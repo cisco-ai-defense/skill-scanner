@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Utility modules for Skill Analyzer."""
+"""Utility modules for Skill Scanner."""
 
 from .file_utils import get_file_type, is_binary_file, read_file_safe
 from .logging_utils import get_logger, setup_logger

@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Configuration management for Claude Skill Analyzer.
+Configuration management for Skill Scanner.
 
 Mirrors MCP Scanner's config structure.
 """

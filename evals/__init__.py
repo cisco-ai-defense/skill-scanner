@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Evaluation framework for Claude Skill Analyzer.
+Evaluation framework for Skill Scanner.
 
 Mirrors MCP Scanner's evals structure for testing analyzer accuracy.
 """

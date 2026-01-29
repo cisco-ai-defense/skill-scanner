@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Dependency Injection Container for Skill Analyzer.
+Dependency Injection Container for Skill Scanner.
 
 This module provides a simple dependency injection container to improve
 testability and decouple configuration from implementation.

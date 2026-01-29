@@ -1,7 +1,7 @@
 //////////////////////////////////////////
 // Skill Discovery Surface Abuse Detection
 // Target: Over-broad descriptions, keyword baiting, activation manipulation
-// For Claude Skills YAML frontmatter and descriptions
+// For agent skills YAML frontmatter and descriptions
 //////////////////////////////////////////
 
 rule skill_discovery_abuse{

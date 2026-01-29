@@ -111,7 +111,7 @@ class MarkdownReporter:
         lines = []
 
         # Header
-        lines.append("# Claude Skills Security Scan Report")
+        lines.append("# Agent Skills Security Scan Report")
         lines.append("")
         lines.append(f"**Timestamp:** {report.timestamp.isoformat()}")
         lines.append("")

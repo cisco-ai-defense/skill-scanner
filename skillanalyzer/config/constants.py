@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Constants for Claude Skill Analyzer.
+Constants for Skill Scanner.
 
 Mirrors MCP Scanner's constants structure.
 """

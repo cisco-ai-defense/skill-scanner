@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Data directory for Claude Skill Analyzer.
+Data directory for Skill Scanner.
 
 Contains prompts and rule files, matching MCP Scanner structure.
 """

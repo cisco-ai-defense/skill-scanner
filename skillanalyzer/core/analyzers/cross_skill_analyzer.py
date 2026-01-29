@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Cross-skill analyzer for detecting coordinated attacks across multiple skills.
+Cross-skill scanner for detecting coordinated attacks across multiple skills.
 
 This analyzer looks for patterns that suggest multiple skills are working together
 to perform malicious activities, such as:
@@ -40,13 +40,13 @@ class CrossSkillAnalyzer(BaseAnalyzer):
     """
 
     def __init__(self):
-        """Initialize cross-skill analyzer."""
+        """Initialize cross-skill scanner."""
         super().__init__("cross_skill_analyzer")
         self._skills: list[Skill] = []
 
     def analyze(self, skill: Skill) -> list[Finding]:
         """
-        Analyze a single skill (no-op for cross-skill analyzer).
+        Analyze a single skill (no-op for cross-skill scanner).
 
         This analyzer only produces findings when analyzing skill sets.
         Call analyze_skill_set() instead.

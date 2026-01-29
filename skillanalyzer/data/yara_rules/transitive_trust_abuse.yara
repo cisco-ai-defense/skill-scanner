@@ -1,7 +1,7 @@
 //////////////////////////////////////////
 // Transitive Trust Abuse Detection
 // Target: Skills that delegate trust to untrusted external content
-// For Claude Skills that consume webpages, files, issues, docs
+// For agent skills that consume webpages, files, issues, docs
 //////////////////////////////////////////
 
 rule transitive_trust_abuse{

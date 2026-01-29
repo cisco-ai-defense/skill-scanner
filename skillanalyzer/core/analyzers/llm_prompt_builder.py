@@ -47,7 +47,7 @@ class PromptBuilder:
                 self.protection_rules = protection_file.read_text(encoding="utf-8")
             else:
                 print(f"Warning: Protection rules file not found at {protection_file}")
-                self.protection_rules = "You are a security analyst analyzing Claude Skills."
+                self.protection_rules = "You are a security analyst analyzing agent skills."
 
             if threat_file.exists():
                 self.threat_analysis_prompt = threat_file.read_text(encoding="utf-8")
@@ -57,7 +57,7 @@ class PromptBuilder:
 
         except Exception as e:
             print(f"Warning: Failed to load prompts: {e}")
-            self.protection_rules = "You are a security analyst analyzing Claude Skills."
+            self.protection_rules = "You are a security analyst analyzing agent skills."
             self.threat_analysis_prompt = "Analyze for security threats."
 
     def build_threat_analysis_prompt(

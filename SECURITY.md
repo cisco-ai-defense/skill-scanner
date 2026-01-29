@@ -9,7 +9,7 @@
 
 ## Reporting a Vulnerability
 
-We take security seriously. If you discover a security vulnerability in the Skill Analyzer, please report it responsibly.
+We take security seriously. If you discover a security vulnerability in the Skill Scanner, please report it responsibly.
 
 ### How to Report
 
@@ -81,7 +81,7 @@ When using the analyzer:
 
 ## Security Scanning
 
-This tool scans Claude Skills for security threats. It is not a substitute for:
+This tool scans agent skills for security threats. It is not a substitute for:
 - Manual security review
 - Penetration testing
 - Compliance audits

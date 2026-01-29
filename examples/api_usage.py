@@ -16,7 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-API usage example - interacting with the Skill Analyzer API server.
+API usage example - interacting with the Skill Scanner API server.
 
 This example demonstrates:
 1. Starting the API server programmatically
@@ -151,7 +151,7 @@ def create_test_zip(skill_dir: Path, output_zip: Path):
 
 def main():
     print("=" * 60)
-    print("Skill Analyzer API Usage Example")
+    print("Skill Scanner API Usage Example")
     print("=" * 60)
 
     # Check health

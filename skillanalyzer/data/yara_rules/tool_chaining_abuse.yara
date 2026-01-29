@@ -1,7 +1,7 @@
 //////////////////////////////////////////
 // Tool Chaining Abuse Detection
 // Target: Suspicious multi-step operations that could exfiltrate data
-// For Claude Skills that chain operations suspiciously
+// For agent skills that chain operations suspiciously
 //////////////////////////////////////////
 
 rule tool_chaining_abuse{

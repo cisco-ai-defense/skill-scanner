@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-REST API server for Claude Skill Analyzer.
+REST API server for Skill Scanner.
 
 Matches MCP Scanner's API structure.
 """

@@ -1,6 +1,6 @@
 # Testing Guide
 
-This document covers testing requirements and procedures for contributing to the Skill Analyzer.
+This document covers testing requirements and procedures for contributing to the Skill Scanner.
 
 ## Quick Reference
 

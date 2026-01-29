@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Comprehensive evaluation benchmark runner for Claude Skill Analyzer.
+Comprehensive evaluation benchmark runner for Skill Scanner.
 
 Based on MCP Scanner's evaluation framework structure.
 Evaluates analyzer accuracy across threat categories.
@@ -94,7 +94,7 @@ class SkillBenchmarkRunner:
         Returns:
             BenchmarkResult with all metrics
         """
-        print("[BENCHMARK] Starting Claude Skill Analyzer Benchmark")
+        print("[BENCHMARK] Starting Skill Scanner Benchmark")
         print("=" * 70)
 
         start_time = time.time()
@@ -296,7 +296,7 @@ def main():
     """Main entry point for benchmark."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run Claude Skill Analyzer benchmarks")
+    parser = argparse.ArgumentParser(description="Run Skill Scanner benchmarks")
     parser.add_argument("--eval-dir", default="evals/skills", help="Directory containing evaluation skills")
     parser.add_argument("--output", help="Output file for JSON results")
     parser.add_argument("--category", help="Run only specific category (e.g., prompt-injection)")

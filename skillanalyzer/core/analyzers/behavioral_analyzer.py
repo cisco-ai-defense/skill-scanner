@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Behavioral analyzer for Claude Skills using static dataflow analysis.
+Behavioral analyzer for agent skills using static dataflow analysis.
 
 Analyzes skill scripts using AST parsing, dataflow tracking, and description-behavior
 alignment checking. Detects threats through code analysis without execution.

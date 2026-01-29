@@ -1,7 +1,7 @@
 //////////////////////////////////////////
 // Unbounded Autonomy Detection
 // Target: Instructions that give skills excessive autonomy
-// For Claude Skills with dangerous autonomous behaviors
+// For agent skills with dangerous autonomous behaviors
 //////////////////////////////////////////
 
 rule autonomy_abuse{

@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Centralized logging configuration for Skill Analyzer.
+Centralized logging configuration for Skill Scanner.
 
 This module provides consistent logging setup across all components.
 """

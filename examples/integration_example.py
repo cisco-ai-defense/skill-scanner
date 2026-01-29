@@ -16,7 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-CI/CD Integration example - using Skill Analyzer in automated pipelines.
+CI/CD Integration example - using Skill Scanner in automated pipelines.
 
 This example demonstrates:
 1. Exit codes for CI/CD integration

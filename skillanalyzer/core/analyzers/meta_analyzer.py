@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-LLM Meta-Analyzer for Claude Skills Security Scanner.
+LLM Meta-Analyzer for Agent Skills Security Scanner.
 
 Performs second-pass LLM analysis on findings from multiple analyzers to:
 - Filter false positives based on contextual understanding

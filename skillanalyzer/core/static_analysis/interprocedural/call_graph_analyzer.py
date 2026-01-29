@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Cross-file analysis for Claude Skills.
+"""Cross-file analysis for agent skills.
 
 Tracks how function parameters flow through function calls across multiple files.
 This enables detection of data exfiltration patterns that span multiple scripts.
@@ -82,7 +82,7 @@ class CallGraph:
 
 
 class CallGraphAnalyzer:
-    """Performs cross-file analysis for Claude Skills.
+    """Performs cross-file analysis for agent skills.
 
     Tracks parameter flow from skill entry points through
     the entire codebase across multiple files.

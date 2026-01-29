@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""API router for Skill Analyzer endpoints."""
+"""API router for Skill Scanner endpoints."""
 
 import shutil
 import tempfile
@@ -123,7 +123,7 @@ class BatchScanRequest(BaseModel):
 @router.get("/", response_model=dict)
 async def root():
     """Root endpoint."""
-    return {"service": "Claude Skill Analyzer API", "version": "0.2.0", "docs": "/docs", "health": "/health"}
+    return {"service": "Skill Scanner API", "version": "0.2.0", "docs": "/docs", "health": "/health"}
 
 
 @router.get("/health", response_model=HealthResponse)

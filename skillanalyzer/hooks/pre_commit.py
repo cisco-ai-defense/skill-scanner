@@ -16,7 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Pre-commit hook for scanning Claude Skills for security issues.
+Pre-commit hook for scanning agent skills for security issues.
 
 This hook scans staged skill directories for security vulnerabilities
 and blocks commits that contain HIGH or CRITICAL severity findings.
@@ -29,7 +29,7 @@ Usage:
        - repo: local
          hooks:
            - id: skill-analyzer
-             name: Skill Analyzer
+             name: Skill Scanner
              entry: skill-analyzer-pre-commit
              language: python
              types: [file]
@@ -54,7 +54,7 @@ from pathlib import Path
 # Default configuration
 DEFAULT_CONFIG = {
     "severity_threshold": "high",  # Block commits on HIGH or CRITICAL
-    "skills_path": ".claude/skills",  # Default Claude skills location
+    "skills_path": ".claude/skills",  # Default skills location
     "fail_fast": True,
     "use_behavioral": False,
     "use_trigger": True,
@@ -273,7 +273,7 @@ def main(args: list[str] | None = None) -> int:
     Returns:
         Exit code (0 = success, 1 = blocked)
     """
-    parser = argparse.ArgumentParser(description="Pre-commit hook for scanning Claude Skills")
+    parser = argparse.ArgumentParser(description="Pre-commit hook for scanning agent skills")
     parser.add_argument(
         "--severity",
         choices=["critical", "high", "medium", "low"],
@@ -413,8 +413,8 @@ def install_hook() -> int:
     hook_path = hooks_dir / "pre-commit"
 
     hook_script = """#!/bin/sh
-# Skill Analyzer Pre-commit Hook
-# Automatically scans Claude Skills for security issues
+# Skill Scanner Pre-commit Hook
+# Automatically scans agent skills for security issues
 
 skill-analyzer-pre-commit "$@"
 exit_code=$?

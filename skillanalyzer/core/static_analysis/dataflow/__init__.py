@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Dataflow analysis for Claude Skills."""
+"""Dataflow analysis for agent skills."""
 
 from .forward_analysis import FlowPath, ForwardDataflowAnalysis, ForwardFlowFact
 

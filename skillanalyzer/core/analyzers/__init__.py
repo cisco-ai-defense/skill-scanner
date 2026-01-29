@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Analyzer modules for detecting security vulnerabilities in Claude Skills.
+Analyzer modules for detecting security vulnerabilities in agent skills.
 
 Structure mirrors MCP Scanner's analyzer organization.
 """

@@ -1,8 +1,8 @@
-# Claude Skills Threat Taxonomy
+# Agent Skills Threat Taxonomy
 
 ## Overview
 
-Authoritative threat classification for Claude Skills security analysis, aligned with the [Cisco Integrated AI Security and Safety Framework](https://arxiv.org/html/2512.12921v1) (December 2025).
+Authoritative threat classification for agent skills security analysis, aligned with the [Cisco Integrated AI Security and Safety Framework](https://arxiv.org/html/2512.12921v1) (December 2025).
 
 **Detection Engines:**
 - Static Analyzer: 58 pattern-based rules (YAML + YARA + Python)

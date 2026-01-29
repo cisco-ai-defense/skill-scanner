@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Threat mapping and taxonomy for Claude Skill Analyzer.
+Threat mapping and taxonomy for Skill Scanner.
 
 Aligned with MCP Scanner's threat taxonomy.
 """

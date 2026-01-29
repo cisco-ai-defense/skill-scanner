@@ -14,9 +14,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Skill Analyzer exceptions.
+"""Skill Scanner exceptions.
 
-This module defines custom exceptions for Skill Analyzer operations.
+This module defines custom exceptions for Skill Scanner operations.
 All exceptions inherit from SkillAnalyzerError for easy catching.
 
 Example:
@@ -35,7 +35,7 @@ Example:
 
 
 class SkillAnalyzerError(Exception):
-    """Base exception for all Skill Analyzer errors."""
+    """Base exception for all Skill Scanner errors."""
 
     pass
 

@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Command execution utilities for Skill Analyzer."""
+"""Command execution utilities for Skill Scanner."""
 
 import os
 import shlex

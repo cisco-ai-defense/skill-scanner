@@ -1,5 +1,5 @@
 //////////////////////////////////////////
-// Code Execution Detection Rule for Claude Skills
+// Code Execution Detection Rule for Agent Skills
 // Target: Python and Bash execution patterns
 // (eval, exec, subprocess, shell injection)
 /////////////////////////////////////////
@@ -9,7 +9,7 @@ rule code_execution{
     meta:
 
         author = "Cisco"
-        description = "Detects dangerous code execution patterns in Claude Skills (Python/Bash)"
+        description = "Detects dangerous code execution patterns in agent skills (Python/Bash)"
         classification = "harmful"
         threat_type = "CODE EXECUTION"
 

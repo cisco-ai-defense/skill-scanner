@@ -501,7 +501,7 @@ def main():
     """Main entry point for evaluation."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run Claude Skill Analyzer evaluations")
+    parser = argparse.ArgumentParser(description="Run Skill Scanner evaluations")
     parser.add_argument("--test-skills-dir", default="evals/skills", help="Directory containing test skills")
     parser.add_argument("--output", help="Output file for results (JSON)")
     parser.add_argument("--use-llm", action="store_true", help="Use LLM analyzer in evaluation")

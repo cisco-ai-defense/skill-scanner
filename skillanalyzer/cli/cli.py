@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Command-line interface for the Claude Skill Analyzer.
+Command-line interface for the Skill Scanner.
 """
 
 import argparse
@@ -623,7 +623,7 @@ def generate_multi_skill_summary(report) -> str:
     """Generate a simple summary for multiple skills."""
     lines = []
     lines.append("=" * 60)
-    lines.append("Claude Skills Security Scan Report")
+    lines.append("Agent Skills Security Scan Report")
     lines.append("=" * 60)
     lines.append(f"Skills Scanned: {report.total_skills_scanned}")
     lines.append(f"Safe Skills: {report.safe_count}")
@@ -648,7 +648,7 @@ def generate_multi_skill_summary(report) -> str:
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Claude Skill Analyzer - Security scanner for Claude Skills packages",
+        description="Skill Scanner - Security scanner for agent skills packages",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

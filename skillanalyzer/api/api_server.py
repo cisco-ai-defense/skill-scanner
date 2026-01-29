@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-REST API server for Claude Skill Analyzer (Phase 4).
+REST API server for Skill Scanner.
 
 Provides HTTP endpoints for skill scanning, similar to MCP Scanner's API server.
 """
@@ -126,8 +126,8 @@ class BatchScanRequest(BaseModel):
 
 # Create FastAPI app
 app = FastAPI(
-    title="Claude Skill Analyzer API",
-    description="Security scanning API for Claude Skills packages",
+    title="Skill Scanner API",
+    description="Security scanning API for agent skills packages",
     version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -140,7 +140,7 @@ scan_results_cache = {}
 @app.get("/", response_model=dict)
 async def root():
     """Root endpoint."""
-    return {"service": "Claude Skill Analyzer API", "version": "0.2.0", "docs": "/docs", "health": "/health"}
+    return {"service": "Skill Scanner API", "version": "0.2.0", "docs": "/docs", "health": "/health"}
 
 
 @app.get("/health", response_model=HealthResponse)

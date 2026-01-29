@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Configuration class for Claude Skill Analyzer.
+Configuration class for Skill Scanner.
 
 Based on MCP Scanner's Config structure.
 """
@@ -28,7 +28,7 @@ from pathlib import Path
 @dataclass
 class Config:
     """
-    Configuration for Claude Skill Analyzer.
+    Configuration for Skill Scanner.
 
     Mirrors MCP Scanner's Config class structure.
     """

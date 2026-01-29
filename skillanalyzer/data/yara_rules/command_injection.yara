@@ -1,6 +1,6 @@
 //////////////////////////////////////////
 // Shell/System Command Injection Detection Rule
-// Target: Command injection patterns for Claude Skills (Python/Bash)
+// Target: Command injection patterns for agent skills (Python/Bash)
 // (Shell operators, dangerous commands, network tools + reverse shells)
 /////////////////////////////////////////
 
@@ -8,7 +8,7 @@ rule command_injection{
 
     meta:
         author = "Cisco"
-        description = "Detects command injection patterns in Claude Skills: shell operators, system commands, and network tools"
+        description = "Detects command injection patterns in agent skills: shell operators, system commands, and network tools"
         classification = "harmful"
         threat_type = "INJECTION ATTACK"
 

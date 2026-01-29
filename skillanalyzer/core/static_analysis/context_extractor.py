@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Context extractor for Claude Skills behavioral analysis.
+Context extractor for agent skills behavioral analysis.
 
 Extracts comprehensive security context from skill scripts for LLM analysis.
 """

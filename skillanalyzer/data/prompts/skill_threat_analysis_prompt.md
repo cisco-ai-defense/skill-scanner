@@ -147,7 +147,7 @@ But script reads environment variables and makes network calls!
 - **MEDIUM**: Social engineering, suspicious patterns, actual tool restriction violations
 - **LOW**: Missing optional metadata (allowed-tools, compatibility), minor documentation issues
 
-**Note on `allowed-tools`:** This field is OPTIONAL per the Claude Skills spec. Missing `allowed-tools` is LOW severity (informational). Only flag as MEDIUM/HIGH if the skill DECLARES `allowed-tools` but then VIOLATES those restrictions.
+**Note on `allowed-tools`:** This field is OPTIONAL per the agent skills spec. Missing `allowed-tools` is LOW severity (informational). Only flag as MEDIUM/HIGH if the skill DECLARES `allowed-tools` but then VIOLATES those restrictions.
 
 ## Required Output Format
 

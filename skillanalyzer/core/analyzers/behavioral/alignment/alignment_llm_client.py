@@ -192,7 +192,7 @@ class AlignmentLLMClient:
                     {
                         "role": "system",
                         "content": (
-                            "You are a security expert analyzing Claude Skills. "
+                            "You are a security expert analyzing agent skills. "
                             "You receive complete dataflow analysis and code context. "
                             "Analyze if the skill description accurately describes what the code actually does. "
                             "Respond ONLY with valid JSON. Do not include any markdown formatting or code blocks."

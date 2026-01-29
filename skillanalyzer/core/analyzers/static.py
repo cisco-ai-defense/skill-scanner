@@ -158,9 +158,9 @@ class StaticAnalyzer(BaseAnalyzer):
                     rule_id="MANIFEST_INVALID_NAME",
                     category=ThreatCategory.POLICY_VIOLATION,
                     severity=Severity.LOW,
-                    title="Skill name does not follow Claude Skills naming rules",
+                    title="Skill name does not follow agent skills naming rules",
                     description=(
-                        f"Skill name '{manifest.name}' is invalid. Claude Skills require lowercase letters, numbers, "
+                        f"Skill name '{manifest.name}' is invalid. Agent skills require lowercase letters, numbers, "
                         f"and hyphens only, with a maximum length of 64 characters."
                     ),
                     file_path="SKILL.md",
@@ -176,9 +176,9 @@ class StaticAnalyzer(BaseAnalyzer):
                     rule_id="MANIFEST_DESCRIPTION_TOO_LONG",
                     category=ThreatCategory.POLICY_VIOLATION,
                     severity=Severity.LOW,
-                    title="Skill description exceeds Claude Skills length limit",
+                    title="Skill description exceeds agent skills length limit",
                     description=(
-                        f"Skill description is {len(manifest.description)} characters; Claude Skills limit the "
+                        f"Skill description is {len(manifest.description)} characters; Agent skills limit the "
                         f"`description` field to 1024 characters."
                     ),
                     file_path="SKILL.md",

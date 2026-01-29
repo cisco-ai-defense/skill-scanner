@@ -15,5 +15,5 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Unit tests for Claude Skill Analyzer.
+Unit tests for Skill Scanner.
 """

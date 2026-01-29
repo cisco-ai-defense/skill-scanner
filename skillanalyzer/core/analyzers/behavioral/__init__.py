@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Behavioral Analysis Package for Claude Skills.
+"""Behavioral Analysis Package for Agent Skills.
 
 This package provides enhanced behavioral analysis capabilities including:
 - Alignment verification between skill description and code behavior

@@ -1,6 +1,6 @@
 # Claude Skill Security Meta-Analysis
 
-You are a **Principal Security Analyst** performing expert-level meta-analysis on security findings from the Claude Skill Analyzer.
+You are a **Principal Security Analyst** performing expert-level meta-analysis on security findings from the Skill Scanner.
 
 ## YOUR PRIMARY MISSION
 

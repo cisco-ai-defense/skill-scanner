@@ -1,8 +1,8 @@
 # API Server Rationale
 
-## Question: Is an API Server Necessary for Skill Analyzer?
+## Question: Is an API Server Necessary for Skill Scanner?
 
-Unlike MCP Scanner, which scans **remote MCP servers** (HTTP/SSE/stdio connections), Skill Analyzer scans **local skill packages** (files/directories). This raises the question: is an API server necessary?
+Unlike MCP Scanner, which scans **remote MCP servers** (HTTP/SSE/stdio connections), Skill Scanner scans **local skill packages** (files/directories). While an API server is less critical for Skill Scanner, it can provide additional support for CI/CD integration, web interfaces, service integrations, and batch processing. Read below for more details.
 
 ## Analysis
 
@@ -13,12 +13,12 @@ Unlike MCP Scanner, which scans **remote MCP servers** (HTTP/SSE/stdio connectio
 - API server enables scanning servers you don't control
 - Essential for the use case (scanning external services)
 
-**Skill Analyzer:**
+**Skill Scanner:**
 - Scans **local** skill packages (files/directories)
 - Skills are **always local** - there are no remote skills (unlike MCP servers)
 - Skills are distributed as ZIP files or directories that users install locally
 - Can be scanned directly via CLI or Python SDK
-- **Key Point**: Remote Claude Skills do not exist - skills are local file packages
+- **Key Point**: Remote skills do not exist - skills are local file packages
 
 ### Use Cases Where API is Valuable
 
@@ -95,9 +95,9 @@ Despite skills being local files, an API server provides value for:
 
 ## Conclusion
 
-**Critical Finding**: Remote Claude Skills **do not exist**. Skills are local file packages that users install on their machines, not remote services like MCP servers.
+**Critical Finding**: Remote skills **do not exist**. Skills are local file packages that users install on their machines, not remote services like MCP servers.
 
-While the API server is **less critical** for Skill Analyzer than for MCP Scanner (since there are no remote skills to scan), it still provides value for:
+While the API server is **less critical** for Skill Scanner than for MCP Scanner (since there are no remote skills to scan), it still provides value for:
 - CI/CD integration (uploading skill ZIP files)
 - Web interfaces (uploading skill packages)
 - Service integrations (HTTP-based workflows)

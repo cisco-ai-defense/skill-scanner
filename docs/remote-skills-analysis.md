@@ -78,7 +78,7 @@ Searches for "remote Claude Skills" or "Claude Skills API" return:
 
 ## Why API Server Still Exists
 
-The API server in Skill Analyzer is **NOT for scanning remote skills** (they don't exist). Instead, it's for:
+The API server in Skill Scanner is **NOT for scanning remote skills** (they don't exist). Instead, it's for:
 
 ### 1. **CI/CD Integration**
 - Upload skill ZIP files via HTTP
@@ -102,7 +102,7 @@ The API server in Skill Analyzer is **NOT for scanning remote skills** (they don
 
 ## Key Difference from MCP Scanner
 
-| Feature | MCP Scanner | Skill Analyzer |
+| Feature | MCP Scanner | Skill Scanner |
 |---------|-------------|----------------|
 | **Target** | Remote MCP servers | Local skill packages |
 | **Access Method** | HTTP/SSE/stdio | File system paths |

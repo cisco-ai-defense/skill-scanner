@@ -14,9 +14,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""API module for Skill Analyzer.
+"""API module for Skill Scanner.
 
-This module provides a FastAPI application for scanning Claude Skills packages.
+This module provides a FastAPI application for scanning agent skills packages.
 """
 
 from fastapi import FastAPI
@@ -24,8 +24,8 @@ from fastapi import FastAPI
 from .router import router as api_router
 
 app = FastAPI(
-    title="Claude Skill Analyzer API",
-    description="Security scanning API for Claude Skills packages",
+    title="Skill Scanner API",
+    description="Security scanning API for agent skills packages",
     version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",

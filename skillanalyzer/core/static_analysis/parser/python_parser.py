@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Python AST parser for Claude Skills scripts.
+Python AST parser for agent skills scripts.
 """
 
 import ast

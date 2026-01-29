@@ -133,7 +133,7 @@ class TestRootEndpoint:
         data = response.json()
 
         assert "service" in data
-        assert "Claude Skill Analyzer" in data["service"]
+        assert "Skill Scanner" in data["service"]
         assert "version" in data
 
 

@@ -16,7 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Programmatic usage example - using Skill Analyzer as a Python library.
+Programmatic usage example - using Skill Scanner as a Python library.
 
 This example demonstrates:
 1. Creating custom scanner configurations

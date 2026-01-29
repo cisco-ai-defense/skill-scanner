@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Claude Skill Analyzer - Security scanner for Claude Skills packages.
+Skill Scanner - Security scanner for agent skills packages.
 """
 
 __version__ = "0.2.0"

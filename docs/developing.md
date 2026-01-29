@@ -1,6 +1,6 @@
 # Development Guide
 
-This guide covers setting up your development environment, running tests, and contributing code to the Skill Analyzer.
+This guide covers setting up your development environment, running tests, and contributing code to the Skill Scanner.
 
 ## Prerequisites
 

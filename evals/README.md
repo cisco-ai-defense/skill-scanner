@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `evals/` directory contains the evaluation framework for testing the accuracy and effectiveness of the Claude Skill Analyzer's threat detection capabilities.
+The `evals/` directory contains the evaluation framework for testing the accuracy and effectiveness of the Skill Scanner's threat detection capabilities.
 
 Mirrors the structure of [MCP Scanner's evals](https://github.com/cisco-ai-defense/mcp-scanner/tree/main/evals).
 

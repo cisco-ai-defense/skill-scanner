@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-AI Defense API analyzer for Claude Skills security scanning.
+AI Defense API analyzer for agent skills security scanning.
 
 Integrates with Cisco AI Defense API (https://api.aidefense.cisco.com) for:
 - Prompt injection detection

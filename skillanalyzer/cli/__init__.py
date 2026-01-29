@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Command-line interface for Claude Skill Analyzer.
+Command-line interface for Skill Scanner.
 
 Matches MCP Scanner's CLI structure.
 """

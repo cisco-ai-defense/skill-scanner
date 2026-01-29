@@ -1,7 +1,7 @@
 #!/bin/bash
-# Skill Analyzer Pre-commit Hook
+# Skill Scanner Pre-commit Hook
 #
-# This script scans Claude Skills for security vulnerabilities before commit.
+# This script scans agent skills for security vulnerabilities before commit.
 # It blocks commits containing HIGH or CRITICAL severity findings.
 #
 # Installation:
@@ -32,7 +32,7 @@ NC='\033[0m' # No Color
 SEVERITY_THRESHOLD="${SKILL_ANALYZER_THRESHOLD:-high}"
 SKILLS_PATH="${SKILL_ANALYZER_SKILLS_PATH:-.claude/skills}"
 
-echo "🔍 Skill Analyzer Pre-commit Hook"
+echo "🔍 Skill Scanner Pre-commit Hook"
 echo "================================"
 
 # Check if skill-analyzer is installed

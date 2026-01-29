@@ -273,7 +273,7 @@ class LLMAnalyzer(BaseAnalyzer):
             messages = [
                 {
                     "role": "system",
-                    "content": """You are a security expert analyzing Claude Skills. Follow the analysis framework provided.
+                    "content": """You are a security expert analyzing agent skills. Follow the analysis framework provided.
 
 When selecting AITech codes for findings, use these mappings:
 - AITech-1.1: Direct prompt injection in SKILL.md (jailbreak, instruction override)

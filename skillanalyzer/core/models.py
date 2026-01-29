@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Data models for Claude Skills and security findings.
+Data models for agent skills and security findings.
 """
 
 from dataclasses import dataclass, field

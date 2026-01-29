@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-YARA rule scanner for detecting malicious patterns in Claude Skills.
+YARA rule scanner for detecting malicious patterns in agent skills.
 """
 
 from pathlib import Path

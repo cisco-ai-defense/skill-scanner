@@ -378,9 +378,9 @@ Parameter Flow Tracking:
         Returns:
             Embedded prompt template
         """
-        return """# Claude Skill Alignment Analysis
+        return """# Agent Skill Alignment Analysis
 
-You are a security expert analyzing Claude Skills for alignment mismatches between their
+You are a security expert analyzing agent skills for alignment mismatches between their
 described behavior and actual implementation.
 
 ## Your Task

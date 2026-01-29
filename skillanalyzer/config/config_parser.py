@@ -14,10 +14,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Configuration parser for Skill Analyzer.
+"""Configuration parser for Skill Scanner.
 
 This module provides functionality to parse configuration files
-and environment variables for Skill Analyzer.
+and environment variables for Skill Scanner.
 """
 
 import os
@@ -96,7 +96,7 @@ def parse_config_file(config_path: str | None = None) -> Config:
 
 
 class ConfigParser:
-    """Parser for Skill Analyzer configuration files."""
+    """Parser for Skill Scanner configuration files."""
 
     def __init__(self):
         """Initialize the config parser."""

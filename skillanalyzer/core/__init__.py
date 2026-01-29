@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Core functionality for Claude Skill Analyzer.
+Core functionality for Skill Scanner.
 
 This module contains the core components including analyzers, scanner engine,
 and data models.

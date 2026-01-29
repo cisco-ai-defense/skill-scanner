@@ -25,7 +25,7 @@ import sys
 def main():
     """Main entry point for API server CLI."""
     parser = argparse.ArgumentParser(
-        description="Claude Skill Analyzer API Server",
+        description="Skill Scanner API Server",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -58,7 +58,7 @@ Examples:
         print("Install with: pip install fastapi uvicorn python-multipart", file=sys.stderr)
         return 1
 
-    print("Starting Claude Skill Analyzer API Server...")
+    print("Starting Skill Scanner API Server...")
     print(f"Server: http://{args.host}:{args.port}")
     print(f"Docs: http://{args.host}:{args.port}/docs")
     print(f"Health: http://{args.host}:{args.port}/health")
