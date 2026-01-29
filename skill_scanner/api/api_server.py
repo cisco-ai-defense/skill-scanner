@@ -627,7 +627,7 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
     """
     import uvicorn
 
-    uvicorn.run("skill_scanner.api_server:app", host=host, port=port, reload=reload)
+    uvicorn.run("skill_scanner.api.api_server:app", host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":
