@@ -55,7 +55,7 @@ class PythonParser:
     SUBPROCESS_PATTERNS = ["subprocess", "os.system", "os.popen"]
     DANGEROUS_FUNCTIONS = ["eval", "exec", "compile", "__import__"]
 
-    # Claude Code tool indicators - map code patterns to Claude Code tools
+    # Agent tool indicators - map code patterns to agent tools
     TOOL_INDICATORS = {
         "Read": {
             "open",
@@ -307,10 +307,10 @@ class PythonParser:
 
     def get_inferred_tools(self) -> dict[str, bool]:
         """
-        Determine which Claude Code tools are implied by the code patterns.
+        Determine which agent tools are implied by the code patterns.
 
         Analyzes function calls, imports, and patterns in the code to infer
-        which Claude Code tools would be needed to execute similar operations.
+        which agent tools would be needed to execute similar operations.
 
         Returns:
             Dictionary mapping tool names to whether they are detected
@@ -371,7 +371,7 @@ class PythonParser:
 
     def get_detected_tools_list(self) -> list[str]:
         """
-        Get a list of Claude Code tools that are detected in the code.
+        Get a list of agent tools that are detected in the code.
 
         Returns:
             List of tool names that were detected

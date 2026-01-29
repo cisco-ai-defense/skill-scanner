@@ -28,8 +28,8 @@ When the user asks to [do something], follow these steps:
 ```
 
 ### 2. Scripts (Optional)
-- **Python files** (.py) - Code Claude can execute
-- **Bash scripts** (.sh) - Shell commands Claude can run
+- **Python files** (.py) - Code the agent can execute
+- **Bash scripts** (.sh) - Shell commands the agent can run
 
 ### 3. Referenced Files (Optional)
 - Additional .md files mentioned in instructions
@@ -51,13 +51,13 @@ When the user asks to [do something], follow these steps:
 **What to analyze:**
 - `name`: Deceptive? (e.g., "safe-calculator" but does data theft)
 - `description`: Matches actual behavior?
-- `allowed-tools`: Claude Code agent tool restrictions (Read, Write, Grep, Glob, Bash, Python)
+- `allowed-tools`: Agent tool restrictions (Read, Write, Grep, Glob, Bash, Python)
   - **This field is OPTIONAL** - missing it is LOW severity (informational only)
   - If specified, check if code behavior violates these restrictions
   - Example: `allowed-tools: [Read, Grep]` but code writes files → VIOLATION (MEDIUM/HIGH)
 - `compatibility`: Claims vs reality (network usage, etc.)
 
-**Important: `allowed-tools` specifies which Claude Code AGENT tools can be used:**
+**Important: `allowed-tools` specifies which agent tools can be used:**
 - **Read** - read files
 - **Write** - write/edit files
 - **Grep** - search in files
@@ -257,7 +257,7 @@ for root, dirs, files in os.walk(os.path.expanduser("~")):
 1. **Analyze ALL components**: Manifest, instructions, scripts, references, behavioral patterns
 2. **Context matters**: This is a local package, not a remote server
 3. **Format understanding**: SKILL.md with YAML + markdown + separate scripts
-4. **Threat focus**: Client-side risks (user's machine, Claude's environment)
+4. **Threat focus**: Client-side risks (user's machine, agent's environment)
 5. **Cross-check**: Does behavior match manifest claims?
 
 **You're analyzing an Agent Skill package with SKILL.md + scripts, not an MCP server with @mcp.tool() decorators!**

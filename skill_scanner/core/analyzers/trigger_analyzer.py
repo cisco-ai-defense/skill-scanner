@@ -17,7 +17,7 @@
 """
 Trigger analyzer for detecting overly generic skill descriptions.
 
-Claude uses skill descriptions to decide when to activate a skill.
+AI agents use skill descriptions to decide when to activate a skill.
 Overly generic descriptions can cause trigger hijacking where a skill
 activates for unrelated user requests.
 """
@@ -220,7 +220,7 @@ class TriggerAnalyzer(BaseAnalyzer):
                     title="Skill description is too short",
                     description=(
                         f"Description has only {len(words)} words. "
-                        f"Short descriptions may not provide enough context for Claude to determine "
+                        f"Short descriptions may not provide enough context for the agent to determine "
                         f"when this skill should be used."
                     ),
                     file_path="SKILL.md",

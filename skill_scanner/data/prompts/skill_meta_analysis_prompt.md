@@ -32,7 +32,7 @@ An Agent Skill is a **local directory package** that extends an AI agent's capab
 ```
 skill-name/
 ├── SKILL.md          # Required: YAML manifest + markdown instructions
-├── scripts/          # Optional: Python/Bash code Claude can execute
+├── scripts/          # Optional: Python/Bash code the agent can execute
 │   └── helper.py
 └── references/       # Optional: Additional files referenced by instructions
     └── guidelines.md
@@ -48,7 +48,7 @@ compatibility: Works in Claude.ai, Claude Code
 allowed-tools: [Read, Write, Python, Bash]  # Optional tool restrictions
 ---
 ```
-Followed by markdown instructions that guide Claude's behavior.
+Followed by markdown instructions that guide the agent's behavior.
 
 ## Analyzer Authority Hierarchy
 

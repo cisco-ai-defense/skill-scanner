@@ -11,7 +11,7 @@
 From `skill_scanner/data/prompts/code_alignment_threat_analysis_prompt.md`:
 
 ```
-**Key Point**: Skills are **local packages** that Claude loads, not remote servers!
+**Key Point**: Skills are **local packages** that agents load, not remote servers!
 ```
 
 ### 2. Skill Distribution Model
@@ -21,7 +21,7 @@ From the codebase analysis:
 - **Skills are distributed as**: ZIP files or local directories
 - **Installation**: Users download and install skills locally
 - **Structure**: Local folder with `SKILL.md` file
-- **Usage**: Claude reads from local file system
+- **Usage**: Agent reads from local file system
 
 ### 3. Skill Loading Process
 
@@ -41,15 +41,15 @@ class SkillLoader:
 
 The loader expects a **local directory path**, not a remote URL.
 
-### 4. How Claude Uses Skills
+### 4. How Agents Use Skills
 
 From the prompt documentation:
 
 1. **Discovery**: User installs skill package **locally**
-2. **Loading**: Claude reads SKILL.md manifest from **local file system**
-3. **Activation**: Claude loads instructions from **local files**
-4. **Execution**: Claude runs scripts from **local directory**
-5. **Output**: Claude uses skill results to respond to user
+2. **Loading**: Agent reads SKILL.md manifest from **local file system**
+3. **Activation**: Agent loads instructions from **local files**
+4. **Execution**: Agent runs scripts from **local directory**
+5. **Output**: Agent uses skill results to respond to user
 
 **No remote access involved.**
 

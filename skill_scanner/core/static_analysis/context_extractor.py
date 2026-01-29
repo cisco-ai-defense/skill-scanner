@@ -145,7 +145,7 @@ class ContextExtractor:
 
     # Legitimate domains that should NOT be flagged as suspicious
     LEGITIMATE_DOMAINS = [
-        # Claude/Anthropic services
+        # AI provider services
         "api.anthropic.com",
         "statsig.anthropic.com",
         # Code repositories

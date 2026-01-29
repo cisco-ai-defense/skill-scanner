@@ -24,4 +24,4 @@ When user requests calculations, use standard Python operators.
 ## Example
 
 User: "What's 25 + 17?"
-Claude: *uses simple-math skill* The result is 42.
+Agent: *uses simple-math skill* The result is 42.
