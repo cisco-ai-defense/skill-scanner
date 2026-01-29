@@ -1,61 +1,75 @@
 # Skill Scanner
 
-A Python tool for scanning Agent Skills packages for potential security findings. The Skill Analyzer combines pattern-based detection (YAML + YARA), LLM-as-a-judge, and behavioral dataflow analysis to detect malicious skills. Supports Anthropic Claude Skills, OpenAI Codex Skills, and Cursor Agent Skills formats, which follow the [Agent Skills specification](https://agentskills.io).
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI version](https://img.shields.io/pypi/v/cisco-ai-skill-scanner.svg)](https://pypi.org/project/cisco-ai-skill-scanner/)
+[![CI](https://github.com/cisco-ai-defense/skill-scanner/actions/workflows/python-tests.yml/badge.svg)](https://github.com/cisco-ai-defense/skill-scanner/actions/workflows/python-tests.yml)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white)](https://discord.com/invite/nKWtDcXxtx)
+
+A security scanner for AI Agent Skills that detects prompt injection, data exfiltration, and malicious code patterns. Combines **pattern-based detection** (YAML + YARA), **LLM-as-a-judge**, and **behavioral dataflow analysis** for comprehensive threat detection.
+
+Supports [Anthropic Claude Skills](https://docs.anthropic.com/en/docs/agents-and-tools/claude-skills), [OpenAI Codex Skills](https://openai.github.io/codex/), and [Cursor Agent Skills](https://docs.cursor.com/context/rules) formats following the [Agent Skills specification](https://agentskills.io).
+
+---
+
+## Highlights
+
+- **Multi-Engine Detection** - Static analysis, behavioral dataflow, LLM semantic analysis, and cloud-based scanning
+- **False Positive Filtering** - Meta-analyzer achieves ~65% noise reduction while maintaining 100% threat detection
+- **CI/CD Ready** - SARIF output for GitHub Code Scanning, exit codes for build failures
+- **Extensible** - Plugin architecture for custom analyzers
+
+**[Join the Cisco AI Discord](https://discord.com/invite/nKWtDcXxtx)** to discuss, share feedback, or connect with the team.
+
+---
 
 ## Documentation
 
-- **[Quick Start Guide](docs/quickstart.md)** - Get started in 5 minutes
-- **[Architecture](docs/architecture.md)** - System design and components
-- **[Threat Taxonomy](docs/threat-taxonomy.md)** - Complete AITech threat taxonomy with examples
-- **[LLM Analyzer](docs/llm-analyzer.md)** - LLM configuration and usage
-- **[Meta-Analyzer](docs/meta-analyzer.md)** - False positive filtering and finding prioritization
-- **[Behavioral Analyzer](docs/behavioral-analyzer.md)** - Dataflow analysis details
-- **[API Reference](docs/api-server.md)** - REST API documentation
-- **[Binary Handling](docs/binary-handling.md)** - How binary files are handled
-- **[Development Guide](docs/developing.md)** - Contributing and development setup
+| Guide | Description |
+|-------|-------------|
+| [Quick Start](docs/quickstart.md) | Get started in 5 minutes |
+| [Architecture](docs/architecture.md) | System design and components |
+| [Threat Taxonomy](docs/threat-taxonomy.md) | Complete AITech threat taxonomy with examples |
+| [LLM Analyzer](docs/llm-analyzer.md) | LLM configuration and usage |
+| [Meta-Analyzer](docs/meta-analyzer.md) | False positive filtering and prioritization |
+| [Behavioral Analyzer](docs/behavioral-analyzer.md) | Dataflow analysis details |
+| [API Reference](docs/api-server.md) | REST API documentation |
+| [Development Guide](docs/developing.md) | Contributing and development setup |
+
+---
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.10+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- LLM Provider API Key (optional, for LLM analyzer)
-
-### Using UV (Recommended)
+**Prerequisites:** Python 3.10+ and [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
 ```bash
-# Install uv if you haven't already
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Core installation (includes CLI + API server)
+# Using uv (recommended)
 uv pip install cisco-ai-skill-scanner
 
-# With LLM support (adds Anthropic, OpenAI, LiteLLM, Google GenAI)
-uv pip install cisco-ai-skill-scanner[llm]
-
-# With AWS Bedrock support
-uv pip install cisco-ai-skill-scanner[bedrock]
-
-# With Google Vertex AI support
-uv pip install cisco-ai-skill-scanner[vertex]
-
-# With Azure OpenAI support
-uv pip install cisco-ai-skill-scanner[azure]
-
-# All features (core + LLM + all cloud providers)
-uv pip install cisco-ai-skill-scanner[all]
+# Using pip
+pip install cisco-ai-skill-scanner
 ```
 
-### Using pip
+<details>
+<summary><strong>Cloud Provider Extras</strong></summary>
 
 ```bash
-# Core installation
-pip install cisco-ai-skill-scanner
+# AWS Bedrock support
+pip install cisco-ai-skill-scanner[bedrock]
 
-# With all features
+# Google Vertex AI support
+pip install cisco-ai-skill-scanner[vertex]
+
+# Azure OpenAI support
+pip install cisco-ai-skill-scanner[azure]
+
+# All cloud providers
 pip install cisco-ai-skill-scanner[all]
 ```
+
+</details>
+
+---
 
 ## Quick Start
 
@@ -65,10 +79,6 @@ pip install cisco-ai-skill-scanner[all]
 # For LLM analyzer and Meta-analyzer
 export SKILL_SCANNER_LLM_API_KEY="your_api_key"
 export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"
-
-# For Azure OpenAI (optional)
-export SKILL_SCANNER_LLM_BASE_URL="https://your-resource.openai.azure.com/"
-export SKILL_SCANNER_LLM_API_VERSION="2025-01-01-preview"
 
 # For VirusTotal binary scanning
 export VIRUSTOTAL_API_KEY="your_virustotal_api_key"
@@ -87,57 +97,38 @@ skill-analyzer scan /path/to/skill
 skill-analyzer scan /path/to/skill --use-behavioral
 
 # Scan with all engines
-skill-analyzer scan /path/to/skill --use-behavioral --use-llm --use-aidefense --use-virustotal
+skill-analyzer scan /path/to/skill --use-behavioral --use-llm --use-aidefense
 
-# Scan with meta-analyzer for false positive filtering (requires --use-llm)
+# Scan with meta-analyzer for false positive filtering
 skill-analyzer scan /path/to/skill --use-llm --enable-meta
 
 # Scan multiple skills recursively
 skill-analyzer scan-all /path/to/skills --recursive --use-behavioral
 
-# Save results to file
-skill-analyzer scan /path/to/skill --format json --output results.json
-
-# Fail CI build if threats found
-skill-analyzer scan-all ./skills --fail-on-findings --use-behavioral
+# CI/CD: Fail build if threats found
+skill-analyzer scan-all ./skills --fail-on-findings --format sarif --output results.sarif
 ```
 
-### Python SDK Usage
+### Python SDK
 
 ```python
-from skillanalyzer import SkillScanner, Config
-from skillanalyzer.core.analyzers import StaticAnalyzer, BehavioralAnalyzer, LLMAnalyzer
+from skillanalyzer import SkillScanner
+from skillanalyzer.core.analyzers import StaticAnalyzer, BehavioralAnalyzer
 
 # Create scanner with analyzers
-analyzers = [
+scanner = SkillScanner(analyzers=[
     StaticAnalyzer(),
     BehavioralAnalyzer(use_static_analysis=True),
-]
-
-scanner = SkillScanner(analyzers=analyzers)
+])
 
 # Scan a skill
 result = scanner.scan_skill("/path/to/skill")
 
-# Check results
-print(f"Skill: {result.skill_name}")
 print(f"Safe: {result.is_safe}")
 print(f"Findings: {len(result.findings)}")
 ```
 
-## CLI Options
-
-| Option | Description |
-|--------|-------------|
-| `--use-behavioral` | Enable behavioral analyzer (dataflow analysis) |
-| `--use-llm` | Enable LLM analyzer (requires API key) |
-| `--use-virustotal` | Enable VirusTotal binary file scanner |
-| `--use-aidefense` | Enable Cisco AI Defense analyzer |
-| `--enable-meta` | Enable meta-analyzer for false positive filtering (requires `--use-llm`) |
-| `--format {summary,json,markdown,table,sarif}` | Output format |
-| `--output PATH` | Save report to file |
-| `--fail-on-findings` | Exit with error if HIGH/CRITICAL found |
-| `--check-overlap` | Enable cross-skill overlap detection |
+---
 
 ## Security Analyzers
 
@@ -146,26 +137,34 @@ print(f"Findings: {len(result.findings)}")
 | **Static** | YAML + YARA patterns | All files | None |
 | **Behavioral** | AST dataflow analysis | Python files | None |
 | **LLM** | Semantic analysis | SKILL.md + scripts | API key |
-| **Meta** | False positive filtering | All findings | API key + `--use-llm` |
+| **Meta** | False positive filtering | All findings | API key |
 | **VirusTotal** | Hash-based malware | Binary files | API key |
 | **AI Defense** | Cloud-based AI | Text content | API key |
 
-> **Note:** The Meta-Analyzer performs a second-pass analysis to filter false positives and prioritize findings. In testing, it achieves ~65% noise reduction while maintaining 100% threat detection rate.
+---
 
-## Output Formats
+## CLI Options
 
-- **`summary`** - Concise overview (default)
-- **`json`** - Machine-readable JSON
-- **`markdown`** - Human-readable reports
-- **`table`** - Clean tabular format
-- **`sarif`** - GitHub Code Scanning integration
+| Option | Description |
+|--------|-------------|
+| `--use-behavioral` | Enable behavioral analyzer (dataflow analysis) |
+| `--use-llm` | Enable LLM analyzer (requires API key) |
+| `--use-virustotal` | Enable VirusTotal binary scanner |
+| `--use-aidefense` | Enable Cisco AI Defense analyzer |
+| `--enable-meta` | Enable meta-analyzer for false positive filtering |
+| `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif` |
+| `--output PATH` | Save report to file |
+| `--fail-on-findings` | Exit with error if HIGH/CRITICAL found |
+
+---
 
 ## Example Output
 
-```bash
-$ skill-analyzer scan evals/test_skills/safe/simple-formatter
+```
+$ skill-analyzer scan ./my-skill --use-behavioral
+
 ============================================================
-Skill: safe-calculator
+Skill: my-skill
 ============================================================
 Status: [OK] SAFE
 Max Severity: SAFE
@@ -173,14 +172,22 @@ Total Findings: 0
 Scan Duration: 0.15s
 ```
 
+---
+
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-Distributed under the `Apache 2.0` License. See [LICENSE](LICENSE) for more information.
+Apache 2.0 - See [LICENSE](LICENSE) for details.
 
 Copyright 2026 Cisco Systems, Inc. and its affiliates
 
-Project Link: https://github.com/cisco-ai-defense/skill-scanner
+---
+
+<p align="center">
+  <a href="https://github.com/cisco-ai-defense/skill-scanner">GitHub</a> •
+  <a href="https://discord.com/invite/nKWtDcXxtx">Discord</a> •
+  <a href="https://pypi.org/project/cisco-ai-skill-scanner/">PyPI</a>
+</p>

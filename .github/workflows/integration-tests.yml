@@ -63,14 +63,13 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.test_llm || github.event_name != 'workflow_dispatch'
         env:
           # Map secrets to SKILL_SCANNER_* environment variables
-          SKILL_SCANNER_LLM_API_KEY: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
+          # GEMINI_API_KEY is used as fallback if SKILL_SCANNER_LLM_API_KEY is not set
+          SKILL_SCANNER_LLM_API_KEY: ${{ secrets.SKILL_SCANNER_LLM_API_KEY || secrets.GEMINI_API_KEY }}
           SKILL_SCANNER_LLM_MODEL: ${{ secrets.SKILL_SCANNER_LLM_MODEL }}
           SKILL_SCANNER_LLM_BASE_URL: ${{ secrets.SKILL_SCANNER_LLM_BASE_URL }}
           SKILL_SCANNER_LLM_API_VERSION: ${{ secrets.SKILL_SCANNER_LLM_API_VERSION }}
-          # Google AI Studio fallback (special case)
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          if [ -n "$SKILL_SCANNER_LLM_API_KEY" ] || [ -n "$GEMINI_API_KEY" ]; then
+          if [ -n "$SKILL_SCANNER_LLM_API_KEY" ]; then
             echo "Running LLM analyzer tests..."
             uv run pytest tests/test_llm_analyzer.py -v --tb=short
           else
@@ -105,14 +104,13 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.test_llm || github.event_name != 'workflow_dispatch'
         env:
           # Map secrets to SKILL_SCANNER_* environment variables
-          SKILL_SCANNER_LLM_API_KEY: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
+          # GEMINI_API_KEY is used as fallback if SKILL_SCANNER_LLM_API_KEY is not set
+          SKILL_SCANNER_LLM_API_KEY: ${{ secrets.SKILL_SCANNER_LLM_API_KEY || secrets.GEMINI_API_KEY }}
           SKILL_SCANNER_LLM_MODEL: ${{ secrets.SKILL_SCANNER_LLM_MODEL }}
           SKILL_SCANNER_LLM_BASE_URL: ${{ secrets.SKILL_SCANNER_LLM_BASE_URL }}
           SKILL_SCANNER_LLM_API_VERSION: ${{ secrets.SKILL_SCANNER_LLM_API_VERSION }}
-          # Google AI Studio fallback (special case)
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          if [ -n "$SKILL_SCANNER_LLM_API_KEY" ] || [ -n "$GEMINI_API_KEY" ]; then
+          if [ -n "$SKILL_SCANNER_LLM_API_KEY" ]; then
             echo "Running evaluation with LLM analyzer..."
             uv run python evals/eval_runner.py --test-skills-dir evals/skills --use-llm
           else

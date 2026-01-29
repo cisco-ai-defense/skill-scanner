@@ -35,12 +35,16 @@ class TestConfigInitialization:
 
     def test_config_with_defaults(self):
         """Test config initialization with default values."""
-        config = Config()
+        # Ensure SKILL_SCANNER_LLM_MODEL is not set to test true defaults
 
-        assert config.llm_model == "claude-3-5-sonnet-20241022"
-        assert config.llm_max_tokens == 4000
-        assert config.llm_temperature == 0.0
-        assert config.enable_static_analyzer
+        env_without_llm = {k: v for k, v in os.environ.items() if not k.startswith("SKILL_SCANNER_LLM")}
+        with patch.dict("os.environ", env_without_llm, clear=True):
+            config = Config()
+
+            assert config.llm_model == "claude-3-5-sonnet-20241022"
+            assert config.llm_max_tokens == 4000
+            assert config.llm_temperature == 0.0
+            assert config.enable_static_analyzer
 
     def test_config_with_custom_values(self):
         """Test config with custom values."""

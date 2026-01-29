@@ -77,9 +77,10 @@ class Config:
         if self.llm_provider_api_key is None:
             self.llm_provider_api_key = os.getenv("SKILL_SCANNER_LLM_API_KEY")
 
-        # LLM model from environment
-        if env_model := os.getenv("SKILL_SCANNER_LLM_MODEL"):
-            self.llm_model = env_model
+        # LLM model from environment (only if still at default)
+        if self.llm_model == "claude-3-5-sonnet-20241022":
+            if env_model := os.getenv("SKILL_SCANNER_LLM_MODEL"):
+                self.llm_model = env_model
 
         # AWS configuration from environment
         if env_region := os.getenv("AWS_REGION"):
