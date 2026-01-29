@@ -8,7 +8,7 @@
 
 ### 1. Explicit Documentation
 
-From `skillanalyzer/data/prompts/code_alignment_threat_analysis_prompt.md`:
+From `skill_scanner/data/prompts/code_alignment_threat_analysis_prompt.md`:
 
 ```
 **Key Point**: Skills are **local packages** that Claude loads, not remote servers!
@@ -25,7 +25,7 @@ From the codebase analysis:
 
 ### 3. Skill Loading Process
 
-From `skillanalyzer/core/loader.py`:
+From `skill_scanner/core/loader.py`:
 
 ```python
 class SkillLoader:

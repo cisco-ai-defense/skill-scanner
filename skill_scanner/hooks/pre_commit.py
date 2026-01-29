@@ -23,20 +23,20 @@ and blocks commits that contain HIGH or CRITICAL severity findings.
 
 Usage:
     1. Install as a pre-commit hook:
-       skill-analyzer-pre-commit install
+       skill-scanner-pre-commit install
 
     2. Or add to .pre-commit-config.yaml:
        - repo: local
          hooks:
-           - id: skill-analyzer
+           - id: skill-scanner
              name: Skill Scanner
-             entry: skill-analyzer-pre-commit
+             entry: skill-scanner-pre-commit
              language: python
              types: [file]
              pass_filenames: false
 
 Configuration:
-    Create a .skillanalyzerrc file in your repo root:
+    Create a .skill_scannerrc file in your repo root:
 
     {
         "severity_threshold": "high",  # block on: critical, high, medium, low
@@ -73,7 +73,7 @@ SEVERITY_LEVELS = {
 
 def load_config(repo_root: Path) -> dict:
     """
-    Load configuration from .skillanalyzerrc file.
+    Load configuration from .skill_scannerrc file.
 
     Args:
         repo_root: Repository root directory
@@ -84,9 +84,9 @@ def load_config(repo_root: Path) -> dict:
     config = DEFAULT_CONFIG.copy()
 
     config_paths = [
-        repo_root / ".skillanalyzerrc",
-        repo_root / ".skillanalyzerrc.json",
-        repo_root / "skillanalyzer.json",
+        repo_root / ".skill_scannerrc",
+        repo_root / ".skill_scannerrc.json",
+        repo_root / "skill_scanner.json",
     ]
 
     for config_path in config_paths:
@@ -416,7 +416,7 @@ def install_hook() -> int:
 # Skill Scanner Pre-commit Hook
 # Automatically scans agent skills for security issues
 
-skill-analyzer-pre-commit "$@"
+skill-scanner-pre-commit "$@"
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
@@ -440,7 +440,7 @@ exit $exit_code
 
     print(f"✅ Pre-commit hook installed at {hook_path}")
     print("\nConfiguration:")
-    print("  Create .skillanalyzerrc in your repo root to customize behavior:")
+    print("  Create .skill_scannerrc in your repo root to customize behavior:")
     print('  { "severity_threshold": "high", "skills_path": ".claude/skills" }')
 
     return 0

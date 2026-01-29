@@ -30,16 +30,16 @@ def main():
         epilog="""
 Examples:
   # Start server on default port
-  skill-analyzer-api
+  skill-scanner-api
 
   # Start on custom port
-  skill-analyzer-api --port 8080
+  skill-scanner-api --port 8080
 
   # Start with auto-reload for development
-  skill-analyzer-api --reload
+  skill-scanner-api --reload
 
   # Custom host and port
-  skill-analyzer-api --host 0.0.0.0 --port 9000
+  skill-scanner-api --host 0.0.0.0 --port 9000
         """,
     )
 
@@ -65,7 +65,7 @@ Examples:
     print()
 
     try:
-        uvicorn.run("skillanalyzer.api.api:app", host=args.host, port=args.port, reload=args.reload)
+        uvicorn.run("skill_scanner.api.api:app", host=args.host, port=args.port, reload=args.reload)
     except KeyboardInterrupt:
         print("\nShutting down server...")
         return 0

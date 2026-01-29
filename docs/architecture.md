@@ -256,7 +256,7 @@ Command-line interface built with `argparse`.
 ### Single Skill Scan Flow
 
 ```
-1. User runs: skill-analyzer scan /path/to/skill
+1. User runs: skill-scanner scan /path/to/skill
 
 2. CLI parses arguments → calls scan_command()
 
@@ -287,7 +287,7 @@ Command-line interface built with `argparse`.
 ### Multi-Skill Scan Flow
 
 ```
-1. User runs: skill-analyzer scan-all /path/to/skills
+1. User runs: skill-scanner scan-all /path/to/skills
 
 2. Scanner.scan_directory()
    ├─→ Find all skill packages (SKILL.md files)
@@ -316,7 +316,7 @@ Command-line interface built with `argparse`.
 Example:
 
 ```python
-from skillanalyzer.analyzers.base import BaseAnalyzer
+from skill_scanner.analyzers.base import BaseAnalyzer
 
 class LLMAnalyzer(BaseAnalyzer):
     def __init__(self):
@@ -331,7 +331,7 @@ class LLMAnalyzer(BaseAnalyzer):
 
 ### Adding New Rules
 
-Edit `skillanalyzer/data/rules/signatures.yaml`:
+Edit `skill_scanner/data/rules/signatures.yaml`:
 
 ```yaml
 - id: MY_CUSTOM_RULE

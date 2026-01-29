@@ -14,30 +14,26 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-REST API server for Skill Scanner.
-
-Provides HTTP endpoints for skill scanning, similar to MCP Scanner's API server.
-"""
+"""API router for Skill Scanner endpoints."""
 
 import shutil
 import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 try:
-    from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
+    from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
     from pydantic import BaseModel, Field
+
+    MULTIPART_AVAILABLE = True
 except ImportError:
     raise ImportError("API server requires FastAPI. Install with: pip install fastapi uvicorn python-multipart")
 
 from ..core.analyzers.static import StaticAnalyzer
-from ..core.models import Report  # noqa: F401 - used in type hints
+from ..core.models import ScanResult  # noqa: F401
 from ..core.scanner import SkillScanner
 
-# Try to import LLM analyzer
 try:
     from ..core.analyzers.llm_analyzer import LLMAnalyzer
 
@@ -46,7 +42,6 @@ except (ImportError, ModuleNotFoundError):
     LLM_AVAILABLE = False
     LLMAnalyzer = None
 
-# Try to import Behavioral analyzer
 try:
     from ..core.analyzers.behavioral_analyzer import BehavioralAnalyzer
 
@@ -55,7 +50,6 @@ except (ImportError, ModuleNotFoundError):
     BEHAVIORAL_AVAILABLE = False
     BehavioralAnalyzer = None
 
-# Try to import AI Defense analyzer
 try:
     from ..core.analyzers.aidefense_analyzer import AIDefenseAnalyzer
 
@@ -64,7 +58,6 @@ except (ImportError, ModuleNotFoundError):
     AIDEFENSE_AVAILABLE = False
     AIDefenseAnalyzer = None
 
-# Try to import Meta analyzer
 try:
     from ..core.analyzers.meta_analyzer import MetaAnalyzer, apply_meta_analysis_to_results
 
@@ -74,6 +67,11 @@ except (ImportError, ModuleNotFoundError):
     MetaAnalyzer = None
     apply_meta_analysis_to_results = None
 
+router = APIRouter()
+
+# In-memory storage for async scans (in production, use Redis or database)
+scan_results_cache = {}
+
 
 # Pydantic models for API
 class ScanRequest(BaseModel):
@@ -82,12 +80,10 @@ class ScanRequest(BaseModel):
     skill_directory: str = Field(..., description="Path to skill directory")
     use_llm: bool = Field(False, description="Enable LLM analyzer")
     llm_provider: str | None = Field("anthropic", description="LLM provider (anthropic or openai)")
-    use_behavioral: bool = Field(False, description="Enable behavioral analyzer (dataflow analysis)")
-    use_aidefense: bool = Field(False, description="Enable Cisco AI Defense analyzer")
-    aidefense_api_key: str | None = Field(None, description="AI Defense API key (or use AI_DEFENSE_API_KEY env var)")
-    enable_meta: bool = Field(
-        False, description="Enable meta-analysis to filter false positives and prioritize findings"
-    )
+    use_behavioral: bool = Field(False, description="Enable behavioral analyzer")
+    use_aidefense: bool = Field(False, description="Enable AI Defense analyzer")
+    aidefense_api_key: str | None = Field(None, description="AI Defense API key")
+    enable_meta: bool = Field(False, description="Enable meta-analysis for false positive filtering")
 
 
 class ScanResponse(BaseModel):
@@ -121,29 +117,16 @@ class BatchScanRequest(BaseModel):
     use_behavioral: bool = False
     use_aidefense: bool = False
     aidefense_api_key: str | None = None
-    enable_meta: bool = Field(False, description="Enable meta-analysis to filter false positives")
+    enable_meta: bool = Field(False, description="Enable meta-analysis")
 
 
-# Create FastAPI app
-app = FastAPI(
-    title="Skill Scanner API",
-    description="Security scanning API for agent skills packages",
-    version="0.2.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
-
-# In-memory storage for async scans (in production, use Redis or database)
-scan_results_cache = {}
-
-
-@app.get("/", response_model=dict)
+@router.get("/", response_model=dict)
 async def root():
     """Root endpoint."""
     return {"service": "Skill Scanner API", "version": "0.2.0", "docs": "/docs", "health": "/health"}
 
 
-@app.get("/health", response_model=HealthResponse)
+@router.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint."""
     analyzers = ["static_analyzer"]
@@ -159,7 +142,7 @@ async def health_check():
     return HealthResponse(status="healthy", version="0.2.0", analyzers_available=analyzers)
 
 
-@app.post("/scan", response_model=ScanResponse)
+@router.post("/scan", response_model=ScanResponse)
 async def scan_skill(request: ScanRequest):
     """
     Scan a single skill package.
@@ -186,7 +169,6 @@ async def scan_skill(request: ScanRequest):
         """Run the scan in a separate thread to avoid event loop conflicts."""
         from ..core.analyzers.base import BaseAnalyzer
 
-        # Create scanner with configured analyzers
         analyzers: list[BaseAnalyzer] = [StaticAnalyzer()]
 
         if request.use_behavioral and BEHAVIORAL_AVAILABLE:
@@ -208,7 +190,7 @@ async def scan_skill(request: ScanRequest):
         if request.use_aidefense and AIDEFENSE_AVAILABLE:
             api_key = request.aidefense_api_key or os.getenv("AI_DEFENSE_API_KEY")
             if not api_key:
-                raise ValueError("AI Defense API key required (set AI_DEFENSE_API_KEY or pass aidefense_api_key)")
+                raise ValueError("AI Defense API key required")
             aidefense_analyzer = AIDefenseAnalyzer(api_key=api_key)
             analyzers.append(aidefense_analyzer)
 
@@ -217,38 +199,33 @@ async def scan_skill(request: ScanRequest):
 
     try:
         # Run the scan in a thread pool to avoid nested event loop issues
-        # (LLMAnalyzer.analyze() uses asyncio.run() which can't be called from a running loop)
         loop = asyncio.get_running_loop()
         with concurrent.futures.ThreadPoolExecutor() as executor:
             result = await loop.run_in_executor(executor, run_scan)
 
-        # Run meta-analysis if enabled
+        # Run meta-analysis if enabled (in separate executor to avoid shutdown issues)
         if request.enable_meta and META_AVAILABLE and len(result.findings) > 0:
             try:
-                # Initialize meta-analyzer
-                meta_analyzer = MetaAnalyzer()
-
-                # Load skill for context
                 from ..core.loader import SkillLoader
 
+                meta_analyzer = MetaAnalyzer()
                 loader = SkillLoader()
                 skill = loader.load_skill(skill_dir)
 
-                # Run meta-analysis
                 import asyncio as async_lib
 
-                meta_result = await loop.run_in_executor(
-                    executor,
-                    lambda: async_lib.run(
+                def run_meta():
+                    return async_lib.run(
                         meta_analyzer.analyze_with_findings(
                             skill=skill,
                             findings=result.findings,
                             analyzers_used=result.analyzers_used,
                         )
-                    ),
-                )
+                    )
 
-                # Apply meta-analysis results
+                with concurrent.futures.ThreadPoolExecutor() as meta_executor:
+                    meta_result = await loop.run_in_executor(meta_executor, run_meta)
+
                 filtered_findings = apply_meta_analysis_to_results(
                     original_findings=result.findings,
                     meta_result=meta_result,
@@ -258,13 +235,10 @@ async def scan_skill(request: ScanRequest):
                 result.analyzers_used.append("meta_analyzer")
 
             except Exception as meta_error:
-                # Log but don't fail if meta-analysis errors
                 print(f"Warning: Meta-analysis failed: {meta_error}")
 
-        # Generate scan ID
         scan_id = str(uuid.uuid4())
 
-        # Convert to response model
         return ScanResponse(
             scan_id=scan_id,
             skill_name=result.skill_name,
@@ -282,7 +256,7 @@ async def scan_skill(request: ScanRequest):
         raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
 
 
-@app.post("/scan-upload")
+@router.post("/scan-upload")
 async def scan_uploaded_skill(
     file: UploadFile = File(..., description="ZIP file containing skill package"),
     use_llm: bool = Query(False, description="Enable LLM analyzer"),
@@ -308,23 +282,19 @@ async def scan_uploaded_skill(
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
 
-    # Create temporary directory
-    temp_dir = Path(tempfile.mkdtemp(prefix="skill_analyzer_"))
+    temp_dir = Path(tempfile.mkdtemp(prefix="skill_scanner_"))
 
     try:
-        # Save uploaded file
         zip_path = temp_dir / file.filename
         with open(zip_path, "wb") as f:
             content = await file.read()
             f.write(content)
 
-        # Extract ZIP
         import zipfile
 
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(temp_dir / "extracted")
 
-        # Find skill directory (look for SKILL.md)
         extracted_dir = temp_dir / "extracted"
         skill_dirs = list(extracted_dir.rglob("SKILL.md"))
 
@@ -333,7 +303,6 @@ async def scan_uploaded_skill(
 
         skill_dir = skill_dirs[0].parent
 
-        # Scan using the scan endpoint logic
         request = ScanRequest(
             skill_directory=str(skill_dir),
             use_llm=use_llm,
@@ -344,15 +313,13 @@ async def scan_uploaded_skill(
         )
 
         result = await scan_skill(request)
-
         return result
 
     finally:
-        # Cleanup temporary files
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@app.post("/scan-batch")
+@router.post("/scan-batch")
 async def scan_batch(request: BatchScanRequest, background_tasks: BackgroundTasks):
     """
     Scan multiple skills in a directory (batch scan).
@@ -371,13 +338,10 @@ async def scan_batch(request: BatchScanRequest, background_tasks: BackgroundTask
     if not skills_dir.exists():
         raise HTTPException(status_code=404, detail=f"Skills directory not found: {skills_dir}")
 
-    # Generate scan ID
     scan_id = str(uuid.uuid4())
 
-    # Initialize result in cache
     scan_results_cache[scan_id] = {"status": "processing", "started_at": datetime.now().isoformat(), "result": None}
 
-    # Start background scan
     background_tasks.add_task(
         run_batch_scan,
         scan_id,
@@ -388,7 +352,6 @@ async def scan_batch(request: BatchScanRequest, background_tasks: BackgroundTask
         request.use_behavioral,
         request.use_aidefense,
         request.aidefense_api_key,
-        request.enable_meta,
     )
 
     return {
@@ -398,7 +361,7 @@ async def scan_batch(request: BatchScanRequest, background_tasks: BackgroundTask
     }
 
 
-@app.get("/scan-batch/{scan_id}")
+@router.get("/scan-batch/{scan_id}")
 async def get_batch_scan_result(scan_id: str):
     """
     Get results of a batch scan.
@@ -437,7 +400,6 @@ def run_batch_scan(
     use_behavioral: bool = False,
     use_aidefense: bool = False,
     aidefense_api_key: str | None = None,
-    enable_meta: bool = False,
 ):
     """
     Background task to run batch scan.
@@ -451,14 +413,12 @@ def run_batch_scan(
         use_behavioral: Use behavioral analyzer
         use_aidefense: Use AI Defense analyzer
         aidefense_api_key: AI Defense API key
-        enable_meta: Enable meta-analysis
     """
     try:
         import os
 
         from ..core.analyzers.base import BaseAnalyzer
 
-        # Create scanner
         analyzers: list[BaseAnalyzer] = [StaticAnalyzer()]
 
         if use_behavioral and BEHAVIORAL_AVAILABLE:
@@ -496,49 +456,8 @@ def run_batch_scan(
                 pass  # Continue without AI Defense analyzer for other errors
 
         scanner = SkillScanner(analyzers=analyzers)
-
-        # Scan directory
         report = scanner.scan_directory(skills_dir, recursive=recursive)
 
-        # Run meta-analysis on each skill's results if enabled
-        if enable_meta and META_AVAILABLE:
-            import asyncio
-
-            try:
-                meta_analyzer = MetaAnalyzer()
-
-                for result in report.scan_results:
-                    if result.findings:
-                        try:
-                            # Load skill for context
-                            skill_dir_path = Path(result.skill_directory)
-                            skill = scanner.loader.load_skill(skill_dir_path)
-
-                            # Run meta-analysis
-                            meta_result = asyncio.run(
-                                meta_analyzer.analyze_with_findings(
-                                    skill=skill,
-                                    findings=result.findings,
-                                    analyzers_used=result.analyzers_used,
-                                )
-                            )
-
-                            # Apply meta-analysis results
-                            filtered_findings = apply_meta_analysis_to_results(
-                                original_findings=result.findings,
-                                meta_result=meta_result,
-                                skill=skill,
-                            )
-                            result.findings = filtered_findings
-                            result.analyzers_used.append("meta_analyzer")
-
-                        except Exception:
-                            pass  # Continue without meta-analysis for this skill
-
-            except Exception:
-                pass  # Continue without meta-analysis
-
-        # Update cache
         scan_results_cache[scan_id] = {
             "status": "completed",
             "started_at": scan_results_cache[scan_id]["started_at"],
@@ -554,7 +473,7 @@ def run_batch_scan(
         }
 
 
-@app.get("/analyzers")
+@router.get("/analyzers")
 async def list_analyzers():
     """List available analyzers."""
     analyzers = [
@@ -599,36 +518,10 @@ async def list_analyzers():
         analyzers.append(
             {
                 "name": "meta_analyzer",
-                "description": "Second-pass LLM analysis for false positive filtering and finding prioritization",
+                "description": "Second-pass LLM analysis for false positive filtering",
                 "available": True,
                 "requires": "2+ analyzers, LLM API key",
-                "features": [
-                    "False positive filtering",
-                    "Missed threat detection",
-                    "Priority ranking",
-                    "Correlation analysis",
-                    "Remediation guidance",
-                ],
             }
         )
 
     return {"analyzers": analyzers}
-
-
-# Entry point for running the server
-def run_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
-    """
-    Run the API server.
-
-    Args:
-        host: Host to bind to
-        port: Port to bind to
-        reload: Enable auto-reload for development
-    """
-    import uvicorn
-
-    uvicorn.run("skillanalyzer.api_server:app", host=host, port=port, reload=reload)
-
-
-if __name__ == "__main__":
-    run_server()

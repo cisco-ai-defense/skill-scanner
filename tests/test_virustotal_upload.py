@@ -26,9 +26,9 @@ import pytest
 # Load environment variables from .env file at module level
 from dotenv import load_dotenv
 
-from skillanalyzer.core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
-from skillanalyzer.core.loader import SkillLoader
-from skillanalyzer.core.models import Skill, SkillFile
+from skill_scanner.core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
+from skill_scanner.core.loader import SkillLoader
+from skill_scanner.core.models import Skill, SkillFile
 
 load_dotenv()
 
@@ -143,7 +143,7 @@ It contains a randomly generated binary file for upload testing.
 
         # Random data should not be flagged as malicious
         # (it's just random bytes, not actual malware)
-        from skillanalyzer.core.models import Severity
+        from skill_scanner.core.models import Severity
 
         critical_findings = [f for f in findings if f.severity == Severity.CRITICAL]
         assert len(critical_findings) == 0, f"Random data should not be flagged as CRITICAL: {critical_findings}"

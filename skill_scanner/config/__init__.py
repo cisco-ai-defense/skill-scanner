@@ -14,8 +14,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Git hooks for skill-analyzer."""
+"""
+Configuration management for Skill Scanner.
 
-from .pre_commit import main as pre_commit_hook
+Mirrors MCP Scanner's config structure.
+"""
 
-__all__ = ["pre_commit_hook"]
+from .config import Config
+from .constants import SkillScannerConstants
+
+__all__ = ["Config", "SkillScannerConstants"]

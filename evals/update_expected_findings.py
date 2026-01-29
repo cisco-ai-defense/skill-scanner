@@ -32,9 +32,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import os
 
-from skillanalyzer.core.analyzers.llm_analyzer import LLMAnalyzer
-from skillanalyzer.core.analyzers.static import StaticAnalyzer
-from skillanalyzer.core.scanner import SkillScanner
+from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
+from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.scanner import SkillScanner
 
 
 def scan_skill_and_get_findings(skill_dir: Path, use_llm: bool = False):

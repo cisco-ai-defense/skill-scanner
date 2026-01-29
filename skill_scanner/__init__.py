@@ -18,12 +18,16 @@
 Skill Scanner - Security scanner for agent skills packages.
 """
 
-__version__ = "0.2.0"
+try:
+    from ._version import __version__
+except ImportError:
+    __version__ = "0.0.0+unknown"
+
 __author__ = "Cisco Systems, Inc."
 
 # Core exports
 from .config.config import Config
-from .config.constants import SkillAnalyzerConstants
+from .config.constants import SkillScannerConstants
 from .core.loader import SkillLoader, load_skill
 from .core.models import Finding, Report, ScanResult, Severity, Skill, ThreatCategory
 from .core.scanner import SkillScanner, scan_directory, scan_skill
@@ -41,5 +45,5 @@ __all__ = [
     "SkillLoader",
     "load_skill",
     "Config",
-    "SkillAnalyzerConstants",
+    "SkillScannerConstants",
 ]

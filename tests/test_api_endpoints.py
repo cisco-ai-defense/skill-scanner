@@ -30,7 +30,7 @@ import pytest
 try:
     from fastapi.testclient import TestClient
 
-    from skillanalyzer.api.api import app
+    from skill_scanner.api.api import app
 
     API_AVAILABLE = True
 except ImportError:

@@ -29,7 +29,7 @@ Describe a specific scenario where this feature would be useful.
 **Example:**
 ```bash
 # How the feature would be used
-skill-analyzer scan /path/to/skill --your-new-feature
+skill-scanner scan /path/to/skill --your-new-feature
 ```
 
 ## Benefits

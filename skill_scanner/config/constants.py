@@ -23,7 +23,7 @@ Mirrors MCP Scanner's constants structure.
 from pathlib import Path
 
 
-class SkillAnalyzerConstants:
+class SkillScannerConstants:
     """Constants used throughout the analyzer."""
 
     # Version

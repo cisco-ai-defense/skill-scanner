@@ -30,7 +30,7 @@ from ..models import Finding, Severity, Skill, ThreatCategory
 from .base import BaseAnalyzer
 
 
-class CrossSkillAnalyzer(BaseAnalyzer):
+class CrossSkillScanner(BaseAnalyzer):
     """
     Analyzes multiple skills together to detect coordinated attack patterns.
 
@@ -41,7 +41,7 @@ class CrossSkillAnalyzer(BaseAnalyzer):
 
     def __init__(self):
         """Initialize cross-skill scanner."""
-        super().__init__("cross_skill_analyzer")
+        super().__init__("cross_skill_scanner")
         self._skills: list[Skill] = []
 
     def analyze(self, skill: Skill) -> list[Finding]:

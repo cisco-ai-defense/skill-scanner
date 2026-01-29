@@ -33,7 +33,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from skillanalyzer.core.models import Finding, Severity, Skill, SkillFile, SkillManifest, ThreatCategory
+from skill_scanner.core.models import Finding, Severity, Skill, SkillFile, SkillManifest, ThreatCategory
 
 
 # Test MetaAnalysisResult
@@ -42,7 +42,7 @@ class TestMetaAnalysisResult:
 
     def test_empty_result(self):
         """Test empty MetaAnalysisResult."""
-        from skillanalyzer.core.analyzers.meta_analyzer import MetaAnalysisResult
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisResult
 
         result = MetaAnalysisResult()
 
@@ -56,7 +56,7 @@ class TestMetaAnalysisResult:
 
     def test_to_dict(self):
         """Test MetaAnalysisResult.to_dict() method."""
-        from skillanalyzer.core.analyzers.meta_analyzer import MetaAnalysisResult
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisResult
 
         result = MetaAnalysisResult(
             validated_findings=[{"id": "1", "severity": "HIGH"}],
@@ -76,7 +76,7 @@ class TestMetaAnalysisResult:
 
     def test_get_validated_findings(self):
         """Test converting validated findings to Finding objects."""
-        from skillanalyzer.core.analyzers.meta_analyzer import MetaAnalysisResult
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisResult
 
         # Create a mock skill
         skill = MagicMock(spec=Skill)
@@ -108,7 +108,7 @@ class TestMetaAnalysisResult:
 
     def test_get_missed_threats(self):
         """Test converting missed threats to Finding objects."""
-        from skillanalyzer.core.analyzers.meta_analyzer import MetaAnalysisResult
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisResult
 
         skill = MagicMock(spec=Skill)
         skill.name = "test-skill"
@@ -140,8 +140,8 @@ class TestMetaAnalyzerInit:
     @pytest.fixture
     def mock_litellm(self):
         """Mock litellm availability."""
-        with patch("skillanalyzer.core.analyzers.meta_analyzer.LITELLM_AVAILABLE", True):
-            with patch("skillanalyzer.core.analyzers.meta_analyzer.acompletion", AsyncMock()):
+        with patch("skill_scanner.core.analyzers.meta_analyzer.LITELLM_AVAILABLE", True):
+            with patch("skill_scanner.core.analyzers.meta_analyzer.acompletion", AsyncMock()):
                 yield
 
     def test_separate_meta_api_key(self, mock_litellm):
@@ -156,7 +156,7 @@ class TestMetaAnalyzerInit:
             },
             clear=True,
         ):
-            from skillanalyzer.core.analyzers.meta_analyzer import MetaAnalyzer
+            from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
 
             # This should use meta-specific keys
             analyzer = MetaAnalyzer()
@@ -174,7 +174,7 @@ class TestMetaAnalyzerInit:
             },
             clear=True,
         ):
-            from skillanalyzer.core.analyzers.meta_analyzer import MetaAnalyzer
+            from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
 
             analyzer = MetaAnalyzer()
 
@@ -192,7 +192,7 @@ class TestMetaAnalyzerInit:
             },
             clear=True,
         ):
-            from skillanalyzer.core.analyzers.meta_analyzer import MetaAnalyzer
+            from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
 
             analyzer = MetaAnalyzer(api_key="test-explicit-key-for-testing", model="explicit-model")
 
@@ -205,7 +205,7 @@ class TestApplyMetaAnalysis:
 
     def test_filters_false_positives(self):
         """Test that false positives are filtered out."""
-        from skillanalyzer.core.analyzers.meta_analyzer import (
+        from skill_scanner.core.analyzers.meta_analyzer import (
             MetaAnalysisResult,
             apply_meta_analysis_to_results,
         )
@@ -260,7 +260,7 @@ class TestApplyMetaAnalysis:
 
     def test_adds_missed_threats(self):
         """Test that missed threats are added to results."""
-        from skillanalyzer.core.analyzers.meta_analyzer import (
+        from skill_scanner.core.analyzers.meta_analyzer import (
             MetaAnalysisResult,
             apply_meta_analysis_to_results,
         )
@@ -299,7 +299,7 @@ class TestReporterCompatibility:
     @pytest.fixture
     def sample_scan_result(self):
         """Create a sample ScanResult with meta-analyzed findings."""
-        from skillanalyzer.core.models import ScanResult
+        from skill_scanner.core.models import ScanResult
 
         findings = [
             Finding(
@@ -334,7 +334,7 @@ class TestReporterCompatibility:
 
     def test_json_reporter(self, sample_scan_result):
         """Test that JSON reporter handles meta-analysis findings."""
-        from skillanalyzer.core.reporters.json_reporter import JSONReporter
+        from skill_scanner.core.reporters.json_reporter import JSONReporter
 
         reporter = JSONReporter(pretty=True)
         output = reporter.generate_report(sample_scan_result)
@@ -349,7 +349,7 @@ class TestReporterCompatibility:
 
     def test_sarif_reporter(self, sample_scan_result):
         """Test that SARIF reporter handles meta-analysis findings."""
-        from skillanalyzer.core.reporters.sarif_reporter import SARIFReporter
+        from skill_scanner.core.reporters.sarif_reporter import SARIFReporter
 
         reporter = SARIFReporter()
         output = reporter.generate_report(sample_scan_result)
@@ -364,7 +364,7 @@ class TestReporterCompatibility:
 
     def test_markdown_reporter(self, sample_scan_result):
         """Test that Markdown reporter handles meta-analysis findings."""
-        from skillanalyzer.core.reporters.markdown_reporter import MarkdownReporter
+        from skill_scanner.core.reporters.markdown_reporter import MarkdownReporter
 
         reporter = MarkdownReporter(detailed=True)
         output = reporter.generate_report(sample_scan_result)
@@ -376,7 +376,7 @@ class TestReporterCompatibility:
 
     def test_table_reporter(self, sample_scan_result):
         """Test that Table reporter handles meta-analysis findings."""
-        from skillanalyzer.core.reporters.table_reporter import TableReporter
+        from skill_scanner.core.reporters.table_reporter import TableReporter
 
         reporter = TableReporter()
         output = reporter.generate_report(sample_scan_result)
@@ -391,10 +391,10 @@ class TestAITechTaxonomy:
 
     def test_aitech_codes_in_prompt(self):
         """Verify all AITech codes in the prompt match threats.py."""
-        from skillanalyzer.threats.threats import ThreatMapping
+        from skill_scanner.threats.threats import ThreatMapping
 
         prompt_path = (
-            Path(__file__).parent.parent / "skillanalyzer" / "data" / "prompts" / "skill_meta_analysis_prompt.md"
+            Path(__file__).parent.parent / "skill_scanner" / "data" / "prompts" / "skill_meta_analysis_prompt.md"
         )
 
         if not prompt_path.exists():
@@ -423,7 +423,7 @@ class TestAITechTaxonomy:
 
     def test_threat_category_mapping(self):
         """Test that AITech codes map to valid ThreatCategory values."""
-        from skillanalyzer.threats.threats import ThreatMapping
+        from skill_scanner.threats.threats import ThreatMapping
 
         aitech_codes = [
             "AITech-1.1",

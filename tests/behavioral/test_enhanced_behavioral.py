@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from skillanalyzer.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
-from skillanalyzer.core.loader import SkillLoader
-from skillanalyzer.core.models import Severity
+from skill_scanner.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
+from skill_scanner.core.loader import SkillLoader
+from skill_scanner.core.models import Severity
 
 
 class TestEnhancedBehavioralAnalyzer:
@@ -129,8 +129,8 @@ class TestDataflowDetection:
 
     def test_tracks_flows_across_functions(self):
         """Test CFG-based dataflow tracking detects script-level sources."""
-        from skillanalyzer.core.static_analysis.dataflow import ForwardDataflowAnalysis
-        from skillanalyzer.core.static_analysis.parser.python_parser import PythonParser
+        from skill_scanner.core.static_analysis.dataflow import ForwardDataflowAnalysis
+        from skill_scanner.core.static_analysis.parser.python_parser import PythonParser
 
         code = """
 import os
@@ -162,8 +162,8 @@ def send_data():
 
     def test_identifies_credential_file_patterns(self):
         """Test CFG-based detection of credential file access patterns."""
-        from skillanalyzer.core.static_analysis.dataflow import ForwardDataflowAnalysis
-        from skillanalyzer.core.static_analysis.parser.python_parser import PythonParser
+        from skill_scanner.core.static_analysis.dataflow import ForwardDataflowAnalysis
+        from skill_scanner.core.static_analysis.parser.python_parser import PythonParser
 
         code = """
 import os
@@ -192,7 +192,7 @@ class TestASTParser:
 
     def test_parses_valid_python(self):
         """Test parsing valid Python code."""
-        from skillanalyzer.core.static_analysis.parser import PythonParser
+        from skill_scanner.core.static_analysis.parser import PythonParser
 
         code = "def hello(): return 'world'"
         parser = PythonParser(code)
@@ -200,7 +200,7 @@ class TestASTParser:
 
     def test_extracts_functions(self):
         """Test function extraction."""
-        from skillanalyzer.core.static_analysis.parser import PythonParser
+        from skill_scanner.core.static_analysis.parser import PythonParser
 
         code = """
 def func1():
@@ -215,7 +215,7 @@ def func2():
 
     def test_detects_network_calls(self):
         """Test network call detection."""
-        from skillanalyzer.core.static_analysis.parser import PythonParser
+        from skill_scanner.core.static_analysis.parser import PythonParser
 
         code = """
 import requests
@@ -229,7 +229,7 @@ def send():
 
     def test_extracts_class_level_strings(self):
         """Test extraction of class-level string constants."""
-        from skillanalyzer.core.static_analysis.parser import PythonParser
+        from skill_scanner.core.static_analysis.parser import PythonParser
 
         code = """
 class Config:

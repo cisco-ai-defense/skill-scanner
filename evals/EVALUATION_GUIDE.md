@@ -157,7 +157,7 @@ Review actual findings and update `_expected.json`:
 
 ```bash
 # Scan a skill and see what it finds
-python -m skillanalyzer.cli.cli scan evals/skills/prompt-injection/jailbreak-override --use-llm --format json > actual_findings.json
+python -m skill_scanner.cli.cli scan evals/skills/prompt-injection/jailbreak-override --use-llm --format json > actual_findings.json
 
 # Compare with expected and update _expected.json
 ```

@@ -1,6 +1,6 @@
 # Meta-Analyzer
 
-The Meta-Analyzer is an optional second-pass LLM analysis feature that reviews findings from other analyzers to improve accuracy and provide actionable insights. In testing, it achieves **~65% noise reduction** while maintaining **100% threat detection rate**.
+The Meta-Analyzer is an optional second-pass LLM analysis feature that reviews findings from other analyzers to improve accuracy and provide actionable insights. In our testing, it significantly reduces false positives while preserving threat detection capability.
 
 ## Overview
 
@@ -38,16 +38,16 @@ When enabled via the `--enable-meta` CLI flag or `enable_meta` API parameter, th
 
 ```bash
 # Scan with static + LLM + meta-analysis
-skill-analyzer scan /path/to/skill --use-llm --enable-meta
+skill-scanner scan /path/to/skill --use-llm --enable-meta
 
 # Scan with behavioral + LLM + meta-analysis (recommended for best results)
-skill-analyzer scan /path/to/skill --use-behavioral --use-llm --enable-meta
+skill-scanner scan /path/to/skill --use-behavioral --use-llm --enable-meta
 
 # Scan all skills in a directory
-skill-analyzer scan-all /path/to/skills --use-llm --enable-meta --recursive
+skill-scanner scan-all /path/to/skills --use-llm --enable-meta --recursive
 
 # Output in JSON format
-skill-analyzer scan /path/to/skill --use-llm --enable-meta --format json
+skill-scanner scan /path/to/skill --use-llm --enable-meta --format json
 ```
 
 **Requirements:**
@@ -290,7 +290,7 @@ Key Insight:
   ✓ Meta-Analyzer IMPROVED signal-to-noise without losing detection capability!
 ```
 
-The comparison shows that while raw metrics like "true positives" decrease (because redundant pattern matches are consolidated), the actual threat detection capability remains at 100%.
+The comparison shows that while raw metrics like "true positives" decrease (because redundant pattern matches are consolidated), the threat detection capability is preserved. Results may vary depending on your specific skills and threat patterns.
 
 ## Best Practices
 

@@ -61,9 +61,9 @@ except (ImportError, ModuleNotFoundError):
     pass
 
 try:
-    from .cross_skill_analyzer import CrossSkillAnalyzer  # noqa: F401
+    from .cross_skill_scanner import CrossSkillScanner  # noqa: F401
 
-    __all__.append("CrossSkillAnalyzer")
+    __all__.append("CrossSkillScanner")
 except (ImportError, ModuleNotFoundError):
     pass
 

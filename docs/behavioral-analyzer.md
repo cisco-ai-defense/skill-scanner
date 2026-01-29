@@ -36,7 +36,7 @@ Finding Generation
 
 ### 1. AST Parser
 
-**Module**: `skillanalyzer/core/static_analysis/parser/python_parser.py`
+**Module**: `skill_scanner/core/static_analysis/parser/python_parser.py`
 
 **Functionality**:
 - Parses Python source into Abstract Syntax Tree
@@ -51,7 +51,7 @@ Finding Generation
 
 **Example**:
 ```python
-from skillanalyzer.core.static_analysis.parser import PythonParser
+from skill_scanner.core.static_analysis.parser import PythonParser
 
 parser = PythonParser(source_code)
 if parser.parse():
@@ -63,7 +63,7 @@ if parser.parse():
 
 ### 2. Forward Dataflow Analysis (CFG-Based)
 
-**Module**: `skillanalyzer/core/static_analysis/dataflow/forward_analysis.py`
+**Module**: `skill_scanner/core/static_analysis/dataflow/forward_analysis.py`
 
 **Functionality**:
 - **CFG-based dataflow analysis** using Control Flow Graph and fixpoint algorithm
@@ -83,8 +83,8 @@ if parser.parse():
 
 **Example**:
 ```python
-from skillanalyzer.core.static_analysis.dataflow import ForwardDataflowAnalysis
-from skillanalyzer.core.static_analysis.parser.python_parser import PythonParser
+from skill_scanner.core.static_analysis.dataflow import ForwardDataflowAnalysis
+from skill_scanner.core.static_analysis.parser.python_parser import PythonParser
 
 parser = PythonParser(source_code)
 parser.parse()
@@ -102,7 +102,7 @@ for flow in flows:
 
 ### 3. Context Extractor
 
-**Module**: `skillanalyzer/core/static_analysis/context_extractor.py`
+**Module**: `skill_scanner/core/static_analysis/context_extractor.py`
 
 **Functionality**:
 - Combines AST parser + dataflow tracker
@@ -154,8 +154,8 @@ reporter.py: Sends to attacker.com
 ### Python API
 
 ```python
-from skillanalyzer.core.analyzers import BehavioralAnalyzer
-from skillanalyzer.core.scanner import SkillScanner
+from skill_scanner.core.analyzers import BehavioralAnalyzer
+from skill_scanner.core.scanner import SkillScanner
 
 # Create analyzer (static analysis mode by default)
 behavioral = BehavioralAnalyzer(use_static_analysis=True)
@@ -169,7 +169,7 @@ result = scanner.scan_skill("/path/to/skill")
 
 ```bash
 # Behavioral analyzer is included by default in static analyzer
-skill-analyzer scan /path/to/skill
+skill-scanner scan /path/to/skill
 
 # Results include behavioral findings (BEHAVIOR_* rule IDs)
 ```
@@ -303,8 +303,8 @@ def process(user_input):
 
 ## Technical References
 
-- Implementation: `skillanalyzer/core/analyzers/behavioral_analyzer.py`
-- AST Parser: `skillanalyzer/core/static_analysis/parser/`
-- Dataflow: `skillanalyzer/core/static_analysis/dataflow/`
+- Implementation: `skill_scanner/core/analyzers/behavioral_analyzer.py`
+- AST Parser: `skill_scanner/core/static_analysis/parser/`
+- Dataflow: `skill_scanner/core/static_analysis/dataflow/`
 - Tests: `tests/test_enhanced_behavioral.py`
 - Complex eval: `evals/skills/behavioral-analysis/multi-file-exfiltration/`

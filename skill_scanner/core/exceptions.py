@@ -17,11 +17,11 @@
 """Skill Scanner exceptions.
 
 This module defines custom exceptions for Skill Scanner operations.
-All exceptions inherit from SkillAnalyzerError for easy catching.
+All exceptions inherit from SkillScannerError for easy catching.
 
 Example:
-    >>> from skillanalyzer import Scanner
-    >>> from skillanalyzer.core.exceptions import SkillLoadError
+    >>> from skill_scanner import Scanner
+    >>> from skill_scanner.core.exceptions import SkillLoadError
     >>>
     >>> scanner = Scanner()
     >>>
@@ -34,13 +34,13 @@ Example:
 """
 
 
-class SkillAnalyzerError(Exception):
+class SkillScannerError(Exception):
     """Base exception for all Skill Scanner errors."""
 
     pass
 
 
-class SkillLoadError(SkillAnalyzerError):
+class SkillLoadError(SkillScannerError):
     """Raised when unable to load a skill package.
 
     This can indicate:
@@ -53,7 +53,7 @@ class SkillLoadError(SkillAnalyzerError):
     pass
 
 
-class SkillAnalysisError(SkillAnalyzerError):
+class SkillAnalysisError(SkillScannerError):
     """Raised when skill analysis fails.
 
     This typically indicates:
@@ -65,7 +65,7 @@ class SkillAnalysisError(SkillAnalyzerError):
     pass
 
 
-class SkillValidationError(SkillAnalyzerError):
+class SkillValidationError(SkillScannerError):
     """Raised when skill validation fails.
 
     This indicates:

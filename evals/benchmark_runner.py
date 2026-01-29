@@ -32,9 +32,9 @@ from typing import Any
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from skillanalyzer.core.analyzers.static import StaticAnalyzer
-from skillanalyzer.core.models import Severity, ThreatCategory
-from skillanalyzer.core.scanner import SkillScanner
+from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.models import Severity, ThreatCategory
+from skill_scanner.core.scanner import SkillScanner
 
 
 @dataclass

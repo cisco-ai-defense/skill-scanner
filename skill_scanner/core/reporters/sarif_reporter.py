@@ -43,7 +43,7 @@ class SARIFReporter:
         Severity.SAFE: "none",
     }
 
-    def __init__(self, tool_name: str = "skill-analyzer", tool_version: str = "1.0.0"):
+    def __init__(self, tool_name: str = "skill-scanner", tool_version: str = "1.0.0"):
         """
         Initialize SARIF reporter.
 
@@ -130,7 +130,7 @@ class SARIFReporter:
             "driver": {
                 "name": self.tool_name,
                 "version": self.tool_version,
-                "informationUri": "https://github.com/anthropics/skill-analyzer",
+                "informationUri": "https://github.com/anthropics/skill-scanner",
                 "rules": rules,
             }
         }

@@ -22,9 +22,9 @@ from pathlib import Path
 
 import pytest
 
-from skillanalyzer.core.analyzers.static import StaticAnalyzer
-from skillanalyzer.core.loader import SkillLoader
-from skillanalyzer.core.models import Severity, ThreatCategory
+from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.loader import SkillLoader
+from skill_scanner.core.models import Severity, ThreatCategory
 
 
 @pytest.fixture

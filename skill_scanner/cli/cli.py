@@ -653,28 +653,28 @@ def main():
         epilog="""
 Examples:
   # Scan a single skill
-  skill-analyzer scan /path/to/skill
+  skill-scanner scan /path/to/skill
 
   # Scan with behavioral analysis (dataflow tracking)
-  skill-analyzer scan /path/to/skill --use-behavioral
+  skill-scanner scan /path/to/skill --use-behavioral
 
   # Scan with all engines (static + behavioral + LLM)
-  skill-analyzer scan /path/to/skill --use-behavioral --use-llm
+  skill-scanner scan /path/to/skill --use-behavioral --use-llm
 
   # Scan with JSON output
-  skill-analyzer scan /path/to/skill --format json
+  skill-scanner scan /path/to/skill --format json
 
   # Scan all skills in a directory
-  skill-analyzer scan-all /path/to/skills
+  skill-scanner scan-all /path/to/skills
 
   # Scan recursively with all engines
-  skill-analyzer scan-all /path/to/skills --recursive --use-behavioral --use-llm
+  skill-scanner scan-all /path/to/skills --recursive --use-behavioral --use-llm
 
   # List available analyzers
-  skill-analyzer list-analyzers
+  skill-scanner list-analyzers
 
   # Validate rule signatures
-  skill-analyzer validate-rules
+  skill-scanner validate-rules
         """,
     )
 

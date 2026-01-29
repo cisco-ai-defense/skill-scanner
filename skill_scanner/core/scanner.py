@@ -261,9 +261,9 @@ class SkillScanner:
 
             # Full cross-skill attack pattern detection
             try:
-                from .analyzers.cross_skill_analyzer import CrossSkillAnalyzer
+                from .analyzers.cross_skill_scanner import CrossSkillScanner
 
-                cross_analyzer = CrossSkillAnalyzer()
+                cross_analyzer = CrossSkillScanner()
                 cross_findings = cross_analyzer.analyze_skill_set(loaded_skills)
                 if cross_findings and report.scan_results:
                     report.scan_results[0].findings.extend(cross_findings)

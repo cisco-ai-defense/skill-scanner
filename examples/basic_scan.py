@@ -18,8 +18,8 @@
 
 from pathlib import Path
 
-from skillanalyzer import SkillScanner
-from skillanalyzer.core.analyzers.static import StaticAnalyzer
+from skill_scanner import SkillScanner
+from skill_scanner.core.analyzers.static import StaticAnalyzer
 
 # Create scanner with static analyzer
 scanner = SkillScanner(analyzers=[StaticAnalyzer()])

@@ -25,7 +25,7 @@ from pathlib import Path
 
 from ..utils.logging_config import get_logger
 from .config import Config
-from .constants import SkillAnalyzerConstants
+from .constants import SkillScannerConstants
 
 logger = get_logger(__name__)
 
@@ -74,10 +74,10 @@ def parse_config_file(config_path: str | None = None) -> Config:
     if not config_path:
         # Try to find default config file
         default_paths = [
-            Path.home() / ".skillanalyzer" / "config.yaml",
-            Path.home() / ".skillanalyzer" / "config.json",
-            Path.cwd() / ".skillanalyzer.yaml",
-            Path.cwd() / ".skillanalyzer.json",
+            Path.home() / ".skill_scanner" / "config.yaml",
+            Path.home() / ".skill_scanner" / "config.json",
+            Path.cwd() / ".skill_scanner.yaml",
+            Path.cwd() / ".skill_scanner.json",
         ]
 
         for path in default_paths:
@@ -100,7 +100,7 @@ class ConfigParser:
 
     def __init__(self):
         """Initialize the config parser."""
-        self.constants = SkillAnalyzerConstants
+        self.constants = SkillScannerConstants
 
     def parse(self, config_path: str | None = None) -> Config:
         """Parse configuration from file and environment.

@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from skillanalyzer.core.loader import SkillLoader, SkillLoadError
+from skill_scanner.core.loader import SkillLoader, SkillLoadError
 
 
 @pytest.fixture

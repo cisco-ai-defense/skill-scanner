@@ -32,7 +32,7 @@ import pytest
 
 # Import conditionally to handle missing httpx
 try:
-    from skillanalyzer.core.analyzers.aidefense_analyzer import (
+    from skill_scanner.core.analyzers.aidefense_analyzer import (
         AI_DEFENSE_API_URL,
         AIDefenseAnalyzer,
     )
@@ -41,7 +41,7 @@ try:
 except ImportError:
     AIDEFENSE_AVAILABLE = False
 
-from skillanalyzer.core.models import (
+from skill_scanner.core.models import (
     Finding,
     Severity,
     Skill,
@@ -88,7 +88,7 @@ class TestAIDefenseAnalyzerInitialization:
 
     def test_init_without_httpx_raises_error(self):
         """Test that initialization without httpx raises error."""
-        with patch("skillanalyzer.core.analyzers.aidefense_analyzer.HTTPX_AVAILABLE", False):
+        with patch("skill_scanner.core.analyzers.aidefense_analyzer.HTTPX_AVAILABLE", False):
             with pytest.raises(ImportError, match="httpx is required"):
                 AIDefenseAnalyzer(api_key="test-key")
 

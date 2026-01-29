@@ -41,8 +41,8 @@ def setup_logger(name: str, level: str | None = None, format_string: str | None 
     if logger.handlers:
         return logger
 
-    skillanalyzer_root = logging.getLogger("skillanalyzer")
-    if skillanalyzer_root.level == logging.DEBUG and name.startswith("skillanalyzer"):
+    skill_scanner_root = logging.getLogger("skill_scanner")
+    if skill_scanner_root.level == logging.DEBUG and name.startswith("skill_scanner"):
         logger.setLevel(logging.DEBUG)
     elif level:
         logger.setLevel(getattr(logging, level.upper()))
@@ -78,18 +78,18 @@ def get_logger(name: str, level: str | None = None) -> logging.Logger:
 
 def set_verbose_logging(verbose: bool = False) -> None:
     """
-    Enable or disable verbose logging for all skillanalyzer loggers.
+    Enable or disable verbose logging for all skill_scanner loggers.
 
     Args:
-        verbose: If True, set all existing skillanalyzer loggers to DEBUG level
+        verbose: If True, set all existing skill_scanner loggers to DEBUG level
     """
     target_level = logging.DEBUG if verbose else logging.INFO
 
-    root_logger = logging.getLogger("skillanalyzer")
+    root_logger = logging.getLogger("skill_scanner")
     root_logger.setLevel(target_level)
 
     for name in list(logging.Logger.manager.loggerDict.keys()):
-        if name.startswith("skillanalyzer"):
+        if name.startswith("skill_scanner"):
             logger = logging.getLogger(name)
             logger.setLevel(target_level)
             for handler in logger.handlers:

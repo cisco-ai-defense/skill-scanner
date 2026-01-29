@@ -30,9 +30,9 @@ Usage:
 import argparse
 from pathlib import Path
 
-from skillanalyzer import SkillScanner
-from skillanalyzer.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
-from skillanalyzer.core.analyzers.static import StaticAnalyzer
+from skill_scanner import SkillScanner
+from skill_scanner.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
+from skill_scanner.core.analyzers.static import StaticAnalyzer
 
 
 def main():

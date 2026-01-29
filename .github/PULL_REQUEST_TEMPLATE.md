@@ -41,7 +41,7 @@ Describe manual testing performed:
 
 ```bash
 # Commands run for testing
-skill-analyzer scan examples/test-skill
+skill-scanner scan examples/test-skill
 ```
 
 **Results:**

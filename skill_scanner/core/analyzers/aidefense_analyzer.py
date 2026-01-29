@@ -325,7 +325,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                 }
             ]
             metadata = {
-                "source": "skill_analyzer",
+                "source": "skill_scanner",
                 "skill_name": skill_name,
                 "file_path": file_path,
                 "content_type": content_type,
@@ -465,7 +465,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                 {"role": "user", "content": f"# Code Analysis for {file_path}\n```{language}\n{content[:15000]}\n```"}
             ]
             metadata = {
-                "source": "skill_analyzer",
+                "source": "skill_scanner",
                 "skill_name": skill_name,
                 "file_path": file_path,
                 "language": language,

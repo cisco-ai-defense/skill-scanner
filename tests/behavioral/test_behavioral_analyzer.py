@@ -26,8 +26,8 @@ from unittest.mock import patch
 
 import pytest
 
-from skillanalyzer.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
-from skillanalyzer.core.models import Severity, Skill, SkillFile, SkillManifest, ThreatCategory
+from skill_scanner.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
+from skill_scanner.core.models import Severity, Skill, SkillFile, SkillManifest, ThreatCategory
 
 
 class TestBehavioralAnalyzerInitialization:
@@ -352,7 +352,7 @@ if __name__ == "__main__":
 """)
 
             # Load and analyze
-            from skillanalyzer.core.loader import SkillLoader
+            from skill_scanner.core.loader import SkillLoader
 
             loader = SkillLoader()
             skill = loader.load_skill(skill_dir)

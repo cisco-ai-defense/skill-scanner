@@ -26,8 +26,8 @@ from unittest.mock import patch
 
 import pytest
 
-from skillanalyzer.config.config import Config
-from skillanalyzer.config.constants import SkillAnalyzerConstants
+from skill_scanner.config.config import Config
+from skill_scanner.config.constants import SkillScannerConstants
 
 
 class TestConfigInitialization:
@@ -150,45 +150,45 @@ class TestConfigAnalyzerToggles:
 
 
 class TestConstants:
-    """Test SkillAnalyzerConstants."""
+    """Test SkillScannerConstants."""
 
     def test_constants_paths_exist(self):
         """Test that constant paths are defined."""
-        assert SkillAnalyzerConstants.PROJECT_ROOT is not None
-        assert SkillAnalyzerConstants.PACKAGE_ROOT is not None
-        assert SkillAnalyzerConstants.PROMPTS_DIR is not None
-        assert SkillAnalyzerConstants.DATA_DIR is not None
+        assert SkillScannerConstants.PROJECT_ROOT is not None
+        assert SkillScannerConstants.PACKAGE_ROOT is not None
+        assert SkillScannerConstants.PROMPTS_DIR is not None
+        assert SkillScannerConstants.DATA_DIR is not None
 
     def test_get_prompts_path(self):
         """Test get_prompts_path method."""
-        path = SkillAnalyzerConstants.get_prompts_path()
+        path = SkillScannerConstants.get_prompts_path()
         assert path is not None
         assert "prompts" in str(path)
 
     def test_get_data_path(self):
         """Test get_data_path method."""
-        path = SkillAnalyzerConstants.get_data_path()
+        path = SkillScannerConstants.get_data_path()
         assert path is not None
         assert "data" in str(path)
 
     def test_get_yara_rules_path(self):
         """Test get_yara_rules_path method."""
-        path = SkillAnalyzerConstants.get_yara_rules_path()
+        path = SkillScannerConstants.get_yara_rules_path()
         assert path is not None
         assert "yara_rules" in str(path)
 
     def test_severity_constants(self):
         """Test severity level constants."""
-        assert SkillAnalyzerConstants.SEVERITY_CRITICAL == "CRITICAL"
-        assert SkillAnalyzerConstants.SEVERITY_HIGH == "HIGH"
-        assert SkillAnalyzerConstants.SEVERITY_MEDIUM == "MEDIUM"
-        assert SkillAnalyzerConstants.SEVERITY_LOW == "LOW"
+        assert SkillScannerConstants.SEVERITY_CRITICAL == "CRITICAL"
+        assert SkillScannerConstants.SEVERITY_HIGH == "HIGH"
+        assert SkillScannerConstants.SEVERITY_MEDIUM == "MEDIUM"
+        assert SkillScannerConstants.SEVERITY_LOW == "LOW"
 
     def test_threat_category_constants(self):
         """Test threat category constants."""
-        assert SkillAnalyzerConstants.THREAT_PROMPT_INJECTION == "prompt_injection"
-        assert SkillAnalyzerConstants.THREAT_COMMAND_INJECTION == "command_injection"
-        assert SkillAnalyzerConstants.THREAT_DATA_EXFILTRATION == "data_exfiltration"
+        assert SkillScannerConstants.THREAT_PROMPT_INJECTION == "prompt_injection"
+        assert SkillScannerConstants.THREAT_COMMAND_INJECTION == "command_injection"
+        assert SkillScannerConstants.THREAT_DATA_EXFILTRATION == "data_exfiltration"
 
 
 class TestConfigFromFile:

@@ -44,7 +44,7 @@ def run_cli(args: list[str], timeout: int = 60) -> tuple[str, str, int]:
     """
     Run the skill-scanner CLI and return stdout, stderr, return code.
     """
-    cmd = [sys.executable, "-m", "skillanalyzer.cli.cli"] + args
+    cmd = [sys.executable, "-m", "skill_scanner.cli.cli"] + args
     result = subprocess.run(
         cmd,
         capture_output=True,
