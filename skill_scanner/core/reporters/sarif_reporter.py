@@ -130,7 +130,7 @@ class SARIFReporter:
             "driver": {
                 "name": self.tool_name,
                 "version": self.tool_version,
-                "informationUri": "https://github.com/anthropics/skill-scanner",
+                "informationUri": "https://github.com/cisco-ai-defense/skill-scanner",
                 "rules": rules,
             }
         }

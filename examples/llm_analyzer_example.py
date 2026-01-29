@@ -26,7 +26,7 @@ This example demonstrates:
 Prerequisites:
     export SKILL_SCANNER_LLM_API_KEY="your_key"
     export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"  # or gpt-4o
-    pip install skill_scanner[llm]
+    pip install cisco-ai-skill-scanner[llm]
 
 Usage:
     python llm_analyzer_example.py <skill_directory>
@@ -45,7 +45,7 @@ try:
     LLM_AVAILABLE = True
 except ImportError:
     LLM_AVAILABLE = False
-    print("Error: LLM analyzer not available. Install with: pip install skill_scanner[llm]")
+    print("Error: LLM analyzer not available. Install with: pip install cisco-ai-skill-scanner[llm]")
 
 
 def main():
