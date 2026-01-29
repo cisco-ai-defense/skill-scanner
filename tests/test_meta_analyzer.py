@@ -203,8 +203,8 @@ class TestMetaAnalyzerInit:
 class TestApplyMetaAnalysis:
     """Tests for apply_meta_analysis_to_results function."""
 
-    def test_filters_false_positives(self):
-        """Test that false positives are filtered out."""
+    def test_marks_false_positives_with_metadata(self):
+        """Test that false positives are marked with metadata but retained in output."""
         from skill_scanner.core.analyzers.meta_analyzer import (
             MetaAnalysisResult,
             apply_meta_analysis_to_results,
@@ -249,14 +249,24 @@ class TestApplyMetaAnalysis:
                     "false_positive_reason": "Pattern match without malicious context",
                 }
             ],
+            priority_order=[0],  # Validated finding has priority 1
         )
 
-        filtered = apply_meta_analysis_to_results(original_findings, meta_result, skill)
+        result = apply_meta_analysis_to_results(original_findings, meta_result, skill)
 
-        # Should only have the validated finding, not the false positive
-        assert len(filtered) == 1
-        assert filtered[0].id == "finding_0"
-        assert filtered[0].metadata.get("meta_confidence") == "HIGH"
+        # Both findings should be in output (false positives are no longer filtered)
+        assert len(result) == 2
+
+        # First finding should be validated (not a false positive)
+        assert result[0].id == "finding_0"
+        assert result[0].metadata.get("meta_false_positive") is False
+        assert result[0].metadata.get("meta_confidence") == "HIGH"
+        assert result[0].metadata.get("meta_priority") == 1
+
+        # Second finding should be marked as a false positive with reason
+        assert result[1].id == "finding_1"
+        assert result[1].metadata.get("meta_false_positive") is True
+        assert result[1].metadata.get("meta_reason") == "Pattern match without malicious context"
 
     def test_adds_missed_threats(self):
         """Test that missed threats are added to results."""
@@ -284,13 +294,15 @@ class TestApplyMetaAnalysis:
             ],
         )
 
-        filtered = apply_meta_analysis_to_results(original_findings, meta_result, skill)
+        result = apply_meta_analysis_to_results(original_findings, meta_result, skill)
 
         # Should have the new threat detected by meta-analyzer
-        assert len(filtered) == 1
-        assert filtered[0].title == "Hidden Data Exfiltration"
-        assert filtered[0].analyzer == "meta"
-        assert filtered[0].metadata.get("meta_detected") is True
+        assert len(result) == 1
+        assert result[0].title == "Hidden Data Exfiltration"
+        assert result[0].analyzer == "meta"
+        assert result[0].metadata.get("meta_detected") is True
+        # Missed threats should also be marked as not false positives
+        assert result[0].metadata.get("meta_false_positive") is False
 
 
 class TestReporterCompatibility:

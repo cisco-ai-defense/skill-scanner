@@ -339,7 +339,7 @@ class MetaAnalyzer(BaseAnalyzer):
 
     def _get_default_system_prompt(self) -> str:
         """Get default system prompt if file not found."""
-        return """You are a senior security analyst performing meta-analysis on Agent Skill security findings.
+        return """You are a senior security analyst performing meta-analysis on Claude Skill security findings.
 Your role is to review findings from multiple analyzers, identify false positives,
 prioritize by actual risk, correlate related issues, and provide actionable recommendations.
 
@@ -787,12 +787,16 @@ def apply_meta_analysis_to_results(
     meta_result: MetaAnalysisResult,
     skill: Skill,
 ) -> list[Finding]:
-    """Apply meta-analysis results to filter and enrich findings.
+    """Apply meta-analysis results to enrich all findings with metadata.
 
     This function:
-    1. Filters out false positives identified by meta-analysis
+    1. Marks false positives with metadata (but keeps them in output)
     2. Adds meta-analysis enrichments to validated findings
     3. Adds any new threats detected by meta-analyzer
+
+    All findings are retained in the output with metadata indicating whether
+    they were identified as false positives. This allows downstream consumers
+    (like VS Code extensions) to filter or display them as needed.
 
     Args:
         original_findings: Original findings from all analyzers
@@ -800,16 +804,25 @@ def apply_meta_analysis_to_results(
         skill: The skill being analyzed
 
     Returns:
-        Filtered and enriched list of findings
+        All findings with meta-analysis metadata added
     """
-    # Build set of false positive indices
-    fp_indices = set()
+    # Build false positive lookup with reasons and metadata
+    fp_data: dict[int, dict[str, Any]] = {}
     for fp in meta_result.false_positives:
         if "_index" in fp:
-            fp_indices.add(fp["_index"])
+            fp_data[fp["_index"]] = {
+                "reason": fp.get("reason") or fp.get("false_positive_reason") or "Identified as likely false positive",
+                "confidence": fp.get("confidence"),
+            }
 
     # Build enrichment lookup from validated findings
-    enrichments = {}
+    enrichments: dict[int, dict[str, Any]] = {}
+    priority_lookup: dict[int, int] = {}
+
+    # Build priority rank lookup from priority_order
+    for rank, idx in enumerate(meta_result.priority_order, start=1):
+        priority_lookup[idx] = rank
+
     for vf in meta_result.validated_findings:
         idx = vf.get("_index")
         if idx is not None:
@@ -821,25 +834,44 @@ def apply_meta_analysis_to_results(
                 "meta_impact": vf.get("impact"),
             }
 
-    # Filter and enrich original findings
+    # Enrich all findings (do not filter out false positives)
     result_findings = []
     for i, finding in enumerate(original_findings):
-        # Skip false positives
-        if i in fp_indices:
-            continue
+        # Ensure metadata dict exists
+        if finding.metadata is None:
+            finding.metadata = {}
 
-        # Add enrichments if available
-        if i in enrichments:
-            for key, value in enrichments[i].items():
-                if value is not None:
-                    finding.metadata[key] = value
+        # Mark false positives with metadata (but keep them in output)
+        if i in fp_data:
+            finding.metadata["meta_false_positive"] = True
+            finding.metadata["meta_reason"] = fp_data[i]["reason"]
+            if fp_data[i].get("confidence") is not None:
+                finding.metadata["meta_confidence"] = fp_data[i]["confidence"]
         else:
-            finding.metadata["meta_reviewed"] = True
+            # Mark as validated (not a false positive)
+            finding.metadata["meta_false_positive"] = False
+
+            # Add enrichments if available for validated findings
+            if i in enrichments:
+                for key, value in enrichments[i].items():
+                    if value is not None:
+                        finding.metadata[key] = value
+            else:
+                finding.metadata["meta_reviewed"] = True
+
+        # Add priority rank if available
+        if i in priority_lookup:
+            finding.metadata["meta_priority"] = priority_lookup[i]
 
         result_findings.append(finding)
 
     # Add missed threats as new findings
     missed_findings = meta_result.get_missed_threats(skill)
+    for mf in missed_findings:
+        # Ensure missed threats are marked as validated (not false positives)
+        if mf.metadata is None:
+            mf.metadata = {}
+        mf.metadata["meta_false_positive"] = False
     result_findings.extend(missed_findings)
 
     return result_findings
