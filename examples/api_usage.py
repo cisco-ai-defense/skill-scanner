@@ -29,7 +29,7 @@ Prerequisites:
 
 Usage:
     # Terminal 1: Start API server
-    skill-analyzer-api --port 8000
+    skill-scanner-api --port 8000
 
     # Terminal 2: Run this example
     python api_usage.py
@@ -157,7 +157,7 @@ def main():
     # Check health
     if not check_health():
         print("\n[ERROR] API server is not running!")
-        print("Please start it with: skill-analyzer-api --port 8000")
+        print("Please start it with: skill-scanner-api --port 8000")
         return 1
 
     # Example 1: Scan a skill directory

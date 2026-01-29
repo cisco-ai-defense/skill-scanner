@@ -2,7 +2,7 @@
 
 ## Overview
 
-The LLM Analyzer uses large language models as security judges to perform semantic analysis of Claude Skills and Codex Skills. It goes beyond pattern matching to understand code intent, data flows, and sophisticated attack patterns using industry-standard threat detection frameworks.
+The LLM Analyzer uses large language models as security judges to perform semantic analysis of Agent Skills. It goes beyond pattern matching to understand code intent, data flows, and sophisticated attack patterns using industry-standard threat detection frameworks.
 
 ## Key Features
 
@@ -43,21 +43,21 @@ The LLM Analyzer uses large language models as security judges to perform semant
 # Basic LLM scan
 export SKILL_SCANNER_LLM_API_KEY=your_key
 export SKILL_SCANNER_LLM_MODEL=claude-3-5-sonnet-20241022
-skill-analyzer scan /path/to/skill --use-llm
+skill-scanner scan /path/to/skill --use-llm
 
 # Use OpenAI
-skill-analyzer scan /path/to/skill --use-llm --llm-provider openai
+skill-scanner scan /path/to/skill --use-llm --llm-provider openai
 
 # AWS Bedrock (enterprise compliance)
 export AWS_REGION=us-east-1
-skill-analyzer scan /path/to/skill --use-llm --llm-provider bedrock
+skill-scanner scan /path/to/skill --use-llm --llm-provider bedrock
 ```
 
 ### Python API
 
 ```python
-from skillanalyzer.core.analyzers.llm_analyzer import LLMAnalyzer
-from skillanalyzer.core.loader import load_skill
+from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
+from skill_scanner.core.loader import load_skill
 
 # Initialize analyzer
 analyzer = LLMAnalyzer(
@@ -296,9 +296,9 @@ The analyzer handles errors gracefully:
 Use multiple analyzers for comprehensive coverage:
 
 ```python
-from skillanalyzer.core.scanner import SkillScanner
-from skillanalyzer.core.analyzers.static import StaticAnalyzer
-from skillanalyzer.core.analyzers.llm_analyzer import LLMAnalyzer
+from skill_scanner.core.scanner import SkillScanner
+from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
 
 analyzers = [
     StaticAnalyzer(),      # Fast pattern matching
@@ -373,7 +373,6 @@ The analyzer tries multiple strategies. Check logs for details. This is usually 
 ## References
 
 - [LiteLLM Documentation](https://docs.litellm.ai/)
-- [Anthropic Claude Skills](https://support.claude.com/skills)
 - [OpenAI Codex Skills](https://developers.openai.com/codex/skills/)
 - [Agent Skills Specification](https://developers.openai.com/codex/skills/)
 - [AITech Threat Taxonomy](https://owasp.org/)

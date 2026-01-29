@@ -27,10 +27,10 @@ This example demonstrates:
 
 from pathlib import Path
 
-from skillanalyzer import SkillScanner
-from skillanalyzer.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
-from skillanalyzer.core.analyzers.static import StaticAnalyzer
-from skillanalyzer.core.models import Severity, ThreatCategory
+from skill_scanner import SkillScanner
+from skill_scanner.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
+from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.models import Severity, ThreatCategory
 
 
 def analyze_findings(findings):

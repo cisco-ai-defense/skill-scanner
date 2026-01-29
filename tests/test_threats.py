@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 import pytest
 
-from skillanalyzer.threats.threats import (
+from skill_scanner.threats.threats import (
     BEHAVIORAL_THREAT_MAPPING,
     LLM_THREAT_MAPPING,
     YARA_THREAT_MAPPING,

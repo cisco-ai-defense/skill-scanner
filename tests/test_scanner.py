@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from skillanalyzer.core.models import Severity
-from skillanalyzer.core.scanner import SkillScanner, scan_skill
+from skill_scanner.core.models import Severity
+from skill_scanner.core.scanner import SkillScanner, scan_skill
 
 
 @pytest.fixture

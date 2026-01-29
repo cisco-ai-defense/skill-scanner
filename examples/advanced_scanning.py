@@ -33,29 +33,29 @@ import argparse
 import json
 from pathlib import Path
 
-from skillanalyzer import SkillScanner
-from skillanalyzer.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
-from skillanalyzer.core.analyzers.static import StaticAnalyzer
-from skillanalyzer.core.reporters.json_reporter import JSONReporter
-from skillanalyzer.core.reporters.markdown_reporter import MarkdownReporter
+from skill_scanner import SkillScanner
+from skill_scanner.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
+from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.reporters.json_reporter import JSONReporter
+from skill_scanner.core.reporters.markdown_reporter import MarkdownReporter
 
 # Optional analyzers
 try:
-    from skillanalyzer.core.analyzers.llm_analyzer import LLMAnalyzer
+    from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
 
     LLM_AVAILABLE = True
 except ImportError:
     LLM_AVAILABLE = False
 
 try:
-    from skillanalyzer.core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
+    from skill_scanner.core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
 
     VT_AVAILABLE = True
 except ImportError:
     VT_AVAILABLE = False
 
 try:
-    from skillanalyzer.core.analyzers.aidefense_analyzer import AIDefenseAnalyzer
+    from skill_scanner.core.analyzers.aidefense_analyzer import AIDefenseAnalyzer
 
     AIDEFENSE_AVAILABLE = True
 except ImportError:

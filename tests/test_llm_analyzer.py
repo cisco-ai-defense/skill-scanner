@@ -26,8 +26,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from skillanalyzer.core.analyzers.llm_analyzer import LLMAnalyzer, SecurityError
-from skillanalyzer.core.models import Finding, Severity, Skill, SkillManifest, ThreatCategory
+from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer, SecurityError
+from skill_scanner.core.models import Finding, Severity, Skill, SkillManifest, ThreatCategory
 
 
 class TestLLMAnalyzerInitialization:
@@ -41,7 +41,7 @@ class TestLLMAnalyzerInitialization:
 
     def test_init_without_litellm_raises_error(self):
         """Test that initialization without LiteLLM raises error."""
-        with patch("skillanalyzer.core.analyzers.llm_provider_config.LITELLM_AVAILABLE", False):
+        with patch("skill_scanner.core.analyzers.llm_provider_config.LITELLM_AVAILABLE", False):
             with pytest.raises(ImportError, match="LiteLLM is required"):
                 LLMAnalyzer(model="claude-3-5-sonnet-20241022", api_key="test-key")
 
@@ -294,7 +294,7 @@ class TestFindingConversion:
 class TestAsyncAnalysis:
     """Test async analysis functionality."""
 
-    @patch("skillanalyzer.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
+    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
     async def test_analyze_async_success(self, mock_make_request):
         """Test successful async analysis."""
         analyzer = LLMAnalyzer(api_key="test-key")
@@ -319,7 +319,7 @@ class TestAsyncAnalysis:
         assert isinstance(findings, list)
         assert len(findings) == 0
 
-    @patch("skillanalyzer.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
+    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
     async def test_analyze_async_with_findings(self, mock_make_request):
         """Test async analysis that detects threats."""
         analyzer = LLMAnalyzer(api_key="test-key")
@@ -355,7 +355,7 @@ class TestAsyncAnalysis:
         assert len(findings) == 1
         assert findings[0].severity == Severity.HIGH
 
-    @patch("skillanalyzer.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
+    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
     async def test_retry_logic_on_rate_limit(self, mock_make_request):
         """Test exponential backoff retry on rate limits."""
         analyzer = LLMAnalyzer(api_key="test-key", max_retries=2, rate_limit_delay=0.1)  # Fast for testing
@@ -471,7 +471,7 @@ class TestLLMRequestMaking:
     """Test LLM API request functionality."""
 
     @pytest.mark.asyncio
-    @patch("skillanalyzer.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
+    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
     async def test_makes_request_with_correct_params(self, mock_make_request):
         """Test that LLM requests include all necessary parameters."""
         analyzer = LLMAnalyzer(model="claude-3-5-sonnet-20241022", api_key="test-key", max_tokens=4000, temperature=0.0)
@@ -487,7 +487,7 @@ class TestLLMRequestMaking:
         assert call_args[0][0] == messages
 
     @pytest.mark.asyncio
-    @patch("skillanalyzer.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
+    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
     async def test_adds_aws_params_for_bedrock(self, mock_make_request):
         """Test that AWS parameters are added for Bedrock models."""
         analyzer = LLMAnalyzer(
@@ -509,7 +509,7 @@ class TestErrorHandling:
     """Test error handling in LLM analyzer."""
 
     @pytest.mark.asyncio
-    @patch("skillanalyzer.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
+    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
     async def test_handles_api_errors_gracefully(self, mock_make_request):
         """Test that API errors are handled without crashing."""
         analyzer = LLMAnalyzer(api_key="test-key", max_retries=1)

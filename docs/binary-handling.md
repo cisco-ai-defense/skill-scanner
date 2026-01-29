@@ -1,4 +1,4 @@
-# Binary File Handling in Claude Skills and Codex Skills
+# Binary File Handling in Agent Skills
 
 ## Current Behavior
 
@@ -23,7 +23,7 @@ When the scanner finds binary files in a skill package:
 1. **Unauditable** - Can't read/inspect the code
 2. **Platform-specific malware** - Could be trojans, keyloggers, ransomware
 3. **Obfuscation** - Hides malicious behavior
-4. **Execution risk** - Could be run by user or Claude
+4. **Execution risk** - Could be run by user or agent
 5. **Supply chain attack** - Common malware delivery method
 
 **Example threat:**

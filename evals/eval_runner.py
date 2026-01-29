@@ -31,9 +31,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import os
 
-from skillanalyzer.core.analyzers.static import StaticAnalyzer
-from skillanalyzer.core.models import Severity
-from skillanalyzer.core.scanner import SkillScanner
+from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.models import Severity
+from skill_scanner.core.scanner import SkillScanner
 
 
 @dataclass
@@ -73,7 +73,7 @@ class EvaluationRunner:
 
         if use_llm:
             try:
-                from skillanalyzer.core.analyzers.llm_analyzer import LLMAnalyzer
+                from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
 
                 api_key = os.getenv("SKILL_SCANNER_LLM_API_KEY")
                 model = os.getenv("SKILL_SCANNER_LLM_MODEL", "claude-3-5-sonnet-20241022")
@@ -95,7 +95,7 @@ class EvaluationRunner:
         # Initialize Meta-Analyzer if requested
         if use_meta:
             try:
-                from skillanalyzer.core.analyzers.meta_analyzer import MetaAnalyzer
+                from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
 
                 self.meta_analyzer = MetaAnalyzer()
                 print("Using Meta-Analyzer for false positive filtering and prioritization")
@@ -131,8 +131,8 @@ class EvaluationRunner:
                     try:
                         import asyncio
 
-                        from skillanalyzer.core.analyzers.meta_analyzer import apply_meta_analysis_to_results
-                        from skillanalyzer.core.loader import SkillLoader
+                        from skill_scanner.core.analyzers.meta_analyzer import apply_meta_analysis_to_results
+                        from skill_scanner.core.loader import SkillLoader
 
                         # Load skill for meta-analysis context
                         loader = SkillLoader()

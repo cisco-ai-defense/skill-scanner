@@ -79,7 +79,7 @@ jobs:
         run: |
           uv run pytest tests/ \
             --ignore=tests/test_llm_analyzer.py \
-            -v --tb=short --cov=skillanalyzer --cov-report=xml
+            -v --tb=short --cov=skill_scanner --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

@@ -29,7 +29,7 @@ Describe a specific scenario where this feature would be useful.
 **Example:**
 ```bash
 # How the feature would be used
-skill-analyzer scan /path/to/skill --your-new-feature
+skill-scanner scan /path/to/skill --your-new-feature
 ```
 
 ## Benefits
@@ -53,4 +53,4 @@ Screenshots, mockups, links to similar features in other tools, etc.
 - [ ] I have searched existing issues/PRs for similar requests
 - [ ] I have described a clear use case
 - [ ] I have considered implementation complexity
-- [ ] This aligns with the project's goals (security scanning for Claude Skills)
+- [ ] This aligns with the project's goals (security scanning for Agent Skills)

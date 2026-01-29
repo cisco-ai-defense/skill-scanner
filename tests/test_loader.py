@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from skillanalyzer.core.loader import SkillLoader, SkillLoadError
+from skill_scanner.core.loader import SkillLoader, SkillLoadError
 
 
 @pytest.fixture
@@ -103,7 +103,7 @@ def test_manifest_parsing(loader, example_skills_dir):
 
 
 def test_allowed_tools_comma_separated_string_is_split(loader, tmp_path):
-    """Claude Code docs often show allowed-tools as a comma-separated string."""
+    """Agent skill docs often show allowed-tools as a comma-separated string."""
     skill_dir = tmp_path / "comma-tools-skill"
     skill_dir.mkdir()
 
@@ -134,7 +134,7 @@ def test_instruction_body_extraction(loader, example_skills_dir):
 
 def test_skill_discovery_under_dot_claude_directory(loader, tmp_path):
     """
-    Claude Code project skills live under `.claude/skills/<skill>/`.
+    Project skills may live under `.claude/skills/<skill>/` or similar hidden directories.
     Ensure our loader discovers files even when parent dirs are hidden.
     """
     skill_dir = tmp_path / ".claude" / "skills" / "my-skill"

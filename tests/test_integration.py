@@ -25,11 +25,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from skillanalyzer.config.config import Config
-from skillanalyzer.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
-from skillanalyzer.core.analyzers.static import StaticAnalyzer
-from skillanalyzer.core.models import Severity
-from skillanalyzer.core.scanner import SkillScanner
+from skill_scanner.config.config import Config
+from skill_scanner.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
+from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.models import Severity
+from skill_scanner.core.scanner import SkillScanner
 
 
 class TestEndToEndScanning:
@@ -120,7 +120,7 @@ class TestOutputFormatIntegration:
 
     def test_json_output_format(self):
         """Test JSON output format."""
-        from skillanalyzer.core.reporters.json_reporter import JSONReporter
+        from skill_scanner.core.reporters.json_reporter import JSONReporter
 
         scanner = SkillScanner()
         example_dir = Path(__file__).parent.parent / "evals" / "test_skills" / "safe" / "simple-formatter"
@@ -137,7 +137,7 @@ class TestOutputFormatIntegration:
 
     def test_markdown_output_format(self):
         """Test Markdown output format."""
-        from skillanalyzer.core.reporters.markdown_reporter import MarkdownReporter
+        from skill_scanner.core.reporters.markdown_reporter import MarkdownReporter
 
         scanner = SkillScanner()
         example_dir = Path(__file__).parent.parent / "evals" / "test_skills" / "safe" / "simple-formatter"
@@ -148,12 +148,12 @@ class TestOutputFormatIntegration:
         reporter = MarkdownReporter(detailed=True)
         md_output = reporter.generate_report(result)
 
-        assert "# Claude Skill Security Scan Report" in md_output
+        assert "# Agent Skill Security Scan Report" in md_output
         assert "simple-formatter" in md_output
 
     def test_table_output_format(self):
         """Test table output format."""
-        from skillanalyzer.core.reporters.table_reporter import TableReporter
+        from skill_scanner.core.reporters.table_reporter import TableReporter
 
         scanner = SkillScanner()
         example_dir = Path(__file__).parent.parent / "evals" / "test_skills" / "safe" / "simple-formatter"
@@ -173,7 +173,7 @@ class TestThreatTaxonomyIntegration:
 
     def test_findings_map_to_aitech(self):
         """Test that findings can be mapped to AITech taxonomy."""
-        from skillanalyzer.threats.threats import ThreatMapping
+        from skill_scanner.threats.threats import ThreatMapping
 
         scanner = SkillScanner()
         example_dir = Path(__file__).parent.parent / "evals" / "test_skills" / "malicious/exfiltrator"

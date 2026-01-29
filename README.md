@@ -10,14 +10,14 @@
 
 A security scanner for AI Agent Skills that detects prompt injection, data exfiltration, and malicious code patterns. Combines **pattern-based detection** (YAML + YARA), **LLM-as-a-judge**, and **behavioral dataflow analysis** for comprehensive threat detection.
 
-Supports [Anthropic Claude Skills](https://docs.anthropic.com/en/docs/agents-and-tools/claude-skills), [OpenAI Codex Skills](https://openai.github.io/codex/), and [Cursor Agent Skills](https://docs.cursor.com/context/rules) formats following the [Agent Skills specification](https://agentskills.io).
+Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agent Skills](https://docs.cursor.com/context/rules) formats following the [Agent Skills specification](https://agentskills.io).
 
 ---
 
 ## Highlights
 
 - **Multi-Engine Detection** - Static analysis, behavioral dataflow, LLM semantic analysis, and cloud-based scanning
-- **False Positive Filtering** - Meta-analyzer achieves ~65% noise reduction while maintaining 100% threat detection
+- **False Positive Filtering** - Meta-analyzer significantly reduces noise while preserving detection capability
 - **CI/CD Ready** - SARIF output for GitHub Code Scanning, exit codes for build failures
 - **Extensible** - Plugin architecture for custom analyzers
 
@@ -93,29 +93,29 @@ export AI_DEFENSE_API_KEY="your_aidefense_api_key"
 
 ```bash
 # Scan a single skill (static analyzer only)
-skill-analyzer scan /path/to/skill
+skill-scanner scan /path/to/skill
 
 # Scan with behavioral analyzer (dataflow analysis)
-skill-analyzer scan /path/to/skill --use-behavioral
+skill-scanner scan /path/to/skill --use-behavioral
 
 # Scan with all engines
-skill-analyzer scan /path/to/skill --use-behavioral --use-llm --use-aidefense
+skill-scanner scan /path/to/skill --use-behavioral --use-llm --use-aidefense
 
 # Scan with meta-analyzer for false positive filtering
-skill-analyzer scan /path/to/skill --use-llm --enable-meta
+skill-scanner scan /path/to/skill --use-llm --enable-meta
 
 # Scan multiple skills recursively
-skill-analyzer scan-all /path/to/skills --recursive --use-behavioral
+skill-scanner scan-all /path/to/skills --recursive --use-behavioral
 
 # CI/CD: Fail build if threats found
-skill-analyzer scan-all ./skills --fail-on-findings --format sarif --output results.sarif
+skill-scanner scan-all ./skills --fail-on-findings --format sarif --output results.sarif
 ```
 
 ### Python SDK
 
 ```python
-from skillanalyzer import SkillScanner
-from skillanalyzer.core.analyzers import StaticAnalyzer, BehavioralAnalyzer
+from skill_scanner import SkillScanner
+from skill_scanner.core.analyzers import StaticAnalyzer, BehavioralAnalyzer
 
 # Create scanner with analyzers
 scanner = SkillScanner(analyzers=[
@@ -163,7 +163,7 @@ print(f"Findings: {len(result.findings)}")
 ## Example Output
 
 ```
-$ skill-analyzer scan ./my-skill --use-behavioral
+$ skill-scanner scan ./my-skill --use-behavioral
 
 ============================================================
 Skill: my-skill

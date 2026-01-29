@@ -9,7 +9,7 @@ This document covers testing requirements and procedures for contributing to the
 uv run pytest tests/ -v
 
 # Run tests with coverage
-uv run pytest tests/ --cov=skillanalyzer --cov-report=html
+uv run pytest tests/ --cov=skill_scanner --cov-report=html
 
 # Run evaluation benchmark
 uv run python evals/benchmark_runner.py
@@ -103,7 +103,7 @@ For detailed evaluation documentation, see [evals/README.md](/evals/README.md).
 
 ```bash
 # Generate HTML coverage report
-uv run pytest tests/ --cov=skillanalyzer --cov-report=html
+uv run pytest tests/ --cov=skill_scanner --cov-report=html
 
 # View report (opens in browser)
 open htmlcov/index.html  # macOS
@@ -123,7 +123,7 @@ xdg-open htmlcov/index.html  # Linux
 ```python
 # tests/test_example.py
 import pytest
-from skillanalyzer.core.scanner import SkillScanner
+from skill_scanner.core.scanner import SkillScanner
 
 class TestExampleFeature:
     """Tests for example feature."""

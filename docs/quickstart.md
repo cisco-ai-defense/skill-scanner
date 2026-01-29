@@ -9,8 +9,8 @@
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Clone and setup
-git clone https://github.com/cisco-ai-defense/skill-analyzer
-cd skill-analyzer
+git clone https://github.com/cisco-ai-defense/skill-scanner
+cd skill-scanner
 
 # Install all dependencies
 uv sync --all-extras
@@ -29,20 +29,20 @@ pip install cisco-ai-skill-scanner[all]
 
 ```bash
 # From source (with uv)
-uv run skill-analyzer scan evals/skills/safe-skills/simple-math
+uv run skill-scanner scan evals/skills/safe-skills/simple-math
 
 # Installed package
-skill-analyzer scan evals/skills/safe-skills/simple-math
+skill-scanner scan evals/skills/safe-skills/simple-math
 ```
 
 ### Scan Multiple Skills
 
 ```bash
 # Scan all skills in a directory
-skill-analyzer scan-all evals/skills --format table
+skill-scanner scan-all evals/skills --format table
 
 # Recursive scan with detailed markdown report
-skill-analyzer scan-all evals/skills --format markdown --detailed --output report.md
+skill-scanner scan-all evals/skills --format markdown --detailed --output report.md
 ```
 
 ## Demo Results
@@ -51,7 +51,7 @@ The project includes test skills in `evals/skills/` for evaluation and testing:
 
 ### [OK] simple-math (SAFE)
 ```bash
-$ skill-analyzer scan evals/skills/safe-skills/simple-math
+$ skill-scanner scan evals/skills/safe-skills/simple-math
 ============================================================
 Skill: safe-calculator
 ============================================================
@@ -63,7 +63,7 @@ Scan Duration: 0.00s
 
 ### [FAIL] multi-file-exfiltration (CRITICAL)
 ```bash
-$ skill-analyzer scan evals/skills/behavioral-analysis/multi-file-exfiltration
+$ skill-scanner scan evals/skills/behavioral-analysis/multi-file-exfiltration
 ============================================================
 Skill: data-analyzer
 ============================================================
@@ -90,43 +90,43 @@ Findings Summary:
 
 ```bash
 # List available analyzers
-skill-analyzer list-analyzers
+skill-scanner list-analyzers
 
 # Validate rule signatures
-skill-analyzer validate-rules
+skill-scanner validate-rules
 
 # Get help
-skill-analyzer --help
-skill-analyzer scan --help
+skill-scanner --help
+skill-scanner scan --help
 ```
 
 ## Output Formats
 
 ### JSON (for CI/CD)
 ```bash
-skill-analyzer scan /path/to/skill --format json --output results.json
+skill-scanner scan /path/to/skill --format json --output results.json
 ```
 
 ### SARIF (for GitHub Code Scanning)
 ```bash
-skill-analyzer scan /path/to/skill --format sarif --output results.sarif
+skill-scanner scan /path/to/skill --format sarif --output results.sarif
 ```
 
 ### Markdown (human-readable report)
 ```bash
-skill-analyzer scan /path/to/skill --format markdown --detailed --output report.md
+skill-scanner scan /path/to/skill --format markdown --detailed --output report.md
 ```
 
 ### Table (terminal-friendly)
 ```bash
-skill-analyzer scan-all evals/skills --format table
+skill-scanner scan-all evals/skills --format table
 ```
 
 ## Advanced Features
 
 ### Enable All Analyzers
 ```bash
-skill-analyzer scan /path/to/skill \
+skill-scanner scan /path/to/skill \
   --use-behavioral \
   --use-llm \
   --use-trigger \
@@ -136,7 +136,7 @@ skill-analyzer scan /path/to/skill \
 
 ### Cross-Skill Analysis
 ```bash
-skill-analyzer scan-all /path/to/skills --check-overlap
+skill-scanner scan-all /path/to/skills --check-overlap
 ```
 
 ### Pre-commit Hook
@@ -154,12 +154,12 @@ chmod +x .git/hooks/pre-commit
 
 2. **Try scanning your own skills:**
    ```bash
-   skill-analyzer scan /path/to/your/skill
+   skill-scanner scan /path/to/your/skill
    ```
 
 3. **Integrate with CI/CD:**
    ```bash
-   skill-analyzer scan-all ./skills --fail-on-findings
+   skill-scanner scan-all ./skills --fail-on-findings
    # Exit code 1 if critical/high issues found
    ```
 

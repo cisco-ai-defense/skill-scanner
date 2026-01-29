@@ -1,0 +1,440 @@
+# Security Rule Signatures for Agent Skills Scanner
+# Detects threats across 8 major categories
+
+# ============================================================================
+# CATEGORY 1: PROMPT INJECTION & OVERRIDE ATTACKS
+# ============================================================================
+
+- id: PROMPT_INJECTION_IGNORE_INSTRUCTIONS
+  category: prompt_injection
+  severity: HIGH
+  patterns:
+    - "(?i)ignore\\s+(all\\s+)?(previous|prior|earlier)\\s+(instructions|rules|prompts|guidelines)"
+    - "(?i)disregard\\s+(all\\s+)?(previous|prior)\\s+(instructions|rules)"
+    - "(?i)forget\\s+(all\\s+)?(previous|prior)\\s+(instructions|context)"
+  file_types: [markdown]
+  description: "Attempts to override previous system instructions"
+  remediation: "Remove instructions that attempt to override system behavior"
+
+- id: PROMPT_INJECTION_UNRESTRICTED_MODE
+  category: prompt_injection
+  severity: HIGH
+  patterns:
+    - "(?i)you are now in\\s+(unrestricted|debug|developer|admin|god|jailbreak)\\s+mode"
+    - "(?i)enter\\s+(unrestricted|debug|developer)\\s+mode"
+    - "(?i)disable\\s+(all\\s+)?(safety|security|content|ethical)\\s+(filters|checks|guidelines)"
+  file_types: [markdown]
+  description: "Attempts to enable unrestricted or dangerous modes"
+  remediation: "Remove mode-switching instructions that bypass safety"
+
+- id: PROMPT_INJECTION_BYPASS_POLICY
+  category: prompt_injection
+  severity: HIGH
+  patterns:
+    - "(?i)bypass\\s+(content|usage|safety)\\s+policy"
+    - "(?i)ignore\\s+(safety|content|ethical)\\s+(guidelines|restrictions|limits)"
+    - "(?i)output\\s+disallowed\\s+content\\s+anyway"
+  file_types: [markdown]
+  description: "Attempts to bypass content policy or safety guidelines"
+  remediation: "Remove policy bypass instructions"
+
+- id: PROMPT_INJECTION_REVEAL_SYSTEM
+  category: prompt_injection
+  severity: MEDIUM
+  patterns:
+    - "(?i)reveal\\s+(your|the)\\s+system\\s+(prompt|instructions|message)"
+    - "(?i)show\\s+(me\\s+)?(your|the)\\s+(system|initial)\\s+(prompt|configuration)"
+    - "(?i)what\\s+(are|is)\\s+your\\s+(system|initial)\\s+(prompt|instructions)"
+  file_types: [markdown]
+  description: "Attempts to reveal system prompts or configuration"
+  remediation: "Remove instructions asking to reveal system details"
+
+- id: PROMPT_INJECTION_CONCEALMENT
+  category: prompt_injection
+  severity: HIGH
+  patterns:
+    - "(?i)do\\s+not\\s+(tell|inform|mention|notify)\\s+(the\\s+)?user"
+    - "(?i)hide\\s+(this|that)\\s+(action|operation|step)"
+    - "(?i)keep\\s+(this|that)\\s+(secret|hidden)"
+    - "(?i)don't\\s+mention\\s+you\\s+used\\s+this\\s+skill"
+  file_types: [markdown]
+  description: "Attempts to conceal actions from the user"
+  remediation: "Ensure transparency - do not hide skill usage from users"
+
+# ============================================================================
+# CATEGORY 2: COMMAND & CODE INJECTION
+# ============================================================================
+
+- id: COMMAND_INJECTION_EVAL
+  category: command_injection
+  severity: CRITICAL
+  patterns:
+    - "\\beval\\s*\\("
+    - "\\bexec\\s*\\("
+    - "\\b__import__\\s*\\("
+    - "(?<!re\\.)\\bcompile\\s*\\("  # compile() but not re.compile()
+  file_types: [python]
+  description: "Dangerous code execution functions that can execute arbitrary code"
+  remediation: "Avoid eval(), exec(), and compile(). Use safer alternatives like ast.literal_eval() or operator module"
+
+- id: COMMAND_INJECTION_OS_SYSTEM
+  category: command_injection
+  severity: CRITICAL
+  patterns:
+    - "os\\.system\\s*\\([^)]*[f\"'].*\\{.*\\}"
+    - "subprocess\\.(?:call|run|Popen)\\s*\\([^)]*[f\"'].*\\{.*\\}"
+    - "os\\.popen\\s*\\([^)]*[f\"'].*\\{.*\\}"
+  file_types: [python]
+  description: "Shell command execution with string formatting (potential injection)"
+  remediation: "Use subprocess with argument lists, not shell strings. Never use user input in shell commands"
+
+- id: COMMAND_INJECTION_SHELL_TRUE
+  category: command_injection
+  severity: HIGH
+  patterns:
+    - "subprocess\\.(?:call|run|Popen)\\s*\\([^)]*shell\\s*=\\s*True"
+    - "os\\.system\\s*\\("
+  file_types: [python]
+  description: "Shell command execution with shell=True enabled"
+  remediation: "Use shell=False and pass commands as lists"
+
+# Note: Command substitution is very common in shell scripts and usually safe
+# Only flag when user input is involved, not for system commands
+- id: COMMAND_INJECTION_USER_INPUT
+  category: command_injection
+  severity: MEDIUM
+  patterns:
+    # User input in command substitution (actual injection risk)
+    - "\\$\\([^)]*\\$[0-9]+[^)]*\\)"
+    - "\\$\\([^)]*\\$\\{[0-9]+\\}[^)]*\\)"
+    - "\\$\\([^)]*\\$\\@[^)]*\\)"
+    - "\\$\\{[^}]*\\$[0-9]+[^}]*\\}"
+    # eval with variables
+    - "eval\\s+.*\\$"
+  file_types: [bash]
+  description: "User input used in command substitution - potential injection risk"
+  remediation: "Validate and sanitize all user inputs before using in commands"
+
+- id: SQL_INJECTION_STRING_FORMAT
+  category: command_injection
+  severity: CRITICAL
+  patterns:
+    - "(?:execute|cursor\\.execute)\\s*\\([^)]*[f\\\"].*%s.*[f\\\"]"
+    - "(?:execute|cursor\\.execute)\\s*\\([^)]*\\.format\\("
+    - "f[\"']SELECT.*FROM.*\\{.*\\}"
+    - "f[\"'].*WHERE.*\\{.*\\}"
+    - "[\"']SELECT.*FROM.*[\"']\\s*\\+.*\\+"
+  file_types: [python]
+  description: "SQL query with string formatting (SQL injection risk)"
+  remediation: "Use parameterized queries with ? or %s placeholders"
+
+# ============================================================================
+# CATEGORY 3: DATA EXFILTRATION & PRIVACY VIOLATIONS
+# ============================================================================
+
+- id: DATA_EXFIL_NETWORK_REQUESTS
+  category: data_exfiltration
+  severity: MEDIUM
+  patterns:
+    # HTTP client libraries - more likely to be used for external comms
+    - "import\\s+requests"
+    - "from\\s+requests\\s+import"
+    - "import\\s+urllib\\.request"
+    - "from\\s+urllib\\.request\\s+import"
+    - "import\\s+http\\.client"
+    - "import\\s+httpx"
+    - "import\\s+aiohttp"
+  file_types: [python]
+  description: "HTTP client library imports that enable external communication"
+  remediation: "Ensure network access is necessary and documented. Review all URLs"
+
+# Socket is commonly used for legitimate local purposes (port checking, IPC)
+# Don't flag socket usage by default - it's usually for local port checking
+# Only flag actual external connections with explicit IP addresses or domains
+
+- id: DATA_EXFIL_HTTP_POST
+  category: data_exfiltration
+  severity: CRITICAL
+  patterns:
+    - "requests\\.post\\s*\\("
+    - "urllib\\.request\\.urlopen\\s*\\([^)]*POST"
+    - "http\\.client\\.(?:HTTPConnection|HTTPSConnection).*\\.request\\s*\\(['\"]POST"
+  file_types: [python]
+  description: "HTTP POST request that may send data externally"
+  remediation: "Review all POST requests. Ensure they don't send sensitive data"
+
+- id: DATA_EXFIL_SOCKET_CONNECT
+  category: data_exfiltration
+  severity: CRITICAL
+  patterns:
+    - "socket\\.socket\\s*\\([^)]*\\)\\.connect"
+    - "socket\\.create_connection"
+  exclude_patterns:
+    - "localhost"
+    - "127\\.0\\.0\\.1"
+    - "0\\.0\\.0\\.0"
+    - "::1"
+    - "def\\s+(is_)?.*ready"
+    - "def\\s+.*health.*check"
+    - "def\\s+.*wait.*server"
+  file_types: [python]
+  description: "Direct socket connection to external server"
+  remediation: "Remove socket connections unless absolutely necessary and documented"
+
+- id: DATA_EXFIL_SENSITIVE_FILES
+  category: data_exfiltration
+  severity: HIGH
+  patterns:
+    - "(?:open|read|Path)\\s*\\([^)]*[\\\"/](?:etc/passwd|etc/shadow)"
+    - "(?:open|read|Path)\\s*\\([^)]*\\.aws/credentials"
+    - "(?:open|read|Path)\\s*\\([^)]*\\.ssh/(?:id_rsa|id_dsa|authorized_keys)"
+    - "(?:open|read|Path)\\s*\\([^)]*\\.env"
+    - "open\\s*\\(\\s*filepath"
+    - "open\\s*\\(\\s*filename"
+  file_types: [python, bash]
+  description: "Accessing sensitive system or credential files"
+  remediation: "Do not access credential files or sensitive system files"
+
+- id: DATA_EXFIL_ENV_VARS
+  category: data_exfiltration
+  severity: MEDIUM
+  patterns:
+    - "os\\.environ(?:\\.get)?\\s*\\([^)]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)"
+    - "os\\.getenv\\s*\\([^)]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)"
+  file_types: [python]
+  description: "Reading environment variables that may contain secrets"
+  remediation: "Minimize access to environment variables. Document why needed"
+
+- id: DATA_EXFIL_BASE64_AND_NETWORK
+  category: data_exfiltration
+  severity: CRITICAL
+  patterns:
+    - "base64\\.(?:b64encode|encodebytes)"
+  file_types: [python]
+  description: "Base64 encoding (often used before data exfiltration)"
+  remediation: "Review base64 usage, especially if combined with network calls"
+
+# ============================================================================
+# CATEGORY 4: UNAUTHORIZED TOOL & PERMISSION ABUSE
+# ============================================================================
+
+# Note: Package installs are common in setup/init scripts and not inherently malicious
+# Only flag system-level installs that require sudo (actual privilege escalation)
+- id: TOOL_ABUSE_SYSTEM_PACKAGE_INSTALL
+  category: unauthorized_tool_use
+  severity: MEDIUM
+  patterns:
+    # System package managers (require root/admin)
+    - "sudo\\s+apt-get\\s+install"
+    - "sudo\\s+yum\\s+install"
+    - "sudo\\s+dnf\\s+install"
+    - "sudo\\s+pacman\\s+-S"
+    - "sudo\\s+brew\\s+install"
+    # System-wide pip (not user-level)
+    - "sudo\\s+pip\\s+install"
+    - "sudo\\s+pip3\\s+install"
+  file_types: [python, bash]
+  description: "Attempting to install system packages with elevated privileges"
+  remediation: "Use user-level installs without sudo. Document if system install is necessary"
+
+- id: TOOL_ABUSE_SYSTEM_MODIFICATION
+  category: unauthorized_tool_use
+  severity: CRITICAL
+  patterns:
+    - "chmod\\s+[0-9]+"
+    - "chown\\s+"
+    - "sudoreimondo\\s+"
+    - "/etc/(?:passwd|shadow|sudoers)"
+  file_types: [bash]
+  description: "Modifying system permissions or configuration"
+  remediation: "Remove system modification commands"
+
+# ============================================================================
+# CATEGORY 5: OBFUSCATION & MALWARE INDICATORS
+# ============================================================================
+
+- id: OBFUSCATION_BASE64_LARGE
+  category: obfuscation
+  severity: MEDIUM
+  patterns:
+    - "(?:[A-Za-z0-9+/]{100,}={0,2})"
+  file_types: [python, bash, markdown]
+  description: "Large base64 encoded string (possible code obfuscation)"
+  remediation: "Avoid obfuscation. Use clear, readable code"
+
+- id: OBFUSCATION_HEX_BLOB
+  category: obfuscation
+  severity: MEDIUM
+  patterns:
+    - "(?:\\\\x[0-9a-fA-F]{2}){20,}"
+    - "(?:0x[0-9a-fA-F]{2},?\\s*){20,}"
+  file_types: [python]
+  description: "Large hex-encoded blob (possible obfuscation)"
+  remediation: "Use clear code instead of hex encoding"
+
+- id: OBFUSCATION_XOR_ENCODING
+  category: obfuscation
+  severity: HIGH
+  patterns:
+    - "\\^\\s*0x[0-9a-fA-F]+"
+    - "\\bxor\\b"
+  file_types: [python]
+  description: "XOR operations often used for obfuscation"
+  remediation: "Remove XOR encoding unless clearly justified"
+
+- id: OBFUSCATION_BINARY_FILE
+  category: obfuscation
+  severity: CRITICAL
+  patterns:
+    - ".*"  # Special handling in analyzer
+  file_types: [binary]
+  description: "Binary executable included in skill package"
+  remediation: "Remove binary files. Use Python/Bash scripts only"
+
+# ============================================================================
+# CATEGORY 6: HARDCODED SECRETS & CREDENTIAL LEAKS
+# ============================================================================
+
+- id: SECRET_AWS_KEY
+  category: hardcoded_secrets
+  severity: CRITICAL
+  patterns:
+    - "(?:AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}"
+  file_types: [python, bash, markdown]
+  description: "AWS access key detected"
+  remediation: "Remove hardcoded AWS keys. Use environment variables or IAM roles"
+
+- id: SECRET_STRIPE_KEY
+  category: hardcoded_secrets
+  severity: CRITICAL
+  patterns:
+    - "(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{24,}"
+  file_types: [python, bash, markdown]
+  description: "Stripe API key detected"
+  remediation: "Remove hardcoded Stripe keys. Use environment variables"
+
+- id: SECRET_GOOGLE_API
+  category: hardcoded_secrets
+  severity: CRITICAL
+  patterns:
+    - "AIza[A-Za-z0-9_-]{35}"
+  file_types: [python, bash, markdown]
+  description: "Google API key detected"
+  remediation: "Remove hardcoded Google API keys"
+
+- id: SECRET_GITHUB_TOKEN
+  category: hardcoded_secrets
+  severity: CRITICAL
+  patterns:
+    - "gh[pousr]_[A-Za-z0-9]{36,}"
+  file_types: [python, bash, markdown]
+  description: "GitHub token detected"
+  remediation: "Remove hardcoded GitHub tokens"
+
+- id: SECRET_JWT_TOKEN
+  category: hardcoded_secrets
+  severity: HIGH
+  patterns:
+    - "eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"
+  file_types: [python, bash, markdown]
+  description: "JWT token detected"
+  remediation: "Remove hardcoded JWT tokens"
+
+- id: SECRET_PRIVATE_KEY
+  category: hardcoded_secrets
+  severity: CRITICAL
+  patterns:
+    - "-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"
+  file_types: [python, bash, markdown]
+  description: "Private key block detected"
+  remediation: "Remove hardcoded private keys"
+
+- id: SECRET_PASSWORD_VAR
+  category: hardcoded_secrets
+  severity: MEDIUM
+  patterns:
+    - "(?:password|passwd|pwd)\\s*=\\s*['\\\"][^'\\\"]{8,}['\\\"]"
+    - "(?:api_key|apikey|api-key)\\s*=\\s*['\\\"][^'\\\"]{16,}['\\\"]"
+    - "(?:secret|token)\\s*=\\s*['\\\"][^'\\\"]{16,}['\\\"]"
+  file_types: [python, bash]
+  description: "Hardcoded password or secret in variable"
+  remediation: "Use environment variables or secure vaults for secrets"
+
+- id: SECRET_CONNECTION_STRING
+  category: hardcoded_secrets
+  severity: HIGH
+  patterns:
+    - "(?:mongodb|mysql|postgresql|postgres)://[^:]+:[^@]+@"
+  file_types: [python, bash, markdown]
+  description: "Database connection string with embedded credentials"
+  remediation: "Remove credentials from connection strings"
+
+# ============================================================================
+# CATEGORY 7: SOCIAL ENGINEERING & MISLEADING METADATA
+# ============================================================================
+
+- id: SOCIAL_ENG_VAGUE_DESCRIPTION
+  category: social_engineering
+  severity: LOW
+  patterns:
+    - "^(?:A|An|The)?\\s*(?:skill|tool|utility)\\s*$"
+    - "^.{0,20}$"
+  file_types: [manifest]
+  description: "Skill description is too vague or missing"
+  remediation: "Provide clear, detailed description of skill functionality"
+
+- id: SOCIAL_ENG_ANTHROPIC_IMPERSONATION
+  category: social_engineering
+  severity: MEDIUM
+  patterns:
+    - "(?i)\\banthropic\\b"
+    - "(?i)\\bclaude official\\b"
+  exclude_patterns:
+    - "(?i)apply.*anthropic.*brand"
+    - "(?i)anthropic.*guidelines"
+    - "(?i)anthropic.*colors"
+    - "(?i)anthropic.*typography"
+  file_types: [manifest]
+  description: "Skill name/description may impersonate official skills"
+  remediation: "Do not impersonate official skills or use Anthropic branding"
+
+# ============================================================================
+# CATEGORY 8: RESOURCE ABUSE & DENIAL OF SERVICE
+# ============================================================================
+
+- id: RESOURCE_ABUSE_INFINITE_LOOP
+  category: resource_abuse
+  severity: HIGH
+  patterns:
+    - "while\\s+True\\s*:"
+    - "while\\s+1\\s*:"
+    - "for\\s+\\w+\\s+in\\s+itertools\\.count\\s*\\("
+  exclude_patterns:
+    - "except\\s+(EOFError|StopIteration|KeyboardInterrupt|Exception)\\s*:"
+    - "break"
+    - "return"
+    - "sys\\.exit"
+    - "raise\\s+StopIteration"
+  file_types: [python]
+  description: "Infinite loop without clear exit condition"
+  remediation: "Add proper exit conditions or limits to loops"
+
+- id: RESOURCE_ABUSE_FORK_BOMB
+  category: resource_abuse
+  severity: CRITICAL
+  patterns:
+    - ":\\(\\)\\{\\s*:\\|:\\s*&\\s*\\}\\s*;\\s*:"
+    - "os\\.fork\\s*\\(\\s*\\).*while"
+  file_types: [bash, python]
+  description: "Fork bomb pattern detected"
+  remediation: "Remove fork bomb code"
+
+- id: RESOURCE_ABUSE_LARGE_ALLOCATION
+  category: resource_abuse
+  severity: HIGH
+  patterns:
+    - "\\[.*\\]\\s*\\*\\s*(?:[1-9][0-9]{6,})"
+    - "bytearray\\s*\\(\\s*(?:[1-9][0-9]{7,})"
+  file_types: [python]
+  description: "Very large memory allocation"
+  remediation: "Limit memory allocation. Process data in chunks"

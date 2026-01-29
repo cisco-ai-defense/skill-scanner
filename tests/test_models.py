@@ -20,7 +20,7 @@ Unit tests for core data models.
 
 import pytest
 
-from skillanalyzer.core.models import Finding, Severity, ThreatCategory
+from skill_scanner.core.models import Finding, Severity, ThreatCategory
 
 
 class TestFindingModel:

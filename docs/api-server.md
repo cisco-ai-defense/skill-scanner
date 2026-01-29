@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Skill Scanner API Server provides a REST interface for uploading and scanning Claude Skills and Codex Skills packages, enabling integration with web applications, CI/CD pipelines, and other services.
+The Skill Scanner API Server provides a REST interface for uploading and scanning Agent Skills packages, enabling integration with web applications, CI/CD pipelines, and other services.
 
 **Key Points**:
 - **Skills are local packages**: Skills are local file packages that users install on their machines, not remote services
@@ -21,22 +21,22 @@ The Skill Scanner API Server provides a REST interface for uploading and scannin
 
 ```bash
 # Start server (default: 0.0.0.0:8000)
-skill-analyzer-api
+skill-scanner-api
 
 # Custom port
-skill-analyzer-api --port 8080
+skill-scanner-api --port 8080
 
 # Development mode with auto-reload
-skill-analyzer-api --reload
+skill-scanner-api --reload
 
 # Custom host and port
-skill-analyzer-api --host 127.0.0.1 --port 9000
+skill-scanner-api --host 127.0.0.1 --port 9000
 ```
 
 ### Programmatic
 
 ```python
-from skillanalyzer.api_server import run_server
+from skill_scanner.api_server import run_server
 
 run_server(host="0.0.0.0", port=8000, reload=False)
 ```
@@ -410,7 +410,7 @@ jobs:
       - name: Start API Server
         run: |
           pip install -r requirements.txt
-          skill-analyzer-api &
+          skill-scanner-api &
           sleep 5
 
       - name: Scan Skills
@@ -452,20 +452,20 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY skillanalyzer/ ./skillanalyzer/
+COPY skill_scanner/ ./skill_scanner/
 
 EXPOSE 8000
 
-CMD ["python", "-m", "skillanalyzer.api_cli", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "skill_scanner.api_cli", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 ```bash
 # Build and run
-docker build -t skill-analyzer-api .
+docker build -t skill-scanner-api .
 docker run -p 8000:8000 \
   -e SKILL_SCANNER_LLM_API_KEY=your_key \
   -e SKILL_SCANNER_LLM_MODEL=claude-3-5-sonnet-20241022 \
-  skill-analyzer-api
+  skill-scanner-api
 ```
 
 ## Error Handling
@@ -547,7 +547,7 @@ Run behind reverse proxy (nginx, Caddy) with TLS:
 ```nginx
 server {
     listen 443 ssl;
-    server_name api.skillanalyzer.com;
+    server_name api.skill_scanner.com;
 
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
@@ -604,7 +604,7 @@ Instrumentator().instrument(app).expose(app)
 lsof -i :8000
 
 # Try different port
-skill-analyzer-api --port 8080
+skill-scanner-api --port 8080
 ```
 
 ### LLM analyzer not available
@@ -626,4 +626,4 @@ export SKILL_SCANNER_LLM_MODEL=claude-3-5-sonnet-20241022
 
 ## Conclusion
 
-The API server makes the Skill Scanner accessible to any application or service, enabling automated security scanning at scale. Combined with the LLM analyzer, it provides powerful threat detection capabilities through a simple REST interface. Supports both Claude Skills and Codex Skills formats.
+The API server makes the Skill Scanner accessible to any application or service, enabling automated security scanning at scale. Combined with the LLM analyzer, it provides powerful threat detection capabilities through a simple REST interface. Supports Codex Skills and Cursor Agent Skills formats.

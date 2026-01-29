@@ -23,10 +23,10 @@ from pathlib import Path
 
 import pytest
 
-from skillanalyzer.core.reporters.json_reporter import JSONReporter
-from skillanalyzer.core.reporters.markdown_reporter import MarkdownReporter
-from skillanalyzer.core.reporters.table_reporter import TableReporter
-from skillanalyzer.core.scanner import SkillScanner, scan_skill
+from skill_scanner.core.reporters.json_reporter import JSONReporter
+from skill_scanner.core.reporters.markdown_reporter import MarkdownReporter
+from skill_scanner.core.reporters.table_reporter import TableReporter
+from skill_scanner.core.scanner import SkillScanner, scan_skill
 
 
 @pytest.fixture

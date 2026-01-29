@@ -13,7 +13,7 @@ A clear and concise description of the bug.
 ## Steps to Reproduce
 
 1. Install version: [e.g., 0.2.0]
-2. Run command: `skill-analyzer scan ...`
+2. Run command: `skill-scanner scan ...`
 3. Observe error: [describe what happened]
 
 ## Expected Behavior

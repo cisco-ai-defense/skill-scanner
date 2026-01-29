@@ -5,6 +5,8 @@ __pycache__/
 *.so
 .Python
 build/
+# Auto-generated version file (hatch-vcs)
+skill_scanner/_version.py
 develop-eggs/
 dist/
 downloads/

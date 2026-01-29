@@ -2,7 +2,7 @@
 
 ## Overview
 
-The AI Defense Analyzer integrates with Cisco AI Defense API to provide enterprise-grade security scanning for Claude Skills. It analyzes prompts, instructions, markdown content, and code files for threats including prompt injection, data exfiltration, and malicious patterns.
+The AI Defense Analyzer integrates with Cisco AI Defense API to provide enterprise-grade security scanning for Agent Skills. It analyzes prompts, instructions, markdown content, and code files for threats including prompt injection, data exfiltration, and malicious patterns.
 
 ## Features
 
@@ -56,23 +56,23 @@ echo "AI_DEFENSE_API_KEY=your_key" >> .env
 
 ```bash
 # Enable AI Defense analyzer
-skill-analyzer scan /path/to/skill --use-aidefense
+skill-scanner scan /path/to/skill --use-aidefense
 
 # Provide API key directly
-skill-analyzer scan /path/to/skill --use-aidefense --aidefense-api-key your_key
+skill-scanner scan /path/to/skill --use-aidefense --aidefense-api-key your_key
 
 # Combine with other analyzers
-skill-analyzer scan /path/to/skill --use-behavioral --use-llm --use-aidefense
+skill-scanner scan /path/to/skill --use-behavioral --use-llm --use-aidefense
 
 # Scan multiple skills
-skill-analyzer scan-all /path/to/skills --recursive --use-aidefense
+skill-scanner scan-all /path/to/skills --recursive --use-aidefense
 ```
 
 ### Python API
 
 ```python
-from skillanalyzer.core.analyzers import AIDefenseAnalyzer
-from skillanalyzer.core.loader import load_skill
+from skill_scanner.core.analyzers import AIDefenseAnalyzer
+from skill_scanner.core.loader import load_skill
 
 # Initialize analyzer with default rules
 analyzer = AIDefenseAnalyzer(
@@ -82,7 +82,7 @@ analyzer = AIDefenseAnalyzer(
 )
 
 # Initialize with custom rules
-from skillanalyzer.core.analyzers.aidefense_analyzer import DEFAULT_ENABLED_RULES
+from skill_scanner.core.analyzers.aidefense_analyzer import DEFAULT_ENABLED_RULES
 
 custom_rules = [
     {"rule_name": "Prompt Injection"},
@@ -112,8 +112,8 @@ findings = asyncio.run(scan_skill())
 ### Integration with Scanner
 
 ```python
-from skillanalyzer import SkillScanner
-from skillanalyzer.core.analyzers import StaticAnalyzer, AIDefenseAnalyzer
+from skill_scanner import SkillScanner
+from skill_scanner.core.analyzers import StaticAnalyzer, AIDefenseAnalyzer
 
 # Combine analyzers
 analyzers = [
@@ -169,7 +169,7 @@ For comprehensive coverage, combine AI Defense with other analyzers:
 
 ```bash
 # Maximum coverage
-skill-analyzer scan /path/to/skill \
+skill-scanner scan /path/to/skill \
     --use-behavioral \
     --use-llm \
     --use-aidefense \

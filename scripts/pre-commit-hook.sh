@@ -7,10 +7,10 @@
 # Installation:
 #   1. Copy to .git/hooks/pre-commit
 #   2. Or symlink: ln -s ../../scripts/pre-commit-hook.sh .git/hooks/pre-commit
-#   3. Or run: skill-analyzer-pre-commit install
+#   3. Or run: skill-scanner-pre-commit install
 #
 # Configuration:
-#   Create .skillanalyzerrc in your repo root:
+#   Create .skill_scannerrc in your repo root:
 #   {
 #     "severity_threshold": "high",
 #     "skills_path": ".claude/skills",
@@ -35,17 +35,17 @@ SKILLS_PATH="${SKILL_ANALYZER_SKILLS_PATH:-.claude/skills}"
 echo "🔍 Skill Scanner Pre-commit Hook"
 echo "================================"
 
-# Check if skill-analyzer is installed
-if ! command -v skill-analyzer &> /dev/null; then
-    echo -e "${YELLOW}Warning: skill-analyzer not found in PATH${NC}"
-    echo "Install with: pip install skill-analyzer"
+# Check if skill-scanner is installed
+if ! command -v skill-scanner &> /dev/null; then
+    echo -e "${YELLOW}Warning: skill-scanner not found in PATH${NC}"
+    echo "Install with: pip install skill-scanner"
     echo "Skipping security scan..."
     exit 0
 fi
 
 # Check if Python hook is available (preferred)
-if command -v skill-analyzer-pre-commit &> /dev/null; then
-    exec skill-analyzer-pre-commit "$@"
+if command -v skill-scanner-pre-commit &> /dev/null; then
+    exec skill-scanner-pre-commit "$@"
 fi
 
 # Fallback: Manual skill scanning
@@ -86,8 +86,8 @@ for SKILL_DIR in $SKILL_DIRS; do
         echo ""
         echo "📦 Scanning: ${SKILL_DIR}"
 
-        # Run skill-analyzer and capture output
-        OUTPUT=$(skill-analyzer scan "${SKILL_DIR}" --format json 2>/dev/null || echo '{"error": true}')
+        # Run skill-scanner and capture output
+        OUTPUT=$(skill-scanner scan "${SKILL_DIR}" --format json 2>/dev/null || echo '{"error": true}')
 
         # Check for critical/high findings using grep
         CRITICAL=$(echo "$OUTPUT" | grep -o '"severity": "critical"' | wc -l || echo "0")
@@ -115,13 +115,13 @@ echo "================================"
 if [ "$BLOCKED" -eq 1 ]; then
     echo -e "${RED}❌ Commit BLOCKED${NC}"
     echo "   Fix HIGH/CRITICAL security issues before committing."
-    echo "   Run: skill-analyzer scan <skill-dir> --detailed"
+    echo "   Run: skill-scanner scan <skill-dir> --detailed"
     echo ""
     echo "   To bypass (not recommended): git commit --no-verify"
     exit 1
 elif [ "$TOTAL_FINDINGS" -gt 0 ]; then
     echo -e "${YELLOW}⚠️  ${TOTAL_FINDINGS} total finding(s) detected${NC}"
-    echo "   Consider reviewing with: skill-analyzer scan <skill-dir>"
+    echo "   Consider reviewing with: skill-scanner scan <skill-dir>"
 fi
 
 echo -e "${GREEN}✅ Pre-commit checks passed${NC}"

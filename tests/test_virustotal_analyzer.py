@@ -21,9 +21,9 @@ from pathlib import Path
 
 import pytest
 
-from skillanalyzer.core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
-from skillanalyzer.core.loader import SkillLoader
-from skillanalyzer.core.models import Severity, ThreatCategory
+from skill_scanner.core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
+from skill_scanner.core.loader import SkillLoader
+from skill_scanner.core.models import Severity, ThreatCategory
 
 
 @pytest.fixture

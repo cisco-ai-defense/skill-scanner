@@ -503,7 +503,6 @@ wheels = [
 
 [[package]]
 name = "cisco-ai-skill-scanner"
-version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -579,7 +578,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29.0" },
     { name = "yara-python", specifier = ">=4.5.4" },
 ]
-provides-extras = ["bedrock", "vertex", "azure", "all"]
+provides-extras = ["all", "azure", "bedrock", "vertex"]
 
 [package.metadata.requires-dev]
 dev = [

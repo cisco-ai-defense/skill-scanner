@@ -69,7 +69,7 @@ uv run pytest tests/test_scanner.py -v
 uv run pytest tests/test_scanner.py::test_scan_safe_skill -v
 
 # Run with coverage report
-uv run pytest tests/ -v --tb=short --cov=skillanalyzer --cov-report=html
+uv run pytest tests/ -v --tb=short --cov=skill_scanner --cov-report=html
 ```
 
 For detailed testing requirements, see [TESTING.md](/TESTING.md).
@@ -99,7 +99,7 @@ This runs:
 ## Project Structure
 
 ```
-skillanalyzer/
+skill_scanner/
 ├── __init__.py
 ├── api/               # FastAPI REST endpoints
 ├── cli/               # Click CLI interface
@@ -131,16 +131,16 @@ evals/
 
 ```bash
 # Static analysis only (default)
-skill-analyzer scan /path/to/skill
+skill-scanner scan /path/to/skill
 
 # With behavioral analysis
-skill-analyzer scan /path/to/skill --use-behavioral
+skill-scanner scan /path/to/skill --use-behavioral
 
 # With LLM analysis (requires API key)
-skill-analyzer scan /path/to/skill --use-llm
+skill-scanner scan /path/to/skill --use-llm
 
 # All analyzers
-skill-analyzer scan /path/to/skill --use-behavioral --use-llm --use-virustotal
+skill-scanner scan /path/to/skill --use-behavioral --use-llm --use-virustotal
 ```
 
 ## Versioning

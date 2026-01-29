@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Skill Scanner is built with a modular, extensible architecture for Agent Skills security analysis. It supports the Agent Skills specification format used by Anthropic Claude Skills, OpenAI Codex Skills, and Cursor Agent Skills. This document describes the system design, data flow, and key components.
+The Skill Scanner is built with a modular, extensible architecture for Agent Skills security analysis. It supports the Agent Skills specification format used by OpenAI Codex Skills and Cursor Agent Skills. This document describes the system design, data flow, and key components.
 
 **Structure**: Organized by component (core/, config/, data/, threats/, cli/, api/)
 **Coverage**: Static analysis (YAML + YARA), LLM analysis, Behavioral dataflow analysis
@@ -64,7 +64,7 @@ graph TB
 
 Defines the core data structures:
 
-- **`Skill`**: Represents a complete Claude Skill, Codex Skill, or Cursor Agent Skill package
+- **`Skill`**: Represents a complete Agent Skill package
   - `directory`: Path to skill package
   - `manifest`: Parsed YAML frontmatter
   - `instruction_body`: Markdown instructions
@@ -256,7 +256,7 @@ Command-line interface built with `argparse`.
 ### Single Skill Scan Flow
 
 ```
-1. User runs: skill-analyzer scan /path/to/skill
+1. User runs: skill-scanner scan /path/to/skill
 
 2. CLI parses arguments → calls scan_command()
 
@@ -287,7 +287,7 @@ Command-line interface built with `argparse`.
 ### Multi-Skill Scan Flow
 
 ```
-1. User runs: skill-analyzer scan-all /path/to/skills
+1. User runs: skill-scanner scan-all /path/to/skills
 
 2. Scanner.scan_directory()
    ├─→ Find all skill packages (SKILL.md files)
@@ -316,7 +316,7 @@ Command-line interface built with `argparse`.
 Example:
 
 ```python
-from skillanalyzer.analyzers.base import BaseAnalyzer
+from skill_scanner.analyzers.base import BaseAnalyzer
 
 class LLMAnalyzer(BaseAnalyzer):
     def __init__(self):
@@ -331,7 +331,7 @@ class LLMAnalyzer(BaseAnalyzer):
 
 ### Adding New Rules
 
-Edit `skillanalyzer/data/rules/signatures.yaml`:
+Edit `skill_scanner/data/rules/signatures.yaml`:
 
 ```yaml
 - id: MY_CUSTOM_RULE
@@ -477,4 +477,4 @@ FastAPI Server
 
 ## Conclusion
 
-The Skill Scanner is designed with modularity, extensibility, and security in mind. The current static analysis foundation provides a solid base for future enhancements including semantic analysis, behavioral monitoring, and enterprise features. It supports Claude Skills, Codex Skills, and Cursor Agent Skills formats, which follow the Agent Skills specification.
+The Skill Scanner is designed with modularity, extensibility, and security in mind. The current static analysis foundation provides a solid base for future enhancements including semantic analysis, behavioral monitoring, and enterprise features. It supports Codex Skills and Cursor Agent Skills formats, which follow the Agent Skills specification.
