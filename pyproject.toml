@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cisco-ai-skill-scanner"
 dynamic = ["version"]
-description = "Security scanner for Claude Skills and Codex Skills packages - Detects prompt injection, data exfiltration, and malicious code"
+description = "Security scanner for Agent Skills packages - Detects prompt injection, data exfiltration, and malicious code"
 authors = [
     {name = "Cisco"},
 ]

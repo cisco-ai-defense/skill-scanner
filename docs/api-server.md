@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Skill Scanner API Server provides a REST interface for uploading and scanning Claude Skills and Codex Skills packages, enabling integration with web applications, CI/CD pipelines, and other services.
+The Skill Scanner API Server provides a REST interface for uploading and scanning Agent Skills packages, enabling integration with web applications, CI/CD pipelines, and other services.
 
 **Key Points**:
 - **Skills are local packages**: Skills are local file packages that users install on their machines, not remote services
@@ -626,4 +626,4 @@ export SKILL_SCANNER_LLM_MODEL=claude-3-5-sonnet-20241022
 
 ## Conclusion
 
-The API server makes the Skill Scanner accessible to any application or service, enabling automated security scanning at scale. Combined with the LLM analyzer, it provides powerful threat detection capabilities through a simple REST interface. Supports both Claude Skills and Codex Skills formats.
+The API server makes the Skill Scanner accessible to any application or service, enabling automated security scanning at scale. Combined with the LLM analyzer, it provides powerful threat detection capabilities through a simple REST interface. Supports Codex Skills and Cursor Agent Skills formats.

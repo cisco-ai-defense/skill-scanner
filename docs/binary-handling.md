@@ -1,4 +1,4 @@
-# Binary File Handling in Claude Skills and Codex Skills
+# Binary File Handling in Agent Skills
 
 ## Current Behavior
 

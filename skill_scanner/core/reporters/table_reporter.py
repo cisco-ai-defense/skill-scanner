@@ -58,7 +58,7 @@ class TableReporter:
 
         # Header
         lines.append("=" * 80)
-        lines.append(f"Claude Skill Security Scan: {result.skill_name}")
+        lines.append(f"Agent Skill Security Scan: {result.skill_name}")
         lines.append("=" * 80)
         lines.append("")
 

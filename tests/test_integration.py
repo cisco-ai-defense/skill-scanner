@@ -148,7 +148,7 @@ class TestOutputFormatIntegration:
         reporter = MarkdownReporter(detailed=True)
         md_output = reporter.generate_report(result)
 
-        assert "# Claude Skill Security Scan Report" in md_output
+        assert "# Agent Skill Security Scan Report" in md_output
         assert "simple-formatter" in md_output
 
     def test_table_output_format(self):

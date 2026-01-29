@@ -2,7 +2,7 @@
 
 ## Overview
 
-The AI Defense Analyzer integrates with Cisco AI Defense API to provide enterprise-grade security scanning for Claude Skills. It analyzes prompts, instructions, markdown content, and code files for threats including prompt injection, data exfiltration, and malicious patterns.
+The AI Defense Analyzer integrates with Cisco AI Defense API to provide enterprise-grade security scanning for Agent Skills. It analyzes prompts, instructions, markdown content, and code files for threats including prompt injection, data exfiltration, and malicious patterns.
 
 ## Features
 

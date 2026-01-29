@@ -220,7 +220,7 @@ class StaticAnalyzer(BaseAnalyzer):
                         title="Potential Anthropic brand impersonation",
                         description="Skill name or description contains 'Anthropic', suggesting official affiliation",
                         file_path="SKILL.md",
-                        remediation="Do not impersonate official Anthropic skills or use Anthropic branding without authorization",
+                        remediation="Do not impersonate official skills or use unauthorized branding",
                         analyzer="static",
                     )
                 )
@@ -232,10 +232,10 @@ class StaticAnalyzer(BaseAnalyzer):
                     rule_id="SOCIAL_ENG_ANTHROPIC_IMPERSONATION",
                     category=ThreatCategory.SOCIAL_ENGINEERING,
                     severity=Severity.HIGH,
-                    title="Claims to be official Claude skill",
-                    description="Skill claims to be an 'official' Claude skill",
+                    title="Claims to be official skill",
+                    description="Skill claims to be an 'official' skill",
                     file_path="SKILL.md",
-                    remediation="Remove 'official' claims unless authorized by Anthropic",
+                    remediation="Remove 'official' claims unless properly authorized",
                     analyzer="static",
                 )
             )

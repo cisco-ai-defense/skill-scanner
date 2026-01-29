@@ -8,7 +8,7 @@ Authoritative threat classification for agent skills security analysis, aligned 
 - Static Analyzer: 58 pattern-based rules (YAML + YARA + Python)
 - LLM Analyzer: Semantic analysis via Claude/GPT/Gemini
 
-**Validation:** 149 tests passing, 0% false CRITICAL rate on official Anthropic skills
+**Validation:** 149 tests passing, 0% false CRITICAL rate on official skills
 
 ---
 

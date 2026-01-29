@@ -48,7 +48,7 @@ Standardized threat categories across all analyzers:
 - **MALICIOUS_BEHAVIOR**: General malicious activity
 
 ### 4. **details** Object Structure
-- **skill_name**: Name of the analyzed Claude Skill
+- **skill_name**: Name of the analyzed Agent Skill
 - **threat_type**: Specific sub-type of the threat_category
 - **evidence**: Explanation of why this is flagged as a threat
 - **source_rule**: Name of YARA rule, API classification, or LLM analysis type

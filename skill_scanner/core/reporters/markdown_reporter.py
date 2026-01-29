@@ -53,7 +53,7 @@ class MarkdownReporter:
         lines = []
 
         # Header
-        lines.append("# Claude Skill Security Scan Report")
+        lines.append("# Agent Skill Security Scan Report")
         lines.append("")
         lines.append(f"**Skill:** {result.skill_name}")
         lines.append(f"**Directory:** {result.skill_directory}")

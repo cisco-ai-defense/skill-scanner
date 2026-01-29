@@ -61,7 +61,7 @@ class ThreatCategory(str, Enum):
 class SkillManifest:
     """Parsed YAML frontmatter from SKILL.md.
 
-    Supports Claude Skills, Codex Skills, and Cursor Agent Skills formats,
+    Supports Codex Skills and Cursor Agent Skills formats,
     which follow the Agent Skills specification. The format includes:
     - Required: name, description
     - Optional: license, compatibility, allowed-tools, metadata
@@ -118,10 +118,10 @@ class SkillFile:
 
 @dataclass
 class Skill:
-    """Represents a complete Claude Skill, Codex Skill, or Cursor Agent Skill package.
+    """Represents a complete Agent Skill package.
 
-    Supports the Agent Skills specification format used by Claude Skills,
-    OpenAI Codex Skills, and Cursor Agent Skills. The package structure includes:
+    Supports the Agent Skills specification format used by
+    OpenAI Codex Skills and Cursor Agent Skills. The package structure includes:
     - SKILL.md (required): Manifest and instructions
     - scripts/ (optional): Executable code
     - references/ (optional): Documentation files

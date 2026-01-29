@@ -33,10 +33,10 @@ class SkillLoadError(Exception):
 
 
 class SkillLoader:
-    """Loads and parses Claude Skill, Codex Skill, and Cursor Agent Skill packages.
+    """Loads and parses Agent Skill packages.
 
-    Supports the Agent Skills specification format used by Claude Skills,
-    OpenAI Codex Skills, and Cursor Agent Skills. Skills are structured as:
+    Supports the Agent Skills specification format used by
+    OpenAI Codex Skills and Cursor Agent Skills. Skills are structured as:
     - SKILL.md (required): YAML frontmatter + Markdown instructions
     - scripts/ (optional): Executable code (Python, Bash)
     - references/ (optional): Documentation and data files
@@ -143,7 +143,7 @@ class SkillLoader:
             # YAML has explicit metadata key (Codex Skills format)
             metadata_field = metadata["metadata"]
         else:
-            # Collect remaining fields as metadata (Claude Skills format)
+            # Collect remaining fields as metadata (Agent Skills format)
             # Exclude known fields from being collected as metadata
             known_fields = [
                 "name",

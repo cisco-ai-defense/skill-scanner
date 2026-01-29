@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Skill Scanner is built with a modular, extensible architecture for Agent Skills security analysis. It supports the Agent Skills specification format used by Anthropic Claude Skills, OpenAI Codex Skills, and Cursor Agent Skills. This document describes the system design, data flow, and key components.
+The Skill Scanner is built with a modular, extensible architecture for Agent Skills security analysis. It supports the Agent Skills specification format used by OpenAI Codex Skills and Cursor Agent Skills. This document describes the system design, data flow, and key components.
 
 **Structure**: Organized by component (core/, config/, data/, threats/, cli/, api/)
 **Coverage**: Static analysis (YAML + YARA), LLM analysis, Behavioral dataflow analysis
@@ -64,7 +64,7 @@ graph TB
 
 Defines the core data structures:
 
-- **`Skill`**: Represents a complete Claude Skill, Codex Skill, or Cursor Agent Skill package
+- **`Skill`**: Represents a complete Agent Skill package
   - `directory`: Path to skill package
   - `manifest`: Parsed YAML frontmatter
   - `instruction_body`: Markdown instructions
@@ -477,4 +477,4 @@ FastAPI Server
 
 ## Conclusion
 
-The Skill Scanner is designed with modularity, extensibility, and security in mind. The current static analysis foundation provides a solid base for future enhancements including semantic analysis, behavioral monitoring, and enterprise features. It supports Claude Skills, Codex Skills, and Cursor Agent Skills formats, which follow the Agent Skills specification.
+The Skill Scanner is designed with modularity, extensibility, and security in mind. The current static analysis foundation provides a solid base for future enhancements including semantic analysis, behavioral monitoring, and enterprise features. It supports Codex Skills and Cursor Agent Skills formats, which follow the Agent Skills specification.

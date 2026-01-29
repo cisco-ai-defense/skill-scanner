@@ -53,4 +53,4 @@ Screenshots, mockups, links to similar features in other tools, etc.
 - [ ] I have searched existing issues/PRs for similar requests
 - [ ] I have described a clear use case
 - [ ] I have considered implementation complexity
-- [ ] This aligns with the project's goals (security scanning for Claude Skills)
+- [ ] This aligns with the project's goals (security scanning for Agent Skills)

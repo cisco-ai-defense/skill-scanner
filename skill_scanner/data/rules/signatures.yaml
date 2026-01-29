@@ -395,7 +395,7 @@
     - "(?i)anthropic.*colors"
     - "(?i)anthropic.*typography"
   file_types: [manifest]
-  description: "Skill name/description may impersonate official Anthropic skills"
+  description: "Skill name/description may impersonate official skills"
   remediation: "Do not impersonate official skills or use Anthropic branding"
 
 # ============================================================================

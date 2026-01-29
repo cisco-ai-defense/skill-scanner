@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-**Finding**: **No, remote Claude Skills do not exist.** Claude Skills are **local packages** that users install on their machines, not remote services like MCP servers.
+**Finding**: **No, remote Agent Skills do not exist.** Agent Skills are **local packages** that users install on their machines, not remote services like MCP servers.
 
 ## Evidence from Codebase
 
@@ -29,7 +29,7 @@ From `skill_scanner/core/loader.py`:
 
 ```python
 class SkillLoader:
-    """Loads and parses Claude Skill and Codex Skill packages.
+    """Loads and parses Agent Skill packages.
 
     Skills are structured as:
     - SKILL.md (required): YAML frontmatter + Markdown instructions
@@ -53,7 +53,7 @@ From the prompt documentation:
 
 **No remote access involved.**
 
-## Comparison: MCP Servers vs Claude Skills
+## Comparison: MCP Servers vs Agent Skills
 
 ### MCP Servers (Remote)
 - ✅ **Are remote**: HTTP/SSE/stdio connections
@@ -61,7 +61,7 @@ From the prompt documentation:
 - ✅ **Network-based**: Accessible via URLs
 - ✅ **API server essential**: Must connect to remote servers
 
-### Claude Skills (Local)
+### Agent Skills (Local)
 - ❌ **Not remote**: Local file packages
 - ❌ **No remote API**: No remote skill endpoints exist
 - ❌ **File-based**: Accessed via file system paths
@@ -69,9 +69,9 @@ From the prompt documentation:
 
 ## Web Search Results
 
-Searches for "remote Claude Skills" or "Claude Skills API" return:
+Searches for "remote Agent Skills" or "Agent Skills API" return:
 - **MCP server results**: All results are about MCP servers (which ARE remote)
-- **No Claude Skills remote access**: No evidence of remote skill hosting
+- **No Agent Skills remote access**: No evidence of remote skill hosting
 - **No skill marketplace API**: No public API for accessing remote skills
 
 **Conclusion**: The web search confirms that remote skills don't exist - only MCP servers are remote.
@@ -130,7 +130,7 @@ Update documentation to clarify:
 
 ## Conclusion
 
-**Remote Claude Skills do not exist.** Skills are local packages installed on users' machines. The API server is valuable for integration workflows (CI/CD, web interfaces, batch processing) but is **not** for scanning remote skills, as they don't exist.
+**Remote Agent Skills do not exist.** Skills are local packages installed on users' machines. The API server is valuable for integration workflows (CI/CD, web interfaces, batch processing) but is **not** for scanning remote skills, as they don't exist.
 
 The API server should be positioned as:
 - **Optional integration feature**

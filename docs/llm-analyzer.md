@@ -2,7 +2,7 @@
 
 ## Overview
 
-The LLM Analyzer uses large language models as security judges to perform semantic analysis of Claude Skills and Codex Skills. It goes beyond pattern matching to understand code intent, data flows, and sophisticated attack patterns using industry-standard threat detection frameworks.
+The LLM Analyzer uses large language models as security judges to perform semantic analysis of Agent Skills. It goes beyond pattern matching to understand code intent, data flows, and sophisticated attack patterns using industry-standard threat detection frameworks.
 
 ## Key Features
 
@@ -373,7 +373,6 @@ The analyzer tries multiple strategies. Check logs for details. This is usually 
 ## References
 
 - [LiteLLM Documentation](https://docs.litellm.ai/)
-- [Anthropic Claude Skills](https://support.claude.com/skills)
 - [OpenAI Codex Skills](https://developers.openai.com/codex/skills/)
 - [Agent Skills Specification](https://developers.openai.com/codex/skills/)
 - [AITech Threat Taxonomy](https://owasp.org/)

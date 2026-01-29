@@ -10,7 +10,7 @@
 
 A security scanner for AI Agent Skills that detects prompt injection, data exfiltration, and malicious code patterns. Combines **pattern-based detection** (YAML + YARA), **LLM-as-a-judge**, and **behavioral dataflow analysis** for comprehensive threat detection.
 
-Supports [Anthropic Claude Skills](https://docs.anthropic.com/en/docs/agents-and-tools/claude-skills), [OpenAI Codex Skills](https://openai.github.io/codex/), and [Cursor Agent Skills](https://docs.cursor.com/context/rules) formats following the [Agent Skills specification](https://agentskills.io).
+Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agent Skills](https://docs.cursor.com/context/rules) formats following the [Agent Skills specification](https://agentskills.io).
 
 ---
 

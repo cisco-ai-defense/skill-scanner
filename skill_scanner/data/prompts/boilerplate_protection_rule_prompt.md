@@ -18,7 +18,7 @@
 
 ## What You're Analyzing
 
-You will analyze **Claude Skill packages** containing:
+You will analyze **Agent Skill packages** containing:
 - **SKILL.md**: Manifest (YAML frontmatter) + Instructions (markdown body)
 - **Python/Bash scripts**: Executable code that Claude runs
 - **Reference files**: Additional markdown or data files

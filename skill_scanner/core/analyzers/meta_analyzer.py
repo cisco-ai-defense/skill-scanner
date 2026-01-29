@@ -339,7 +339,7 @@ class MetaAnalyzer(BaseAnalyzer):
 
     def _get_default_system_prompt(self) -> str:
         """Get default system prompt if file not found."""
-        return """You are a senior security analyst performing meta-analysis on Claude Skill security findings.
+        return """You are a senior security analyst performing meta-analysis on Agent Skill security findings.
 Your role is to review findings from multiple analyzers, identify false positives,
 prioritize by actual risk, correlate related issues, and provide actionable recommendations.
 
