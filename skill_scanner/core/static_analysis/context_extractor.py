@@ -172,7 +172,6 @@ class ContextExtractor:
         # Localhost and development
         "localhost",
         "127.0.0.1",
-        "0.0.0.0",
     ]
 
     def extract_context(self, file_path: Path, source_code: str) -> SkillScriptContext:

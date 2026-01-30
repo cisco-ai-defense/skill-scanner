@@ -553,7 +553,7 @@ class StaticAnalyzer(BaseAnalyzer):
         ]
 
         socket_external_indicators = ["socket.connect", "socket.create_connection"]
-        socket_localhost_indicators = ["localhost", "127.0.0.1", "0.0.0.0"]
+        socket_localhost_indicators = ["localhost", "127.0.0.1", "::1"]
 
         for skill_file in skill.get_scripts():
             content = skill_file.read_content()

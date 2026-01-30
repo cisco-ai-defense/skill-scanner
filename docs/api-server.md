@@ -5,6 +5,7 @@
 The Skill Scanner API Server provides a REST interface for uploading and scanning Agent Skills packages, enabling integration with web applications, CI/CD pipelines, and other services.
 
 **Key Points**:
+
 - **Skills are local packages**: Skills are local file packages that users install on their machines, not remote services
 - **API enables uploads**: The API allows uploading skill ZIP files for scanning via HTTP
 - **For integration workflows**: Useful for CI/CD, web interfaces, and service integrations
@@ -20,7 +21,7 @@ The Skill Scanner API Server provides a REST interface for uploading and scannin
 ### Command Line
 
 ```bash
-# Start server (default: 0.0.0.0:8000)
+# Start server (default: localhost:8000)
 skill-scanner-api
 
 # Custom port
@@ -38,7 +39,7 @@ skill-scanner-api --host 127.0.0.1 --port 9000
 ```python
 from skill_scanner.api_server import run_server
 
-run_server(host="0.0.0.0", port=8000, reload=False)
+run_server(host="127.0.0.1", port=8000, reload=False)
 ```
 
 ## Endpoints
@@ -52,6 +53,7 @@ GET /health
 Returns server status and available analyzers.
 
 **Response:**
+
 ```json
 {
   "status": "healthy",
@@ -83,16 +85,17 @@ Content-Type: application/json
 
 **Request Parameters:**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `skill_directory` | string | required | Path to skill directory |
-| `use_behavioral` | boolean | false | Enable behavioral dataflow analyzer |
-| `use_llm` | boolean | false | Enable LLM semantic analyzer |
-| `llm_provider` | string | "anthropic" | LLM provider (anthropic, openai, azure, bedrock, gemini) |
-| `use_aidefense` | boolean | false | Enable Cisco AI Defense analyzer |
-| `aidefense_api_key` | string | null | AI Defense API key (or set `AI_DEFENSE_API_KEY` env var) |
+| Parameter           | Type    | Default     | Description                                              |
+| ------------------- | ------- | ----------- | -------------------------------------------------------- |
+| `skill_directory`   | string  | required    | Path to skill directory                                  |
+| `use_behavioral`    | boolean | false       | Enable behavioral dataflow analyzer                      |
+| `use_llm`           | boolean | false       | Enable LLM semantic analyzer                             |
+| `llm_provider`      | string  | "anthropic" | LLM provider (anthropic, openai, azure, bedrock, gemini) |
+| `use_aidefense`     | boolean | false       | Enable Cisco AI Defense analyzer                         |
+| `aidefense_api_key` | string  | null        | AI Defense API key (or set `AI_DEFENSE_API_KEY` env var) |
 
 **Response:**
+
 ```json
 {
   "scan_id": "uuid",
@@ -141,6 +144,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "scan_id": "uuid",
@@ -156,6 +160,7 @@ GET /scan-batch/{scan_id}
 ```
 
 **Response (Processing):**
+
 ```json
 {
   "scan_id": "uuid",
@@ -165,6 +170,7 @@ GET /scan-batch/{scan_id}
 ```
 
 **Response (Completed):**
+
 ```json
 {
   "scan_id": "uuid",
@@ -185,6 +191,7 @@ GET /analyzers
 ```
 
 **Response:**
+
 ```json
 {
   "analyzers": [
@@ -329,13 +336,13 @@ while True:
 
 ```javascript
 // Scan skill
-const response = await fetch('http://localhost:8000/scan', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+const response = await fetch("http://localhost:8000/scan", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    skill_directory: '/path/to/skill',
-    use_llm: false
-  })
+    skill_directory: "/path/to/skill",
+    use_llm: false,
+  }),
 });
 
 const result = await response.json();
@@ -344,12 +351,12 @@ console.log(`Findings: ${result.findings_count}`);
 
 // Upload ZIP
 const formData = new FormData();
-formData.append('file', skillZipFile);
-formData.append('use_llm', 'false');
+formData.append("file", skillZipFile);
+formData.append("use_llm", "false");
 
-const uploadResponse = await fetch('http://localhost:8000/scan-upload', {
-  method: 'POST',
-  body: formData
+const uploadResponse = await fetch("http://localhost:8000/scan-upload", {
+  method: "POST",
+  body: formData,
 });
 ```
 
@@ -373,7 +380,7 @@ export ANTHROPIC_API_BASE=https://your-endpoint.com/anthropic
 export AI_DEFENSE_API_KEY=your_key
 
 # Server settings (optional)
-export API_HOST=0.0.0.0
+export API_HOST=localhost
 export API_PORT=8000
 ```
 
@@ -472,12 +479,12 @@ docker run -p 8000:8000 \
 
 ### Common Errors
 
-| Status Code | Error | Solution |
-|-------------|-------|----------|
-| 400 | Invalid request | Check JSON format and required fields |
-| 404 | Skill not found | Verify directory path exists |
-| 500 | Scan failed | Check logs for detailed error |
-| 503 | Service unavailable | Server may be overloaded or starting up |
+| Status Code | Error               | Solution                                |
+| ----------- | ------------------- | --------------------------------------- |
+| 400         | Invalid request     | Check JSON format and required fields   |
+| 404         | Skill not found     | Verify directory path exists            |
+| 500         | Scan failed         | Check logs for detailed error           |
+| 503         | Service unavailable | Server may be overloaded or starting up |
 
 ### Error Response Format
 
