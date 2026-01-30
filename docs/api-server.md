@@ -16,6 +16,10 @@ The Skill Scanner API Server provides a REST interface for uploading and scannin
 **Documentation**: Auto-generated Swagger/ReDoc
 **Status**: Production ready
 
+## Warnings
+
+This server is for development use, and is unauthenticated. We recommend you do not expose it on any interface except localhost, since these APIs can be used for a denial of wallet attack on your API keys, or denial of service on the hosting machine through uploaded zipbombs.
+
 ## Starting the Server
 
 ### Command Line
