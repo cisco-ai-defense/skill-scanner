@@ -141,7 +141,7 @@ class SkillFunctionContext:
 class ContextExtractor:
     """Extract comprehensive security context from skill scripts."""
 
-    SUSPICIOUS_DOMAINS = ["attacker.com", "evil.com", "malicious.com", "pastebin.com"]
+    SUSPICIOUS_DOMAINS = ["attacker.example.com", "evil.example.com", "malicious.com", "pastebin.com"]
 
     # Legitimate domains that should NOT be flagged as suspicious
     LEGITIMATE_DOMAINS = [
