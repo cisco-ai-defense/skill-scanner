@@ -1,3 +1,19 @@
+# Copyright 2026 Cisco Systems, Inc. and its affiliates
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 import tempfile
 from pathlib import Path
 
@@ -30,7 +46,7 @@ class TestReadinessAnalyzer:
         assert analyzer.get_name() == "readiness_analyzer"
 
     def test_valid_skill_no_findings(self, analyzer, loader):
-        content = '''---
+        content = """---
 name: valid-skill
 description: A valid skill for testing. Use when testing the analyzer.
 ---
@@ -38,7 +54,7 @@ description: A valid skill for testing. Use when testing the analyzer.
 # Valid Skill
 
 This is a valid skill with proper structure.
-'''
+"""
         skill_dir = create_skill_dir(content)
         skill = loader.load_skill(skill_dir)
         findings = analyzer.analyze(skill)
@@ -46,7 +62,7 @@ This is a valid skill with proper structure.
         assert len(high_findings) == 0
 
     def test_missing_trigger_context(self, analyzer, loader):
-        content = '''---
+        content = """---
 name: no-trigger-skill
 description: A skill that does things with files.
 ---
@@ -54,7 +70,7 @@ description: A skill that does things with files.
 # No Trigger Skill
 
 Content here.
-'''
+"""
         skill_dir = create_skill_dir(content)
         skill = loader.load_skill(skill_dir)
         findings = analyzer.analyze(skill)
@@ -63,7 +79,7 @@ Content here.
         assert trigger_findings[0].severity == Severity.HIGH
 
     def test_first_person_description(self, analyzer, loader):
-        content = '''---
+        content = """---
 name: first-person-skill
 description: I can help you process files. Use when needed.
 ---
@@ -71,7 +87,7 @@ description: I can help you process files. Use when needed.
 # First Person Skill
 
 Content here.
-'''
+"""
         skill_dir = create_skill_dir(content)
         skill = loader.load_skill(skill_dir)
         findings = analyzer.analyze(skill)
@@ -80,7 +96,7 @@ Content here.
         assert person_findings[0].severity == Severity.MEDIUM
 
     def test_short_description(self, analyzer, loader):
-        content = '''---
+        content = """---
 name: short-desc-skill
 description: Short
 ---
@@ -88,7 +104,7 @@ description: Short
 # Short Description Skill
 
 Content here.
-'''
+"""
         skill_dir = create_skill_dir(content)
         skill = loader.load_skill(skill_dir)
         findings = analyzer.analyze(skill)
@@ -97,7 +113,7 @@ Content here.
         assert length_findings[0].severity == Severity.HIGH
 
     def test_invalid_name_format(self, analyzer, loader):
-        content = '''---
+        content = """---
 name: Invalid_Name_Here
 description: A skill with invalid name. Use when testing name validation.
 ---
@@ -105,7 +121,7 @@ description: A skill with invalid name. Use when testing name validation.
 # Invalid Name Skill
 
 Content here.
-'''
+"""
         skill_dir = create_skill_dir(content)
         skill = loader.load_skill(skill_dir)
         findings = analyzer.analyze(skill)
@@ -115,7 +131,7 @@ Content here.
 
     def test_large_skill_no_refs(self, analyzer, loader):
         lines = "\n".join([f"Line {i}: Some content here." for i in range(150)])
-        content = f'''---
+        content = f"""---
 name: large-skill
 description: A large skill without progressive disclosure. Use when testing size limits.
 ---
@@ -123,7 +139,7 @@ description: A large skill without progressive disclosure. Use when testing size
 # Large Skill
 
 {lines}
-'''
+"""
         skill_dir = create_skill_dir(content)
         skill = loader.load_skill(skill_dir)
         findings = analyzer.analyze(skill)
@@ -133,7 +149,7 @@ description: A large skill without progressive disclosure. Use when testing size
 
     def test_exceeds_line_limit(self, analyzer, loader):
         lines = "\n".join([f"Line {i}: Some content here." for i in range(600)])
-        content = f'''---
+        content = f"""---
 name: oversized-skill
 description: An oversized skill. Use when testing line limits.
 ---
@@ -141,7 +157,7 @@ description: An oversized skill. Use when testing line limits.
 # Oversized Skill
 
 {lines}
-'''
+"""
         skill_dir = create_skill_dir(content)
         skill = loader.load_skill(skill_dir)
         findings = analyzer.analyze(skill)

@@ -27,16 +27,16 @@ Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agen
 
 ## Documentation
 
-| Guide | Description |
-|-------|-------------|
-| [Quick Start](docs/quickstart.md) | Get started in 5 minutes |
-| [Architecture](docs/architecture.md) | System design and components |
-| [Threat Taxonomy](docs/threat-taxonomy.md) | Complete AITech threat taxonomy with examples |
-| [LLM Analyzer](docs/llm-analyzer.md) | LLM configuration and usage |
-| [Meta-Analyzer](docs/meta-analyzer.md) | False positive filtering and prioritization |
-| [Behavioral Analyzer](docs/behavioral-analyzer.md) | Dataflow analysis details |
-| [API Reference](docs/api-server.md) | REST API documentation |
-| [Development Guide](docs/developing.md) | Contributing and development setup |
+| Guide                                              | Description                                   |
+| -------------------------------------------------- | --------------------------------------------- |
+| [Quick Start](docs/quickstart.md)                  | Get started in 5 minutes                      |
+| [Architecture](docs/architecture.md)               | System design and components                  |
+| [Threat Taxonomy](docs/threat-taxonomy.md)         | Complete AITech threat taxonomy with examples |
+| [LLM Analyzer](docs/llm-analyzer.md)               | LLM configuration and usage                   |
+| [Meta-Analyzer](docs/meta-analyzer.md)             | False positive filtering and prioritization   |
+| [Behavioral Analyzer](docs/behavioral-analyzer.md) | Dataflow analysis details                     |
+| [API Reference](docs/api-server.md)                | REST API documentation                        |
+| [Development Guide](docs/developing.md)            | Contributing and development setup            |
 
 ---
 
@@ -134,31 +134,31 @@ print(f"Findings: {len(result.findings)}")
 
 ## Analyzers
 
-| Analyzer | Detection Method | Scope | Requirements |
-|----------|------------------|-------|--------------|
-| **Static** | YAML + YARA patterns | All files | None |
-| **Behavioral** | AST dataflow analysis | Python files | None |
-| **LLM** | Semantic analysis | SKILL.md + scripts | API key |
-| **Meta** | False positive filtering | All findings | API key |
-| **VirusTotal** | Hash-based malware | Binary files | API key |
-| **AI Defense** | Cloud-based AI | Text content | API key |
-| **Readiness** | Best practices heuristics | SKILL.md + scripts | None |
+| Analyzer       | Detection Method          | Scope              | Requirements |
+| -------------- | ------------------------- | ------------------ | ------------ |
+| **Static**     | YAML + YARA patterns      | All files          | None         |
+| **Behavioral** | AST dataflow analysis     | Python files       | None         |
+| **LLM**        | Semantic analysis         | SKILL.md + scripts | API key      |
+| **Meta**       | False positive filtering  | All findings       | API key      |
+| **VirusTotal** | Hash-based malware        | Binary files       | API key      |
+| **AI Defense** | Cloud-based AI            | Text content       | API key      |
+| **Readiness**  | Best practices heuristics | SKILL.md + scripts | None         |
 
 ---
 
 ## CLI Options
 
-| Option | Description |
-|--------|-------------|
-| `--use-behavioral` | Enable behavioral analyzer (dataflow analysis) |
-| `--use-llm` | Enable LLM analyzer (requires API key) |
-| `--use-virustotal` | Enable VirusTotal binary scanner |
-| `--use-aidefense` | Enable Cisco AI Defense analyzer |
-| `--use-readiness` | Enable readiness analyzer (operational quality checks) |
-| `--enable-meta` | Enable meta-analyzer for false positive filtering |
-| `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif` |
-| `--output PATH` | Save report to file |
-| `--fail-on-findings` | Exit with error if HIGH/CRITICAL found |
+| Option               | Description                                             |
+| -------------------- | ------------------------------------------------------- |
+| `--use-behavioral`   | Enable behavioral analyzer (dataflow analysis)          |
+| `--use-llm`          | Enable LLM analyzer (requires API key)                  |
+| `--use-virustotal`   | Enable VirusTotal binary scanner                        |
+| `--use-aidefense`    | Enable Cisco AI Defense analyzer                        |
+| `--use-readiness`    | Enable readiness analyzer (operational quality checks)  |
+| `--enable-meta`      | Enable meta-analyzer for false positive filtering       |
+| `--format`           | Output: `summary`, `json`, `markdown`, `table`, `sarif` |
+| `--output PATH`      | Save report to file                                     |
+| `--fail-on-findings` | Exit with error if HIGH/CRITICAL found                  |
 
 ---
 
