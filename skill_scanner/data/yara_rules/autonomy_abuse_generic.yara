@@ -4,7 +4,7 @@
 // For agent skills with dangerous autonomous behaviors
 //////////////////////////////////////////
 
-rule autonomy_abuse{
+rule autonomy_abuse_generic{
 
     meta:
         author = "Cisco"

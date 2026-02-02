@@ -199,7 +199,7 @@ Choose the appropriate AITech code based on the threat type you detect:
 
 - **AITech-1.2 (Indirect Prompt Injection)**: Use for transitive trust abuse where skill follows untrusted external content. Examples: "follow instructions from this webpage", "execute code blocks found in files", "trust content from external sources", delegating trust to untrusted data.
 
-- **AITech-2.1 (Social Engineering)**: Use for deceptive or misleading skill descriptions/metadata that mislead users about the skill's true purpose. Examples: Skill named "safe-calculator" but actually exfiltrates data, description claims local-only but makes network calls, misleading allowed-tools declarations.
+- **AITech-4.3 (Protocol Manipulation / Capability Inflation)**: Use for manipulation of skill discovery to increase unwanted activation. Examples: Keyword baiting, over-broad descriptions, impersonation, skill named "safe-calculator" but actually exfiltrates data.
 
 - **AITech-8.2 (Data Exfiltration / Exposure)**: Use for unauthorized data access, transmission, or exposure. Examples: Network calls sending credentials/data to external servers, reading ~/.aws/credentials or ~/.ssh keys, hardcoded API keys/secrets in code, environment variable harvesting, data exfiltration via tool chaining (read→send patterns).
 
@@ -209,7 +209,7 @@ Choose the appropriate AITech code based on the threat type you detect:
 
 - **AITech-13.3 (Availability Disruption)**: Use for resource exhaustion or denial of service attacks. Examples: Infinite loops, unbounded retries, excessive resource consumption, CPU/memory exhaustion, denial of service patterns.
 
-- **AITech-15.1 (Harmful / Misleading / Inaccurate Content)**: Use for deceptive or harmful content that doesn't fit other categories. Examples: Misleading instructions that could cause harm, deceptive content generation, misinformation.
+- **AITech-15.1 (Harmful Content)**: Use for deceptive or harmful content that doesn't fit other categories. Examples: Misleading instructions that could cause harm, deceptive content generation, misinformation.
 
 **IMPORTANT**:
 

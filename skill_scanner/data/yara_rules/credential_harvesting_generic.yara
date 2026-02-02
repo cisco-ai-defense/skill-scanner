@@ -3,7 +3,7 @@
 // Target: API keys and tokens, SSH keys and certificates, Environment variables, Database credentials
 //////////////////////////////////////////
 
-rule credential_harvesting{
+rule credential_harvesting_generic{
 
     meta:
         author = "Cisco"

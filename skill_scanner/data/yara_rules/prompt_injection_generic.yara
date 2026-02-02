@@ -3,7 +3,7 @@
 // Target: Instruction override patterns, Tool injection commands
 //////////////////////////////////////////
 
-rule prompt_injection{
+rule prompt_injection_generic{
 
     meta:
 

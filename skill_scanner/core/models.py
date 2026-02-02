@@ -49,6 +49,7 @@ class ThreatCategory(str, Enum):
     RESOURCE_ABUSE = "resource_abuse"
     POLICY_VIOLATION = "policy_violation"
     MALWARE = "malware"
+    HARMFUL_CONTENT = "harmful_content"
     # New threat categories
     SKILL_DISCOVERY_ABUSE = "skill_discovery_abuse"
     TRANSITIVE_TRUST_ABUSE = "transitive_trust_abuse"

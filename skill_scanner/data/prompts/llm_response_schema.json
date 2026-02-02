@@ -16,14 +16,14 @@
             "enum": [
               "AITech-1.1",
               "AITech-1.2",
-              "AITech-2.1",
+              "AITech-4.3",
               "AITech-8.2",
               "AITech-9.1",
               "AITech-12.1",
               "AITech-13.3",
               "AITech-15.1"
             ],
-            "description": "AITech taxonomy code (REQUIRED). Choose based on threat type: AITech-1.1=Direct Prompt Injection (jailbreak, instruction override in SKILL.md), AITech-1.2=Indirect Prompt Injection (transitive trust, following untrusted content), AITech-2.1=Social Engineering (deceptive descriptions/metadata), AITech-8.2=Data Exfiltration/Exposure (unauthorized data access, credential theft, hardcoded secrets), AITech-9.1=Model/Agentic System Manipulation (command injection, code injection, SQL injection, obfuscation), AITech-12.1=Tool Exploitation (tool poisoning, tool shadowing, unauthorized tool use), AITech-13.3=Availability Disruption (resource abuse, DoS, infinite loops), AITech-15.1=Harmful/Misleading Content (deceptive content, misinformation)"
+            "description": "AITech taxonomy code (REQUIRED). Choose based on threat type: AITech-1.1=Direct Prompt Injection (jailbreak, instruction override in SKILL.md), AITech-1.2=Indirect Prompt Injection (transitive trust, following untrusted content), AITech-4.3=Protocol Manipulation/Capability Inflation (skill discovery abuse, keyword baiting, over-broad descriptions), AITech-8.2=Data Exfiltration/Exposure (unauthorized data access, credential theft, hardcoded secrets), AITech-9.1=Model/Agentic System Manipulation (command injection, code injection, SQL injection, obfuscation), AITech-12.1=Tool Exploitation (tool poisoning, tool shadowing, unauthorized tool use), AITech-13.3=Availability Disruption (resource abuse, DoS, infinite loops), AITech-15.1=Harmful/Misleading Content (deceptive content, misinformation)"
           },
           "aisubtech": {
             "type": ["string", "null"],

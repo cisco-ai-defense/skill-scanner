@@ -278,7 +278,7 @@ class LLMAnalyzer(BaseAnalyzer):
 When selecting AITech codes for findings, use these mappings:
 - AITech-1.1: Direct prompt injection in SKILL.md (jailbreak, instruction override)
 - AITech-1.2: Indirect prompt injection (transitive trust, following untrusted content)
-- AITech-2.1: Social engineering (deceptive descriptions/metadata)
+- AITech-4.3: Protocol manipulation/capability inflation (skill discovery abuse, keyword baiting, over-broad descriptions)
 - AITech-8.2: Data exfiltration/exposure (unauthorized access, credential theft, hardcoded secrets)
 - AITech-9.1: Model/agentic manipulation (command injection, code injection, SQL injection, obfuscation)
 - AITech-12.1: Tool exploitation (tool poisoning, shadowing, unauthorized use)

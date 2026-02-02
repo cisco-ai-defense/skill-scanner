@@ -3,7 +3,7 @@
 // Target: SQL keywords and operations, SQL tautologies and bypasses, Database-specific functions
 //////////////////////////////////////////
 
-rule sql_injection{
+rule sql_injection_generic{
 
     meta:
         author = "Cisco"

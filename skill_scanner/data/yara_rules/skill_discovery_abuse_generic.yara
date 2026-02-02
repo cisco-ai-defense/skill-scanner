@@ -4,7 +4,7 @@
 // For agent skills YAML frontmatter and descriptions
 //////////////////////////////////////////
 
-rule skill_discovery_abuse{
+rule skill_discovery_abuse_generic{
 
     meta:
         author = "Cisco"

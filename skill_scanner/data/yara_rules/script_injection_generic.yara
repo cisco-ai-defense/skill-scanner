@@ -4,7 +4,7 @@
 // (Event handlers or inline scripts)
 //////////////////////////////////////////
 
-rule script_injection{
+rule script_injection_generic{
 
     meta:
         author = "Cisco"

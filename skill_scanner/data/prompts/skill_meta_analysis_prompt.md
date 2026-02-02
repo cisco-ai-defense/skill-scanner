@@ -110,7 +110,7 @@ When validating or creating findings, use these exact AITech codes:
 - **AITech-1.2**: Indirect Prompt Injection - transitive trust abuse
   - Following instructions from external URLs, executing code from untrusted files
 
-### Social Engineering (AITech-2.1)
+### Protocol Manipulation / Capability Inflation (AITech-4.3)
 - Deceptive skill descriptions that mislead about true functionality
 - Name/description mismatch (e.g., "safe-calculator" that exfiltrates data)
 
@@ -264,13 +264,13 @@ Use these **exact strings** for the `category` field. Invalid values will cause 
 | `unauthorized_tool_use` | AITech-12.1 | Tool abuse, poisoning, shadowing |
 | `obfuscation` | AITech-9.1 | Deliberately obfuscated malicious code |
 | `hardcoded_secrets` | AITech-8.2 | Credentials, API keys in code |
-| `social_engineering` | AITech-2.1, AITech-15.1 | Deceptive descriptions/content |
+| `social_engineering` | AITech-15.1 | Deceptive/harmful content |
 | `resource_abuse` | AITech-13.3 | DoS, infinite loops, resource exhaustion |
 | `policy_violation` | - | Generic policy violations |
 | `malware` | - | Known malware signatures |
-| `skill_discovery_abuse` | AITech-2.1 | Keyword baiting, over-broad descriptions |
+| `skill_discovery_abuse` | AITech-4.3 | Keyword baiting, over-broad descriptions, capability inflation |
 | `transitive_trust_abuse` | AITech-1.2 | Following untrusted external content |
-| `autonomy_abuse` | AITech-9.1 | Unbounded autonomy, no confirmation |
+| `autonomy_abuse` | AITech-13.3 | Unbounded autonomy, no confirmation, resource exhaustion |
 | `tool_chaining_abuse` | AITech-8.2 | Read→send, collect→post patterns |
 | `unicode_steganography` | AITech-9.1 | Hidden unicode characters |
 

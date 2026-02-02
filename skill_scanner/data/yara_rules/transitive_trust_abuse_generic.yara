@@ -4,7 +4,7 @@
 // For agent skills that consume webpages, files, issues, docs
 //////////////////////////////////////////
 
-rule transitive_trust_abuse{
+rule transitive_trust_abuse_generic{
 
     meta:
         author = "Cisco"
