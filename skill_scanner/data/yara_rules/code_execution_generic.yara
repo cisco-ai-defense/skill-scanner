@@ -4,7 +4,7 @@
 // (eval, exec, subprocess, shell injection)
 /////////////////////////////////////////
 
-rule code_execution{
+rule code_execution_generic{
 
     meta:
 

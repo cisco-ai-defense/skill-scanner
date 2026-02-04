@@ -1,10 +1,10 @@
 //////////////////////////////////////////
 // Detects coercive or attention-grabbing prompt injections.
-// Target: Directives forcing execution order (e.g., “Always execute this tool first”).
+// Target: Directives forcing execution order (e.g., "Always execute this tool first").
 // (Mandatory language to override normal tool chains)
 //////////////////////////////////////////
 
-rule coercive_injection {
+rule coercive_injection_generic {
 
     meta:
         author = "Cisco"

@@ -4,7 +4,7 @@
 // Based on: https://en.wikipedia.org/wiki/Tags_(Unicode_block)
 //////////////////////////////////////////
 
-rule unicode_steganography{
+rule prompt_injection_unicode_steganography{
 
     meta:
         author = "Cisco"

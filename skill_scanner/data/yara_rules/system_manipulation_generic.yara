@@ -4,7 +4,7 @@
 // (Process control and termination)
 //////////////////////////////////////////
 
-rule system_manipulation{
+rule system_manipulation_generic{
 
     meta:
         author = "Cisco"

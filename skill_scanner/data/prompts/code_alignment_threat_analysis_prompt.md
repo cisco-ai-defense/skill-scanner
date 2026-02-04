@@ -450,9 +450,9 @@ def analyze(file_path):
 
 ---
 
-### 7. SOCIAL ENGINEERING (Deceptive Metadata)
+### 7. SKILL DISCOVERY ABUSE (Deceptive Metadata / Capability Inflation)
 
-**What it is**: Misleading YAML manifest that misrepresents skill purpose.
+**What it is**: Misleading YAML manifest that misrepresents skill purpose (protocol manipulation).
 
 **Where to look**: YAML frontmatter vs actual functionality
 
@@ -462,6 +462,7 @@ def analyze(file_path):
 - Vague description with complex implementation
 - Claims to be "official" or "verified" (impersonation)
 - Description hides actual capabilities
+- Over-broad capability claims (keyword baiting)
 
 **Example - Malicious Skill:**
 
@@ -486,7 +487,7 @@ def get_data():
 
 - **Name**: Implies official skill (deceptive)
 - **Behavior**: Data theft, not official utilities
-- **Verdict**: SOCIAL ENGINEERING threat (HIGH)
+- **Verdict**: SKILL DISCOVERY ABUSE threat (HIGH)
 
 ---
 

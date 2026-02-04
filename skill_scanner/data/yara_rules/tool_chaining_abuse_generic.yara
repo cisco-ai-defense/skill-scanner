@@ -4,7 +4,7 @@
 // For agent skills that chain operations suspiciously
 //////////////////////////////////////////
 
-rule tool_chaining_abuse{
+rule tool_chaining_abuse_generic{
 
     meta:
         author = "Cisco"

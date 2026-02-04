@@ -4,7 +4,7 @@
 // (Shell operators, dangerous commands, network tools + reverse shells)
 /////////////////////////////////////////
 
-rule command_injection{
+rule command_injection_generic{
 
     meta:
         author = "Cisco"

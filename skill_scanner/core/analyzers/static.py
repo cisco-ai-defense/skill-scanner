@@ -935,7 +935,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 yara_matches = self.yara_scanner.scan_content(content, skill_file.relative_path)
                 for match in yara_matches:
                     rule_name = match.get("rule_name", "")
-                    if rule_name == "skill_discovery_abuse":
+                    if rule_name == "skill_discovery_abuse_generic":
                         continue
                     findings.extend(self._create_findings_from_yara_match(match, skill, content))
 
@@ -1007,7 +1007,7 @@ class StaticAnalyzer(BaseAnalyzer):
         }
 
         for string_match in match["strings"]:
-            if rule_name == "code_execution":
+            if rule_name == "code_execution_generic":
                 line_content = string_match.get("line_content", "").lower()
                 matched_data = string_match.get("matched_data", "").lower()
 
@@ -1028,7 +1028,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 if is_safe_command:
                     continue
 
-            if rule_name == "system_manipulation":
+            if rule_name == "system_manipulation_generic":
                 line_content = string_match.get("line_content", "").lower()
 
                 if "rm -rf" in line_content or "rm -r" in line_content:

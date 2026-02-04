@@ -240,7 +240,7 @@ The meta-analyzer uses the AITech taxonomy for threat classification:
 |-------------|----------|-------------|
 | AITech-1.1 | Direct Prompt Injection | Explicit instruction override attempts |
 | AITech-1.2 | Indirect Prompt Injection | Transitive trust abuse, external content execution |
-| AITech-2.1 | Social Engineering | Deceptive descriptions, misleading metadata |
+| AITech-4.3 | Protocol Manipulation | Skill discovery abuse, capability inflation |
 | AITech-8.2 | Data Exfiltration | Credential theft, unauthorized data transmission |
 | AITech-9.1 | System Manipulation | Command injection, code injection, obfuscation |
 | AITech-12.1 | Tool Exploitation | Tool poisoning, shadowing, unauthorized use |
