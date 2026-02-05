@@ -3,7 +3,6 @@
 // AITech-4.3 / AISubtech-4.3.5
 // Target: Over-broad descriptions, keyword baiting, activation manipulation
 // Detects manipulation of skill discovery mechanisms to inflate perceived capabilities
-// Tuned to require explicit manipulation intent
 //////////////////////////////////////////
 
 rule capability_inflation_generic{
@@ -18,61 +17,44 @@ rule capability_inflation_generic{
 
     strings:
 
-        // === High confidence: explicit manipulation ===
+        // Over-broad capability claims
+        $overbroad_claims = /\b(can do (anything|everything)|general (purpose )?assistant|all-purpose|universal (tool|skill|helper)|always use (this|me)|default (tool|skill|assistant))\b/i
 
-        // Direct activation hijacking (require "this skill" or "this tool" context)
-        $activation_hijack = /\b(always (use|call|invoke) (this (skill|tool|assistant)|me (first|instead))|use (this (skill|tool)|me) (first|instead|by default)|this (skill|tool) (should|must) be (the )?(first|primary|default))\b/i
+        // Keyword baiting patterns - match same word repeated in comma lists
+        // Using explicit word patterns since YARA doesn't support backreferences
+        $keyword_stuffing_file = /\bfile\s*,\s*file\s*,\s*file\s*,\s*file\b/i
+        $keyword_stuffing_data = /\bdata\s*,\s*data\s*,\s*data\s*,\s*data\b/i
+        $keyword_stuffing_code = /\bcode\s*,\s*code\s*,\s*code\s*,\s*code\b/i
 
-        // Explicit impersonation claims
-        $impersonation = /\b(I am (the )?official|this is (the )?official|verified (skill|tool|assistant)|endorsed by (Anthropic|OpenAI|Cursor|Microsoft))\b/i
+        // Activation priority manipulation
+        $activation_priority = /\b(use (this|me) (first|before)|priority (skill|tool)|primary (tool|skill)|preferred (tool|skill|method)|call (this|me) (before|first))\b/i
 
-        // Keyword stuffing in DESCRIPTIONS (not code) - require 5+ repetitions with commas/spaces
-        // This pattern specifically targets SEO-style keyword stuffing in skill descriptions
-        $keyword_stuff_file = /\b(file\s*,\s*){4,}file\b|\bfile file file file file\b/i
-        $keyword_stuff_data = /\b(data\s*,\s*){4,}data\b|\bdata data data data data\b/i
-        $keyword_stuff_code = /\b(code\s*,\s*){4,}code\b|\bcode code code code code\b/i
+        // Impersonation patterns (beyond just Anthropic)
+        $trusted_impersonation = /\b(official|verified|trusted|certified|approved|endorsed|authentic|legitimate)\s+(skill|tool|extension|plugin|assistant)\b/i
 
-        // Priority/preference claims that override user choice
-        $priority_override = /\b(priorit(y|ize) (this|me)|prefer (this|me) over|don't use other (tools|skills)|ignore other (tools|skills))\b/i
+        // Over-promising descriptions (exclude comments and technical contexts)
+        $overpromising = /\b(100% (safe|secure|accurate)|guaranteed (to|that|when|if)|perfect|flawless|never (fails|errors)|always (works|succeeds))\b/i
 
-        // === Medium confidence: manipulative guarantees in promotional context ===
-
-        // Overpromising with promotional language
-        $overpromise_promo = /\b(guaranteed to|100% (accurate|reliable|safe)|never (fails|wrong|errors)|always (correct|accurate|works))\b[^.]{0,50}\b(use|try|choose|pick) (this|me)\b/i
-
-        // Hidden/secret functionality claims
-        $hidden_features = /\b(secret (feature|capability|function)|hidden (mode|feature)|backdoor (access|mode))\b/i
-
-        // False scarcity/urgency (require promotional context)
-        // "limited access" alone is too broad - require explicit urgency language
-        $false_urgency = /\b(limited time (offer|only)|act (now|fast|quickly)|exclusive (offer|deal)|only available (for|until)|hurry|don't miss out)\b/i
-
-        // === Exclusions ===
-        $testing_context = /\b(test(ing|s)?|simulation|deterministic|reproducib)/i
-        $technical_doc = /\b(algorithm|function|method|implementation|specification)\b/i
-        $code_context = /(```|for\s*\(|while\s*\(|\bint\s+\w+\s*=|\bconst\s+\w+\s*=|sum\s*\+=)/
+        // Hidden activation triggers
+        $hidden_triggers = /\b(secret (command|keyword)|hidden (feature|mode)|easter egg|backdoor (access|entry))\b/i
 
     condition:
-        // Exclude code snippets from detection
-        not $code_context and
-        (
-            // High confidence patterns - always flag
-            (
-                $activation_hijack or
-                $impersonation or
-                $keyword_stuff_file or
-                $keyword_stuff_data or
-                $keyword_stuff_code or
-                $priority_override or
-                $hidden_features or
-                $false_urgency
-            )
-            or
-            // Overpromising only when not in technical context
-            (
-                $overpromise_promo and
-                not $testing_context and
-                not $technical_doc
-            )
-        )
+
+        // Over-broad capability claims
+        $overbroad_claims or
+
+        // Keyword stuffing (same word repeated 4+ times)
+        $keyword_stuffing_file or $keyword_stuffing_data or $keyword_stuffing_code or
+
+        // Activation priority manipulation
+        $activation_priority or
+
+        // Trusted impersonation
+        $trusted_impersonation or
+
+        // Over-promising
+        $overpromising or
+
+        // Hidden triggers
+        $hidden_triggers
 }
