@@ -83,3 +83,16 @@ Thumbs.db
 # Local environment files
 .env.local
 .env.*.local
+
+# Local benchmark and analysis data
+.local_benchmark/
+
+# Agent/AI tool configs (user-specific)
+.agent/
+.agents/
+.claude/
+.codex/
+.cursor/skills/
+
+# Jupyter notebooks (local analysis)
+*.ipynb
