@@ -935,7 +935,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 yara_matches = self.yara_scanner.scan_content(content, skill_file.relative_path)
                 for match in yara_matches:
                     rule_name = match.get("rule_name", "")
-                    if rule_name == "skill_discovery_abuse_generic":
+                    if rule_name == "capability_inflation_generic":
                         continue
                     findings.extend(self._create_findings_from_yara_match(match, skill, content))
 

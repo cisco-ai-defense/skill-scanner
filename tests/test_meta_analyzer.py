@@ -422,7 +422,7 @@ class TestAITechTaxonomy:
             "AITech-8.2",
             "AITech-9.1",
             "AITech-12.1",
-            "AITech-13.3",
+            "AITech-13.1",
             "AITech-15.1",
         ]
 
@@ -444,7 +444,7 @@ class TestAITechTaxonomy:
             "AITech-8.2",
             "AITech-9.1",
             "AITech-12.1",
-            "AITech-13.3",
+            "AITech-13.1",
             "AITech-15.1",
         ]
 
