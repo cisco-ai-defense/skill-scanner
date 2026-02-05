@@ -1,16 +1,19 @@
 //////////////////////////////////////////
-// Skill Discovery Surface Abuse Detection
+// Protocol Manipulation - Capability Inflation Detection
+// AITech-4.3 / AISubtech-4.3.5
 // Target: Over-broad descriptions, keyword baiting, activation manipulation
-// For agent skills YAML frontmatter and descriptions
+// Detects manipulation of skill discovery mechanisms to inflate perceived capabilities
 //////////////////////////////////////////
 
-rule skill_discovery_abuse_generic{
+rule capability_inflation_generic{
 
     meta:
         author = "Cisco"
-        description = "Detects manipulation of skill discovery to increase unwanted activation"
+        description = "Detects protocol manipulation via capability inflation in skill discovery"
         classification = "harmful"
         threat_type = "SKILL DISCOVERY ABUSE"
+        aitech = "AITech-4.3"
+        aisubtech = "AISubtech-4.3.5"
 
     strings:
 
