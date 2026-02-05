@@ -185,8 +185,8 @@ class YaraModeConfig:
             ),
             # Disable noisier rules
             disabled_rules={
-                "skill_discovery_abuse_generic",
-                "transitive_trust_abuse_generic",
+                "capability_inflation_generic",
+                "indirect_prompt_injection_generic",
             },
         )
 

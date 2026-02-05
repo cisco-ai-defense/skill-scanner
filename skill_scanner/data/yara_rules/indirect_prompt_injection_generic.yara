@@ -1,16 +1,19 @@
 //////////////////////////////////////////
-// Transitive Trust Abuse Detection
-// Target: Skills that delegate trust to untrusted external content
-// For agent skills that consume webpages, files, issues, docs
+// Indirect Prompt Injection - Instruction Manipulation Detection
+// AITech-1.2 / AISubtech-1.2.1
+// Target: Skills that embed/follow malicious instructions from external data sources
+// Detects delegation of trust to untrusted external content (webpages, documents, APIs)
 //////////////////////////////////////////
 
-rule transitive_trust_abuse_generic{
+rule indirect_prompt_injection_generic{
 
     meta:
         author = "Cisco"
-        description = "Detects skills that delegate trust to untrusted external content"
+        description = "Detects indirect prompt injection via instruction manipulation from external sources"
         classification = "harmful"
         threat_type = "TRANSITIVE TRUST ABUSE"
+        aitech = "AITech-1.2"
+        aisubtech = "AISubtech-1.2.1"
 
     strings:
 

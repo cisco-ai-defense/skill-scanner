@@ -65,7 +65,7 @@ class ThreatMapping:
             "severity": "HIGH",
             "aitech": "AITech-12.1",
             "aitech_name": "Tool Exploitation",
-            "aisubtech": "AISubtech-12.1.5",
+            "aisubtech": "AISubtech-12.1.4",
             "aisubtech_name": "Tool Shadowing",
             "description": "Disguising, substituting or duplicating legitimate tools within an agent, enabling malicious tools with identical or similar identifiers to intercept or replace trusted tool calls.",
         },
@@ -107,7 +107,7 @@ class ThreatMapping:
             "aitech_name": "Protocol Manipulation",
             "aisubtech": "AISubtech-4.3.5",
             "aisubtech_name": "Capability Inflation",
-            "description": "Manipulation of skill discovery to increase unwanted activation (keyword baiting, over-broad descriptions, impersonation).",
+            "description": "Manipulation of skill discovery mechanisms to inflate perceived capabilities and increase unwanted activation (keyword baiting, over-broad descriptions, brand impersonation).",
         },
         "TRANSITIVE TRUST ABUSE": {
             "scanner_category": "PROMPT INJECTION",
@@ -116,14 +116,14 @@ class ThreatMapping:
             "aitech_name": "Indirect Prompt Injection",
             "aisubtech": "AISubtech-1.2.1",
             "aisubtech_name": "Instruction Manipulation (Indirect Prompt Injection)",
-            "description": "Delegating trust to untrusted external content - following webpage/file instructions, executing found code blocks.",
+            "description": "Embedding malicious instructions in external data sources (webpages, documents, APIs) that override intended behavior - following external instructions, executing found code blocks.",
         },
         "AUTONOMY ABUSE": {
             "scanner_category": "RESOURCE ABUSE",
             "severity": "HIGH",
-            "aitech": "AITech-13.3",
-            "aitech_name": "Availability Disruption",
-            "aisubtech": "AISubtech-13.3.2",
+            "aitech": "AITech-13.1",
+            "aitech_name": "Disruption of Availability",
+            "aisubtech": "AISubtech-13.1.1",
             "aisubtech_name": "Compute Exhaustion",
             "description": "Excessive autonomy without bounds - keep retrying indefinitely, run without confirmation, ignore errors.",
         },
@@ -175,9 +175,9 @@ class ThreatMapping:
         "RESOURCE ABUSE": {
             "scanner_category": "RESOURCE ABUSE",
             "severity": "MEDIUM",
-            "aitech": "AITech-13.3",
-            "aitech_name": "Availability Disruption",
-            "aisubtech": "AISubtech-13.3.2",
+            "aitech": "AITech-13.1",
+            "aitech_name": "Disruption of Availability",
+            "aisubtech": "AISubtech-13.1.1",
             "aisubtech_name": "Compute Exhaustion",
             "description": "Excessive resource consumption or denial of service.",
         },
@@ -242,9 +242,9 @@ class ThreatMapping:
         "RESOURCE EXHAUSTION": {
             "scanner_category": "RESOURCE ABUSE",
             "severity": "MEDIUM",
-            "aitech": "AITech-13.3",
-            "aitech_name": "Availability Disruption",
-            "aisubtech": "AISubtech-13.3.2",
+            "aitech": "AITech-13.1",
+            "aitech_name": "Disruption of Availability",
+            "aisubtech": "AISubtech-13.1.1",
             "aisubtech_name": "Compute Exhaustion",
             "description": "Overloading the system via repeated invocations or large payloads to cause denial of service.",
         },
@@ -315,7 +315,7 @@ class ThreatMapping:
             "AITech-8.2": "data_exfiltration",  # Data Exfiltration / Exposure
             "AITech-9.1": "command_injection",  # Model or Agentic System Manipulation (injection attacks)
             "AITech-12.1": "unauthorized_tool_use",  # Tool Exploitation
-            "AITech-13.3": "resource_abuse",  # Availability Disruption
+            "AITech-13.1": "resource_abuse",  # Disruption of Availability (AISubtech-13.1.1: Compute Exhaustion)
             "AITech-15.1": "harmful_content",  # Harmful Content
             "AITech-99.9": "policy_violation",  # Unknown Threat
         }

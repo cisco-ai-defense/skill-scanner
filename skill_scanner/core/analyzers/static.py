@@ -1001,8 +1001,8 @@ class StaticAnalyzer(BaseAnalyzer):
                     # Check if rule is enabled in current mode and not explicitly disabled
                     if not self._is_rule_enabled(rule_name):
                         continue
-                    # Legacy skip for skill discovery in scripts (less relevant in scripts)
-                    if rule_name == "skill_discovery_abuse_generic":
+                    # Skip capability inflation in scripts (less relevant in code context)
+                    if rule_name == "capability_inflation_generic":
                         continue
                     findings.extend(self._create_findings_from_yara_match(match, skill, content))
 

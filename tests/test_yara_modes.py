@@ -70,7 +70,7 @@ class TestYaraModeConfig:
 
         # Should have some rules disabled
         assert len(permissive.disabled_rules) > 0
-        assert "skill_discovery_abuse_generic" in permissive.disabled_rules
+        assert "capability_inflation_generic" in permissive.disabled_rules
 
     def test_from_mode_name_creates_correct_mode(self):
         """from_mode_name should create correct config."""
