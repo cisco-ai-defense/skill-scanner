@@ -142,15 +142,48 @@ class ContextExtractor:
     """Extract comprehensive security context from skill scripts."""
 
     # ONLY flag URLs to explicitly suspicious domains - not all unknown URLs
+    # Reference: https://lots-project.com/ (Living Off Trusted Sites)
     SUSPICIOUS_DOMAINS = [
-        # Known exfil/C2 services
+        # Known exfil/C2/paste services (LOTS: Download, Exfiltration, C&C)
         "pastebin.com",
         "hastebin.com",
         "paste.ee",
+        "rentry.co",
+        "zerobin.net",
+        "textbin.net",
+        "termbin.com",
+        "sprunge.us",
+        "clbin.com",
+        "ix.io",
+        "pastetext.net",
+        "pastie.org",
+        "ideone.com",
+        # File sharing services (LOTS: Download, Exfiltration)
+        "transfer.sh",
+        "filebin.net",
+        "gofile.io",
+        "anonfiles.com",
+        "mediafire.com",
+        "mega.nz",
+        "wetransfer.com",
+        "filetransfer.io",
+        "ufile.io",
+        "4sync.com",
+        "uplooder.net",
+        "filecloudonline.com",
+        "sendspace.com",
+        "siasky.net",
+        # Tunneling/webhook services (LOTS: C&C, Exfiltration)
         "webhook.site",
         "requestbin",
         "ngrok.io",
         "pipedream.net",
+        "localhost.run",
+        "trycloudflare.com",
+        # Code execution services (LOTS: C&C, Download)
+        "codepen.io",
+        "repl.co",
+        "glitch.me",
         # Explicitly malicious example domains
         "attacker.example.com",
         "evil.example.com",
@@ -159,20 +192,17 @@ class ContextExtractor:
     ]
 
     # Domains that are always safe (not flagged even if matched by SUSPICIOUS_DOMAINS pattern)
+    # NOTE: We intentionally exclude file-hosting/messaging services that appear in LOTS
+    # (https://lots-project.com/) with Download/C&C capabilities, even if commonly used.
     LEGITIMATE_DOMAINS = [
-        # AI provider services
+        # AI provider services (API endpoints only, not user content)
         "api.anthropic.com",
         "statsig.anthropic.com",
         "api.openai.com",
         "api.together.xyz",
         "api.cohere.ai",
         "generativelanguage.googleapis.com",
-        # Code repositories
-        "github.com",
-        "gitlab.com",
-        "bitbucket.org",
-        "raw.githubusercontent.com",
-        # Package registries
+        # Package registries (read-only, no user-uploaded executables)
         "registry.npmjs.org",
         "npmjs.com",
         "npmjs.org",
@@ -184,13 +214,6 @@ class ContextExtractor:
         "crates.io",
         "rubygems.org",
         "pkg.go.dev",
-        # Cloud provider APIs
-        "amazonaws.com",
-        "azure.com",
-        "googleapis.com",
-        "google.com",
-        "microsoft.com",
-        "cloudflare.com",
         # System packages
         "archive.ubuntu.com",
         "security.ubuntu.com",
@@ -206,15 +229,10 @@ class ContextExtractor:
         "127.0.0.1",
         "0.0.0.0",
         "::1",
-        # Common safe services
+        # Common safe services (API-focused, not file hosting)
         "stripe.com",
-        "slack.com",
         "zoom.us",
-        "fathom.video",
-        "telegram.org",
-        "discord.com",
         "twilio.com",
-        "sendgrid.com",
         "mailgun.com",
         "sentry.io",
         "datadog.com",
@@ -223,6 +241,13 @@ class ContextExtractor:
         "mongodb.com",
         "redis.io",
         "postgresql.org",
+        # NOTE: The following are intentionally NOT in this list due to LOTS risk:
+        # - github.com, gitlab.com, bitbucket.org (Download, C&C)
+        # - raw.githubusercontent.com (Download, C&C)
+        # - discord.com, telegram.org, slack.com (C&C, Exfil)
+        # - amazonaws.com, googleapis.com, azure.com, cloudflare.com (wildcard hosting)
+        # - google.com, microsoft.com (too broad, includes file hosting)
+        # - sendgrid.com (email tracking/download)
     ]
 
     def extract_context(self, file_path: Path, source_code: str) -> SkillScriptContext:
