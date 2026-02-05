@@ -73,3 +73,10 @@ try:
     __all__.extend(["MetaAnalyzer", "MetaAnalysisResult", "apply_meta_analysis_to_results"])
 except (ImportError, ModuleNotFoundError):
     pass
+
+try:
+    from .readiness_analyzer import ReadinessAnalyzer  # noqa: F401
+
+    __all__.append("ReadinessAnalyzer")
+except (ImportError, ModuleNotFoundError):
+    pass

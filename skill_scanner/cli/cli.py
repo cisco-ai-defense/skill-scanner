@@ -154,6 +154,16 @@ def scan_command(args):
         except Exception as e:
             print(f"Warning: Could not initialize Trigger analyzer: {e}", file=sys.stderr)
 
+    if hasattr(args, "use_readiness") and args.use_readiness:
+        try:
+            from ..core.analyzers.readiness_analyzer import ReadinessAnalyzer
+
+            readiness_analyzer = ReadinessAnalyzer()
+            analyzers.append(readiness_analyzer)
+            status_print("Using Readiness analyzer (operational quality checks)")
+        except Exception as e:
+            print(f"Warning: Could not initialize Readiness analyzer: {e}", file=sys.stderr)
+
     # Initialize meta-analyzer if requested
     meta_analyzer = None
     enable_meta = hasattr(args, "enable_meta") and args.enable_meta
@@ -359,6 +369,16 @@ def scan_all_command(args):
             status_print("Using Trigger analyzer (description specificity analysis)")
         except Exception as e:
             print(f"Warning: Could not initialize Trigger analyzer: {e}", file=sys.stderr)
+
+    if hasattr(args, "use_readiness") and args.use_readiness:
+        try:
+            from ..core.analyzers.readiness_analyzer import ReadinessAnalyzer
+
+            readiness_analyzer = ReadinessAnalyzer()
+            analyzers.append(readiness_analyzer)
+            status_print("Using Readiness analyzer (operational quality checks)")
+        except Exception as e:
+            print(f"Warning: Could not initialize Readiness analyzer: {e}", file=sys.stderr)
 
     # Initialize meta-analyzer if requested
     meta_analyzer = None
@@ -728,6 +748,11 @@ Examples:
         action="store_true",
         help="Enable meta-analysis for false positive filtering and finding prioritization (requires 2+ analyzers including LLM)",
     )
+    scan_parser.add_argument(
+        "--use-readiness",
+        action="store_true",
+        help="Enable readiness analyzer for operational quality checks (best practices, token efficiency)",
+    )
 
     # Scan-all command
     scan_all_parser = subparsers.add_parser("scan-all", help="Scan multiple skill packages")
@@ -782,6 +807,11 @@ Examples:
         "--enable-meta",
         action="store_true",
         help="Enable meta-analysis for false positive filtering and finding prioritization (requires 2+ analyzers including LLM)",
+    )
+    scan_all_parser.add_argument(
+        "--use-readiness",
+        action="store_true",
+        help="Enable readiness analyzer for operational quality checks (best practices, token efficiency)",
     )
 
     # List analyzers command
