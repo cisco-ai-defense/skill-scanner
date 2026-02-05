@@ -34,10 +34,10 @@ from pathlib import Path
 import pytest
 
 from skill_scanner.threats.cisco_ai_taxonomy import (
-    VALID_AITECH_CODES,
     VALID_AISUBTECH_CODES,
-    get_aitech_name,
+    VALID_AITECH_CODES,
     get_aisubtech_name,
+    get_aitech_name,
 )
 from skill_scanner.threats.threats import ThreatMapping
 
@@ -83,13 +83,10 @@ class TestTaxonomyValidation:
         for dict_name, threat_name, aitech, _ in self._get_all_codes_from_threats():
             if aitech and self.PLACEHOLDER_CODE not in aitech:
                 if aitech not in VALID_AITECH_CODES:
-                    invalid_codes.append(
-                        f"{dict_name}['{threat_name}']: '{aitech}' not in taxonomy"
-                    )
+                    invalid_codes.append(f"{dict_name}['{threat_name}']: '{aitech}' not in taxonomy")
 
-        assert not invalid_codes, (
-            f"Found {len(invalid_codes)} invalid AITech code(s):\n"
-            + "\n".join(f"  - {e}" for e in invalid_codes)
+        assert not invalid_codes, f"Found {len(invalid_codes)} invalid AITech code(s):\n" + "\n".join(
+            f"  - {e}" for e in invalid_codes
         )
 
     def test_all_aisubtech_codes_exist_in_taxonomy(self):
@@ -99,13 +96,10 @@ class TestTaxonomyValidation:
         for dict_name, threat_name, _, aisubtech in self._get_all_codes_from_threats():
             if aisubtech and self.PLACEHOLDER_CODE not in aisubtech:
                 if aisubtech not in VALID_AISUBTECH_CODES:
-                    invalid_codes.append(
-                        f"{dict_name}['{threat_name}']: '{aisubtech}' not in taxonomy"
-                    )
+                    invalid_codes.append(f"{dict_name}['{threat_name}']: '{aisubtech}' not in taxonomy")
 
-        assert not invalid_codes, (
-            f"Found {len(invalid_codes)} invalid AISubtech code(s):\n"
-            + "\n".join(f"  - {e}" for e in invalid_codes)
+        assert not invalid_codes, f"Found {len(invalid_codes)} invalid AISubtech code(s):\n" + "\n".join(
+            f"  - {e}" for e in invalid_codes
         )
 
     def test_aitech_code_format(self):
@@ -115,13 +109,10 @@ class TestTaxonomyValidation:
 
         for dict_name, threat_name, aitech, _ in self._get_all_codes_from_threats():
             if aitech and not pattern.match(aitech):
-                invalid_format.append(
-                    f"{dict_name}['{threat_name}']: '{aitech}' invalid format"
-                )
+                invalid_format.append(f"{dict_name}['{threat_name}']: '{aitech}' invalid format")
 
-        assert not invalid_format, (
-            f"Found {len(invalid_format)} malformed AITech code(s):\n"
-            + "\n".join(f"  - {e}" for e in invalid_format)
+        assert not invalid_format, f"Found {len(invalid_format)} malformed AITech code(s):\n" + "\n".join(
+            f"  - {e}" for e in invalid_format
         )
 
     def test_aisubtech_code_format(self):
@@ -131,13 +122,10 @@ class TestTaxonomyValidation:
 
         for dict_name, threat_name, _, aisubtech in self._get_all_codes_from_threats():
             if aisubtech and not pattern.match(aisubtech):
-                invalid_format.append(
-                    f"{dict_name}['{threat_name}']: '{aisubtech}' invalid format"
-                )
+                invalid_format.append(f"{dict_name}['{threat_name}']: '{aisubtech}' invalid format")
 
-        assert not invalid_format, (
-            f"Found {len(invalid_format)} malformed AISubtech code(s):\n"
-            + "\n".join(f"  - {e}" for e in invalid_format)
+        assert not invalid_format, f"Found {len(invalid_format)} malformed AISubtech code(s):\n" + "\n".join(
+            f"  - {e}" for e in invalid_format
         )
 
     def test_aisubtech_parent_matches_aitech(self):
@@ -151,26 +139,18 @@ class TestTaxonomyValidation:
             aisubtech,
         ) in self._get_all_codes_from_threats():
             if aitech and aisubtech:
-                if (
-                    self.PLACEHOLDER_CODE in aitech
-                    or self.PLACEHOLDER_CODE in aisubtech
-                ):
+                if self.PLACEHOLDER_CODE in aitech or self.PLACEHOLDER_CODE in aisubtech:
                     continue
 
                 # Extract parent from AISubtech-X.Y.Z -> X.Y
-                aisubtech_parent = ".".join(
-                    aisubtech.replace("AISubtech-", "").split(".")[:2]
-                )
+                aisubtech_parent = ".".join(aisubtech.replace("AISubtech-", "").split(".")[:2])
                 aitech_suffix = aitech.replace("AITech-", "")
 
                 if aisubtech_parent != aitech_suffix:
-                    mismatches.append(
-                        f"{dict_name}['{threat_name}']: AITech={aitech} but AISubtech={aisubtech}"
-                    )
+                    mismatches.append(f"{dict_name}['{threat_name}']: AITech={aitech} but AISubtech={aisubtech}")
 
-        assert not mismatches, (
-            f"Found {len(mismatches)} AITech/AISubtech parent mismatch(es):\n"
-            + "\n".join(f"  - {e}" for e in mismatches)
+        assert not mismatches, f"Found {len(mismatches)} AITech/AISubtech parent mismatch(es):\n" + "\n".join(
+            f"  - {e}" for e in mismatches
         )
 
 
@@ -195,12 +175,8 @@ class TestTaxonomyCompleteness:
         assert "AITech-9.1" in VALID_AITECH_CODES, "Missing System Manipulation"
         assert "AITech-12.1" in VALID_AITECH_CODES, "Missing Tool Exploitation"
         assert "AITech-13.1" in VALID_AITECH_CODES, "Missing Disruption of Availability"
-        assert (
-            "AISubtech-1.1.1" in VALID_AISUBTECH_CODES
-        ), "Missing Instruction Manipulation"
-        assert (
-            "AISubtech-8.2.3" in VALID_AISUBTECH_CODES
-        ), "Missing Data Exfiltration via Agent Tooling"
+        assert "AISubtech-1.1.1" in VALID_AISUBTECH_CODES, "Missing Instruction Manipulation"
+        assert "AISubtech-8.2.3" in VALID_AISUBTECH_CODES, "Missing Data Exfiltration via Agent Tooling"
 
 
 class TestTaxonomyHelpers:
@@ -230,10 +206,7 @@ class TestTaxonomyHelpers:
 
     def test_get_aisubtech_name(self):
         """Test AISubtech name lookup."""
-        assert (
-            get_aisubtech_name("AISubtech-1.1.1")
-            == "Instruction Manipulation (Direct Prompt Injection)"
-        )
+        assert get_aisubtech_name("AISubtech-1.1.1") == "Instruction Manipulation (Direct Prompt Injection)"
         assert get_aisubtech_name("AISubtech-99.99.99") is None
 
 
@@ -300,14 +273,10 @@ class TestLLMAnalyzerTaxonomy:
             for code, line_num, _ in codes:
                 if code.startswith("AITech-"):
                     if code not in VALID_AITECH_CODES:
-                        invalid_codes.append(
-                            f"{file_path}:{line_num}: '{code}' not in taxonomy"
-                        )
+                        invalid_codes.append(f"{file_path}:{line_num}: '{code}' not in taxonomy")
                 elif code.startswith("AISubtech-"):
                     if code not in VALID_AISUBTECH_CODES:
-                        invalid_codes.append(
-                            f"{file_path}:{line_num}: '{code}' not in taxonomy"
-                        )
+                        invalid_codes.append(f"{file_path}:{line_num}: '{code}' not in taxonomy")
 
         # Skip test if no files found
         if files_scanned == 0:
@@ -349,7 +318,6 @@ class TestLLMAnalyzerTaxonomy:
             # Schema structure might be different, fall back to regex scan
             pass
 
-        assert not invalid_codes, (
-            f"Found {len(invalid_codes)} invalid AITech code(s) in schema enum:\n"
-            + "\n".join(f"  - {e}" for e in invalid_codes)
+        assert not invalid_codes, f"Found {len(invalid_codes)} invalid AITech code(s) in schema enum:\n" + "\n".join(
+            f"  - {e}" for e in invalid_codes
         )
