@@ -149,7 +149,7 @@ class TestMarkdownFormat:
 
     def test_markdown_format_has_headers(self, safe_skill_dir):
         """Test that Markdown format has proper headers."""
-        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown"])
+        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown", "--compact"])
         assert code == 0
 
         # Should have Markdown headers
@@ -157,7 +157,7 @@ class TestMarkdownFormat:
 
     def test_markdown_format_has_skill_info(self, safe_skill_dir):
         """Test that Markdown includes skill information."""
-        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown"])
+        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown", "--compact"])
         assert code == 0
 
         # Should mention the skill name
@@ -165,7 +165,7 @@ class TestMarkdownFormat:
 
     def test_markdown_format_has_status(self, safe_skill_dir):
         """Test that Markdown shows safety status."""
-        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown"])
+        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown", "--compact"])
         assert code == 0
 
         # Should show some form of status
