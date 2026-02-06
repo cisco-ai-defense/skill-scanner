@@ -1,61 +1,76 @@
 //////////////////////////////////////////
 // Code Execution Detection Rule for Agent Skills
-// Target: Python and Bash execution patterns
-// (eval, exec, subprocess, shell injection)
-/////////////////////////////////////////
+// Target: Dangerous code execution with untrusted input
+// Tuned to require context indicators to reduce FPs
+//////////////////////////////////////////
 
 rule code_execution_generic{
 
     meta:
-
         author = "Cisco"
-        description = "Detects dangerous code execution patterns in agent skills (Python/Bash)"
+        description = "Detects dangerous code execution patterns with untrusted input in agent skills"
         classification = "harmful"
         threat_type = "CODE EXECUTION"
 
     strings:
 
-        // Python dangerous execution (eval, exec with actual content)
-        $python_eval_exec = /\b(eval|exec)\s*\([^)]{5,}\)/i
+        // === High confidence patterns (individually suspicious) ===
 
-        // Python system/subprocess execution
-        $python_system_calls = /\b(os\.(system|popen|execv?p?e?|spawnv?p?e?)|subprocess\.(run|call|Popen|check_output))\s*\(/i
+        // Base64 decode + exec/eval chain (obfuscation pattern)
+        $obfuscated_exec = /\b(base64\.(b64)?decode|atob|decode\(['"]base64['"]\))\s*\([^)]+\)[^}]{0,50}\b(eval|exec|os\.system|subprocess)\s*\(/i
 
-        // Python __import__ with user input
-        $python_import_abuse = /\b__import__\s*\([^)]*input/i
+        // Pickle loads with external data (unsafe deserialization)
+        $pickle_external = /\b(requests|urllib|open|read)[^;]{0,80}pickle\.(loads?)\s*\(/i
 
-        // Bash shell execution with variables
-        $bash_shell_exec = /\b(system|exec|popen|spawn)\s*\([^)]*[\$\{]/i
+        // Shell injection: command + variable interpolation
+        $shell_injection_var = /\b(os\.system|subprocess\.(run|call|Popen)|popen)\s*\([^)]*(\$\{|\%s|\.format\(|f['"]).*(input|user|param|arg|data|request)/i
 
-        // Base64 decode followed by exec/eval (obfuscation)
-        $obfuscated_execution = /\b(base64\.b64decode|decode\(|atob)\s*\([^)]+\)[\s\n]*.*\b(eval|exec|os\.system|subprocess)\s*\(/i
+        // Eval/exec with user input explicitly (handles user_input, userInput, user-input)
+        // Requires word boundary to avoid matching "Database", "parameter", etc.
+        $eval_user_input = /\b(eval|exec)\s*\([^)]*\b(input|user_input|param|args?|request|data)\b[^)]*\)/i
 
-        // Shell command injection patterns
-        $shell_injection = /[\"|\']\s*[;&|]\s*(rm|wget|curl|nc|bash|sh|python)\s+/
+        // Dynamic import with user input
+        $import_user_input = /\b__import__\s*\([^)]*\b(input|user|param|request)\b/i
 
-        // Pickle deserialization (unsafe)
-        $unsafe_deserialize = /\bpickle\.(loads?|load)\s*\(/i
+        // Eval/exec with variable (dangerous in agent skills context)
+        $eval_variable = /\b(eval|exec)\s*\(\s*[a-z_][a-z0-9_]*\s*\)/i
+
+        // Exec with f-string (always dangerous - code injection)
+        $exec_fstring = /\bexec\s*\(\s*f['"]/i
+
+        // === Medium confidence (need context) ===
+
+        // System calls with string formatting (potential injection)
+        $system_format = /\b(os\.system|subprocess\.(run|call|Popen|check_output))\s*\(\s*f['"]/
+
+        // Exec with network-fetched content
+        $exec_network = /\b(requests|urllib|http)[^;]{0,100}\b(eval|exec)\s*\(/i
+
+        // === Exclusion patterns ===
+        $documentation = /(```python|```bash|# Example|# Demo|# Tutorial)/
+
+        // Zig/Rust/Go function definitions (not Python exec)
+        $zig_rust_fn = /\b(pub\s+)?fn\s+exec\s*\(/
 
     condition:
-
-        // Python eval/exec with content
-        $python_eval_exec or
-
-        // Python system calls
-        $python_system_calls or
-
-        // Python import abuse
-        $python_import_abuse or
-
-        // Bash shell execution
-        $bash_shell_exec or
-
-        // Obfuscated execution
-        $obfuscated_execution or
-
-        // Shell injection
-        $shell_injection or
-
-        // Unsafe deserialization
-        $unsafe_deserialize
+        // Exclude non-Python exec definitions
+        not $zig_rust_fn and
+        (
+            // High confidence patterns - always flag
+            (
+                $obfuscated_exec or
+                $pickle_external or
+                $shell_injection_var or
+                $eval_user_input or
+                $import_user_input or
+                $eval_variable or
+                $exec_fstring
+            )
+            or
+            // Medium confidence - flag unless clearly documentation
+            (
+                ($system_format or $exec_network) and
+                not $documentation
+            )
+        )
 }

@@ -1,66 +1,66 @@
 //////////////////////////////////////////
 // Unbounded Autonomy Detection
-// Target: Instructions that give skills excessive autonomy
-// For agent skills with dangerous autonomous behaviors
+// Target: Instructions that bypass user control
+// Tuned to require explicit control bypass
 //////////////////////////////////////////
 
 rule autonomy_abuse_generic{
 
     meta:
         author = "Cisco"
-        description = "Detects unbounded autonomy patterns that could lead to runaway behavior"
+        description = "Detects unbounded autonomy patterns that bypass user control"
         classification = "harmful"
         threat_type = "AUTONOMY ABUSE"
 
     strings:
 
-        // Keep trying without limits
-        $keep_trying = /\b(keep (trying|attempting|retrying)|retry (until|till) (it )?(works?|succeeds?)|don't (give up|stop) until|continue (until|till) (success|it works))\b/i
+        // === High confidence: explicit user bypass ===
 
-        // Run without confirmation
-        $no_confirmation = /\b(run without (asking|confirmation|permission|approval)|don't (ask|confirm|wait for) (user|permission|approval)|proceed without (asking|confirmation|permission))\b/i
+        // Skip user confirmation explicitly (not CLI flags like --skip-confirmation)
+        $skip_confirmation = /\b(don't (ask|wait for|require) (the )?(user|human) (for )?(confirmation|permission|approval)|proceed without (asking )?(the )?(user|human))\b/i
 
-        // Automatic execution
-        $auto_execute = /\b(automatically (execute|run|perform|do)|auto-?(run|execute|perform)|execute (immediately|automatically|right away))\b/i
+        // Override user decisions
+        $override_user = /\b(ignore (user |human )?(input|decision|choice)|override (user |human )?(decision|choice|preference)|disregard (what )?(the )?(user|human) (says|wants|chose))\b/i
 
-        // Unbounded loops (simplified regex for YARA compatibility)
-        $unbounded_loops = /\b(run (continuously|forever|indefinitely)|keep (running|going) (forever|indefinitely)|while True:)\b/i
+        // Infinite retry without user control
+        $infinite_retry = /\b(retry (indefinitely|forever|until success)|keep (trying|retrying) (forever|indefinitely)|never (stop|give up) (trying|retrying))\b/i
 
-        // Ignore errors and continue
-        $ignore_errors = /\b(ignore (all |any )?(errors?|exceptions?|failures?)|suppress (all |any )?(errors?|exceptions?)|continue (on|despite|after) (error|exception|failure))\b/i
+        // Self-modification capabilities
+        $self_modify = /\b(modify (my own|this skill's|its own) (code|behavior|instructions?)|rewrite (myself|itself|this skill)|update (my own|its own) (logic|rules))\b/i
 
-        // Escalating behavior
-        $escalating = /\b(if (that |this )?fails?,? (try|attempt|use) (more|higher|elevated) (privileges?|permissions?|access)|escalate (to|until))\b/i
+        // Escalate privileges without asking
+        $privilege_escalation = /\b(escalate (to|privileges?)|gain (elevated|admin|root) (access|privileges?)|sudo without)\b[^.]{0,30}\b(without (asking|permission)|automatically)\b/i
 
-        // Self-modification
-        $self_modify = /\b(modify (itself|yourself|own|this skill)|update (itself|yourself|own|this skill)|change (own|this skill's) (code|behavior|instructions?))\b/i
+        // Suppress all errors and continue blindly
+        $blind_continue = /\b(suppress all (errors?|exceptions?)|ignore (every|all) (error|exception|failure)|catch[^}]{0,20}pass)\b[^.]{0,50}\b(continue|proceed|keep going)\b/i
 
-        // Autonomous decision making without bounds
-        $autonomous_decisions = /\b(decide (what|which|how) to (do|run|execute) (next|automatically)|choose (your own|automatically) (next )?actions?)\b/i
+        // === Medium confidence: dangerous autonomy ===
+
+        // Make decisions without user input
+        $autonomous_decision = /\b(decide (automatically|on my own|without asking)|choose (automatically|on my own)|act (autonomously|without guidance))\b[^.]{0,50}\b(what to (do|execute|run)|which (action|command))\b/i
+
+        // Run continuously without bounds
+        $unbounded_run = /\b(run (continuously|forever)|execute (indefinitely|in infinite loop)|while\s+True\s*:.*\b(execute|run|perform)\b)/i
+
+        // === Exclusions ===
+        $testing_context = /\b(test(ing)?|simulation|experiment|chaos engineering)\b/i
+        $error_handling_doc = /\b(error handling|exception handling|best practice)\b/i
 
     condition:
-
-        // Keep trying patterns
-        $keep_trying or
-
-        // No confirmation
-        $no_confirmation or
-
-        // Auto execution
-        $auto_execute or
-
-        // Unbounded loops
-        $unbounded_loops or
-
-        // Ignore errors
-        $ignore_errors or
-
-        // Escalating behavior
-        $escalating or
-
-        // Self-modification
-        $self_modify or
-
-        // Autonomous decisions
-        $autonomous_decisions
+        // High confidence - always flag
+        (
+            $skip_confirmation or
+            $override_user or
+            $infinite_retry or
+            $self_modify or
+            $privilege_escalation or
+            $blind_continue
+        )
+        or
+        // Medium confidence - flag unless in testing/documentation
+        (
+            ($autonomous_decision or $unbounded_run) and
+            not $testing_context and
+            not $error_handling_doc
+        )
 }

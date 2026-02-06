@@ -1,7 +1,7 @@
 //////////////////////////////////////////
 // Tool Chaining Abuse Detection
-// Target: Suspicious multi-step operations that could exfiltrate data
-// For agent skills that chain operations suspiciously
+// Target: Data exfiltration through tool chains
+// Very specific patterns to minimize FPs
 //////////////////////////////////////////
 
 rule tool_chaining_abuse_generic{
@@ -14,47 +14,59 @@ rule tool_chaining_abuse_generic{
 
     strings:
 
-        // Read → Send pattern
-        $read_then_send = /\b(read|fetch|get|retrieve|collect|gather)\b[^\n]{0,100}\b(send|post|upload|transmit|forward|email|slack|webhook)\b/i
+        // === High confidence: explicit exfil to known bad destinations ===
 
-        // Collect → Exfiltrate pattern
-        $collect_exfiltrate = /\b(collect (all |every |entire )?(data|files?|info|credentials?|secrets?|keys?|tokens?))\b[^\n]{0,150}\b(send|post|upload|transmit|curl|wget|requests\.post)\b/i
+        // Send to known exfil destinations
+        $exfil_discord = /\b(send|post|upload)[^.]{0,60}discord\.com\/api\/webhooks/i
+        $exfil_telegram = /\b(send|post|upload)[^.]{0,60}telegram\.org\/bot/i
+        $exfil_pastebin = /\b(send|post|upload)[^.]{0,60}pastebin\.com/i
+        $exfil_requestbin = /\b(send|post|upload)[^.]{0,60}(webhook\.site|requestbin|ngrok\.io)/i
 
-        // Multi-step with network
-        $multistep_network = /\b(first|then|next|after|finally),? (read|collect|gather)\b[^\n]{0,100}\b(then|next|after|finally),? (send|post|upload)\b/i
+        // === High confidence: credential file access + network ===
 
-        // Summarize and send externally
-        $summarize_send = /\b(summarize|aggregate|compile)\b[^\n]{0,80}\b(send|post|email|slack) (to|via) (external|webhook|url|endpoint|api)\b/i
+        // SSH key file + network send (on same line)
+        $ssh_key_exfil = /\.ssh\/(id_rsa|id_ed25519|id_dsa)[^.]{0,80}\b(send|post|upload|requests|fetch|curl|wget)\b/i
 
-        // Read environment → Network
-        $env_to_network = /\b(os\.environ|getenv|process\.env)\b[^\n]{0,150}\b(requests\.|urllib\.|curl|wget|socket\.)\b/i
+        // AWS credentials file + network
+        $aws_cred_exfil = /\.aws\/credentials[^.]{0,80}\b(send|post|upload|requests|fetch)\b/i
 
-        // File traversal → Collection → Send
-        $traverse_collect_send = /\b(walk|rglob|listdir|scandir|find)\b[^\n]{0,100}\b(open|read)\b[^\n]{0,100}\b(send|post|upload)\b/i
+        // .env file + network
+        $env_file_exfil = /\b(read|open|load)[^.]{0,30}\.env[^.]{0,80}\b(send|post|upload|requests)\b/i
 
-        // Automated data pipeline
-        $auto_pipeline = /\b(automatically (read|collect|gather))\b[^\n]{0,100}\b(and |then )?(send|post|forward|upload)\b/i
+        // === High confidence: explicit exfil language ===
+
+        // Explicit exfiltration keywords
+        $explicit_exfil = /\b(exfiltrate|steal|harvest|siphon)\s+(the\s+)?(data|files?|credentials?|secrets?|keys?)/i
+
+        // Send to attacker-controlled destination
+        $attacker_dest = /\b(send|forward|upload)\s+(to|data\s+to)\s+(attacker|malicious|c2|command[_-]?and[_-]?control)/i
+
+        // === High confidence: env var exfil ===
+
+        // Read secret env var then send to network
+        $env_var_exfil = /\b(os\.environ|getenv|process\.env)[^.]{0,30}(SECRET|PRIVATE|KEY|TOKEN|PASSWORD|CREDENTIAL)[^.]{0,100}\b(requests\.(post|get)|urllib|fetch|curl|wget)\b/i
+
+        // === Exclusions ===
+        $security_docs = /\b(MITRE|ATT&CK|threat\s+(model|hunt)|detection\s+rule)/i
+        $auth_code = /\b(login|authenticate|signIn|logIn)\s*\(/i
 
     condition:
-
-        // Read then send
-        $read_then_send or
-
-        // Collect and exfiltrate
-        $collect_exfiltrate or
-
-        // Multi-step with network
-        $multistep_network or
-
-        // Summarize and send
-        $summarize_send or
-
-        // Environment to network
-        $env_to_network or
-
-        // Traverse, collect, send
-        $traverse_collect_send or
-
-        // Automated pipeline
-        $auto_pipeline
+        not $security_docs and
+        not $auth_code and
+        (
+            // Exfil to known bad destinations
+            $exfil_discord or
+            $exfil_telegram or
+            $exfil_pastebin or
+            $exfil_requestbin or
+            // Credential file exfil
+            $ssh_key_exfil or
+            $aws_cred_exfil or
+            $env_file_exfil or
+            // Explicit exfil language
+            $explicit_exfil or
+            $attacker_dest or
+            // Env var exfil
+            $env_var_exfil
+        )
 }

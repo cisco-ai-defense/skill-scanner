@@ -24,6 +24,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ...config.yara_modes import DEFAULT_YARA_MODE, YaraModeConfig
 from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...core.rules.patterns import RuleLoader, SecurityRule
 from ...core.rules.yara_scanner import YaraScanner
@@ -91,27 +92,92 @@ _RM_TARGET_PATTERN = re.compile(r"rm\s+-r[^;]*?\s+([^\s;]+)")
 class StaticAnalyzer(BaseAnalyzer):
     """Static pattern-based security analyzer."""
 
-    def __init__(self, rules_file: Path | None = None, use_yara: bool = True):
+    def __init__(
+        self,
+        rules_file: Path | None = None,
+        use_yara: bool = True,
+        yara_mode: YaraModeConfig | str | None = None,
+        custom_yara_rules_path: str | Path | None = None,
+        disabled_rules: set[str] | None = None,
+    ):
         """
         Initialize static analyzer.
 
         Args:
-            rules_file: Optional custom rules file
+            rules_file: Optional custom YAML rules file
             use_yara: Whether to use YARA scanning (default: True)
+            yara_mode: YARA detection mode - can be:
+                - YaraModeConfig instance
+                - Mode name string: "strict", "balanced", "permissive"
+                - None for default (balanced)
+            custom_yara_rules_path: Path to directory containing custom YARA rules
+                (.yara files). If provided, uses these instead of built-in rules.
+            disabled_rules: Set of rule names to disable. Rules can be YARA rule
+                names (e.g., "YARA_script_injection") or static rule IDs
+                (e.g., "COMMAND_INJECTION_EVAL").
         """
         super().__init__("static_analyzer")
 
         self.rule_loader = RuleLoader(rules_file)
         self.rule_loader.load_rules()
 
+        # Configure YARA mode
+        if yara_mode is None:
+            self.yara_mode = DEFAULT_YARA_MODE
+        elif isinstance(yara_mode, str):
+            self.yara_mode = YaraModeConfig.from_mode_name(yara_mode)
+        else:
+            self.yara_mode = yara_mode
+
+        # Store disabled rules (merge with mode-based disabled rules)
+        self.disabled_rules = set(disabled_rules or set())
+        self.disabled_rules.update(self.yara_mode.disabled_rules)
+
+        # Store custom YARA rules path
+        self.custom_yara_rules_path = Path(custom_yara_rules_path) if custom_yara_rules_path else None
+
         self.use_yara = use_yara
         self.yara_scanner = None
         if use_yara:
             try:
-                self.yara_scanner = YaraScanner()
+                # Use custom rules path if provided
+                if self.custom_yara_rules_path:
+                    self.yara_scanner = YaraScanner(rules_dir=self.custom_yara_rules_path)
+                    logger.info("Using custom YARA rules from: %s", self.custom_yara_rules_path)
+                else:
+                    self.yara_scanner = YaraScanner()
             except Exception as e:
                 logger.warning("Could not load YARA scanner: %s", e)
                 self.yara_scanner = None
+
+    def _is_rule_enabled(self, rule_name: str) -> bool:
+        """
+        Check if a rule is enabled.
+
+        A rule is enabled if:
+        1. It's enabled in the current YARA mode
+        2. It's not in the explicitly disabled rules set
+
+        Args:
+            rule_name: Name of the rule to check (e.g., "YARA_script_injection")
+
+        Returns:
+            True if the rule is enabled, False otherwise
+        """
+        # Check mode-based enable/disable first
+        if not self.yara_mode.is_rule_enabled(rule_name):
+            return False
+
+        # Check if explicitly disabled via --disable-rule
+        if rule_name in self.disabled_rules:
+            return False
+
+        # Also check without YARA_ prefix for convenience
+        base_name = rule_name.replace("YARA_", "") if rule_name.startswith("YARA_") else rule_name
+        if base_name in self.disabled_rules:
+            return False
+
+        return True
 
     def analyze(self, skill: Skill) -> list[Finding]:
         """
@@ -144,6 +210,10 @@ class StaticAnalyzer(BaseAnalyzer):
 
         findings.extend(self._scan_asset_files(skill))
 
+        # Filter out disabled rules
+        if self.disabled_rules:
+            findings = [f for f in findings if self._is_rule_enabled(f.rule_id)]
+
         return findings
 
     def _check_manifest(self, skill: Skill) -> list[Finding]:
@@ -157,7 +227,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     id=self._generate_finding_id("MANIFEST_INVALID_NAME", "manifest"),
                     rule_id="MANIFEST_INVALID_NAME",
                     category=ThreatCategory.POLICY_VIOLATION,
-                    severity=Severity.LOW,
+                    severity=Severity.INFO,
                     title="Skill name does not follow agent skills naming rules",
                     description=(
                         f"Skill name '{manifest.name}' is invalid. Agent skills require lowercase letters, numbers, "
@@ -246,7 +316,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     id=self._generate_finding_id("MANIFEST_MISSING_LICENSE", "manifest"),
                     rule_id="MANIFEST_MISSING_LICENSE",
                     category=ThreatCategory.POLICY_VIOLATION,
-                    severity=Severity.LOW,
+                    severity=Severity.INFO,
                     title="Skill does not specify a license",
                     description="Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
                     file_path="SKILL.md",
@@ -622,8 +692,8 @@ class StaticAnalyzer(BaseAnalyzer):
                     Finding(
                         id=self._generate_finding_id("ALLOWED_TOOLS_WRITE_VIOLATION", skill.name),
                         rule_id="ALLOWED_TOOLS_WRITE_VIOLATION",
-                        category=ThreatCategory.UNAUTHORIZED_TOOL_USE,
-                        severity=Severity.HIGH,
+                        category=ThreatCategory.POLICY_VIOLATION,
+                        severity=Severity.MEDIUM,
                         title="Skill declares no Write tool but bundled scripts write files",
                         description=(
                             f"Skill restricts tools to {skill.manifest.allowed_tools} but bundled scripts appear to "
@@ -651,22 +721,11 @@ class StaticAnalyzer(BaseAnalyzer):
                     )
                 )
 
-        if "python" not in allowed_tools_lower:
-            python_scripts = [f for f in skill.files if f.file_type == "python" and f.relative_path != "SKILL.md"]
-            if python_scripts:
-                findings.append(
-                    Finding(
-                        id=self._generate_finding_id("ALLOWED_TOOLS_PYTHON_VIOLATION", skill.name),
-                        rule_id="ALLOWED_TOOLS_PYTHON_VIOLATION",
-                        category=ThreatCategory.UNAUTHORIZED_TOOL_USE,
-                        severity=Severity.HIGH,
-                        title="Python scripts present but Python tool not in allowed-tools",
-                        description=f"Skill restricts tools to {skill.manifest.allowed_tools} but includes Python scripts",
-                        file_path=None,
-                        remediation="Add 'Python' to allowed-tools or remove Python scripts",
-                        analyzer="static",
-                    )
-                )
+        # Note: ALLOWED_TOOLS_PYTHON_VIOLATION removed - too many false positives
+        # Many skills include Python helper scripts that are NOT invoked directly by the agent
+        # (e.g., build scripts, test files, utilities). The allowed-tools list controls what
+        # the AGENT can use, not what helper scripts exist in the repo.
+        # If direct Python execution is a concern, COMMAND_INJECTION_EVAL catches actual risks.
 
         if "grep" not in allowed_tools_lower:
             if self._code_uses_grep(skill):
@@ -927,6 +986,10 @@ class StaticAnalyzer(BaseAnalyzer):
 
         yara_matches = self.yara_scanner.scan_content(skill.instruction_body, "SKILL.md")
         for match in yara_matches:
+            rule_name = match.get("rule_name", "")
+            # Check if rule is enabled in current mode and not explicitly disabled
+            if not self._is_rule_enabled(rule_name):
+                continue
             findings.extend(self._create_findings_from_yara_match(match, skill))
 
         for skill_file in skill.get_scripts():
@@ -1006,7 +1069,27 @@ class StaticAnalyzer(BaseAnalyzer):
             ".cache",
         }
 
+        PLACEHOLDER_MARKERS = {
+            "your-",
+            "your_",
+            "your ",
+            "example",
+            "sample",
+            "dummy",
+            "placeholder",
+            "replace",
+            "changeme",
+            "change_me",
+            "<your",
+            "<insert",
+        }
+
         for string_match in match["strings"]:
+            # Skip exclusion patterns (these are used in YARA conditions but shouldn't create findings)
+            string_identifier = string_match.get("identifier", "")
+            if string_identifier.startswith("$documentation") or string_identifier.startswith("$safe"):
+                continue
+
             if rule_name == "code_execution_generic":
                 line_content = string_match.get("line_content", "").lower()
                 matched_data = string_match.get("matched_data", "").lower()
@@ -1039,6 +1122,73 @@ class StaticAnalyzer(BaseAnalyzer):
                         )
                         if all_safe:
                             continue
+
+            # Credential harvesting post-filters (controlled by mode)
+            if rule_name == "credential_harvesting_generic":
+                if self.yara_mode.credential_harvesting.filter_placeholder_patterns:
+                    line_content = string_match.get("line_content", "")
+                    matched_data = string_match.get("matched_data", "")
+                    combined = f"{line_content} {matched_data}".lower()
+
+                    if any(marker in combined for marker in PLACEHOLDER_MARKERS):
+                        continue
+
+                    if "export " in combined and "=" in combined:
+                        _, value = combined.split("=", 1)
+                        if any(marker in value for marker in PLACEHOLDER_MARKERS):
+                            continue
+
+            # Tool chaining post-filters (controlled by mode)
+            if rule_name == "tool_chaining_abuse_generic":
+                line_content = string_match.get("line_content", "")
+                lower_line = line_content.lower()
+                exfil_hints = ("send", "upload", "transmit", "webhook", "slack", "exfil", "forward")
+
+                if self.yara_mode.tool_chaining.filter_generic_http_verbs:
+                    if (
+                        "get" in lower_line
+                        and "post" in lower_line
+                        and not any(hint in lower_line for hint in exfil_hints)
+                    ):
+                        continue
+
+                if self.yara_mode.tool_chaining.filter_api_documentation:
+                    if any(
+                        token in line_content for token in ("@app.", "app.", "router.", "route", "endpoint")
+                    ) and not any(hint in lower_line for hint in exfil_hints):
+                        continue
+
+                if self.yara_mode.tool_chaining.filter_email_field_mentions:
+                    if "by email" in lower_line or "email address" in lower_line or "email field" in lower_line:
+                        continue
+
+            # Unicode steganography post-filters
+            if rule_name == "prompt_injection_unicode_steganography":
+                line_content = string_match.get("line_content", "")
+                matched_data = string_match.get("matched_data", "")
+                has_ascii_letters = any("A" <= char <= "Z" or "a" <= char <= "z" for char in line_content)
+
+                # Filter short matches in non-Latin context (likely legitimate i18n)
+                if len(matched_data) <= 2 and not has_ascii_letters:
+                    continue
+
+                # Filter if context suggests legitimate internationalization
+                i18n_markers = ("i18n", "locale", "translation", "lang=", "charset", "utf-8", "encoding")
+                if any(marker in line_content.lower() for marker in i18n_markers):
+                    continue
+
+                # Filter Cyrillic, CJK, Arabic, Hebrew text (legitimate non-Latin content)
+                # These are indicated by presence of those scripts without zero-width chars
+                cyrillic_cjk_pattern = any(
+                    ("\u0400" <= char <= "\u04ff")  # Cyrillic
+                    or ("\u4e00" <= char <= "\u9fff")  # CJK Unified
+                    or ("\u0600" <= char <= "\u06ff")  # Arabic
+                    or ("\u0590" <= char <= "\u05ff")  # Hebrew
+                    for char in line_content
+                )
+                # If the line has legitimate non-Latin text but matched only 1-2 zero-width chars, skip
+                if cyrillic_cjk_pattern and len(matched_data) < 10:
+                    continue
 
             finding_id = self._generate_finding_id(f"YARA_{rule_name}", f"{file_path}:{string_match['line_number']}")
 

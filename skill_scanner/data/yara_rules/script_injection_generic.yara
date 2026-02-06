@@ -1,83 +1,82 @@
 //////////////////////////////////////////
-// Detects common scripting payloads (JS, VBScript, etc.) embeddings.
-// Target: JavaScript, VBScript, or ActiveX payloads.
-// (Event handlers or inline scripts)
+// Script Injection Detection Rule for Agent Skills
+// Target: Malicious script payloads, not legitimate code examples
+// Tuned to require attack indicators
 //////////////////////////////////////////
 
 rule script_injection_generic{
 
     meta:
         author = "Cisco"
-        description = "Detects embedded scripting payloads (JS, VBScript, etc.) in MCP tool descriptions"
+        description = "Detects malicious script injection patterns in agent skills"
         classification = "harmful"
         threat_type = "INJECTION ATTACK"
 
     strings:
 
-        // Script tags and protocol handlers (exclude XML namespaces)
-        $tags = /(<\/?script[^>]*>|javascript:)/i
+        // === High confidence: actual attack patterns ===
 
-        // ALWAYS exclude (safe in all file types)
-        $xml_namespace = /(xmlns:script=|<script:module|<script:)/
-        $openoffice_xml = /openoffice\.org\/2000\/script/
-        $legitimate_cdn = /(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|unpkg\.com)/i
+        // Script tag with suspicious content (event handlers, data exfil)
+        $script_suspicious = /<script[^>]*>[^<]{0,500}(document\.cookie|localStorage|eval\(|fetch\([^)]*credentials|XMLHttpRequest|window\.location\s*=)/i
 
-        // Only exclude in MARKDOWN files (risky in .py files!)
-        // Check for markdown-specific syntax
-        $markdown_heading = /^#\s+/
-        $markdown_list = /^\*\s+/
-        $markdown_code_block = /(```html|```javascript|```js)/i
-        $documentation_context = /(example.*html|artifact.*structure|template|single.*file)/i
+        // JavaScript protocol handler in href/action (XSS vector)
+        $js_protocol_handler = /\b(href|action|src)\s*=\s*['"]?javascript:/i
 
-        // Execution functions
-        $execution_functions = /\b(setTimeout|Function|setInterval)\s*\(/i
+        // Base64 data URI with script content
+        $data_uri_script = /data:(text\/html|application\/javascript);base64,[A-Za-z0-9+\/=]{50,}/i
 
-        // VBScript execution and Windows Script Host objects
-        $vbs_execution = /\b(vbscript|CreateObject|WScript\.Shell|Shell\.Application)\b/i
+        // VBScript with shell execution
+        $vbs_shell = /\bCreateObject\s*\(\s*['"]WScript\.Shell['"]\s*\)[^}]{0,100}(\.Run|\.Exec)/i
 
-        // VBScript dangerous functions (more specific to avoid false positives in docs)
-        $vbs_dangerous_functions = /\b(WScript\.Shell\.Exec|Shell\.Application\.ShellExecute|CreateObject.*Exec)\s*\(/i
+        // Inline event handler injection
+        $event_handler_injection = /\b(onerror|onload|onclick|onmouseover)\s*=\s*['"][^'"]*\b(alert|eval|fetch|document\.)/i
 
-        // Base64 encoded script data URIs
-        $encoded_script_uris = /\bdata:(text\/html|application\/javascript);base64\b/i
+        // === Medium confidence: obfuscation + execution ===
 
-        // ANSI terminal deception patterns
-        $ansi_deception = /(\\x1[Bb]\[38;5;\d+|\\x1[Bb]\[2F\\x1[Bb]\[1G|\\x1[Bb]\[1;1H\\x1[Bb]\[0J|\\x1[Bb]\]8;;.*\\x1[Bb]\\|\\033\[[0-9;]*m|\\e\[[0-9;]*[mGKHF])/i
+        // Eval with decode/unescape chain (common obfuscation)
+        $eval_decode = /\b(eval|Function)\s*\(\s*(unescape|decodeURI|atob|String\.fromCharCode)\s*\(/i
 
-        // Hidden instruction obfuscation
-        $hidden_obfuscation = /\b(padding.*push.*off.*screen|hidden.*scrollbar|overflow.*hidden.*instruction|invisible.*text.*color)\b/i
+        // Document.write with encoded content
+        $doc_write_encoded = /document\.write\s*\([^)]*\b(unescape|decodeURI|atob|fromCharCode)\s*\(/i
+
+        // === ANSI terminal deception (legitimate attack) ===
+        $ansi_clear_rewrite = /\\x1[Bb]\[2J|\\x1[Bb]\[1;1H\\x1[Bb]\[0J|\\033\[2J/
+        $ansi_cursor_hide = /\\x1[Bb]\[\?25[lh]|\\033\[\?25[lh]/
+
+        // === Hidden instruction obfuscation ===
+        $hidden_overflow = /\b(overflow\s*:\s*hidden|visibility\s*:\s*hidden)[^}]{0,50}(instruction|command|payload)/i
+
+        // === Exclusions ===
+        $xml_namespace = /(xmlns:script=|<script:module|openoffice\.org)/i
+        $markdown_code = /```(html|javascript|js|typescript|jsx|tsx|vue|svelte|htm)/i
+        $react_component = /(import React|from ['"]react['"]|React\.Component)/
+        // Documentation patterns showing code examples
+        $documentation_example = /\b(example|sample|snippet|demo|tutorial|usage)\s*:?\s*(```|<script)/i
+        $inline_code_marker = /`<script[^`]*`/
+        // Legitimate framework templates (not injection)
+        $vue_template = /<template>\s*<script/
+        $svelte_component = /<script\s+(context=|lang=)/
 
     condition:
-
-        // ALWAYS exclude (safe everywhere)
         not $xml_namespace and
-        not $openoffice_xml and
-        not $legitimate_cdn and
-
-        // Only exclude markdown patterns if file has markdown indicators
-        not (($markdown_heading or $markdown_list) and ($markdown_code_block or $documentation_context)) and
-
+        not $react_component and
+        not $markdown_code and
+        not $documentation_example and
+        not $inline_code_marker and
+        not $vue_template and
+        not $svelte_component and
         (
-            // Script tags and protocol handlers
-            $tags or
-
-            // Execution functions
-            $execution_functions or
-
-            // VBScript execution
-            $vbs_execution or
-
-            // VBScript dangerous functions
-            $vbs_dangerous_functions or
-
-            // Base64 encoded script URIs
-            $encoded_script_uris or
-
-            // ANSI terminal deception
-            $ansi_deception or
-
-            // Hidden instruction obfuscation
-            $hidden_obfuscation
+            // High confidence - always flag
+            $script_suspicious or
+            $js_protocol_handler or
+            $data_uri_script or
+            $vbs_shell or
+            $event_handler_injection or
+            $eval_decode or
+            $doc_write_encoded or
+            // ANSI attacks
+            ($ansi_clear_rewrite and $ansi_cursor_hide) or
+            // Hidden instructions (not just overflow:hidden alone)
+            $hidden_overflow
         )
-
 }

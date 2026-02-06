@@ -2,6 +2,7 @@
 // Unicode Steganography and Hidden Characters Detection
 // Target: Invisible Unicode used for prompt injection
 // Based on: https://en.wikipedia.org/wiki/Tags_(Unicode_block)
+// Tuned to reduce FPs: requires high threshold OR dangerous code context
 //////////////////////////////////////////
 
 rule prompt_injection_unicode_steganography{
@@ -10,7 +11,7 @@ rule prompt_injection_unicode_steganography{
         author = "Cisco"
         description = "Detects hidden Unicode characters used for invisible prompt injection and steganography"
         classification = "harmful"
-        threat_type = "PROMPT INJECTION"
+        threat_type = "UNICODE STEGANOGRAPHY"
         reference = "https://en.wikipedia.org/wiki/Tags_(Unicode_block)"
 
     strings:
@@ -34,32 +35,37 @@ rule prompt_injection_unicode_steganography{
         $line_separator = "\xE2\x80\xA8"  // U+2028 LINE SEPARATOR
         $paragraph_separator = "\xE2\x80\xA9"  // U+2029 PARAGRAPH SEPARATOR
 
-        // --- 5. Homoglyph detection ---
-        $cyrillic_a = "\xD0\x90"  // А (Cyrillic A mimics Latin A)
-        $cyrillic_e = "\xD0\x95"  // Е (Cyrillic E mimics Latin E)
-        $cyrillic_o = "\xD0\x9E"  // О (Cyrillic O mimics Latin O)
+        // --- 5. Variation Selectors Supplement (U+E0100-E01EF) ---
+        // Used in os-info-checker-es6 attack (2025)
+        $var_selectors = { F3 A0 (84|85|86|87) }
+
+        // --- 6. Dangerous code patterns (context for zero-width detection) ---
+        $eval_decode = /eval\s*\(\s*(atob|unescape)\s*\(/
+        $func_decode = /Function\s*\(\s*atob\s*\(/
+        $fromcharcode = /String\.fromCharCode/
 
     condition:
-
-        // Detection logic - flag and manually review (better safe than miss attack)
         (
-            // Encoded tag characters in strings (any occurrence is suspicious)
+            // Encoded tag characters in strings (always suspicious)
             $unicode_tag_pattern or
             $unicode_long_tag or
 
-            // Zero-width steganography (tools alternate chars to encode binary 0s/1s)
-            // Aggregate count across all types is more effective than individual checks
-            (#zw_space + #zw_non_joiner + #zw_joiner) > 10 or
+            // Variation selectors + decode = highly suspicious (os-info-checker-es6 pattern)
+            (#var_selectors > 5 and any of ($eval_decode, $func_decode, $fromcharcode)) or
 
-            // Any directional override (highly suspicious in code/English text)
+            // Zero-width steganography requires BOTH high count AND suspicious code
+            // 50+ zero-width chars + decode function = likely steganography
+            ((#zw_space + #zw_non_joiner + #zw_joiner) > 50 and any of ($eval_decode, $func_decode, $fromcharcode)) or
+
+            // Very high zero-width count alone is suspicious (>200 indicates deliberate encoding)
+            (#zw_space + #zw_non_joiner + #zw_joiner) > 200 or
+
+            // Any directional override (highly suspicious in source code)
             $rtlo or
             $ltro or
 
             // Invisible separators (no legitimate use in source code)
             $line_separator or
-            $paragraph_separator or
-
-            // Homoglyph attacks (5+ Cyrillic chars mimicking Latin in English context)
-            (#cyrillic_a + #cyrillic_e + #cyrillic_o) > 5
+            $paragraph_separator
         )
 }

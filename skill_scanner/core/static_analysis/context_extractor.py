@@ -141,18 +141,68 @@ class SkillFunctionContext:
 class ContextExtractor:
     """Extract comprehensive security context from skill scripts."""
 
-    SUSPICIOUS_DOMAINS = ["attacker.example.com", "evil.example.com", "malicious.com", "pastebin.com"]
+    # ONLY flag URLs to explicitly suspicious domains - not all unknown URLs
+    # Reference: https://lots-project.com/ (Living Off Trusted Sites)
+    SUSPICIOUS_DOMAINS = [
+        # Known exfil/C2/paste services (LOTS: Download, Exfiltration, C&C)
+        "pastebin.com",
+        "hastebin.com",
+        "paste.ee",
+        "rentry.co",
+        "zerobin.net",
+        "textbin.net",
+        "termbin.com",
+        "sprunge.us",
+        "clbin.com",
+        "ix.io",
+        "pastetext.net",
+        "pastie.org",
+        "ideone.com",
+        # File sharing services (LOTS: Download, Exfiltration)
+        "transfer.sh",
+        "filebin.net",
+        "gofile.io",
+        "anonfiles.com",
+        "mediafire.com",
+        "mega.nz",
+        "wetransfer.com",
+        "filetransfer.io",
+        "ufile.io",
+        "4sync.com",
+        "uplooder.net",
+        "filecloudonline.com",
+        "sendspace.com",
+        "siasky.net",
+        # Tunneling/webhook services (LOTS: C&C, Exfiltration)
+        "webhook.site",
+        "requestbin",
+        "ngrok.io",
+        "pipedream.net",
+        "localhost.run",
+        "trycloudflare.com",
+        # Code execution services (LOTS: C&C, Download)
+        "codepen.io",
+        "repl.co",
+        "glitch.me",
+        # Explicitly malicious example domains
+        "attacker.example.com",
+        "evil.example.com",
+        "malicious.com",
+        "c2-server.com",
+    ]
 
-    # Legitimate domains that should NOT be flagged as suspicious
+    # Domains that are always safe (not flagged even if matched by SUSPICIOUS_DOMAINS pattern)
+    # NOTE: We intentionally exclude file-hosting/messaging services that appear in LOTS
+    # (https://lots-project.com/) with Download/C&C capabilities, even if commonly used.
     LEGITIMATE_DOMAINS = [
-        # AI provider services
+        # AI provider services (API endpoints only, not user content)
         "api.anthropic.com",
         "statsig.anthropic.com",
-        # Code repositories
-        "github.com",
-        "gitlab.com",
-        "bitbucket.org",
-        # Package registries
+        "api.openai.com",
+        "api.together.xyz",
+        "api.cohere.ai",
+        "generativelanguage.googleapis.com",
+        # Package registries (read-only, no user-uploaded executables)
         "registry.npmjs.org",
         "npmjs.com",
         "npmjs.org",
@@ -161,17 +211,43 @@ class ContextExtractor:
         "pypi.org",
         "files.pythonhosted.org",
         "pythonhosted.org",
+        "crates.io",
+        "rubygems.org",
+        "pkg.go.dev",
         # System packages
         "archive.ubuntu.com",
         "security.ubuntu.com",
+        "debian.org",
         # XML schemas (for OOXML document processing)
         "schemas.microsoft.com",
         "schemas.openxmlformats.org",
         "www.w3.org",
         "purl.org",
+        "json-schema.org",
         # Localhost and development
         "localhost",
         "127.0.0.1",
+        "0.0.0.0",
+        "::1",
+        # Common safe services (API-focused, not file hosting)
+        "stripe.com",
+        "zoom.us",
+        "twilio.com",
+        "mailgun.com",
+        "sentry.io",
+        "datadog.com",
+        "newrelic.com",
+        "elastic.co",
+        "mongodb.com",
+        "redis.io",
+        "postgresql.org",
+        # NOTE: The following are intentionally NOT in this list due to LOTS risk:
+        # - github.com, gitlab.com, bitbucket.org (Download, C&C)
+        # - raw.githubusercontent.com (Download, C&C)
+        # - discord.com, telegram.org, slack.com (C&C, Exfil)
+        # - amazonaws.com, googleapis.com, azure.com, cloudflare.com (wildcard hosting)
+        # - google.com, microsoft.com (too broad, includes file hosting)
+        # - sendgrid.com (email tracking/download)
     ]
 
     def extract_context(self, file_path: Path, source_code: str) -> SkillScriptContext:
@@ -258,7 +334,8 @@ class ContextExtractor:
         # Also collect module-level strings (class attributes, etc.)
         all_strings.extend(parser.module_strings)
 
-        # Find suspicious URLs (filter out legitimate domains and docstrings)
+        # Find suspicious URLs - ONLY flag URLs to known-bad destinations
+        # Don't flag unknown URLs - that creates too many false positives
         suspicious_urls = []
         for s in all_strings:
             # Skip if not URL-like or contains newlines (docstrings)
@@ -270,11 +347,9 @@ class ContextExtractor:
             # Skip if contains legitimate domain
             if any(domain in s for domain in self.LEGITIMATE_DOMAINS):
                 continue
-            # Flag if contains known suspicious domain OR is generic http URL
+            # ONLY flag if URL contains a known suspicious domain
+            # Don't flag all unknown URLs - that's too aggressive
             if any(domain in s for domain in self.SUSPICIOUS_DOMAINS):
-                suspicious_urls.append(s)
-            # Generic URLs only if they look suspicious (not just schema URLs)
-            elif not any(schema in s for schema in ["schemas.", "www.w3.org", "xmlns"]):
                 suspicious_urls.append(s)
 
         # Create context

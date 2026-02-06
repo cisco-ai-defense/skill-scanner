@@ -31,35 +31,49 @@ rule system_manipulation_generic{
         // Dangerous process operations
         $process_manipulation = /\b(kill\s+-9\s+[0-9]+|killall\s+-9|pkill\s+-9)\b/i
 
-        // Dangerous recursive operations with wildcards
-        $recursive_operations = /\b(rm\s+-rf\s+[\$\/\*]|find\s+\/\s+-delete)\b/i
+        // Dangerous recursive operations with wildcards (exclude common cleanup dirs)
+        $recursive_operations = /\b(rm\s+-rf\s+(\/\s|\/root|\/home|\$HOME|~\/|\/etc|\/usr)|\bfind\s+\/\s+-delete)\b/i
+
+        // Safe cleanup patterns to exclude (Docker, npm, apt cache cleanup, backup retention)
+        $safe_cleanup = /(rm\s+-rf\s+(\/var\/lib\/apt\/lists|\/tmp\/|node_modules|__pycache__|\.cache|\.npm|\/var\/cache|dist|build|target)|find\s+[^\n]*-mtime\s+\+[0-9]+[^\n]*-delete|find\s+[^\n]*backup[^\n]*-delete)/i
+
+        // Testing and build commands (not manipulation)
+        $testing_commands = /\b(pytest|tox|make\s+test|npm\s+test|cargo\s+test|go\s+test|mvn\s+test|gradle\s+test|jest|mocha)\b/i
+
+        // Safe directory creation
+        $safe_mkdir = /\bmkdir\s+-p\b/
 
         // System path manipulation
         $path_manipulation = /\b(PATH=\/tmp|PATH=\.:|export\s+PATH=[\$\{])/i
 
     condition:
+        // Exclude safe patterns
+        not $safe_cleanup and
+        not $testing_commands and
+        not $safe_mkdir and
+        (
+            // Environment variable manipulation (not just reading)
+            $env_var_manipulation or
 
-        // Environment variable manipulation (not just reading)
-        $env_var_manipulation or
+            // File destruction (not safe cleanup)
+            ($file_destruction and not $safe_cleanup) or
 
-        // File destruction
-        $file_destruction or
+            // Permission manipulation
+            $permission_manipulation or
 
-        // Permission manipulation
-        $permission_manipulation or
+            // Critical system access
+            $critical_system_access or
 
-        // Critical system access
-        $critical_system_access or
+            // Privilege escalation
+            $privilege_escalation or
 
-        // Privilege escalation
-        $privilege_escalation or
+            // Process manipulation
+            $process_manipulation or
 
-        // Process manipulation
-        $process_manipulation or
+            // Recursive operations
+            $recursive_operations or
 
-        // Recursive operations
-        $recursive_operations or
-
-        // PATH manipulation
-        $path_manipulation
+            // PATH manipulation
+            $path_manipulation
+        )
 }

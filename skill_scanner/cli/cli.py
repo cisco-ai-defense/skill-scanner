@@ -62,8 +62,19 @@ def scan_command(args):
         print(f"Error: Directory does not exist: {skill_dir}", file=sys.stderr)
         return 1
 
+    # Get YARA mode and custom rules from args
+    yara_mode = getattr(args, "yara_mode", "balanced")
+    custom_rules_path = getattr(args, "custom_rules", None)
+    disabled_rules = set(getattr(args, "disabled_rules", None) or [])
+
     # Create scanner with configured analyzers
-    analyzers = [StaticAnalyzer()]
+    analyzers = [
+        StaticAnalyzer(
+            yara_mode=yara_mode,
+            custom_yara_rules_path=custom_rules_path,
+            disabled_rules=disabled_rules,
+        )
+    ]
 
     # Helper to print status messages - go to stderr when JSON output to avoid breaking parsing
     is_json_output = getattr(args, "format", "summary") == "json"
@@ -273,8 +284,19 @@ def scan_all_command(args):
         print(f"Error: Directory does not exist: {skills_dir}", file=sys.stderr)
         return 1
 
+    # Get YARA mode and custom rules from args
+    yara_mode = getattr(args, "yara_mode", "balanced")
+    custom_rules_path = getattr(args, "custom_rules", None)
+    disabled_rules = set(getattr(args, "disabled_rules", None) or [])
+
     # Create scanner with configured analyzers
-    analyzers = [StaticAnalyzer()]
+    analyzers = [
+        StaticAnalyzer(
+            yara_mode=yara_mode,
+            custom_yara_rules_path=custom_rules_path,
+            disabled_rules=disabled_rules,
+        )
+    ]
 
     # Helper to print status messages - go to stderr when JSON output to avoid breaking parsing
     is_json_output = getattr(args, "format", "summary") == "json"
@@ -728,6 +750,24 @@ Examples:
         action="store_true",
         help="Enable meta-analysis for false positive filtering and finding prioritization (requires 2+ analyzers including LLM)",
     )
+    scan_parser.add_argument(
+        "--yara-mode",
+        choices=["strict", "balanced", "permissive"],
+        default="balanced",
+        help="YARA detection mode: strict (max security, more FPs), balanced (default), permissive (fewer FPs, may miss threats)",
+    )
+    scan_parser.add_argument(
+        "--custom-rules",
+        metavar="PATH",
+        help="Path to directory containing custom YARA rules (.yara files) to use instead of built-in rules",
+    )
+    scan_parser.add_argument(
+        "--disable-rule",
+        action="append",
+        metavar="RULE_NAME",
+        dest="disabled_rules",
+        help="Disable a specific rule by name (can be used multiple times). Example: --disable-rule YARA_script_injection",
+    )
 
     # Scan-all command
     scan_all_parser = subparsers.add_parser("scan-all", help="Scan multiple skill packages")
@@ -782,6 +822,24 @@ Examples:
         "--enable-meta",
         action="store_true",
         help="Enable meta-analysis for false positive filtering and finding prioritization (requires 2+ analyzers including LLM)",
+    )
+    scan_all_parser.add_argument(
+        "--yara-mode",
+        choices=["strict", "balanced", "permissive"],
+        default="balanced",
+        help="YARA detection mode: strict (max security, more FPs), balanced (default), permissive (fewer FPs, may miss threats)",
+    )
+    scan_all_parser.add_argument(
+        "--custom-rules",
+        metavar="PATH",
+        help="Path to directory containing custom YARA rules (.yara files) to use instead of built-in rules",
+    )
+    scan_all_parser.add_argument(
+        "--disable-rule",
+        action="append",
+        metavar="RULE_NAME",
+        dest="disabled_rules",
+        help="Disable a specific rule by name (can be used multiple times). Example: --disable-rule YARA_script_injection",
     )
 
     # List analyzers command

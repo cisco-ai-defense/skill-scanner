@@ -23,13 +23,17 @@ rule sql_injection_generic{
         $union_based_attacks = /(UNION\s+(ALL\s+)?SELECT|'\s*UNION\s+SELECT|"\s*UNION\s+SELECT)/i
 
         // Time-based blind injection techniques (SQL context only)
-        $time_based_injections = /\b(SLEEP|WAITFOR\s+DELAY|BENCHMARK|pg_sleep)\s*\(/i
+        // Require SQL-specific context like quotes or semicolons
+        $time_based_injections = /['";]\s*(SLEEP|WAITFOR\s+DELAY|BENCHMARK|pg_sleep)\s*\(/i
 
-        // Exclude Python sleep functions (not SQL injection)
-        $python_sleep = /(time\.sleep|asyncio\.sleep|threading\.[A-Za-z]*\.sleep)\s*\(/
+        // Exclude non-SQL sleep functions (Python, Rust, JS, etc.)
+        $non_sql_sleep = /(time\.sleep|asyncio\.sleep|threading\.[A-Za-z]*\.sleep|tokio::time::sleep|std::thread::sleep|Thread\.sleep|setTimeout)\s*\(/
 
-        // Error-based injection methods
-        $error_based_techniques = /\b(EXTRACTVALUE|UPDATEXML|EXP\(~\(SELECT|CAST)\s*\(/i
+        // Error-based injection methods (SQL-specific, not general cast())
+        $error_based_techniques = /\b(EXTRACTVALUE|UPDATEXML|EXP\(~\(SELECT)\s*\(/i
+
+        // SQL CAST injection (require SQL context)
+        $sql_cast_injection = /\bCAST\s*\([^)]*\s+AS\s+(INT|VARCHAR|CHAR|TEXT|NVARCHAR)\)/i
 
         // Database-specific system objects in malicious contexts
         $database_system_objects = /(\bSELECT [^;]*\b(information_schema|mysql\.user|all_tables|user_tables)\b|\bFROM\s+(information_schema|mysql\.user|dual|all_tables|user_tables)\b|LOAD_FILE\s*\(\s*['"][^'"]*\.(config|passwd|shadow|key)\b|INTO\s+OUTFILE\s+['"][^'"]*\.(txt|sql|php)\b|\b(xp_cmdshell|sp_executesql)\s*\(|dbms_[a-z_]+\s*\()/i
@@ -43,10 +47,17 @@ rule sql_injection_generic{
         // Common context phrases where these words appear in benign usage
         $common_context_phrases = /\b(adds?\s+a\s+user|create\s+user|new\s+user|user\s+(account|profile|registration|authentication|permissions?|roles?)|user\s+(who|that)|for\s+user|the\s+user|current\s+user\s+(account|profile)|user\s+(input|data|information)|example:?\s+SELECT\s+USER\(\)|SELECT\s+USER\(\)\s+returns?|built-?in\s+function)\b/i
 
+        // Documentation and code examples (legitimate SQL shown in docs)
+        $documentation_markers = /(```sql|```mysql|```postgres|-- Example|-- Query|SELECT\s+.*FROM\s+.*--\s*\w+\s+query|sample\s+query|example\s+query)/i
+        $schema_exploration = /\b(information_schema|pg_catalog|sys\.(schemas|tables|columns))\b.*\b(documentation|reference|schema|metadata)\b/i
+
     condition:
 
-        // Exclude Python sleep functions from all checks
-        not $python_sleep and (
+        // Exclude non-SQL sleep functions from all checks
+        not $non_sql_sleep and
+        // Exclude documentation showing SQL examples
+        not $documentation_markers and
+        not $schema_exploration and (
 
         // SQL injection tautologies
         ($injection_tautologies and not $common_sql_ops and not $common_context_phrases) or
@@ -62,6 +73,9 @@ rule sql_injection_generic{
 
         // Error-based injection techniques
         ($error_based_techniques and not $common_sql_ops and not $common_context_phrases) or
+
+        // SQL CAST injection
+        ($sql_cast_injection and not $common_sql_ops and not $common_context_phrases) or
 
         // Database system object access
         ($database_system_objects and not $common_sql_ops and not $common_context_phrases) or

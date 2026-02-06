@@ -15,7 +15,7 @@ rule prompt_injection_generic{
     strings:
 
         // Instruction override patterns (exclude Python type comments)
-        $instruction_overrides = /\b(Bypass|Dis\W?regard|Do not (follow|Obey)|Forget|Ignore)\s+((all|any|each|every|most|some)\s+(of\s+)?)?((your|the)\s)?(command|communication|conte[nx]t|conversation|data|guidelines|input|instruction|message|request|response|text)(s)?/i
+        $instruction_overrides = /\b(Bypass|Dis\W?regard|Do not (follow|Obey)|Forget|Ignore)\s+((all|any|each|every|most|some)\s+(of\s+)?)?((your|the|previous|prior|above|earlier)\s)?(command|communication|conte[nx]t|conversation|data|guidelines|input|instruction|message|request|response|text)(s)?/i
 
         // Legitimate patterns to exclude
         $python_type_comment = /# type: ignore/
