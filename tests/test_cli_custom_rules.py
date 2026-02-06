@@ -125,7 +125,7 @@ class TestDisableRule:
     def test_disable_single_rule(self, malicious_skill_dir):
         """Test disabling a single rule."""
         # First scan without disabling
-        stdout1, _, code1 = run_cli(["scan", str(malicious_skill_dir), "--format", "json"])
+        stdout1, _, code1 = run_cli(["scan", str(malicious_skill_dir), "--format", "json", "--compact"])
         assert code1 == 0
         data1 = json.loads(stdout1)
         findings1 = data1.get("findings", [])
@@ -136,7 +136,15 @@ class TestDisableRule:
             if rule_to_disable:
                 # Scan with rule disabled
                 stdout2, _, code2 = run_cli(
-                    ["scan", str(malicious_skill_dir), "--format", "json", "--disable-rule", rule_to_disable]
+                    [
+                        "scan",
+                        str(malicious_skill_dir),
+                        "--format",
+                        "json",
+                        "--compact",
+                        "--disable-rule",
+                        rule_to_disable,
+                    ]
                 )
                 assert code2 == 0
                 data2 = json.loads(stdout2)
@@ -154,6 +162,7 @@ class TestDisableRule:
                 str(malicious_skill_dir),
                 "--format",
                 "json",
+                "--compact",
                 "--disable-rule",
                 "COMMAND_INJECTION_EVAL",
                 "--disable-rule",
@@ -181,7 +190,15 @@ class TestDisableRule:
         """Test disabling a YARA rule."""
         # Scan with YARA_script_injection disabled
         stdout, _, code = run_cli(
-            ["scan", str(malicious_skill_dir), "--format", "json", "--disable-rule", "YARA_script_injection"]
+            [
+                "scan",
+                str(malicious_skill_dir),
+                "--format",
+                "json",
+                "--compact",
+                "--disable-rule",
+                "YARA_script_injection",
+            ]
         )
         assert code == 0
         data = json.loads(stdout)
@@ -252,6 +269,7 @@ class TestCustomRulesIntegration:
                 str(malicious_skill_dir),
                 "--format",
                 "json",
+                "--compact",
                 "--yara-mode",
                 "strict",
                 "--disable-rule",

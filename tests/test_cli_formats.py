@@ -63,7 +63,7 @@ class TestJSONFormat:
 
     def test_json_format_is_valid_json(self, safe_skill_dir):
         """Test that JSON format produces valid JSON."""
-        stdout, stderr, code = run_cli(["scan", str(safe_skill_dir), "--format", "json"])
+        stdout, stderr, code = run_cli(["scan", str(safe_skill_dir), "--format", "json", "--compact"])
 
         assert code == 0, f"CLI failed: {stderr}"
 
@@ -73,7 +73,7 @@ class TestJSONFormat:
 
     def test_json_format_has_required_fields(self, safe_skill_dir):
         """Test that JSON output has all required fields."""
-        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "json"])
+        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "json", "--compact"])
         assert code == 0
 
         data = json.loads(stdout)
@@ -93,7 +93,7 @@ class TestJSONFormat:
 
     def test_json_format_findings_structure(self, safe_skill_dir):
         """Test that findings array has correct structure."""
-        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "json"])
+        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "json", "--compact"])
         assert code == 0
 
         data = json.loads(stdout)
@@ -130,7 +130,9 @@ class TestJSONFormat:
 
     def test_json_format_with_behavioral(self, safe_skill_dir):
         """Test JSON format with behavioral analyzer enabled."""
-        stdout, stderr, code = run_cli(["scan", str(safe_skill_dir), "--format", "json", "--use-behavioral"])
+        stdout, stderr, code = run_cli(
+            ["scan", str(safe_skill_dir), "--format", "json", "--use-behavioral", "--compact"]
+        )
         assert code == 0, f"CLI failed: {stderr}"
 
         # Status messages should be in stderr, not stdout
@@ -149,7 +151,7 @@ class TestMarkdownFormat:
 
     def test_markdown_format_has_headers(self, safe_skill_dir):
         """Test that Markdown format has proper headers."""
-        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown"])
+        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown", "--compact"])
         assert code == 0
 
         # Should have Markdown headers
@@ -157,7 +159,7 @@ class TestMarkdownFormat:
 
     def test_markdown_format_has_skill_info(self, safe_skill_dir):
         """Test that Markdown includes skill information."""
-        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown"])
+        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown", "--compact"])
         assert code == 0
 
         # Should mention the skill name
@@ -165,7 +167,7 @@ class TestMarkdownFormat:
 
     def test_markdown_format_has_status(self, safe_skill_dir):
         """Test that Markdown shows safety status."""
-        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown"])
+        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "markdown", "--compact"])
         assert code == 0
 
         # Should show some form of status
@@ -333,7 +335,7 @@ class TestMultiSkillFormats:
         """Test JSON format with scan-all command."""
         # Use the safe subdirectory which has skills at root level
         safe_dir = test_skills_dir / "safe"
-        stdout, stderr, code = run_cli(["scan-all", str(safe_dir), "--format", "json"])
+        stdout, stderr, code = run_cli(["scan-all", str(safe_dir), "--format", "json", "--compact"])
         assert code == 0, f"CLI failed: {stderr}"
 
         data = json.loads(stdout)
@@ -378,7 +380,7 @@ class TestFormatErrorHandling:
 
     def test_json_format_error_in_stderr(self):
         """Test that errors go to stderr, not stdout, for JSON format."""
-        stdout, stderr, code = run_cli(["scan", "/nonexistent/path", "--format", "json"])
+        stdout, stderr, code = run_cli(["scan", "/nonexistent/path", "--format", "json", "--compact"])
 
         # Error messages should be in stderr
         assert len(stderr) > 0
@@ -399,7 +401,9 @@ class TestAnalyzerStatusInJSON:
 
     def test_behavioral_status_not_in_json(self, safe_skill_dir):
         """Test behavioral analyzer status goes to stderr."""
-        stdout, stderr, code = run_cli(["scan", str(safe_skill_dir), "--format", "json", "--use-behavioral"])
+        stdout, stderr, code = run_cli(
+            ["scan", str(safe_skill_dir), "--format", "json", "--use-behavioral", "--compact"]
+        )
         assert code == 0
 
         # JSON should be clean
@@ -412,7 +416,7 @@ class TestAnalyzerStatusInJSON:
 
     def test_trigger_status_not_in_json(self, safe_skill_dir):
         """Test trigger analyzer status goes to stderr."""
-        stdout, stderr, code = run_cli(["scan", str(safe_skill_dir), "--format", "json", "--use-trigger"])
+        stdout, stderr, code = run_cli(["scan", str(safe_skill_dir), "--format", "json", "--use-trigger", "--compact"])
         assert code == 0
 
         # JSON should be clean
