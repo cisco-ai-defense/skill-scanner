@@ -94,5 +94,5 @@ Thumbs.db
 .codex/
 .cursor/skills/
 
-# Jupyter notebooks (analysis)
+# Jupyter notebooks (local analysis)
 *.ipynb
