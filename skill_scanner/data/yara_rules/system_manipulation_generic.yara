@@ -13,56 +13,68 @@ rule system_manipulation_generic{
         threat_type = "SYSTEM MANIPULATION"
 
     strings:
-        // Suspicious environment variable manipulation (not just reading)
-        $env_var_manipulation = /\b(os\.environ\s*\[[^\]]*\]\s*=|export\s+PATH=|unset\s+(PATH|HOME|USER))\b/i
+        // Suspicious environment variable manipulation - TIGHTENED
+        // Removed "export PATH=" which is normal in shell scripts
+        // Only match clearly malicious path manipulation or unsetting critical vars
+        $env_var_manipulation = /\b(unset\s+(PATH|HOME|USER)|export\s+PATH=\.\:)\b/i
 
-        // File destruction and manipulation
-        $file_destruction = /\b(rm\s+-rf|dd\s+if=\/dev\/zero|wipefs|shred\s+-|find\s+[^\n]+-delete)\b/i
+        // File destruction - TIGHTENED
+        // Bare "rm -rf" without a dangerous path is too common (build cleanup, etc.)
+        // Only match truly destructive patterns: dd zero, wipefs, shred
+        // rm -rf with dangerous paths is handled by $recursive_operations
+        $file_destruction = /\b(dd\s+if=\/dev\/zero\s+of=\/|wipefs\s+(-a\s+)?\/|shred\s+-[a-z]*\s+\/)\b/i
 
         // Dangerous file permission changes
-        $permission_manipulation = /\b(chmod\s+(777|4755|6755|[ug]?\+s)|(chown|chgrp)\s+(root|0)|setuid|setgid)\b/i
+        $permission_manipulation = /\b(chmod\s+(777|4755|6755|[ug]\+s)\s+\/)|(chown\s+root\s+\/)\b/i
 
-        // Critical system file access
-        $critical_system_access = /\b(\/etc\/(passwd|shadow|sudoers)|\/root\/\.ssh|~\/\.aws\/credentials|~\/\.ssh\/id_rsa)\b/i
+        // Critical system file access - TIGHTENED
+        // Only match write/modify access to critical files, not just mentioning paths
+        // Removed /etc/passwd and ~/.aws/credentials and ~/.ssh/id_rsa (too common in docs)
+        $critical_system_write = /\b(echo|cat|tee|write|>>?)\s+[^\n]*(\/etc\/(shadow|sudoers))\b/i
 
-        // Privilege escalation patterns
-        $privilege_escalation = /\b(sudo\s+-[si]|su\s+-c?|runuser|doas)\b/i
+        // Privilege escalation patterns - TIGHTENED
+        // Removed bare "su -" which is common. Only match sudo -s/-i
+        $privilege_escalation = /\b(sudo\s+-[si]|runuser|doas)\b/i
 
-        // Dangerous process operations
-        $process_manipulation = /\b(kill\s+-9\s+[0-9]+|killall\s+-9|pkill\s+-9)\b/i
+        // Dangerous process operations - TIGHTENED
+        // "kill -9 2" matched on PIDs like 2xxx. Require explicit dangerous context
+        $process_manipulation = /\b(killall\s+-9\s+\w+|pkill\s+-9\s+\w+)\b/i
 
-        // Dangerous recursive operations with wildcards (exclude common cleanup dirs)
-        $recursive_operations = /\b(rm\s+-rf\s+(\/\s|\/root|\/home|\$HOME|~\/|\/etc|\/usr)|\bfind\s+\/\s+-delete)\b/i
+        // Dangerous recursive operations with system-critical paths
+        $recursive_operations = /\b(rm\s+-rf\s+(\/\s|\/root|\/home|\$HOME|~\/|\/etc|\/usr))\b/i
 
-        // Safe cleanup patterns to exclude (Docker, npm, apt cache cleanup, backup retention)
-        $safe_cleanup = /(rm\s+-rf\s+(\/var\/lib\/apt\/lists|\/tmp\/|node_modules|__pycache__|\.cache|\.npm|\/var\/cache|dist|build|target)|find\s+[^\n]*-mtime\s+\+[0-9]+[^\n]*-delete|find\s+[^\n]*backup[^\n]*-delete)/i
+        // Safe cleanup patterns to exclude - EXPANDED
+        $safe_cleanup = /(rm\s+-rf\s+(\/var\/lib\/apt\/lists|\/tmp\/|node_modules|__pycache__|\.cache|\.npm|\/var\/cache|dist\/|build\/|target\/|\.git\/|coverage\/|\.tox\/|\.mypy_cache|\.pytest_cache|\.next\/|\.nuxt\/|out\/|\.turbo\/)|find\s+[^\n]*-mtime\s+\+[0-9]+[^\n]*-delete|find\s+[^\n]*backup[^\n]*-delete|rm\s+-rf\s+\$\{?[A-Za-z_]+\}?\/)/i
 
-        // Testing and build commands (not manipulation)
+        // Testing and build commands
         $testing_commands = /\b(pytest|tox|make\s+test|npm\s+test|cargo\s+test|go\s+test|mvn\s+test|gradle\s+test|jest|mocha)\b/i
 
         // Safe directory creation
         $safe_mkdir = /\bmkdir\s+-p\b/
 
-        // System path manipulation
-        $path_manipulation = /\b(PATH=\/tmp|PATH=\.:|export\s+PATH=[\$\{])/i
+        // System path manipulation (inject current dir or tmp into PATH)
+        $path_manipulation = /\b(PATH=\/tmp|PATH=\.\:|export\s+PATH=\.\:)\b/i
+
+        // Documentation context - mentioning these in security docs is not an attack
+        $security_doc_context = /\b(security[_\s]?(check|audit|scan|best.practice|guide)|threat[_\s]?pattern|vulnerability|remediat)\b/i
 
     condition:
-        // Exclude safe patterns
         not $safe_cleanup and
         not $testing_commands and
         not $safe_mkdir and
+        not $security_doc_context and
         (
-            // Environment variable manipulation (not just reading)
+            // Environment variable manipulation
             $env_var_manipulation or
 
-            // File destruction (not safe cleanup)
-            ($file_destruction and not $safe_cleanup) or
+            // File destruction
+            $file_destruction or
 
             // Permission manipulation
             $permission_manipulation or
 
-            // Critical system access
-            $critical_system_access or
+            // Critical system file writes
+            $critical_system_write or
 
             // Privilege escalation
             $privilege_escalation or
@@ -70,7 +82,7 @@ rule system_manipulation_generic{
             // Process manipulation
             $process_manipulation or
 
-            // Recursive operations
+            // Recursive operations on system paths
             $recursive_operations or
 
             // PATH manipulation

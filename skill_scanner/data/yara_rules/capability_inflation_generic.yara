@@ -17,8 +17,10 @@ rule capability_inflation_generic{
 
     strings:
 
-        // Over-broad capability claims
-        $overbroad_claims = /\b(can do (anything|everything)|general (purpose )?assistant|all-purpose|universal (tool|skill|helper)|always use (this|me)|default (tool|skill|assistant))\b/i
+        // Over-broad capability claims - TIGHTENED
+        // Removed "general purpose assistant" and "all-purpose" (too common for legit tools)
+        // Kept coercive "always use me" patterns
+        $overbroad_claims = /\b(can do (anything|everything)|always use (this|me) (first|instead)|default (tool|skill|assistant) for (all|every|any))\b/i
 
         // Keyword baiting patterns - match same word repeated in comma lists
         // Using explicit word patterns since YARA doesn't support backreferences
@@ -26,35 +28,35 @@ rule capability_inflation_generic{
         $keyword_stuffing_data = /\bdata\s*,\s*data\s*,\s*data\s*,\s*data\b/i
         $keyword_stuffing_code = /\bcode\s*,\s*code\s*,\s*code\s*,\s*code\b/i
 
-        // Activation priority manipulation
-        $activation_priority = /\b(use (this|me) (first|before)|priority (skill|tool)|primary (tool|skill)|preferred (tool|skill|method)|call (this|me) (before|first))\b/i
+        // Activation priority manipulation - TIGHTENED
+        // Removed "preferred method/tool/skill" and "primary tool/skill" (very common legit language)
+        // Only match explicitly coercive "use me first/before others" patterns
+        $activation_priority = /\b(use (this|me) (first|before (anything|everything|other|all))|call (this|me) (before|first|instead)|priority over (all |every |other )?(tools?|skills?))\b/i
 
-        // Impersonation patterns (beyond just Anthropic)
-        $trusted_impersonation = /\b(official|verified|trusted|certified|approved|endorsed|authentic|legitimate)\s+(skill|tool|extension|plugin|assistant)\b/i
+        // Impersonation patterns - TIGHTENED
+        // Removed "official", "trusted", "legitimate" which are common legit descriptions
+        // Only match claims that are specifically deceptive certification claims
+        $trusted_impersonation = /\b(verified|certified|approved|endorsed)\s+by\s+(anthropic|openai|google|claude|microsoft)/i
 
-        // Over-promising descriptions (exclude comments and technical contexts)
-        $overpromising = /\b(100% (safe|secure|accurate)|guaranteed (to|that|when|if)|perfect|flawless|never (fails|errors)|always (works|succeeds))\b/i
+        // Over-promising descriptions - RESTRUCTURED
+        // Single word "perfect" is too broad. Require combination or stronger claims
+        $overpromising_strong = /\b(100% (safe|secure|accurate|reliable)|guaranteed (to never|to always|that it will)|never (fails|errors|crashes|breaks)|always (works|succeeds) (perfectly|flawlessly))\b/i
 
         // Hidden activation triggers
         $hidden_triggers = /\b(secret (command|keyword)|hidden (feature|mode)|easter egg|backdoor (access|entry))\b/i
 
     condition:
 
-        // Over-broad capability claims
-        $overbroad_claims or
-
-        // Keyword stuffing (same word repeated 4+ times)
+        // Keyword stuffing (clear abuse)
         $keyword_stuffing_file or $keyword_stuffing_data or $keyword_stuffing_code or
 
-        // Activation priority manipulation
-        $activation_priority or
+        // Hidden triggers (clear abuse)
+        $hidden_triggers or
 
-        // Trusted impersonation
-        $trusted_impersonation or
-
-        // Over-promising
-        $overpromising or
-
-        // Hidden triggers
-        $hidden_triggers
+        // Coercive claims require at least 2 signals to reduce FPs
+        (
+            ($overbroad_claims and ($activation_priority or $overpromising_strong)) or
+            ($activation_priority and $overpromising_strong) or
+            $trusted_impersonation
+        )
 }

@@ -16,7 +16,7 @@ rule autonomy_abuse_generic{
 
         // === High confidence: explicit user bypass ===
 
-        // Skip user confirmation explicitly (not CLI flags like --skip-confirmation)
+        // Skip user confirmation explicitly
         $skip_confirmation = /\b(don't (ask|wait for|require) (the )?(user|human) (for )?(confirmation|permission|approval)|proceed without (asking )?(the )?(user|human))\b/i
 
         // Override user decisions
@@ -39,8 +39,10 @@ rule autonomy_abuse_generic{
         // Make decisions without user input
         $autonomous_decision = /\b(decide (automatically|on my own|without asking)|choose (automatically|on my own)|act (autonomously|without guidance))\b[^.]{0,50}\b(what to (do|execute|run)|which (action|command))\b/i
 
-        // Run continuously without bounds
-        $unbounded_run = /\b(run (continuously|forever)|execute (indefinitely|in infinite loop)|while\s+True\s*:.*\b(execute|run|perform)\b)/i
+        // Run continuously without bounds - TIGHTENED
+        // Old pattern matched "while True:" with "execute/run/perform" which is common in legitimate event loops
+        // Now only match natural language instructions to run forever, not code patterns
+        $unbounded_run = /\b(run (continuously|forever) without (stopping|bounds|limit)|execute (indefinitely|in infinite loop) without (user|human) (control|intervention|approval))\b/i
 
         // === Exclusions ===
         $testing_context = /\b(test(ing)?|simulation|experiment|chaos engineering)\b/i
