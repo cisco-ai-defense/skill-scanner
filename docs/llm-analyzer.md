@@ -298,10 +298,14 @@ Use multiple analyzers for comprehensive coverage:
 ```python
 from skill_scanner.core.scanner import SkillScanner
 from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.analyzers.bytecode_analyzer import BytecodeAnalyzer
+from skill_scanner.core.analyzers.pipeline_analyzer import PipelineAnalyzer
 from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
 
 analyzers = [
     StaticAnalyzer(),      # Fast pattern matching
+    BytecodeAnalyzer(),    # Python bytecode integrity
+    PipelineAnalyzer(),    # Command pipeline taint analysis
     LLMAnalyzer()          # Deep semantic analysis
 ]
 

@@ -24,6 +24,8 @@ graph TB
 
     subgraph Analyzers[Security Analyzers]
         Static[Static Analyzer<br/>YAML + YARA patterns]
+        Bytecode[Bytecode Analyzer<br/>pyc integrity checks]
+        Pipeline[Pipeline Analyzer<br/>Command taint analysis]
         LLM[LLM Analyzer<br/>Semantic analysis]
         Behavioral[Behavioral Analyzer<br/>CFG-based Dataflow analysis]
     end
@@ -122,7 +124,7 @@ Parses instruction body for:
 
 ### 3. Static Analyzer (`analyzers/static.py`)
 
-The primary security analyzer in Phase 1.
+The primary pattern-based security analyzer.
 
 **Multi-Pass Scanning Strategy:**
 
@@ -163,6 +165,26 @@ for rule in rules:
         finding = create_finding_from_match(rule, match)
         findings.append(finding)
 ```
+
+### 3a. Bytecode Analyzer (`analyzers/bytecode_analyzer.py`)
+
+Verifies Python bytecode integrity by comparing `.pyc` files against their `.py` source.
+
+**Detects:**
+- Bytecode that doesn't match source code (tampered `.pyc`)
+- Orphan `.pyc` files without corresponding source
+- Hidden functionality injected at the bytecode level
+
+### 3b. Pipeline Analyzer (`analyzers/pipeline_analyzer.py`)
+
+Performs taint analysis on shell command pipelines found in scripts and documentation.
+
+**Detects:**
+- Sensitive file reads piped to network sinks (`cat /etc/passwd | curl ...`)
+- Credential harvesting through chained commands
+- Data exfiltration via piped command sequences
+
+**Policy-Driven:** Uses `command_safety` tiers and `sensitive_files.patterns` from the scan policy.
 
 ### 4. Security Rules (`rules/`)
 
@@ -210,9 +232,9 @@ class SkillScanner:
 ```
 
 **Analyzer Management:**
-- Default: Static Analyzer only
-- Extensible: Can add multiple analyzers
-- Future: LLM Analyzer, Behavioral Analyzer
+- Default: Static, Bytecode, and Pipeline analyzers (no API keys needed)
+- Extensible: Can add multiple analyzers via CLI flags or policy
+- Optional: LLM Analyzer, Behavioral Analyzer, VirusTotal, AI Defense (require API keys or flags)
 
 ### 6. Reporters (`reporters/`)
 
@@ -266,13 +288,17 @@ Command-line interface built with `argparse`.
    │   ├─→ Discover files (.py, .sh, .md)
    │   └─→ Return Skill object
    │
-   └─→ For each analyzer:
+   └─→ For each enabled analyzer (per scan policy):
        ├─→ StaticAnalyzer.analyze(skill)
        │   ├─→ Load rules from signatures.yaml
-       │   ├─→ Run 6 scanning passes
+       │   ├─→ Run scanning passes (manifest, tools, refs, binary, hidden, YARA)
        │   └─→ Return List[Finding]
+       ├─→ BytecodeAnalyzer.analyze(skill)
+       │   └─→ Verify .pyc integrity against .py source
+       ├─→ PipelineAnalyzer.analyze(skill)
+       │   └─→ Taint analysis on shell command pipelines
        │
-       └─→ Aggregate findings
+       └─→ Aggregate findings, apply policy (disabled_rules, severity_overrides)
 
 4. Generate ScanResult
    ├─→ Calculate is_safe, max_severity

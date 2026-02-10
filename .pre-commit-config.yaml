@@ -22,7 +22,7 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: detect-private-key
-        exclude: '(code_alignment_threat_analysis_prompt\.md|\.env\.example)$'
+        exclude: '(code_alignment_threat_analysis_prompt\.md|\.env\.example|_policy\.yaml|scan-policy\.md|evals/policies/)'
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.0
@@ -46,3 +46,13 @@ repos:
           - "apache"
           - -s
         files: \.(py|pyi)$
+
+  - repo: local
+    hooks:
+      - id: check-taxonomy
+        name: check-taxonomy
+        language: python
+        entry: python scripts/check_taxonomy.py
+        pass_filenames: false
+        files: \.(py|yaml)$
+        description: "Validate ThreatCategory enum against official Cisco AI taxonomy"

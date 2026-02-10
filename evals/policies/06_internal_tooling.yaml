@@ -1,0 +1,37 @@
+# Policy 06: Internal Tooling Org
+# Trusts internal installers, allows larger packages, suppresses noisy rules.
+policy_name: internal-tooling
+policy_version: "1.0"
+
+pipeline:
+  known_installer_domains:
+    - "sh.rustup.rs"
+    - "astral.sh"
+    - "raw.githubusercontent.com/nvm-sh"
+    - "get.sdkman.io"
+    - "pyenv.run"
+    - "get.docker.com"
+    - "install.python-poetry.org"
+    - "bun.sh"
+    - "deno.land"
+    - "get.volta.sh"
+    - "brew.sh"
+    - "getcomposer.org"
+    - "nixos.org"
+    - "get.pnpm.io"
+    - "proto.moonrepo.app"
+    - "mise.jdx.dev"
+    - "taskfile.dev"
+    # Internal installers
+    - "install.internal.example.com"
+    - "scripts.corp.example.com"
+
+file_limits:
+  max_file_count: 300
+  max_file_size_bytes: 10485760  # 10 MB
+  max_description_length: 2048
+
+disabled_rules:
+  - EXCESSIVE_FILE_COUNT
+  - MANIFEST_INVALID_NAME
+  - LAZY_LOAD_DEEP_NESTING

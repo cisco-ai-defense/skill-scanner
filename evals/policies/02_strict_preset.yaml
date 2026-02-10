@@ -1,0 +1,4 @@
+# Policy 02: Strict Preset (unmodified)
+# Maximum security posture - narrow allowlists, no suppressions
+# Inherits all values from data/strict_policy.yaml via preset loader
+policy_name: strict-preset

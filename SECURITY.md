@@ -9,10 +9,7 @@ This document outlines security procedures and general policies for the
 
 ## Disclosing a security issue
 
-The `skill-scanner` maintainers take all security issues in the project
-seriously. Thank you for improving the security of `skill-scanner`. We
-appreciate your dedication to responsible disclosure and will make every effort
-to acknowledge your contributions.
+The `skill-scanner` maintainers take all security issues in the project seriously. Thank you for improving the security of `skill-scanner`. We appreciate your dedication to responsible disclosure and will make every effort to acknowledge your contributions.
 
 `skill-scanner` leverages GitHub's private vulnerability reporting.
 
@@ -26,13 +23,11 @@ Here are some helpful details to include in your report:
 - versions of the project that may be affected by the issue
 - if known, any mitigations for the issue
 
-A maintainer will acknowledge the report within three (3) business days, and
-will send a more detailed response within an additional three (3) business days
-indicating the next steps in handling your report.
+A maintainer will acknowledge the report and follow up with next steps.
 
 If you've been unable to successfully draft a vulnerability report via GitHub
-or have not received a response during the alloted response window, please
-reach out via the [Cisco Open security contact email](mailto:oss-security@cisco.com).
+or have not received a timely response, please reach out via the
+[Cisco Open security contact email](mailto:oss-security@cisco.com).
 
 After the initial reply to your report, the maintainers will endeavor to keep
 you informed of the progress towards a fix and full announcement, and may ask

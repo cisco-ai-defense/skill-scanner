@@ -23,11 +23,16 @@ import re
 import time
 from pathlib import Path
 
+from .analyzability import compute_analyzability
 from .analyzers.base import BaseAnalyzer
+from .analyzers.bytecode_analyzer import BytecodeAnalyzer
+from .analyzers.pipeline_analyzer import PipelineAnalyzer
 from .analyzers.static import StaticAnalyzer
 from .analyzers.virustotal_analyzer import VirusTotalAnalyzer
+from .extractors.content_extractor import ContentExtractor
 from .loader import SkillLoader, SkillLoadError
 from .models import Finding, Report, ScanResult, Severity, Skill, ThreatCategory
+from .scan_policy import ScanPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +108,7 @@ class SkillScanner:
         use_virustotal: bool = False,
         virustotal_api_key: str | None = None,
         virustotal_upload_files: bool = False,
+        policy: ScanPolicy | None = None,
     ):
         """
         Initialize scanner with analyzers.
@@ -113,9 +119,21 @@ class SkillScanner:
             virustotal_api_key: VirusTotal API key (required if use_virustotal=True)
             virustotal_upload_files: If True, upload unknown files to VT. If False (default),
                                     only check existing hashes
+            policy: Scan policy for org-specific allowlists and rule scoping.
+                If None, loads built-in defaults.
         """
+        self.policy = policy or ScanPolicy.default()
+
         if analyzers is None:
-            self.analyzers: list[BaseAnalyzer] = [StaticAnalyzer()]
+            self.analyzers: list[BaseAnalyzer] = []
+
+            # Respect per-analyzer enable/disable from policy
+            if self.policy.analyzers.static:
+                self.analyzers.append(StaticAnalyzer(policy=self.policy))
+            if self.policy.analyzers.bytecode:
+                self.analyzers.append(BytecodeAnalyzer())
+            if self.policy.analyzers.pipeline:
+                self.analyzers.append(PipelineAnalyzer(policy=self.policy))
 
             if use_virustotal and virustotal_api_key:
                 vt_analyzer = VirusTotalAnalyzer(
@@ -126,6 +144,7 @@ class SkillScanner:
             self.analyzers = analyzers
 
         self.loader = SkillLoader()
+        self.content_extractor = ContentExtractor()
 
     def scan_skill(self, skill_directory: Path) -> ScanResult:
         """
@@ -148,8 +167,15 @@ class SkillScanner:
         # Load the skill
         skill = self.loader.load_skill(skill_directory)
 
+        # Pre-processing: Extract archives and add extracted files to skill
+        extraction_result = self.content_extractor.extract_skill_archives(skill.files)
+        if extraction_result.extracted_files:
+            skill.files.extend(extraction_result.extracted_files)
+
         # Run all analyzers
         all_findings = []
+        # Include any archive extraction findings (zip bombs, path traversal, etc.)
+        all_findings.extend(extraction_result.findings)
         analyzer_names = []
         validated_binary_files = set()
 
@@ -170,6 +196,25 @@ class SkillScanner:
                 filtered_findings.append(finding)
             all_findings = filtered_findings
 
+        # Global safety net: enforce disabled_rules across ALL analyzers
+        if self.policy.disabled_rules:
+            all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
+
+        # Apply severity overrides from policy
+        for finding in all_findings:
+            override = self.policy.get_severity_override(finding.rule_id)
+            if override:
+                try:
+                    finding.severity = Severity(override)
+                except (ValueError, KeyError):
+                    logger.warning("Invalid severity override '%s' for rule %s", override, finding.rule_id)
+
+        # Compute analyzability score
+        analyzability = compute_analyzability(skill, policy=self.policy)
+
+        # Cleanup temporary extraction directories
+        self.content_extractor.cleanup()
+
         scan_duration = time.time() - start_time
 
         result = ScanResult(
@@ -178,6 +223,8 @@ class SkillScanner:
             findings=all_findings,
             scan_duration_seconds=scan_duration,
             analyzers_used=analyzer_names,
+            analyzability_score=analyzability.score,
+            analyzability_details=analyzability.to_dict(),
         )
 
         return result
@@ -211,9 +258,16 @@ class SkillScanner:
                 # Load skill once for both scanning and cross-skill analysis
                 skill = self.loader.load_skill(skill_dir)
 
+                # Pre-processing: Extract archives and add extracted files to skill
+                extraction_result = self.content_extractor.extract_skill_archives(skill.files)
+                if extraction_result.extracted_files:
+                    skill.files.extend(extraction_result.extracted_files)
+
                 # Run all analyzers on the already-loaded skill
                 start_time = time.time()
                 all_findings = []
+                # Include any archive extraction findings (zip bombs, path traversal, etc.)
+                all_findings.extend(extraction_result.findings)
                 analyzer_names = []
                 validated_binary_files = set()
 
@@ -233,6 +287,25 @@ class SkillScanner:
                         if not (f.rule_id == "BINARY_FILE_DETECTED" and f.file_path in validated_binary_files)
                     ]
 
+                # Global safety net: enforce disabled_rules across ALL analyzers
+                if self.policy.disabled_rules:
+                    all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
+
+                # Apply severity overrides from policy
+                for finding in all_findings:
+                    override = self.policy.get_severity_override(finding.rule_id)
+                    if override:
+                        try:
+                            finding.severity = Severity(override)
+                        except (ValueError, KeyError):
+                            logger.warning("Invalid severity override '%s' for rule %s", override, finding.rule_id)
+
+                # Compute analyzability score
+                analyzability = compute_analyzability(skill, policy=self.policy)
+
+                # Cleanup temporary extraction directories
+                self.content_extractor.cleanup()
+
                 scan_duration = time.time() - start_time
 
                 result = ScanResult(
@@ -241,6 +314,8 @@ class SkillScanner:
                     findings=all_findings,
                     scan_duration_seconds=scan_duration,
                     analyzers_used=analyzer_names,
+                    analyzability_score=analyzability.score,
+                    analyzability_details=analyzability.to_dict(),
                 )
 
                 report.add_scan_result(result)

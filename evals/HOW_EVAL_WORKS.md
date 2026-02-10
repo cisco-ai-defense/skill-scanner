@@ -4,21 +4,21 @@
 
 ### How does eval work with LLM, YARA, and both?
 
-1. **Static Analyzer Only** (includes YARA):
+1. **Default Analyzers** (Static + Bytecode + Pipeline):
    ```bash
    python evals/eval_runner.py --test-skills-dir evals/skills
    ```
-   - Uses `StaticAnalyzer` which includes YARA rule matching
+   - Uses `StaticAnalyzer` (YARA + pattern matching), `BytecodeAnalyzer`, and `PipelineAnalyzer`
    - Fast, no API calls
-   - Tests pattern-based detection
+   - Tests pattern-based detection, bytecode integrity, and pipeline taint
 
 2. **Static + LLM Analyzer**:
    ```bash
    export SKILL_SCANNER_LLM_API_KEY=your_key
    python evals/eval_runner.py --test-skills-dir evals/skills --use-llm
    ```
-   - Uses `StaticAnalyzer` + `LLMAnalyzer`
-   - Combines pattern matching (YARA) with semantic analysis (LLM)
+   - Uses `StaticAnalyzer` + `BytecodeAnalyzer` + `PipelineAnalyzer` + `LLMAnalyzer`
+   - Combines pattern matching and taint analysis (YARA + pipeline) with semantic analysis (LLM)
    - More comprehensive but slower
 
 3. **With Meta-Analyzer** (false positive filtering):

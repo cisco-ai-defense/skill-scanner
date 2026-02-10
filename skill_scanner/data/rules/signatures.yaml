@@ -174,17 +174,15 @@
   category: data_exfiltration
   severity: MEDIUM
   patterns:
-    # HTTP client libraries - more likely to be used for external comms
-    - "import\\s+requests"
-    - "from\\s+requests\\s+import"
-    - "import\\s+urllib\\.request"
-    - "from\\s+urllib\\.request\\s+import"
-    - "import\\s+http\\.client"
-    - "import\\s+httpx"
-    - "import\\s+aiohttp"
+    # Actual network operations (imports alone are too noisy)
+    - "requests\\.(?:get|post|put|delete|patch|request)\\s*\\("
+    - "httpx\\.(?:get|post|put|delete|patch|request)\\s*\\("
+    - "aiohttp\\.(?:ClientSession|request)\\s*\\("
+    - "urllib\\.request\\.(?:urlopen|Request)\\s*\\("
+    - "http\\.client\\.(?:HTTPConnection|HTTPSConnection)"
   file_types: [python]
-  description: "HTTP client library imports that enable external communication"
-  remediation: "Ensure network access is necessary and documented. Review all URLs"
+  description: "Outbound network request primitives that can transmit data externally"
+  remediation: "Ensure network operations are necessary and document allowed destinations"
 
 # Socket is commonly used for legitimate local purposes (port checking, IPC)
 # Don't flag socket usage by default - it's usually for local port checking
@@ -255,12 +253,14 @@
 
 - id: DATA_EXFIL_BASE64_AND_NETWORK
   category: data_exfiltration
-  severity: CRITICAL
+  severity: HIGH
   patterns:
-    - "base64\\.(?:b64encode|encodebytes)"
+    # Require both encoding and network context on the same line to avoid broad base64 FPs
+    - "base64\\.(?:b64encode|encodebytes)[^\\n]{0,160}(?:requests\\.|urllib\\.request|httpx\\.|socket\\.)"
+    - "(?:requests\\.|urllib\\.request|httpx\\.|socket\\.)[^\\n]{0,160}base64\\.(?:b64encode|encodebytes)"
   file_types: [python]
-  description: "Base64 encoding (often used before data exfiltration)"
-  remediation: "Review base64 usage, especially if combined with network calls"
+  description: "Base64 encoding combined with network operations (potential exfiltration staging)"
+  remediation: "Review data flow from encoding to network sinks and remove unnecessary transfers"
 
 # ============================================================================
 # CATEGORY 4: UNAUTHORIZED TOOL & PERMISSION ABUSE
@@ -285,13 +285,39 @@
   description: "Attempting to install system packages with elevated privileges"
   remediation: "Use user-level installs without sudo. Document if system install is necessary"
 
+- id: TOOL_ABUSE_UNTRUSTED_PACKAGE_SOURCE
+  category: unauthorized_tool_use
+  severity: HIGH
+  patterns:
+    # Python: direct install from URL / VCS can bypass curated registries
+    - "pip(?:3)?\\s+install\\s+(?:https?://|git\\+https?://|git\\+ssh://)"
+    # JavaScript: remote tarballs / git URLs
+    - "npm\\s+install\\s+(?:https?://|git\\+https?://|git\\+ssh://)"
+    - "yarn\\s+add\\s+(?:https?://|git\\+https?://|git\\+ssh://)"
+    - "pnpm\\s+add\\s+(?:https?://|git\\+https?://|git\\+ssh://)"
+  exclude_patterns:
+    - "localhost"
+    - "127\\.0\\.0\\.1"
+    - "example\\.com"
+    - "test"
+    - "demo"
+  file_types: [python, bash]
+  description: "Package installation from untrusted remote sources"
+  remediation: "Prefer trusted registries and pinned package versions over direct URL/VCS installs"
+
 - id: TOOL_ABUSE_SYSTEM_MODIFICATION
   category: unauthorized_tool_use
   severity: CRITICAL
   patterns:
-    - "chmod\\s+[0-9]+"
-    - "chown\\s+"
-    - "sudoreimondo\\s+"
+    - "chmod\\s+(?:777|666|4755|6755|[ug]\\+s)\\b"
+    - "chown\\s+root\\b"
+    # Sudo with specific system-modifying commands (service, user, kernel,
+    # firewall, mount).  Generic "sudo\\s+" is intentionally avoided because
+    # package-install sudo commands are handled at MEDIUM severity by
+    # TOOL_ABUSE_SYSTEM_PACKAGE_INSTALL and should not also fire here at
+    # CRITICAL.
+    - "sudo\\s+(?:systemctl|service|usermod|useradd|userdel|groupadd|visudo|crontab|mount|umount|sysctl|modprobe|iptables|ufw|firewall-cmd)\\b"
+    - "sudo\\s+(?:sh|bash)\\s+-c"
     - "/etc/(?:passwd|shadow|sudoers)"
   file_types: [bash]
   description: "Modifying system permissions or configuration"
@@ -305,10 +331,12 @@
   category: obfuscation
   severity: MEDIUM
   patterns:
-    - "(?:[A-Za-z0-9+/]{100,}={0,2})"
+    # Prioritize decode/execute chains instead of generic long base64 blobs
+    - "(?:base64\\.(?:b64decode|decodebytes)|atob\\s*\\()[^\\n]{0,140}(?:eval|exec|os\\.system|subprocess)"
+    - "(?:eval|exec|os\\.system|subprocess)[^\\n]{0,140}(?:base64\\.(?:b64decode|decodebytes)|atob\\s*\\()"
   file_types: [python, bash, markdown]
-  description: "Large base64 encoded string (possible code obfuscation)"
-  remediation: "Avoid obfuscation. Use clear, readable code"
+  description: "Base64 decode and execution chain (possible obfuscation)"
+  remediation: "Avoid encoded execution paths; decode and inspect content explicitly"
 
 - id: OBFUSCATION_HEX_BLOB
   category: obfuscation
@@ -322,13 +350,13 @@
 
 - id: OBFUSCATION_XOR_ENCODING
   category: obfuscation
-  severity: HIGH
+  severity: MEDIUM
   patterns:
-    - "\\^\\s*0x[0-9a-fA-F]+"
-    - "\\bxor\\b"
+    - "\\^\\s*0x[0-9a-fA-F]{2,}"
+    - "\\bxor\\b[^\\n]{0,80}(?:decode|decrypt|obfuscat|payload|shellcode|exec|eval)"
   file_types: [python]
-  description: "XOR operations often used for obfuscation"
-  remediation: "Remove XOR encoding unless clearly justified"
+  description: "XOR used in decode/execute context (possible obfuscation)"
+  remediation: "Use transparent transformations and document any required XOR logic"
 
 - id: OBFUSCATION_BINARY_FILE
   category: obfuscation

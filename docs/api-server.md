@@ -64,6 +64,8 @@ Returns server status and available analyzers.
   "version": "0.2.0",
   "analyzers_available": [
     "static_analyzer",
+    "bytecode_analyzer",
+    "pipeline_analyzer",
     "behavioral_analyzer",
     "llm_analyzer",
     "aidefense_analyzer"
@@ -203,7 +205,17 @@ GET /analyzers
       "name": "static_analyzer",
       "description": "Pattern-based detection using YAML and YARA rules",
       "available": true,
-      "rules_count": "40+"
+      "rules_count": "58+"
+    },
+    {
+      "name": "bytecode_analyzer",
+      "description": "Python bytecode integrity verification against source",
+      "available": true
+    },
+    {
+      "name": "pipeline_analyzer",
+      "description": "Command pipeline taint analysis for data exfiltration",
+      "available": true
     },
     {
       "name": "behavioral_analyzer",

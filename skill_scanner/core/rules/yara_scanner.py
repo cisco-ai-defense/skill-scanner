@@ -130,23 +130,91 @@ class YaraScanner:
 
         return matches
 
-    def scan_file(self, file_path: Path) -> list[dict[str, Any]]:
+    def scan_file(self, file_path: Path | str, display_path: str | None = None) -> list[dict[str, Any]]:
         """
         Scan a file with YARA rules.
 
+        For text files the content is read as UTF-8 and delegated to
+        :meth:`scan_content` so that line numbers are available in results.
+
+        For binary files (those that cannot be decoded as UTF-8) the scanner
+        falls back to YARA's native ``rules.match(filepath=...)`` which works
+        directly on raw bytes.
+
         Args:
-            file_path: Path to file to scan
+            file_path: Path to file to scan (absolute or relative).
+            display_path: Optional path to show in match results instead of
+                *file_path* (e.g. a relative path for cleaner output).
 
         Returns:
-            List of matches
+            List of matches in the same format as :meth:`scan_content`.
         """
+        file_path = str(file_path)
+        context_path = display_path or file_path
+
+        # Try text-mode first (gives line numbers via scan_content)
         try:
             with open(file_path, encoding="utf-8") as f:
                 content = f.read()
-            return self.scan_content(content, str(file_path))
-        except (OSError, UnicodeDecodeError) as e:
+            return self.scan_content(content, context_path)
+        except UnicodeDecodeError:
+            pass  # Fall through to binary scanning
+        except OSError as e:
             print(f"Warning: Could not read file {file_path}: {e}")
             return []
+
+        # Binary fallback — use YARA native file scanning
+        return self._scan_file_binary(file_path, context_path)
+
+    def _scan_file_binary(self, file_path: str, display_path: str) -> list[dict[str, Any]]:
+        """Scan a binary file using YARA's native filepath matcher.
+
+        Since the file is not valid UTF-8, line numbers are not meaningful.
+        Matched data is decoded with ``errors="ignore"`` and offsets are
+        reported as byte offsets.
+        """
+        if not self.rules:
+            return []
+
+        matches = []
+        try:
+            yara_matches = self.rules.match(filepath=file_path)
+
+            for match in yara_matches:
+                meta = {
+                    "rule_name": match.rule,
+                    "namespace": match.namespace,
+                    "tags": match.tags,
+                    "meta": match.meta,
+                }
+
+                matched_strings = []
+                for string in match.strings:
+                    for instance in string.instances:
+                        matched_strings.append(
+                            {
+                                "identifier": string.identifier,
+                                "offset": instance.offset,
+                                "matched_data": instance.matched_data.decode("utf-8", errors="ignore"),
+                                "line_number": 0,  # Not meaningful for binary
+                                "line_content": f"[binary file at byte offset {instance.offset}]",
+                            }
+                        )
+
+                matches.append(
+                    {
+                        "rule_name": match.rule,
+                        "namespace": match.namespace,
+                        "file_path": display_path,
+                        "meta": meta,
+                        "strings": matched_strings,
+                    }
+                )
+
+        except yara.Error as e:
+            print(f"Warning: YARA binary scanning error for {file_path}: {e}")
+
+        return matches
 
     def get_loaded_rules(self) -> list[str]:
         """Get list of loaded rule names."""

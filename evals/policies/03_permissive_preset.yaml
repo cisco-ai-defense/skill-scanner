@@ -1,0 +1,4 @@
+# Policy 03: Permissive Preset (unmodified)
+# Minimal noise - broad allowlists, aggressive suppression
+# Inherits all values from data/permissive_policy.yaml via preset loader
+policy_name: permissive-preset

@@ -5,7 +5,9 @@
 Authoritative threat classification for agent skills security analysis, aligned with the [Cisco Integrated AI Security and Safety Framework](https://arxiv.org/html/2512.12921v1) (December 2025).
 
 **Detection Engines:**
-- Static Analyzer: 58 pattern-based rules (YAML + YARA + Python)
+- Static Analyzer: 58+ pattern-based rules (YAML + YARA + Python)
+- Bytecode Analyzer: Python .pyc integrity verification
+- Pipeline Analyzer: Command pipeline taint analysis
 - LLM Analyzer: Semantic analysis via Claude/GPT/Gemini
 
 **Validation:** 149 tests passing, 0% false CRITICAL rate on official skills
@@ -148,11 +150,20 @@ Excessive resource consumption causing instability (compute exhaustion).
 
 ## Detection Architecture
 
-### Static Analyzer (58 methods)
+### Static Analyzer (58+ methods)
 - 35 YAML regex rules
 - 13 YARA pattern files
 - 6 Python validation checks
 - 5 consistency validations
+
+### Bytecode Analyzer
+- Python `.pyc` integrity verification against `.py` source
+- Detects tampered bytecode that hides malicious behavior
+
+### Pipeline Analyzer
+- Command pipeline taint analysis
+- Detects data exfiltration through piped shell commands
+- Sensitive-file-to-network sink tracking
 
 ### LLM Analyzer
 - Semantic analysis across all categories

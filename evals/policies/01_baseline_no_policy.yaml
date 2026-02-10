@@ -1,0 +1,4 @@
+# Policy 01: Baseline (No Policy)
+# This is identical to balanced defaults - serves as control group
+policy_name: baseline-no-policy
+policy_version: "1.0"

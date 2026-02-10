@@ -1,0 +1,519 @@
+# Skill Scanner – Default Scan Policy
+# ====================================
+# This file defines the built-in security policy.  Every setting here can be
+# overridden in an organisation-specific policy file passed via --policy.
+#
+# To generate a starting point:
+#   skill-scanner generate-policy > my_org_policy.yaml
+#
+# To use it:
+#   skill-scanner scan --policy my_org_policy.yaml ./my-skill
+
+policy_name: default
+policy_version: "1.0"
+
+# ---------------------------------------------------------------------------
+# Hidden files – which dotfiles and dotdirs are considered benign
+# ---------------------------------------------------------------------------
+# Files / dirs not in these lists will be flagged.  Customise per-org to
+# match your toolchain (e.g. add ".bazelrc" if you use Bazel).
+hidden_files:
+  benign_dotfiles:
+    # Version control
+    - ".gitignore"
+    - ".gitattributes"
+    - ".gitmodules"
+    - ".gitkeep"
+    # Editor / formatting
+    - ".editorconfig"
+    - ".prettierrc"
+    - ".prettierignore"
+    # Linting – JavaScript / TypeScript
+    - ".eslintrc"
+    - ".eslintignore"
+    - ".eslintrc.json"
+    - ".eslintrc.js"
+    - ".eslintrc.yml"
+    - ".stylelintrc"
+    - ".stylelintignore"
+    # Node.js
+    - ".npmrc"
+    - ".npmignore"
+    - ".nvmrc"
+    - ".node-version"
+    # Language version managers
+    - ".python-version"
+    - ".ruby-version"
+    - ".tool-versions"
+    # Python linting
+    - ".flake8"
+    - ".pylintrc"
+    - ".isort.cfg"
+    - ".mypy.ini"
+    # Frontend tooling
+    - ".babelrc"
+    - ".browserslistrc"
+    - ".postcssrc"
+    # Docker / env
+    - ".dockerignore"
+    - ".env.example"
+    - ".env.sample"
+    - ".env.template"
+    # Markdown / YAML linting
+    - ".markdownlint.json"
+    - ".markdownlintignore"
+    - ".yamllint"
+    - ".yamllint.yml"
+    # Cursor / AI
+    - ".cursorrules"
+    - ".cursorignore"
+    # C/C++
+    - ".clang-format"
+    - ".clang-tidy"
+    # Other
+    - ".rubocop.yml"
+    - ".solhint.json"
+    - ".mcp.json"
+    - ".envrc"
+    - ".version"
+    - ".goreleaser.yaml"
+    - ".goreleaser.yml"
+
+  benign_dotdirs:
+    # CI / IDE
+    - ".github"
+    - ".vscode"
+    - ".idea"
+    - ".cursor"
+    - ".husky"
+    - ".circleci"
+    - ".gitlab"
+    # Data stores / caches
+    - ".lance"
+    - ".lmdb"
+    - ".cache"
+    - ".tmp"
+    - ".data"
+    - ".next"
+    - ".nuxt"
+    - ".parcel-cache"
+    # Plugin / skill hosting
+    - ".claude"
+    - ".claude-plugin"
+    - ".codex"
+    # Index / search data
+    - ".osgrep"
+    - ".obsidian"
+    - ".leann"
+    # Container / dev config
+    - ".devcontainer"
+    - ".smithery"
+    # Static site generators / build tools
+    - ".vitepress"
+    - ".docusaurus"
+    - ".storybook"
+
+# ---------------------------------------------------------------------------
+# Pipeline taint analysis
+# ---------------------------------------------------------------------------
+pipeline:
+  # Installer domains whose curl|sh patterns are demoted to LOW severity
+  known_installer_domains:
+    - "sh.rustup.rs"               # Rust
+    - "astral.sh"                  # uv / ruff
+    - "raw.githubusercontent.com/nvm-sh"  # nvm
+    - "get.sdkman.io"              # SDKMAN
+    - "pyenv.run"                  # pyenv
+    - "get.docker.com"             # Docker
+    - "install.python-poetry.org"  # Poetry
+    - "bun.sh"                     # Bun
+    - "deno.land"                  # Deno
+    - "get.volta.sh"               # Volta
+    - "brew.sh"                    # Homebrew
+    - "getcomposer.org"            # Composer
+    - "nixos.org"                  # Nix
+    - "get.pnpm.io"               # pnpm
+    - "proto.moonrepo.app"         # proto
+    - "mise.jdx.dev"               # mise
+    - "taskfile.dev"               # Task
+
+  # Regex patterns for benign pipe targets (full pipeline is matched)
+  benign_pipe_targets:
+    - 'ps\s.*\|\s*grep'                                                   # ps aux | grep
+    - 'grep\s.*\|\s*grep\s+-v'                                            # grep | grep -v
+    - 'cat\s.*\|\s*(sort|uniq|wc|head|tail|grep|cut|awk|sed)'             # cat | text-processing
+    - 'find\s.*\|\s*(sort|head|wc|xargs\s+ls)'                            # find | sort/count
+    - 'ls\s.*\|\s*(sort|head|grep|wc)'                                    # ls | filter
+    - 'echo\s.*\|\s*(tr|sed|awk|cut|base64)'                              # echo | transform
+    - 'curl\s.*\|\s*(jq|python\s+-m\s+json\.tool|json_pp|yq|xmllint)'    # curl | formatter
+
+  # Path segments that indicate documentation context (lower severity)
+  doc_path_indicators:
+    - "references"
+    - "docs"
+    - "examples"
+    - "tutorials"
+    - "guides"
+
+# ---------------------------------------------------------------------------
+# Rule scoping – which rule sets apply to which files
+# ---------------------------------------------------------------------------
+rule_scoping:
+  # Rules that ONLY fire on SKILL.md and script files (.py, .sh, etc.)
+  # These detect patterns that are only dangerous as actual instructions
+  skillmd_and_scripts_only:
+    - "coercive_injection_generic"
+    - "autonomy_abuse_generic"
+
+  # Rules that are skipped for files in documentation directories
+  skip_in_docs:
+    - "code_execution_generic"
+    - "system_manipulation_generic"
+    - "script_injection_generic"
+
+  # Rules that only fire on code files (python, bash), not markdown/configs
+  code_only:
+    - "prompt_injection_unicode_steganography"
+    - "sql_injection_generic"
+
+  # Directory names that mark "documentation" context for YARA scoping
+  doc_path_indicators:
+    - "references"
+    - "docs"
+    - "examples"
+    - "tutorials"
+    - "guides"
+    - "rules"
+    - "indexes"
+    - "demos"
+    - "fixtures"
+    - "test"
+
+  # Filename patterns (regex) that mark educational/example content
+  doc_filename_patterns:
+    - 'security[_-]patterns|examples?|patterns?|samples?|demo|tutorial|guide|howto|cheatsheet'
+
+# ---------------------------------------------------------------------------
+# Credential allow-list – well-known test values to suppress
+# ---------------------------------------------------------------------------
+credentials:
+  known_test_values:
+    # Stripe official test keys
+    - "sk_test_4eC39HqLyjWDarjtT1zdp7dc"
+    - "pk_test_TYooMQauvdEDq54NiTphI7jx"
+    # JWT.io example token prefix
+    - "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ"
+    # Common placeholder passwords
+    - 'password="password"'
+    - "password='password'"
+    - "api_key='sk-no-key-required'"
+    - 'api_key="sk-no-key-required"'
+  placeholder_markers:
+    - "your-"
+    - "your_"
+    - "your "
+    - "example"
+    - "sample"
+    - "dummy"
+    - "placeholder"
+    - "replace"
+    - "changeme"
+    - "change_me"
+    - "<your"
+    - "<insert"
+
+# ---------------------------------------------------------------------------
+# System cleanup – safe destructive cleanup targets
+# ---------------------------------------------------------------------------
+system_cleanup:
+  safe_rm_targets:
+    - "dist"
+    - "build"
+    - "tmp"
+    - "temp"
+    - ".tmp"
+    - ".temp"
+    - "bundle.html"
+    - "bundle.js"
+    - "bundle.css"
+    - "node_modules"
+    - ".next"
+    - ".nuxt"
+    - ".cache"
+
+# ---------------------------------------------------------------------------
+# File classification – how extensions are routed for analysis
+# ---------------------------------------------------------------------------
+# Inert files skip the binary check; archives get flagged; code files are
+# used for hidden-file detection.
+file_classification:
+  inert_extensions:
+    - ".ttf"
+    - ".otf"
+    - ".woff"
+    - ".woff2"
+    - ".eot"
+    - ".png"
+    - ".jpg"
+    - ".jpeg"
+    - ".gif"
+    - ".webp"
+    - ".ico"
+    - ".bmp"
+    - ".tiff"
+    - ".pyc"
+    - ".pyo"
+
+  structured_extensions:
+    - ".svg"
+    - ".pdf"
+
+  archive_extensions:
+    - ".zip"
+    - ".tar.gz"
+    - ".tgz"
+    - ".tar"
+    - ".gz"
+    - ".bz2"
+    - ".xz"
+    - ".7z"
+    - ".rar"
+    - ".jar"
+    - ".war"
+    - ".apk"
+    - ".docx"
+    - ".xlsx"
+    - ".pptx"
+    - ".odt"
+    - ".ods"
+    - ".odp"
+
+  code_extensions:
+    - ".py"
+    - ".sh"
+    - ".bash"
+    - ".rb"
+    - ".pl"
+    - ".js"
+    - ".ts"
+    - ".php"
+
+# ---------------------------------------------------------------------------
+# File limits – numeric thresholds for inventory checks
+# ---------------------------------------------------------------------------
+file_limits:
+  max_file_count: 100           # Files above this → EXCESSIVE_FILE_COUNT
+  max_file_size_bytes: 5242880  # 5 MB – files above this → OVERSIZED_FILE
+  max_reference_depth: 5        # Recursion depth for reference resolution
+  max_name_length: 64           # Skill name length limit
+  max_description_length: 1024  # Max description length
+  min_description_length: 20    # Below this → vague description warning
+
+# ---------------------------------------------------------------------------
+# Analysis thresholds – YARA and analyzability scoring
+# ---------------------------------------------------------------------------
+analysis_thresholds:
+  zerowidth_threshold_with_decode: 50    # Zero-width chars when decode context present
+  zerowidth_threshold_alone: 200         # Zero-width chars without decode context
+  analyzability_low_risk: 90             # Score >= this → LOW risk
+  analyzability_medium_risk: 70          # Score >= this → MEDIUM risk
+
+# ---------------------------------------------------------------------------
+# Sensitive files – patterns that upgrade taint in pipelines
+# ---------------------------------------------------------------------------
+# These regex patterns match file paths in command arguments.  When a pipeline
+# reads a file matching these, the taint is upgraded to SENSITIVE_DATA.
+sensitive_files:
+  patterns:
+    - '/etc/(?:passwd|shadow|hosts)'
+    - '~?/\.(?:ssh|aws|gnupg|config|env)'
+    - '\.(?:env|pem|key|crt|p12|pfx)'
+    - '(?:credentials|secrets?|tokens?|password)'
+    - '\$(?:HOME|USER|SSH_AUTH_SOCK|AWS_)'
+
+# ---------------------------------------------------------------------------
+# Command safety tiers – which commands fall into which risk tier
+# ---------------------------------------------------------------------------
+# The scanner uses a tiered command evaluation system.  Each tier controls
+# whether a YARA code_execution finding is suppressed or kept.
+# Only override a tier if you need to; empty lists fall back to built-in defaults.
+command_safety:
+  safe_commands:
+    - "cat"
+    - "head"
+    - "tail"
+    - "less"
+    - "more"
+    - "wc"
+    - "file"
+    - "stat"
+    - "ls"
+    - "dir"
+    - "tree"
+    - "grep"
+    - "rg"
+    - "ag"
+    - "ack"
+    - "find"
+    - "fd"
+    - "locate"
+    - "which"
+    - "where"
+    - "whereis"
+    - "type"
+    - "sort"
+    - "uniq"
+    - "cut"
+    - "tr"
+    - "fold"
+    - "column"
+    - "paste"
+    - "join"
+    - "diff"
+    - "comm"
+    - "fmt"
+    - "nl"
+    - "expand"
+    - "unexpand"
+    - "echo"
+    - "printf"
+    - "true"
+    - "false"
+    - "date"
+    - "cal"
+    - "uname"
+    - "hostname"
+    - "whoami"
+    - "id"
+    - "groups"
+    - "env"
+    - "printenv"
+    - "pwd"
+    - "basename"
+    - "dirname"
+    - "realpath"
+    - "readlink"
+    - "sha256sum"
+    - "sha512sum"
+    - "md5sum"
+    - "shasum"
+    - "cksum"
+    - "b2sum"
+    - "python"
+    - "python3"
+    - "node"
+    - "ruby"
+    - "git"
+    - "npm"
+    - "pip"
+    - "pip3"
+    - "uv"
+    - "cargo"
+    - "go"
+    - "java"
+    - "javac"
+
+  caution_commands:
+    - "cp"
+    - "mv"
+    - "ln"
+    - "mkdir"
+    - "rmdir"
+    - "touch"
+    - "chmod"
+    - "chown"
+    - "chgrp"
+    - "sed"
+    - "awk"
+    - "gawk"
+    - "perl"
+    - "make"
+    - "cmake"
+    - "gradle"
+    - "mvn"
+    - "dotnet"
+    - "rustc"
+    - "apt"
+    - "apt-get"
+    - "brew"
+    - "yum"
+    - "dnf"
+    - "pacman"
+    - "apk"
+
+  risky_commands:
+    - "rm"
+    - "dd"
+    - "mkfs"
+    - "mount"
+    - "umount"
+    - "fdisk"
+    - "iptables"
+    - "nft"
+    - "ufw"
+    - "systemctl"
+    - "service"
+    - "launchctl"
+    - "crontab"
+    - "at"
+    - "ssh"
+    - "scp"
+    - "rsync"
+    - "sftp"
+    - "docker"
+    - "podman"
+    - "kubectl"
+    - "nc"
+    - "ncat"
+    - "netcat"
+    - "socat"
+    - "telnet"
+    - "nmap"
+
+  dangerous_commands:
+    - "curl"
+    - "wget"
+    - "eval"
+    - "exec"
+    - "source"
+    - "bash"
+    - "sh"
+    - "zsh"
+    - "dash"
+    - "fish"
+    - "csh"
+    - "tcsh"
+    - "ksh"
+    - "sudo"
+    - "su"
+    - "doas"
+    - "base64"
+    - "openssl"
+    - "gpg"
+
+# ---------------------------------------------------------------------------
+# Analyzers – enable or disable entire analysis passes
+# ---------------------------------------------------------------------------
+analyzers:
+  static: true
+  bytecode: true
+  pipeline: true
+
+# ---------------------------------------------------------------------------
+# Severity overrides – raise or lower any rule's severity
+# ---------------------------------------------------------------------------
+# Example:
+#   severity_overrides:
+#     - rule_id: BINARY_FILE_DETECTED
+#       severity: MEDIUM            # Promote back to MEDIUM for strict orgs
+#       reason: "Our policy treats unknown binaries as medium risk"
+severity_overrides: []
+
+# ---------------------------------------------------------------------------
+# Disabled rules – completely suppress specific rule IDs
+# ---------------------------------------------------------------------------
+# Example:
+#   disabled_rules:
+#     - LAZY_LOAD_DEEP_NESTING     # We allow deep nesting
+#     - ARCHIVE_FILE_DETECTED      # Archives are expected in our skills
+disabled_rules: []

@@ -25,9 +25,12 @@ import sys
 from pathlib import Path
 
 from ..core.analyzers.behavioral_analyzer import BehavioralAnalyzer
+from ..core.analyzers.bytecode_analyzer import BytecodeAnalyzer
+from ..core.analyzers.pipeline_analyzer import PipelineAnalyzer
 from ..core.analyzers.static import StaticAnalyzer
 from ..core.reporters.json_reporter import JSONReporter
 from ..core.reporters.sarif_reporter import SARIFReporter
+from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
 
 # Optional LLM analyzer
@@ -54,6 +57,99 @@ from ..core.reporters.markdown_reporter import MarkdownReporter
 from ..core.reporters.table_reporter import TableReporter
 
 
+def _load_policy(args) -> ScanPolicy:
+    """Load scan policy from --policy flag or defaults.
+
+    ``--policy`` accepts either a preset name (``strict``, ``balanced``,
+    ``permissive``) or a path to a custom YAML file.
+    """
+    policy_value = getattr(args, "policy", None)
+
+    # Emit deprecation warnings for legacy flags
+    explicit_yara_mode = getattr(args, "yara_mode", None)
+    if explicit_yara_mode is not None and not policy_value:
+        print(
+            "WARNING: --yara-mode is deprecated. Use --policy strict / --policy permissive instead.",
+            file=sys.stderr,
+        )
+        # Map legacy yara-mode to preset policy
+        policy_value = explicit_yara_mode
+
+    legacy_disabled = getattr(args, "disabled_rules", None)
+    if legacy_disabled and not policy_value:
+        print(
+            "WARNING: --disable-rule is deprecated. Add disabled_rules to your policy YAML instead.",
+            file=sys.stderr,
+        )
+
+    if policy_value:
+        # Try as a preset name first
+        presets = ScanPolicy.preset_names()
+        if policy_value.lower() in presets:
+            policy = ScanPolicy.from_preset(policy_value)
+            print(f"Using {policy.policy_name} scan policy (preset)", file=sys.stderr)
+            return policy
+
+        # Otherwise treat as file path
+        try:
+            policy = ScanPolicy.from_yaml(policy_value)
+            print(f"Using scan policy: {policy_value} ({policy.policy_name})", file=sys.stderr)
+            return policy
+        except FileNotFoundError:
+            print(f"Error: Policy file not found: {policy_value}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error loading policy file: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    return ScanPolicy.default()
+
+
+def _build_policy_analyzers(policy: ScanPolicy, args) -> list:
+    """Build the base analyzer list respecting policy enable/disable settings.
+
+    The policy controls which core analyzers are active via its
+    ``analyzers.static``, ``analyzers.bytecode``, and ``analyzers.pipeline``
+    flags.  This helper ensures the CLI honours those settings rather than
+    unconditionally including a fixed set.
+
+    When ``--yara-mode`` is not explicitly set on the CLI, the YARA mode is
+    derived from the policy preset name so that ``--policy strict`` implies
+    strict YARA post-filtering behaviour (and likewise for permissive).
+    """
+    # Derive YARA mode from the policy when not explicitly overridden via CLI
+    explicit_yara_mode = getattr(args, "yara_mode", None)
+    if explicit_yara_mode is not None:
+        yara_mode = explicit_yara_mode
+    else:
+        # Map policy preset name → matching YARA mode
+        _POLICY_TO_YARA = {"strict": "strict", "permissive": "permissive"}
+        yara_mode = _POLICY_TO_YARA.get(policy.policy_name, "balanced")
+
+    custom_rules_path = getattr(args, "custom_rules", None)
+    disabled_rules = set(getattr(args, "disabled_rules", None) or [])
+
+    analyzers = []
+
+    if policy.analyzers.static:
+        analyzers.append(
+            StaticAnalyzer(
+                yara_mode=yara_mode,
+                custom_yara_rules_path=custom_rules_path,
+                disabled_rules=disabled_rules,
+                policy=policy,
+            )
+        )
+
+    if policy.analyzers.bytecode:
+        analyzers.append(BytecodeAnalyzer())
+
+    if policy.analyzers.pipeline:
+        analyzers.append(PipelineAnalyzer(policy=policy))
+
+    return analyzers
+
+
 def scan_command(args):
     """Handle the scan command for a single skill."""
     skill_dir = Path(args.skill_directory)
@@ -62,19 +158,11 @@ def scan_command(args):
         print(f"Error: Directory does not exist: {skill_dir}", file=sys.stderr)
         return 1
 
-    # Get YARA mode and custom rules from args
-    yara_mode = getattr(args, "yara_mode", "balanced")
-    custom_rules_path = getattr(args, "custom_rules", None)
-    disabled_rules = set(getattr(args, "disabled_rules", None) or [])
+    # Load scan policy
+    policy = _load_policy(args)
 
-    # Create scanner with configured analyzers
-    analyzers = [
-        StaticAnalyzer(
-            yara_mode=yara_mode,
-            custom_yara_rules_path=custom_rules_path,
-            disabled_rules=disabled_rules,
-        )
-    ]
+    # Create scanner with policy-driven analyzers
+    analyzers = _build_policy_analyzers(policy, args)
 
     # Helper to print status messages - go to stderr when JSON output to avoid breaking parsing
     is_json_output = getattr(args, "format", "summary") == "json"
@@ -284,19 +372,11 @@ def scan_all_command(args):
         print(f"Error: Directory does not exist: {skills_dir}", file=sys.stderr)
         return 1
 
-    # Get YARA mode and custom rules from args
-    yara_mode = getattr(args, "yara_mode", "balanced")
-    custom_rules_path = getattr(args, "custom_rules", None)
-    disabled_rules = set(getattr(args, "disabled_rules", None) or [])
+    # Load scan policy
+    policy = _load_policy(args)
 
-    # Create scanner with configured analyzers
-    analyzers = [
-        StaticAnalyzer(
-            yara_mode=yara_mode,
-            custom_yara_rules_path=custom_rules_path,
-            disabled_rules=disabled_rules,
-        )
-    ]
+    # Create scanner with policy-driven analyzers
+    analyzers = _build_policy_analyzers(policy, args)
 
     # Helper to print status messages - go to stderr when JSON output to avoid breaking parsing
     is_json_output = getattr(args, "format", "summary") == "json"
@@ -616,6 +696,46 @@ def validate_rules_command(args):
         return 1
 
 
+def generate_policy_command(args):
+    """Handle the generate-policy command."""
+    output_path = Path(args.output)
+    preset = getattr(args, "preset", "balanced")
+    try:
+        policy = ScanPolicy.from_preset(preset)
+        policy.to_yaml(output_path)
+        print(f"Generated {preset} scan policy: {output_path}")
+        print("")
+        print("Edit the file to customise for your organisation, then use:")
+        print(f"  skill-scanner scan --policy {output_path} /path/to/skill")
+        print("")
+        print("Or use the interactive configurator:")
+        print("  skill-scanner configure-policy")
+        print("")
+        print("Available presets:  strict | balanced (default) | permissive")
+        print("")
+        print("Sections you can customise:")
+        print("  hidden_files       - Benign dotfiles/dirs to skip")
+        print("  pipeline           - Known installer URLs, benign pipe patterns")
+        print("  rule_scoping       - Which rules fire on which file types")
+        print("  credentials        - Well-known test credentials to suppress")
+        print("  command_safety     - Safe/caution/risky/dangerous command tiers")
+        print("  analyzers          - Enable/disable analysis passes")
+        print("  severity_overrides - Raise/lower severity per rule")
+        print("  disabled_rules     - Completely suppress specific rules")
+        return 0
+    except Exception as e:
+        print(f"Error generating policy: {e}", file=sys.stderr)
+        return 1
+
+
+def configure_policy_command(args):
+    """Handle the configure-policy command (interactive TUI)."""
+    from .policy_tui import run_policy_tui
+
+    output_path = getattr(args, "output", "scan_policy.yaml")
+    return run_policy_tui(output_path)
+
+
 def generate_summary(result) -> str:
     """Generate a simple summary output."""
     lines = []
@@ -692,6 +812,10 @@ Examples:
   # Scan recursively with all engines
   skill-scanner scan-all /path/to/skills --recursive --use-behavioral --use-llm
 
+  # Customise the security bar for your org
+  skill-scanner generate-policy -o my_org_policy.yaml
+  skill-scanner scan --policy my_org_policy.yaml /path/to/skill
+
   # List available analyzers
   skill-scanner list-analyzers
 
@@ -751,10 +875,15 @@ Examples:
         help="Enable meta-analysis for false positive filtering and finding prioritization (requires 2+ analyzers including LLM)",
     )
     scan_parser.add_argument(
+        "--policy",
+        metavar="PRESET_OR_PATH",
+        help="Scan policy: a preset name (strict, balanced, permissive) or path to a custom YAML file. Generate a starting point with: skill-scanner generate-policy",
+    )
+    scan_parser.add_argument(
         "--yara-mode",
         choices=["strict", "balanced", "permissive"],
-        default="balanced",
-        help="YARA detection mode: strict (max security, more FPs), balanced (default), permissive (fewer FPs, may miss threats)",
+        default=None,
+        help="[DEPRECATED: use --policy instead] YARA detection mode",
     )
     scan_parser.add_argument(
         "--custom-rules",
@@ -766,7 +895,7 @@ Examples:
         action="append",
         metavar="RULE_NAME",
         dest="disabled_rules",
-        help="Disable a specific rule by name (can be used multiple times). Example: --disable-rule YARA_script_injection",
+        help="[DEPRECATED: use disabled_rules in policy YAML] Disable a specific rule by name",
     )
 
     # Scan-all command
@@ -824,10 +953,15 @@ Examples:
         help="Enable meta-analysis for false positive filtering and finding prioritization (requires 2+ analyzers including LLM)",
     )
     scan_all_parser.add_argument(
+        "--policy",
+        metavar="PRESET_OR_PATH",
+        help="Scan policy: a preset name (strict, balanced, permissive) or path to a custom YAML file. Generate a starting point with: skill-scanner generate-policy",
+    )
+    scan_all_parser.add_argument(
         "--yara-mode",
         choices=["strict", "balanced", "permissive"],
-        default="balanced",
-        help="YARA detection mode: strict (max security, more FPs), balanced (default), permissive (fewer FPs, may miss threats)",
+        default=None,
+        help="[DEPRECATED: use --policy instead] YARA detection mode",
     )
     scan_all_parser.add_argument(
         "--custom-rules",
@@ -839,7 +973,7 @@ Examples:
         action="append",
         metavar="RULE_NAME",
         dest="disabled_rules",
-        help="Disable a specific rule by name (can be used multiple times). Example: --disable-rule YARA_script_injection",
+        help="[DEPRECATED: use disabled_rules in policy YAML] Disable a specific rule by name",
     )
 
     # List analyzers command
@@ -848,6 +982,36 @@ Examples:
     # Validate rules command
     validate_parser = subparsers.add_parser("validate-rules", help="Validate rule signatures")
     validate_parser.add_argument("--rules-file", help="Path to custom rules file")
+
+    # Generate policy command
+    gen_policy_parser = subparsers.add_parser(
+        "generate-policy",
+        help="Generate a default scan policy YAML file for customisation",
+    )
+    gen_policy_parser.add_argument(
+        "--output",
+        "-o",
+        default="scan_policy.yaml",
+        help="Output file path (default: scan_policy.yaml)",
+    )
+    gen_policy_parser.add_argument(
+        "--preset",
+        choices=["strict", "balanced", "permissive"],
+        default="balanced",
+        help="Preset to use as base (default: balanced)",
+    )
+
+    # Interactive policy configurator
+    config_policy_parser = subparsers.add_parser(
+        "configure-policy",
+        help="Interactive TUI to build a custom scan policy",
+    )
+    config_policy_parser.add_argument(
+        "--output",
+        "-o",
+        default="scan_policy.yaml",
+        help="Output file path (default: scan_policy.yaml)",
+    )
 
     # Parse arguments
     args = parser.parse_args()
@@ -865,6 +1029,10 @@ Examples:
         return list_analyzers_command(args)
     elif args.command == "validate-rules":
         return validate_rules_command(args)
+    elif args.command == "generate-policy":
+        return generate_policy_command(args)
+    elif args.command == "configure-policy":
+        return configure_policy_command(args)
     else:
         parser.print_help()
         return 1

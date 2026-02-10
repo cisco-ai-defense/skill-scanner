@@ -26,6 +26,11 @@ import yaml
 
 from ...core.models import Severity, ThreatCategory
 
+# Matches a regex character class like [^\n] or [a-z0-9].
+# Used to strip character-class contents before checking whether a pattern
+# contains \n for genuine multiline spanning (vs single-line [^\n] anchoring).
+_CHAR_CLASS_RE = re.compile(r"\[[^\]]*\]")
+
 
 class SecurityRule:
     """Represents a security detection rule."""
@@ -95,6 +100,39 @@ class SecurityRule:
                             "file_path": file_path,
                         }
                     )
+
+        # Some rules intentionally span lines (for example "...\\n...open(...)").
+        # The primary pass above is line-based for speed; this pass captures
+        # multiline-only regexes and maps matches back to starting line number.
+        for pattern in self.compiled_patterns:
+            # Check for \\n *outside* character classes.  Patterns that use
+            # [^\\n] (negated newline inside a character class) are still
+            # single-line patterns — they must NOT enter the multiline pass
+            # or they will duplicate every match already found in pass 1.
+            stripped = _CHAR_CLASS_RE.sub("", pattern.pattern)
+            if "\\n" not in stripped:
+                continue
+            for match in pattern.finditer(content):
+                matched_text = match.group(0)
+                excluded = False
+                for exclude_pattern in self.compiled_exclude_patterns:
+                    if exclude_pattern.search(matched_text):
+                        excluded = True
+                        break
+                if excluded:
+                    continue
+
+                start_line = content.count("\n", 0, match.start()) + 1
+                snippet = lines[start_line - 1].strip() if 0 <= start_line - 1 < len(lines) else ""
+                matches.append(
+                    {
+                        "line_number": start_line,
+                        "line_content": snippet,
+                        "matched_pattern": pattern.pattern,
+                        "matched_text": matched_text[:200],
+                        "file_path": file_path,
+                    }
+                )
 
         return matches
 

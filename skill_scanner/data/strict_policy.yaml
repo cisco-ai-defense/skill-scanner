@@ -1,0 +1,200 @@
+# Skill Scanner – STRICT Scan Policy
+# ====================================
+# Maximum security posture.  Narrow allowlists, fewer suppressions.
+# Use for: untrusted / external skills, security audits, compliance.
+#
+# Usage:
+#   skill-scanner scan --policy strict ./my-skill
+
+policy_name: strict
+policy_version: "1.0"
+
+# ---------------------------------------------------------------------------
+# Hidden files – only the absolute essentials are benign
+# ---------------------------------------------------------------------------
+hidden_files:
+  benign_dotfiles:
+    - ".gitignore"
+    - ".gitattributes"
+    - ".gitmodules"
+    - ".gitkeep"
+    - ".editorconfig"
+    - ".dockerignore"
+
+  benign_dotdirs:
+    - ".github"
+    - ".circleci"
+    - ".gitlab"
+
+# ---------------------------------------------------------------------------
+# Pipeline taint – no trusted installers, no benign pipes
+# ---------------------------------------------------------------------------
+# In strict mode every curl|sh is flagged at full severity
+pipeline:
+  known_installer_domains: []
+
+  benign_pipe_targets:
+    # Only the most obviously safe patterns
+    - 'ps\s.*\|\s*grep'
+    - 'grep\s.*\|\s*grep\s+-v'
+
+  doc_path_indicators:
+    - "references"
+    - "docs"
+
+# ---------------------------------------------------------------------------
+# Rule scoping – fire rules more broadly
+# ---------------------------------------------------------------------------
+rule_scoping:
+  # In strict mode, coercive/autonomy rules fire on ALL text files
+  skillmd_and_scripts_only: []
+
+  # Only skip YARA in explicit documentation directories
+  skip_in_docs:
+    - "code_execution_generic"
+    - "system_manipulation_generic"
+    - "script_injection_generic"
+
+  # Unicode steganography fires on everything (strict wants max coverage)
+  code_only:
+    - "sql_injection_generic"
+
+  doc_path_indicators:
+    - "references"
+    - "docs"
+
+  doc_filename_patterns:
+    - 'tutorial|guide|howto'
+
+# ---------------------------------------------------------------------------
+# Credentials – no test credentials are suppressed
+# ---------------------------------------------------------------------------
+credentials:
+  known_test_values: []
+  placeholder_markers: []
+
+# ---------------------------------------------------------------------------
+# System cleanup – strict mode trusts fewer rm targets
+# ---------------------------------------------------------------------------
+system_cleanup:
+  safe_rm_targets:
+    - "dist"
+    - "build"
+    - "tmp"
+    - "temp"
+
+# ---------------------------------------------------------------------------
+# File classification – inherited from default (no relaxation)
+# ---------------------------------------------------------------------------
+# Inherits defaults via deep-merge in ScanPolicy.from_yaml
+
+# ---------------------------------------------------------------------------
+# File limits – tighter thresholds
+# ---------------------------------------------------------------------------
+file_limits:
+  max_file_count: 50            # Half the default – stricter inventory
+  max_file_size_bytes: 2097152  # 2 MB – flag large files earlier
+  max_reference_depth: 3        # Less recursion
+  max_name_length: 48           # Shorter names expected
+  max_description_length: 512   # Shorter descriptions expected
+  min_description_length: 30    # Require more descriptive text
+
+# ---------------------------------------------------------------------------
+# Analysis thresholds – more sensitive detection
+# ---------------------------------------------------------------------------
+analysis_thresholds:
+  zerowidth_threshold_with_decode: 20   # Flag steganography earlier
+  zerowidth_threshold_alone: 100        # Lower bar for standalone zero-width
+  analyzability_low_risk: 95            # Require higher analyzability for LOW
+  analyzability_medium_risk: 80         # Higher bar for MEDIUM
+
+# ---------------------------------------------------------------------------
+# Sensitive files – expanded patterns
+# ---------------------------------------------------------------------------
+sensitive_files:
+  patterns:
+    - '/etc/(?:passwd|shadow|hosts|sudoers)'
+    - '~?/\.(?:ssh|aws|gnupg|config|env|kube)'
+    - '\.(?:env|pem|key|crt|p12|pfx|jks|keystore)'
+    - '(?:credentials|secrets?|tokens?|password|private)'
+    - '\$(?:HOME|USER|SSH_AUTH_SOCK|AWS_|KUBECONFIG)'
+
+# ---------------------------------------------------------------------------
+# Command safety – stricter: promote docker/kubectl/ssh to dangerous
+# ---------------------------------------------------------------------------
+command_safety:
+  # Only override tiers you want to change; empty → use built-in defaults
+  risky_commands:
+    - "rm"
+    - "dd"
+    - "mkfs"
+    - "mount"
+    - "umount"
+    - "fdisk"
+    - "iptables"
+    - "nft"
+    - "ufw"
+    - "systemctl"
+    - "service"
+    - "launchctl"
+    - "crontab"
+    - "at"
+    - "nc"
+    - "ncat"
+    - "netcat"
+    - "socat"
+    - "telnet"
+    - "nmap"
+
+  dangerous_commands:
+    - "curl"
+    - "wget"
+    - "eval"
+    - "exec"
+    - "source"
+    - "bash"
+    - "sh"
+    - "zsh"
+    - "dash"
+    - "fish"
+    - "csh"
+    - "tcsh"
+    - "ksh"
+    - "sudo"
+    - "su"
+    - "doas"
+    - "base64"
+    - "openssl"
+    - "gpg"
+    # Promoted from risky in strict mode
+    - "ssh"
+    - "scp"
+    - "rsync"
+    - "sftp"
+    - "docker"
+    - "podman"
+    - "kubectl"
+
+# ---------------------------------------------------------------------------
+# Analyzers – all enabled in strict mode
+# ---------------------------------------------------------------------------
+analyzers:
+  static: true
+  bytecode: true
+  pipeline: true
+
+# ---------------------------------------------------------------------------
+# Severity overrides – promote some rules to higher severity
+# ---------------------------------------------------------------------------
+severity_overrides:
+  - rule_id: BINARY_FILE_DETECTED
+    severity: MEDIUM
+    reason: "Strict mode treats unknown binaries as medium risk"
+  - rule_id: HIDDEN_DATA_FILE
+    severity: MEDIUM
+    reason: "Strict mode flags all unknown hidden files at medium"
+  - rule_id: PYCACHE_FILES_DETECTED
+    severity: MEDIUM
+    reason: "Strict mode flags bytecode distribution at medium"
+
+disabled_rules: []

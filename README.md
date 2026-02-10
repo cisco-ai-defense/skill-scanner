@@ -35,6 +35,7 @@ Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agen
 | [LLM Analyzer](docs/llm-analyzer.md) | LLM configuration and usage |
 | [Meta-Analyzer](docs/meta-analyzer.md) | False positive filtering and prioritization |
 | [Behavioral Analyzer](docs/behavioral-analyzer.md) | Dataflow analysis details |
+| [Scan Policy](docs/scan-policy.md) | Custom policies, presets, and tuning guide |
 | [API Reference](docs/api-server.md) | REST API documentation |
 | [Development Guide](docs/developing.md) | Contributing and development setup |
 
@@ -113,14 +114,17 @@ skill-scanner scan-all ./skills --fail-on-findings --format sarif --output resul
 # Use custom YARA rules
 skill-scanner scan /path/to/skill --custom-rules /path/to/my-rules/
 
-# Disable specific noisy rules
-skill-scanner scan /path/to/skill --disable-rule YARA_script_injection --disable-rule MANIFEST_MISSING_LICENSE
+# Use a scan policy preset (strict, balanced, permissive)
+skill-scanner scan /path/to/skill --policy strict
 
-# Strict mode (more findings, higher FP rate)
-skill-scanner scan /path/to/skill --yara-mode strict
+# Use a custom org policy file
+skill-scanner scan /path/to/skill --policy my_org_policy.yaml
 
-# Permissive mode (fewer findings, may miss some threats)
-skill-scanner scan /path/to/skill --yara-mode permissive
+# Generate a policy file to customise
+skill-scanner generate-policy -o my_org_policy.yaml
+
+# Interactive policy configurator (TUI)
+skill-scanner configure-policy
 ```
 
 ### Python SDK
@@ -149,6 +153,8 @@ print(f"Findings: {len(result.findings)}")
 | Analyzer | Detection Method | Scope | Requirements |
 |----------|------------------|-------|--------------|
 | **Static** | YAML + YARA patterns | All files | None |
+| **Bytecode** | .pyc integrity verification | Python bytecode | None |
+| **Pipeline** | Command taint analysis | Shell pipelines | None |
 | **Behavioral** | AST dataflow analysis | Python files | None |
 | **LLM** | Semantic analysis | SKILL.md + scripts | API key |
 | **Meta** | False positive filtering | All findings | API key |
@@ -161,6 +167,7 @@ print(f"Findings: {len(result.findings)}")
 
 | Option | Description |
 |--------|-------------|
+| `--policy` | Scan policy: preset name (`strict`, `balanced`, `permissive`) or path to custom YAML |
 | `--use-behavioral` | Enable behavioral analyzer (dataflow analysis) |
 | `--use-llm` | Enable LLM analyzer (requires API key) |
 | `--use-virustotal` | Enable VirusTotal binary scanner |
@@ -169,9 +176,16 @@ print(f"Findings: {len(result.findings)}")
 | `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif` |
 | `--output PATH` | Save report to file |
 | `--fail-on-findings` | Exit with error if HIGH/CRITICAL found |
-| `--yara-mode` | Detection mode: `strict`, `balanced` (default), `permissive` |
 | `--custom-rules PATH` | Use custom YARA rules from directory |
-| `--disable-rule RULE` | Disable specific rule (can repeat) |
+
+| Command | Description |
+|---------|-------------|
+| `scan` | Scan a single skill directory |
+| `scan-all` | Scan multiple skills (with `--recursive`) |
+| `generate-policy` | Generate a scan policy YAML for customisation |
+| `configure-policy` | Interactive TUI to build a custom scan policy |
+| `list-analyzers` | Show available analyzers |
+| `validate-rules` | Validate rule signatures |
 
 ---
 

@@ -124,6 +124,26 @@ skill-scanner scan-all evals/skills --format table
 
 ## Advanced Features
 
+### Scan Policies
+
+Use built-in presets or a custom policy to tune detection sensitivity:
+
+```bash
+# Use a stricter preset
+skill-scanner scan /path/to/skill --policy strict
+
+# Use a more permissive preset
+skill-scanner scan /path/to/skill --policy permissive
+
+# Generate a custom policy YAML to edit
+skill-scanner generate-policy -o my_policy.yaml
+
+# Interactive policy configurator (TUI)
+skill-scanner configure-policy
+```
+
+See [Scan Policy Guide](scan-policy.md) for full details.
+
 ### Enable All Analyzers
 ```bash
 skill-scanner scan /path/to/skill \
@@ -151,6 +171,7 @@ chmod +x .git/hooks/pre-commit
    - [README.md](../README.md) - Project overview
    - [docs/architecture.md](architecture.md) - System design
    - [docs/threat-taxonomy.md](threat-taxonomy.md) - All threat categories
+   - [docs/scan-policy.md](scan-policy.md) - Custom policies and tuning
 
 2. **Try scanning your own skills:**
    ```bash

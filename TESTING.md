@@ -50,6 +50,14 @@ uv run pytest tests/ -k "behavioral" -v
 | `test_api_endpoints.py` | REST API endpoints |
 | `test_reporters.py` | Report generation |
 | `test_threats.py` | Threat taxonomy |
+| `test_scan_policy.py` | Scan policy system |
+| `test_bytecode_analyzer.py` | Bytecode integrity analyzer |
+| `test_pipeline_analyzer.py` | Pipeline taint analyzer |
+| `test_command_safety.py` | Command safety evaluation |
+| `test_analyzability.py` | Analyzability scoring |
+| `test_file_magic.py` | File magic detection |
+| `test_extractors.py` | Archive extraction |
+| `test_hidden_files.py` | Hidden file detection |
 | `behavioral/` | Behavioral analyzer tests |
 | `static_analysis/` | Static analysis tests |
 
@@ -78,6 +86,15 @@ uv run pytest tests/test_meta_analyzer.py -v
 
 # AI Defense analyzer
 uv run pytest tests/test_aidefense_analyzer.py -v
+
+# Bytecode analyzer
+uv run pytest tests/test_bytecode_analyzer.py -v
+
+# Pipeline analyzer
+uv run pytest tests/test_pipeline_analyzer.py -v
+
+# Scan policy
+uv run pytest tests/test_scan_policy.py -v
 ```
 
 ## Evaluation Framework (`evals/`)

@@ -197,14 +197,14 @@ class SkillLoader:
             if not path.is_file():
                 continue
 
-            # Skip hidden files and __pycache__ (relative to the skill directory)
+            # Skip .git/ directory only (version control metadata, not an attack vector).
+            # All other hidden files and __pycache__ are now discovered so they can be
+            # flagged and scanned by downstream analyzers.
             #
             # Important: Skills may live under hidden parent directories like `.claude/skills/`.
-            # We only want to skip hidden files/folders *inside* the skill package, not its parents.
+            # We only want to skip .git *inside* the skill package, not its parents.
             rel_parts = path.relative_to(skill_directory).parts
-            if any(part.startswith(".") for part in rel_parts):
-                continue
-            if "__pycache__" in rel_parts:
+            if any(part == ".git" for part in rel_parts):
                 continue
 
             relative_path = str(path.relative_to(skill_directory))

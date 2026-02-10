@@ -17,21 +17,21 @@ The evaluation framework (`evals/eval_runner.py`) tests analyzer accuracy by com
 
 The evaluation can run with different analyzer combinations:
 
-#### Static Analyzer Only (Default)
+#### Default Analyzers (Static + Bytecode + Pipeline)
 ```bash
 python evals/eval_runner.py --test-skills-dir evals/skills
 ```
-- Uses `StaticAnalyzer` (includes YARA rules, pattern matching)
+- Uses `StaticAnalyzer`, `BytecodeAnalyzer`, and `PipelineAnalyzer`
 - Fast, no API calls needed
-- Good for testing YARA rules and static patterns
+- Good for testing YARA rules, static patterns, bytecode integrity, and pipeline taint
 
 #### Static + LLM Analyzer
 ```bash
 export SKILL_SCANNER_LLM_API_KEY=your_key
 python evals/eval_runner.py --test-skills-dir evals/skills --use-llm
 ```
-- Uses `StaticAnalyzer` + `LLMAnalyzer`
-- Combines pattern matching with semantic analysis
+- Uses `StaticAnalyzer` + `BytecodeAnalyzer` + `PipelineAnalyzer` + `LLMAnalyzer`
+- Combines pattern matching and taint analysis with semantic analysis
 - More comprehensive but slower (API calls)
 
 #### With Meta-Analyzer (False Positive Filtering)

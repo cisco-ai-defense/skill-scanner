@@ -28,6 +28,7 @@ from ...config.yara_modes import DEFAULT_YARA_MODE, YaraModeConfig
 from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...core.rules.patterns import RuleLoader, SecurityRule
 from ...core.rules.yara_scanner import YaraScanner
+from ...core.scan_policy import ScanPolicy
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
 
@@ -36,7 +37,6 @@ logger = logging.getLogger(__name__)
 # Pre-compiled regex patterns for file operation checks
 _READ_PATTERNS = [
     re.compile(r"open\([^)]+['\"]r['\"]"),
-    re.compile(r"open\([^)]+\)"),
     re.compile(r"\.read\("),
     re.compile(r"\.readline\("),
     re.compile(r"\.readlines\("),
@@ -59,8 +59,6 @@ _GREP_PATTERNS = [
     re.compile(r"re\.match\("),
     re.compile(r"re\.finditer\("),
     re.compile(r"re\.sub\("),
-    re.compile(r"\.search\("),
-    re.compile(r"\.findall\("),
     re.compile(r"grep"),
 ]
 
@@ -87,6 +85,35 @@ _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^\)]+)\)")
 _PYTHON_IMPORT_PATTERN = re.compile(r"^from\s+\.([A-Za-z0-9_.]*)\s+import", re.MULTILINE)
 _BASH_SOURCE_PATTERN = re.compile(r"(?:source|\.)\s+([A-Za-z0-9_\-./]+\.(?:sh|bash))")
 _RM_TARGET_PATTERN = re.compile(r"rm\s+-r[^;]*?\s+([^\s;]+)")
+_DEFAULT_SAFE_CLEANUP_DIRS = {
+    "dist",
+    "build",
+    "tmp",
+    "temp",
+    ".tmp",
+    ".temp",
+    "bundle.html",
+    "bundle.js",
+    "bundle.css",
+    "node_modules",
+    ".next",
+    ".nuxt",
+    ".cache",
+}
+_DEFAULT_PLACEHOLDER_MARKERS = {
+    "your-",
+    "your_",
+    "your ",
+    "example",
+    "sample",
+    "dummy",
+    "placeholder",
+    "replace",
+    "changeme",
+    "change_me",
+    "<your",
+    "<insert",
+}
 
 
 class StaticAnalyzer(BaseAnalyzer):
@@ -99,6 +126,7 @@ class StaticAnalyzer(BaseAnalyzer):
         yara_mode: YaraModeConfig | str | None = None,
         custom_yara_rules_path: str | Path | None = None,
         disabled_rules: set[str] | None = None,
+        policy: ScanPolicy | None = None,
     ):
         """
         Initialize static analyzer.
@@ -115,8 +143,13 @@ class StaticAnalyzer(BaseAnalyzer):
             disabled_rules: Set of rule names to disable. Rules can be YARA rule
                 names (e.g., "YARA_script_injection") or static rule IDs
                 (e.g., "COMMAND_INJECTION_EVAL").
+            policy: Scan policy for org-specific allowlists and rule scoping.
+                If None, loads built-in defaults.
         """
         super().__init__("static_analyzer")
+
+        # Load policy (defaults if not provided)
+        self.policy = policy or ScanPolicy.default()
 
         self.rule_loader = RuleLoader(rules_file)
         self.rule_loader.load_rules()
@@ -129,9 +162,10 @@ class StaticAnalyzer(BaseAnalyzer):
         else:
             self.yara_mode = yara_mode
 
-        # Store disabled rules (merge with mode-based disabled rules)
+        # Store disabled rules (merge CLI + mode + policy)
         self.disabled_rules = set(disabled_rules or set())
         self.disabled_rules.update(self.yara_mode.disabled_rules)
+        self.disabled_rules.update(self.policy.disabled_rules)
 
         # Store custom YARA rules path
         self.custom_yara_rules_path = Path(custom_yara_rules_path) if custom_yara_rules_path else None
@@ -204,6 +238,8 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(self._check_consistency(skill))
         findings.extend(self._scan_referenced_files(skill))
         findings.extend(self._check_binary_files(skill))
+        findings.extend(self._check_hidden_files(skill))
+        findings.extend(self._check_file_inventory(skill))
 
         if self.yara_scanner:
             findings.extend(self._yara_scan(skill))
@@ -214,14 +250,29 @@ class StaticAnalyzer(BaseAnalyzer):
         if self.disabled_rules:
             findings = [f for f in findings if self._is_rule_enabled(f.rule_id)]
 
+        # Filter out well-known test/placeholder credentials
+        findings = [f for f in findings if not self._is_known_test_credential(f)]
+
         return findings
+
+    def _is_known_test_credential(self, finding: Finding) -> bool:
+        """Check if a finding matches a well-known test/placeholder credential (from policy)."""
+        if finding.category != ThreatCategory.HARDCODED_SECRETS:
+            return False
+        snippet = finding.snippet or ""
+        for cred in self.policy.credentials.known_test_values:
+            if cred in snippet:
+                return True
+        return False
 
     def _check_manifest(self, skill: Skill) -> list[Finding]:
         """Validate skill manifest for security issues."""
         findings = []
         manifest = skill.manifest
 
-        if len(manifest.name) > 64 or not _SKILL_NAME_PATTERN.fullmatch(manifest.name or ""):
+        if len(manifest.name) > self.policy.file_limits.max_name_length or not _SKILL_NAME_PATTERN.fullmatch(
+            manifest.name or ""
+        ):
             findings.append(
                 Finding(
                     id=self._generate_finding_id("MANIFEST_INVALID_NAME", "manifest"),
@@ -231,7 +282,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     title="Skill name does not follow agent skills naming rules",
                     description=(
                         f"Skill name '{manifest.name}' is invalid. Agent skills require lowercase letters, numbers, "
-                        f"and hyphens only, with a maximum length of 64 characters."
+                        f"and hyphens only, with a maximum length of {self.policy.file_limits.max_name_length} characters."
                     ),
                     file_path="SKILL.md",
                     remediation="Rename the skill to match `[a-z0-9-]{1,64}` (e.g., 'pdf-processing')",
@@ -239,7 +290,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 )
             )
 
-        if len(manifest.description or "") > 1024:
+        if len(manifest.description or "") > self.policy.file_limits.max_description_length:
             findings.append(
                 Finding(
                     id=self._generate_finding_id("MANIFEST_DESCRIPTION_TOO_LONG", "manifest"),
@@ -249,15 +300,15 @@ class StaticAnalyzer(BaseAnalyzer):
                     title="Skill description exceeds agent skills length limit",
                     description=(
                         f"Skill description is {len(manifest.description)} characters; Agent skills limit the "
-                        f"`description` field to 1024 characters."
+                        f"`description` field to {self.policy.file_limits.max_description_length} characters."
                     ),
                     file_path="SKILL.md",
-                    remediation="Shorten the description to 1024 characters or fewer while keeping it specific",
+                    remediation=f"Shorten the description to {self.policy.file_limits.max_description_length} characters or fewer while keeping it specific",
                     analyzer="static",
                 )
             )
 
-        if len(manifest.description) < 20:
+        if len(manifest.description) < self.policy.file_limits.min_description_length:
             findings.append(
                 Finding(
                     id=self._generate_finding_id("SOCIAL_ENG_VAGUE_DESCRIPTION", "manifest"),
@@ -420,7 +471,11 @@ class StaticAnalyzer(BaseAnalyzer):
     def _scan_referenced_files(self, skill: Skill) -> list[Finding]:
         """Scan files referenced in instruction body with recursive scanning."""
         findings = []
-        findings.extend(self._scan_references_recursive(skill, skill.referenced_files, max_depth=5))
+        findings.extend(
+            self._scan_references_recursive(
+                skill, skill.referenced_files, max_depth=self.policy.file_limits.max_reference_depth
+            )
+        )
         return findings
 
     def _scan_references_recursive(
@@ -559,54 +614,201 @@ class StaticAnalyzer(BaseAnalyzer):
         return references
 
     def _check_binary_files(self, skill: Skill) -> list[Finding]:
-        """Check for binary files in skill package."""
+        """Check for binary files in skill package with tiered asset classification and magic byte validation."""
+        from ..file_magic import check_extension_mismatch
+
         findings = []
 
-        ASSET_EXTENSIONS = {
-            ".ttf",
-            ".otf",
-            ".woff",
-            ".woff2",
-            ".eot",
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".gif",
-            ".svg",
-            ".webp",
-            ".ico",
-            ".bmp",
-            ".tiff",
-            ".tar.gz",
-            ".tgz",
-            ".zip",
-        }
+        # Extension classifications from policy (org-customisable)
+        INERT_EXTENSIONS = self.policy.file_classification.inert_extensions
+        STRUCTURED_EXTENSIONS = self.policy.file_classification.structured_extensions
+        ARCHIVE_EXTENSIONS = self.policy.file_classification.archive_extensions
 
         for skill_file in skill.files:
-            if skill_file.file_type == "binary":
-                file_path_obj = Path(skill_file.relative_path)
-                ext = file_path_obj.suffix.lower()
-                if file_path_obj.name.endswith(".tar.gz"):
-                    ext = ".tar.gz"
+            file_path_obj = Path(skill_file.relative_path)
+            ext = file_path_obj.suffix.lower()
+            if file_path_obj.name.endswith(".tar.gz"):
+                ext = ".tar.gz"
 
-                if ext in ASSET_EXTENSIONS:
-                    continue
+            # Run file magic mismatch check on ALL files with known extensions
+            # (regardless of whether they're classified as binary)
+            if skill_file.path.exists():
+                mismatch = check_extension_mismatch(skill_file.path)
+                if mismatch:
+                    mismatch_severity, mismatch_desc, magic_match = mismatch
+                    severity_map = {
+                        "CRITICAL": Severity.CRITICAL,
+                        "HIGH": Severity.HIGH,
+                        "MEDIUM": Severity.MEDIUM,
+                    }
+                    findings.append(
+                        Finding(
+                            id=self._generate_finding_id("FILE_MAGIC_MISMATCH", skill_file.relative_path),
+                            rule_id="FILE_MAGIC_MISMATCH",
+                            category=ThreatCategory.OBFUSCATION,
+                            severity=severity_map.get(mismatch_severity, Severity.MEDIUM),
+                            title="File extension does not match actual content type",
+                            description=mismatch_desc,
+                            file_path=skill_file.relative_path,
+                            remediation="Rename the file to match its actual content type, or remove it if it appears malicious.",
+                            analyzer="static",
+                            metadata={
+                                "actual_type": magic_match.content_type,
+                                "actual_family": magic_match.content_family,
+                                "claimed_extension": ext,
+                            },
+                        )
+                    )
 
+            # Only check further if the file is classified as binary
+            if skill_file.file_type != "binary":
+                continue
+
+            if ext in INERT_EXTENSIONS:
+                continue
+
+            if ext in STRUCTURED_EXTENSIONS:
+                # SVGs will be scanned by multimodal analyzer for embedded scripts
+                # Just note their presence for now
+                continue
+
+            if ext in ARCHIVE_EXTENSIONS:
                 findings.append(
                     Finding(
-                        id=self._generate_finding_id("BINARY_FILE_DETECTED", skill_file.relative_path),
-                        rule_id="BINARY_FILE_DETECTED",
+                        id=self._generate_finding_id("ARCHIVE_FILE_DETECTED", skill_file.relative_path),
+                        rule_id="ARCHIVE_FILE_DETECTED",
                         category=ThreatCategory.POLICY_VIOLATION,
-                        severity=Severity.INFO,
-                        title="Binary file detected in skill package",
-                        description=f"Binary file found: {skill_file.relative_path}. "
-                        f"Binary files cannot be inspected by static analysis. "
-                        f"Consider using Python or Bash scripts for transparency.",
+                        severity=Severity.MEDIUM,
+                        title="Archive file detected in skill package",
+                        description=(
+                            f"Archive file found: {skill_file.relative_path}. "
+                            f"Archives can contain hidden executables, scripts, or other malicious content "
+                            f"that is not visible without extraction."
+                        ),
                         file_path=skill_file.relative_path,
-                        remediation="Review binary file necessity. Replace with auditable scripts if possible.",
+                        remediation="Extract archive contents and include files directly, or document the archive's purpose.",
                         analyzer="static",
                     )
                 )
+                continue
+
+            # Unknown binary file - informational only
+            findings.append(
+                Finding(
+                    id=self._generate_finding_id("BINARY_FILE_DETECTED", skill_file.relative_path),
+                    rule_id="BINARY_FILE_DETECTED",
+                    category=ThreatCategory.POLICY_VIOLATION,
+                    severity=Severity.INFO,
+                    title="Binary file detected in skill package",
+                    description=f"Binary file found: {skill_file.relative_path}. "
+                    f"Binary files cannot be inspected by static analysis. "
+                    f"Consider using Python or Bash scripts for transparency.",
+                    file_path=skill_file.relative_path,
+                    remediation="Review binary file necessity. Replace with auditable scripts if possible.",
+                    analyzer="static",
+                )
+            )
+
+        return findings
+
+    def _check_hidden_files(self, skill: Skill) -> list[Finding]:
+        """Check for hidden files (dotfiles) and __pycache__ in skill package."""
+        findings = []
+
+        # Code extensions from policy (org-customisable)
+        CODE_EXTENSIONS = self.policy.file_classification.code_extensions
+
+        # Use policy-defined allowlists (org-customisable)
+        benign_dotfiles = self.policy.hidden_files.benign_dotfiles
+        benign_dotdirs = self.policy.hidden_files.benign_dotdirs
+
+        # Track pycache directories already flagged (consolidate to one finding per dir)
+        flagged_pycache_dirs: set[str] = set()
+
+        for skill_file in skill.files:
+            rel_path = skill_file.relative_path
+            path_obj = Path(rel_path)
+
+            if skill_file.is_pycache:
+                # Consolidate: one finding per __pycache__ directory, not per file
+                pycache_dir = str(path_obj.parent)
+                if pycache_dir in flagged_pycache_dirs:
+                    continue
+                flagged_pycache_dirs.add(pycache_dir)
+
+                # Count how many .pyc files are in this directory
+                pyc_count = sum(
+                    1 for sf in skill.files if sf.is_pycache and str(Path(sf.relative_path).parent) == pycache_dir
+                )
+
+                findings.append(
+                    Finding(
+                        id=self._generate_finding_id("PYCACHE_FILES_DETECTED", pycache_dir),
+                        rule_id="PYCACHE_FILES_DETECTED",
+                        category=ThreatCategory.POLICY_VIOLATION,
+                        severity=Severity.LOW,
+                        title="Python bytecode cache directory detected",
+                        description=(
+                            f"__pycache__ directory found at {pycache_dir}/ "
+                            f"containing {pyc_count} bytecode file(s). "
+                            f"Pre-compiled bytecode should not be distributed in skill packages."
+                        ),
+                        file_path=pycache_dir,
+                        remediation="Remove __pycache__ directories from skill packages. Ship source code only.",
+                        analyzer="static",
+                    )
+                )
+            elif skill_file.is_hidden:
+                ext = path_obj.suffix.lower()
+                parts = path_obj.parts
+                filename = path_obj.name
+
+                # Skip known benign dotfiles (from policy)
+                if filename.lower() in benign_dotfiles:
+                    continue
+
+                # Skip files inside known benign hidden directories (from policy)
+                hidden_parts = [p for p in parts if p.startswith(".") and p != "."]
+                if any(p.lower() in benign_dotdirs for p in hidden_parts):
+                    continue
+
+                if ext in CODE_EXTENSIONS:
+                    findings.append(
+                        Finding(
+                            id=self._generate_finding_id("HIDDEN_EXECUTABLE_SCRIPT", rel_path),
+                            rule_id="HIDDEN_EXECUTABLE_SCRIPT",
+                            category=ThreatCategory.OBFUSCATION,
+                            severity=Severity.HIGH,
+                            title="Hidden executable script detected",
+                            description=(
+                                f"Hidden script file found: {rel_path}. "
+                                f"Hidden files (dotfiles) are often used to conceal malicious code "
+                                f"from casual inspection."
+                            ),
+                            file_path=rel_path,
+                            remediation="Move script to a visible location or remove if not needed.",
+                            analyzer="static",
+                        )
+                    )
+                else:
+                    # Unknown hidden data/config file
+                    findings.append(
+                        Finding(
+                            id=self._generate_finding_id("HIDDEN_DATA_FILE", rel_path),
+                            rule_id="HIDDEN_DATA_FILE",
+                            category=ThreatCategory.OBFUSCATION,
+                            severity=Severity.LOW,
+                            title="Hidden data file detected",
+                            description=(
+                                f"Hidden file found: {rel_path}. "
+                                f"Hidden files may contain concealed configuration or data "
+                                f"that should be reviewed."
+                            ),
+                            file_path=rel_path,
+                            remediation="Move file to a visible location or document its purpose.",
+                            analyzer="static",
+                        )
+                    )
 
         return findings
 
@@ -981,26 +1183,218 @@ class StaticAnalyzer(BaseAnalyzer):
         return f"{rule_id}_{hash_obj.hexdigest()[:10]}"
 
     def _yara_scan(self, skill: Skill) -> list[Finding]:
-        """Scan skill files with YARA rules."""
+        """Scan ALL skill files with YARA rules (full-tree scan).
+
+        Scans:
+        - SKILL.md instruction body
+        - All text-readable files (scripts, markdown, configs, etc.)
+        - Binary files are scanned by YARA directly on disk if the scanner supports it
+        """
         findings = []
 
+        # Scan SKILL.md instruction body
         yara_matches = self.yara_scanner.scan_content(skill.instruction_body, "SKILL.md")
         for match in yara_matches:
             rule_name = match.get("rule_name", "")
-            # Check if rule is enabled in current mode and not explicitly disabled
             if not self._is_rule_enabled(rule_name):
                 continue
             findings.extend(self._create_findings_from_yara_match(match, skill))
 
-        for skill_file in skill.get_scripts():
+        # Use policy-defined rule scoping (org-customisable)
+        _SKILLMD_AND_SCRIPTS_ONLY = self.policy.rule_scoping.skillmd_and_scripts_only
+        _SCRIPT_ONLY_YARA_RULES = self.policy.rule_scoping.skip_in_docs
+        _CODE_ONLY_YARA_RULES = self.policy.rule_scoping.code_only
+        _DOC_PATH_INDICATORS = self.policy.rule_scoping.doc_path_indicators
+        _DOC_FILE_RE = self.policy._compiled_doc_filename_re
+
+        def _is_doc_file(rel_path: str) -> bool:
+            """Check if a file is in a documentation directory or is an educational file."""
+            path_obj = Path(rel_path)
+            parts = path_obj.parts
+            if any(p.lower() in _DOC_PATH_INDICATORS for p in parts):
+                return True
+            if _DOC_FILE_RE and _DOC_FILE_RE.search(path_obj.stem):
+                return True
+            return False
+
+        def _is_skillmd_or_script(skill_file) -> bool:
+            """Check if this is SKILL.md or an executable script."""
+            return (
+                skill_file.relative_path == "SKILL.md"
+                or skill_file.file_type in ("python", "bash")
+                or Path(skill_file.relative_path).suffix.lower() in {".py", ".sh", ".bash", ".rb", ".pl", ".js", ".ts"}
+            )
+
+        # Track which files have been scanned
+        scanned_files = {"SKILL.md"}
+
+        # Scan ALL files, not just scripts
+        for skill_file in skill.files:
+            if skill_file.relative_path in scanned_files:
+                continue
+            scanned_files.add(skill_file.relative_path)
+
+            if skill_file.file_type == "binary":
+                # For binary files, scan with YARA directly on disk.
+                # scan_file() handles both text and binary: it tries UTF-8
+                # first, then falls back to YARA's native filepath matcher.
+                if skill_file.path.exists():
+                    try:
+                        yara_matches = self.yara_scanner.scan_file(
+                            skill_file.path,
+                            display_path=skill_file.relative_path,
+                        )
+                        for match in yara_matches:
+                            rule_name = match.get("rule_name", "")
+                            if not self._is_rule_enabled(rule_name):
+                                continue
+                            findings.extend(self._create_findings_from_yara_match(match, skill))
+                    except Exception as e:
+                        logger.debug("YARA binary scan failed for %s: %s", skill_file.relative_path, e)
+                continue
+
+            # For text files, read content and scan
             content = skill_file.read_content()
             if content:
+                is_doc = _is_doc_file(skill_file.relative_path)
+
                 yara_matches = self.yara_scanner.scan_content(content, skill_file.relative_path)
                 for match in yara_matches:
                     rule_name = match.get("rule_name", "")
                     if rule_name == "capability_inflation_generic":
                         continue
+                    if not self._is_rule_enabled(rule_name):
+                        continue
+
+                    # Most restrictive: only SKILL.md and scripts
+                    if rule_name in _SKILLMD_AND_SCRIPTS_ONLY:
+                        if not _is_skillmd_or_script(skill_file):
+                            continue
+
+                    # Skip script-specific YARA rules for documentation files
+                    if is_doc and rule_name in _SCRIPT_ONLY_YARA_RULES:
+                        continue
+
+                    # Skip code-only YARA rules for non-script files (markdown, configs)
+                    is_non_script = skill_file.file_type not in ("python", "bash")
+                    if is_non_script and rule_name in _CODE_ONLY_YARA_RULES:
+                        # Exception: SKILL.md is already scanned above
+                        continue
+
                     findings.extend(self._create_findings_from_yara_match(match, skill, content))
+
+        # Post-filter: apply policy zero-width steganography thresholds
+        # The YARA rule has built-in thresholds (50 with decode, 200 alone).
+        # The policy allows raising these thresholds (more permissive) to reduce FPs.
+        zw_threshold_decode = self.policy.analysis_thresholds.zerowidth_threshold_with_decode
+        zw_threshold_alone = self.policy.analysis_thresholds.zerowidth_threshold_alone
+
+        if zw_threshold_decode != 50 or zw_threshold_alone != 200:
+            # Only run this expensive check if policy overrides the default thresholds
+            steg_files: set[str] = set()
+            for f in findings:
+                if f.rule_id == "YARA_prompt_injection_unicode_steganography" and f.file_path:
+                    steg_files.add(f.file_path)
+
+            if steg_files:
+                _ZW_CHARS = frozenset("\u200b\u200c\u200d")
+                _DECODE_PATTERNS = ("atob", "unescape", "fromCharCode", "base64", "decode")
+                suppressed_files: set[str] = set()
+
+                for rel_path in steg_files:
+                    sf = next((s for s in skill.files if s.relative_path == rel_path), None)
+                    if sf is None:
+                        continue
+                    content = sf.read_content()
+                    if content is None:
+                        continue
+                    zw_count = sum(1 for ch in content if ch in _ZW_CHARS)
+                    has_decode = any(pat in content for pat in _DECODE_PATTERNS)
+                    threshold = zw_threshold_decode if has_decode else zw_threshold_alone
+                    if zw_count <= threshold:
+                        suppressed_files.add(rel_path)
+
+                if suppressed_files:
+                    findings = [
+                        f
+                        for f in findings
+                        if not (
+                            f.rule_id == "YARA_prompt_injection_unicode_steganography"
+                            and f.file_path in suppressed_files
+                        )
+                    ]
+
+        return findings
+
+    def _check_file_inventory(self, skill: Skill) -> list[Finding]:
+        """Analyze the file inventory of the skill package for anomalies."""
+        findings = []
+
+        if not skill.files:
+            return findings
+
+        # Count file types
+        type_counts: dict[str, int] = {}
+        ext_counts: dict[str, int] = {}
+        total_size = 0
+        largest_file = None
+        largest_size = 0
+
+        for sf in skill.files:
+            file_type = sf.file_type
+            type_counts[file_type] = type_counts.get(file_type, 0) + 1
+
+            ext = sf.path.suffix.lower()
+            ext_counts[ext] = ext_counts.get(ext, 0) + 1
+
+            total_size += sf.size_bytes
+            if sf.size_bytes > largest_size:
+                largest_size = sf.size_bytes
+                largest_file = sf
+
+        # Check for excessive file count (possible resource waste)
+        if len(skill.files) > self.policy.file_limits.max_file_count:
+            findings.append(
+                Finding(
+                    id=self._generate_finding_id("EXCESSIVE_FILE_COUNT", str(len(skill.files))),
+                    rule_id="EXCESSIVE_FILE_COUNT",
+                    category=ThreatCategory.POLICY_VIOLATION,
+                    severity=Severity.LOW,
+                    title="Skill package contains many files",
+                    description=(
+                        f"Skill package contains {len(skill.files)} files. "
+                        f"Large file counts increase attack surface and may indicate "
+                        f"bundled dependencies or unnecessary content."
+                    ),
+                    file_path=".",
+                    remediation="Review file inventory and remove unnecessary files.",
+                    analyzer="static",
+                    metadata={
+                        "file_count": len(skill.files),
+                        "type_breakdown": type_counts,
+                    },
+                )
+            )
+
+        # Check for oversized individual files
+        if largest_file and largest_size > self.policy.file_limits.max_file_size_bytes:
+            findings.append(
+                Finding(
+                    id=self._generate_finding_id("OVERSIZED_FILE", largest_file.relative_path),
+                    rule_id="OVERSIZED_FILE",
+                    category=ThreatCategory.POLICY_VIOLATION,
+                    severity=Severity.LOW,
+                    title="Oversized file in skill package",
+                    description=(
+                        f"File {largest_file.relative_path} is {largest_size / 1024 / 1024:.1f}MB. "
+                        f"Large files in skill packages may contain hidden content or serve as "
+                        f"a vector for resource abuse."
+                    ),
+                    file_path=largest_file.relative_path,
+                    remediation="Review large files and consider hosting externally.",
+                    analyzer="static",
+                )
+            )
 
         return findings
 
@@ -1017,72 +1411,10 @@ class StaticAnalyzer(BaseAnalyzer):
 
         category, severity = self._map_yara_rule_to_threat(rule_name, meta)
 
-        SAFE_COMMANDS = {
-            "soffice",
-            "pandoc",
-            "wkhtmltopdf",
-            "convert",
-            "gs",
-            "pdftotext",
-            "pdfinfo",
-            "pdftoppm",
-            "pdftohtml",
-            "tesseract",
-            "ffmpeg",
-            "ffprobe",
-            "zip",
-            "unzip",
-            "tar",
-            "gzip",
-            "gunzip",
-            "bzip2",
-            "bunzip2",
-            "xz",
-            "unxz",
-            "7z",
-            "7za",
-            "gtimeout",
-            "timeout",
-            "grep",
-            "head",
-            "tail",
-            "sort",
-            "uniq",
-            "wc",
-            "file",
-            "git",
-        }
+        from ..command_safety import evaluate_command
 
-        SAFE_CLEANUP_DIRS = {
-            "dist",
-            "build",
-            "tmp",
-            "temp",
-            ".tmp",
-            ".temp",
-            "bundle.html",
-            "bundle.js",
-            "bundle.css",
-            "node_modules",
-            ".next",
-            ".nuxt",
-            ".cache",
-        }
-
-        PLACEHOLDER_MARKERS = {
-            "your-",
-            "your_",
-            "your ",
-            "example",
-            "sample",
-            "dummy",
-            "placeholder",
-            "replace",
-            "changeme",
-            "change_me",
-            "<your",
-            "<insert",
-        }
+        safe_cleanup_dirs = self.policy.system_cleanup.safe_rm_targets or _DEFAULT_SAFE_CLEANUP_DIRS
+        placeholder_markers = self.policy.credentials.placeholder_markers or _DEFAULT_PLACEHOLDER_MARKERS
 
         for string_match in match["strings"]:
             # Skip exclusion patterns (these are used in YARA conditions but shouldn't create findings)
@@ -1094,21 +1426,11 @@ class StaticAnalyzer(BaseAnalyzer):
                 line_content = string_match.get("line_content", "").lower()
                 matched_data = string_match.get("matched_data", "").lower()
 
-                context_content = ""
-                if file_content:
-                    line_num = string_match.get("line_number", 0)
-                    if line_num > 0:
-                        lines = file_content.split("\n")
-                        start_line = max(0, line_num - 4)
-                        end_line = min(len(lines), line_num + 5)
-                        context_content = "\n".join(lines[start_line:end_line]).lower()
-
-                is_safe_command = any(
-                    safe_cmd in line_content or safe_cmd in matched_data or safe_cmd in context_content
-                    for safe_cmd in SAFE_COMMANDS
-                )
-
-                if is_safe_command:
+                # Use context-aware command safety evaluation
+                # Try to extract a command from the matched content
+                cmd_to_eval = matched_data.strip() or line_content.strip()
+                verdict = evaluate_command(cmd_to_eval, policy=self.policy)
+                if verdict.should_suppress_yara:
                     continue
 
             if rule_name == "system_manipulation_generic":
@@ -1118,7 +1440,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     rm_targets = _RM_TARGET_PATTERN.findall(line_content)
                     if rm_targets:
                         all_safe = all(
-                            any(safe_dir in target for safe_dir in SAFE_CLEANUP_DIRS) for target in rm_targets
+                            any(safe_dir in target for safe_dir in safe_cleanup_dirs) for target in rm_targets
                         )
                         if all_safe:
                             continue
@@ -1130,12 +1452,12 @@ class StaticAnalyzer(BaseAnalyzer):
                     matched_data = string_match.get("matched_data", "")
                     combined = f"{line_content} {matched_data}".lower()
 
-                    if any(marker in combined for marker in PLACEHOLDER_MARKERS):
+                    if any(marker in combined for marker in placeholder_markers):
                         continue
 
                     if "export " in combined and "=" in combined:
                         _, value = combined.split("=", 1)
-                        if any(marker in value for marker in PLACEHOLDER_MARKERS):
+                        if any(marker in value for marker in placeholder_markers):
                             continue
 
             # Tool chaining post-filters (controlled by mode)

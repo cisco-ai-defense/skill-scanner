@@ -1,0 +1,41 @@
+# Policy 09: Credential-Heavy Suppression
+# Very broad test credential suppression + relaxed limits.
+# Tests how much credential noise can be eliminated.
+policy_name: cred-heavy-suppression
+policy_version: "1.0"
+
+credentials:
+  known_test_values:
+    # Stripe
+    - "sk_test_4eC39HqLyjWDarjtT1zdp7dc"
+    - "pk_test_TYooMQauvdEDq54NiTphI7jx"
+    # JWT.io
+    - "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ"
+    # Placeholders
+    - 'password="password"'
+    - "password='password'"
+    - "api_key='sk-no-key-required'"
+    - 'api_key="sk-no-key-required"'
+    # Broad placeholders
+    - 'password="changeme"'
+    - "password='changeme'"
+    - 'password="example"'
+    - "password='example'"
+    - 'password="test"'
+    - "password='test'"
+    - "AKIAIOSFODNN7EXAMPLE"
+    - "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    - "-----BEGIN RSA PRIVATE KEY----- ..."
+    - "-----BEGIN PRIVATE KEY----- ..."
+    - "supersecretpassword"
+    - "mysecretkey"
+    - "your-api-key-here"
+    - "INSERT_YOUR_KEY_HERE"
+    - "xxx"
+    - "yyy"
+    - "dummy"
+    - "placeholder"
+    - "<your-key>"
+    - "${API_KEY}"
+    - "sk-xxxxxxxx"
+    - "your_password_here"

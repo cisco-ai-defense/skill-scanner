@@ -23,7 +23,7 @@ When enabled via the `--enable-meta` CLI flag or `enable_meta` API parameter, th
    - Complete SKILL.md content (up to 50KB)
    - All code files (.py, .js, .ts, .sh, .bash) with content (up to 30KB per file, 150KB total)
 3. **Authority-Based Review**: Uses an analyzer authority hierarchy to weight findings:
-   - LLM Analyzer (highest) > Behavioral > AI Defense > Static > Trigger (lowest)
+   - LLM Analyzer (highest) > Behavioral > AI Defense > Static/Pipeline/Bytecode > Trigger (lowest)
 4. **Filter & Consolidate**:
    - Redundant pattern-based findings are consolidated into comprehensive descriptions
    - False positives are removed based on actual code analysis
@@ -183,6 +183,8 @@ The meta-analyzer weights findings based on which analyzer produced them:
 | Behavioral | High | Dataflow tracking, source→sink analysis, multi-file chains |
 | AI Defense | Medium-High | Known attack patterns, threat intelligence |
 | Static | Medium | Pattern matching, hardcoded secrets, obvious violations |
+| Pipeline | Medium | Command pipeline taint flows, data exfiltration chains |
+| Bytecode | Medium | Python .pyc integrity, source/bytecode mismatch |
 | Trigger | Lower | Description specificity (informational) |
 | VirusTotal | Specialized | Binary file malware (not code) |
 

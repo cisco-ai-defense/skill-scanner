@@ -1,0 +1,14 @@
+# Stripe's official PUBLIC test keys (https://docs.stripe.com/keys#obtain-api-keys)
+# These are intentionally included in scan policy files as known-safe test
+# credential values used for false-positive suppression.
+evals/policies/09_cred_heavy.yaml:stripe-access-token:10
+docs/scan-policy.md:stripe-access-token:267
+tests/test_scan_policy.py:stripe-access-token:55
+skill_scanner/data/permissive_policy.yaml:stripe-access-token:228
+tests/test_policy_integration.py:stripe-access-token:328
+tests/test_policy_integration.py:stripe-access-token:341
+tests/test_policy_integration.py:stripe-access-token:349
+tests/test_policy_integration.py:stripe-access-token:360
+tests/test_policy_integration.py:stripe-access-token:362
+tests/test_policy_integration.py:stripe-access-token:381
+skill_scanner/data/default_policy.yaml:stripe-access-token:202

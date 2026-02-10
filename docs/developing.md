@@ -105,7 +105,7 @@ skill_scanner/
 ├── cli/               # Click CLI interface
 ├── config/            # Configuration and constants
 ├── core/
-│   ├── analyzers/     # Security analyzers (static, behavioral, LLM)
+│   ├── analyzers/     # Security analyzers (static, bytecode, pipeline, behavioral, LLM)
 │   ├── reporters/     # Output formatters (JSON, SARIF, Markdown)
 │   ├── rules/         # YARA and pattern rules
 │   ├── static_analysis/  # AST parsing and dataflow analysis

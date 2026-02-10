@@ -1,0 +1,20 @@
+# Policy 05: CI/CD Pipeline
+# Balanced defaults but promotes archives/binaries and tightens file limits.
+# Designed for automated gate-keeping in CI.
+policy_name: ci-pipeline
+policy_version: "1.0"
+
+file_limits:
+  max_file_count: 75
+  max_file_size_bytes: 3145728  # 3 MB
+
+severity_overrides:
+  - rule_id: ARCHIVE_FILE_DETECTED
+    severity: HIGH
+    reason: "CI should catch archives"
+  - rule_id: BINARY_FILE_DETECTED
+    severity: HIGH
+    reason: "CI should catch unknown binaries"
+  - rule_id: PYCACHE_FILES_DETECTED
+    severity: MEDIUM
+    reason: "CI should flag distributed bytecode"
