@@ -186,7 +186,10 @@ Then edit the generated file to add your trusted domains, extra benign dotfiles,
 ```yaml
 policy_name: my-org              # Display name for reports
 policy_version: "1.0"            # Semantic version for tracking changes
+preset_base: strict              # Which preset this derives from (strict / balanced / permissive)
 ```
+
+`preset_base` controls which YARA post-filtering behaviour is used (credential placeholder filtering, generic HTTP verb suppression, etc.). It is set automatically by built-in presets and preserved when you rename `policy_name`. If your custom policy was generated from a preset, the correct `preset_base` is already embedded — you only need to change it if you want different YARA filtering than the preset you started from.
 
 ### hidden_files
 

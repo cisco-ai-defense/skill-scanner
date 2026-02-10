@@ -8,6 +8,7 @@
 
 policy_name: strict
 policy_version: "1.0"
+preset_base: strict
 
 # ---------------------------------------------------------------------------
 # Hidden files – only the absolute essentials are benign

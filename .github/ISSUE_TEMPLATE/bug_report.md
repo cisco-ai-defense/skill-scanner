@@ -12,7 +12,7 @@ A clear and concise description of the bug.
 
 ## Steps to Reproduce
 
-1. Install version: [e.g., 0.2.0]
+1. Install version: [e.g., 1.0.0]
 2. Run command: `skill-scanner scan ...`
 3. Observe error: [describe what happened]
 
@@ -28,7 +28,7 @@ What actually happened.
 
 - **OS:** [e.g., macOS 14, Ubuntu 22.04, Windows 11]
 - **Python Version:** [e.g., 3.10.5]
-- **Package Version:** [e.g., 0.2.0]
+- **Package Version:** [e.g., 1.0.0]
 - **Installation Method:** [pip, source, docker]
 
 ## Skill Being Scanned (if applicable)

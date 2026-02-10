@@ -67,7 +67,7 @@ def create_scanner(use_llm=False, use_behavioral=False, use_virustotal=False, us
     analyzers = [StaticAnalyzer()]
 
     if use_behavioral:
-        analyzers.append(BehavioralAnalyzer(use_static_analysis=True))
+        analyzers.append(BehavioralAnalyzer())
 
     if use_llm and LLM_AVAILABLE:
         analyzers.append(LLMAnalyzer())

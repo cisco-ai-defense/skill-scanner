@@ -11,6 +11,7 @@
 
 policy_name: default
 policy_version: "1.0"
+preset_base: balanced
 
 # ---------------------------------------------------------------------------
 # Hidden files – which dotfiles and dotdirs are considered benign

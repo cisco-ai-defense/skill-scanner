@@ -63,7 +63,7 @@ def main():
 
     # Scan with behavioral analyzer
     print("Step 2: Scanning with Behavioral Analyzer (dataflow analysis)...")
-    behavioral_analyzer = BehavioralAnalyzer(use_static_analysis=True)
+    behavioral_analyzer = BehavioralAnalyzer()
     behavioral_scanner = SkillScanner(analyzers=[behavioral_analyzer])
     behavioral_result = behavioral_scanner.scan_skill(skill_path)
 
@@ -73,7 +73,7 @@ def main():
 
     # Scan with both
     print("Step 3: Scanning with Static + Behavioral Analyzers...")
-    combined_scanner = SkillScanner(analyzers=[StaticAnalyzer(), BehavioralAnalyzer(use_static_analysis=True)])
+    combined_scanner = SkillScanner(analyzers=[StaticAnalyzer(), BehavioralAnalyzer()])
     combined_result = combined_scanner.scan_skill(skill_path)
 
     print(f"  Findings: {len(combined_result.findings)}")

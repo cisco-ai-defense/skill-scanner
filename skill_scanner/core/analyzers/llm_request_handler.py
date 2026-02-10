@@ -24,11 +24,14 @@ Uses structured outputs (JSON schema) when available.
 
 import asyncio
 import json
+import logging
 import warnings
 from pathlib import Path
 from typing import Any
 
 from .llm_provider_config import ProviderConfig
+
+logger = logging.getLogger(__name__)
 
 try:
     from litellm import acompletion
@@ -93,7 +96,7 @@ class LLMRequestHandler:
             if schema_path.exists():
                 return json.loads(schema_path.read_text(encoding="utf-8"))
         except Exception as e:
-            print(f"Warning: Could not load response schema: {e}")
+            logger.warning("Could not load response schema: %s", e)
         return None
 
     def _sanitize_schema_for_google(self, schema: dict[str, Any]) -> dict[str, Any]:
@@ -196,14 +199,18 @@ class LLMRequestHandler:
                 ):
                     if attempt < self.max_retries:
                         delay = (2**attempt) * self.rate_limit_delay
-                        print(
-                            f"Rate limit hit for {context}, retrying in {delay}s (attempt {attempt + 1}/{self.max_retries + 1})"
+                        logger.warning(
+                            "Rate limit hit for %s, retrying in %ss (attempt %d/%d)",
+                            context,
+                            delay,
+                            attempt + 1,
+                            self.max_retries + 1,
                         )
                         await asyncio.sleep(delay)
                         continue
 
                 # For other errors, don't retry
-                print(f"LLM API error for {context}: {e}")
+                logger.error("LLM API error for %s: %s", context, e)
                 break
 
         raise last_exception
@@ -277,8 +284,8 @@ class LLMRequestHandler:
                         await asyncio.sleep(wait_time)
                         continue
 
-                # Non-retryable error - print for debugging
-                print(f"LLM analysis failed: {e}")
+                # Non-retryable error - log for debugging
+                logger.error("LLM analysis failed: %s", e)
                 raise
 
         raise last_exception

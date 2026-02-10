@@ -26,8 +26,11 @@ from pathlib import Path
 class SkillScannerConstants:
     """Constants used throughout the analyzer."""
 
-    # Version
-    VERSION = "0.2.0"
+    # Version – derived from pyproject.toml via hatch-vcs at install time.
+    try:
+        from .._version import __version__ as VERSION  # type: ignore[assignment]
+    except Exception:  # pragma: no cover
+        VERSION = "0.0.0-dev"
 
     # Project paths
     PROJECT_ROOT = Path(__file__).parent.parent.parent

@@ -41,7 +41,7 @@ skill-scanner-api --host 127.0.0.1 --port 9000
 ### Programmatic
 
 ```python
-from skill_scanner.api_server import run_server
+from skill_scanner.api.api_server import run_server
 
 run_server(host="127.0.0.1", port=8000, reload=False)
 ```
@@ -61,7 +61,7 @@ Returns server status and available analyzers.
 ```json
 {
   "status": "healthy",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "analyzers_available": [
     "static_analyzer",
     "bytecode_analyzer",
@@ -81,6 +81,7 @@ Content-Type: application/json
 
 {
   "skill_directory": "/path/to/skill",
+  "policy": "balanced",
   "use_behavioral": false,
   "use_llm": false,
   "llm_provider": "anthropic",
@@ -94,6 +95,7 @@ Content-Type: application/json
 | Parameter           | Type    | Default     | Description                                              |
 | ------------------- | ------- | ----------- | -------------------------------------------------------- |
 | `skill_directory`   | string  | required    | Path to skill directory                                  |
+| `policy`            | string  | null        | Scan policy: preset name (`strict`, `balanced`, `permissive`) or path to custom YAML |
 | `use_behavioral`    | boolean | false       | Enable behavioral dataflow analyzer                      |
 | `use_llm`           | boolean | false       | Enable LLM semantic analyzer                             |
 | `llm_provider`      | string  | "anthropic" | LLM provider (anthropic, openai, azure, bedrock, gemini) |
@@ -124,6 +126,7 @@ POST /scan-upload
 Content-Type: multipart/form-data
 
 file: skill.zip
+policy: balanced
 use_llm: false
 llm_provider: anthropic
 ```
@@ -140,6 +143,7 @@ Content-Type: application/json
 
 {
   "skills_directory": "/path/to/skills",
+  "policy": "balanced",
   "recursive": false,
   "use_behavioral": false,
   "use_llm": false,
@@ -253,11 +257,27 @@ When the server is running, visit:
 # Health check
 curl http://localhost:8000/health
 
-# Scan skill (static only)
+# Scan skill (default analyzers, balanced policy)
 curl -X POST http://localhost:8000/scan \
   -H "Content-Type: application/json" \
   -d '{
     "skill_directory": "/path/to/skill"
+  }'
+
+# Scan with strict policy
+curl -X POST http://localhost:8000/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "skill_directory": "/path/to/skill",
+    "policy": "strict"
+  }'
+
+# Scan with custom policy YAML
+curl -X POST http://localhost:8000/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "skill_directory": "/path/to/skill",
+    "policy": "/path/to/my_policy.yaml"
   }'
 
 # Scan with all analyzers
@@ -265,6 +285,7 @@ curl -X POST http://localhost:8000/scan \
   -H "Content-Type: application/json" \
   -d '{
     "skill_directory": "/path/to/skill",
+    "policy": "balanced",
     "use_behavioral": true,
     "use_llm": true,
     "llm_provider": "anthropic",
@@ -298,11 +319,12 @@ curl http://localhost:8000/scan-batch/{scan_id}
 ```python
 import requests
 
-# Scan skill
+# Scan skill with strict policy
 response = requests.post(
     "http://localhost:8000/scan",
     json={
         "skill_directory": "/path/to/skill",
+        "policy": "strict",
         "use_llm": True,
         "llm_provider": "anthropic"
     }

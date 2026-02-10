@@ -177,7 +177,7 @@ def analyze_binary_behavior(self, binary_path: Path) -> List[Finding]:
 2. **Medium Priority**: Metadata extraction for Windows/Linux/macOS
 3. **Low Priority**: Sandboxed execution (complex, resource-intensive)
 
-## Current Behavior (v0.2.0)
+## Current Behavior
 
 **Binary files are detected and highlighted:**
 - Severity: INFO (informational, doesn't block)

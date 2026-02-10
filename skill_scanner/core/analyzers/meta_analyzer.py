@@ -35,6 +35,7 @@ Requirements:
 
 import asyncio
 import json
+import logging
 import os
 import secrets
 from dataclasses import dataclass, field
@@ -46,6 +47,8 @@ from ..models import Finding, Severity, Skill, ThreatCategory
 from .base import BaseAnalyzer
 from .llm_provider_config import ProviderConfig
 from .llm_request_handler import LLMRequestHandler
+
+logger = logging.getLogger(__name__)
 
 # Check for LiteLLM availability
 try:
@@ -331,10 +334,10 @@ class MetaAnalyzer(BaseAnalyzer):
             if meta_prompt_file.exists():
                 self.system_prompt = meta_prompt_file.read_text(encoding="utf-8")
             else:
-                print(f"Warning: Meta-analysis prompt not found at {meta_prompt_file}")
+                logger.warning("Meta-analysis prompt not found at %s", meta_prompt_file)
                 self.system_prompt = self._get_default_system_prompt()
         except Exception as e:
-            print(f"Warning: Failed to load meta-analysis prompt: {e}")
+            logger.warning("Failed to load meta-analysis prompt: %s", e)
             self.system_prompt = self._get_default_system_prompt()
 
     def _get_default_system_prompt(self) -> str:
@@ -411,16 +414,17 @@ Respond with JSON containing your analysis following the required schema."""
             # Parse response
             result = self._parse_response(response, findings)
 
-            print(
-                f"Meta-analysis complete: {len(result.validated_findings)} validated, "
-                f"{len(result.false_positives)} false positives filtered, "
-                f"{len(result.missed_threats)} new threats detected"
+            logger.warning(
+                "Meta-analysis complete: %d validated, %d false positives filtered, %d new threats detected",
+                len(result.validated_findings),
+                len(result.false_positives),
+                len(result.missed_threats),
             )
 
             return result
 
         except Exception as e:
-            print(f"Meta-analysis failed: {e}")
+            logger.error("Meta-analysis failed: %s", e)
             # Return original findings as validated if analysis fails
             return MetaAnalysisResult(
                 validated_findings=[self._finding_to_dict(f) for f in findings],
@@ -670,7 +674,7 @@ Respond with a JSON object following the schema in the system prompt."""
 
                 if attempt < self.max_retries - 1 and is_retryable:
                     delay = (2**attempt) * 1.0
-                    print(f"Meta-analysis LLM request failed (attempt {attempt + 1}): {e}")
+                    logger.warning("Meta-analysis LLM request failed (attempt %d): %s", attempt + 1, e)
                     await asyncio.sleep(delay)
                 else:
                     raise last_exception
@@ -698,7 +702,7 @@ Respond with a JSON object following the schema in the system prompt."""
             return result
 
         except (json.JSONDecodeError, ValueError) as e:
-            print(f"Failed to parse meta-analysis response: {e}")
+            logger.error("Failed to parse meta-analysis response: %s", e)
             # Return original findings as validated
             return MetaAnalysisResult(
                 validated_findings=[self._finding_to_dict(f) for f in original_findings],

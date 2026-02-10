@@ -27,6 +27,7 @@ Production analyzer with:
 """
 
 import asyncio
+import logging
 from enum import Enum
 from typing import Any
 
@@ -37,6 +38,8 @@ from .llm_prompt_builder import PromptBuilder
 from .llm_provider_config import ProviderConfig
 from .llm_request_handler import LLMRequestHandler
 from .llm_response_parser import ResponseParser
+
+logger = logging.getLogger(__name__)
 
 # Export constants for backward compatibility with tests
 try:
@@ -301,7 +304,7 @@ The structured output schema will enforce these exact codes.""",
             findings = self._convert_to_findings(analysis_result, skill)
 
         except Exception as e:
-            print(f"LLM analysis failed for {skill.name}: {e}")
+            logger.error("LLM analysis failed for %s: %s", skill.name, e)
             # Return empty findings - don't pollute results with errors
             return []
 
@@ -320,7 +323,7 @@ The structured output schema will enforce these exact codes.""",
                 # Parse AITech code (required by structured output)
                 aitech_code = llm_finding.get("aitech")
                 if not aitech_code:
-                    print("Warning: Missing AITech code in LLM finding, skipping")
+                    logger.warning("Missing AITech code in LLM finding, skipping")
                     continue
 
                 # Get threat mapping from AITech code
@@ -331,8 +334,10 @@ The structured output schema will enforce these exact codes.""",
                 try:
                     category = ThreatCategory(category_str)
                 except ValueError:
-                    print(
-                        f"Warning: Invalid ThreatCategory '{category_str}' for AITech '{aitech_code}', using policy_violation"
+                    logger.warning(
+                        "Invalid ThreatCategory '%s' for AITech '%s', using policy_violation",
+                        category_str,
+                        aitech_code,
                     )
                     category = ThreatCategory.POLICY_VIOLATION
 
@@ -412,7 +417,7 @@ The structured output schema will enforce these exact codes.""",
                 findings.append(finding)
 
             except (ValueError, KeyError) as e:
-                print(f"Warning: Failed to parse LLM finding: {e}")
+                logger.warning("Failed to parse LLM finding: %s", e)
                 continue
 
         return findings

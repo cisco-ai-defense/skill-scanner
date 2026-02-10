@@ -33,7 +33,7 @@ class TestEnhancedBehavioralAnalyzer:
         loader = SkillLoader()
         skill = loader.load_skill(Path("evals/skills/behavioral-analysis/multi-file-exfiltration"))
 
-        analyzer = BehavioralAnalyzer(use_static_analysis=True)
+        analyzer = BehavioralAnalyzer()
         findings = analyzer.analyze(skill)
 
         # Should detect suspicious URLs in reporter.py
@@ -53,7 +53,7 @@ class TestEnhancedBehavioralAnalyzer:
         loader = SkillLoader()
         skill = loader.load_skill(Path("evals/skills/data-exfiltration/environment-secrets"))
 
-        analyzer = BehavioralAnalyzer(use_static_analysis=True)
+        analyzer = BehavioralAnalyzer()
         findings = analyzer.analyze(skill)
 
         # Should detect env var + network combination (if implemented)
@@ -66,7 +66,7 @@ class TestEnhancedBehavioralAnalyzer:
         loader = SkillLoader()
         skill = loader.load_skill(Path("evals/skills/safe-skills/simple-math"))
 
-        analyzer = BehavioralAnalyzer(use_static_analysis=True)
+        analyzer = BehavioralAnalyzer()
         findings = analyzer.analyze(skill)
 
         # Safe skill should have no behavioral findings
@@ -77,7 +77,7 @@ class TestEnhancedBehavioralAnalyzer:
         loader = SkillLoader()
         skill = loader.load_skill(Path("evals/skills/behavioral-analysis/multi-file-exfiltration"))
 
-        analyzer = BehavioralAnalyzer(use_static_analysis=True)
+        analyzer = BehavioralAnalyzer()
         findings = analyzer.analyze(skill)
 
         # Should analyze all 4 Python files
@@ -89,25 +89,9 @@ class TestEnhancedBehavioralAnalyzer:
         # At least 1 file should have findings
         assert len(files_analyzed) >= 1
 
-    def test_static_analysis_mode_default(self):
-        """Test that static analysis is the default mode."""
-        analyzer = BehavioralAnalyzer()
-        assert analyzer.use_static_analysis
-
-    def test_backward_compatible_use_static_analysis_false(self):
-        """Test backward compatibility when use_static_analysis=False is passed.
-
-        Note: The parameter is deprecated but kept for backward compatibility.
-        Static analysis is always enabled regardless of this parameter.
-        """
-        # This should not raise an error - the parameter is accepted but ignored
-        analyzer = BehavioralAnalyzer(use_static_analysis=False)
-        # Static analysis is always enabled now
-        assert analyzer.use_static_analysis is True
-
     def test_context_extractor_integration(self):
         """Test context extractor is properly initialized."""
-        analyzer = BehavioralAnalyzer(use_static_analysis=True)
+        analyzer = BehavioralAnalyzer()
         assert analyzer.context_extractor is not None
 
     def test_detects_eval_subprocess_combination(self):
@@ -115,7 +99,7 @@ class TestEnhancedBehavioralAnalyzer:
         loader = SkillLoader()
         skill = loader.load_skill(Path("evals/skills/backdoor/magic-string-trigger"))
 
-        analyzer = BehavioralAnalyzer(use_static_analysis=True)
+        analyzer = BehavioralAnalyzer()
         findings = analyzer.analyze(skill)
 
         # Should detect dangerous combination

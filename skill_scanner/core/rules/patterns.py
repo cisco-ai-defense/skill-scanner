@@ -18,6 +18,7 @@
 Pattern matching utilities for security rules.
 """
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,8 @@ from typing import Any
 import yaml
 
 from ...core.models import Severity, ThreatCategory
+
+logger = logging.getLogger(__name__)
 
 # Matches a regex character class like [^\n] or [a-z0-9].
 # Used to strip character-class contents before checking whether a pattern
@@ -51,7 +54,7 @@ class SecurityRule:
             try:
                 self.compiled_patterns.append(re.compile(pattern))
             except re.error as e:
-                print(f"Warning: Failed to compile pattern '{pattern}' for rule {self.id}: {e}")
+                logger.warning("Failed to compile pattern '%s' for rule %s: %s", pattern, self.id, e)
 
         # Compile exclude patterns
         self.compiled_exclude_patterns = []
@@ -59,7 +62,7 @@ class SecurityRule:
             try:
                 self.compiled_exclude_patterns.append(re.compile(pattern))
             except re.error as e:
-                print(f"Warning: Failed to compile exclude pattern '{pattern}' for rule {self.id}: {e}")
+                logger.warning("Failed to compile exclude pattern '%s' for rule %s: %s", pattern, self.id, e)
 
     def matches_file_type(self, file_type: str) -> bool:
         """Check if this rule applies to the given file type."""
@@ -186,7 +189,7 @@ class RuleLoader:
                     self.rules_by_category[rule.category] = []
                 self.rules_by_category[rule.category].append(rule)
             except Exception as e:
-                print(f"Warning: Failed to load rule {rule_data.get('id', 'unknown')}: {e}")
+                logger.warning("Failed to load rule %s: %s", rule_data.get("id", "unknown"), e)
 
         return self.rules
 

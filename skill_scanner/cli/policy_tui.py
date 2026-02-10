@@ -4,7 +4,9 @@
 """
 Interactive TUI for configuring a scan policy.
 
-Uses ``rich`` (already a project dependency) for a clean terminal experience.
+Uses ``textual`` for a mouse-friendly, widget-based terminal experience
+with checkboxes, radio buttons, scrollable lists, and clickable buttons.
+
 Run via:  skill-scanner configure-policy [-o my_policy.yaml]
 """
 
@@ -13,413 +15,617 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Confirm, IntPrompt, Prompt
-from rich.table import Table
-from rich.text import Text
+from textual import on
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, ScrollableContainer, Vertical, VerticalScroll
+from textual.screen import ModalScreen
+from textual.widgets import (
+    Button,
+    Checkbox,
+    Footer,
+    Header,
+    Input,
+    Label,
+    RadioButton,
+    RadioSet,
+    Rule,
+    Static,
+    TextArea,
+)
 
-from ..core.scan_policy import ScanPolicy
+from ..core.scan_policy import ScanPolicy, SeverityOverride
 
-console = Console()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# ─── Utility ──────────────────────────────────────────────────────────────────
 
 
-def _pick_one(prompt_text: str, options: list[str], default: str | None = None) -> str:
-    """Prompt user to pick one option by number."""
-    for i, opt in enumerate(options, 1):
-        marker = " (default)" if opt == default else ""
-        console.print(f"  [cyan]{i}[/cyan]. {opt}{marker}")
-    while True:
-        raw = Prompt.ask(
-            f"{prompt_text} [1-{len(options)}]", default=str(options.index(default) + 1) if default else None
-        )
+def _set_to_text(s: set[str] | list[str]) -> str:
+    """Convert a set/list to newline-separated text for a TextArea."""
+    items = sorted(s) if isinstance(s, set) else list(s)
+    return "\n".join(items)
+
+
+def _text_to_set(text: str) -> set[str]:
+    """Convert newline-separated text back to a set."""
+    return {line.strip() for line in text.splitlines() if line.strip()}
+
+
+def _text_to_list(text: str) -> list[str]:
+    """Convert newline-separated text back to a list."""
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+# ─── Set Editor Modal ────────────────────────────────────────────────────────
+
+
+class SetEditorScreen(ModalScreen[set[str] | list[str] | None]):
+    """Modal for editing a set or list of strings (one per line)."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    DEFAULT_CSS = """
+    SetEditorScreen {
+        align: center middle;
+    }
+    SetEditorScreen > Vertical {
+        width: 80;
+        max-height: 85%;
+        border: thick $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+    SetEditorScreen TextArea {
+        height: 1fr;
+        min-height: 10;
+    }
+    SetEditorScreen .buttons {
+        height: 3;
+        align: right middle;
+        margin-top: 1;
+    }
+    SetEditorScreen .buttons Button {
+        margin-left: 1;
+    }
+    """
+
+    def __init__(self, title: str, items: set[str] | list[str], as_list: bool = False) -> None:
+        super().__init__()
+        self.editor_title = title
+        self.items = items
+        self.as_list = as_list
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label(f"[bold]{self.editor_title}[/bold]  [dim](one item per line)[/dim]")
+            yield TextArea(_set_to_text(self.items), id="editor")
+            with Horizontal(classes="buttons"):
+                yield Button("Save", variant="primary", id="save")
+                yield Button("Cancel", variant="default", id="cancel")
+
+    @on(Button.Pressed, "#save")
+    def on_save(self) -> None:
+        text = self.query_one("#editor", TextArea).text
+        if self.as_list:
+            self.dismiss(_text_to_list(text))
+        else:
+            self.dismiss(_text_to_set(text))
+
+    @on(Button.Pressed, "#cancel")
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+# ─── Main App ────────────────────────────────────────────────────────────────
+
+
+class PolicyConfigApp(App[str | None]):
+    """Interactive policy configurator with mouse-friendly widgets."""
+
+    TITLE = "Skill Scanner – Policy Configurator"
+    SUB_TITLE = "Build a custom scan policy for your organisation"
+
+    BINDINGS = [
+        Binding("q", "quit_app", "Quit without saving"),
+        Binding("s", "save_policy", "Save policy"),
+    ]
+
+    DEFAULT_CSS = """
+    Screen {
+        background: $surface;
+    }
+    #main-scroll {
+        height: 1fr;
+        padding: 1 2;
+    }
+    .section-title {
+        margin-top: 1;
+        text-style: bold;
+        color: $primary;
+    }
+    .section-desc {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .field-row {
+        height: 3;
+        margin-bottom: 0;
+    }
+    .field-row Label {
+        width: 35;
+        content-align: left middle;
+    }
+    .field-row Input {
+        width: 1fr;
+    }
+    .field-row Button {
+        width: auto;
+        min-width: 20;
+    }
+    .edit-btn {
+        margin-left: 1;
+    }
+    .preset-row {
+        height: auto;
+        margin-bottom: 1;
+    }
+    .preset-row RadioSet {
+        width: 100%;
+    }
+    .analyzer-checks {
+        height: auto;
+        margin-bottom: 1;
+    }
+    .action-bar {
+        height: 3;
+        dock: bottom;
+        align: center middle;
+        background: $primary-background;
+        padding: 0 2;
+    }
+    .action-bar Button {
+        margin: 0 1;
+    }
+    #policy-name-input, #policy-version-input {
+        width: 1fr;
+    }
+    """
+
+    def __init__(self, output_path: str = "scan_policy.yaml") -> None:
+        super().__init__()
+        self.output_path = output_path
+        self.policy = ScanPolicy.default()
+        self.preset_name = "balanced"
+        # Track which field an edit-modal result should update
+        self._pending_field: str | None = None
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with VerticalScroll(id="main-scroll"):
+            # ── Preset ────────────────────────────────────────────────
+            yield Label("Starting Preset", classes="section-title")
+            yield Label("Choose a base policy to customise from.", classes="section-desc")
+            with RadioSet(id="preset-radio"):
+                yield RadioButton("Strict – narrow allowlists, no suppressions", id="preset-strict")
+                yield RadioButton("Balanced – sensible defaults (recommended)", id="preset-balanced", value=True)
+                yield RadioButton("Permissive – broad allowlists, aggressive suppression", id="preset-permissive")
+
+            yield Rule()
+
+            # ── Identity ──────────────────────────────────────────────
+            yield Label("Policy Identity", classes="section-title")
+            with Horizontal(classes="field-row"):
+                yield Label("Policy name")
+                yield Input(value="balanced-custom", id="policy-name-input")
+            with Horizontal(classes="field-row"):
+                yield Label("Policy version")
+                yield Input(value="1.0", id="policy-version-input")
+
+            yield Rule()
+
+            # ── Hidden Files ──────────────────────────────────────────
+            yield Label("Hidden Files", classes="section-title")
+            yield Label("Control which dotfiles and dotdirs are treated as benign.", classes="section-desc")
+            with Horizontal(classes="field-row"):
+                yield Label("Benign dotfiles")
+                yield Button("Edit list...", id="edit-dotfiles", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Benign dotdirs")
+                yield Button("Edit list...", id="edit-dotdirs", classes="edit-btn")
+
+            yield Rule()
+
+            # ── Pipeline ──────────────────────────────────────────────
+            yield Label("Pipeline Analysis", classes="section-title")
+            yield Label("Trusted installer URLs and benign pipe patterns.", classes="section-desc")
+            with Horizontal(classes="field-row"):
+                yield Label("Known installer domains")
+                yield Button("Edit list...", id="edit-installers", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Benign pipe targets (regex)")
+                yield Button("Edit list...", id="edit-pipes", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Doc path indicators")
+                yield Button("Edit list...", id="edit-pipe-docpaths", classes="edit-btn")
+
+            yield Rule()
+
+            # ── Rule Scoping ──────────────────────────────────────────
+            yield Label("Rule Scoping", classes="section-title")
+            yield Label("Control which rules fire on which file types.", classes="section-desc")
+            with Horizontal(classes="field-row"):
+                yield Label("SKILL.md + scripts only")
+                yield Button("Edit list...", id="edit-rule-skillmd", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Skip in documentation")
+                yield Button("Edit list...", id="edit-rule-docs", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Code-only rules")
+                yield Button("Edit list...", id="edit-rule-code", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Doc path names")
+                yield Button("Edit list...", id="edit-rule-docpaths", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Doc filename patterns")
+                yield Button("Edit list...", id="edit-rule-docfiles", classes="edit-btn")
+
+            yield Rule()
+
+            # ── Credentials ───────────────────────────────────────────
+            yield Label("Credentials", classes="section-title")
+            yield Label("Suppress well-known test credentials and placeholders.", classes="section-desc")
+            with Horizontal(classes="field-row"):
+                yield Label("Known test values")
+                yield Button("Edit list...", id="edit-creds", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Placeholder markers")
+                yield Button("Edit list...", id="edit-placeholders", classes="edit-btn")
+
+            yield Rule()
+
+            # ── System Cleanup ────────────────────────────────────────
+            yield Label("System Cleanup", classes="section-title")
+            with Horizontal(classes="field-row"):
+                yield Label("Safe rm targets")
+                yield Button("Edit list...", id="edit-safe-rm", classes="edit-btn")
+
+            yield Rule()
+
+            # ── File Classification ───────────────────────────────────
+            yield Label("File Classification", classes="section-title")
+            yield Label("Extension-based file categorisation for analysis routing.", classes="section-desc")
+            with Horizontal(classes="field-row"):
+                yield Label("Inert extensions")
+                yield Button("Edit list...", id="edit-inert-ext", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Structured extensions")
+                yield Button("Edit list...", id="edit-struct-ext", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Archive extensions")
+                yield Button("Edit list...", id="edit-archive-ext", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Code extensions")
+                yield Button("Edit list...", id="edit-code-ext", classes="edit-btn")
+
+            yield Rule()
+
+            # ── File Limits ───────────────────────────────────────────
+            yield Label("File Limits", classes="section-title")
+            with Horizontal(classes="field-row"):
+                yield Label("Max file count")
+                yield Input(value="100", id="max-file-count", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Max file size (bytes)")
+                yield Input(value="5242880", id="max-file-size", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Max reference depth")
+                yield Input(value="5", id="max-ref-depth", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Max name length")
+                yield Input(value="64", id="max-name-len", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Max description length")
+                yield Input(value="1024", id="max-desc-len", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Min description length")
+                yield Input(value="20", id="min-desc-len", type="integer")
+
+            yield Rule()
+
+            # ── Analysis Thresholds ───────────────────────────────────
+            yield Label("Analysis Thresholds", classes="section-title")
+            with Horizontal(classes="field-row"):
+                yield Label("Zero-width (with decode)")
+                yield Input(value="50", id="zw-decode", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Zero-width (standalone)")
+                yield Input(value="200", id="zw-alone", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Analyzability LOW risk (%)")
+                yield Input(value="90", id="anal-low", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Analyzability MEDIUM risk (%)")
+                yield Input(value="70", id="anal-med", type="integer")
+
+            yield Rule()
+
+            # ── Sensitive Files ────────────────────────────────────────
+            yield Label("Sensitive Files", classes="section-title")
+            with Horizontal(classes="field-row"):
+                yield Label("Patterns (regex)")
+                yield Button("Edit list...", id="edit-sensitive", classes="edit-btn")
+
+            yield Rule()
+
+            # ── Command Safety ────────────────────────────────────────
+            yield Label("Command Safety Tiers", classes="section-title")
+            yield Label("Classify commands into safety tiers.", classes="section-desc")
+            with Horizontal(classes="field-row"):
+                yield Label("Safe commands")
+                yield Button("Edit list...", id="edit-cmd-safe", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Caution commands")
+                yield Button("Edit list...", id="edit-cmd-caution", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Risky commands")
+                yield Button("Edit list...", id="edit-cmd-risky", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Dangerous commands")
+                yield Button("Edit list...", id="edit-cmd-dangerous", classes="edit-btn")
+
+            yield Rule()
+
+            # ── Analyzers ─────────────────────────────────────────────
+            yield Label("Analyzers", classes="section-title")
+            yield Label("Enable or disable analysis passes.", classes="section-desc")
+            with Vertical(classes="analyzer-checks"):
+                yield Checkbox("Static analyzer (YAML + YARA patterns)", value=True, id="chk-static")
+                yield Checkbox("Bytecode analyzer (.pyc integrity)", value=True, id="chk-bytecode")
+                yield Checkbox("Pipeline analyzer (command taint)", value=True, id="chk-pipeline")
+
+            yield Rule()
+
+            # ── Disabled Rules ────────────────────────────────────────
+            yield Label("Disabled Rules & Severity Overrides", classes="section-title")
+            with Horizontal(classes="field-row"):
+                yield Label("Disabled rules")
+                yield Button("Edit list...", id="edit-disabled", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Severity overrides")
+                yield Button("Edit list...", id="edit-overrides", classes="edit-btn")
+
+        # ── Bottom action bar ─────────────────────────────────────
+        with Horizontal(classes="action-bar"):
+            yield Button("Save Policy", variant="primary", id="btn-save")
+            yield Button("Quit", variant="error", id="btn-quit")
+
+        yield Footer()
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────
+
+    def on_mount(self) -> None:
+        """Load the default (balanced) preset into the form."""
+        self._load_preset("balanced")
+
+    # ── Preset switching ──────────────────────────────────────────────────
+
+    @on(RadioSet.Changed, "#preset-radio")
+    def on_preset_change(self, event: RadioSet.Changed) -> None:
+        idx = event.radio_set.pressed_index
+        presets = ["strict", "balanced", "permissive"]
+        if 0 <= idx < len(presets):
+            self._load_preset(presets[idx])
+
+    def _load_preset(self, name: str) -> None:
+        self.preset_name = name
+        self.policy = ScanPolicy.from_preset(name)
+        self._sync_form_from_policy()
+
+    def _sync_form_from_policy(self) -> None:
+        """Push policy values into form widgets."""
+        p = self.policy
+
+        self.query_one("#policy-name-input", Input).value = p.policy_name or f"{self.preset_name}-custom"
+        self.query_one("#policy-version-input", Input).value = p.policy_version or "1.0"
+
+        # File limits
+        self.query_one("#max-file-count", Input).value = str(p.file_limits.max_file_count)
+        self.query_one("#max-file-size", Input).value = str(p.file_limits.max_file_size_bytes)
+        self.query_one("#max-ref-depth", Input).value = str(p.file_limits.max_reference_depth)
+        self.query_one("#max-name-len", Input).value = str(p.file_limits.max_name_length)
+        self.query_one("#max-desc-len", Input).value = str(p.file_limits.max_description_length)
+        self.query_one("#min-desc-len", Input).value = str(p.file_limits.min_description_length)
+
+        # Thresholds
+        self.query_one("#zw-decode", Input).value = str(p.analysis_thresholds.zerowidth_threshold_with_decode)
+        self.query_one("#zw-alone", Input).value = str(p.analysis_thresholds.zerowidth_threshold_alone)
+        self.query_one("#anal-low", Input).value = str(p.analysis_thresholds.analyzability_low_risk)
+        self.query_one("#anal-med", Input).value = str(p.analysis_thresholds.analyzability_medium_risk)
+
+        # Analyzers
+        self.query_one("#chk-static", Checkbox).value = p.analyzers.static
+        self.query_one("#chk-bytecode", Checkbox).value = p.analyzers.bytecode
+        self.query_one("#chk-pipeline", Checkbox).value = p.analyzers.pipeline
+
+    def _sync_policy_from_form(self) -> None:
+        """Pull form widget values back into the policy object."""
+        p = self.policy
+
+        p.policy_name = self.query_one("#policy-name-input", Input).value.strip() or "custom"
+        p.policy_version = self.query_one("#policy-version-input", Input).value.strip() or "1.0"
+
+        # File limits
         try:
-            idx = int(raw) - 1
-            if 0 <= idx < len(options):
-                return options[idx]
+            p.file_limits.max_file_count = int(self.query_one("#max-file-count", Input).value)
         except ValueError:
             pass
-        console.print(f"  [red]Please enter a number between 1 and {len(options)}[/red]")
+        try:
+            p.file_limits.max_file_size_bytes = int(self.query_one("#max-file-size", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.file_limits.max_reference_depth = int(self.query_one("#max-ref-depth", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.file_limits.max_name_length = int(self.query_one("#max-name-len", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.file_limits.max_description_length = int(self.query_one("#max-desc-len", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.file_limits.min_description_length = int(self.query_one("#min-desc-len", Input).value)
+        except ValueError:
+            pass
 
+        # Thresholds
+        try:
+            p.analysis_thresholds.zerowidth_threshold_with_decode = int(self.query_one("#zw-decode", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.analysis_thresholds.zerowidth_threshold_alone = int(self.query_one("#zw-alone", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.analysis_thresholds.analyzability_low_risk = int(self.query_one("#anal-low", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.analysis_thresholds.analyzability_medium_risk = int(self.query_one("#anal-med", Input).value)
+        except ValueError:
+            pass
 
-def _edit_set(title: str, current: set[str]) -> set[str]:
-    """Let the user add/remove items from a set."""
-    items = sorted(current)
-    while True:
-        console.print(f"\n  [bold]{title}[/bold] ({len(items)} items)")
-        if items:
-            for i, item in enumerate(items[:15], 1):
-                console.print(f"    {i:>3}. {item}")
-            if len(items) > 15:
-                console.print(f"    ... and {len(items) - 15} more")
-        else:
-            console.print("    [dim](empty)[/dim]")
+        # Analyzers
+        p.analyzers.static = self.query_one("#chk-static", Checkbox).value
+        p.analyzers.bytecode = self.query_one("#chk-bytecode", Checkbox).value
+        p.analyzers.pipeline = self.query_one("#chk-pipeline", Checkbox).value
 
-        action = _pick_one("Action", ["keep as-is", "add item", "remove item", "clear all"], default="keep as-is")
+    # ── Edit-list button handlers ─────────────────────────────────────────
 
-        if action == "keep as-is":
-            return set(items)
-        elif action == "add item":
-            val = Prompt.ask("  Value to add").strip()
-            if val:
-                items.append(val)
-                items.sort()
-                console.print(f"  [green]Added:[/green] {val}")
-        elif action == "remove item":
-            val = Prompt.ask("  Value to remove (or number)").strip()
-            try:
-                idx = int(val) - 1
-                if 0 <= idx < len(items):
-                    removed = items.pop(idx)
-                    console.print(f"  [red]Removed:[/red] {removed}")
-                    continue
-            except ValueError:
-                pass
-            if val in items:
-                items.remove(val)
-                console.print(f"  [red]Removed:[/red] {val}")
-            else:
-                console.print(f"  [yellow]Not found:[/yellow] {val}")
-        elif action == "clear all":
-            if Confirm.ask("  Clear all items?", default=False):
-                items.clear()
+    # Map button IDs to (policy attribute path, title, is_list)
+    _FIELD_MAP: dict[str, tuple[str, str, bool]] = {
+        "edit-dotfiles": ("hidden_files.benign_dotfiles", "Benign Dotfiles", False),
+        "edit-dotdirs": ("hidden_files.benign_dotdirs", "Benign Dot-directories", False),
+        "edit-installers": ("pipeline.known_installer_domains", "Known Installer Domains", False),
+        "edit-pipes": ("pipeline.benign_pipe_targets", "Benign Pipe Targets (regex)", True),
+        "edit-pipe-docpaths": ("pipeline.doc_path_indicators", "Pipeline Doc Path Indicators", False),
+        "edit-rule-skillmd": ("rule_scoping.skillmd_and_scripts_only", "Rules: SKILL.md + scripts only", False),
+        "edit-rule-docs": ("rule_scoping.skip_in_docs", "Rules: Skip in documentation", False),
+        "edit-rule-code": ("rule_scoping.code_only", "Rules: Code-only", False),
+        "edit-rule-docpaths": ("rule_scoping.doc_path_indicators", "Doc Path Names", False),
+        "edit-rule-docfiles": ("rule_scoping.doc_filename_patterns", "Doc Filename Patterns (regex)", True),
+        "edit-creds": ("credentials.known_test_values", "Test Credential Values", False),
+        "edit-placeholders": ("credentials.placeholder_markers", "Placeholder Markers", False),
+        "edit-safe-rm": ("system_cleanup.safe_rm_targets", "Safe rm Targets", False),
+        "edit-inert-ext": ("file_classification.inert_extensions", "Inert Extensions", False),
+        "edit-struct-ext": ("file_classification.structured_extensions", "Structured Extensions", False),
+        "edit-archive-ext": ("file_classification.archive_extensions", "Archive Extensions", False),
+        "edit-code-ext": ("file_classification.code_extensions", "Code Extensions", False),
+        "edit-sensitive": ("sensitive_files.patterns", "Sensitive File Patterns (regex)", True),
+        "edit-cmd-safe": ("command_safety.safe_commands", "Safe Commands", False),
+        "edit-cmd-caution": ("command_safety.caution_commands", "Caution Commands", False),
+        "edit-cmd-risky": ("command_safety.risky_commands", "Risky Commands", False),
+        "edit-cmd-dangerous": ("command_safety.dangerous_commands", "Dangerous Commands", False),
+        "edit-disabled": ("disabled_rules", "Disabled Rules", False),
+        "edit-overrides": ("severity_overrides", "Severity Overrides (rule_id:SEVERITY:reason)", True),
+    }
 
+    def _get_field(self, path: str) -> set[str] | list[str]:
+        """Get a policy field value by dotted path."""
+        parts = path.split(".")
+        obj = self.policy
+        for part in parts:
+            obj = getattr(obj, part)
+        if path == "severity_overrides":
+            return [f"{o.rule_id}:{o.severity}:{o.reason}" for o in obj]
+        return obj
 
-def _edit_list(title: str, current: list[str]) -> list[str]:
-    """Let the user add/remove items from a list."""
-    items = list(current)
-    while True:
-        console.print(f"\n  [bold]{title}[/bold] ({len(items)} items)")
-        if items:
-            for i, item in enumerate(items[:15], 1):
-                console.print(f"    {i:>3}. {item}")
-            if len(items) > 15:
-                console.print(f"    ... and {len(items) - 15} more")
-        else:
-            console.print("    [dim](empty)[/dim]")
-
-        action = _pick_one("Action", ["keep as-is", "add item", "remove item", "clear all"], default="keep as-is")
-
-        if action == "keep as-is":
-            return items
-        elif action == "add item":
-            val = Prompt.ask("  Value to add").strip()
-            if val:
-                items.append(val)
-                console.print(f"  [green]Added:[/green] {val}")
-        elif action == "remove item":
-            val = Prompt.ask("  Value to remove (or number)").strip()
-            try:
-                idx = int(val) - 1
-                if 0 <= idx < len(items):
-                    removed = items.pop(idx)
-                    console.print(f"  [red]Removed:[/red] {removed}")
-                    continue
-            except ValueError:
-                pass
-            if val in items:
-                items.remove(val)
-                console.print(f"  [red]Removed:[/red] {val}")
-            else:
-                console.print(f"  [yellow]Not found:[/yellow] {val}")
-        elif action == "clear all":
-            if Confirm.ask("  Clear all items?", default=False):
-                items.clear()
-
-
-def _edit_file_limits(policy: ScanPolicy) -> None:
-    """Let the user adjust numeric file limits."""
-    fl = policy.file_limits
-    console.print("\n  [bold]File Limits[/bold]")
-    fl.max_file_count = IntPrompt.ask("  Max file count", default=fl.max_file_count)
-    fl.max_file_size_bytes = IntPrompt.ask("  Max file size (bytes)", default=fl.max_file_size_bytes)
-    fl.max_reference_depth = IntPrompt.ask("  Max reference depth", default=fl.max_reference_depth)
-    fl.max_name_length = IntPrompt.ask("  Max skill name length", default=fl.max_name_length)
-    fl.max_description_length = IntPrompt.ask("  Max description length", default=fl.max_description_length)
-    fl.min_description_length = IntPrompt.ask("  Min description length", default=fl.min_description_length)
-
-
-def _edit_analysis_thresholds(policy: ScanPolicy) -> None:
-    """Let the user adjust analysis thresholds."""
-    at = policy.analysis_thresholds
-    console.print("\n  [bold]Analysis Thresholds[/bold]")
-    at.zerowidth_threshold_with_decode = IntPrompt.ask(
-        "  Zero-width threshold (with decode context)", default=at.zerowidth_threshold_with_decode
-    )
-    at.zerowidth_threshold_alone = IntPrompt.ask(
-        "  Zero-width threshold (standalone)", default=at.zerowidth_threshold_alone
-    )
-    at.analyzability_low_risk = IntPrompt.ask(
-        "  Analyzability score for LOW risk (%)", default=at.analyzability_low_risk
-    )
-    at.analyzability_medium_risk = IntPrompt.ask(
-        "  Analyzability score for MEDIUM risk (%)", default=at.analyzability_medium_risk
-    )
-
-
-def _edit_severity_overrides(policy: ScanPolicy) -> None:
-    """Let the user add/remove severity overrides."""
-    while True:
-        console.print(f"\n  [bold]Severity Overrides[/bold] ({len(policy.severity_overrides)} rules)")
-        if policy.severity_overrides:
-            for ovr in policy.severity_overrides:
-                console.print(f"    {ovr.rule_id} → [bold]{ovr.severity}[/bold]  ({ovr.reason})")
-        else:
-            console.print("    [dim](none)[/dim]")
-
-        action = _pick_one(
-            "Action", ["keep as-is", "add override", "remove override", "clear all"], default="keep as-is"
-        )
-
-        if action == "keep as-is":
+    def _set_field(self, path: str, value: set[str] | list[str]) -> None:
+        """Set a policy field value by dotted path."""
+        if path == "severity_overrides":
+            overrides = []
+            for line in value:
+                parts = line.split(":", 2)
+                if len(parts) >= 2:
+                    overrides.append(
+                        SeverityOverride(
+                            rule_id=parts[0].strip(),
+                            severity=parts[1].strip(),
+                            reason=parts[2].strip() if len(parts) > 2 else "",
+                        )
+                    )
+            self.policy.severity_overrides = overrides
             return
-        elif action == "add override":
-            from ..core.scan_policy import SeverityOverride
 
-            rule_id = Prompt.ask("  Rule ID (e.g. BINARY_FILE_DETECTED)")
-            severity = _pick_one("  Severity", ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"])
-            reason = Prompt.ask("  Reason", default="")
-            policy.severity_overrides.append(SeverityOverride(rule_id=rule_id, severity=severity, reason=reason))
-            console.print(f"  [green]Added:[/green] {rule_id} → {severity}")
-        elif action == "remove override":
-            if not policy.severity_overrides:
-                continue
-            rule_id = Prompt.ask("  Rule ID to remove")
-            policy.severity_overrides = [o for o in policy.severity_overrides if o.rule_id != rule_id]
-        elif action == "clear all":
-            if Confirm.ask("  Clear all overrides?", default=False):
-                policy.severity_overrides.clear()
+        parts = path.split(".")
+        obj = self.policy
+        for part in parts[:-1]:
+            obj = getattr(obj, part)
+        setattr(obj, parts[-1], value)
+
+    @on(Button.Pressed)
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+
+        if btn_id == "btn-save":
+            self.action_save_policy()
+            return
+        if btn_id == "btn-quit":
+            self.action_quit_app()
+            return
+
+        if btn_id in self._FIELD_MAP:
+            attr_path, title, is_list = self._FIELD_MAP[btn_id]
+            current = self._get_field(attr_path)
+            self._pending_field = attr_path
+
+            def on_result(result: set[str] | list[str] | None) -> None:
+                if result is not None and self._pending_field:
+                    self._set_field(self._pending_field, result)
+                self._pending_field = None
+
+            self.push_screen(
+                SetEditorScreen(title, current, as_list=is_list),
+                callback=on_result,
+            )
+
+    # ── Actions ───────────────────────────────────────────────────────────
+
+    def action_quit_app(self) -> None:
+        self.exit(None)
+
+    def action_save_policy(self) -> None:
+        self._sync_policy_from_form()
+        path = self.output_path
+        if Path(path).exists():
+            # Overwrite silently in TUI (user chose Save)
+            pass
+        self.policy.to_yaml(path)
+        self.exit(path)
 
 
-# ---------------------------------------------------------------------------
-# Main TUI flow
-# ---------------------------------------------------------------------------
+# ─── Entry point (called by CLI) ─────────────────────────────────────────────
 
 
 def run_policy_tui(output_path: str = "scan_policy.yaml") -> int:
     """Run the interactive policy configurator."""
-    console.print()
-    console.print(
-        Panel.fit(
-            "[bold blue]Skill Scanner – Policy Configurator[/bold blue]\n"
-            "[dim]Build a custom scan policy for your organisation[/dim]",
-            border_style="blue",
-        )
-    )
-    console.print()
+    app = PolicyConfigApp(output_path=output_path)
+    result = app.run()
 
-    # Step 1: Choose starting point
-    console.print("[bold]Step 1: Choose a starting point[/bold]")
-    console.print()
+    if result:
+        from rich.console import Console
 
-    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
-    table.add_column("Preset", style="cyan", width=12)
-    table.add_column("Description", width=50)
-    table.add_column("Use when", style="dim")
-    table.add_row("strict", "Narrow allowlists, no suppressions", "Auditing untrusted skills")
-    table.add_row("balanced", "Sensible defaults, moderate filtering", "CI/CD, everyday scanning")
-    table.add_row("permissive", "Broad allowlists, aggressive suppression", "Trusted internal skills")
-    console.print(table)
-    console.print()
+        console = Console()
+        console.print(f"\n  [bold green]Saved policy to {result}[/bold green]")
+        console.print(f"  Use it with: [cyan]skill-scanner scan --policy {result} /path/to/skill[/cyan]\n")
+        return 0
+    else:
+        from rich.console import Console
 
-    preset = _pick_one("Start from", ["strict", "balanced", "permissive"], default="balanced")
-    policy = ScanPolicy.from_preset(preset)
-    console.print(f"\n  [green]Loaded [bold]{preset}[/bold] preset as starting point[/green]\n")
-
-    # Step 2: Policy name & version
-    console.print("[bold]Step 2: Name your policy[/bold]")
-    policy.policy_name = Prompt.ask("  Policy name", default=f"{preset}-custom")
-    policy.policy_version = Prompt.ask("  Policy version", default=policy.policy_version)
-    console.print()
-
-    # Step 3: Customise sections
-    console.print("[bold]Step 3: Customise sections[/bold]")
-    console.print("  [dim]Choose which sections to review. Skip any to keep the preset defaults.[/dim]\n")
-
-    sections = [
-        ("Hidden files – benign dotfiles", "dotfiles"),
-        ("Hidden files – benign directories", "dotdirs"),
-        ("Pipeline – known installer URLs", "installers"),
-        ("Pipeline – benign pipe targets (regex)", "pipe_targets"),
-        ("Pipeline – documentation path indicators", "pipe_docpaths"),
-        ("Rule scoping – rules limited to SKILL.md + scripts", "rule_skillmd"),
-        ("Rule scoping – rules skipped in documentation", "rule_docs"),
-        ("Rule scoping – code-only rules", "rule_code_only"),
-        ("Rule scoping – documentation directory names", "rule_docpaths"),
-        ("Rule scoping – doc filename patterns (regex)", "rule_doc_filenames"),
-        ("Credentials – suppressed test values", "creds"),
-        ("Credentials – placeholder markers", "cred_placeholders"),
-        ("System cleanup – safe rm targets", "safe_rm"),
-        ("File classification – inert/structured/archive/code extensions", "file_class"),
-        ("File limits – counts, sizes, lengths", "file_limits"),
-        ("Analysis thresholds – steganography, analyzability", "thresholds"),
-        ("Sensitive file patterns – taint upgrade regex", "sensitive"),
-        ("Command safety – safe/caution/risky/dangerous tiers", "cmd_safety"),
-        ("Analyzers – enable/disable analysis passes", "analyzers"),
-        ("Severity overrides", "severity"),
-        ("Disabled rules", "disabled"),
-    ]
-
-    for label, key in sections:
-        if Confirm.ask(f"  Customise [cyan]{label}[/cyan]?", default=False):
-            if key == "dotfiles":
-                policy.hidden_files.benign_dotfiles = _edit_set("Benign dotfiles", policy.hidden_files.benign_dotfiles)
-            elif key == "dotdirs":
-                policy.hidden_files.benign_dotdirs = _edit_set("Benign dotdirs", policy.hidden_files.benign_dotdirs)
-            elif key == "installers":
-                policy.pipeline.known_installer_domains = _edit_set(
-                    "Known installer domains", policy.pipeline.known_installer_domains
-                )
-            elif key == "pipe_targets":
-                policy.pipeline.benign_pipe_targets = _edit_list(
-                    "Benign pipe targets (regex)", policy.pipeline.benign_pipe_targets
-                )
-            elif key == "pipe_docpaths":
-                policy.pipeline.doc_path_indicators = _edit_set(
-                    "Pipeline doc path indicators", policy.pipeline.doc_path_indicators
-                )
-            elif key == "rule_skillmd":
-                policy.rule_scoping.skillmd_and_scripts_only = _edit_set(
-                    "SKILL.md + scripts only", policy.rule_scoping.skillmd_and_scripts_only
-                )
-            elif key == "rule_docs":
-                policy.rule_scoping.skip_in_docs = _edit_set("Skip in docs", policy.rule_scoping.skip_in_docs)
-            elif key == "rule_code_only":
-                policy.rule_scoping.code_only = _edit_set("Code-only rules", policy.rule_scoping.code_only)
-            elif key == "rule_docpaths":
-                policy.rule_scoping.doc_path_indicators = _edit_set(
-                    "Doc path names", policy.rule_scoping.doc_path_indicators
-                )
-            elif key == "rule_doc_filenames":
-                policy.rule_scoping.doc_filename_patterns = _edit_list(
-                    "Doc filename patterns (regex)", policy.rule_scoping.doc_filename_patterns
-                )
-            elif key == "creds":
-                policy.credentials.known_test_values = _edit_set(
-                    "Test credential values", policy.credentials.known_test_values
-                )
-            elif key == "cred_placeholders":
-                policy.credentials.placeholder_markers = _edit_set(
-                    "Placeholder markers", policy.credentials.placeholder_markers
-                )
-            elif key == "safe_rm":
-                policy.system_cleanup.safe_rm_targets = _edit_set(
-                    "Safe rm targets", policy.system_cleanup.safe_rm_targets
-                )
-            elif key == "file_class":
-                policy.file_classification.inert_extensions = _edit_set(
-                    "Inert extensions", policy.file_classification.inert_extensions
-                )
-                policy.file_classification.structured_extensions = _edit_set(
-                    "Structured extensions", policy.file_classification.structured_extensions
-                )
-                policy.file_classification.archive_extensions = _edit_set(
-                    "Archive extensions", policy.file_classification.archive_extensions
-                )
-                policy.file_classification.code_extensions = _edit_set(
-                    "Code extensions", policy.file_classification.code_extensions
-                )
-            elif key == "file_limits":
-                _edit_file_limits(policy)
-            elif key == "thresholds":
-                _edit_analysis_thresholds(policy)
-            elif key == "sensitive":
-                policy.sensitive_files.patterns = _edit_list(
-                    "Sensitive file patterns (regex)", policy.sensitive_files.patterns
-                )
-            elif key == "cmd_safety":
-                policy.command_safety.safe_commands = _edit_set("Safe commands", policy.command_safety.safe_commands)
-                policy.command_safety.caution_commands = _edit_set(
-                    "Caution commands", policy.command_safety.caution_commands
-                )
-                policy.command_safety.risky_commands = _edit_set("Risky commands", policy.command_safety.risky_commands)
-                policy.command_safety.dangerous_commands = _edit_set(
-                    "Dangerous commands", policy.command_safety.dangerous_commands
-                )
-            elif key == "analyzers":
-                console.print("\n  [bold]Analyzers[/bold]")
-                policy.analyzers.static = Confirm.ask("  Enable static analyzer?", default=policy.analyzers.static)
-                policy.analyzers.bytecode = Confirm.ask(
-                    "  Enable bytecode analyzer?", default=policy.analyzers.bytecode
-                )
-                policy.analyzers.pipeline = Confirm.ask(
-                    "  Enable pipeline analyzer?", default=policy.analyzers.pipeline
-                )
-            elif key == "severity":
-                _edit_severity_overrides(policy)
-            elif key == "disabled":
-                policy.disabled_rules = _edit_set("Disabled rules", policy.disabled_rules)
-
-    # Step 4: Summary
-    console.print()
-    console.print("[bold]Step 4: Review[/bold]")
-
-    summary = Table(show_header=False, box=None, pad_edge=True, padding=(0, 2))
-    summary.add_column("Key", style="cyan")
-    summary.add_column("Value")
-    summary.add_row("Policy name", policy.policy_name)
-    summary.add_row("Policy version", policy.policy_version)
-    summary.add_row("Based on", preset)
-    summary.add_row("Benign dotfiles", str(len(policy.hidden_files.benign_dotfiles)))
-    summary.add_row("Benign dotdirs", str(len(policy.hidden_files.benign_dotdirs)))
-    summary.add_row("Known installers", str(len(policy.pipeline.known_installer_domains)))
-    summary.add_row("Benign pipe targets", str(len(policy.pipeline.benign_pipe_targets)))
-    summary.add_row("Pipeline doc paths", str(len(policy.pipeline.doc_path_indicators)))
-    summary.add_row(
-        "Rules (SKILL.md only)", ", ".join(sorted(policy.rule_scoping.skillmd_and_scripts_only)) or "(none)"
-    )
-    summary.add_row("Rules (skip in docs)", ", ".join(sorted(policy.rule_scoping.skip_in_docs)) or "(none)")
-    summary.add_row("Rules (code only)", ", ".join(sorted(policy.rule_scoping.code_only)) or "(none)")
-    summary.add_row("Doc path indicators", str(len(policy.rule_scoping.doc_path_indicators)))
-    summary.add_row("Doc filename patterns", str(len(policy.rule_scoping.doc_filename_patterns)))
-    summary.add_row("Test creds suppressed", str(len(policy.credentials.known_test_values)))
-    summary.add_row("Placeholder markers", str(len(policy.credentials.placeholder_markers)))
-    summary.add_row("Safe rm targets", str(len(policy.system_cleanup.safe_rm_targets)))
-    summary.add_row("Inert extensions", str(len(policy.file_classification.inert_extensions)))
-    summary.add_row("Structured extensions", str(len(policy.file_classification.structured_extensions)))
-    summary.add_row("Archive extensions", str(len(policy.file_classification.archive_extensions)))
-    summary.add_row("Code extensions", str(len(policy.file_classification.code_extensions)))
-    summary.add_row("Max file count", str(policy.file_limits.max_file_count))
-    summary.add_row("Max file size", f"{policy.file_limits.max_file_size_bytes / 1024 / 1024:.0f} MB")
-    summary.add_row("Sensitive file patterns", str(len(policy.sensitive_files.patterns)))
-    summary.add_row("Safe commands", str(len(policy.command_safety.safe_commands)))
-    summary.add_row("Caution commands", str(len(policy.command_safety.caution_commands)))
-    summary.add_row("Risky commands", str(len(policy.command_safety.risky_commands)))
-    summary.add_row("Dangerous commands", str(len(policy.command_safety.dangerous_commands)))
-    summary.add_row(
-        "Analyzers",
-        ", ".join(
-            a
-            for a, enabled in [
-                ("static", policy.analyzers.static),
-                ("bytecode", policy.analyzers.bytecode),
-                ("pipeline", policy.analyzers.pipeline),
-            ]
-            if enabled
-        )
-        or "(none)",
-    )
-    summary.add_row("Severity overrides", str(len(policy.severity_overrides)))
-    summary.add_row("Disabled rules", ", ".join(sorted(policy.disabled_rules)) or "(none)")
-    console.print(summary)
-
-    # Step 5: Save
-    console.print()
-    output_path = Prompt.ask("  Save to", default=output_path)
-
-    if Path(output_path).exists():
-        if not Confirm.ask(f"  [yellow]{output_path} already exists. Overwrite?[/yellow]", default=False):
-            console.print("  [dim]Cancelled.[/dim]")
-            return 0
-
-    policy.to_yaml(output_path)
-    console.print(f"\n  [bold green]Saved policy to {output_path}[/bold green]")
-    console.print("\n  Use it with:")
-    console.print(f"    [cyan]skill-scanner scan --policy {output_path} /path/to/skill[/cyan]")
-    console.print()
-    return 0
+        console = Console()
+        console.print("\n  [dim]Quit without saving.[/dim]\n")
+        return 0

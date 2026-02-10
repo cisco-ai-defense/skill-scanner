@@ -216,6 +216,10 @@ class ScanPolicy:
     # Metadata
     policy_name: str = "default"
     policy_version: str = "1.0"
+    # The preset this policy was derived from ("strict", "balanced",
+    # "permissive").  Separate from ``policy_name`` so that renaming the
+    # policy (e.g. "acme-corp") does not silently change YARA mode behaviour.
+    preset_base: str = "balanced"
 
     # Sections
     hidden_files: HiddenFilePolicy = field(default_factory=HiddenFilePolicy)
@@ -351,8 +355,7 @@ class ScanPolicy:
     def _from_dict(cls, d: dict[str, Any]) -> ScanPolicy:
         hf = d.get("hidden_files", {})
         pl = d.get("pipeline", {})
-        # Backward compat: accept old "yara_scoping" key, prefer "rule_scoping"
-        ys = d.get("rule_scoping", d.get("yara_scoping", {}))
+        ys = d.get("rule_scoping", {})
         cr = d.get("credentials", {})
         sc = d.get("system_cleanup", {})
         fc = d.get("file_classification", {})
@@ -367,6 +370,7 @@ class ScanPolicy:
         return cls(
             policy_name=d.get("policy_name", "default"),
             policy_version=d.get("policy_version", "1.0"),
+            preset_base=d.get("preset_base", "balanced"),
             hidden_files=HiddenFilePolicy(
                 benign_dotfiles=set(hf.get("benign_dotfiles", [])),
                 benign_dotdirs=set(hf.get("benign_dotdirs", [])),
@@ -432,6 +436,7 @@ class ScanPolicy:
         return {
             "policy_name": self.policy_name,
             "policy_version": self.policy_version,
+            "preset_base": self.preset_base,
             "hidden_files": {
                 "benign_dotfiles": sorted(self.hidden_files.benign_dotfiles),
                 "benign_dotdirs": sorted(self.hidden_files.benign_dotdirs),

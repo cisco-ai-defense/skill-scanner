@@ -61,15 +61,19 @@ class BytecodeAnalyzer(BaseAnalyzer):
 
         # Gather all .pyc and .py files
         pyc_files: list[SkillFile] = []
-        py_files: dict[str, SkillFile] = {}
+        # Index .py files by their relative path for precise directory-aware
+        # matching.  A secondary stem-only index is kept as a fallback for
+        # flat layouts where __pycache__ sits next to source.
+        py_files_by_path: dict[str, SkillFile] = {}
+        py_files_by_stem: dict[str, list[SkillFile]] = {}
 
         for sf in skill.files:
             ext = sf.path.suffix.lower()
             if ext == ".pyc":
                 pyc_files.append(sf)
             elif ext == ".py":
-                # Index by stem for matching
-                py_files[sf.path.stem] = sf
+                py_files_by_path[sf.relative_path] = sf
+                py_files_by_stem.setdefault(sf.path.stem, []).append(sf)
 
         if not pyc_files:
             return findings
@@ -82,7 +86,12 @@ class BytecodeAnalyzer(BaseAnalyzer):
             if ".cpython-" in stem:
                 stem = stem.split(".cpython-")[0]
 
-            matching_py = py_files.get(stem)
+            matching_py = self._find_matching_source(
+                pyc_file,
+                stem,
+                py_files_by_path,
+                py_files_by_stem,
+            )
 
             if matching_py is None:
                 # .pyc with no .py - can't verify
@@ -108,6 +117,54 @@ class BytecodeAnalyzer(BaseAnalyzer):
                 findings.extend(mismatch_findings)
 
         return findings
+
+    @staticmethod
+    def _find_matching_source(
+        pyc_file: SkillFile,
+        stem: str,
+        by_path: dict[str, SkillFile],
+        by_stem: dict[str, list[SkillFile]],
+    ) -> SkillFile | None:
+        """Find the .py source that corresponds to a .pyc file.
+
+        Matching strategy (most to least specific):
+
+        1. **Directory-aware lookup** — standard Python layout puts bytecode in
+           ``<pkg>/__pycache__/<module>.cpython-3XX.pyc``.  The source is
+           expected at ``<pkg>/<module>.py``.  We compute this path and do an
+           exact lookup.
+
+        2. **Same-directory lookup** — for non-``__pycache__`` locations,
+           look for ``<module>.py`` next to the ``.pyc`` file.
+
+        3. **Stem-only fallback** — if only one ``.py`` in the entire skill
+           has a matching stem, use it.  If multiple exist we return ``None``
+           rather than risk a false-positive CRITICAL finding from comparing
+           against the wrong file.
+        """
+        pyc_parent = Path(pyc_file.relative_path).parent
+
+        # Strategy 1: __pycache__ → parent directory
+        if pyc_parent.name == "__pycache__":
+            expected_rel = str(pyc_parent.parent / f"{stem}.py")
+            match = by_path.get(expected_rel)
+            if match is not None:
+                return match
+
+        # Strategy 2: same directory
+        expected_rel = str(pyc_parent / f"{stem}.py")
+        match = by_path.get(expected_rel)
+        if match is not None:
+            return match
+
+        # Strategy 3: stem-only fallback (only when unambiguous)
+        candidates = by_stem.get(stem, [])
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # Ambiguous or missing — safer to return None than to guess and
+        # produce a false-positive CRITICAL supply-chain finding.
+        return None
 
     def _compare_bytecode_to_source(self, pyc_file: SkillFile, py_file: SkillFile) -> list[Finding]:
         """Compare a .pyc file against its .py source using ast.dump()."""

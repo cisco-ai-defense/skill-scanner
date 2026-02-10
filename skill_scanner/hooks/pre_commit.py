@@ -179,7 +179,7 @@ def scan_skill(skill_dir: Path, config: dict) -> dict:
             try:
                 from ..core.analyzers.behavioral_analyzer import BehavioralAnalyzer
 
-                analyzers.append(BehavioralAnalyzer(use_static_analysis=True))
+                analyzers.append(BehavioralAnalyzer())
             except ImportError:
                 pass
 

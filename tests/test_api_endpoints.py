@@ -117,6 +117,27 @@ class TestHealthEndpoint:
 
         assert "aidefense_analyzer" in data["analyzers_available"]
 
+    def test_health_includes_bytecode_analyzer(self, client):
+        """Test that health endpoint lists bytecode analyzer."""
+        response = client.get("/health")
+        data = response.json()
+
+        assert "bytecode_analyzer" in data["analyzers_available"]
+
+    def test_health_includes_pipeline_analyzer(self, client):
+        """Test that health endpoint lists pipeline analyzer."""
+        response = client.get("/health")
+        data = response.json()
+
+        assert "pipeline_analyzer" in data["analyzers_available"]
+
+    def test_health_version_is_current(self, client):
+        """Test that health endpoint returns current version."""
+        response = client.get("/health")
+        data = response.json()
+
+        assert data["version"] == "0.3.0"
+
 
 # =============================================================================
 # Root Endpoint Tests
@@ -241,10 +262,14 @@ class TestScanEndpoint:
         """Test scan with all available parameters."""
         request_data = {
             "skill_directory": str(safe_skill_dir),
+            "policy": "balanced",
             "use_behavioral": True,
             "use_llm": False,
             "llm_provider": "anthropic",
+            "use_virustotal": False,
             "use_aidefense": False,
+            "use_trigger": False,
+            "enable_meta": False,
         }
 
         response = client.post("/scan", json=request_data)
@@ -372,10 +397,15 @@ class TestAnalyzersEndpoint:
 
         analyzer_names = [a["name"] for a in data["analyzers"]]
 
-        # Check expected analyzers
-        expected = ["static_analyzer", "behavioral_analyzer", "llm_analyzer", "aidefense_analyzer"]
-        for name in expected:
-            assert name in analyzer_names, f"Missing analyzer: {name}"
+        # Check core (always-available) analyzers
+        core_expected = ["static_analyzer", "bytecode_analyzer", "pipeline_analyzer"]
+        for name in core_expected:
+            assert name in analyzer_names, f"Missing core analyzer: {name}"
+
+        # Check optional analyzers (available when their deps are installed)
+        optional_expected = ["behavioral_analyzer", "llm_analyzer", "aidefense_analyzer"]
+        for name in optional_expected:
+            assert name in analyzer_names, f"Missing optional analyzer: {name}"
 
 
 # =============================================================================
@@ -557,3 +587,236 @@ class TestConcurrentRequests:
             assert response.status_code == 200
             data = response.json()
             assert "scan_id" in data
+
+
+# =============================================================================
+# Policy Parameter Tests
+# =============================================================================
+@pytest.mark.skipif(not API_AVAILABLE, reason="FastAPI not installed")
+class TestPolicyParameter:
+    """Test scan policy parameter on API endpoints."""
+
+    def test_scan_with_strict_policy(self, client, safe_skill_dir):
+        """Test scanning with strict policy preset."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "policy": "strict",
+        }
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert "findings" in data
+
+    def test_scan_with_balanced_policy(self, client, safe_skill_dir):
+        """Test scanning with balanced policy preset."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "policy": "balanced",
+        }
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+
+    def test_scan_with_permissive_policy(self, client, safe_skill_dir):
+        """Test scanning with permissive policy preset."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "policy": "permissive",
+        }
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+
+    def test_scan_with_invalid_policy_returns_400(self, client, safe_skill_dir):
+        """Test scanning with invalid policy returns 400."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "policy": "nonexistent_policy",
+        }
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 400
+        assert "policy" in response.json()["detail"].lower() or "unknown" in response.json()["detail"].lower()
+
+    def test_scan_with_no_policy_uses_default(self, client, safe_skill_dir):
+        """Test scanning without policy uses balanced default."""
+        request_data = {"skill_directory": str(safe_skill_dir)}
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+
+    def test_batch_scan_with_policy(self, client, test_skills_dir):
+        """Test batch scan accepts policy parameter."""
+        request_data = {
+            "skills_directory": str(test_skills_dir),
+            "policy": "strict",
+            "recursive": False,
+        }
+        response = client.post("/scan-batch", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "processing"
+
+    def test_upload_scan_with_policy(self, client, safe_skill_dir):
+        """Test upload scan accepts policy parameter."""
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            skill_md = safe_skill_dir / "SKILL.md"
+            if skill_md.exists():
+                zf.write(skill_md, "SKILL.md")
+
+        zip_buffer.seek(0)
+        files = {"file": ("skill.zip", zip_buffer, "application/zip")}
+        data = {"policy": "strict"}
+
+        response = client.post("/scan-upload", files=files, data=data)
+        assert response.status_code in [200, 400, 500]
+
+
+# =============================================================================
+# VirusTotal & Trigger Parity Tests
+# =============================================================================
+@pytest.mark.skipif(not API_AVAILABLE, reason="FastAPI not installed")
+class TestAnalyzerParity:
+    """Test that API accepts all analyzer flags matching CLI parity."""
+
+    def test_scan_accepts_virustotal_params(self, client, safe_skill_dir):
+        """Test that scan endpoint accepts VirusTotal parameters."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "use_virustotal": False,
+            "vt_api_key": None,
+            "vt_upload_files": False,
+        }
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+
+    def test_scan_accepts_trigger_param(self, client, safe_skill_dir):
+        """Test that scan endpoint accepts trigger parameter."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "use_trigger": False,
+        }
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+
+    def test_scan_accepts_aidefense_url(self, client, safe_skill_dir):
+        """Test that scan endpoint accepts AI Defense URL parameter."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "use_aidefense": False,
+            "aidefense_api_url": None,
+        }
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+
+    def test_scan_accepts_custom_rules(self, client, safe_skill_dir):
+        """Test that scan endpoint accepts custom_rules parameter."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "custom_rules": None,
+        }
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+
+    def test_scan_accepts_enable_meta(self, client, safe_skill_dir):
+        """Test that scan endpoint accepts enable_meta parameter."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "enable_meta": False,
+        }
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+
+    def test_batch_accepts_check_overlap(self, client, test_skills_dir):
+        """Test that batch scan accepts check_overlap parameter."""
+        request_data = {
+            "skills_directory": str(test_skills_dir),
+            "check_overlap": True,
+            "recursive": False,
+        }
+        response = client.post("/scan-batch", json=request_data)
+        assert response.status_code == 200
+
+    def test_batch_accepts_all_analyzer_params(self, client, test_skills_dir):
+        """Test that batch scan accepts all analyzer parameters matching CLI."""
+        request_data = {
+            "skills_directory": str(test_skills_dir),
+            "policy": "balanced",
+            "recursive": False,
+            "check_overlap": False,
+            "use_llm": False,
+            "use_behavioral": False,
+            "use_virustotal": False,
+            "use_aidefense": False,
+            "use_trigger": False,
+            "enable_meta": False,
+        }
+        response = client.post("/scan-batch", json=request_data)
+        assert response.status_code == 200
+
+    def test_virustotal_without_key_returns_400(self, client, safe_skill_dir):
+        """Test that VirusTotal without API key returns 400."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "use_virustotal": True,
+            "vt_api_key": None,
+        }
+        response = client.post("/scan", json=request_data)
+        # Should return 400 if no key is set in env either
+        assert response.status_code in [200, 400]
+        if response.status_code == 400:
+            assert "API key" in response.json()["detail"] or "VirusTotal" in response.json()["detail"]
+
+    def test_openapi_schema_has_policy_field(self, client):
+        """Test that OpenAPI schema includes the policy field."""
+        response = client.get("/openapi.json")
+        schema = response.json()
+        scan_schema = schema["components"]["schemas"]["ScanRequest"]
+        assert "policy" in scan_schema["properties"]
+
+    def test_openapi_schema_has_virustotal_fields(self, client):
+        """Test that OpenAPI schema includes VirusTotal fields."""
+        response = client.get("/openapi.json")
+        schema = response.json()
+        scan_schema = schema["components"]["schemas"]["ScanRequest"]
+        assert "use_virustotal" in scan_schema["properties"]
+        assert "vt_api_key" in scan_schema["properties"]
+        assert "vt_upload_files" in scan_schema["properties"]
+
+    def test_openapi_schema_has_trigger_field(self, client):
+        """Test that OpenAPI schema includes trigger field."""
+        response = client.get("/openapi.json")
+        schema = response.json()
+        scan_schema = schema["components"]["schemas"]["ScanRequest"]
+        assert "use_trigger" in scan_schema["properties"]
+
+    def test_openapi_schema_batch_has_check_overlap(self, client):
+        """Test that OpenAPI schema includes check_overlap on batch."""
+        response = client.get("/openapi.json")
+        schema = response.json()
+        batch_schema = schema["components"]["schemas"]["BatchScanRequest"]
+        assert "check_overlap" in batch_schema["properties"]
+
+
+# =============================================================================
+# TUI Import Test
+# =============================================================================
+class TestTUIImport:
+    """Test that the TUI module is importable and has expected exports."""
+
+    def test_policy_tui_imports(self):
+        """Test that policy_tui module can be imported."""
+        from skill_scanner.cli.policy_tui import PolicyConfigApp, run_policy_tui
+
+        assert PolicyConfigApp is not None
+        assert callable(run_policy_tui)
+
+    def test_policy_config_app_instantiates(self):
+        """Test that PolicyConfigApp can be instantiated."""
+        from skill_scanner.cli.policy_tui import PolicyConfigApp
+
+        app = PolicyConfigApp(output_path="test_policy.yaml")
+        assert app.output_path == "test_policy.yaml"
+
+    def test_set_editor_screen_imports(self):
+        """Test that SetEditorScreen modal is importable."""
+        from skill_scanner.cli.policy_tui import SetEditorScreen
+
+        assert SetEditorScreen is not None

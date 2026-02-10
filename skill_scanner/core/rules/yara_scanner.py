@@ -18,10 +18,13 @@
 YARA rule scanner for detecting malicious patterns in agent skills.
 """
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import yara
+
+logger = logging.getLogger(__name__)
 
 
 class YaraScanner:
@@ -126,7 +129,7 @@ class YaraScanner:
                 )
 
         except yara.Error as e:
-            print(f"Warning: YARA scanning error: {e}")
+            logger.warning("YARA scanning error: %s", e)
 
         return matches
 
@@ -160,7 +163,7 @@ class YaraScanner:
         except UnicodeDecodeError:
             pass  # Fall through to binary scanning
         except OSError as e:
-            print(f"Warning: Could not read file {file_path}: {e}")
+            logger.warning("Could not read file %s: %s", file_path, e)
             return []
 
         # Binary fallback — use YARA native file scanning
@@ -212,7 +215,7 @@ class YaraScanner:
                 )
 
         except yara.Error as e:
-            print(f"Warning: YARA binary scanning error for {file_path}: {e}")
+            logger.warning("YARA binary scanning error for %s: %s", file_path, e)
 
         return matches
 

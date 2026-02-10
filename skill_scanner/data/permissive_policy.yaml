@@ -8,6 +8,7 @@
 
 policy_name: permissive
 policy_version: "1.0"
+preset_base: permissive
 
 # ---------------------------------------------------------------------------
 # Hidden files – very broad allowlist

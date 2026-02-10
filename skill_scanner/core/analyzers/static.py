@@ -24,7 +24,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ...config.yara_modes import DEFAULT_YARA_MODE, YaraModeConfig
+from ...config.yara_modes import YaraModeConfig
 from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...core.rules.patterns import RuleLoader, SecurityRule
 from ...core.rules.yara_scanner import YaraScanner
@@ -154,9 +154,18 @@ class StaticAnalyzer(BaseAnalyzer):
         self.rule_loader = RuleLoader(rules_file)
         self.rule_loader.load_rules()
 
-        # Configure YARA mode
+        # Configure YARA mode.
+        # When no explicit yara_mode is supplied, derive it from the policy's
+        # ``preset_base`` so that ``--policy strict`` (or a custom policy
+        # generated from the strict preset) automatically gets strict YARA
+        # post-filtering.  ``preset_base`` is a stable field that survives
+        # policy-name customisation (e.g. "acme-corp"), unlike
+        # ``policy_name`` which is a user-facing display name.
         if yara_mode is None:
-            self.yara_mode = DEFAULT_YARA_MODE
+            preset = getattr(self.policy, "preset_base", "balanced")
+            _PRESET_TO_YARA = {"strict": "strict", "permissive": "permissive"}
+            mode_name = _PRESET_TO_YARA.get(preset, "balanced")
+            self.yara_mode = YaraModeConfig.from_mode_name(mode_name)
         elif isinstance(yara_mode, str):
             self.yara_mode = YaraModeConfig.from_mode_name(yara_mode)
         else:
@@ -202,7 +211,7 @@ class StaticAnalyzer(BaseAnalyzer):
         if not self.yara_mode.is_rule_enabled(rule_name):
             return False
 
-        # Check if explicitly disabled via --disable-rule
+        # Check if explicitly disabled via policy or constructor
         if rule_name in self.disabled_rules:
             return False
 

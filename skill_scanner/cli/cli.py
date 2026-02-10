@@ -14,14 +14,16 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Command-line interface for the Skill Scanner.
-"""
+"""Command-line interface for the Skill Scanner."""
+
+from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from ..core.analyzers.behavioral_analyzer import BehavioralAnalyzer
@@ -56,44 +58,28 @@ from ..core.loader import SkillLoadError
 from ..core.reporters.markdown_reporter import MarkdownReporter
 from ..core.reporters.table_reporter import TableReporter
 
+logger = logging.getLogger("skill_scanner.cli")
 
-def _load_policy(args) -> ScanPolicy:
-    """Load scan policy from --policy flag or defaults.
 
-    ``--policy`` accepts either a preset name (``strict``, ``balanced``,
-    ``permissive``) or a path to a custom YAML file.
-    """
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_policy(args: argparse.Namespace) -> ScanPolicy:
+    """Load scan policy from ``--policy`` flag or return the default."""
     policy_value = getattr(args, "policy", None)
 
-    # Emit deprecation warnings for legacy flags
-    explicit_yara_mode = getattr(args, "yara_mode", None)
-    if explicit_yara_mode is not None and not policy_value:
-        print(
-            "WARNING: --yara-mode is deprecated. Use --policy strict / --policy permissive instead.",
-            file=sys.stderr,
-        )
-        # Map legacy yara-mode to preset policy
-        policy_value = explicit_yara_mode
-
-    legacy_disabled = getattr(args, "disabled_rules", None)
-    if legacy_disabled and not policy_value:
-        print(
-            "WARNING: --disable-rule is deprecated. Add disabled_rules to your policy YAML instead.",
-            file=sys.stderr,
-        )
-
     if policy_value:
-        # Try as a preset name first
         presets = ScanPolicy.preset_names()
         if policy_value.lower() in presets:
             policy = ScanPolicy.from_preset(policy_value)
-            print(f"Using {policy.policy_name} scan policy (preset)", file=sys.stderr)
+            logger.info("Using %s scan policy (preset)", policy.policy_name)
             return policy
 
-        # Otherwise treat as file path
         try:
             policy = ScanPolicy.from_yaml(policy_value)
-            print(f"Using scan policy: {policy_value} ({policy.policy_name})", file=sys.stderr)
+            logger.info("Using scan policy: %s (%s)", policy_value, policy.policy_name)
             return policy
         except FileNotFoundError:
             print(f"Error: Policy file not found: {policy_value}", file=sys.stderr)
@@ -105,255 +91,204 @@ def _load_policy(args) -> ScanPolicy:
     return ScanPolicy.default()
 
 
-def _build_policy_analyzers(policy: ScanPolicy, args) -> list:
-    """Build the base analyzer list respecting policy enable/disable settings.
+def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Callable[[str], None]) -> list:
+    """Build the full analyzer list from *policy* and CLI *args*.
 
-    The policy controls which core analyzers are active via its
-    ``analyzers.static``, ``analyzers.bytecode``, and ``analyzers.pipeline``
-    flags.  This helper ensures the CLI honours those settings rather than
-    unconditionally including a fixed set.
+    Core analysers (static, bytecode, pipeline) are toggled by the policy.
+    Optional analysers (behavioral, LLM, VT, AI Defense, trigger) are toggled
+    by explicit CLI flags.
 
-    When ``--yara-mode`` is not explicitly set on the CLI, the YARA mode is
-    derived from the policy preset name so that ``--policy strict`` implies
-    strict YARA post-filtering behaviour (and likewise for permissive).
+    This helper is shared between ``scan`` and ``scan-all`` to avoid
+    duplicated initialisation code.
     """
-    # Derive YARA mode from the policy when not explicitly overridden via CLI
-    explicit_yara_mode = getattr(args, "yara_mode", None)
-    if explicit_yara_mode is not None:
-        yara_mode = explicit_yara_mode
-    else:
-        # Map policy preset name → matching YARA mode
-        _POLICY_TO_YARA = {"strict": "strict", "permissive": "permissive"}
-        yara_mode = _POLICY_TO_YARA.get(policy.policy_name, "balanced")
+    analyzers: list = []
 
-    custom_rules_path = getattr(args, "custom_rules", None)
-    disabled_rules = set(getattr(args, "disabled_rules", None) or [])
-
-    analyzers = []
-
+    # -- Core analysers (policy-driven) ------------------------------------
     if policy.analyzers.static:
-        analyzers.append(
-            StaticAnalyzer(
-                yara_mode=yara_mode,
-                custom_yara_rules_path=custom_rules_path,
-                disabled_rules=disabled_rules,
-                policy=policy,
-            )
-        )
-
+        custom_rules = getattr(args, "custom_rules", None)
+        analyzers.append(StaticAnalyzer(custom_yara_rules_path=custom_rules, policy=policy))
     if policy.analyzers.bytecode:
         analyzers.append(BytecodeAnalyzer())
-
     if policy.analyzers.pipeline:
         analyzers.append(PipelineAnalyzer(policy=policy))
 
-    return analyzers
-
-
-def scan_command(args):
-    """Handle the scan command for a single skill."""
-    skill_dir = Path(args.skill_directory)
-
-    if not skill_dir.exists():
-        print(f"Error: Directory does not exist: {skill_dir}", file=sys.stderr)
-        return 1
-
-    # Load scan policy
-    policy = _load_policy(args)
-
-    # Create scanner with policy-driven analyzers
-    analyzers = _build_policy_analyzers(policy, args)
-
-    # Helper to print status messages - go to stderr when JSON output to avoid breaking parsing
-    is_json_output = getattr(args, "format", "summary") == "json"
-
-    def status_print(msg: str) -> None:
-        if is_json_output:
-            print(msg, file=sys.stderr)
-        else:
-            print(msg)
-
-    # Add behavioral analyzer if requested
-    if hasattr(args, "use_behavioral") and args.use_behavioral:
+    # -- Optional analysers (flag-driven) ----------------------------------
+    if getattr(args, "use_behavioral", False):
         try:
-            behavioral_analyzer = BehavioralAnalyzer(use_static_analysis=True)
-            analyzers.append(behavioral_analyzer)
-            status_print("Using behavioral analyzer (static dataflow analysis)")
+            analyzers.append(BehavioralAnalyzer())
+            status("Using behavioral analyzer (static dataflow analysis)")
         except Exception as e:
-            print(f"Warning: Could not initialize behavioral analyzer: {e}", file=sys.stderr)
+            logger.warning("Could not initialise behavioral analyzer: %s", e)
 
-    # Add LLM analyzer if requested and available
-    if hasattr(args, "use_llm") and args.use_llm:
+    if getattr(args, "use_llm", False):
         if not LLM_AVAILABLE:
-            print("Warning: LLM analyzer requested but dependencies not installed.", file=sys.stderr)
-            print("Install with: pip install anthropic openai", file=sys.stderr)
+            logger.warning("LLM analyzer requested but dependencies not installed.  pip install litellm anthropic")
         else:
             try:
-                # Get API key and model from environment
-                # Use SKILL_SCANNER_* env vars only (no provider-specific fallbacks)
                 api_key = os.getenv("SKILL_SCANNER_LLM_API_KEY")
                 model = os.getenv("SKILL_SCANNER_LLM_MODEL") or "claude-3-5-sonnet-20241022"
                 base_url = os.getenv("SKILL_SCANNER_LLM_BASE_URL")
                 api_version = os.getenv("SKILL_SCANNER_LLM_API_VERSION")
-
-                llm_analyzer = LLMAnalyzer(
-                    model=model,
-                    api_key=api_key,
-                    base_url=base_url,
-                    api_version=api_version,
-                )
-                analyzers.append(llm_analyzer)
-                status_print(f"Using LLM analyzer with model: {model}")
+                analyzers.append(LLMAnalyzer(model=model, api_key=api_key, base_url=base_url, api_version=api_version))
+                status(f"Using LLM analyzer with model: {model}")
             except Exception as e:
-                print(f"Warning: Could not initialize LLM analyzer: {e}", file=sys.stderr)
+                logger.warning("Could not initialise LLM analyzer: %s", e)
 
-    # Add VirusTotal analyzer if requested
-    if hasattr(args, "use_virustotal") and args.use_virustotal:
-        vt_api_key = args.vt_api_key or os.getenv("VIRUSTOTAL_API_KEY")
-        if not vt_api_key:
-            print("Warning: VirusTotal requested but no API key provided.", file=sys.stderr)
-            print("Set VIRUSTOTAL_API_KEY environment variable or use --vt-api-key", file=sys.stderr)
+    if getattr(args, "use_virustotal", False):
+        vt_key = getattr(args, "vt_api_key", None) or os.getenv("VIRUSTOTAL_API_KEY")
+        if not vt_key:
+            logger.warning("VirusTotal requested but no API key.  Set VIRUSTOTAL_API_KEY or use --vt-api-key")
         else:
             try:
                 from ..core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
 
-                vt_upload = getattr(args, "vt_upload_files", False)
-                vt_analyzer = VirusTotalAnalyzer(api_key=vt_api_key, enabled=True, upload_files=vt_upload)
-                analyzers.append(vt_analyzer)
-                mode = "with file uploads" if vt_upload else "hash-only mode"
-                status_print(f"Using VirusTotal binary file scanner ({mode})")
+                upload = getattr(args, "vt_upload_files", False)
+                analyzers.append(VirusTotalAnalyzer(api_key=vt_key, enabled=True, upload_files=upload))
+                mode = "with file uploads" if upload else "hash-only mode"
+                status(f"Using VirusTotal binary file scanner ({mode})")
             except Exception as e:
-                print(f"Warning: Could not initialize VirusTotal analyzer: {e}", file=sys.stderr)
+                logger.warning("Could not initialise VirusTotal analyzer: %s", e)
 
-    # Add AI Defense analyzer if requested
-    if hasattr(args, "use_aidefense") and args.use_aidefense:
-        aidefense_api_key = getattr(args, "aidefense_api_key", None) or os.getenv("AI_DEFENSE_API_KEY")
-        if not aidefense_api_key:
-            print("Warning: AI Defense requested but no API key provided.", file=sys.stderr)
-            print("Set AI_DEFENSE_API_KEY environment variable or use --aidefense-api-key", file=sys.stderr)
+    if getattr(args, "use_aidefense", False):
+        ai_key = getattr(args, "aidefense_api_key", None) or os.getenv("AI_DEFENSE_API_KEY")
+        if not ai_key:
+            logger.warning("AI Defense requested but no API key.  Set AI_DEFENSE_API_KEY or use --aidefense-api-key")
         else:
             try:
                 from ..core.analyzers.aidefense_analyzer import AIDefenseAnalyzer
 
-                aidefense_api_url = getattr(args, "aidefense_api_url", None) or os.getenv("AI_DEFENSE_API_URL")
-                aidefense_analyzer = AIDefenseAnalyzer(api_key=aidefense_api_key, api_url=aidefense_api_url)
-                analyzers.append(aidefense_analyzer)
-                status_print("Using AI Defense analyzer")
+                ai_url = getattr(args, "aidefense_api_url", None) or os.getenv("AI_DEFENSE_API_URL")
+                analyzers.append(AIDefenseAnalyzer(api_key=ai_key, api_url=ai_url))
+                status("Using AI Defense analyzer")
             except Exception as e:
-                print(f"Warning: Could not initialize AI Defense analyzer: {e}", file=sys.stderr)
+                logger.warning("Could not initialise AI Defense analyzer: %s", e)
 
-    # Add Trigger analyzer if requested
-    if hasattr(args, "use_trigger") and args.use_trigger:
+    if getattr(args, "use_trigger", False):
         try:
             from ..core.analyzers.trigger_analyzer import TriggerAnalyzer
 
-            trigger_analyzer = TriggerAnalyzer()
-            analyzers.append(trigger_analyzer)
-            status_print("Using Trigger analyzer (description specificity analysis)")
+            analyzers.append(TriggerAnalyzer())
+            status("Using Trigger analyzer (description specificity analysis)")
         except Exception as e:
-            print(f"Warning: Could not initialize Trigger analyzer: {e}", file=sys.stderr)
+            logger.warning("Could not initialise Trigger analyzer: %s", e)
 
-    # Initialize meta-analyzer if requested
-    meta_analyzer = None
-    enable_meta = hasattr(args, "enable_meta") and args.enable_meta
-    if enable_meta:
-        if not META_AVAILABLE:
-            print("Warning: Meta-analyzer requested but dependencies not installed.", file=sys.stderr)
-            print("Install with: pip install litellm", file=sys.stderr)
-        elif len(analyzers) < 2:
-            print("Warning: Meta-analysis requires at least 2 analyzers. Skipping meta-analysis.", file=sys.stderr)
-        else:
-            try:
-                # Use SKILL_SCANNER_* env vars only (no provider-specific fallbacks)
-                # Priority: meta-specific > scanner-wide
-                meta_api_key = os.getenv("SKILL_SCANNER_META_LLM_API_KEY") or os.getenv("SKILL_SCANNER_LLM_API_KEY")
-                meta_model = os.getenv("SKILL_SCANNER_META_LLM_MODEL") or os.getenv("SKILL_SCANNER_LLM_MODEL")
-                meta_base_url = os.getenv("SKILL_SCANNER_META_LLM_BASE_URL") or os.getenv("SKILL_SCANNER_LLM_BASE_URL")
-                meta_api_version = os.getenv("SKILL_SCANNER_META_LLM_API_VERSION") or os.getenv(
-                    "SKILL_SCANNER_LLM_API_VERSION"
-                )
-                meta_analyzer = MetaAnalyzer(
-                    model=meta_model,
-                    api_key=meta_api_key,
-                    base_url=meta_base_url,
-                    api_version=meta_api_version,
-                )
-                status_print("Using Meta-Analyzer for false positive filtering and finding prioritization")
-            except Exception as e:
-                print(f"Warning: Could not initialize Meta-Analyzer: {e}", file=sys.stderr)
+    return analyzers
 
-    scanner = SkillScanner(analyzers=analyzers)
+
+def _build_meta_analyzer(args: argparse.Namespace, analyzer_count: int, status: Callable[[str], None]):
+    """Optionally build a MetaAnalyzer if ``--enable-meta`` is set."""
+    if not getattr(args, "enable_meta", False):
+        return None
+
+    if not META_AVAILABLE:
+        logger.warning("Meta-analyzer requested but dependencies not installed.  pip install litellm")
+        return None
+    if analyzer_count < 2:
+        logger.warning("Meta-analysis requires at least 2 analyzers.  Skipping.")
+        return None
 
     try:
-        # Scan the skill
+        meta_api_key = os.getenv("SKILL_SCANNER_META_LLM_API_KEY") or os.getenv("SKILL_SCANNER_LLM_API_KEY")
+        meta_model = os.getenv("SKILL_SCANNER_META_LLM_MODEL") or os.getenv("SKILL_SCANNER_LLM_MODEL")
+        meta_base_url = os.getenv("SKILL_SCANNER_META_LLM_BASE_URL") or os.getenv("SKILL_SCANNER_LLM_BASE_URL")
+        meta_api_version = os.getenv("SKILL_SCANNER_META_LLM_API_VERSION") or os.getenv("SKILL_SCANNER_LLM_API_VERSION")
+        meta = MetaAnalyzer(
+            model=meta_model, api_key=meta_api_key, base_url=meta_base_url, api_version=meta_api_version
+        )
+        status("Using Meta-Analyzer for false positive filtering and finding prioritization")
+        return meta
+    except Exception as e:
+        logger.warning("Could not initialise Meta-Analyzer: %s", e)
+        return None
+
+
+def _make_status_printer(args: argparse.Namespace) -> Callable[[str], None]:
+    """Return a printer that sends to stderr when JSON output is active."""
+    is_json = getattr(args, "format", "summary") == "json"
+
+    def _print(msg: str) -> None:
+        print(msg, file=sys.stderr if is_json else sys.stdout)
+
+    return _print
+
+
+def _format_output(args: argparse.Namespace, result_or_report) -> str:
+    """Generate the formatted output string for a scan result / report."""
+    fmt = getattr(args, "format", "summary")
+    if fmt == "json":
+        return JSONReporter(pretty=not args.compact).generate_report(result_or_report)
+    if fmt == "markdown":
+        return MarkdownReporter(detailed=args.detailed).generate_report(result_or_report)
+    if fmt == "table":
+        return TableReporter().generate_report(result_or_report)
+    if fmt == "sarif":
+        return SARIFReporter().generate_report(result_or_report)
+    # summary (default)
+    from ..core.models import Report
+
+    if isinstance(result_or_report, Report):
+        return _generate_multi_skill_summary(result_or_report)
+    return _generate_summary(result_or_report)
+
+
+def _write_output(args: argparse.Namespace, output: str) -> None:
+    """Write *output* to a file or stdout."""
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as fh:
+            fh.write(output)
+        print(f"Report saved to: {args.output}")
+    else:
+        print(output)
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+
+def scan_command(args: argparse.Namespace) -> int:
+    """Handle the ``scan`` command for a single skill."""
+    skill_dir = Path(args.skill_directory)
+    if not skill_dir.exists():
+        print(f"Error: Directory does not exist: {skill_dir}", file=sys.stderr)
+        return 1
+
+    policy = _load_policy(args)
+    status = _make_status_printer(args)
+    analyzers = _build_analyzers(policy, args, status)
+    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status)
+
+    scanner = SkillScanner(analyzers=analyzers, policy=policy)
+
+    try:
         result = scanner.scan_skill(skill_dir)
 
-        # Run meta-analysis if enabled and we have findings
+        # Meta-analysis
         if meta_analyzer and result.findings:
-            status_print("Running meta-analysis to filter false positives...")
+            status("Running meta-analysis to filter false positives...")
             try:
-                # Load the skill for context
                 skill = scanner.loader.load_skill(skill_dir)
-
-                # Run meta-analysis asynchronously
                 meta_result = asyncio.run(
                     meta_analyzer.analyze_with_findings(
-                        skill=skill,
-                        findings=result.findings,
-                        analyzers_used=result.analyzers_used,
+                        skill=skill, findings=result.findings, analyzers_used=result.analyzers_used
                     )
                 )
-
-                # Apply meta-analysis results
-                filtered_findings = apply_meta_analysis_to_results(
-                    original_findings=result.findings,
-                    meta_result=meta_result,
-                    skill=skill,
+                filtered = apply_meta_analysis_to_results(
+                    original_findings=result.findings, meta_result=meta_result, skill=skill
                 )
-
-                # Update result with filtered findings
-                original_count = len(result.findings)
-                result.findings = filtered_findings
+                orig = len(result.findings)
+                result.findings = filtered
                 result.analyzers_used.append("meta_analyzer")
-
-                fp_count = original_count - len([f for f in filtered_findings if f.analyzer != "meta"])
-                new_count = len([f for f in filtered_findings if f.analyzer == "meta"])
-                status_print(
-                    f"Meta-analysis complete: {fp_count} false positives filtered, {new_count} new threats detected"
-                )
-
+                fp = orig - len([f for f in filtered if f.analyzer != "meta"])
+                new = len([f for f in filtered if f.analyzer == "meta"])
+                status(f"Meta-analysis complete: {fp} false positives filtered, {new} new threats detected")
             except Exception as e:
-                print(f"Warning: Meta-analysis failed: {e}", file=sys.stderr)
-                print("Continuing with original findings.", file=sys.stderr)
+                logger.warning("Meta-analysis failed: %s", e)
 
-        # Generate report based on format
-        if args.format == "json":
-            reporter = JSONReporter(pretty=not args.compact)
-            output = reporter.generate_report(result)
-        elif args.format == "markdown":
-            reporter = MarkdownReporter(detailed=args.detailed)
-            output = reporter.generate_report(result)
-        elif args.format == "table":
-            reporter = TableReporter()
-            output = reporter.generate_report(result)
-        elif args.format == "sarif":
-            reporter = SARIFReporter()
-            output = reporter.generate_report(result)
-        else:  # summary
-            output = generate_summary(result)
+        _write_output(args, _format_output(args, result))
 
-        # Output
-        if args.output:
-            with open(args.output, "w", encoding="utf-8") as f:
-                f.write(output)
-            print(f"Report saved to: {args.output}")
-        else:
-            print(output)
-
-        # Exit with error code if critical/high issues found
         if not result.is_safe and args.fail_on_findings:
             return 1
-
         return 0
 
     except SkillLoadError as e:
@@ -364,190 +299,53 @@ def scan_command(args):
         return 1
 
 
-def scan_all_command(args):
-    """Handle the scan-all command for multiple skills."""
+def scan_all_command(args: argparse.Namespace) -> int:
+    """Handle the ``scan-all`` command for multiple skills."""
     skills_dir = Path(args.skills_directory)
-
     if not skills_dir.exists():
         print(f"Error: Directory does not exist: {skills_dir}", file=sys.stderr)
         return 1
 
-    # Load scan policy
     policy = _load_policy(args)
+    status = _make_status_printer(args)
+    analyzers = _build_analyzers(policy, args, status)
+    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status)
 
-    # Create scanner with policy-driven analyzers
-    analyzers = _build_policy_analyzers(policy, args)
-
-    # Helper to print status messages - go to stderr when JSON output to avoid breaking parsing
-    is_json_output = getattr(args, "format", "summary") == "json"
-
-    def status_print(msg: str) -> None:
-        if is_json_output:
-            print(msg, file=sys.stderr)
-        else:
-            print(msg)
-
-    # Add behavioral analyzer if requested
-    if hasattr(args, "use_behavioral") and args.use_behavioral:
-        try:
-            behavioral_analyzer = BehavioralAnalyzer(use_static_analysis=True)
-            analyzers.append(behavioral_analyzer)
-            status_print("Using behavioral analyzer (static dataflow analysis)")
-        except Exception as e:
-            print(f"Warning: Could not initialize behavioral analyzer: {e}", file=sys.stderr)
-
-    # Add LLM analyzer if requested
-    if hasattr(args, "use_llm") and args.use_llm and LLM_AVAILABLE:
-        try:
-            # Use SKILL_SCANNER_* env vars only (no provider-specific fallbacks)
-            api_key = os.getenv("SKILL_SCANNER_LLM_API_KEY")
-            model = os.getenv("SKILL_SCANNER_LLM_MODEL") or "claude-3-5-sonnet-20241022"
-            base_url = os.getenv("SKILL_SCANNER_LLM_BASE_URL")
-            api_version = os.getenv("SKILL_SCANNER_LLM_API_VERSION")
-
-            llm_analyzer = LLMAnalyzer(
-                model=model,
-                api_key=api_key,
-                base_url=base_url,
-                api_version=api_version,
-            )
-            analyzers.append(llm_analyzer)
-            status_print(f"Using LLM analyzer with model: {model}")
-        except Exception as e:
-            print(f"Warning: Could not initialize LLM analyzer: {e}", file=sys.stderr)
-
-    # Add VirusTotal analyzer if requested
-    if hasattr(args, "use_virustotal") and args.use_virustotal:
-        vt_api_key = args.vt_api_key or os.getenv("VIRUSTOTAL_API_KEY")
-        vt_upload = getattr(args, "vt_upload_files", False)
-        if not vt_api_key:
-            print("Warning: VirusTotal requested but no API key provided.", file=sys.stderr)
-            print("Set VIRUSTOTAL_API_KEY environment variable or use --vt-api-key", file=sys.stderr)
-        else:
-            try:
-                from ..core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
-
-                vt_analyzer = VirusTotalAnalyzer(api_key=vt_api_key, enabled=True, upload_files=vt_upload)
-                analyzers.append(vt_analyzer)
-                mode = "with file uploads" if vt_upload else "hash-only mode"
-                status_print(f"Using VirusTotal binary file scanner ({mode})")
-            except Exception as e:
-                print(f"Warning: Could not initialize VirusTotal analyzer: {e}", file=sys.stderr)
-
-    # Add AI Defense analyzer if requested
-    if hasattr(args, "use_aidefense") and args.use_aidefense:
-        aidefense_api_key = getattr(args, "aidefense_api_key", None) or os.getenv("AI_DEFENSE_API_KEY")
-        if not aidefense_api_key:
-            print("Warning: AI Defense requested but no API key provided.", file=sys.stderr)
-            print("Set AI_DEFENSE_API_KEY environment variable or use --aidefense-api-key", file=sys.stderr)
-        else:
-            try:
-                from ..core.analyzers.aidefense_analyzer import AIDefenseAnalyzer
-
-                aidefense_api_url = getattr(args, "aidefense_api_url", None) or os.getenv("AI_DEFENSE_API_URL")
-                aidefense_analyzer = AIDefenseAnalyzer(api_key=aidefense_api_key, api_url=aidefense_api_url)
-                analyzers.append(aidefense_analyzer)
-                status_print("Using AI Defense analyzer")
-            except Exception as e:
-                print(f"Warning: Could not initialize AI Defense analyzer: {e}", file=sys.stderr)
-
-    # Add Trigger analyzer if requested
-    if hasattr(args, "use_trigger") and args.use_trigger:
-        try:
-            from ..core.analyzers.trigger_analyzer import TriggerAnalyzer
-
-            trigger_analyzer = TriggerAnalyzer()
-            analyzers.append(trigger_analyzer)
-            status_print("Using Trigger analyzer (description specificity analysis)")
-        except Exception as e:
-            print(f"Warning: Could not initialize Trigger analyzer: {e}", file=sys.stderr)
-
-    # Initialize meta-analyzer if requested
-    meta_analyzer = None
-    enable_meta = hasattr(args, "enable_meta") and args.enable_meta
-    if enable_meta:
-        if not META_AVAILABLE:
-            print("Warning: Meta-analyzer requested but dependencies not installed.", file=sys.stderr)
-            print("Install with: pip install litellm", file=sys.stderr)
-        elif len(analyzers) < 2:
-            print("Warning: Meta-analysis requires at least 2 analyzers. Skipping meta-analysis.", file=sys.stderr)
-        else:
-            try:
-                # Use SKILL_SCANNER_* env vars only (no provider-specific fallbacks)
-                # Priority: meta-specific > scanner-wide
-                meta_api_key = os.getenv("SKILL_SCANNER_META_LLM_API_KEY") or os.getenv("SKILL_SCANNER_LLM_API_KEY")
-                meta_model = os.getenv("SKILL_SCANNER_META_LLM_MODEL") or os.getenv("SKILL_SCANNER_LLM_MODEL")
-                meta_base_url = os.getenv("SKILL_SCANNER_META_LLM_BASE_URL") or os.getenv("SKILL_SCANNER_LLM_BASE_URL")
-                meta_api_version = os.getenv("SKILL_SCANNER_META_LLM_API_VERSION") or os.getenv(
-                    "SKILL_SCANNER_LLM_API_VERSION"
-                )
-                meta_analyzer = MetaAnalyzer(
-                    model=meta_model,
-                    api_key=meta_api_key,
-                    base_url=meta_base_url,
-                    api_version=meta_api_version,
-                )
-                status_print("Using Meta-Analyzer for false positive filtering and finding prioritization")
-            except Exception as e:
-                print(f"Warning: Could not initialize Meta-Analyzer: {e}", file=sys.stderr)
-
-    scanner = SkillScanner(analyzers=analyzers)
+    scanner = SkillScanner(analyzers=analyzers, policy=policy)
 
     try:
-        # Scan all skills
-        check_overlap = hasattr(args, "check_overlap") and args.check_overlap
+        check_overlap = getattr(args, "check_overlap", False)
         report = scanner.scan_directory(skills_dir, recursive=args.recursive, check_overlap=check_overlap)
 
         if report.total_skills_scanned == 0:
             print("No skills found to scan.", file=sys.stderr)
             return 1
 
-        # Run meta-analysis on each skill's results if enabled
+        # Per-skill meta-analysis
         if meta_analyzer:
-            status_print("Running meta-analysis on scan results...")
-            total_fp_filtered = 0
-            total_new_threats = 0
-
+            status("Running meta-analysis on scan results...")
+            total_fp, total_new = 0, 0
             for result in report.scan_results:
-                if result.findings:
-                    try:
-                        # Load the skill for context
-                        skill_dir = Path(result.skill_directory)
-                        skill = scanner.loader.load_skill(skill_dir)
-
-                        # Run meta-analysis asynchronously
-                        meta_result = asyncio.run(
-                            meta_analyzer.analyze_with_findings(
-                                skill=skill,
-                                findings=result.findings,
-                                analyzers_used=result.analyzers_used,
-                            )
+                if not result.findings:
+                    continue
+                try:
+                    skill = scanner.loader.load_skill(Path(result.skill_directory))
+                    meta_result = asyncio.run(
+                        meta_analyzer.analyze_with_findings(
+                            skill=skill, findings=result.findings, analyzers_used=result.analyzers_used
                         )
+                    )
+                    filtered = apply_meta_analysis_to_results(
+                        original_findings=result.findings, meta_result=meta_result, skill=skill
+                    )
+                    total_fp += len(result.findings) - len([f for f in filtered if f.analyzer != "meta"])
+                    total_new += len([f for f in filtered if f.analyzer == "meta"])
+                    result.findings = filtered
+                    result.analyzers_used.append("meta_analyzer")
+                except Exception as e:
+                    logger.warning("Meta-analysis failed for %s: %s", result.skill_name, e)
 
-                        # Apply meta-analysis results
-                        original_count = len(result.findings)
-                        filtered_findings = apply_meta_analysis_to_results(
-                            original_findings=result.findings,
-                            meta_result=meta_result,
-                            skill=skill,
-                        )
-
-                        # Track statistics
-                        fp_count = original_count - len([f for f in filtered_findings if f.analyzer != "meta"])
-                        new_count = len([f for f in filtered_findings if f.analyzer == "meta"])
-                        total_fp_filtered += fp_count
-                        total_new_threats += new_count
-
-                        # Update result
-                        result.findings = filtered_findings
-                        result.analyzers_used.append("meta_analyzer")
-
-                    except Exception as e:
-                        print(f"Warning: Meta-analysis failed for {result.skill_name}: {e}", file=sys.stderr)
-
-            status_print(
-                f"Meta-analysis complete: {total_fp_filtered} total false positives filtered, {total_new_threats} new threats detected"
-            )
+            status(f"Meta-analysis complete: {total_fp} FPs filtered, {total_new} new threats detected")
 
             # Recalculate report totals
             report.total_findings = sum(len(r.findings) for r in report.scan_results)
@@ -562,34 +360,10 @@ def scan_all_command(args):
             report.info_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "INFO")
             report.safe_count = sum(1 for r in report.scan_results if r.is_safe)
 
-        # Generate report based on format
-        if args.format == "json":
-            reporter = JSONReporter(pretty=not args.compact)
-            output = reporter.generate_report(report)
-        elif args.format == "markdown":
-            reporter = MarkdownReporter(detailed=args.detailed)
-            output = reporter.generate_report(report)
-        elif args.format == "table":
-            reporter = TableReporter()
-            output = reporter.generate_report(report)
-        elif args.format == "sarif":
-            reporter = SARIFReporter()
-            output = reporter.generate_report(report)
-        else:  # summary
-            output = generate_multi_skill_summary(report)
+        _write_output(args, _format_output(args, report))
 
-        # Output
-        if args.output:
-            with open(args.output, "w", encoding="utf-8") as f:
-                f.write(output)
-            print(f"Report saved to: {args.output}")
-        else:
-            print(output)
-
-        # Exit with error code if any skills have issues
         if args.fail_on_findings and (report.critical_count > 0 or report.high_count > 0):
             return 1
-
         return 0
 
     except Exception as e:
@@ -597,445 +371,266 @@ def scan_all_command(args):
         return 1
 
 
-def list_analyzers_command(args):
-    """Handle the list-analyzers command."""
-    print("Available Analyzers:")
-    print("")
-    print("1. static_analyzer (Default)")
-    print("   - Pattern-based detection using YAML + YARA rules")
-    print("   - Scans SKILL.md instructions and scripts")
-    print("   - Detects 80+ security patterns across 12+ threat categories")
-    print("")
+def list_analyzers_command(_args: argparse.Namespace) -> int:
+    """Handle the ``list-analyzers`` command."""
+    entries = [
+        ("static_analyzer", True, "Default", "Pattern-based detection using YAML + YARA rules", "--policy"),
+        ("bytecode_analyzer", True, "Default", "Python .pyc integrity verification", "--policy"),
+        ("pipeline_analyzer", True, "Default", "Command pipeline taint analysis", "--policy"),
+        (
+            "behavioral_analyzer",
+            True,
+            "Available",
+            "Static dataflow analysis (AST + taint tracking)",
+            "--use-behavioral",
+        ),
+        (
+            "virustotal_analyzer",
+            True,
+            "Available (optional)",
+            "Hash-based malware detection via VirusTotal API",
+            "--use-virustotal --vt-api-key KEY",
+        ),
+        (
+            "aidefense_analyzer",
+            True,
+            "Available (optional)",
+            "Cisco AI Defense cloud-based threat detection",
+            "--use-aidefense --aidefense-api-key KEY",
+        ),
+        (
+            "llm_analyzer",
+            LLM_AVAILABLE,
+            "Available" if LLM_AVAILABLE else "Not installed",
+            "Semantic analysis using LLMs as judges",
+            "--use-llm",
+        ),
+        ("trigger_analyzer", True, "Available", "Detects overly generic skill descriptions", "--use-trigger"),
+        (
+            "meta_analyzer",
+            META_AVAILABLE,
+            "Available" if META_AVAILABLE else "Not installed",
+            "Second-pass LLM FP filtering & prioritization",
+            "--enable-meta",
+        ),
+    ]
 
-    print("2. behavioral_analyzer [OK] Available")
-    print("   - Static dataflow analysis (AST + taint tracking)")
-    print("   - Tracks data from sources to sinks without execution")
-    print("   - Detects multi-file exfiltration chains")
-    print("   - Cross-file correlation analysis")
-    print("   - Usage: --use-behavioral")
-    print("")
+    print("Available Analyzers:\n")
+    for i, (name, available, badge, desc, usage) in enumerate(entries, 1):
+        ok = "[OK]" if available else "[WARNING]"
+        print(f"  {i}. {name} {ok} {badge}")
+        print(f"     {desc}")
+        print(f"     Usage: {usage}")
+        print()
 
-    print("3. virustotal_analyzer [OK] Available (optional)")
-    print("   - Scans binary files (images, PDFs, archives) using VirusTotal")
-    print("   - Hash-based malware detection via VirusTotal API")
-    print("   - Excludes code files (.py, .js, .md, etc.)")
-    print("   - Requires VirusTotal API key")
-    print("   - Usage: --use-virustotal --vt-api-key YOUR_KEY")
-    print("")
-
-    print("4. aidefense_analyzer [OK] Available (optional)")
-    print("   - Enterprise-grade threat detection via Cisco AI Defense API")
-    print("   - Analyzes prompts, instructions, markdown, and code files")
-    print("   - Detects prompt injection, data exfiltration, tool poisoning")
-    print("   - Requires Cisco AI Defense API key")
-    print("   - Usage: --use-aidefense --aidefense-api-key YOUR_KEY")
-    print("")
-
-    if LLM_AVAILABLE:
-        print("5. llm_analyzer [OK] Available")
-        print("   - Semantic analysis using LLMs as judges")
-        print("   - Context-aware threat detection")
-        print("   - Understands code intent beyond patterns")
-        print("   - Usage: --use-llm")
-        print("")
-    else:
-        print("5. llm_analyzer [WARNING] Not installed")
-        print("   - Install with: pip install litellm anthropic openai")
-        print("")
-
-    print("6. trigger_analyzer [OK] Available")
-    print("   - Detects overly generic skill descriptions")
-    print("   - Identifies trigger hijacking risks")
-    print("   - Checks description specificity and keyword baiting")
-    print("   - Usage: --use-trigger")
-    print("")
-
-    if META_AVAILABLE:
-        print("7. meta_analyzer [OK] Available")
-        print("   - Second-pass LLM analysis on findings from other analyzers")
-        print("   - Filters false positives using contextual understanding")
-        print("   - Prioritizes findings by actual exploitability")
-        print("   - Detects threats other analyzers missed")
-        print("   - Usage: --enable-meta (requires 2+ analyzers)")
-        print("")
-    else:
-        print("7. meta_analyzer [WARNING] Not installed")
-        print("   - Install with: pip install litellm")
-        print("")
-
-    print("Future Analyzers (not yet implemented):")
-    print("  - policy_checker: Organization-specific policy validation")
-    print("  - runtime_monitor: Live execution monitoring (sandbox)")
-    print("")
     return 0
 
 
-def validate_rules_command(args):
-    """Handle the validate-rules command."""
+def validate_rules_command(args: argparse.Namespace) -> int:
+    """Handle the ``validate-rules`` command."""
     from ..core.rules.patterns import RuleLoader
 
     try:
-        if args.rules_file:
-            loader = RuleLoader(Path(args.rules_file))
-        else:
-            loader = RuleLoader()
-
+        loader = RuleLoader(Path(args.rules_file)) if args.rules_file else RuleLoader()
         rules = loader.load_rules()
-
-        print(f"[OK] Successfully loaded {len(rules)} rules")
-        print("")
+        print(f"[OK] Successfully loaded {len(rules)} rules\n")
         print("Rules by category:")
-
         for category, category_rules in loader.rules_by_category.items():
             print(f"  - {category.value}: {len(category_rules)} rules")
-
         return 0
-
     except Exception as e:
         print(f"[FAIL] Error validating rules: {e}", file=sys.stderr)
         return 1
 
 
-def generate_policy_command(args):
-    """Handle the generate-policy command."""
+def generate_policy_command(args: argparse.Namespace) -> int:
+    """Handle the ``generate-policy`` command."""
     output_path = Path(args.output)
     preset = getattr(args, "preset", "balanced")
     try:
         policy = ScanPolicy.from_preset(preset)
         policy.to_yaml(output_path)
-        print(f"Generated {preset} scan policy: {output_path}")
-        print("")
-        print("Edit the file to customise for your organisation, then use:")
-        print(f"  skill-scanner scan --policy {output_path} /path/to/skill")
-        print("")
+        print(f"Generated {preset} scan policy: {output_path}\n")
+        print("Edit the file to customise, then use:")
+        print(f"  skill-scanner scan --policy {output_path} /path/to/skill\n")
         print("Or use the interactive configurator:")
-        print("  skill-scanner configure-policy")
-        print("")
-        print("Available presets:  strict | balanced (default) | permissive")
-        print("")
-        print("Sections you can customise:")
-        print("  hidden_files       - Benign dotfiles/dirs to skip")
-        print("  pipeline           - Known installer URLs, benign pipe patterns")
-        print("  rule_scoping       - Which rules fire on which file types")
-        print("  credentials        - Well-known test credentials to suppress")
-        print("  command_safety     - Safe/caution/risky/dangerous command tiers")
-        print("  analyzers          - Enable/disable analysis passes")
-        print("  severity_overrides - Raise/lower severity per rule")
-        print("  disabled_rules     - Completely suppress specific rules")
+        print("  skill-scanner configure-policy\n")
+        print("Available presets: strict | balanced (default) | permissive")
         return 0
     except Exception as e:
         print(f"Error generating policy: {e}", file=sys.stderr)
         return 1
 
 
-def configure_policy_command(args):
-    """Handle the configure-policy command (interactive TUI)."""
+def configure_policy_command(args: argparse.Namespace) -> int:
+    """Handle the ``configure-policy`` command (interactive TUI)."""
     from .policy_tui import run_policy_tui
 
-    output_path = getattr(args, "output", "scan_policy.yaml")
-    return run_policy_tui(output_path)
+    return run_policy_tui(getattr(args, "output", "scan_policy.yaml"))
 
 
-def generate_summary(result) -> str:
-    """Generate a simple summary output."""
-    lines = []
-    lines.append("=" * 60)
-    lines.append(f"Skill: {result.skill_name}")
-    lines.append("=" * 60)
-    lines.append(f"Status: {'[OK] SAFE' if result.is_safe else '[FAIL] ISSUES FOUND'}")
-    lines.append(f"Max Severity: {result.max_severity.value}")
-    lines.append(f"Total Findings: {len(result.findings)}")
-    lines.append(f"Scan Duration: {result.scan_duration_seconds:.2f}s")
-    lines.append("")
+# ---------------------------------------------------------------------------
+# Summary formatters
+# ---------------------------------------------------------------------------
 
+
+def _generate_summary(result) -> str:
+    from ..core.models import Severity
+
+    lines = [
+        "=" * 60,
+        f"Skill: {result.skill_name}",
+        "=" * 60,
+        f"Status: {'[OK] SAFE' if result.is_safe else '[FAIL] ISSUES FOUND'}",
+        f"Max Severity: {result.max_severity.value}",
+        f"Total Findings: {len(result.findings)}",
+        f"Scan Duration: {result.scan_duration_seconds:.2f}s",
+        "",
+    ]
     if result.findings:
-        from ..core.models import Severity
-
         lines.append("Findings Summary:")
-        lines.append(f"  Critical: {len(result.get_findings_by_severity(Severity.CRITICAL))}")
-        lines.append(f"  High:     {len(result.get_findings_by_severity(Severity.HIGH))}")
-        lines.append(f"  Medium:   {len(result.get_findings_by_severity(Severity.MEDIUM))}")
-        lines.append(f"  Low:      {len(result.get_findings_by_severity(Severity.LOW))}")
-        lines.append(f"  Info:     {len(result.get_findings_by_severity(Severity.INFO))}")
-
+        for sev in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO):
+            lines.append(f"  {sev.value:>8s}: {len(result.get_findings_by_severity(sev))}")
     return "\n".join(lines)
 
 
-def generate_multi_skill_summary(report) -> str:
-    """Generate a simple summary for multiple skills."""
-    lines = []
-    lines.append("=" * 60)
-    lines.append("Agent Skills Security Scan Report")
-    lines.append("=" * 60)
-    lines.append(f"Skills Scanned: {report.total_skills_scanned}")
-    lines.append(f"Safe Skills: {report.safe_count}")
-    lines.append(f"Total Findings: {report.total_findings}")
-    lines.append("")
-    lines.append("Findings by Severity:")
-    lines.append(f"  Critical: {report.critical_count}")
-    lines.append(f"  High:     {report.high_count}")
-    lines.append(f"  Medium:   {report.medium_count}")
-    lines.append(f"  Low:      {report.low_count}")
-    lines.append(f"  Info:     {report.info_count}")
-    lines.append("")
-
-    lines.append("Individual Skills:")
-    for result in report.scan_results:
-        status = "[OK]" if result.is_safe else "[FAIL]"
-        lines.append(f"  {status} {result.skill_name} - {len(result.findings)} findings ({result.max_severity.value})")
-
+def _generate_multi_skill_summary(report) -> str:
+    lines = [
+        "=" * 60,
+        "Agent Skills Security Scan Report",
+        "=" * 60,
+        f"Skills Scanned: {report.total_skills_scanned}",
+        f"Safe Skills: {report.safe_count}",
+        f"Total Findings: {report.total_findings}",
+        "",
+        "Findings by Severity:",
+        f"  Critical: {report.critical_count}",
+        f"     High: {report.high_count}",
+        f"   Medium: {report.medium_count}",
+        f"      Low: {report.low_count}",
+        f"     Info: {report.info_count}",
+        "",
+        "Individual Skills:",
+    ]
+    for r in report.scan_results:
+        tag = "[OK]" if r.is_safe else "[FAIL]"
+        lines.append(f"  {tag} {r.skill_name} - {len(r.findings)} findings ({r.max_severity.value})")
     return "\n".join(lines)
 
 
-def main():
+# ---------------------------------------------------------------------------
+# Shared argparse helpers
+# ---------------------------------------------------------------------------
+
+
+def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
+    """Add flags shared between ``scan`` and ``scan-all``."""
+    parser.add_argument(
+        "--format",
+        choices=["summary", "json", "markdown", "table", "sarif"],
+        default="summary",
+        help="Output format (default: summary). Use 'sarif' for GitHub Code Scanning.",
+    )
+    parser.add_argument("--output", "-o", help="Output file path")
+    parser.add_argument("--detailed", action="store_true", help="Include detailed findings")
+    parser.add_argument("--compact", action="store_true", help="Compact JSON output")
+    parser.add_argument("--fail-on-findings", action="store_true", help="Exit with error if critical/high findings")
+    parser.add_argument("--use-behavioral", action="store_true", help="Enable behavioral dataflow analysis")
+    parser.add_argument("--use-llm", action="store_true", help="Enable LLM-based semantic analysis (requires API key)")
+    parser.add_argument("--use-virustotal", action="store_true", help="Enable VirusTotal scanning (requires API key)")
+    parser.add_argument("--vt-api-key", help="VirusTotal API key (or set VIRUSTOTAL_API_KEY)")
+    parser.add_argument("--vt-upload-files", action="store_true", help="Upload unknown files to VirusTotal")
+    parser.add_argument("--use-aidefense", action="store_true", help="Enable AI Defense analyzer (requires API key)")
+    parser.add_argument("--aidefense-api-key", help="AI Defense API key (or set AI_DEFENSE_API_KEY)")
+    parser.add_argument("--aidefense-api-url", help="AI Defense API URL (optional, defaults to US region)")
+    parser.add_argument("--llm-provider", choices=["anthropic", "openai"], default="anthropic", help="LLM provider")
+    parser.add_argument("--use-trigger", action="store_true", help="Enable trigger specificity analysis")
+    parser.add_argument("--enable-meta", action="store_true", help="Enable meta-analysis FP filtering (2+ analyzers)")
+    parser.add_argument(
+        "--policy",
+        metavar="PRESET_OR_PATH",
+        help="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
+    )
+    parser.add_argument(
+        "--custom-rules",
+        metavar="PATH",
+        help="Path to directory containing custom YARA rules (.yara files)",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Skill Scanner - Security scanner for agent skills packages",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Scan a single skill
   skill-scanner scan /path/to/skill
-
-  # Scan with behavioral analysis (dataflow tracking)
-  skill-scanner scan /path/to/skill --use-behavioral
-
-  # Scan with all engines (static + behavioral + LLM)
   skill-scanner scan /path/to/skill --use-behavioral --use-llm
-
-  # Scan with JSON output
+  skill-scanner scan /path/to/skill --policy strict
   skill-scanner scan /path/to/skill --format json
-
-  # Scan all skills in a directory
-  skill-scanner scan-all /path/to/skills
-
-  # Scan recursively with all engines
-  skill-scanner scan-all /path/to/skills --recursive --use-behavioral --use-llm
-
-  # Customise the security bar for your org
-  skill-scanner generate-policy -o my_org_policy.yaml
-  skill-scanner scan --policy my_org_policy.yaml /path/to/skill
-
-  # List available analyzers
+  skill-scanner scan-all /path/to/skills --recursive
+  skill-scanner generate-policy -o my_policy.yaml
+  skill-scanner configure-policy
   skill-scanner list-analyzers
-
-  # Validate rule signatures
-  skill-scanner validate-rules
         """,
     )
-
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
-    # Scan command
-    scan_parser = subparsers.add_parser("scan", help="Scan a single skill package")
-    scan_parser.add_argument("skill_directory", help="Path to skill directory")
-    scan_parser.add_argument(
-        "--format",
-        choices=["summary", "json", "markdown", "table", "sarif"],
-        default="summary",
-        help="Output format (default: summary). Use 'sarif' for GitHub Code Scanning integration.",
-    )
-    scan_parser.add_argument("--output", "-o", help="Output file path")
-    scan_parser.add_argument("--detailed", action="store_true", help="Include detailed findings")
-    scan_parser.add_argument("--compact", action="store_true", help="Compact JSON output")
-    scan_parser.add_argument(
-        "--fail-on-findings", action="store_true", help="Exit with error code if critical/high findings exist"
-    )
-    scan_parser.add_argument("--use-behavioral", action="store_true", help="Enable behavioral dataflow analysis")
-    scan_parser.add_argument(
-        "--use-llm", action="store_true", help="Enable LLM-based semantic analysis (requires API key)"
-    )
-    scan_parser.add_argument(
-        "--use-virustotal", action="store_true", help="Enable VirusTotal binary file scanning (requires API key)"
-    )
-    scan_parser.add_argument("--vt-api-key", help="VirusTotal API key (or set VIRUSTOTAL_API_KEY environment variable)")
-    scan_parser.add_argument(
-        "--vt-upload-files",
-        action="store_true",
-        help="Upload unknown files to VirusTotal (default: hash-only lookup for privacy)",
-    )
-    scan_parser.add_argument(
-        "--use-aidefense", action="store_true", help="Enable AI Defense analyzer (requires API key)"
-    )
-    scan_parser.add_argument(
-        "--aidefense-api-key", help="AI Defense API key (or set AI_DEFENSE_API_KEY environment variable)"
-    )
-    scan_parser.add_argument("--aidefense-api-url", help="AI Defense API URL (optional, defaults to US region)")
-    scan_parser.add_argument(
-        "--llm-provider", choices=["anthropic", "openai"], default="anthropic", help="LLM provider (default: anthropic)"
-    )
-    scan_parser.add_argument(
-        "--use-trigger",
-        action="store_true",
-        help="Enable trigger specificity analysis (detects overly generic descriptions)",
-    )
-    scan_parser.add_argument(
-        "--enable-meta",
-        action="store_true",
-        help="Enable meta-analysis for false positive filtering and finding prioritization (requires 2+ analyzers including LLM)",
-    )
-    scan_parser.add_argument(
-        "--policy",
-        metavar="PRESET_OR_PATH",
-        help="Scan policy: a preset name (strict, balanced, permissive) or path to a custom YAML file. Generate a starting point with: skill-scanner generate-policy",
-    )
-    scan_parser.add_argument(
-        "--yara-mode",
-        choices=["strict", "balanced", "permissive"],
-        default=None,
-        help="[DEPRECATED: use --policy instead] YARA detection mode",
-    )
-    scan_parser.add_argument(
-        "--custom-rules",
-        metavar="PATH",
-        help="Path to directory containing custom YARA rules (.yara files) to use instead of built-in rules",
-    )
-    scan_parser.add_argument(
-        "--disable-rule",
-        action="append",
-        metavar="RULE_NAME",
-        dest="disabled_rules",
-        help="[DEPRECATED: use disabled_rules in policy YAML] Disable a specific rule by name",
-    )
+    # -- scan --------------------------------------------------------------
+    scan_p = subparsers.add_parser("scan", help="Scan a single skill package")
+    scan_p.add_argument("skill_directory", help="Path to skill directory")
+    _add_common_scan_flags(scan_p)
 
-    # Scan-all command
-    scan_all_parser = subparsers.add_parser("scan-all", help="Scan multiple skill packages")
-    scan_all_parser.add_argument("skills_directory", help="Directory containing skills")
-    scan_all_parser.add_argument("--recursive", "-r", action="store_true", help="Recursively search for skills")
-    scan_all_parser.add_argument(
-        "--format",
-        choices=["summary", "json", "markdown", "table", "sarif"],
-        default="summary",
-        help="Output format (default: summary). Use 'sarif' for GitHub Code Scanning integration.",
-    )
-    scan_all_parser.add_argument("--output", "-o", help="Output file path")
-    scan_all_parser.add_argument("--detailed", action="store_true", help="Include detailed findings")
-    scan_all_parser.add_argument("--compact", action="store_true", help="Compact JSON output")
-    scan_all_parser.add_argument(
-        "--fail-on-findings", action="store_true", help="Exit with error code if any critical/high findings exist"
-    )
-    scan_all_parser.add_argument("--use-behavioral", action="store_true", help="Enable behavioral dataflow analysis")
-    scan_all_parser.add_argument(
-        "--use-llm", action="store_true", help="Enable LLM-based semantic analysis (requires API key)"
-    )
-    scan_all_parser.add_argument(
-        "--use-virustotal", action="store_true", help="Enable VirusTotal binary file scanning (requires API key)"
-    )
-    scan_all_parser.add_argument(
-        "--vt-api-key", help="VirusTotal API key (or set VIRUSTOTAL_API_KEY environment variable)"
-    )
-    scan_all_parser.add_argument(
-        "--vt-upload-files",
-        action="store_true",
-        help="Upload unknown files to VirusTotal (default: hash-only lookup for privacy)",
-    )
-    scan_all_parser.add_argument(
-        "--use-aidefense", action="store_true", help="Enable AI Defense analyzer (requires API key)"
-    )
-    scan_all_parser.add_argument(
-        "--aidefense-api-key", help="AI Defense API key (or set AI_DEFENSE_API_KEY environment variable)"
-    )
-    scan_all_parser.add_argument("--aidefense-api-url", help="AI Defense API URL (optional, defaults to US region)")
-    scan_all_parser.add_argument(
-        "--llm-provider", choices=["anthropic", "openai"], default="anthropic", help="LLM provider (default: anthropic)"
-    )
-    scan_all_parser.add_argument(
-        "--use-trigger",
-        action="store_true",
-        help="Enable trigger specificity analysis (detects overly generic descriptions)",
-    )
-    scan_all_parser.add_argument(
-        "--check-overlap", action="store_true", help="Enable cross-skill description overlap detection"
-    )
-    scan_all_parser.add_argument(
-        "--enable-meta",
-        action="store_true",
-        help="Enable meta-analysis for false positive filtering and finding prioritization (requires 2+ analyzers including LLM)",
-    )
-    scan_all_parser.add_argument(
-        "--policy",
-        metavar="PRESET_OR_PATH",
-        help="Scan policy: a preset name (strict, balanced, permissive) or path to a custom YAML file. Generate a starting point with: skill-scanner generate-policy",
-    )
-    scan_all_parser.add_argument(
-        "--yara-mode",
-        choices=["strict", "balanced", "permissive"],
-        default=None,
-        help="[DEPRECATED: use --policy instead] YARA detection mode",
-    )
-    scan_all_parser.add_argument(
-        "--custom-rules",
-        metavar="PATH",
-        help="Path to directory containing custom YARA rules (.yara files) to use instead of built-in rules",
-    )
-    scan_all_parser.add_argument(
-        "--disable-rule",
-        action="append",
-        metavar="RULE_NAME",
-        dest="disabled_rules",
-        help="[DEPRECATED: use disabled_rules in policy YAML] Disable a specific rule by name",
-    )
+    # -- scan-all ----------------------------------------------------------
+    scan_all_p = subparsers.add_parser("scan-all", help="Scan multiple skill packages")
+    scan_all_p.add_argument("skills_directory", help="Directory containing skills")
+    scan_all_p.add_argument("--recursive", "-r", action="store_true", help="Recursively search for skills")
+    scan_all_p.add_argument("--check-overlap", action="store_true", help="Enable cross-skill description overlap")
+    _add_common_scan_flags(scan_all_p)
 
-    # List analyzers command
+    # -- list-analyzers ----------------------------------------------------
     subparsers.add_parser("list-analyzers", help="List available analyzers")
 
-    # Validate rules command
-    validate_parser = subparsers.add_parser("validate-rules", help="Validate rule signatures")
-    validate_parser.add_argument("--rules-file", help="Path to custom rules file")
+    # -- validate-rules ----------------------------------------------------
+    vr_p = subparsers.add_parser("validate-rules", help="Validate rule signatures")
+    vr_p.add_argument("--rules-file", help="Path to custom rules file")
 
-    # Generate policy command
-    gen_policy_parser = subparsers.add_parser(
-        "generate-policy",
-        help="Generate a default scan policy YAML file for customisation",
-    )
-    gen_policy_parser.add_argument(
-        "--output",
-        "-o",
-        default="scan_policy.yaml",
-        help="Output file path (default: scan_policy.yaml)",
-    )
-    gen_policy_parser.add_argument(
-        "--preset",
-        choices=["strict", "balanced", "permissive"],
-        default="balanced",
-        help="Preset to use as base (default: balanced)",
-    )
+    # -- generate-policy ---------------------------------------------------
+    gp_p = subparsers.add_parser("generate-policy", help="Generate a default scan policy YAML")
+    gp_p.add_argument("--output", "-o", default="scan_policy.yaml", help="Output file path")
+    gp_p.add_argument("--preset", choices=["strict", "balanced", "permissive"], default="balanced", help="Base preset")
 
-    # Interactive policy configurator
-    config_policy_parser = subparsers.add_parser(
-        "configure-policy",
-        help="Interactive TUI to build a custom scan policy",
-    )
-    config_policy_parser.add_argument(
-        "--output",
-        "-o",
-        default="scan_policy.yaml",
-        help="Output file path (default: scan_policy.yaml)",
-    )
+    # -- configure-policy --------------------------------------------------
+    cp_p = subparsers.add_parser("configure-policy", help="Interactive TUI to build a custom scan policy")
+    cp_p.add_argument("--output", "-o", default="scan_policy.yaml", help="Output file path")
 
-    # Parse arguments
+    # -- dispatch ----------------------------------------------------------
     args = parser.parse_args()
 
     if not args.command:
         parser.print_help()
         return 1
 
-    # Execute command
-    if args.command == "scan":
-        return scan_command(args)
-    elif args.command == "scan-all":
-        return scan_all_command(args)
-    elif args.command == "list-analyzers":
-        return list_analyzers_command(args)
-    elif args.command == "validate-rules":
-        return validate_rules_command(args)
-    elif args.command == "generate-policy":
-        return generate_policy_command(args)
-    elif args.command == "configure-policy":
-        return configure_policy_command(args)
-    else:
-        parser.print_help()
-        return 1
+    dispatch = {
+        "scan": scan_command,
+        "scan-all": scan_all_command,
+        "list-analyzers": list_analyzers_command,
+        "validate-rules": validate_rules_command,
+        "generate-policy": generate_policy_command,
+        "configure-policy": configure_policy_command,
+    }
+    handler = dispatch.get(args.command)
+    if handler:
+        return handler(args)
+
+    parser.print_help()
+    return 1
 
 
 if __name__ == "__main__":

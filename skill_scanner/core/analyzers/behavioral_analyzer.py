@@ -63,7 +63,6 @@ class BehavioralAnalyzer(BaseAnalyzer):
 
     def __init__(
         self,
-        use_static_analysis: bool = True,
         use_alignment_verification: bool = False,
         llm_model: str | None = None,
         llm_api_key: str | None = None,
@@ -72,8 +71,6 @@ class BehavioralAnalyzer(BaseAnalyzer):
         Initialize behavioral analyzer.
 
         Args:
-            use_static_analysis: Deprecated parameter, kept for backward compatibility.
-                Static analysis is always enabled as it's required for the analyzer to function.
             use_alignment_verification: Enable LLM-powered alignment verification
             llm_model: LLM model for alignment verification (e.g., "gemini/gemini-2.0-flash")
             llm_api_key: API key for the LLM provider (or resolved from environment)
@@ -85,13 +82,6 @@ class BehavioralAnalyzer(BaseAnalyzer):
         """
         super().__init__("behavioral_analyzer")
 
-        # Static analysis is always required - the parameter is kept for backward compatibility
-        if not use_static_analysis:
-            logger.warning(
-                "use_static_analysis=False is deprecated and ignored. "
-                "Static analysis is required for the behavioral analyzer to function."
-            )
-        self.use_static_analysis = True  # Always enabled
         self.use_alignment_verification = use_alignment_verification
         self.context_extractor = ContextExtractor()  # Always initialized
 
