@@ -18,22 +18,28 @@
 Base analyzer interface for skill security scanning.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 from ..models import Finding, Skill
+from ..scan_policy import ScanPolicy
 
 
 class BaseAnalyzer(ABC):
     """Abstract base class for all security analyzers."""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, policy: ScanPolicy | None = None):
         """
         Initialize analyzer.
 
         Args:
             name: Name of the analyzer
+            policy: Scan policy for org-specific allowlists and rule scoping.
+                If None, loads built-in defaults.
         """
         self.name = name
+        self.policy = policy or ScanPolicy.default()
 
     @abstractmethod
     def analyze(self, skill: Skill) -> list[Finding]:

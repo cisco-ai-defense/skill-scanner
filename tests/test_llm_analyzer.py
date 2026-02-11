@@ -85,7 +85,16 @@ class TestPromptLoading:
 
     def test_fallback_prompts_on_missing_files(self):
         """Test that analyzer falls back to basic prompts if files missing."""
-        with patch("pathlib.Path.exists", return_value=False):
+        # Only patch the prompt-file existence checks, not all Path.exists()
+        # (ScanPolicy.default() needs Path.exists to load the default YAML)
+        _real_exists = Path.exists
+
+        def _fake_exists(self):
+            if "prompts" in str(self):
+                return False
+            return _real_exists(self)
+
+        with patch.object(Path, "exists", _fake_exists):
             analyzer = LLMAnalyzer(api_key="test-key")
 
             # Should have fallback prompts

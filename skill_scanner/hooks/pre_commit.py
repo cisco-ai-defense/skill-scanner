@@ -168,30 +168,27 @@ def scan_skill(skill_dir: Path, config: dict) -> dict:
         Scan results as dictionary
     """
     try:
-        from ..core.analyzers.base import BaseAnalyzer
-        from ..core.analyzers.static import StaticAnalyzer
+        from ..core.analyzer_factory import build_analyzers
+        from ..core.scan_policy import ScanPolicy
         from ..core.scanner import SkillScanner
 
-        analyzers: list[BaseAnalyzer] = [StaticAnalyzer()]
+        # Load policy (preset name, file path, or default)
+        policy_value = config.get("policy")
+        if policy_value and policy_value in ("strict", "balanced", "permissive"):
+            policy = ScanPolicy.from_preset(policy_value)
+        elif policy_value:
+            policy = ScanPolicy.from_yaml(policy_value)
+        else:
+            policy = ScanPolicy.default()
 
-        # Add optional analyzers based on config
-        if config.get("use_behavioral"):
-            try:
-                from ..core.analyzers.behavioral_analyzer import BehavioralAnalyzer
+        # Delegate to the centralized factory
+        analyzers = build_analyzers(
+            policy,
+            use_behavioral=bool(config.get("use_behavioral")),
+            use_trigger=bool(config.get("use_trigger")),
+        )
 
-                analyzers.append(BehavioralAnalyzer())
-            except ImportError:
-                pass
-
-        if config.get("use_trigger"):
-            try:
-                from ..core.analyzers.trigger_analyzer import TriggerAnalyzer
-
-                analyzers.append(TriggerAnalyzer())
-            except ImportError:
-                pass
-
-        scanner = SkillScanner(analyzers=analyzers)
+        scanner = SkillScanner(analyzers=analyzers, policy=policy)
         result = scanner.scan_skill(skill_dir)
 
         # Count findings by severity

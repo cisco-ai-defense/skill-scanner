@@ -137,8 +137,9 @@ class TestJSONFormat:
         data = json.loads(stdout)
         assert "skill_name" in data
 
-        # Check stderr has status message
-        assert "behavioral" in stderr.lower() or stderr == ""
+        # Check stderr has status message (ignore Python runtime warnings)
+        stderr_filtered = "\n".join(line for line in stderr.splitlines() if "RuntimeWarning" not in line)
+        assert "behavioral" in stderr_filtered.lower() or stderr_filtered.strip() == ""
 
 
 # =============================================================================

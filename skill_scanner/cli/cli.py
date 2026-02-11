@@ -26,18 +26,15 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from ..core.analyzers.behavioral_analyzer import BehavioralAnalyzer
-from ..core.analyzers.bytecode_analyzer import BytecodeAnalyzer
-from ..core.analyzers.pipeline_analyzer import PipelineAnalyzer
-from ..core.analyzers.static import StaticAnalyzer
+from ..core.analyzer_factory import build_analyzers
 from ..core.reporters.json_reporter import JSONReporter
 from ..core.reporters.sarif_reporter import SARIFReporter
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
 
-# Optional LLM analyzer
+# Optional LLM analyzer (needed only for LLM_AVAILABLE check)
 try:
-    from ..core.analyzers.llm_analyzer import LLMAnalyzer
+    from ..core.analyzers.llm_analyzer import LLMAnalyzer  # noqa: F401
 
     LLM_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
@@ -94,83 +91,37 @@ def _load_policy(args: argparse.Namespace) -> ScanPolicy:
 def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Callable[[str], None]) -> list:
     """Build the full analyzer list from *policy* and CLI *args*.
 
-    Core analysers (static, bytecode, pipeline) are toggled by the policy.
-    Optional analysers (behavioral, LLM, VT, AI Defense, trigger) are toggled
-    by explicit CLI flags.
-
-    This helper is shared between ``scan`` and ``scan-all`` to avoid
-    duplicated initialisation code.
+    Delegates to the centralized :func:`build_analyzers` factory so that
+    core analyzer construction is defined in exactly one place.
     """
-    analyzers: list = []
+    analyzers = build_analyzers(
+        policy,
+        custom_yara_rules_path=getattr(args, "custom_rules", None),
+        use_behavioral=getattr(args, "use_behavioral", False),
+        use_llm=getattr(args, "use_llm", False),
+        use_virustotal=getattr(args, "use_virustotal", False),
+        vt_api_key=getattr(args, "vt_api_key", None),
+        vt_upload_files=getattr(args, "vt_upload_files", False),
+        use_aidefense=getattr(args, "use_aidefense", False),
+        aidefense_api_key=getattr(args, "aidefense_api_key", None),
+        aidefense_api_url=getattr(args, "aidefense_api_url", None),
+        use_trigger=getattr(args, "use_trigger", False),
+    )
 
-    # -- Core analysers (policy-driven) ------------------------------------
-    if policy.analyzers.static:
-        custom_rules = getattr(args, "custom_rules", None)
-        analyzers.append(StaticAnalyzer(custom_yara_rules_path=custom_rules, policy=policy))
-    if policy.analyzers.bytecode:
-        analyzers.append(BytecodeAnalyzer())
-    if policy.analyzers.pipeline:
-        analyzers.append(PipelineAnalyzer(policy=policy))
-
-    # -- Optional analysers (flag-driven) ----------------------------------
-    if getattr(args, "use_behavioral", False):
-        try:
-            analyzers.append(BehavioralAnalyzer())
+    # Emit status messages for the optional analyzers that were activated.
+    for a in analyzers:
+        name = a.get_name()
+        if name == "behavioral":
             status("Using behavioral analyzer (static dataflow analysis)")
-        except Exception as e:
-            logger.warning("Could not initialise behavioral analyzer: %s", e)
-
-    if getattr(args, "use_llm", False):
-        if not LLM_AVAILABLE:
-            logger.warning("LLM analyzer requested but dependencies not installed.  pip install litellm anthropic")
-        else:
-            try:
-                api_key = os.getenv("SKILL_SCANNER_LLM_API_KEY")
-                model = os.getenv("SKILL_SCANNER_LLM_MODEL") or "claude-3-5-sonnet-20241022"
-                base_url = os.getenv("SKILL_SCANNER_LLM_BASE_URL")
-                api_version = os.getenv("SKILL_SCANNER_LLM_API_VERSION")
-                analyzers.append(LLMAnalyzer(model=model, api_key=api_key, base_url=base_url, api_version=api_version))
-                status(f"Using LLM analyzer with model: {model}")
-            except Exception as e:
-                logger.warning("Could not initialise LLM analyzer: %s", e)
-
-    if getattr(args, "use_virustotal", False):
-        vt_key = getattr(args, "vt_api_key", None) or os.getenv("VIRUSTOTAL_API_KEY")
-        if not vt_key:
-            logger.warning("VirusTotal requested but no API key.  Set VIRUSTOTAL_API_KEY or use --vt-api-key")
-        else:
-            try:
-                from ..core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
-
-                upload = getattr(args, "vt_upload_files", False)
-                analyzers.append(VirusTotalAnalyzer(api_key=vt_key, enabled=True, upload_files=upload))
-                mode = "with file uploads" if upload else "hash-only mode"
-                status(f"Using VirusTotal binary file scanner ({mode})")
-            except Exception as e:
-                logger.warning("Could not initialise VirusTotal analyzer: %s", e)
-
-    if getattr(args, "use_aidefense", False):
-        ai_key = getattr(args, "aidefense_api_key", None) or os.getenv("AI_DEFENSE_API_KEY")
-        if not ai_key:
-            logger.warning("AI Defense requested but no API key.  Set AI_DEFENSE_API_KEY or use --aidefense-api-key")
-        else:
-            try:
-                from ..core.analyzers.aidefense_analyzer import AIDefenseAnalyzer
-
-                ai_url = getattr(args, "aidefense_api_url", None) or os.getenv("AI_DEFENSE_API_URL")
-                analyzers.append(AIDefenseAnalyzer(api_key=ai_key, api_url=ai_url))
-                status("Using AI Defense analyzer")
-            except Exception as e:
-                logger.warning("Could not initialise AI Defense analyzer: %s", e)
-
-    if getattr(args, "use_trigger", False):
-        try:
-            from ..core.analyzers.trigger_analyzer import TriggerAnalyzer
-
-            analyzers.append(TriggerAnalyzer())
+        elif name == "llm":
+            status(f"Using LLM analyzer with model: {getattr(a, 'model', 'unknown')}")
+        elif name == "virustotal":
+            mode = "with file uploads" if getattr(a, "upload_files", False) else "hash-only mode"
+            status(f"Using VirusTotal binary file scanner ({mode})")
+        elif name == "aidefense":
+            status("Using AI Defense analyzer")
+        elif name == "trigger":
             status("Using Trigger analyzer (description specificity analysis)")
-        except Exception as e:
-            logger.warning("Could not initialise Trigger analyzer: %s", e)
 
     return analyzers
 

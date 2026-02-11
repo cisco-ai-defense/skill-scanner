@@ -24,11 +24,8 @@ import time
 from pathlib import Path
 
 from .analyzability import compute_analyzability
+from .analyzer_factory import build_core_analyzers
 from .analyzers.base import BaseAnalyzer
-from .analyzers.bytecode_analyzer import BytecodeAnalyzer
-from .analyzers.pipeline_analyzer import PipelineAnalyzer
-from .analyzers.static import StaticAnalyzer
-from .analyzers.virustotal_analyzer import VirusTotalAnalyzer
 from .extractors.content_extractor import ContentExtractor
 from .loader import SkillLoader, SkillLoadError
 from .models import Finding, Report, ScanResult, Severity, Skill, ThreatCategory
@@ -125,17 +122,13 @@ class SkillScanner:
         self.policy = policy or ScanPolicy.default()
 
         if analyzers is None:
-            self.analyzers: list[BaseAnalyzer] = []
-
-            # Respect per-analyzer enable/disable from policy
-            if self.policy.analyzers.static:
-                self.analyzers.append(StaticAnalyzer(policy=self.policy))
-            if self.policy.analyzers.bytecode:
-                self.analyzers.append(BytecodeAnalyzer())
-            if self.policy.analyzers.pipeline:
-                self.analyzers.append(PipelineAnalyzer(policy=self.policy))
+            # Delegate to the centralised factory so core analyzer
+            # construction is defined in exactly one place.
+            self.analyzers: list[BaseAnalyzer] = build_core_analyzers(self.policy)
 
             if use_virustotal and virustotal_api_key:
+                from .analyzers.virustotal_analyzer import VirusTotalAnalyzer
+
                 vt_analyzer = VirusTotalAnalyzer(
                     api_key=virustotal_api_key, enabled=True, upload_files=virustotal_upload_files
                 )
@@ -201,13 +194,7 @@ class SkillScanner:
             all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
 
         # Apply severity overrides from policy
-        for finding in all_findings:
-            override = self.policy.get_severity_override(finding.rule_id)
-            if override:
-                try:
-                    finding.severity = Severity(override)
-                except (ValueError, KeyError):
-                    logger.warning("Invalid severity override '%s' for rule %s", override, finding.rule_id)
+        self._apply_severity_overrides(all_findings)
 
         # Compute analyzability score
         analyzability = compute_analyzability(skill, policy=self.policy)
@@ -228,6 +215,37 @@ class SkillScanner:
         )
 
         return result
+
+    def _apply_severity_overrides(self, findings: list) -> None:
+        """Apply severity overrides from both legacy ``severity_overrides`` and
+        the extensible ``rule_properties`` map.
+
+        Precedence (highest first):
+        1. ``severity_overrides`` (legacy list – backward compatible)
+        2. ``rule_properties.<rule_id>.severity``
+        3. Analyzer default (no change)
+        """
+        for finding in findings:
+            # Legacy severity_overrides take first priority
+            override = self.policy.get_severity_override(finding.rule_id)
+            if override:
+                try:
+                    finding.severity = Severity(override)
+                except (ValueError, KeyError):
+                    logger.warning("Invalid severity override '%s' for rule %s", override, finding.rule_id)
+                continue
+
+            # Extensible rule_properties severity (second priority)
+            rp_severity = self.policy.get_rule_property(finding.rule_id, "severity")
+            if rp_severity:
+                try:
+                    finding.severity = Severity(rp_severity)
+                except (ValueError, KeyError):
+                    logger.warning(
+                        "Invalid rule_properties severity '%s' for rule %s",
+                        rp_severity,
+                        finding.rule_id,
+                    )
 
     def scan_directory(self, skills_directory: Path, recursive: bool = False, check_overlap: bool = False) -> Report:
         """
@@ -292,13 +310,7 @@ class SkillScanner:
                     all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
 
                 # Apply severity overrides from policy
-                for finding in all_findings:
-                    override = self.policy.get_severity_override(finding.rule_id)
-                    if override:
-                        try:
-                            finding.severity = Severity(override)
-                        except (ValueError, KeyError):
-                            logger.warning("Invalid severity override '%s' for rule %s", override, finding.rule_id)
+                self._apply_severity_overrides(all_findings)
 
                 # Compute analyzability score
                 analyzability = compute_analyzability(skill, policy=self.policy)

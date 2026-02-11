@@ -32,22 +32,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import os
 
-from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
-from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.analyzer_factory import build_analyzers
+from skill_scanner.core.scan_policy import ScanPolicy
 from skill_scanner.core.scanner import SkillScanner
 
 
 def scan_skill_and_get_findings(skill_dir: Path, use_llm: bool = False):
     """Scan a skill and return findings grouped by category+severity."""
-    analyzers = [StaticAnalyzer()]
+    policy = ScanPolicy.default()
+    analyzers = build_analyzers(policy, use_llm=use_llm)
 
-    if use_llm:
-        api_key = os.getenv("SKILL_SCANNER_LLM_API_KEY")
-        model = os.getenv("SKILL_SCANNER_LLM_MODEL", "claude-3-5-sonnet-20241022")
-        if api_key:
-            analyzers.append(LLMAnalyzer(model=model, api_key=api_key))
-
-    scanner = SkillScanner(analyzers=analyzers)
+    scanner = SkillScanner(analyzers=analyzers, policy=policy)
     result = scanner.scan_skill(skill_dir)
 
     # Group findings by category+severity

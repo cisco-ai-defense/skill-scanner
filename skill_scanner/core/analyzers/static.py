@@ -146,10 +146,7 @@ class StaticAnalyzer(BaseAnalyzer):
             policy: Scan policy for org-specific allowlists and rule scoping.
                 If None, loads built-in defaults.
         """
-        super().__init__("static_analyzer")
-
-        # Load policy (defaults if not provided)
-        self.policy = policy or ScanPolicy.default()
+        super().__init__("static_analyzer", policy=policy)
 
         self.rule_loader = RuleLoader(rules_file)
         self.rule_loader.load_rules()
@@ -279,9 +276,13 @@ class StaticAnalyzer(BaseAnalyzer):
         findings = []
         manifest = skill.manifest
 
-        if len(manifest.name) > self.policy.file_limits.max_name_length or not _SKILL_NAME_PATTERN.fullmatch(
-            manifest.name or ""
-        ):
+        # Per-rule overrides via rule_properties take priority over global file_limits
+        max_name_length = self.policy.get_rule_property_int(
+            "MANIFEST_INVALID_NAME",
+            "max_name_length",
+            default=self.policy.file_limits.max_name_length,
+        )
+        if len(manifest.name) > max_name_length or not _SKILL_NAME_PATTERN.fullmatch(manifest.name or ""):
             findings.append(
                 Finding(
                     id=self._generate_finding_id("MANIFEST_INVALID_NAME", "manifest"),
@@ -291,7 +292,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     title="Skill name does not follow agent skills naming rules",
                     description=(
                         f"Skill name '{manifest.name}' is invalid. Agent skills require lowercase letters, numbers, "
-                        f"and hyphens only, with a maximum length of {self.policy.file_limits.max_name_length} characters."
+                        f"and hyphens only, with a maximum length of {max_name_length} characters."
                     ),
                     file_path="SKILL.md",
                     remediation="Rename the skill to match `[a-z0-9-]{1,64}` (e.g., 'pdf-processing')",
@@ -299,7 +300,12 @@ class StaticAnalyzer(BaseAnalyzer):
                 )
             )
 
-        if len(manifest.description or "") > self.policy.file_limits.max_description_length:
+        max_desc_length = self.policy.get_rule_property_int(
+            "MANIFEST_DESCRIPTION_TOO_LONG",
+            "max_description_length",
+            default=self.policy.file_limits.max_description_length,
+        )
+        if len(manifest.description or "") > max_desc_length:
             findings.append(
                 Finding(
                     id=self._generate_finding_id("MANIFEST_DESCRIPTION_TOO_LONG", "manifest"),
@@ -309,15 +315,20 @@ class StaticAnalyzer(BaseAnalyzer):
                     title="Skill description exceeds agent skills length limit",
                     description=(
                         f"Skill description is {len(manifest.description)} characters; Agent skills limit the "
-                        f"`description` field to {self.policy.file_limits.max_description_length} characters."
+                        f"`description` field to {max_desc_length} characters."
                     ),
                     file_path="SKILL.md",
-                    remediation=f"Shorten the description to {self.policy.file_limits.max_description_length} characters or fewer while keeping it specific",
+                    remediation=f"Shorten the description to {max_desc_length} characters or fewer while keeping it specific",
                     analyzer="static",
                 )
             )
 
-        if len(manifest.description) < self.policy.file_limits.min_description_length:
+        min_desc_length = self.policy.get_rule_property_int(
+            "SOCIAL_ENG_VAGUE_DESCRIPTION",
+            "min_description_length",
+            default=self.policy.file_limits.min_description_length,
+        )
+        if len(manifest.description) < min_desc_length:
             findings.append(
                 Finding(
                     id=self._generate_finding_id("SOCIAL_ENG_VAGUE_DESCRIPTION", "manifest"),
@@ -426,8 +437,14 @@ class StaticAnalyzer(BaseAnalyzer):
 
     def _is_loop_with_exception_handler(self, content: str, loop_line_num: int) -> bool:
         """Check if a while True loop has an exception handler in surrounding context."""
+        # Number of lines to scan after the loop; configurable via rule_properties
+        context_size = self.policy.get_rule_property_int(
+            "RESOURCE_ABUSE_INFINITE_LOOP",
+            "exception_handler_context_lines",
+            default=20,
+        )
         lines = content.split("\n")
-        context_lines = lines[loop_line_num - 1 : min(loop_line_num + 20, len(lines))]
+        context_lines = lines[loop_line_num - 1 : min(loop_line_num + context_size, len(lines))]
         context_text = "\n".join(context_lines)
 
         for pattern in _EXCEPTION_PATTERNS:
@@ -479,12 +496,14 @@ class StaticAnalyzer(BaseAnalyzer):
 
     def _scan_referenced_files(self, skill: Skill) -> list[Finding]:
         """Scan files referenced in instruction body with recursive scanning."""
-        findings = []
-        findings.extend(
-            self._scan_references_recursive(
-                skill, skill.referenced_files, max_depth=self.policy.file_limits.max_reference_depth
-            )
+        # Per-rule override via rule_properties for reference depth
+        max_depth = self.policy.get_rule_property_int(
+            "LAZY_LOAD_DEEP_NESTING",
+            "max_reference_depth",
+            default=self.policy.file_limits.max_reference_depth,
         )
+        findings = []
+        findings.extend(self._scan_references_recursive(skill, skill.referenced_files, max_depth=max_depth))
         return findings
 
     def _scan_references_recursive(
@@ -633,6 +652,11 @@ class StaticAnalyzer(BaseAnalyzer):
         STRUCTURED_EXTENSIONS = self.policy.file_classification.structured_extensions
         ARCHIVE_EXTENSIONS = self.policy.file_classification.archive_extensions
 
+        # Magika confidence threshold for mismatch detection (configurable via rule_properties)
+        min_confidence = (
+            self.policy.get_rule_property_int("FILE_MAGIC_MISMATCH", "min_confidence_pct", default=80) / 100.0
+        )
+
         for skill_file in skill.files:
             file_path_obj = Path(skill_file.relative_path)
             ext = file_path_obj.suffix.lower()
@@ -642,7 +666,7 @@ class StaticAnalyzer(BaseAnalyzer):
             # Run file magic mismatch check on ALL files with known extensions
             # (regardless of whether they're classified as binary)
             if skill_file.path.exists():
-                mismatch = check_extension_mismatch(skill_file.path)
+                mismatch = check_extension_mismatch(skill_file.path, min_confidence=min_confidence)
                 if mismatch:
                     mismatch_severity, mismatch_desc, magic_match = mismatch
                     severity_map = {
@@ -665,6 +689,7 @@ class StaticAnalyzer(BaseAnalyzer):
                                 "actual_type": magic_match.content_type,
                                 "actual_family": magic_match.content_family,
                                 "claimed_extension": ext,
+                                "confidence_score": magic_match.score,
                             },
                         )
                     )
@@ -1295,8 +1320,18 @@ class StaticAnalyzer(BaseAnalyzer):
         # Post-filter: apply policy zero-width steganography thresholds
         # The YARA rule has built-in thresholds (50 with decode, 200 alone).
         # The policy allows raising these thresholds (more permissive) to reduce FPs.
-        zw_threshold_decode = self.policy.analysis_thresholds.zerowidth_threshold_with_decode
-        zw_threshold_alone = self.policy.analysis_thresholds.zerowidth_threshold_alone
+        # Per-rule overrides (rule_properties) take priority over global thresholds.
+        _steg_rule = "YARA_prompt_injection_unicode_steganography"
+        zw_threshold_decode = self.policy.get_rule_property_int(
+            _steg_rule,
+            "zerowidth_threshold_with_decode",
+            default=self.policy.analysis_thresholds.zerowidth_threshold_with_decode,
+        )
+        zw_threshold_alone = self.policy.get_rule_property_int(
+            _steg_rule,
+            "zerowidth_threshold_alone",
+            default=self.policy.analysis_thresholds.zerowidth_threshold_alone,
+        )
 
         if zw_threshold_decode != 50 or zw_threshold_alone != 200:
             # Only run this expensive check if policy overrides the default thresholds
@@ -1362,7 +1397,13 @@ class StaticAnalyzer(BaseAnalyzer):
                 largest_file = sf
 
         # Check for excessive file count (possible resource waste)
-        if len(skill.files) > self.policy.file_limits.max_file_count:
+        # Per-rule override via rule_properties takes priority over global file_limits
+        max_file_count = self.policy.get_rule_property_int(
+            "EXCESSIVE_FILE_COUNT",
+            "max_file_count",
+            default=self.policy.file_limits.max_file_count,
+        )
+        if len(skill.files) > max_file_count:
             findings.append(
                 Finding(
                     id=self._generate_finding_id("EXCESSIVE_FILE_COUNT", str(len(skill.files))),
@@ -1386,7 +1427,13 @@ class StaticAnalyzer(BaseAnalyzer):
             )
 
         # Check for oversized individual files
-        if largest_file and largest_size > self.policy.file_limits.max_file_size_bytes:
+        # Per-rule override via rule_properties takes priority over global file_limits
+        max_file_size = self.policy.get_rule_property_int(
+            "OVERSIZED_FILE",
+            "max_file_size_bytes",
+            default=self.policy.file_limits.max_file_size_bytes,
+        )
+        if largest_file and largest_size > max_file_size:
             findings.append(
                 Finding(
                     id=self._generate_finding_id("OVERSIZED_FILE", largest_file.relative_path),
@@ -1469,11 +1516,21 @@ class StaticAnalyzer(BaseAnalyzer):
                         if any(marker in value for marker in placeholder_markers):
                             continue
 
-            # Tool chaining post-filters (controlled by mode)
+            # Tool chaining post-filters (controlled by mode + rule_properties)
             if rule_name == "tool_chaining_abuse_generic":
+                _tc_rule_id = "YARA_tool_chaining_abuse_generic"
                 line_content = string_match.get("line_content", "")
                 lower_line = line_content.lower()
-                exfil_hints = ("send", "upload", "transmit", "webhook", "slack", "exfil", "forward")
+                # Configurable exfil hint words via rule_properties
+                _default_exfil = "send,upload,transmit,webhook,slack,exfil,forward"
+                exfil_raw = self.policy.get_rule_property(
+                    _tc_rule_id,
+                    "exfil_hints",
+                    default=_default_exfil,
+                )
+                exfil_hints = tuple(
+                    h.strip() for h in (exfil_raw.split(",") if isinstance(exfil_raw, str) else exfil_raw)
+                )
 
                 if self.yara_mode.tool_chaining.filter_generic_http_verbs:
                     if (
@@ -1484,9 +1541,18 @@ class StaticAnalyzer(BaseAnalyzer):
                         continue
 
                 if self.yara_mode.tool_chaining.filter_api_documentation:
-                    if any(
-                        token in line_content for token in ("@app.", "app.", "router.", "route", "endpoint")
-                    ) and not any(hint in lower_line for hint in exfil_hints):
+                    _default_api = "@app.,app.,router.,route,endpoint"
+                    api_raw = self.policy.get_rule_property(
+                        _tc_rule_id,
+                        "api_doc_tokens",
+                        default=_default_api,
+                    )
+                    api_doc_tokens = tuple(
+                        t.strip() for t in (api_raw.split(",") if isinstance(api_raw, str) else api_raw)
+                    )
+                    if any(token in line_content for token in api_doc_tokens) and not any(
+                        hint in lower_line for hint in exfil_hints
+                    ):
                         continue
 
                 if self.yara_mode.tool_chaining.filter_email_field_mentions:
@@ -1495,12 +1561,19 @@ class StaticAnalyzer(BaseAnalyzer):
 
             # Unicode steganography post-filters
             if rule_name == "prompt_injection_unicode_steganography":
+                _steg_rule_id = "YARA_prompt_injection_unicode_steganography"
                 line_content = string_match.get("line_content", "")
                 matched_data = string_match.get("matched_data", "")
                 has_ascii_letters = any("A" <= char <= "Z" or "a" <= char <= "z" for char in line_content)
 
                 # Filter short matches in non-Latin context (likely legitimate i18n)
-                if len(matched_data) <= 2 and not has_ascii_letters:
+                # Configurable via rule_properties
+                short_match_max = self.policy.get_rule_property_int(
+                    _steg_rule_id,
+                    "short_match_max_chars",
+                    default=2,
+                )
+                if len(matched_data) <= short_match_max and not has_ascii_letters:
                     continue
 
                 # Filter if context suggests legitimate internationalization
@@ -1517,8 +1590,13 @@ class StaticAnalyzer(BaseAnalyzer):
                     or ("\u0590" <= char <= "\u05ff")  # Hebrew
                     for char in line_content
                 )
-                # If the line has legitimate non-Latin text but matched only 1-2 zero-width chars, skip
-                if cyrillic_cjk_pattern and len(matched_data) < 10:
+                # If the line has legitimate non-Latin text but matched only a few zero-width chars, skip
+                cyrillic_cjk_min = self.policy.get_rule_property_int(
+                    _steg_rule_id,
+                    "cyrillic_cjk_min_chars",
+                    default=10,
+                )
+                if cyrillic_cjk_pattern and len(matched_data) < cyrillic_cjk_min:
                     continue
 
             finding_id = self._generate_finding_id(f"YARA_{rule_name}", f"{file_path}:{string_match['line_number']}")

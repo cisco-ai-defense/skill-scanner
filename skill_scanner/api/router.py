@@ -37,9 +37,7 @@ try:
 except ImportError:
     raise ImportError("API server requires FastAPI. Install with: pip install fastapi uvicorn python-multipart")
 
-from ..core.analyzers.bytecode_analyzer import BytecodeAnalyzer
-from ..core.analyzers.pipeline_analyzer import PipelineAnalyzer
-from ..core.analyzers.static import StaticAnalyzer
+from ..core.analyzer_factory import build_analyzers
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
 
@@ -181,7 +179,7 @@ def _resolve_policy(policy_str: str | None) -> ScanPolicy:
     """Resolve a policy string to a ScanPolicy object."""
     if policy_str is None:
         return ScanPolicy.default()
-    if policy_str in ("strict", "balanced", "permissive"):
+    if policy_str.lower() in ("strict", "balanced", "permissive"):
         return ScanPolicy.from_preset(policy_str)
     policy_path = Path(policy_str)
     if policy_path.exists():
@@ -204,48 +202,21 @@ def _build_analyzers(
     aidefense_api_url: str | None = None,
     use_trigger: bool = False,
 ):
-    """Build the analyzer list from policy flags and request parameters."""
-    import os
-
-    from ..core.analyzers.base import BaseAnalyzer
-
-    analyzers: list[BaseAnalyzer] = []
-
-    if policy.analyzers.static:
-        analyzers.append(StaticAnalyzer(custom_yara_rules_path=custom_rules, policy=policy))
-    if policy.analyzers.bytecode:
-        analyzers.append(BytecodeAnalyzer())
-    if policy.analyzers.pipeline:
-        analyzers.append(PipelineAnalyzer(policy=policy))
-
-    if use_behavioral and BEHAVIORAL_AVAILABLE:
-        analyzers.append(BehavioralAnalyzer())
-
-    if use_llm and LLM_AVAILABLE:
-        llm_model = os.getenv("SKILL_SCANNER_LLM_MODEL")
-        provider_str = llm_provider or "anthropic"
-        if llm_model:
-            analyzers.append(LLMAnalyzer(model=llm_model))
-        else:
-            analyzers.append(LLMAnalyzer(provider=provider_str))
-
-    if use_virustotal and VIRUSTOTAL_AVAILABLE:
-        key = vt_api_key or os.getenv("VIRUSTOTAL_API_KEY")
-        if not key:
-            raise ValueError("VirusTotal API key required (set VIRUSTOTAL_API_KEY or pass vt_api_key)")
-        analyzers.append(VirusTotalAnalyzer(api_key=key, enabled=True, upload_files=vt_upload_files))
-
-    if use_aidefense and AIDEFENSE_AVAILABLE:
-        key = aidefense_api_key or os.getenv("AI_DEFENSE_API_KEY")
-        if not key:
-            raise ValueError("AI Defense API key required (set AI_DEFENSE_API_KEY or pass aidefense_api_key)")
-        url = aidefense_api_url or os.getenv("AI_DEFENSE_API_URL")
-        analyzers.append(AIDefenseAnalyzer(api_key=key, api_url=url))
-
-    if use_trigger and TRIGGER_AVAILABLE:
-        analyzers.append(TriggerAnalyzer())
-
-    return analyzers
+    """Build the analyzer list — delegates to the centralized factory."""
+    return build_analyzers(
+        policy,
+        custom_yara_rules_path=custom_rules,
+        use_behavioral=use_behavioral,
+        use_llm=use_llm,
+        llm_provider=llm_provider,
+        use_virustotal=use_virustotal,
+        vt_api_key=vt_api_key,
+        vt_upload_files=vt_upload_files,
+        use_aidefense=use_aidefense,
+        aidefense_api_key=aidefense_api_key,
+        aidefense_api_url=aidefense_api_url,
+        use_trigger=use_trigger,
+    )
 
 
 # ---------------------------------------------------------------------------

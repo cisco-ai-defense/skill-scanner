@@ -151,8 +151,7 @@ class PipelineAnalyzer(BaseAnalyzer):
     """Analyzes command pipelines for multi-step attack patterns."""
 
     def __init__(self, policy: ScanPolicy | None = None):
-        super().__init__(name="pipeline")
-        self.policy = policy or ScanPolicy.default()
+        super().__init__(name="pipeline", policy=policy)
         self._sensitive_file_patterns_cache: list[re.Pattern] | None = None
 
     @property
@@ -326,8 +325,14 @@ class PipelineAnalyzer(BaseAnalyzer):
 
                     # Demote instructional one-liners in SKILL.md when URL is unknown.
                     # Keep visible, but lower noise in policy/actionable metrics.
+                    # Configurable via rule_properties["PIPELINE_TAINT_FLOW"]["demote_instructional"]
                     instructional_skillmd = self._is_instructional_skillmd_pipeline(chain)
-                    if instructional_skillmd and not known_installer:
+                    demote_instructional = self.policy.get_rule_property_bool(
+                        "PIPELINE_TAINT_FLOW",
+                        "demote_instructional",
+                        default=True,
+                    )
+                    if demote_instructional and instructional_skillmd and not known_installer:
                         if severity == Severity.CRITICAL:
                             severity = Severity.MEDIUM
                         elif severity == Severity.HIGH:
@@ -339,8 +344,16 @@ class PipelineAnalyzer(BaseAnalyzer):
 
                     # Demote findings in documentation/reference files
                     # since they're describing usage, not executing
+                    # Configurable via rule_properties["PIPELINE_TAINT_FLOW"]["demote_in_docs"]
+                    demote_in_docs = self.policy.get_rule_property_bool(
+                        "PIPELINE_TAINT_FLOW",
+                        "demote_in_docs",
+                        default=True,
+                    )
                     is_doc = self._DOC_PATH_PATTERNS.search(chain.source_file)
-                    if is_doc and not known_installer and not instructional_skillmd:  # Don't double-demote
+                    if (
+                        demote_in_docs and is_doc and not known_installer and not instructional_skillmd
+                    ):  # Don't double-demote
                         if severity == Severity.CRITICAL:
                             severity = Severity.MEDIUM
                         elif severity == Severity.HIGH:

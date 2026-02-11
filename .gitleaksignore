@@ -12,3 +12,7 @@ tests/test_policy_integration.py:stripe-access-token:360
 tests/test_policy_integration.py:stripe-access-token:362
 tests/test_policy_integration.py:stripe-access-token:381
 skill_scanner/data/default_policy.yaml:stripe-access-token:202
+tests/test_policy_knobs.py:stripe-access-token:355
+tests/test_policy_knobs.py:stripe-access-token:362
+tests/test_policy_knobs.py:stripe-access-token:377
+tests/test_policy_knobs.py:stripe-access-token:388

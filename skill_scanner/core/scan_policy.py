@@ -236,6 +236,11 @@ class ScanPolicy:
     severity_overrides: list[SeverityOverride] = field(default_factory=list)
     disabled_rules: set[str] = field(default_factory=set)
 
+    # Extensible per-rule property overrides.
+    # Keys are rule IDs; values are ``dict[str, Any]`` of property → value.
+    # Analyzers query via ``get_rule_property()``; unknown keys are ignored.
+    rule_properties: dict[str, dict[str, Any]] = field(default_factory=dict)
+
     # -----------------------------------------------------------------------
     # Convenience helpers
     # -----------------------------------------------------------------------
@@ -246,6 +251,50 @@ class ScanPolicy:
             if ovr.rule_id == rule_id:
                 return ovr.severity
         return None
+
+    def get_rule_property(self, rule_id: str, key: str, default: Any = None) -> Any:
+        """Return a per-rule property value, falling back to *default*.
+
+        This is the main accessor for the extensible ``rule_properties`` map.
+        Analyzers use it to read rule-specific tuning knobs while preserving
+        backward-compatible defaults when the key is absent.
+
+        Example::
+
+            threshold = policy.get_rule_property(
+                "YARA_prompt_injection_unicode_steganography",
+                "zerowidth_threshold_with_decode",
+                default=policy.analysis_thresholds.zerowidth_threshold_with_decode,
+            )
+        """
+        props = self.rule_properties.get(rule_id)
+        if props is None:
+            return default
+        return props.get(key, default)
+
+    def get_rule_property_int(self, rule_id: str, key: str, default: int) -> int:
+        """Like :meth:`get_rule_property` but coerces to ``int``."""
+        val = self.get_rule_property(rule_id, key, default)
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            logger.warning(
+                "rule_properties[%s][%s] = %r is not a valid int; using default %d",
+                rule_id,
+                key,
+                val,
+                default,
+            )
+            return default
+
+    def get_rule_property_bool(self, rule_id: str, key: str, default: bool) -> bool:
+        """Like :meth:`get_rule_property` but coerces to ``bool``."""
+        val = self.get_rule_property(rule_id, key, default)
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val.lower() in ("true", "yes", "1")
+        return bool(val)
 
     @property
     def _compiled_doc_filename_re(self) -> re.Pattern | None:
@@ -430,6 +479,11 @@ class ScanPolicy:
             ),
             severity_overrides=severity_overrides,
             disabled_rules=set(d.get("disabled_rules", [])),
+            rule_properties={
+                str(rule_id): dict(props)
+                for rule_id, props in d.get("rule_properties", {}).items()
+                if isinstance(props, dict)
+            },
         )
 
     def _to_dict(self) -> dict[str, Any]:
@@ -498,4 +552,7 @@ class ScanPolicy:
                 {"rule_id": o.rule_id, "severity": o.severity, "reason": o.reason} for o in self.severity_overrides
             ],
             "disabled_rules": sorted(self.disabled_rules),
+            "rule_properties": {rule_id: dict(props) for rule_id, props in sorted(self.rule_properties.items())}
+            if self.rule_properties
+            else {},
         }

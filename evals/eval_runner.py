@@ -31,8 +31,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import os
 
-from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.analyzer_factory import build_analyzers
 from skill_scanner.core.models import Severity
+from skill_scanner.core.scan_policy import ScanPolicy
 from skill_scanner.core.scanner import SkillScanner
 
 
@@ -68,29 +69,10 @@ class EvaluationRunner:
         self.use_meta = use_meta
         self.meta_analyzer = None
 
-        # Build analyzers list
-        analyzers = [StaticAnalyzer()]
-
-        if use_llm:
-            try:
-                from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
-
-                api_key = os.getenv("SKILL_SCANNER_LLM_API_KEY")
-                model = os.getenv("SKILL_SCANNER_LLM_MODEL", "claude-3-5-sonnet-20241022")
-                base_url = os.getenv("SKILL_SCANNER_LLM_BASE_URL")
-                api_version = os.getenv("SKILL_SCANNER_LLM_API_VERSION")
-
-                if api_key:
-                    llm_analyzer = LLMAnalyzer(
-                        model=model,
-                        api_key=api_key,
-                        base_url=base_url,
-                        api_version=api_version,
-                    )
-                    analyzers.append(llm_analyzer)
-                    print(f"Using LLM analyzer with model: {model}")
-            except Exception as e:
-                print(f"Warning: Could not initialize LLM analyzer: {e}")
+        # Delegate to the centralized factory so eval results match
+        # real-world CLI/API scans (same analyzers, same policy).
+        policy = ScanPolicy.default()
+        analyzers = build_analyzers(policy, use_llm=use_llm)
 
         # Initialize Meta-Analyzer if requested
         if use_meta:
@@ -102,7 +84,7 @@ class EvaluationRunner:
             except Exception as e:
                 print(f"Warning: Could not initialize Meta-Analyzer: {e}")
 
-        self.scanner = SkillScanner(analyzers=analyzers)
+        self.scanner = SkillScanner(analyzers=analyzers, policy=policy)
 
     def run_evaluation(self) -> dict[str, Any]:
         """

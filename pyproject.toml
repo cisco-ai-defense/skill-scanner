@@ -59,6 +59,8 @@ dependencies = [
     "yara-python>=4.5.4",
     "python-dotenv>=1.0.0",
     "httpx>=0.28.1",
+    # AI-powered file type detection (200+ types, ~99% accuracy)
+    "magika>=0.6.0",
     # LLM support (required)
     "anthropic>=0.40.0",
     "openai>=1.0.0",
@@ -167,6 +169,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests that hit external services (run with -m integration)",
     "requires_llm: marks tests that require LLM API keys",
+    "e2e: marks end-to-end tests (CLI subprocess + full scan chain)",
 ]
 
 [tool.coverage.run]

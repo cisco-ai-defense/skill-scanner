@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from ..models import Finding, Severity, Skill, SkillFile, ThreatCategory
+from ..scan_policy import ScanPolicy
 from .base import BaseAnalyzer
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,8 @@ logger = logging.getLogger(__name__)
 class BytecodeAnalyzer(BaseAnalyzer):
     """Analyzes Python bytecode files (.pyc) for integrity against source."""
 
-    def __init__(self):
-        super().__init__(name="bytecode")
+    def __init__(self, policy: ScanPolicy | None = None):
+        super().__init__(name="bytecode", policy=policy)
 
     def _generate_finding_id(self, rule_id: str, context: str) -> str:
         """Generate a unique finding ID."""

@@ -27,6 +27,7 @@ Every organisation has a different security bar. A **scan policy** captures what
   - [analyzers](#analyzers)
   - [severity_overrides](#severity_overrides)
   - [disabled_rules](#disabled_rules)
+  - [rule_properties (Advanced)](#rule_properties-advanced)
 - [Interactive Configurator (TUI)](#interactive-configurator-tui)
 - [Migration from Legacy Flags](#migration-from-legacy-flags)
 - [Examples](#examples)
@@ -459,6 +460,102 @@ disabled_rules:
 
 **Important:** Do not list a rule in both `disabled_rules` and `rule_scoping`. If a rule is disabled, scoping entries for that rule are ignored.
 
+### rule_properties (Advanced)
+
+Per-rule property overrides for fine-grained tuning. This is an **advanced, opt-in** section — omit it entirely (or leave it empty) to keep all defaults.
+
+Each key is a rule ID; its value is a map of property names to values. Analyzers query these via `policy.get_rule_property(rule_id, key, default)` and fall back to global settings or built-in defaults when a key is absent.
+
+```yaml
+rule_properties:
+  # Override severity for a specific rule (alternative to severity_overrides)
+  PIPELINE_TAINT_FLOW:
+    severity: MEDIUM
+    demote_instructional: false   # disable instructional demotion
+    demote_in_docs: false         # keep full severity in doc files too
+
+  # Raise thresholds for file inventory rules
+  EXCESSIVE_FILE_COUNT:
+    max_file_count: 250
+  OVERSIZED_FILE:
+    max_file_size_bytes: 10485760   # 10 MB
+
+  # Tune manifest validation
+  MANIFEST_INVALID_NAME:
+    max_name_length: 128
+  SOCIAL_ENG_VAGUE_DESCRIPTION:
+    min_description_length: 10
+
+  # Raise zero-width thresholds for the steganography rule
+  YARA_prompt_injection_unicode_steganography:
+    zerowidth_threshold_with_decode: 100
+    zerowidth_threshold_alone: 500
+    short_match_max_chars: 4
+
+  # Widen the infinite-loop exception-handler scan window
+  RESOURCE_ABUSE_INFINITE_LOOP:
+    exception_handler_context_lines: 40
+
+  # Demote any bytecode rule you consider low-risk
+  BYTECODE_NO_SOURCE:
+    severity: MEDIUM
+```
+
+#### How it works
+
+| Behaviour | Detail |
+|---|---|
+| **Omitted entirely** | All rules use their built-in / global defaults. Zero behaviour change. |
+| **Unknown keys** | Silently ignored. Safe to add future properties before analyzers consume them. |
+| **Type coercion** | Typed accessors (`get_rule_property_int`, `get_rule_property_bool`) warn and fall back to the default on bad values. |
+| **Precedence** | For severity: `severity_overrides` (legacy list) > `rule_properties.{rule}.severity` > analyzer default. |
+| **Backward compatible** | Existing policies without `rule_properties` continue to work identically. |
+
+#### Currently supported per-rule properties
+
+**Universal (works on every rule)**
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `severity` | string | *(analyzer default)* | Override finding severity (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`). Legacy `severity_overrides` list takes precedence if both are set. |
+
+**Static analyzer — manifest & file inventory**
+
+| Rule ID | Property | Type | Default | Description |
+|---|---|---|---|---|
+| `MANIFEST_INVALID_NAME` | `max_name_length` | int | `64` | Max skill name length before this rule fires |
+| `MANIFEST_DESCRIPTION_TOO_LONG` | `max_description_length` | int | `1024` | Max description chars |
+| `SOCIAL_ENG_VAGUE_DESCRIPTION` | `min_description_length` | int | `20` | Min description chars |
+| `EXCESSIVE_FILE_COUNT` | `max_file_count` | int | `100` | Max files before this rule fires |
+| `OVERSIZED_FILE` | `max_file_size_bytes` | int | `5242880` | Max file size in bytes |
+| `LAZY_LOAD_DEEP_NESTING` | `max_reference_depth` | int | `5` | Max nested reference depth |
+| `RESOURCE_ABUSE_INFINITE_LOOP` | `exception_handler_context_lines` | int | `20` | Lines scanned after loop for exception handlers |
+
+**Static analyzer — Unicode steganography**
+
+| Rule ID | Property | Type | Default | Description |
+|---|---|---|---|---|
+| `YARA_prompt_injection_unicode_steganography` | `zerowidth_threshold_with_decode` | int | `50` | Zero-width char count threshold when decode patterns present |
+| `YARA_prompt_injection_unicode_steganography` | `zerowidth_threshold_alone` | int | `200` | Zero-width char count threshold without decode patterns |
+| `YARA_prompt_injection_unicode_steganography` | `short_match_max_chars` | int | `2` | Max matched chars to auto-skip in non-Latin context |
+| `YARA_prompt_injection_unicode_steganography` | `cyrillic_cjk_min_chars` | int | `10` | Min matched chars to keep when CJK/Cyrillic/Arabic/Hebrew present |
+
+**Static analyzer — YARA tool chaining**
+
+| Rule ID | Property | Type | Default | Description |
+|---|---|---|---|---|
+| `YARA_tool_chaining_abuse_generic` | `exfil_hints` | string | `send,upload,...` | Comma-separated exfiltration hint words |
+| `YARA_tool_chaining_abuse_generic` | `api_doc_tokens` | string | `@app.,app.,...` | Comma-separated API documentation tokens |
+
+**Pipeline analyzer**
+
+| Rule ID | Property | Type | Default | Description |
+|---|---|---|---|---|
+| `PIPELINE_TAINT_FLOW` | `demote_instructional` | bool | `true` | Lower severity for instructional `curl\|sh` in SKILL.md |
+| `PIPELINE_TAINT_FLOW` | `demote_in_docs` | bool | `true` | Lower severity for pipelines found in documentation files |
+
+> **Tip:** You can set `severity` on any rule via `rule_properties` as an alternative to the `severity_overrides` list. The list-based `severity_overrides` takes precedence if both are set for the same rule.
+
 ---
 
 ## Interactive Configurator (TUI)
@@ -478,6 +575,8 @@ The configurator:
 5. Saves to a YAML file
 
 For each section, you can add/remove individual items from lists, adjust numeric thresholds, and manage severity overrides.
+
+An **Advanced Rule Tuning** section at the bottom of the TUI provides opt-in access to `rule_properties`. It displays a summary of how many rule overrides are configured, and opens a text editor for the YAML-like per-rule format when clicked.
 
 ---
 
