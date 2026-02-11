@@ -8,7 +8,7 @@ then produces a comparison report.
 Usage:
     uv run python evals/policy_benchmark.py
     uv run python evals/policy_benchmark.py --corpus .local_benchmark/extracted_s3
-    uv run python evals/policy_benchmark.py --policies evals/policies/04_compliance_audit.yaml
+    uv run python evals/runners/policy_benchmark.py --policies evals/policies/04_compliance_audit.yaml
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 # Add parent to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from skill_scanner.core.models import Severity, ThreatCategory
 from skill_scanner.core.scan_policy import ScanPolicy
@@ -506,11 +506,11 @@ def generate_report(results: list[PolicyResult], output_path: Path) -> str:
 def main():
     parser = argparse.ArgumentParser(description="Run policy benchmark comparison")
     parser.add_argument("--eval-dir", default="evals/skills", help="Eval skills directory")
-    parser.add_argument("--corpus", default=".local_benchmark/extracted_s3", help="Large corpus directory")
+    parser.add_argument("--corpus", default=".local_benchmark/corpus", help="Large corpus directory")
     parser.add_argument("--policies", nargs="*", help="Specific policy files (default: all in evals/policies/)")
     parser.add_argument("--max-skills", type=int, default=0, help="Max skills to scan from corpus (0=all)")
-    parser.add_argument("--output", default="evals/POLICY_BENCHMARK_RESULTS.md", help="Output report path")
-    parser.add_argument("--json-output", default="evals/policy_benchmark_results.json", help="JSON output path")
+    parser.add_argument("--output", default="evals/results/POLICY_BENCHMARK_RESULTS.md", help="Output report path")
+    parser.add_argument("--json-output", default="evals/results/policy_benchmark_results.json", help="JSON output path")
     parser.add_argument("--skip-corpus", action="store_true", help="Skip corpus scan (eval only)")
     args = parser.parse_args()
 

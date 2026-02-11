@@ -99,10 +99,7 @@ Thumbs.db
 
 # Benchmark results (generated from local/internal corpus data)
 BENCHMARK_RESULTS.md
-evals/policy_benchmark_results.json
-evals/POLICY_BENCHMARK_RESULTS.md
-evals/preset_policy_benchmark_results.json
-evals/PRESET_POLICY_BENCHMARK_RESULTS.md
+evals/results/
 
 # User-generated scan policy (default TUI output)
 scan_policy.yaml
