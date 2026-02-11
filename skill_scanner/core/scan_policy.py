@@ -178,12 +178,18 @@ class CommandSafetyPolicy:
     - caution:   generally safe but context-dependent
     - risky:     can modify system or exfiltrate data
     - dangerous: direct code execution, network exfiltration
+
+    ``dangerous_arg_patterns`` is a list of regex strings that, when matched
+    against a full command line, immediately classify it as DANGEROUS.  These
+    are checked **in addition to** the built-in patterns in
+    ``command_safety._DANGEROUS_ARG_PATTERNS``.
     """
 
     safe_commands: set[str] = field(default_factory=set)
     caution_commands: set[str] = field(default_factory=set)
     risky_commands: set[str] = field(default_factory=set)
     dangerous_commands: set[str] = field(default_factory=set)
+    dangerous_arg_patterns: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -471,6 +477,7 @@ class ScanPolicy:
                 caution_commands=set(cs.get("caution_commands", [])),
                 risky_commands=set(cs.get("risky_commands", [])),
                 dangerous_commands=set(cs.get("dangerous_commands", [])),
+                dangerous_arg_patterns=list(cs.get("dangerous_arg_patterns", [])),
             ),
             analyzers=AnalyzersPolicy(
                 static=az.get("static", True),
@@ -542,6 +549,7 @@ class ScanPolicy:
                 "caution_commands": sorted(self.command_safety.caution_commands),
                 "risky_commands": sorted(self.command_safety.risky_commands),
                 "dangerous_commands": sorted(self.command_safety.dangerous_commands),
+                "dangerous_arg_patterns": self.command_safety.dangerous_arg_patterns,
             },
             "analyzers": {
                 "static": self.analyzers.static,

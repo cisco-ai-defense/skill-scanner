@@ -59,8 +59,6 @@ _SAFE_COMMANDS = frozenset(
         "cat",
         "head",
         "tail",
-        "less",
-        "more",
         "wc",
         "file",
         "stat",
@@ -72,7 +70,6 @@ _SAFE_COMMANDS = frozenset(
         "rg",
         "ag",
         "ack",
-        "find",
         "fd",
         "locate",
         "which",
@@ -120,21 +117,11 @@ _SAFE_COMMANDS = frozenset(
         "shasum",
         "cksum",
         "b2sum",
-        # Programming tools (read-only / check modes)
+        # Programming tools (kept in SAFE – dangerous invocations caught by arg patterns)
         "python",
         "python3",
         "node",
         "ruby",
-        # Version checks
-        "git",
-        "npm",
-        "pip",
-        "pip3",
-        "uv",
-        "cargo",
-        "go",
-        "java",
-        "javac",
     }
 )
 
@@ -174,6 +161,19 @@ _CAUTION_COMMANDS = frozenset(
         "apk",
         "yarn",
         "pnpm",
+        # GTFOBins-capable: safe in common use but can spawn shells / execute code
+        "find",  # -exec, -execdir can run arbitrary commands
+        "less",  # !command shell escape
+        "more",  # !command shell escape
+        "git",  # arbitrary code via hooks, subcommands
+        "npm",  # run/exec can execute arbitrary code
+        "pip",  # install can run setup.py
+        "pip3",  # install can run setup.py
+        "uv",  # run can execute arbitrary code
+        "cargo",  # run/build can execute build scripts
+        "go",  # run/generate can execute arbitrary code
+        "java",  # executes bytecode
+        "javac",  # compiler, can trigger annotation processors
     }
 )
 
@@ -244,8 +244,25 @@ _DANGEROUS_ARG_PATTERNS = [
     re.compile(r"\$\((?:curl|wget|bash|sh|python|perl|ruby|node|nc|ncat|netcat)[^)]*\)"),
     re.compile(r"`(?:curl|wget|bash|sh|python|perl|ruby|node|nc|ncat|netcat)[^`]*`"),
     re.compile(r"\|\s*(bash|sh|eval|exec|python)"),  # Pipe to shell
-    re.compile(r"--exec"),  # find --exec or similar
+    re.compile(r"-{1,2}exec\b"),  # find -exec / --exec or similar
     re.compile(r"&&\s*(rm|dd|curl|wget|bash|sh)"),  # Chain with dangerous
+    # --- GTFOBins-style abuse patterns ---
+    # Python/python3 with -c (inline code execution)
+    re.compile(r"\bpython[23]?\s+.*-c\s"),
+    # Node with -e/--eval (inline JS execution)
+    re.compile(r"\bnode\s+.*(?:-e|--eval)\s"),
+    # Ruby with -e (inline code execution)
+    re.compile(r"\bruby\s+.*-e\s"),
+    # env used to spawn a shell
+    re.compile(r"\benv\s+.*(?:/bin/(?:ba)?sh|/bin/(?:z|da|fi)sh)"),
+    # find with -exec/-execdir (arbitrary command execution)
+    re.compile(r"\bfind\s+.*-exec(?:dir)?\s"),
+    # less/more/man with shell escape (!)
+    re.compile(r"\b(?:less|more|man)\s+.*!\s*/bin/"),
+    # pip/pip3 install from untrusted index (supply-chain attack)
+    re.compile(r"\bpip[3]?\s+install\s+(?:--index-url|--extra-index-url|-i)\s"),
+    # git clone/remote chained with shell operators
+    re.compile(r"\bgit\s+(?:clone|remote\s+add)\s+.*[;&|]"),
 ]
 
 
@@ -345,6 +362,19 @@ def evaluate_command(raw_command: str, *, policy=None) -> CommandVerdict:
                 False,
             )
 
+    # Check policy-provided dangerous arg patterns (additive to built-in)
+    if policy is not None and hasattr(policy, "command_safety"):
+        for pat_str in getattr(policy.command_safety, "dangerous_arg_patterns", []):
+            try:
+                if re.search(pat_str, ctx.raw_command):
+                    return CommandVerdict(
+                        CommandRisk.DANGEROUS,
+                        f"Policy dangerous arg pattern matched: {pat_str}",
+                        False,
+                    )
+            except re.error:
+                pass  # Skip invalid regex patterns gracefully
+
     # Classify base command
     # Check safe first, then caution, then risky, then dangerous
     # But dangerous overrides all if matched
@@ -430,6 +460,68 @@ def evaluate_command(raw_command: str, *, policy=None) -> CommandVerdict:
                 f"Caution command '{base}' with pipeline/subshell",
                 False,
             )
+
+        # Safe sub-modes for GTFOBins-capable commands that were promoted from SAFE.
+        # These common read-only invocations are demoted back to SAFE.
+        if base == "find" and not any(a in ("-exec", "-execdir", "-ok", "-delete") for a in ctx.arguments):
+            return CommandVerdict(CommandRisk.SAFE, "find without exec/delete", True)
+
+        if base == "git":
+            _SAFE_GIT_SUBCMDS = frozenset(
+                {
+                    "status",
+                    "log",
+                    "diff",
+                    "branch",
+                    "show",
+                    "tag",
+                    "describe",
+                    "rev-parse",
+                    "ls-files",
+                    "remote",
+                    "fetch",
+                    "config",
+                }
+            )
+            if ctx.arguments and ctx.arguments[0] in _SAFE_GIT_SUBCMDS:
+                return CommandVerdict(
+                    CommandRisk.SAFE,
+                    f"git {ctx.arguments[0]} is read-only",
+                    True,
+                )
+
+        if base in ("less", "more") and not ctx.has_pipeline:
+            return CommandVerdict(CommandRisk.SAFE, f"'{base}' viewing file", True)
+
+        if base in ("npm", "pip", "pip3", "uv", "cargo", "go"):
+            _SAFE_PKG_SUBCMDS = frozenset(
+                {
+                    "list",
+                    "show",
+                    "info",
+                    "search",
+                    "outdated",
+                    "version",
+                    "help",
+                    "config",
+                    "view",
+                    "freeze",
+                }
+            )
+            if ctx.arguments and ctx.arguments[0] in _SAFE_PKG_SUBCMDS:
+                return CommandVerdict(
+                    CommandRisk.SAFE,
+                    f"{base} {ctx.arguments[0]} is read-only",
+                    True,
+                )
+
+        if base in ("java", "javac") and not ctx.has_pipeline:
+            return CommandVerdict(
+                CommandRisk.CAUTION,
+                f"'{base}' compilation/execution",
+                True,
+            )
+
         return CommandVerdict(
             CommandRisk.CAUTION,
             f"Generally safe command: '{base}'",

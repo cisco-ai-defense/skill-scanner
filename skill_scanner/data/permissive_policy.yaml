@@ -431,6 +431,16 @@ command_safety:
     - "scp"
     - "rsync"
 
+  # Regex patterns that immediately classify a command as DANGEROUS.
+  # Permissive mode only catches the most clearly abusive patterns.
+  dangerous_arg_patterns:
+    # env spawning a shell
+    - '\benv\s+.*(?:/bin/(?:ba)?sh|/bin/(?:z|da|fi)sh)'
+    # find with -exec/-execdir
+    - '\bfind\s+.*-exec(?:dir)?\s'
+    # less/more/man with shell escape
+    - '\b(?:less|more|man)\s+.*!\s*/bin/'
+
 # ---------------------------------------------------------------------------
 # Analyzers – all enabled
 # ---------------------------------------------------------------------------

@@ -176,6 +176,31 @@ command_safety:
     - "podman"
     - "kubectl"
 
+  # Regex patterns that immediately classify a command as DANGEROUS.
+  # Strict mode includes all default patterns plus additional ones.
+  dangerous_arg_patterns:
+    # Python/python3 inline code execution
+    - '\bpython[23]?\s+.*-c\s'
+    # Node inline JS execution
+    - '\bnode\s+.*(?:-e|--eval)\s'
+    # Ruby inline code execution
+    - '\bruby\s+.*-e\s'
+    # env spawning a shell
+    - '\benv\s+.*(?:/bin/(?:ba)?sh|/bin/(?:z|da|fi)sh)'
+    # find with -exec/-execdir
+    - '\bfind\s+.*-exec(?:dir)?\s'
+    # less/more/man with shell escape
+    - '\b(?:less|more|man)\s+.*!\s*/bin/'
+    # pip/pip3 install from untrusted index
+    - '\bpip[3]?\s+install\s+(?:--index-url|--extra-index-url|-i)\s'
+    # git clone/remote chained with shell operators
+    - '\bgit\s+(?:clone|remote\s+add)\s+.*[;&|]'
+    # Strict-only: pip install from any URL (supply-chain risk)
+    - '\bpip[3]?\s+install\s+https?://'
+    # Strict-only: npm run / npx arbitrary script execution
+    - '\bnpm\s+(?:run|exec)\s'
+    - '\bnpx\s+'
+
 # ---------------------------------------------------------------------------
 # Analyzers – all enabled in strict mode
 # ---------------------------------------------------------------------------

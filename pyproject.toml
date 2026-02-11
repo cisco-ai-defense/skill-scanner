@@ -56,7 +56,7 @@ dependencies = [
     "fastapi>=0.125.0",
     "uvicorn[standard]>=0.29.0",
     "python-multipart>=0.0.6",
-    "yara-python>=4.5.4",
+    "yara-x>=1.12.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.28.1",
     # AI-powered file type detection (200+ types, ~99% accuracy)

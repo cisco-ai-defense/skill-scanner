@@ -22,7 +22,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import yara
+import yara_x
 
 logger = logging.getLogger(__name__)
 
@@ -57,15 +57,16 @@ class YaraScanner:
         if not yara_files:
             raise FileNotFoundError(f"No .yara files found in {self.rules_dir}")
 
-        # Compile all rules
-        rules_dict = {}
-        for yara_file in yara_files:
-            namespace = yara_file.stem  # Use filename as namespace
-            rules_dict[namespace] = str(yara_file)
-
+        # Compile all rules using the yara-x Compiler with namespaces
+        compiler = yara_x.Compiler()
         try:
-            self.rules = yara.compile(filepaths=rules_dict)
-        except yara.SyntaxError as e:
+            for yara_file in yara_files:
+                namespace = yara_file.stem  # Use filename as namespace
+                compiler.new_namespace(namespace)
+                source = yara_file.read_text(encoding="utf-8")
+                compiler.add_source(source, origin=str(yara_file))
+            self.rules = compiler.build()
+        except yara_x.CompileError as e:
             raise RuntimeError(f"Failed to compile YARA rules: {e}")
 
     def scan_content(self, content: str, file_path: str | None = None) -> list[dict[str, Any]]:
@@ -85,34 +86,41 @@ class YaraScanner:
         matches = []
 
         try:
-            yara_matches = self.rules.match(data=content)
+            # yara-x scans bytes, not str
+            content_bytes = content.encode("utf-8")
+            scan_results = self.rules.scan(content_bytes)
 
-            for match in yara_matches:
+            for rule in scan_results.matching_rules:
                 # Extract metadata from the rule
+                # rule.metadata is a tuple of (key, value) pairs; convert to dict
+                meta_dict = dict(rule.metadata)
                 meta = {
-                    "rule_name": match.rule,
-                    "namespace": match.namespace,
-                    "tags": match.tags,
-                    "meta": match.meta,
+                    "rule_name": rule.identifier,
+                    "namespace": rule.namespace,
+                    "tags": list(rule.tags),
+                    "meta": meta_dict,
                 }
 
-                # Find which strings matched and their locations
+                # Find which patterns matched and their locations
                 matched_strings = []
-                for string in match.strings:
-                    for instance in string.instances:
+                for pattern in rule.patterns:
+                    for match in pattern.matches:
+                        # Extract matched data from content bytes
+                        matched_data_bytes = content_bytes[match.offset : match.offset + match.length]
+
                         # Find line number for this match
-                        line_num = content[: instance.offset].count("\n") + 1
-                        line_start = content.rfind("\n", 0, instance.offset) + 1
-                        line_end = content.find("\n", instance.offset)
+                        line_num = content[: match.offset].count("\n") + 1
+                        line_start = content.rfind("\n", 0, match.offset) + 1
+                        line_end = content.find("\n", match.offset)
                         if line_end == -1:
                             line_end = len(content)
                         line_content = content[line_start:line_end].strip()
 
                         matched_strings.append(
                             {
-                                "identifier": string.identifier,
-                                "offset": instance.offset,
-                                "matched_data": instance.matched_data.decode("utf-8", errors="ignore"),
+                                "identifier": pattern.identifier,
+                                "offset": match.offset,
+                                "matched_data": matched_data_bytes.decode("utf-8", errors="ignore"),
                                 "line_number": line_num,
                                 "line_content": line_content,
                             }
@@ -120,15 +128,15 @@ class YaraScanner:
 
                 matches.append(
                     {
-                        "rule_name": match.rule,
-                        "namespace": match.namespace,
+                        "rule_name": rule.identifier,
+                        "namespace": rule.namespace,
                         "file_path": file_path,
                         "meta": meta,
                         "strings": matched_strings,
                     }
                 )
 
-        except yara.Error as e:
+        except yara_x.ScanError as e:
             logger.warning("YARA scanning error: %s", e)
 
         return matches
@@ -141,7 +149,7 @@ class YaraScanner:
         :meth:`scan_content` so that line numbers are available in results.
 
         For binary files (those that cannot be decoded as UTF-8) the scanner
-        falls back to YARA's native ``rules.match(filepath=...)`` which works
+        falls back to YARA-X's native ``Scanner.scan_file(...)`` which works
         directly on raw bytes.
 
         Args:
@@ -166,11 +174,11 @@ class YaraScanner:
             logger.warning("Could not read file %s: %s", file_path, e)
             return []
 
-        # Binary fallback — use YARA native file scanning
+        # Binary fallback — use YARA-X native file scanning
         return self._scan_file_binary(file_path, context_path)
 
     def _scan_file_binary(self, file_path: str, display_path: str) -> list[dict[str, Any]]:
-        """Scan a binary file using YARA's native filepath matcher.
+        """Scan a binary file using YARA-X's Scanner.scan_file.
 
         Since the file is not valid UTF-8, line numbers are not meaningful.
         Matched data is decoded with ``errors="ignore"`` and offsets are
@@ -181,40 +189,47 @@ class YaraScanner:
 
         matches = []
         try:
-            yara_matches = self.rules.match(filepath=file_path)
+            # Read raw bytes for matched_data extraction
+            with open(file_path, "rb") as f:
+                file_bytes = f.read()
 
-            for match in yara_matches:
+            scanner = yara_x.Scanner(self.rules)
+            scan_results = scanner.scan(file_bytes)
+
+            for rule in scan_results.matching_rules:
+                meta_dict = dict(rule.metadata)
                 meta = {
-                    "rule_name": match.rule,
-                    "namespace": match.namespace,
-                    "tags": match.tags,
-                    "meta": match.meta,
+                    "rule_name": rule.identifier,
+                    "namespace": rule.namespace,
+                    "tags": list(rule.tags),
+                    "meta": meta_dict,
                 }
 
                 matched_strings = []
-                for string in match.strings:
-                    for instance in string.instances:
+                for pattern in rule.patterns:
+                    for match in pattern.matches:
+                        matched_data_bytes = file_bytes[match.offset : match.offset + match.length]
                         matched_strings.append(
                             {
-                                "identifier": string.identifier,
-                                "offset": instance.offset,
-                                "matched_data": instance.matched_data.decode("utf-8", errors="ignore"),
+                                "identifier": pattern.identifier,
+                                "offset": match.offset,
+                                "matched_data": matched_data_bytes.decode("utf-8", errors="ignore"),
                                 "line_number": 0,  # Not meaningful for binary
-                                "line_content": f"[binary file at byte offset {instance.offset}]",
+                                "line_content": f"[binary file at byte offset {match.offset}]",
                             }
                         )
 
                 matches.append(
                     {
-                        "rule_name": match.rule,
-                        "namespace": match.namespace,
+                        "rule_name": rule.identifier,
+                        "namespace": rule.namespace,
                         "file_path": display_path,
                         "meta": meta,
                         "strings": matched_strings,
                     }
                 )
 
-        except yara.Error as e:
+        except yara_x.ScanError as e:
             logger.warning("YARA binary scanning error for %s: %s", file_path, e)
 
         return matches
@@ -223,6 +238,6 @@ class YaraScanner:
         """Get list of loaded rule names."""
         if not self.rules:
             return []
-        # YARA doesn't provide easy access to rule names, return namespaces
+        # Return namespaces based on .yara filenames
         yara_files = list(self.rules_dir.glob("*.yara"))
         return [f.stem for f in yara_files]

