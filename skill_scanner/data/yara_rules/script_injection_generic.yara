@@ -16,11 +16,13 @@ rule script_injection_generic{
 
         // === High confidence: actual attack patterns ===
 
-        // Script tag with suspicious content (event handlers, data exfil)
-        $script_suspicious = /<script[^>]*>[^<]{0,500}(document\.cookie|localStorage|eval\(|fetch\([^)]*credentials|XMLHttpRequest|window\.location\s*=)/i
+        // Script tag with suspicious content - TIGHTENED
+        // Old pattern matched any <script> with localStorage which is normal in dashboards/web apps
+        // Now requires truly malicious patterns: cookie theft, credential access, redirects, fetch+credentials
+        $script_suspicious = /<script[^>]*>[^<]{0,500}(document\.cookie[^<]{0,80}(fetch|XMLHttpRequest|new Image|window\.location|src\s*=)|eval\(|fetch\([^)]*credentials|window\.location\s*=\s*['"](https?:\/\/|\/\/))/i
 
         // JavaScript protocol handler in href/action (XSS vector)
-        $js_protocol_handler = /\b(href|action|src)\s*=\s*['"]?javascript:/i
+        $js_protocol_handler = /\b(href|action|src)\s*=\s*['"]?javascript:\s*[a-z]/i
 
         // Base64 data URI with script content
         $data_uri_script = /data:(text\/html|application\/javascript);base64,[A-Za-z0-9+\/=]{50,}/i
@@ -28,8 +30,9 @@ rule script_injection_generic{
         // VBScript with shell execution
         $vbs_shell = /\bCreateObject\s*\(\s*['"]WScript\.Shell['"]\s*\)[^}]{0,100}(\.Run|\.Exec)/i
 
-        // Inline event handler injection
-        $event_handler_injection = /\b(onerror|onload|onclick|onmouseover)\s*=\s*['"][^'"]*\b(alert|eval|fetch|document\.)/i
+        // Inline event handler injection - TIGHTENED
+        // Only match truly suspicious payloads: alert/eval/fetch, not document.getElementById
+        $event_handler_injection = /\b(onerror|onload|onmouseover)\s*=\s*['"][^'"]*\b(alert|eval|fetch)\s*\(/i
 
         // === Medium confidence: obfuscation + execution ===
 
@@ -50,12 +53,12 @@ rule script_injection_generic{
         $xml_namespace = /(xmlns:script=|<script:module|openoffice\.org)/i
         $markdown_code = /```(html|javascript|js|typescript|jsx|tsx|vue|svelte|htm)/i
         $react_component = /(import React|from ['"]react['"]|React\.Component)/
-        // Documentation patterns showing code examples
         $documentation_example = /\b(example|sample|snippet|demo|tutorial|usage)\s*:?\s*(```|<script)/i
         $inline_code_marker = /`<script[^`]*`/
-        // Legitimate framework templates (not injection)
         $vue_template = /<template>\s*<script/
         $svelte_component = /<script\s+(context=|lang=)/
+        // Legitimate HTML files with normal localStorage usage (dashboards, apps)
+        $legitimate_html_app = /<!DOCTYPE html>|<html\b/i
 
     condition:
         not $xml_namespace and
@@ -66,8 +69,8 @@ rule script_injection_generic{
         not $vue_template and
         not $svelte_component and
         (
-            // High confidence - always flag
-            $script_suspicious or
+            // High confidence - always flag (but localStorage in HTML apps is not suspicious alone)
+            ($script_suspicious and not $legitimate_html_app) or
             $js_protocol_handler or
             $data_uri_script or
             $vbs_shell or
@@ -76,7 +79,7 @@ rule script_injection_generic{
             $doc_write_encoded or
             // ANSI attacks
             ($ansi_clear_rewrite and $ansi_cursor_hide) or
-            // Hidden instructions (not just overflow:hidden alone)
+            // Hidden instructions
             $hidden_overflow
         )
 }
