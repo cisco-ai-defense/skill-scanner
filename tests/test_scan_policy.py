@@ -253,9 +253,14 @@ class TestScanPolicyPresets:
 class TestRuleProperties:
     """Test the extensible rule_properties system."""
 
-    def test_default_policy_has_empty_rule_properties(self):
+    def test_default_policy_has_rule_properties(self):
+        """Default policy should have rule_properties for FP-tuning knobs."""
         policy = ScanPolicy.default()
-        assert policy.rule_properties == {}
+        # The default policy now ships with tuning knobs for new detection rules
+        assert isinstance(policy.rule_properties, dict)
+        assert "HOMOGLYPH_ATTACK" in policy.rule_properties
+        assert "COMPOUND_FETCH_EXECUTE" in policy.rule_properties
+        assert "UNANALYZABLE_BINARY" in policy.rule_properties
 
     def test_get_rule_property_returns_default_when_absent(self):
         policy = ScanPolicy.default()
@@ -315,8 +320,8 @@ class TestRuleProperties:
         assert reloaded.get_rule_property("MY_CUSTOM_RULE", "severity") == "HIGH"
         assert reloaded.get_rule_property_bool("MY_CUSTOM_RULE", "custom_flag", False) is True
 
-    def test_empty_rule_properties_in_yaml(self, tmp_path):
-        """An empty rule_properties section should not break anything."""
+    def test_empty_rule_properties_in_yaml_inherits_defaults(self, tmp_path):
+        """An empty rule_properties section should inherit defaults via deep merge."""
         policy_file = tmp_path / "empty_rp.yaml"
         policy_file.write_text(
             textwrap.dedent("""\
@@ -324,7 +329,9 @@ class TestRuleProperties:
         """)
         )
         policy = ScanPolicy.from_yaml(policy_file)
-        assert policy.rule_properties == {}
+        # Deep merge preserves defaults when the overlay is empty
+        default_policy = ScanPolicy.default()
+        assert policy.rule_properties == default_policy.rule_properties
 
     def test_invalid_rule_properties_entry_ignored(self, tmp_path):
         """Non-dict entries under rule_properties should be skipped."""
@@ -555,7 +562,9 @@ class TestRulePropertiesAnalyzerIntegration:
 
         analyzer = BytecodeAnalyzer()
         assert analyzer.policy is not None
-        assert analyzer.policy.rule_properties == {}
+        # Default policy now ships with FP-tuning knobs
+        assert isinstance(analyzer.policy.rule_properties, dict)
+        assert "HOMOGLYPH_ATTACK" in analyzer.policy.rule_properties
 
     def test_comprehensive_rule_properties_from_yaml(self, tmp_path):
         """A single YAML file with many rule_properties should parse and round-trip."""

@@ -213,6 +213,46 @@ class LLMAnalyzer(BaseAnalyzer):
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
 
+        # Enriched context from other analyzers (set externally before analyze())
+        self.enrichment_context: str | None = None
+
+        # Consensus judging: number of runs to perform (1 = no consensus)
+        self.consensus_runs: int = 1
+
+    def set_enrichment_context(
+        self,
+        *,
+        file_inventory: dict | None = None,
+        magic_mismatches: list[str] | None = None,
+        static_findings_summary: list[str] | None = None,
+        analyzability_score: float | None = None,
+    ) -> None:
+        """Set enriched context from other analyzers to improve LLM analysis.
+
+        This should be called before analyze() to provide the LLM with
+        pre-computed context that focuses its analysis.
+
+        Args:
+            file_inventory: Dict with file counts by type, unreferenced files, etc.
+            magic_mismatches: List of files with extension/content mismatches.
+            static_findings_summary: Brief summary of key static analysis findings.
+            analyzability_score: Overall analyzability score (0-100).
+        """
+        parts: list[str] = []
+
+        if file_inventory:
+            parts.append(f"File inventory: {file_inventory}")
+        if magic_mismatches:
+            parts.append(f"File type mismatches (extension != content): {', '.join(magic_mismatches)}")
+        if static_findings_summary:
+            parts.append("Key static findings:")
+            for f in static_findings_summary[:10]:  # Limit to top 10
+                parts.append(f"  - {f}")
+        if analyzability_score is not None:
+            parts.append(f"Analyzability score: {analyzability_score:.0f}%")
+
+        self.enrichment_context = "\n".join(parts) if parts else None
+
     def analyze(self, skill: Skill) -> list[Finding]:
         """
         Analyze skill using LLM (sync wrapper for async method).
@@ -230,6 +270,9 @@ class LLMAnalyzer(BaseAnalyzer):
         """
         Analyze skill using LLM (async).
 
+        Supports enriched context from other analyzers and opt-in consensus
+        judging (multiple runs with majority agreement).
+
         Args:
             skill: Skill to analyze
 
@@ -244,7 +287,7 @@ class LLMAnalyzer(BaseAnalyzer):
             code_files_text = self.prompt_builder.format_code_files(skill)
             referenced_files_text = self.prompt_builder.format_referenced_files(skill)
 
-            # Create protected prompt
+            # Create protected prompt with optional enrichment context
             prompt, injection_detected = self.prompt_builder.build_threat_analysis_prompt(
                 skill.name,
                 skill.description,
@@ -252,6 +295,7 @@ class LLMAnalyzer(BaseAnalyzer):
                 skill.instruction_body[:3000],
                 code_files_text,
                 referenced_files_text,
+                enrichment_context=self.enrichment_context,
             )
 
             # If injection detected, create immediate finding
@@ -273,10 +317,7 @@ class LLMAnalyzer(BaseAnalyzer):
 
             # Query LLM with retry logic
             # System message includes context about AITech taxonomy for structured outputs
-            messages = [
-                {
-                    "role": "system",
-                    "content": """You are a security expert analyzing agent skills. Follow the analysis framework provided.
+            system_content = """You are a security expert analyzing agent skills. Follow the analysis framework provided.
 
 When selecting AITech codes for findings, use these mappings:
 - AITech-1.1: Direct prompt injection in SKILL.md (jailbreak, instruction override)
@@ -284,24 +325,28 @@ When selecting AITech codes for findings, use these mappings:
 - AITech-4.3: Protocol manipulation - capability inflation (skill discovery abuse, keyword baiting, over-broad claims)
 - AITech-8.2: Data exfiltration/exposure (unauthorized access, credential theft, hardcoded secrets)
 - AITech-9.1: Model/agentic manipulation (command injection, code injection, SQL injection, obfuscation)
+- AITech-9.3: Supply chain compromise (dependency/plugin compromise, malicious package injection)
 - AITech-12.1: Tool exploitation (tool poisoning, shadowing, unauthorized use)
 - AITech-13.1: Disruption of Availability (resource abuse, DoS, infinite loops) - AISubtech-13.1.1: Compute Exhaustion
 - AITech-15.1: Harmful/misleading content (deceptive content, misinformation)
 
-The structured output schema will enforce these exact codes.""",
-                },
+The structured output schema will enforce these exact codes."""
+
+            messages = [
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": prompt},
             ]
 
-            response_content = await self.request_handler.make_request(
-                messages, context=f"threat analysis for {skill.name}"
-            )
-
-            # Parse response
-            analysis_result = self.response_parser.parse(response_content)
-
-            # Convert to findings
-            findings = self._convert_to_findings(analysis_result, skill)
+            if self.consensus_runs <= 1:
+                # Standard single-run analysis
+                response_content = await self.request_handler.make_request(
+                    messages, context=f"threat analysis for {skill.name}"
+                )
+                analysis_result = self.response_parser.parse(response_content)
+                findings = self._convert_to_findings(analysis_result, skill)
+            else:
+                # Consensus judging: run N times, keep findings that appear in majority
+                findings = await self._consensus_analyze(messages, skill)
 
         except Exception as e:
             logger.error("LLM analysis failed for %s: %s", skill.name, e)
@@ -309,6 +354,68 @@ The structured output schema will enforce these exact codes.""",
             return []
 
         return findings
+
+    async def _consensus_analyze(self, messages: list[dict], skill: Skill) -> list[Finding]:
+        """Run LLM analysis multiple times and keep findings with majority agreement.
+
+        This reduces false positives by requiring agreement across N independent
+        LLM runs. A finding is kept if it appears in more than N/2 runs.
+
+        Args:
+            messages: The LLM messages to send.
+            skill: The skill being analyzed.
+
+        Returns:
+            Findings that achieved majority consensus.
+        """
+        all_run_findings: list[list[Finding]] = []
+
+        for run_idx in range(self.consensus_runs):
+            try:
+                response_content = await self.request_handler.make_request(
+                    messages, context=f"consensus run {run_idx + 1}/{self.consensus_runs} for {skill.name}"
+                )
+                analysis_result = self.response_parser.parse(response_content)
+                run_findings = self._convert_to_findings(analysis_result, skill)
+                all_run_findings.append(run_findings)
+            except Exception as e:
+                logger.warning("Consensus run %d failed for %s: %s", run_idx + 1, skill.name, e)
+                all_run_findings.append([])
+
+        # Count how many runs produced each unique finding (by rule_id + category)
+        finding_counts: dict[str, int] = {}
+        finding_map: dict[str, Finding] = {}
+
+        for run_findings in all_run_findings:
+            seen_in_run: set[str] = set()
+            for f in run_findings:
+                key = f"{f.rule_id}:{f.category.value}:{f.file_path or ''}"
+                if key not in seen_in_run:
+                    finding_counts[key] = finding_counts.get(key, 0) + 1
+                    seen_in_run.add(key)
+                    # Keep the first occurrence for the finding details
+                    if key not in finding_map:
+                        finding_map[key] = f
+
+        # Keep findings with majority agreement
+        threshold = self.consensus_runs / 2
+        consensus_findings: list[Finding] = []
+        for key, count in finding_counts.items():
+            if count > threshold:
+                finding = finding_map[key]
+                finding.metadata["consensus_agreement"] = f"{count}/{self.consensus_runs}"
+                consensus_findings.append(finding)
+
+        logger.info(
+            "Consensus judging for %s: %d unique findings, %d with majority agreement (%d/%d runs)",
+            skill.name,
+            len(finding_counts),
+            len(consensus_findings),
+            self.consensus_runs,
+            self.consensus_runs,
+        )
+
+        return consensus_findings
 
     def _convert_to_findings(self, analysis_result: dict[str, Any], skill: Skill) -> list[Finding]:
         """Convert LLM analysis results to Finding objects."""

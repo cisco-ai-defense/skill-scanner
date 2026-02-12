@@ -224,3 +224,49 @@ severity_overrides:
     reason: "Strict mode flags bytecode distribution at medium"
 
 disabled_rules: []
+
+# ---------------------------------------------------------------------------
+# Per-rule properties – strict: max sensitivity, fewer exemptions
+# ---------------------------------------------------------------------------
+rule_properties:
+  HOMOGLYPH_ATTACK:
+    min_dangerous_lines: 3          # Lower threshold → more sensitive
+    enabled: true
+  COMPOUND_FETCH_EXECUTE:
+    check_known_installers: false   # Flag all curl|sh, no installer exemption
+    demote_in_docs: false           # No doc-path demotion
+    enabled: true
+  UNANALYZABLE_BINARY:
+    skip_inert_extensions: false    # Flag all binaries, even images/fonts
+    enabled: true
+  YARA_embedded_shebang_in_binary:
+    skip_inert_extensions: false    # Flag all binaries with shebangs
+    enabled: true
+  PDF_STRUCTURAL_THREAT:
+    enabled: true
+  OFFICE_DOCUMENT_THREAT:
+    enabled: true
+  # Signature rules — strict keeps all enabled
+  SVG_EMBEDDED_SCRIPT:
+    enabled: true
+  PDF_EMBEDDED_JAVASCRIPT:
+    enabled: true
+  GLOB_HIDDEN_FILE_TARGETING:
+    enabled: true
+  FIND_EXEC_PATTERN:
+    enabled: true
+  HIDDEN_FILE_WITH_CODE:
+    enabled: true
+  # File inventory rules
+  ARCHIVE_CONTAINS_EXECUTABLE:
+    enabled: true
+  # YARA binary detection rules
+  YARA_embedded_elf_binary:
+    enabled: true
+  YARA_embedded_pe_executable:
+    enabled: true
+  YARA_embedded_macho_binary:
+    enabled: true
+  # Analyzability rules
+  LOW_ANALYZABILITY:
+    enabled: true

@@ -71,6 +71,8 @@ class PromptBuilder:
         instruction_body: str,
         code_files: str,
         referenced_files: str,
+        *,
+        enrichment_context: str | None = None,
     ) -> tuple[str, bool]:
         """
         Create threat analysis prompt with prompt injection protection.
@@ -84,6 +86,9 @@ class PromptBuilder:
             instruction_body: SKILL.md content
             code_files: Formatted code files
             referenced_files: Referenced files
+            enrichment_context: Optional pre-computed context from other analyzers
+                (file inventory, magic mismatches, static findings) to improve
+                LLM analysis quality.
 
         Returns:
             Tuple of (prompt, injection_detected)
@@ -108,6 +113,13 @@ Script Files (Python/Bash):
 
 Referenced Files:
 {referenced_files}
+"""
+
+        # Add enrichment context if available
+        if enrichment_context:
+            analysis_content += f"""
+Pre-Scan Context (from static analyzers — use this to focus your analysis):
+{enrichment_context}
 """
 
         # Check for delimiter injection (security violation)

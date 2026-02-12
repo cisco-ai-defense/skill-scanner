@@ -77,6 +77,7 @@ ALLOWED_CATEGORIES: set[str] = {
     "AUTONOMY_ABUSE",
     "TOOL_CHAINING_ABUSE",
     "UNICODE_STEGANOGRAPHY",
+    "SUPPLY_CHAIN_ATTACK",
 }
 
 # ---------------------------------------------------------------------------

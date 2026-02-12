@@ -100,6 +100,11 @@ _SOURCE_PATTERNS: dict[str, set[TaintType]] = {
     "read": {TaintType.USER_INPUT},
     "curl": {TaintType.NETWORK_DATA},
     "wget": {TaintType.NETWORK_DATA},
+    # Archive extraction — produces potentially tainted files
+    "unzip": {TaintType.SENSITIVE_DATA},
+    "tar": {TaintType.SENSITIVE_DATA},
+    "7z": {TaintType.SENSITIVE_DATA},
+    "unrar": {TaintType.SENSITIVE_DATA},
 }
 
 # Sensitive file patterns that upgrade taint severity
@@ -126,6 +131,11 @@ _TRANSFORM_TAINTS: dict[str, set[TaintType]] = {
     "sort": set(),
     "uniq": set(),
     "xargs": set(),
+    # Document conversion — opaque input to readable text (data laundering vector)
+    "pandoc": set(),
+    "pdftotext": set(),
+    "libreoffice": set(),
+    "textutil": set(),
 }
 
 # Sink commands - consume tainted data dangerously
@@ -143,6 +153,10 @@ _SINK_PATTERNS: dict[str, set[TaintType]] = {
     "python": {TaintType.CODE_EXECUTION},
     "python3": {TaintType.CODE_EXECUTION},
     "node": {TaintType.CODE_EXECUTION},
+    "ruby": {TaintType.CODE_EXECUTION},
+    "perl": {TaintType.CODE_EXECUTION},
+    "source": {TaintType.CODE_EXECUTION},
+    "chmod": {TaintType.CODE_EXECUTION},  # chmod +x enables execution
     "tee": {TaintType.FILESYSTEM_WRITE},
 }
 
@@ -188,6 +202,9 @@ class PipelineAnalyzer(BaseAnalyzer):
         for pipeline in pipelines:
             chain_findings = self._analyze_pipeline(pipeline)
             findings.extend(chain_findings)
+
+        # Analyze compound command sequences (multi-line patterns)
+        findings.extend(self._analyze_compound_sequences(skill))
 
         return findings
 
@@ -469,3 +486,186 @@ class PipelineAnalyzer(BaseAnalyzer):
         if TaintType.CODE_EXECUTION in combined_taints:
             return ThreatCategory.COMMAND_INJECTION
         return ThreatCategory.POLICY_VIOLATION
+
+    # ------------------------------------------------------------------
+    # Compound command sequence detection
+    # ------------------------------------------------------------------
+
+    # Known dangerous multi-line command sequences.
+    # Each entry: (pattern list, rule_id, severity, category, title, description)
+    _COMPOUND_PATTERNS: list[tuple[list[re.Pattern], str, Severity, ThreatCategory, str, str]] = [
+        # find -exec / find | xargs exec
+        (
+            [
+                re.compile(r"find\b.*-exec\s", re.IGNORECASE),
+            ],
+            "COMPOUND_FIND_EXEC",
+            Severity.CRITICAL,
+            ThreatCategory.COMMAND_INJECTION,
+            "Discovery and execution chain (find -exec)",
+            "The find command with -exec executes commands on discovered files. "
+            "An attacker can use this to find and execute hidden malicious scripts.",
+        ),
+        # extract + execute: unzip/tar then bash/sh/python
+        (
+            [
+                re.compile(r"(?:unzip|tar\s+(?:x[a-zA-Z]*|(?:-[a-zA-Z]*x[a-zA-Z]*)))\b"),
+                re.compile(r"(?:bash|sh|python3?|chmod\s+\+x)\b"),
+            ],
+            "COMPOUND_EXTRACT_EXECUTE",
+            Severity.HIGH,
+            ThreatCategory.SUPPLY_CHAIN_ATTACK,
+            "Archive extraction followed by execution",
+            "An archive is extracted and its contents are then executed. "
+            "This pattern can deliver and run malicious payloads hidden in archives.",
+        ),
+        # fetch + execute: curl/wget then bash/sh/python
+        (
+            [
+                re.compile(r"(?:curl|wget)\b"),
+                re.compile(r"(?:bash|sh|python3?|chmod\s+\+x|source)\b"),
+            ],
+            "COMPOUND_FETCH_EXECUTE",
+            Severity.CRITICAL,
+            ThreatCategory.COMMAND_INJECTION,
+            "Remote fetch followed by execution",
+            "Content is downloaded from the network and subsequently executed. "
+            "This is a classic remote code execution attack pattern.",
+        ),
+        # document conversion + agent reads output (data laundering)
+        (
+            [
+                re.compile(r"(?:pandoc|pdftotext|libreoffice|textutil)\b"),
+                re.compile(r"(?:cat|head|tail|less|more)\b.*\.(?:md|txt|html)"),
+            ],
+            "COMPOUND_LAUNDERING_CHAIN",
+            Severity.HIGH,
+            ThreatCategory.COMMAND_INJECTION,
+            "Document conversion to agent-readable text",
+            "An opaque document is converted to plain text that the agent will read. "
+            "Malicious instructions can be embedded in documents and laundered through "
+            "conversion into agent-readable prompts.",
+        ),
+    ]
+
+    def _analyze_compound_sequences(self, skill: Skill) -> list[Finding]:
+        """Detect dangerous multi-line command sequences in code blocks and scripts.
+
+        Unlike single-line pipe analysis, this looks at adjacent commands within
+        the same code block to catch multi-step attacks split across lines.
+        """
+        findings: list[Finding] = []
+        # Extract code blocks from all relevant content
+        blocks = self._extract_code_blocks(skill)
+
+        for source_file, block_text, base_line in blocks:
+            for patterns, rule_id, severity, category, title, description in self._COMPOUND_PATTERNS:
+                matched_lines = self._match_compound_pattern(block_text, patterns)
+                if matched_lines is not None:
+                    # Check for known benign patterns
+                    is_benign = False
+                    for pat in self.policy._compiled_benign_pipes:
+                        if pat.search(block_text):
+                            is_benign = True
+                            break
+                    if is_benign:
+                        continue
+
+                    # Demote if in documentation file
+                    actual_severity = severity
+                    note = ""
+                    is_doc = self._DOC_PATH_PATTERNS.search(source_file)
+                    demote_in_docs = self.policy.get_rule_property_bool(rule_id, "demote_in_docs", default=True)
+                    if demote_in_docs and is_doc:
+                        if actual_severity == Severity.CRITICAL:
+                            actual_severity = Severity.MEDIUM
+                        elif actual_severity == Severity.HIGH:
+                            actual_severity = Severity.LOW
+                        note = " (found in documentation — may be instructional)"
+
+                    # For COMPOUND_FETCH_EXECUTE, demote known installer URLs
+                    # (same treatment as single-pipe PIPELINE_TAINT_FLOW).
+                    if rule_id == "COMPOUND_FETCH_EXECUTE":
+                        check_installers = self.policy.get_rule_property_bool(
+                            rule_id, "check_known_installers", default=True
+                        )
+                        if check_installers and self._is_known_installer(block_text):
+                            actual_severity = Severity.LOW
+                            note += " (uses a well-known installer URL — likely a standard installation)"
+
+                    snippet = block_text[:300] if len(block_text) > 300 else block_text
+                    findings.append(
+                        Finding(
+                            id=self._generate_finding_id(rule_id, f"{source_file}:{base_line}:{block_text[:80]}"),
+                            rule_id=rule_id,
+                            category=category,
+                            severity=actual_severity,
+                            title=title,
+                            description=description + note,
+                            file_path=source_file,
+                            line_number=base_line + (matched_lines[0] if matched_lines else 0),
+                            snippet=snippet,
+                            remediation=(
+                                "Review the command sequence for potential multi-step attacks. "
+                                "Ensure all steps are necessary and safe."
+                            ),
+                            analyzer=self.name,
+                            metadata={
+                                "pattern": rule_id,
+                                "matched_lines": matched_lines,
+                                "in_documentation": bool(is_doc),
+                            },
+                        )
+                    )
+
+        return findings
+
+    def _extract_code_blocks(self, skill: Skill) -> list[tuple[str, str, int]]:
+        """Extract shell code blocks from SKILL.md and script files.
+
+        Returns list of (source_file, block_text, base_line_number).
+        """
+        blocks: list[tuple[str, str, int]] = []
+        code_block_re = re.compile(r"```(?:bash|sh|shell|zsh)?\n(.*?)```", re.DOTALL)
+
+        # Extract from SKILL.md instruction body
+        for match in code_block_re.finditer(skill.instruction_body):
+            block = match.group(1)
+            line_num = skill.instruction_body[: match.start()].count("\n") + 1
+            blocks.append(("SKILL.md", block, line_num))
+
+        # Extract from script files and markdown
+        for sf in skill.files:
+            content = sf.read_content()
+            if not content:
+                continue
+            if sf.file_type == "bash":
+                blocks.append((sf.relative_path, content, 1))
+            elif sf.file_type == "markdown":
+                for match in code_block_re.finditer(content):
+                    block = match.group(1)
+                    line_num = content[: match.start()].count("\n") + 1
+                    blocks.append((sf.relative_path, block, line_num))
+
+        return blocks
+
+    def _match_compound_pattern(self, block_text: str, patterns: list[re.Pattern]) -> list[int] | None:
+        """Check if a code block contains all patterns in sequence.
+
+        Returns list of matched line numbers (0-indexed within block) or None.
+        """
+        lines = block_text.split("\n")
+        matched_lines: list[int] = []
+        pattern_idx = 0
+
+        for line_idx, line in enumerate(lines):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if pattern_idx < len(patterns) and patterns[pattern_idx].search(line):
+                matched_lines.append(line_idx)
+                pattern_idx += 1
+                if pattern_idx >= len(patterns):
+                    return matched_lines
+
+        return None  # Not all patterns matched in sequence

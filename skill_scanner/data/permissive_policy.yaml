@@ -196,6 +196,8 @@ rule_scoping:
     - "script_injection_generic"
     - "command_injection_generic"
     - "credential_harvesting_generic"
+    - "GLOB_HIDDEN_FILE_TARGETING"
+    - "FIND_EXEC_PATTERN"
 
   code_only:
     - "prompt_injection_unicode_steganography"
@@ -469,3 +471,53 @@ disabled_rules:
   # Explicitly disabled; keep out of rule_scoping to avoid conflicting intent.
   - capability_inflation_generic
   - indirect_prompt_injection_generic
+  # Noisy new rules — disabled in permissive mode to minimise FPs
+  - GLOB_HIDDEN_FILE_TARGETING
+  - HOMOGLYPH_ATTACK
+  - embedded_shebang_in_binary
+
+# ---------------------------------------------------------------------------
+# Per-rule properties – permissive: relaxed thresholds, broad exemptions
+# ---------------------------------------------------------------------------
+rule_properties:
+  HOMOGLYPH_ATTACK:
+    min_dangerous_lines: 8          # Higher threshold → fewer triggers
+    enabled: true
+  COMPOUND_FETCH_EXECUTE:
+    check_known_installers: true    # Demote known installer URLs
+    demote_in_docs: true
+    enabled: true
+  UNANALYZABLE_BINARY:
+    skip_inert_extensions: true     # Skip images, fonts, databases
+    enabled: true
+  YARA_embedded_shebang_in_binary:
+    skip_inert_extensions: true     # Skip images, fonts, databases
+    enabled: true
+  PDF_STRUCTURAL_THREAT:
+    enabled: true
+  OFFICE_DOCUMENT_THREAT:
+    enabled: true
+  # Signature rules — permissive disables noisy ones
+  SVG_EMBEDDED_SCRIPT:
+    enabled: true
+  PDF_EMBEDDED_JAVASCRIPT:
+    enabled: true
+  GLOB_HIDDEN_FILE_TARGETING:
+    enabled: false                  # Disabled (also in disabled_rules)
+  FIND_EXEC_PATTERN:
+    enabled: true
+  HIDDEN_FILE_WITH_CODE:
+    enabled: true
+  # File inventory rules
+  ARCHIVE_CONTAINS_EXECUTABLE:
+    enabled: true
+  # YARA binary detection rules
+  YARA_embedded_elf_binary:
+    enabled: true
+  YARA_embedded_pe_executable:
+    enabled: true
+  YARA_embedded_macho_binary:
+    enabled: true
+  # Analyzability rules
+  LOW_ANALYZABILITY:
+    enabled: false                  # Permissive skips analyzability warnings

@@ -226,6 +226,16 @@ class ThreatMapping:
             "aisubtech_name": "Unauthorized or Unsolicited System Access",
             "description": "Manipulating or accessing underlying system resources without authorization.",
         },
+        "SUPPLY CHAIN ATTACK": {
+            "scanner_category": "SUPPLY CHAIN ATTACK",
+            "severity": "HIGH",
+            "aitech": "AITech-9.3",
+            "aitech_name": "Dependency / Plugin Compromise",
+            "aisubtech": "AISubtech-9.3.1",
+            "aisubtech_name": "Malicious Package / Tool Injection",
+            "description": "Bytecode poisoning, archive payload delivery, or dependency replacement "
+            "that compromises the supply chain integrity of a skill package.",
+        },
     }
 
     # Behavioral Analyzer Threats
@@ -314,6 +324,7 @@ class ThreatMapping:
             "AITech-4.3": "skill_discovery_abuse",  # Protocol Manipulation / Capability Inflation
             "AITech-8.2": "data_exfiltration",  # Data Exfiltration / Exposure
             "AITech-9.1": "command_injection",  # Model or Agentic System Manipulation (injection attacks)
+            "AITech-9.3": "supply_chain_attack",  # Dependency / Plugin Compromise
             "AITech-12.1": "unauthorized_tool_use",  # Tool Exploitation
             "AITech-13.1": "resource_abuse",  # Disruption of Availability (AISubtech-13.1.1: Compute Exhaustion)
             "AITech-15.1": "harmful_content",  # Harmful Content

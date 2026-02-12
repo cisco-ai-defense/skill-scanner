@@ -492,6 +492,7 @@ def generate_report(results: list[PolicyResult], output_path: Path) -> str:
 
     report = "\n".join(lines)
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         f.write(report)
 
@@ -598,6 +599,7 @@ def main():
             }
         )
 
+    Path(args.json_output).parent.mkdir(parents=True, exist_ok=True)
     with open(args.json_output, "w") as f:
         json.dump(json_data, f, indent=2)
     print(f"JSON saved to: {args.json_output}")

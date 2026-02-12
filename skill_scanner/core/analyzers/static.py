@@ -148,6 +148,11 @@ class StaticAnalyzer(BaseAnalyzer):
         """
         super().__init__("static_analyzer", policy=policy)
 
+        # Unreferenced scripts are computed during _check_file_inventory()
+        # and exposed to the scanner for LLM enrichment context (not as
+        # standalone findings).
+        self._unreferenced_scripts: list[str] = []
+
         self.rule_loader = RuleLoader(rules_file)
         self.rule_loader.load_rules()
 
@@ -197,6 +202,7 @@ class StaticAnalyzer(BaseAnalyzer):
         A rule is enabled if:
         1. It's enabled in the current YARA mode
         2. It's not in the explicitly disabled rules set
+        3. Its ``rule_properties.<rule>.enabled`` knob is not set to ``false``
 
         Args:
             rule_name: Name of the rule to check (e.g., "YARA_script_injection")
@@ -215,6 +221,10 @@ class StaticAnalyzer(BaseAnalyzer):
         # Also check without YARA_ prefix for convenience
         base_name = rule_name.replace("YARA_", "") if rule_name.startswith("YARA_") else rule_name
         if base_name in self.disabled_rules:
+            return False
+
+        # Check per-rule ``enabled`` knob in rule_properties
+        if not self.policy.get_rule_property_bool(rule_name, "enabled", default=True):
             return False
 
         return True
@@ -237,6 +247,7 @@ class StaticAnalyzer(BaseAnalyzer):
             List of security findings
         """
         findings = []
+        self._unreferenced_scripts = []  # reset per-scan enrichment state
 
         findings.extend(self._check_manifest(skill))
         findings.extend(self._scan_instruction_body(skill))
@@ -246,6 +257,9 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(self._check_binary_files(skill))
         findings.extend(self._check_hidden_files(skill))
         findings.extend(self._check_file_inventory(skill))
+        findings.extend(self._check_pdf_documents(skill))
+        findings.extend(self._check_office_documents(skill))
+        findings.extend(self._check_homoglyph_attacks(skill))
 
         if self.yara_scanner:
             findings.extend(self._yara_scan(skill))
@@ -261,6 +275,15 @@ class StaticAnalyzer(BaseAnalyzer):
 
         return findings
 
+    def get_unreferenced_scripts(self) -> list[str]:
+        """Return unreferenced script paths computed during the last ``analyze()`` call.
+
+        These are scripts present in the skill package that are not mentioned
+        in SKILL.md.  They are stored as enrichment context for the LLM
+        analyzer rather than emitted as standalone findings.
+        """
+        return list(self._unreferenced_scripts)
+
     def _is_known_test_credential(self, finding: Finding) -> bool:
         """Check if a finding matches a well-known test/placeholder credential (from policy)."""
         if finding.category != ThreatCategory.HARDCODED_SECRETS:
@@ -269,6 +292,23 @@ class StaticAnalyzer(BaseAnalyzer):
         for cred in self.policy.credentials.known_test_values:
             if cred in snippet:
                 return True
+        return False
+
+    def _is_doc_file(self, rel_path: str) -> bool:
+        """Check if a file is in a documentation directory or is an educational file.
+
+        Uses ``doc_path_indicators`` and ``doc_filename_patterns`` from the
+        active scan policy to determine if a given relative path belongs to a
+        documentation or example area (e.g. ``docs/``, ``examples/``).
+        """
+        path_obj = Path(rel_path)
+        parts = path_obj.parts
+        doc_indicators = self.policy.rule_scoping.doc_path_indicators
+        if any(p.lower() in doc_indicators for p in parts):
+            return True
+        doc_re = self.policy._compiled_doc_filename_re
+        if doc_re and doc_re.search(path_obj.stem):
+            return True
         return False
 
     def _check_manifest(self, skill: Skill) -> list[Finding]:
@@ -414,6 +454,7 @@ class StaticAnalyzer(BaseAnalyzer):
     def _scan_scripts(self, skill: Skill) -> list[Finding]:
         """Scan all script files (Python, Bash) for vulnerabilities."""
         findings = []
+        skip_in_docs = set(self.policy.rule_scoping.skip_in_docs)
 
         for skill_file in skill.files:
             if skill_file.file_type not in ("python", "bash"):
@@ -425,7 +466,12 @@ class StaticAnalyzer(BaseAnalyzer):
             if not content:
                 continue
 
+            is_doc = self._is_doc_file(skill_file.relative_path)
+
             for rule in rules:
+                # Skip rules scoped out of documentation files
+                if is_doc and rule.id in skip_in_docs:
+                    continue
                 matches = rule.scan_content(content, skill_file.relative_path)
                 for match in matches:
                     if rule.id == "RESOURCE_ABUSE_INFINITE_LOOP" and skill_file.file_type == "python":
@@ -591,7 +637,13 @@ class StaticAnalyzer(BaseAnalyzer):
                 else:
                     rules = []
 
+                skip_in_docs = set(self.policy.rule_scoping.skip_in_docs)
+                is_doc = self._is_doc_file(ref_file_path)
+
                 for rule in rules:
+                    # Skip rules scoped out of documentation files
+                    if is_doc and rule.id in skip_in_docs:
+                        continue
                     matches = rule.scan_content(content, ref_file_path)
                     for match in matches:
                         finding = self._create_finding_from_match(rule, match)
@@ -1232,24 +1284,15 @@ class StaticAnalyzer(BaseAnalyzer):
             rule_name = match.get("rule_name", "")
             if not self._is_rule_enabled(rule_name):
                 continue
+            # embedded_shebang_in_binary only applies to binary files, not text
+            if rule_name == "embedded_shebang_in_binary":
+                continue
             findings.extend(self._create_findings_from_yara_match(match, skill))
 
         # Use policy-defined rule scoping (org-customisable)
         _SKILLMD_AND_SCRIPTS_ONLY = self.policy.rule_scoping.skillmd_and_scripts_only
         _SCRIPT_ONLY_YARA_RULES = self.policy.rule_scoping.skip_in_docs
         _CODE_ONLY_YARA_RULES = self.policy.rule_scoping.code_only
-        _DOC_PATH_INDICATORS = self.policy.rule_scoping.doc_path_indicators
-        _DOC_FILE_RE = self.policy._compiled_doc_filename_re
-
-        def _is_doc_file(rel_path: str) -> bool:
-            """Check if a file is in a documentation directory or is an educational file."""
-            path_obj = Path(rel_path)
-            parts = path_obj.parts
-            if any(p.lower() in _DOC_PATH_INDICATORS for p in parts):
-                return True
-            if _DOC_FILE_RE and _DOC_FILE_RE.search(path_obj.stem):
-                return True
-            return False
 
         def _is_skillmd_or_script(skill_file) -> bool:
             """Check if this is SKILL.md or an executable script."""
@@ -1273,6 +1316,14 @@ class StaticAnalyzer(BaseAnalyzer):
                 # scan_file() handles both text and binary: it tries UTF-8
                 # first, then falls back to YARA's native filepath matcher.
                 if skill_file.path.exists():
+                    # Determine if this binary has an inert extension (images,
+                    # fonts, databases) — used to suppress noisy shebang rule.
+                    _ext = skill_file.path.suffix.lower()
+                    _inert_exts = set(self.policy.file_classification.inert_extensions)
+                    _is_inert = _ext in _inert_exts
+                    _skip_shebang_inert = self.policy.get_rule_property_bool(
+                        "YARA_embedded_shebang_in_binary", "skip_inert_extensions", default=True
+                    )
                     try:
                         yara_matches = self.yara_scanner.scan_file(
                             skill_file.path,
@@ -1282,6 +1333,10 @@ class StaticAnalyzer(BaseAnalyzer):
                             rule_name = match.get("rule_name", "")
                             if not self._is_rule_enabled(rule_name):
                                 continue
+                            # Skip shebang-in-binary for inert file types (images,
+                            # fonts, databases) — shebang-like bytes are coincidental.
+                            if rule_name == "embedded_shebang_in_binary" and _is_inert and _skip_shebang_inert:
+                                continue
                             findings.extend(self._create_findings_from_yara_match(match, skill))
                     except Exception as e:
                         logger.debug("YARA binary scan failed for %s: %s", skill_file.relative_path, e)
@@ -1290,7 +1345,7 @@ class StaticAnalyzer(BaseAnalyzer):
             # For text files, read content and scan
             content = skill_file.read_content()
             if content:
-                is_doc = _is_doc_file(skill_file.relative_path)
+                is_doc = self._is_doc_file(skill_file.relative_path)
 
                 yara_matches = self.yara_scanner.scan_content(content, skill_file.relative_path)
                 for match in yara_matches:
@@ -1314,6 +1369,12 @@ class StaticAnalyzer(BaseAnalyzer):
                     if is_non_script and rule_name in _CODE_ONLY_YARA_RULES:
                         # Exception: SKILL.md is already scanned above
                         continue
+
+                    # embedded_shebang_in_binary is only meaningful for binary files;
+                    # text files (markdown, scripts) legitimately contain shebangs in
+                    # code blocks, examples, and documentation.
+                    if rule_name == "embedded_shebang_in_binary":
+                        continue  # text files always skip; binary files handled above
 
                     findings.extend(self._create_findings_from_yara_match(match, skill, content))
 
@@ -1367,6 +1428,334 @@ class StaticAnalyzer(BaseAnalyzer):
                             and f.file_path in suppressed_files
                         )
                     ]
+
+        return findings
+
+    # ------------------------------------------------------------------
+    # OSS-powered document & homoglyph scanners
+    # ------------------------------------------------------------------
+
+    def _check_pdf_documents(self, skill: Skill) -> list[Finding]:
+        """Scan PDF files using pdfid for structural analysis of suspicious elements.
+
+        Uses Didier Stevens' pdfid library to detect /JS, /JavaScript,
+        /OpenAction, /AA, /Launch and other markers that indicate embedded
+        executable content inside PDF documents.
+        """
+        if not self.policy.get_rule_property_bool("PDF_STRUCTURAL_THREAT", "enabled", default=True):
+            return []
+
+        try:
+            from pdfid import pdfid as pdfid_mod  # type: ignore[import-untyped]
+        except ImportError:
+            logger.debug("pdfid not installed – skipping structural PDF scan")
+            return []
+
+        findings: list[Finding] = []
+
+        # Suspicious PDF keywords and their severity mapping
+        suspicious_keywords: dict[str, tuple[Severity, str]] = {
+            "/JS": (Severity.CRITICAL, "Embedded JavaScript code"),
+            "/JavaScript": (Severity.CRITICAL, "JavaScript action dictionary"),
+            "/OpenAction": (Severity.HIGH, "Auto-execute action on open"),
+            "/AA": (Severity.HIGH, "Additional actions (auto-trigger)"),
+            "/Launch": (Severity.CRITICAL, "Launch external application"),
+            "/EmbeddedFile": (Severity.MEDIUM, "Embedded file attachment"),
+            "/RichMedia": (Severity.MEDIUM, "Rich media (Flash/video) content"),
+            "/XFA": (Severity.MEDIUM, "XFA form (can contain scripts)"),
+            "/AcroForm": (Severity.LOW, "Interactive form fields"),
+        }
+
+        for sf in skill.files:
+            # Target PDF files by extension or content family
+            is_pdf = (
+                sf.path.suffix.lower() == ".pdf"
+                or sf.file_type in ("binary", "other")
+                and sf.path.exists()
+                and sf.path.stat().st_size > 4
+                and sf.path.read_bytes()[:5] == b"%PDF-"
+            )
+            if not is_pdf or not sf.path.exists():
+                continue
+
+            try:
+                # pdfid returns a xml.dom.minidom Document; parse keyword counts
+                xml_doc = pdfid_mod.PDFiD(str(sf.path), disarm=False)
+                if xml_doc is None:
+                    continue
+
+                # Check that pdfid considers this a valid PDF
+                pdfid_elem = xml_doc.getElementsByTagName("PDFiD")
+                if pdfid_elem and pdfid_elem[0].getAttribute("IsPDF") != "True":
+                    continue
+
+                # Extract keyword counts from the minidom XML structure
+                detected: list[tuple[str, int, Severity, str]] = []
+                for keyword_elem in xml_doc.getElementsByTagName("Keyword"):
+                    name = keyword_elem.getAttribute("Name")
+                    count = int(keyword_elem.getAttribute("Count") or "0")
+                    if count > 0 and name in suspicious_keywords:
+                        severity, desc = suspicious_keywords[name]
+                        detected.append((name, count, severity, desc))
+
+                if not detected:
+                    continue
+
+                # Use highest severity among all detected keywords
+                _SEV_ORDER = {
+                    Severity.CRITICAL: 5,
+                    Severity.HIGH: 4,
+                    Severity.MEDIUM: 3,
+                    Severity.LOW: 2,
+                    Severity.INFO: 1,
+                }
+                max_severity = max(detected, key=lambda d: _SEV_ORDER.get(d[2], 0))[2]
+                keyword_summary = ", ".join(f"{name} ({count}x)" for name, count, _, _ in detected)
+                detail_lines = "\n".join(
+                    f"  - {name}: {desc} (found {count} occurrence(s))" for name, count, _, desc in detected
+                )
+
+                findings.append(
+                    Finding(
+                        id=self._generate_finding_id("PDF_STRUCTURAL_THREAT", sf.relative_path),
+                        rule_id="PDF_STRUCTURAL_THREAT",
+                        category=ThreatCategory.COMMAND_INJECTION,
+                        severity=max_severity,
+                        title="PDF contains suspicious structural elements",
+                        description=(
+                            f"Structural analysis of '{sf.relative_path}' detected "
+                            f"suspicious PDF keywords: {keyword_summary}.\n{detail_lines}\n"
+                            f"These elements can execute code when the PDF is opened."
+                        ),
+                        file_path=sf.relative_path,
+                        remediation=(
+                            "Remove JavaScript actions and auto-execute triggers from PDF files. "
+                            "PDF files in skill packages should contain only static content."
+                        ),
+                        analyzer="static",
+                        metadata={
+                            "detected_keywords": {name: count for name, count, _, _ in detected},
+                            "analysis_method": "pdfid_structural",
+                        },
+                    )
+                )
+
+            except Exception as e:
+                logger.debug("pdfid analysis failed for %s: %s", sf.relative_path, e)
+
+        return findings
+
+    def _check_office_documents(self, skill: Skill) -> list[Finding]:
+        """Scan Office documents for VBA macros and suspicious OLE indicators.
+
+        Uses oletools (oleid) to detect macros, auto-executable triggers,
+        embedded OLE objects, and encrypted content in Office files.
+        """
+        if not self.policy.get_rule_property_bool("OFFICE_DOCUMENT_THREAT", "enabled", default=True):
+            return []
+
+        try:
+            from oletools.oleid import OleID  # type: ignore[import-untyped]
+        except ImportError:
+            logger.debug("oletools not installed – skipping Office document scan")
+            return []
+
+        findings: list[Finding] = []
+
+        # Office file extensions
+        office_extensions = {
+            ".doc",
+            ".docx",
+            ".docm",
+            ".xls",
+            ".xlsx",
+            ".xlsm",
+            ".ppt",
+            ".pptx",
+            ".pptm",
+            ".odt",
+            ".ods",
+            ".odp",
+        }
+
+        for sf in skill.files:
+            ext = sf.path.suffix.lower()
+            if ext not in office_extensions or not sf.path.exists():
+                continue
+
+            try:
+                oid = OleID(str(sf.path))
+                indicators = oid.check()
+
+                has_macros = False
+                is_encrypted = False
+                suspicious_indicators: list[str] = []
+
+                for indicator in indicators:
+                    ind_id = getattr(indicator, "id", "")
+                    ind_value = getattr(indicator, "value", None)
+                    ind_name = getattr(indicator, "name", str(indicator))
+
+                    if ind_id == "vba_macros" and ind_value:
+                        has_macros = True
+                        suspicious_indicators.append(f"VBA macros detected: {ind_value}")
+                    elif ind_id == "xlm_macros" and ind_value:
+                        has_macros = True
+                        suspicious_indicators.append(f"XLM/Excel4 macros detected: {ind_value}")
+                    elif ind_id == "encrypted" and ind_value:
+                        is_encrypted = True
+                        suspicious_indicators.append(f"Document is encrypted: {ind_value}")
+                    elif ind_id == "flash" and ind_value:
+                        suspicious_indicators.append(f"Embedded Flash content: {ind_value}")
+                    elif ind_id == "ObjectPool" and ind_value:
+                        suspicious_indicators.append(f"Embedded OLE objects: {ind_value}")
+                    elif ind_id == "ext_rels" and ind_value:
+                        suspicious_indicators.append(f"External relationships: {ind_value}")
+
+                if not suspicious_indicators:
+                    continue
+
+                # Determine severity
+                if has_macros:
+                    severity = Severity.CRITICAL
+                    title = "Office document contains VBA macros"
+                elif is_encrypted:
+                    severity = Severity.HIGH
+                    title = "Office document is encrypted (resists analysis)"
+                else:
+                    severity = Severity.MEDIUM
+                    title = "Office document contains suspicious indicators"
+
+                findings.append(
+                    Finding(
+                        id=self._generate_finding_id("OFFICE_DOCUMENT_THREAT", sf.relative_path),
+                        rule_id="OFFICE_DOCUMENT_THREAT",
+                        category=ThreatCategory.SUPPLY_CHAIN_ATTACK,
+                        severity=severity,
+                        title=title,
+                        description=(
+                            f"Analysis of '{sf.relative_path}' detected:\n"
+                            + "\n".join(f"  - {s}" for s in suspicious_indicators)
+                            + "\nMalicious macros in Office documents can execute code "
+                            "when the agent processes the file."
+                        ),
+                        file_path=sf.relative_path,
+                        remediation=(
+                            "Remove VBA macros from Office documents. Use plain text, "
+                            "Markdown, or macro-free formats (.docx, .xlsx) instead."
+                        ),
+                        analyzer="static",
+                        metadata={
+                            "has_macros": has_macros,
+                            "is_encrypted": is_encrypted,
+                            "indicators": suspicious_indicators,
+                            "analysis_method": "oletools_oleid",
+                        },
+                    )
+                )
+
+            except Exception as e:
+                logger.debug("oleid analysis failed for %s: %s", sf.relative_path, e)
+
+        return findings
+
+    def _check_homoglyph_attacks(self, skill: Skill) -> list[Finding]:
+        """Detect Unicode homoglyph attacks in code files.
+
+        Uses the confusable-homoglyphs library (backed by Unicode Consortium's
+        confusables.txt) to identify characters that look identical to ASCII
+        but are from different scripts (e.g., Cyrillic 'a' vs Latin 'a').
+        """
+        try:
+            from confusable_homoglyphs import confusables  # type: ignore[import-untyped]
+        except ImportError:
+            logger.debug("confusable-homoglyphs not installed – skipping homoglyph check")
+            return []
+
+        findings: list[Finding] = []
+
+        # Only scan executable code files where homoglyphs can evade pattern
+        # matching.  Markdown is excluded because legitimate multilingual prose
+        # (CJK, Cyrillic, Arabic mixed with Latin) triggers massive FPs.
+        code_file_types = {"python", "bash"}
+
+        # Code-like tokens that suggest a line is an identifier / expression,
+        # not natural-language prose (used for additional filtering).
+        _CODE_TOKEN_RE = re.compile(r"[=\(\)\[\]\{\};]|import |def |class |if |for |while |return |print\(")
+
+        for sf in skill.files:
+            if sf.file_type not in code_file_types:
+                continue
+
+            content = sf.read_content()
+            if not content:
+                continue
+
+            # Check each line for mixed-script homoglyphs
+            dangerous_lines: list[tuple[int, str, list[dict]]] = []
+
+            for line_num, line in enumerate(content.split("\n"), 1):
+                # Skip comments and empty lines
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+                    continue
+
+                # Only check lines that contain non-ASCII characters
+                if stripped.isascii():
+                    continue
+
+                # Heuristic: in code files, only flag lines that look like code
+                # (have operators, parens, etc.) — skip i18n strings
+                if not _CODE_TOKEN_RE.search(stripped):
+                    continue
+
+                # Check for confusable characters
+                result = confusables.is_dangerous(stripped, preferred_aliases=["LATIN"])
+                if result:
+                    dangerous_lines.append((line_num, stripped, result))
+
+            # Require multiple dangerous lines to reduce single-line i18n FPs.
+            # A genuine homoglyph attack typically uses confusables across
+            # several identifiers / expressions.
+            min_dangerous_lines = self.policy.get_rule_property_int(
+                "HOMOGLYPH_ATTACK", "min_dangerous_lines", default=5
+            )
+            if len(dangerous_lines) < min_dangerous_lines:
+                continue
+
+            # Report the first few dangerous lines (avoid noise)
+            reported = dangerous_lines[:5]
+            line_details = "\n".join(f"  - Line {ln}: {text[:80]}" for ln, text, _ in reported)
+            extra = ""
+            if len(dangerous_lines) > 5:
+                extra = f"\n  ... and {len(dangerous_lines) - 5} more lines"
+
+            findings.append(
+                Finding(
+                    id=self._generate_finding_id("HOMOGLYPH_ATTACK", sf.relative_path),
+                    rule_id="HOMOGLYPH_ATTACK",
+                    category=ThreatCategory.OBFUSCATION,
+                    severity=Severity.HIGH,
+                    title="Unicode homoglyph characters detected in code",
+                    description=(
+                        f"File '{sf.relative_path}' contains characters from mixed Unicode "
+                        f"scripts that are visually identical to ASCII letters. "
+                        f"This technique can bypass pattern-matching security rules.\n"
+                        f"{line_details}{extra}"
+                    ),
+                    file_path=sf.relative_path,
+                    line_number=reported[0][0],
+                    remediation=(
+                        "Replace all non-ASCII lookalike characters with their ASCII "
+                        "equivalents. All code should use standard Latin characters."
+                    ),
+                    analyzer="static",
+                    metadata={
+                        "affected_lines": len(dangerous_lines),
+                        "analysis_method": "confusable_homoglyphs",
+                    },
+                )
+            )
 
         return findings
 
@@ -1451,6 +1840,123 @@ class StaticAnalyzer(BaseAnalyzer):
                     analyzer="static",
                 )
             )
+
+        # Check for unreferenced script files (hidden functionality)
+        code_extensions = self.policy.file_classification.code_extensions
+
+        # Build the set of referenced file names (from SKILL.md)
+        referenced_lower = {r.lower() for r in skill.referenced_files}
+
+        # Expand references transitively: scripts imported by referenced scripts
+        # are considered indirectly referenced (not hidden functionality)
+        _import_re = re.compile(r"^(?:from\s+\.?(\w[\w.]*)\s+import|import\s+\.?(\w[\w.]*))", re.MULTILINE)
+        _source_re = re.compile(r"(?:source|\.)\s+[\"']?([A-Za-z0-9_\-./]+\.(?:sh|bash))[\"']?")
+        expanded_refs: set[str] = set(referenced_lower)
+        for sf in skill.files:
+            if sf.relative_path.lower() not in referenced_lower:
+                fn = Path(sf.relative_path).name.lower()
+                if fn not in referenced_lower and fn not in skill.instruction_body.lower():
+                    continue  # this file itself isn't referenced
+            content = sf.read_content()
+            if not content:
+                continue
+            # Python: from X import Y → X.py is transitively referenced
+            if sf.file_type == "python":
+                for m in _import_re.finditer(content):
+                    mod = (m.group(1) or m.group(2) or "").replace(".", "/")
+                    if mod:
+                        expanded_refs.add(f"{mod}.py")
+                        expanded_refs.add(mod.split("/")[-1] + ".py")
+            # Bash: source X.sh → X.sh is transitively referenced
+            elif sf.file_type == "bash":
+                for m in _source_re.finditer(content):
+                    expanded_refs.add(m.group(1).lower())
+                    expanded_refs.add(Path(m.group(1)).name.lower())
+
+        # Well-known filenames that are almost never referenced in SKILL.md
+        # but serve standard structural roles in Python/JS projects
+        _BENIGN_FILENAMES = {
+            "__init__.py",
+            "__main__.py",
+            "conftest.py",
+            "setup.py",
+            "setup.cfg",
+            "manage.py",
+            "wsgi.py",
+            "asgi.py",
+            "fabfile.py",
+            "noxfile.py",
+            "tasks.py",
+            "makefile",
+            "rakefile",
+            "gulpfile.js",
+            "gruntfile.js",
+            "webpack.config.js",
+            "tsconfig.json",
+            "jest.config.js",
+            "babel.config.js",
+            ".eslintrc.js",
+            "vite.config.js",
+        }
+        # Patterns for test files that are structural, not hidden functionality
+        _TEST_FILE_RE = re.compile(r"^(?:test_|tests_).*\.py$|^.*_test\.py$|^conftest\.py$", re.IGNORECASE)
+
+        for sf in skill.files:
+            if sf.file_type in ("python", "bash") or sf.path.suffix.lower() in code_extensions:
+                rel = sf.relative_path
+                # Skip SKILL.md itself
+                if rel.lower() == "skill.md":
+                    continue
+                filename = Path(rel).name
+                filename_lower = filename.lower()
+
+                # Skip well-known structural files (not hidden functionality)
+                if filename_lower in _BENIGN_FILENAMES:
+                    continue
+
+                # Skip test files (test infrastructure, not hidden functionality)
+                if _TEST_FILE_RE.match(filename):
+                    continue
+
+                # Check if referenced in SKILL.md (directly or transitively)
+                is_referenced = (
+                    rel.lower() in expanded_refs
+                    or filename_lower in expanded_refs
+                    or any(ref in rel.lower() for ref in expanded_refs if ref)
+                    or filename_lower in skill.instruction_body.lower()
+                )
+                if not is_referenced:
+                    # Store for LLM enrichment context instead of emitting
+                    # a standalone finding (too noisy — ~95% FP in corpus).
+                    self._unreferenced_scripts.append(rel)
+
+        # Check for archives that contain executable scripts
+        for sf in skill.files:
+            if sf.extracted_from and sf.file_type in ("python", "bash"):
+                findings.append(
+                    Finding(
+                        id=self._generate_finding_id("ARCHIVE_CONTAINS_EXECUTABLE", sf.relative_path),
+                        rule_id="ARCHIVE_CONTAINS_EXECUTABLE",
+                        category=ThreatCategory.SUPPLY_CHAIN_ATTACK,
+                        severity=Severity.HIGH,
+                        title="Archive contains executable script",
+                        description=(
+                            f"Executable script '{sf.relative_path}' was extracted from "
+                            f"archive '{sf.extracted_from}'. Archives can be used to conceal "
+                            f"malicious scripts from casual inspection."
+                        ),
+                        file_path=sf.relative_path,
+                        remediation=(
+                            "Remove executable scripts from archives. "
+                            "Include scripts directly in the skill package for transparency."
+                        ),
+                        analyzer="static",
+                        metadata={
+                            "extracted_from": sf.extracted_from,
+                            "file_type": sf.file_type,
+                        },
+                    )
+                )
 
         return findings
 

@@ -106,6 +106,7 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
         aidefense_api_key=getattr(args, "aidefense_api_key", None),
         aidefense_api_url=getattr(args, "aidefense_api_url", None),
         use_trigger=getattr(args, "use_trigger", False),
+        llm_consensus_runs=getattr(args, "llm_consensus_runs", 1),
     )
 
     # Emit status messages for the optional analyzers that were activated.
@@ -495,6 +496,13 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--aidefense-api-key", help="AI Defense API key (or set AI_DEFENSE_API_KEY)")
     parser.add_argument("--aidefense-api-url", help="AI Defense API URL (optional, defaults to US region)")
     parser.add_argument("--llm-provider", choices=["anthropic", "openai"], default="anthropic", help="LLM provider")
+    parser.add_argument(
+        "--llm-consensus-runs",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Run LLM analysis N times and keep only findings with majority agreement (reduces false positives, increases cost)",
+    )
     parser.add_argument("--use-trigger", action="store_true", help="Enable trigger specificity analysis")
     parser.add_argument("--enable-meta", action="store_true", help="Enable meta-analysis FP filtering (2+ analyzers)")
     parser.add_argument(

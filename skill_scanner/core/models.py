@@ -56,6 +56,7 @@ class ThreatCategory(str, Enum):
     AUTONOMY_ABUSE = "autonomy_abuse"
     TOOL_CHAINING_ABUSE = "tool_chaining_abuse"
     UNICODE_STEGANOGRAPHY = "unicode_steganography"
+    SUPPLY_CHAIN_ATTACK = "supply_chain_attack"
 
 
 @dataclass

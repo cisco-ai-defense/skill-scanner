@@ -171,6 +171,8 @@ rule_scoping:
     - "code_execution_generic"
     - "system_manipulation_generic"
     - "script_injection_generic"
+    - "GLOB_HIDDEN_FILE_TARGETING"
+    - "FIND_EXEC_PATTERN"
 
   # Rules that only fire on code files (python, bash), not markdown/configs
   code_only:
@@ -264,6 +266,10 @@ file_classification:
     - ".tiff"
     - ".pyc"
     - ".pyo"
+    # Databases (binary but not security-relevant)
+    - ".db"
+    - ".sqlite"
+    - ".sqlite3"
 
   structured_extensions:
     - ".svg"
@@ -541,3 +547,51 @@ severity_overrides: []
 #     - LAZY_LOAD_DEEP_NESTING     # We allow deep nesting
 #     - ARCHIVE_FILE_DETECTED      # Archives are expected in our skills
 disabled_rules: []
+
+# ---------------------------------------------------------------------------
+# Per-rule properties – tunable knobs for individual rules
+# ---------------------------------------------------------------------------
+# Use policy.get_rule_property(rule_id, key, default) in analyzers.
+# Unknown keys are silently ignored; missing keys use analyzer defaults.
+rule_properties:
+  HOMOGLYPH_ATTACK:
+    min_dangerous_lines: 5          # Min lines with confusable chars to trigger
+    enabled: true
+  COMPOUND_FETCH_EXECUTE:
+    check_known_installers: true    # Demote known installer URLs to LOW
+    demote_in_docs: true
+    enabled: true
+  UNANALYZABLE_BINARY:
+    skip_inert_extensions: true     # Skip images, fonts, databases
+    enabled: true
+  YARA_embedded_shebang_in_binary:
+    skip_inert_extensions: true     # Skip images, fonts, databases
+    enabled: true
+  PDF_STRUCTURAL_THREAT:
+    enabled: true
+  OFFICE_DOCUMENT_THREAT:
+    enabled: true
+  # Signature rules
+  SVG_EMBEDDED_SCRIPT:
+    enabled: true
+  PDF_EMBEDDED_JAVASCRIPT:
+    enabled: true
+  GLOB_HIDDEN_FILE_TARGETING:
+    enabled: true
+  FIND_EXEC_PATTERN:
+    enabled: true
+  HIDDEN_FILE_WITH_CODE:
+    enabled: true
+  # File inventory rules
+  ARCHIVE_CONTAINS_EXECUTABLE:
+    enabled: true
+  # YARA binary detection rules
+  YARA_embedded_elf_binary:
+    enabled: true
+  YARA_embedded_pe_executable:
+    enabled: true
+  YARA_embedded_macho_binary:
+    enabled: true
+  # Analyzability rules
+  LOW_ANALYZABILITY:
+    enabled: true

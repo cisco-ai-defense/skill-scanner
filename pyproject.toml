@@ -61,6 +61,12 @@ dependencies = [
     "httpx>=0.28.1",
     # AI-powered file type detection (200+ types, ~99% accuracy)
     "magika>=0.6.0",
+    # Structural PDF analysis (detects JS, OpenAction, Launch, etc.)
+    "pdfid>=1.1.0",
+    # Office document macro/VBA detection (oleid + olevba)
+    "oletools>=0.60.1",
+    # Unicode homoglyph attack detection (confusables.txt backed)
+    "confusable-homoglyphs>=3.3.0",
     # LLM support (required)
     "anthropic>=0.40.0",
     "openai>=1.0.0",
@@ -82,6 +88,10 @@ vertex = [
 azure = [
     "azure-identity>=1.15.0",
 ]
+# Supply chain dependency scanning (requires network access)
+# NOTE: guarddog has a dependency conflict with pip-audit via tomli.
+# Install separately: pip install guarddog
+# supply-chain = ["guarddog>=2.0.0"]
 # All optional provider extras
 all = [
     "boto3>=1.28.57",
