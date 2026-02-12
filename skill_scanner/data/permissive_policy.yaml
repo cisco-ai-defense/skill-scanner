@@ -182,6 +182,10 @@ pipeline:
     - "tutorials"
     - "guides"
 
+  demote_in_docs: true
+  demote_instructional: true
+  check_known_installers: true
+
 # ---------------------------------------------------------------------------
 # Rule scoping – narrower rule application
 # ---------------------------------------------------------------------------
@@ -364,6 +368,8 @@ file_classification:
     - ".r"
     - ".jl"
 
+  skip_inert_extensions: true
+
 # ---------------------------------------------------------------------------
 # File limits – relaxed thresholds
 # ---------------------------------------------------------------------------
@@ -383,6 +389,11 @@ analysis_thresholds:
   zerowidth_threshold_alone: 500        # Much higher for standalone zero-width
   analyzability_low_risk: 80            # Easier to reach LOW risk
   analyzability_medium_risk: 50         # Easier to reach MEDIUM risk
+  min_dangerous_lines: 10
+  min_confidence_pct: 90
+  exception_handler_context_lines: 15
+  short_match_max_chars: 4
+  cyrillic_cjk_min_chars: 20
 
 # ---------------------------------------------------------------------------
 # Sensitive files – narrower patterns (fewer FPs)
@@ -475,49 +486,3 @@ disabled_rules:
   - GLOB_HIDDEN_FILE_TARGETING
   - HOMOGLYPH_ATTACK
   - embedded_shebang_in_binary
-
-# ---------------------------------------------------------------------------
-# Per-rule properties – permissive: relaxed thresholds, broad exemptions
-# ---------------------------------------------------------------------------
-rule_properties:
-  HOMOGLYPH_ATTACK:
-    min_dangerous_lines: 8          # Higher threshold → fewer triggers
-    enabled: true
-  COMPOUND_FETCH_EXECUTE:
-    check_known_installers: true    # Demote known installer URLs
-    demote_in_docs: true
-    enabled: true
-  UNANALYZABLE_BINARY:
-    skip_inert_extensions: true     # Skip images, fonts, databases
-    enabled: true
-  YARA_embedded_shebang_in_binary:
-    skip_inert_extensions: true     # Skip images, fonts, databases
-    enabled: true
-  PDF_STRUCTURAL_THREAT:
-    enabled: true
-  OFFICE_DOCUMENT_THREAT:
-    enabled: true
-  # Signature rules — permissive disables noisy ones
-  SVG_EMBEDDED_SCRIPT:
-    enabled: true
-  PDF_EMBEDDED_JAVASCRIPT:
-    enabled: true
-  GLOB_HIDDEN_FILE_TARGETING:
-    enabled: false                  # Disabled (also in disabled_rules)
-  FIND_EXEC_PATTERN:
-    enabled: true
-  HIDDEN_FILE_WITH_CODE:
-    enabled: true
-  # File inventory rules
-  ARCHIVE_CONTAINS_EXECUTABLE:
-    enabled: true
-  # YARA binary detection rules
-  YARA_embedded_elf_binary:
-    enabled: true
-  YARA_embedded_pe_executable:
-    enabled: true
-  YARA_embedded_macho_binary:
-    enabled: true
-  # Analyzability rules
-  LOW_ANALYZABILITY:
-    enabled: false                  # Permissive skips analyzability warnings

@@ -249,8 +249,7 @@ class ScanResult:
         """
         return {
             "skill_name": self.skill_name,
-            "skill_path": self.skill_directory,  # Plugin expects skill_path
-            "skill_directory": self.skill_directory,  # Keep for backward compatibility
+            "skill_path": self.skill_directory,
             "is_safe": self.is_safe,
             "max_severity": self.max_severity.value,
             "findings_count": len(self.findings),

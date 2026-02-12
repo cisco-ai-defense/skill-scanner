@@ -283,8 +283,8 @@ class SkillScanner:
 
         # Escalate unknown binaries from INFO to MEDIUM — skip inert
         # file types (images, fonts, databases) that are binary but benign.
-        _unanalyzable_enabled = self.policy.get_rule_property_bool("UNANALYZABLE_BINARY", "enabled", default=True)
-        _skip_inert = self.policy.get_rule_property_bool("UNANALYZABLE_BINARY", "skip_inert_extensions", default=True)
+        _unanalyzable_enabled = "UNANALYZABLE_BINARY" not in self.policy.disabled_rules
+        _skip_inert = self.policy.file_classification.skip_inert_extensions
         _inert_exts = set(self.policy.file_classification.inert_extensions) if _skip_inert else set()
         _doc_indicators = set(self.policy.rule_scoping.doc_path_indicators)
 
@@ -323,7 +323,7 @@ class SkillScanner:
                 )
 
         # Overall analyzability score findings — check policy knob
-        if not self.policy.get_rule_property_bool("LOW_ANALYZABILITY", "enabled", default=True):
+        if "LOW_ANALYZABILITY" in self.policy.disabled_rules:
             return findings  # early return; UNANALYZABLE_BINARY already collected above
 
         if report.risk_level == "HIGH":
@@ -393,35 +393,14 @@ class SkillScanner:
         return has_critical_or_high or has_unreferenced or has_magic_mismatch
 
     def _apply_severity_overrides(self, findings: list) -> None:
-        """Apply severity overrides from both legacy ``severity_overrides`` and
-        the extensible ``rule_properties`` map.
-
-        Precedence (highest first):
-        1. ``severity_overrides`` (legacy list – backward compatible)
-        2. ``rule_properties.<rule_id>.severity``
-        3. Analyzer default (no change)
-        """
+        """Apply severity overrides from policy ``severity_overrides``."""
         for finding in findings:
-            # Legacy severity_overrides take first priority
             override = self.policy.get_severity_override(finding.rule_id)
             if override:
                 try:
                     finding.severity = Severity(override)
                 except (ValueError, KeyError):
                     logger.warning("Invalid severity override '%s' for rule %s", override, finding.rule_id)
-                continue
-
-            # Extensible rule_properties severity (second priority)
-            rp_severity = self.policy.get_rule_property(finding.rule_id, "severity")
-            if rp_severity:
-                try:
-                    finding.severity = Severity(rp_severity)
-                except (ValueError, KeyError):
-                    logger.warning(
-                        "Invalid rule_properties severity '%s' for rule %s",
-                        rp_severity,
-                        finding.rule_id,
-                    )
 
     def scan_directory(self, skills_directory: Path, recursive: bool = False, check_overlap: bool = False) -> Report:
         """

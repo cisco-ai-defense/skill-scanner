@@ -41,7 +41,7 @@ from .llm_response_parser import ResponseParser
 
 logger = logging.getLogger(__name__)
 
-# Export constants for backward compatibility with tests
+# Import provider availability flags
 try:
     from .llm_provider_config import GOOGLE_GENAI_AVAILABLE, LITELLM_AVAILABLE
 except (ImportError, ModuleNotFoundError):
@@ -199,10 +199,6 @@ class LLMAnalyzer(BaseAnalyzer):
         self.prompt_builder = PromptBuilder()
         self.response_parser = ResponseParser()
 
-        # Expose commonly accessed attributes for backward compatibility
-        self.model = self.provider_config.model
-        self.api_key = self.provider_config.api_key
-        self.is_bedrock = self.provider_config.is_bedrock
         self.is_gemini = self.provider_config.is_gemini
         self.aws_region = self.provider_config.aws_region
         self.aws_profile = self.provider_config.aws_profile
@@ -510,7 +506,7 @@ The structured output schema will enforce these exact codes."""
                     remediation=llm_finding.get("remediation", ""),
                     analyzer="llm",
                     metadata={
-                        "model": self.model,
+                        "model": self.provider_config.model,
                         "overall_assessment": analysis_result.get("overall_assessment", ""),
                         "primary_threats": analysis_result.get("primary_threats", []),
                         "aitech": aitech_code,
@@ -538,14 +534,7 @@ The structured output schema will enforce these exact codes."""
 
         # If it's an absolute path, check if it's within skill directory
         if file_path_obj.is_absolute():
-            try:
-                return skill_dir in file_path_obj.parents or file_path_obj.is_relative_to(skill_dir)
-            except AttributeError:
-                # Python < 3.9 compatibility
-                try:
-                    return skill_dir.resolve() in file_path_obj.resolve().parents
-                except OSError:
-                    return False
+            return skill_dir in file_path_obj.parents or file_path_obj.is_relative_to(skill_dir)
 
         # Relative path - check if it exists within skill directory
         full_path = skill_dir / file_path

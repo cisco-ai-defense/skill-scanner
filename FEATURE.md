@@ -31,7 +31,7 @@ This document is the single source of truth for every feature in the Skill Scann
 | 16 | [Content Extractor (ZIP/TAR/DOCX/XLSX)](#16-content-extractor-ziptardocxxlsx) | No | **New** | File Handling | Safe archive extraction with zip-bomb, path-traversal, and file-limit protections |
 | 17 | [Analyzability Scoring](#17-analyzability-scoring) | No | **New** | Reporting | 0-100 scan confidence score based on source-vs-binary ratio, SKILL.md quality, and file limits |
 | 18 | [Analyzer Factory](#18-analyzer-factory) | No | **New** | Architecture | Centralized `build_core_analyzers()` / `build_analyzers()` replacing scattered init logic |
-| 19 | [Extensible Rule Properties](#19-extensible-rule-properties) | No | **New** | Policy Engine | Per-rule severity, file-type, and metadata overrides via `rule_properties` YAML section |
+| 19 | [Policy-Driven Knob System](#19-policy-driven-knob-system) | No | **New** | Policy Engine | All tunable parameters live in named policy sections (file_limits, analysis_thresholds, pipeline, file_classification, etc.) — no per-rule property layer |
 | 20 | [Policy Benchmark System](#20-policy-benchmark-system) | No | **New** | Evals | Cross-policy comparison on ~119-skill corpus with 10 policy variants; MD + JSON output |
 | 21 | [Eval-Skills Benchmark](#21-eval-skills-benchmark) | Yes | Enhanced | Evals | Runners moved to `evals/runners/`; added `__init__.py`; updated imports and paths |
 | 22 | [Taxonomy Enforcement (check-taxonomy)](#22-taxonomy-enforcement-check-taxonomy) | No | **New** | CI / Governance | Pre-commit hook validating `ThreatCategory` enum stays in sync with Cisco AITech taxonomy |
@@ -63,15 +63,15 @@ This document is the single source of truth for every feature in the Skill Scann
 
 | | |
 |---|---|
-| **Files** | `skill_scanner/core/analyzers/static.py`, `skill_scanner/data/rules/signatures.yaml`, `skill_scanner/data/yara_rules/*.yara` |
+| **Files** | `skill_scanner/core/analyzers/static.py`, `skill_scanner/data/packs/core/signatures/`, `skill_scanner/data/packs/core/yara/*.yara` |
 | **Branch** | `main`: Yes — `local`: Enhanced |
 | **Requires** | Nothing (runs offline, no API keys) |
 
 **What it is:**
 The primary detection engine. It scans every file in a skill directory using two complementary pattern systems:
 
-- **YAML signature rules** — regex-based patterns defined in `signatures.yaml`, grouped by category (prompt injection, command injection, hardcoded secrets, etc.). Each rule specifies `id`, `category`, `severity`, `patterns`, and optional `file_types`.
-- **YARA rules** — compiled rules in `skill_scanner/data/yara_rules/` for binary and text matching. Covers 13 threat categories including prompt injection, credential harvesting, unicode steganography, and tool-chaining abuse.
+- **YAML signature rules** — regex-based patterns defined in `data/packs/core/signatures/`, grouped by category (prompt injection, command injection, hardcoded secrets, etc.). Each rule specifies `id`, `category`, `severity`, `patterns`, and optional `file_types`.
+- **YARA rules** — compiled rules in `skill_scanner/data/packs/core/yara/` for binary and text matching. Covers 13 threat categories including prompt injection, credential harvesting, unicode steganography, and tool-chaining abuse.
 
 The static analyzer also performs:
 - **Manifest analysis** — checks SKILL.md frontmatter for suspicious fields.
@@ -359,7 +359,6 @@ A comprehensive policy engine that lets organizations customize every aspect of 
 | `command_safety` | Command risk tiers (safe/caution/risky/dangerous) |
 | `severity_overrides` | Bump or lower severity for specific rules |
 | `disabled_rules` | Completely disable specific rule IDs |
-| `rule_properties` | Per-rule property overrides (advanced) |
 | `analyzers` | Enable/disable and configure individual analyzers |
 
 **Why it exists:**
@@ -562,33 +561,37 @@ analyzers = build_analyzers(config=config, policy=policy)
 
 ---
 
-### 19. Extensible Rule Properties
+### 19. Policy-Driven Knob System
 
 | | |
 |---|---|
-| **Files** | `skill_scanner/core/scan_policy.py` (rule_properties section), `skill_scanner/core/rules/patterns.py` |
+| **Files** | `skill_scanner/core/scan_policy.py`, `skill_scanner/data/default_policy.yaml`, policy preset files |
 | **Branch** | `main`: No — `local`: **New** |
-| **Requires** | Scan policy file |
+| **Requires** | Nothing (defaults are built-in) |
 
 **What it is:**
-The `rule_properties` section in scan policies allows per-rule overrides for any property. This enables fine-grained control like:
+All tunable parameters are exposed through named policy sections. There is no separate per-rule property layer. Fine-grained control is achieved by editing the appropriate section:
 
-- Changing a specific rule's severity without disabling it.
-- Restricting a rule to specific file types.
-- Adding custom metadata to rules for reporting.
+- **file_limits** — max file count, max file size, max reference depth, name/description length thresholds
+- **analysis_thresholds** — zero-width character thresholds, analyzability risk cutoffs
+- **pipeline** — trusted installer domains, benign pipe patterns, doc path indicators
+- **file_classification** — inert extensions, structured extensions, archive and code extensions
+- **severity_overrides** — change any rule's severity without disabling it
 
 **Why it exists:**
-Organizations often need to tweak individual rules rather than disabling them entirely. For example, a team might want `HARDCODED_SECRETS_API_KEY` at `CRITICAL` severity instead of the default `HIGH`, or want `COMMAND_INJECTION_EVAL` to only fire on `.py` files.
+Organizations need to tune scan behavior to match their security posture. Placing all knobs in well-defined policy sections keeps configuration discoverable and avoids the complexity of per-rule property overrides.
 
 **How to use:**
 
 ```yaml
-# In your policy YAML
-rule_properties:
-  HARDCODED_SECRETS_API_KEY:
-    severity: CRITICAL
-  COMMAND_INJECTION_EVAL:
-    file_types: [".py", ".pyi"]
+# In your policy YAML — tune thresholds and scoping via named sections
+file_limits:
+  max_file_count: 200
+  max_file_size_bytes: 10485760
+
+analysis_thresholds:
+  zerowidth_threshold_with_decode: 100
+  zerowidth_threshold_alone: 500
 ```
 
 ---
@@ -904,7 +907,7 @@ Standardized taxonomy enables consistent reporting across Cisco's AI security pr
 
 | | |
 |---|---|
-| **Files** | `skill_scanner/data/yara_rules/*.yara` (13 rule files) |
+| **Files** | `skill_scanner/data/packs/core/yara/*.yara` (13 rule files) |
 | **Branch** | `main`: Yes — `local`: Enhanced |
 
 **What it is:**

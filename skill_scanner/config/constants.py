@@ -39,7 +39,8 @@ class SkillScannerConstants:
     # Resource paths
     DATA_DIR = PACKAGE_ROOT / "data"
     PROMPTS_DIR = DATA_DIR / "prompts"
-    YARA_RULES_DIR = DATA_DIR / "yara_rules"
+    YARA_RULES_DIR = DATA_DIR / "packs" / "core" / "yara"
+    SIGNATURES_DIR = DATA_DIR / "packs" / "core" / "signatures"
     RULES_DIR = PACKAGE_ROOT / "core" / "rules"
 
     # Default values

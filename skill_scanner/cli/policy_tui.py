@@ -117,149 +117,6 @@ class SetEditorScreen(ModalScreen[set[str] | list[str] | None]):
         self.dismiss(None)
 
 
-class RulePropertiesEditorScreen(ModalScreen[dict[str, dict[str, object]] | None]):
-    """Modal for editing per-rule property overrides in YAML-like format.
-
-    Format (one rule per block, blank-line separated)::
-
-        PIPELINE_TAINT_FLOW:
-          severity: MEDIUM
-          demote_instructional: false
-
-        EXCESSIVE_FILE_COUNT:
-          max_file_count: 200
-    """
-
-    BINDINGS = [
-        Binding("escape", "cancel", "Cancel"),
-    ]
-
-    DEFAULT_CSS = """
-    RulePropertiesEditorScreen {
-        align: center middle;
-    }
-    RulePropertiesEditorScreen > Vertical {
-        width: 90;
-        max-height: 90%;
-        border: thick $primary;
-        background: $surface;
-        padding: 1 2;
-    }
-    RulePropertiesEditorScreen TextArea {
-        height: 1fr;
-        min-height: 14;
-    }
-    RulePropertiesEditorScreen .hint {
-        color: $text-muted;
-        margin-bottom: 1;
-    }
-    RulePropertiesEditorScreen .buttons {
-        height: 3;
-        align: right middle;
-        margin-top: 1;
-    }
-    RulePropertiesEditorScreen .buttons Button {
-        margin-left: 1;
-    }
-    RulePropertiesEditorScreen .error-label {
-        color: $error;
-        height: auto;
-    }
-    """
-
-    def __init__(self, rule_properties: dict[str, dict[str, object]]) -> None:
-        super().__init__()
-        self._rule_properties = rule_properties
-
-    @staticmethod
-    def _props_to_text(props: dict[str, dict[str, object]]) -> str:
-        """Serialize rule_properties to a human-friendly text format."""
-        if not props:
-            return ""
-        lines: list[str] = []
-        for rule_id in sorted(props):
-            lines.append(f"{rule_id}:")
-            for key, val in sorted(props[rule_id].items()):
-                lines.append(f"  {key}: {val}")
-            lines.append("")
-        return "\n".join(lines)
-
-    @staticmethod
-    def _text_to_props(text: str) -> dict[str, dict[str, object]]:
-        """Parse the human-friendly text back to a dict.
-
-        Raises ``ValueError`` on bad input.
-        """
-        result: dict[str, dict[str, object]] = {}
-        current_rule: str | None = None
-        for lineno, raw in enumerate(text.splitlines(), 1):
-            line = raw.rstrip()
-            if not line or line.isspace():
-                current_rule = None
-                continue
-            # Rule header: "RULE_ID:"
-            if not line.startswith(" ") and line.endswith(":"):
-                current_rule = line[:-1].strip()
-                if not current_rule:
-                    raise ValueError(f"Line {lineno}: empty rule ID")
-                result.setdefault(current_rule, {})
-                continue
-            # Property line: "  key: value"
-            if current_rule and line.startswith(" "):
-                stripped = line.strip()
-                if ":" not in stripped:
-                    raise ValueError(f"Line {lineno}: expected 'key: value', got '{stripped}'")
-                key, _, raw_val = stripped.partition(":")
-                key = key.strip()
-                raw_val = raw_val.strip()
-                # Auto-coerce common types
-                if raw_val.lower() in ("true", "yes"):
-                    val: object = True
-                elif raw_val.lower() in ("false", "no"):
-                    val = False
-                else:
-                    try:
-                        val = int(raw_val)
-                    except ValueError:
-                        val = raw_val
-                result[current_rule][key] = val
-                continue
-            # Unindented non-header line
-            if not line.startswith(" ") and ":" in line and not line.endswith(":"):
-                # Could be "key: value" without a rule header – reject gracefully
-                raise ValueError(f"Line {lineno}: property '{line}' must be indented under a RULE_ID: header")
-            raise ValueError(f"Line {lineno}: unexpected content '{line}'")
-        return result
-
-    def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Label("[bold]Advanced Rule Properties[/bold]")
-            yield Label(
-                "Per-rule overrides. Format: RULE_ID: header, then indented key: value lines. "
-                "Blank lines separate rules.",
-                classes="hint",
-            )
-            yield TextArea(self._props_to_text(self._rule_properties), id="rp-editor")
-            yield Label("", id="rp-error", classes="error-label")
-            with Horizontal(classes="buttons"):
-                yield Button("Save", variant="primary", id="save")
-                yield Button("Cancel", variant="default", id="cancel")
-
-    @on(Button.Pressed, "#save")
-    def on_save(self) -> None:
-        text = self.query_one("#rp-editor", TextArea).text
-        try:
-            parsed = self._text_to_props(text)
-        except ValueError as exc:
-            self.query_one("#rp-error", Label).update(f"Parse error: {exc}")
-            return
-        self.dismiss(parsed)
-
-    @on(Button.Pressed, "#cancel")
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-
 # ─── Main App ────────────────────────────────────────────────────────────────
 
 
@@ -391,6 +248,10 @@ class PolicyConfigApp(App[str | None]):
             with Horizontal(classes="field-row"):
                 yield Label("Doc path indicators")
                 yield Button("Edit list...", id="edit-pipe-docpaths", classes="edit-btn")
+            with Vertical(classes="analyzer-checks"):
+                yield Checkbox("Demote findings in docs", value=True, id="chk-demote-in-docs")
+                yield Checkbox("Demote instructional examples", value=True, id="chk-demote-instructional")
+                yield Checkbox("Demote known installer URLs", value=True, id="chk-check-known-installers")
 
             yield Rule()
 
@@ -450,6 +311,8 @@ class PolicyConfigApp(App[str | None]):
             with Horizontal(classes="field-row"):
                 yield Label("Code extensions")
                 yield Button("Edit list...", id="edit-code-ext", classes="edit-btn")
+            with Vertical(classes="analyzer-checks"):
+                yield Checkbox("Skip inert extension checks", value=True, id="chk-skip-inert-ext")
 
             yield Rule()
 
@@ -490,6 +353,21 @@ class PolicyConfigApp(App[str | None]):
             with Horizontal(classes="field-row"):
                 yield Label("Analyzability MEDIUM risk (%)")
                 yield Input(value="70", id="anal-med", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Min dangerous lines (HOMOGLYPH)")
+                yield Input(value="5", id="min-dangerous-lines", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Min confidence % (FILE_MAGIC)")
+                yield Input(value="80", id="min-confidence-pct", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Exception handler context lines")
+                yield Input(value="20", id="exception-handler-context-lines", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Short match max chars (steg)")
+                yield Input(value="2", id="short-match-max-chars", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Cyrillic/CJK min chars (steg)")
+                yield Input(value="10", id="cyrillic-cjk-min-chars", type="integer")
 
             yield Rule()
 
@@ -538,19 +416,6 @@ class PolicyConfigApp(App[str | None]):
                 yield Label("Severity overrides")
                 yield Button("Edit list...", id="edit-overrides", classes="edit-btn")
 
-            yield Rule()
-
-            # ── Advanced Rule Properties (opt-in) ────────────────────
-            yield Label("Advanced Rule Tuning", classes="section-title")
-            yield Label(
-                "Per-rule property overrides (severity, thresholds, toggles). Leave empty for defaults.",
-                classes="section-desc",
-            )
-            yield Label("0 rule overrides configured", id="rp-summary")
-            with Horizontal(classes="field-row"):
-                yield Label("Rule properties")
-                yield Button("Edit...", id="edit-rule-properties", classes="edit-btn")
-
         # ── Bottom action bar ─────────────────────────────────────
         with Horizontal(classes="action-bar"):
             yield Button("Save Policy", variant="primary", id="btn-save")
@@ -598,15 +463,26 @@ class PolicyConfigApp(App[str | None]):
         self.query_one("#zw-alone", Input).value = str(p.analysis_thresholds.zerowidth_threshold_alone)
         self.query_one("#anal-low", Input).value = str(p.analysis_thresholds.analyzability_low_risk)
         self.query_one("#anal-med", Input).value = str(p.analysis_thresholds.analyzability_medium_risk)
+        self.query_one("#min-dangerous-lines", Input).value = str(p.analysis_thresholds.min_dangerous_lines)
+        self.query_one("#min-confidence-pct", Input).value = str(p.analysis_thresholds.min_confidence_pct)
+        self.query_one("#exception-handler-context-lines", Input).value = str(
+            p.analysis_thresholds.exception_handler_context_lines
+        )
+        self.query_one("#short-match-max-chars", Input).value = str(p.analysis_thresholds.short_match_max_chars)
+        self.query_one("#cyrillic-cjk-min-chars", Input).value = str(p.analysis_thresholds.cyrillic_cjk_min_chars)
+
+        # Pipeline checkboxes
+        self.query_one("#chk-demote-in-docs", Checkbox).value = p.pipeline.demote_in_docs
+        self.query_one("#chk-demote-instructional", Checkbox).value = p.pipeline.demote_instructional
+        self.query_one("#chk-check-known-installers", Checkbox).value = p.pipeline.check_known_installers
+
+        # File classification checkbox
+        self.query_one("#chk-skip-inert-ext", Checkbox).value = p.file_classification.skip_inert_extensions
 
         # Analyzers
         self.query_one("#chk-static", Checkbox).value = p.analyzers.static
         self.query_one("#chk-bytecode", Checkbox).value = p.analyzers.bytecode
         self.query_one("#chk-pipeline", Checkbox).value = p.analyzers.pipeline
-
-        # Rule properties summary
-        n = len(p.rule_properties)
-        self.query_one("#rp-summary", Label).update(f"{n} rule override{'s' if n != 1 else ''} configured")
 
     def _sync_policy_from_form(self) -> None:
         """Pull form widget values back into the policy object."""
@@ -658,6 +534,36 @@ class PolicyConfigApp(App[str | None]):
             p.analysis_thresholds.analyzability_medium_risk = int(self.query_one("#anal-med", Input).value)
         except ValueError:
             pass
+        try:
+            p.analysis_thresholds.min_dangerous_lines = int(self.query_one("#min-dangerous-lines", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.analysis_thresholds.min_confidence_pct = int(self.query_one("#min-confidence-pct", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.analysis_thresholds.exception_handler_context_lines = int(
+                self.query_one("#exception-handler-context-lines", Input).value
+            )
+        except ValueError:
+            pass
+        try:
+            p.analysis_thresholds.short_match_max_chars = int(self.query_one("#short-match-max-chars", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.analysis_thresholds.cyrillic_cjk_min_chars = int(self.query_one("#cyrillic-cjk-min-chars", Input).value)
+        except ValueError:
+            pass
+
+        # Pipeline checkboxes
+        p.pipeline.demote_in_docs = self.query_one("#chk-demote-in-docs", Checkbox).value
+        p.pipeline.demote_instructional = self.query_one("#chk-demote-instructional", Checkbox).value
+        p.pipeline.check_known_installers = self.query_one("#chk-check-known-installers", Checkbox).value
+
+        # File classification checkbox
+        p.file_classification.skip_inert_extensions = self.query_one("#chk-skip-inert-ext", Checkbox).value
 
         # Analyzers
         p.analyzers.static = self.query_one("#chk-static", Checkbox).value
@@ -736,20 +642,6 @@ class PolicyConfigApp(App[str | None]):
             return
         if btn_id == "btn-quit":
             self.action_quit_app()
-            return
-
-        if btn_id == "edit-rule-properties":
-
-            def on_rp_result(result: dict[str, dict[str, object]] | None) -> None:
-                if result is not None:
-                    self.policy.rule_properties = result
-                    n = len(result)
-                    self.query_one("#rp-summary", Label).update(f"{n} rule override{'s' if n != 1 else ''} configured")
-
-            self.push_screen(
-                RulePropertiesEditorScreen(self.policy.rule_properties),
-                callback=on_rp_result,
-            )
             return
 
         if btn_id in self._FIELD_MAP:

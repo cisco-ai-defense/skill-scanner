@@ -186,9 +186,9 @@ Performs taint analysis on shell command pipelines found in scripts and document
 
 **Policy-Driven:** Uses `command_safety` tiers and `sensitive_files.patterns` from the scan policy.
 
-### 4. Security Rules (`rules/`)
+### 4. Security Rules (`data/packs/core/`)
 
-**`signatures.yaml`**: Declarative rule definitions
+**`data/packs/core/signatures/`**: Declarative rule definitions
 
 ```yaml
 - id: RULE_ID
@@ -290,7 +290,7 @@ Command-line interface built with `argparse`.
    │
    └─→ For each enabled analyzer (per scan policy):
        ├─→ StaticAnalyzer.analyze(skill)
-       │   ├─→ Load rules from signatures.yaml
+       │   ├─→ Load rules from data/packs/core/signatures/
        │   ├─→ Run scanning passes (manifest, tools, refs, binary, hidden, YARA)
        │   └─→ Return List[Finding]
        ├─→ BytecodeAnalyzer.analyze(skill)
@@ -357,7 +357,7 @@ class LLMAnalyzer(BaseAnalyzer):
 
 ### Adding New Rules
 
-Edit `skill_scanner/data/rules/signatures.yaml`:
+Edit `skill_scanner/data/packs/core/signatures/`:
 
 ```yaml
 - id: MY_CUSTOM_RULE

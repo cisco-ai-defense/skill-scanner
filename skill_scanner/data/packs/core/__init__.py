@@ -1,4 +1,4 @@
-# Copyright 2026 Cisco Systems, Inc.
+# Copyright 2026 Cisco Systems, Inc. and its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,20 +14,4 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Data directory for Skill Scanner.
-
-Contains prompts and rule files, matching MCP Scanner structure.
-"""
-
-from pathlib import Path
-
-DATA_DIR = Path(__file__).parent
-PROMPTS_DIR = DATA_DIR / "prompts"
-
-# Canonical locations under the core pack (new layout)
-_CORE_PACK = DATA_DIR / "packs" / "core"
-YARA_RULES_DIR = _CORE_PACK / "yara"
-SIGNATURES_DIR = _CORE_PACK / "signatures"
-
-__all__ = ["DATA_DIR", "PROMPTS_DIR", "YARA_RULES_DIR", "SIGNATURES_DIR"]
+# Core rule pack namespace package.

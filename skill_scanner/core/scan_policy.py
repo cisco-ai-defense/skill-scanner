@@ -44,7 +44,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any  # used in _from_dict / _deep_merge signatures
 
 import yaml
 
@@ -84,6 +84,18 @@ class PipelinePolicy:
     known_installer_domains: set[str] = field(default_factory=set)
     benign_pipe_targets: list[str] = field(default_factory=list)
     doc_path_indicators: set[str] = field(default_factory=set)
+    # Demote pipeline findings found in documentation paths
+    demote_in_docs: bool = True
+    # Demote findings that look like instructional examples (e.g. SKILL.md)
+    demote_instructional: bool = True
+    # Check URLs against known_installer_domains and demote matches to LOW
+    check_known_installers: bool = True
+    # Hint words that suggest data exfiltration in tool-chaining detection
+    exfil_hints: list[str] = field(
+        default_factory=lambda: ["send", "upload", "transmit", "webhook", "slack", "exfil", "forward"]
+    )
+    # Tokens that indicate API/framework documentation (suppress tool-chaining FP)
+    api_doc_tokens: list[str] = field(default_factory=lambda: ["@app.", "app.", "router.", "route", "endpoint"])
 
 
 @dataclass
@@ -129,6 +141,8 @@ class FileClassificationPolicy:
     archive_extensions: set[str] = field(default_factory=set)
     # Extensions considered executable code (for hidden-file checks)
     code_extensions: set[str] = field(default_factory=set)
+    # Skip binary/shebang checks on files with inert extensions
+    skip_inert_extensions: bool = True
 
 
 @dataclass
@@ -159,6 +173,16 @@ class AnalysisThresholdsPolicy:
     # Analyzability risk-level thresholds (percentage)
     analyzability_low_risk: int = 90  # score >= this → LOW risk
     analyzability_medium_risk: int = 70  # score >= this → MEDIUM risk
+    # Minimum lines containing confusable chars to fire HOMOGLYPH_ATTACK
+    min_dangerous_lines: int = 5
+    # Minimum confidence % for FILE_MAGIC_MISMATCH detection
+    min_confidence_pct: int = 80
+    # Lines of context around exception handlers for RESOURCE_ABUSE_INFINITE_LOOP
+    exception_handler_context_lines: int = 20
+    # Max matched chars to still count as "short match" in unicode steganography
+    short_match_max_chars: int = 2
+    # Minimum Cyrillic/CJK chars to suppress false-positive unicode steganography
+    cyrillic_cjk_min_chars: int = 10
 
 
 @dataclass
@@ -242,11 +266,6 @@ class ScanPolicy:
     severity_overrides: list[SeverityOverride] = field(default_factory=list)
     disabled_rules: set[str] = field(default_factory=set)
 
-    # Extensible per-rule property overrides.
-    # Keys are rule IDs; values are ``dict[str, Any]`` of property → value.
-    # Analyzers query via ``get_rule_property()``; unknown keys are ignored.
-    rule_properties: dict[str, dict[str, Any]] = field(default_factory=dict)
-
     # -----------------------------------------------------------------------
     # Convenience helpers
     # -----------------------------------------------------------------------
@@ -257,50 +276,6 @@ class ScanPolicy:
             if ovr.rule_id == rule_id:
                 return ovr.severity
         return None
-
-    def get_rule_property(self, rule_id: str, key: str, default: Any = None) -> Any:
-        """Return a per-rule property value, falling back to *default*.
-
-        This is the main accessor for the extensible ``rule_properties`` map.
-        Analyzers use it to read rule-specific tuning knobs while preserving
-        backward-compatible defaults when the key is absent.
-
-        Example::
-
-            threshold = policy.get_rule_property(
-                "YARA_prompt_injection_unicode_steganography",
-                "zerowidth_threshold_with_decode",
-                default=policy.analysis_thresholds.zerowidth_threshold_with_decode,
-            )
-        """
-        props = self.rule_properties.get(rule_id)
-        if props is None:
-            return default
-        return props.get(key, default)
-
-    def get_rule_property_int(self, rule_id: str, key: str, default: int) -> int:
-        """Like :meth:`get_rule_property` but coerces to ``int``."""
-        val = self.get_rule_property(rule_id, key, default)
-        try:
-            return int(val)
-        except (TypeError, ValueError):
-            logger.warning(
-                "rule_properties[%s][%s] = %r is not a valid int; using default %d",
-                rule_id,
-                key,
-                val,
-                default,
-            )
-            return default
-
-    def get_rule_property_bool(self, rule_id: str, key: str, default: bool) -> bool:
-        """Like :meth:`get_rule_property` but coerces to ``bool``."""
-        val = self.get_rule_property(rule_id, key, default)
-        if isinstance(val, bool):
-            return val
-        if isinstance(val, str):
-            return val.lower() in ("true", "yes", "1")
-        return bool(val)
 
     @property
     def _compiled_doc_filename_re(self) -> re.Pattern | None:
@@ -362,12 +337,14 @@ class ScanPolicy:
         # If this IS the default file, just parse directly
         is_default = path.resolve() == _DEFAULT_POLICY_PATH.resolve()
         if is_default:
-            return cls._from_dict(raw)
+            policy = cls._from_dict(raw)
+        else:
+            # Otherwise, load defaults first, then overlay the user's file
+            default_raw = cls._load_default_raw()
+            merged = cls._deep_merge(default_raw, raw)
+            policy = cls._from_dict(merged)
 
-        # Otherwise, load defaults first, then overlay the user's file
-        default_raw = cls._load_default_raw()
-        merged = cls._deep_merge(default_raw, raw)
-        return cls._from_dict(merged)
+        return policy
 
     def to_yaml(self, path: str | Path) -> None:
         """Dump the full policy to a YAML file for editing."""
@@ -434,6 +411,13 @@ class ScanPolicy:
                 known_installer_domains=set(pl.get("known_installer_domains", [])),
                 benign_pipe_targets=pl.get("benign_pipe_targets", []),
                 doc_path_indicators=set(pl.get("doc_path_indicators", [])),
+                demote_in_docs=pl.get("demote_in_docs", True),
+                demote_instructional=pl.get("demote_instructional", True),
+                check_known_installers=pl.get("check_known_installers", True),
+                exfil_hints=pl.get(
+                    "exfil_hints", ["send", "upload", "transmit", "webhook", "slack", "exfil", "forward"]
+                ),
+                api_doc_tokens=pl.get("api_doc_tokens", ["@app.", "app.", "router.", "route", "endpoint"]),
             ),
             rule_scoping=RuleScopingPolicy(
                 skillmd_and_scripts_only=set(ys.get("skillmd_and_scripts_only", [])),
@@ -454,6 +438,7 @@ class ScanPolicy:
                 structured_extensions=set(fc.get("structured_extensions", [])),
                 archive_extensions=set(fc.get("archive_extensions", [])),
                 code_extensions=set(fc.get("code_extensions", [])),
+                skip_inert_extensions=fc.get("skip_inert_extensions", True),
             ),
             file_limits=FileLimitsPolicy(
                 max_file_count=fl.get("max_file_count", 100),
@@ -468,6 +453,11 @@ class ScanPolicy:
                 zerowidth_threshold_alone=at.get("zerowidth_threshold_alone", 200),
                 analyzability_low_risk=at.get("analyzability_low_risk", 90),
                 analyzability_medium_risk=at.get("analyzability_medium_risk", 70),
+                min_dangerous_lines=at.get("min_dangerous_lines", 5),
+                min_confidence_pct=at.get("min_confidence_pct", 80),
+                exception_handler_context_lines=at.get("exception_handler_context_lines", 20),
+                short_match_max_chars=at.get("short_match_max_chars", 2),
+                cyrillic_cjk_min_chars=at.get("cyrillic_cjk_min_chars", 10),
             ),
             sensitive_files=SensitiveFilesPolicy(
                 patterns=sf.get("patterns", []),
@@ -486,11 +476,6 @@ class ScanPolicy:
             ),
             severity_overrides=severity_overrides,
             disabled_rules=set(d.get("disabled_rules", [])),
-            rule_properties={
-                str(rule_id): dict(props)
-                for rule_id, props in d.get("rule_properties", {}).items()
-                if isinstance(props, dict)
-            },
         )
 
     def _to_dict(self) -> dict[str, Any]:
@@ -506,6 +491,11 @@ class ScanPolicy:
                 "known_installer_domains": sorted(self.pipeline.known_installer_domains),
                 "benign_pipe_targets": self.pipeline.benign_pipe_targets,
                 "doc_path_indicators": sorted(self.pipeline.doc_path_indicators),
+                "demote_in_docs": self.pipeline.demote_in_docs,
+                "demote_instructional": self.pipeline.demote_instructional,
+                "check_known_installers": self.pipeline.check_known_installers,
+                "exfil_hints": self.pipeline.exfil_hints,
+                "api_doc_tokens": self.pipeline.api_doc_tokens,
             },
             "rule_scoping": {
                 "skillmd_and_scripts_only": sorted(self.rule_scoping.skillmd_and_scripts_only),
@@ -526,6 +516,7 @@ class ScanPolicy:
                 "structured_extensions": sorted(self.file_classification.structured_extensions),
                 "archive_extensions": sorted(self.file_classification.archive_extensions),
                 "code_extensions": sorted(self.file_classification.code_extensions),
+                "skip_inert_extensions": self.file_classification.skip_inert_extensions,
             },
             "file_limits": {
                 "max_file_count": self.file_limits.max_file_count,
@@ -540,6 +531,11 @@ class ScanPolicy:
                 "zerowidth_threshold_alone": self.analysis_thresholds.zerowidth_threshold_alone,
                 "analyzability_low_risk": self.analysis_thresholds.analyzability_low_risk,
                 "analyzability_medium_risk": self.analysis_thresholds.analyzability_medium_risk,
+                "min_dangerous_lines": self.analysis_thresholds.min_dangerous_lines,
+                "min_confidence_pct": self.analysis_thresholds.min_confidence_pct,
+                "exception_handler_context_lines": self.analysis_thresholds.exception_handler_context_lines,
+                "short_match_max_chars": self.analysis_thresholds.short_match_max_chars,
+                "cyrillic_cjk_min_chars": self.analysis_thresholds.cyrillic_cjk_min_chars,
             },
             "sensitive_files": {
                 "patterns": self.sensitive_files.patterns,
@@ -560,7 +556,4 @@ class ScanPolicy:
                 {"rule_id": o.rule_id, "severity": o.severity, "reason": o.reason} for o in self.severity_overrides
             ],
             "disabled_rules": sorted(self.disabled_rules),
-            "rule_properties": {rule_id: dict(props) for rule_id, props in sorted(self.rule_properties.items())}
-            if self.rule_properties
-            else {},
         }

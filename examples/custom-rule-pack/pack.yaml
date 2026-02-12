@@ -1,0 +1,34 @@
+# Example Custom Rule Pack
+#
+# This is an example of an external rule pack that adds custom detection
+# rules to skill-scanner.  Place this directory anywhere on disk and
+# pass it to the scanner via --rule-packs:
+#
+#   skill-scanner scan ./my-skill --rule-packs ./examples/custom-rule-pack/
+#
+# The pack manifest (this file) declares all rules and their default knobs.
+# The scanner merges these defaults with your policy YAML overrides.
+
+name: example-org-rules
+version: "1.0"
+description: "Example custom detection rules for demonstration"
+
+rules:
+  # Custom signature rule (implementation in signatures.yaml below)
+  EXAMPLE_DANGEROUS_IMPORT:
+    source: signature
+    category: command_injection
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: "Detects imports of dangerous Python modules"
+
+  EXAMPLE_HARDCODED_URL:
+    source: signature
+    category: data_exfiltration
+    severity: MEDIUM
+    knobs:
+      enabled: true
+      # Custom knob: minimum URL length to flag
+      min_url_length: 20
+    description: "Detects hardcoded URLs pointing to external services"

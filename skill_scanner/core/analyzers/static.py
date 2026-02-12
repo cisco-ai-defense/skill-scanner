@@ -202,7 +202,7 @@ class StaticAnalyzer(BaseAnalyzer):
         A rule is enabled if:
         1. It's enabled in the current YARA mode
         2. It's not in the explicitly disabled rules set
-        3. Its ``rule_properties.<rule>.enabled`` knob is not set to ``false``
+        3. It's not in the policy's disabled_rules set
 
         Args:
             rule_name: Name of the rule to check (e.g., "YARA_script_injection")
@@ -223,8 +223,7 @@ class StaticAnalyzer(BaseAnalyzer):
         if base_name in self.disabled_rules:
             return False
 
-        # Check per-rule ``enabled`` knob in rule_properties
-        if not self.policy.get_rule_property_bool(rule_name, "enabled", default=True):
+        if rule_name in self.policy.disabled_rules:
             return False
 
         return True
@@ -266,9 +265,8 @@ class StaticAnalyzer(BaseAnalyzer):
 
         findings.extend(self._scan_asset_files(skill))
 
-        # Filter out disabled rules
-        if self.disabled_rules:
-            findings = [f for f in findings if self._is_rule_enabled(f.rule_id)]
+        # Filter out disabled rules (both explicitly disabled and via enabled=false knob)
+        findings = [f for f in findings if self._is_rule_enabled(f.rule_id)]
 
         # Filter out well-known test/placeholder credentials
         findings = [f for f in findings if not self._is_known_test_credential(f)]
@@ -316,12 +314,7 @@ class StaticAnalyzer(BaseAnalyzer):
         findings = []
         manifest = skill.manifest
 
-        # Per-rule overrides via rule_properties take priority over global file_limits
-        max_name_length = self.policy.get_rule_property_int(
-            "MANIFEST_INVALID_NAME",
-            "max_name_length",
-            default=self.policy.file_limits.max_name_length,
-        )
+        max_name_length = self.policy.file_limits.max_name_length
         if len(manifest.name) > max_name_length or not _SKILL_NAME_PATTERN.fullmatch(manifest.name or ""):
             findings.append(
                 Finding(
@@ -340,11 +333,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 )
             )
 
-        max_desc_length = self.policy.get_rule_property_int(
-            "MANIFEST_DESCRIPTION_TOO_LONG",
-            "max_description_length",
-            default=self.policy.file_limits.max_description_length,
-        )
+        max_desc_length = self.policy.file_limits.max_description_length
         if len(manifest.description or "") > max_desc_length:
             findings.append(
                 Finding(
@@ -363,12 +352,8 @@ class StaticAnalyzer(BaseAnalyzer):
                 )
             )
 
-        min_desc_length = self.policy.get_rule_property_int(
-            "SOCIAL_ENG_VAGUE_DESCRIPTION",
-            "min_description_length",
-            default=self.policy.file_limits.min_description_length,
-        )
-        if len(manifest.description) < min_desc_length:
+        min_desc_length = self.policy.file_limits.min_description_length
+        if len(manifest.description or "") < min_desc_length:
             findings.append(
                 Finding(
                     id=self._generate_finding_id("SOCIAL_ENG_VAGUE_DESCRIPTION", "manifest"),
@@ -483,12 +468,7 @@ class StaticAnalyzer(BaseAnalyzer):
 
     def _is_loop_with_exception_handler(self, content: str, loop_line_num: int) -> bool:
         """Check if a while True loop has an exception handler in surrounding context."""
-        # Number of lines to scan after the loop; configurable via rule_properties
-        context_size = self.policy.get_rule_property_int(
-            "RESOURCE_ABUSE_INFINITE_LOOP",
-            "exception_handler_context_lines",
-            default=20,
-        )
+        context_size = self.policy.analysis_thresholds.exception_handler_context_lines
         lines = content.split("\n")
         context_lines = lines[loop_line_num - 1 : min(loop_line_num + context_size, len(lines))]
         context_text = "\n".join(context_lines)
@@ -542,12 +522,7 @@ class StaticAnalyzer(BaseAnalyzer):
 
     def _scan_referenced_files(self, skill: Skill) -> list[Finding]:
         """Scan files referenced in instruction body with recursive scanning."""
-        # Per-rule override via rule_properties for reference depth
-        max_depth = self.policy.get_rule_property_int(
-            "LAZY_LOAD_DEEP_NESTING",
-            "max_reference_depth",
-            default=self.policy.file_limits.max_reference_depth,
-        )
+        max_depth = self.policy.file_limits.max_reference_depth
         findings = []
         findings.extend(self._scan_references_recursive(skill, skill.referenced_files, max_depth=max_depth))
         return findings
@@ -704,10 +679,7 @@ class StaticAnalyzer(BaseAnalyzer):
         STRUCTURED_EXTENSIONS = self.policy.file_classification.structured_extensions
         ARCHIVE_EXTENSIONS = self.policy.file_classification.archive_extensions
 
-        # Magika confidence threshold for mismatch detection (configurable via rule_properties)
-        min_confidence = (
-            self.policy.get_rule_property_int("FILE_MAGIC_MISMATCH", "min_confidence_pct", default=80) / 100.0
-        )
+        min_confidence = self.policy.analysis_thresholds.min_confidence_pct / 100.0
 
         for skill_file in skill.files:
             file_path_obj = Path(skill_file.relative_path)
@@ -1321,9 +1293,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     _ext = skill_file.path.suffix.lower()
                     _inert_exts = set(self.policy.file_classification.inert_extensions)
                     _is_inert = _ext in _inert_exts
-                    _skip_shebang_inert = self.policy.get_rule_property_bool(
-                        "YARA_embedded_shebang_in_binary", "skip_inert_extensions", default=True
-                    )
+                    _skip_shebang_inert = self.policy.file_classification.skip_inert_extensions
                     try:
                         yara_matches = self.yara_scanner.scan_file(
                             skill_file.path,
@@ -1381,18 +1351,8 @@ class StaticAnalyzer(BaseAnalyzer):
         # Post-filter: apply policy zero-width steganography thresholds
         # The YARA rule has built-in thresholds (50 with decode, 200 alone).
         # The policy allows raising these thresholds (more permissive) to reduce FPs.
-        # Per-rule overrides (rule_properties) take priority over global thresholds.
-        _steg_rule = "YARA_prompt_injection_unicode_steganography"
-        zw_threshold_decode = self.policy.get_rule_property_int(
-            _steg_rule,
-            "zerowidth_threshold_with_decode",
-            default=self.policy.analysis_thresholds.zerowidth_threshold_with_decode,
-        )
-        zw_threshold_alone = self.policy.get_rule_property_int(
-            _steg_rule,
-            "zerowidth_threshold_alone",
-            default=self.policy.analysis_thresholds.zerowidth_threshold_alone,
-        )
+        zw_threshold_decode = self.policy.analysis_thresholds.zerowidth_threshold_with_decode
+        zw_threshold_alone = self.policy.analysis_thresholds.zerowidth_threshold_alone
 
         if zw_threshold_decode != 50 or zw_threshold_alone != 200:
             # Only run this expensive check if policy overrides the default thresholds
@@ -1442,7 +1402,7 @@ class StaticAnalyzer(BaseAnalyzer):
         /OpenAction, /AA, /Launch and other markers that indicate embedded
         executable content inside PDF documents.
         """
-        if not self.policy.get_rule_property_bool("PDF_STRUCTURAL_THREAT", "enabled", default=True):
+        if "PDF_STRUCTURAL_THREAT" in self.policy.disabled_rules:
             return []
 
         try:
@@ -1551,7 +1511,7 @@ class StaticAnalyzer(BaseAnalyzer):
         Uses oletools (oleid) to detect macros, auto-executable triggers,
         embedded OLE objects, and encrypted content in Office files.
         """
-        if not self.policy.get_rule_property_bool("OFFICE_DOCUMENT_THREAT", "enabled", default=True):
+        if "OFFICE_DOCUMENT_THREAT" in self.policy.disabled_rules:
             return []
 
         try:
@@ -1717,9 +1677,7 @@ class StaticAnalyzer(BaseAnalyzer):
             # Require multiple dangerous lines to reduce single-line i18n FPs.
             # A genuine homoglyph attack typically uses confusables across
             # several identifiers / expressions.
-            min_dangerous_lines = self.policy.get_rule_property_int(
-                "HOMOGLYPH_ATTACK", "min_dangerous_lines", default=5
-            )
+            min_dangerous_lines = self.policy.analysis_thresholds.min_dangerous_lines
             if len(dangerous_lines) < min_dangerous_lines:
                 continue
 
@@ -1786,12 +1744,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 largest_file = sf
 
         # Check for excessive file count (possible resource waste)
-        # Per-rule override via rule_properties takes priority over global file_limits
-        max_file_count = self.policy.get_rule_property_int(
-            "EXCESSIVE_FILE_COUNT",
-            "max_file_count",
-            default=self.policy.file_limits.max_file_count,
-        )
+        max_file_count = self.policy.file_limits.max_file_count
         if len(skill.files) > max_file_count:
             findings.append(
                 Finding(
@@ -1816,12 +1769,7 @@ class StaticAnalyzer(BaseAnalyzer):
             )
 
         # Check for oversized individual files
-        # Per-rule override via rule_properties takes priority over global file_limits
-        max_file_size = self.policy.get_rule_property_int(
-            "OVERSIZED_FILE",
-            "max_file_size_bytes",
-            default=self.policy.file_limits.max_file_size_bytes,
-        )
+        max_file_size = self.policy.file_limits.max_file_size_bytes
         if largest_file and largest_size > max_file_size:
             findings.append(
                 Finding(
@@ -2022,21 +1970,12 @@ class StaticAnalyzer(BaseAnalyzer):
                         if any(marker in value for marker in placeholder_markers):
                             continue
 
-            # Tool chaining post-filters (controlled by mode + rule_properties)
+            # Tool chaining post-filters (controlled by mode + policy pipeline)
             if rule_name == "tool_chaining_abuse_generic":
-                _tc_rule_id = "YARA_tool_chaining_abuse_generic"
                 line_content = string_match.get("line_content", "")
                 lower_line = line_content.lower()
-                # Configurable exfil hint words via rule_properties
-                _default_exfil = "send,upload,transmit,webhook,slack,exfil,forward"
-                exfil_raw = self.policy.get_rule_property(
-                    _tc_rule_id,
-                    "exfil_hints",
-                    default=_default_exfil,
-                )
-                exfil_hints = tuple(
-                    h.strip() for h in (exfil_raw.split(",") if isinstance(exfil_raw, str) else exfil_raw)
-                )
+                exfil_raw = ",".join(self.policy.pipeline.exfil_hints)
+                exfil_hints = tuple(h.strip() for h in exfil_raw.split(","))
 
                 if self.yara_mode.tool_chaining.filter_generic_http_verbs:
                     if (
@@ -2047,15 +1986,8 @@ class StaticAnalyzer(BaseAnalyzer):
                         continue
 
                 if self.yara_mode.tool_chaining.filter_api_documentation:
-                    _default_api = "@app.,app.,router.,route,endpoint"
-                    api_raw = self.policy.get_rule_property(
-                        _tc_rule_id,
-                        "api_doc_tokens",
-                        default=_default_api,
-                    )
-                    api_doc_tokens = tuple(
-                        t.strip() for t in (api_raw.split(",") if isinstance(api_raw, str) else api_raw)
-                    )
+                    api_raw = ",".join(self.policy.pipeline.api_doc_tokens)
+                    api_doc_tokens = tuple(t.strip() for t in api_raw.split(","))
                     if any(token in line_content for token in api_doc_tokens) and not any(
                         hint in lower_line for hint in exfil_hints
                     ):
@@ -2073,12 +2005,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 has_ascii_letters = any("A" <= char <= "Z" or "a" <= char <= "z" for char in line_content)
 
                 # Filter short matches in non-Latin context (likely legitimate i18n)
-                # Configurable via rule_properties
-                short_match_max = self.policy.get_rule_property_int(
-                    _steg_rule_id,
-                    "short_match_max_chars",
-                    default=2,
-                )
+                short_match_max = self.policy.analysis_thresholds.short_match_max_chars
                 if len(matched_data) <= short_match_max and not has_ascii_letters:
                     continue
 
@@ -2097,11 +2024,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     for char in line_content
                 )
                 # If the line has legitimate non-Latin text but matched only a few zero-width chars, skip
-                cyrillic_cjk_min = self.policy.get_rule_property_int(
-                    _steg_rule_id,
-                    "cyrillic_cjk_min_chars",
-                    default=10,
-                )
+                cyrillic_cjk_min = self.policy.analysis_thresholds.cyrillic_cjk_min_chars
                 if cyrillic_cjk_pattern and len(matched_data) < cyrillic_cjk_min:
                     continue
 

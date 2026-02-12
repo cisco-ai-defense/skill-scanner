@@ -342,13 +342,8 @@ class PipelineAnalyzer(BaseAnalyzer):
 
                     # Demote instructional one-liners in SKILL.md when URL is unknown.
                     # Keep visible, but lower noise in policy/actionable metrics.
-                    # Configurable via rule_properties["PIPELINE_TAINT_FLOW"]["demote_instructional"]
                     instructional_skillmd = self._is_instructional_skillmd_pipeline(chain)
-                    demote_instructional = self.policy.get_rule_property_bool(
-                        "PIPELINE_TAINT_FLOW",
-                        "demote_instructional",
-                        default=True,
-                    )
+                    demote_instructional = self.policy.pipeline.demote_instructional
                     if demote_instructional and instructional_skillmd and not known_installer:
                         if severity == Severity.CRITICAL:
                             severity = Severity.MEDIUM
@@ -361,12 +356,7 @@ class PipelineAnalyzer(BaseAnalyzer):
 
                     # Demote findings in documentation/reference files
                     # since they're describing usage, not executing
-                    # Configurable via rule_properties["PIPELINE_TAINT_FLOW"]["demote_in_docs"]
-                    demote_in_docs = self.policy.get_rule_property_bool(
-                        "PIPELINE_TAINT_FLOW",
-                        "demote_in_docs",
-                        default=True,
-                    )
+                    demote_in_docs = self.policy.pipeline.demote_in_docs
                     is_doc = self._DOC_PATH_PATTERNS.search(chain.source_file)
                     if (
                         demote_in_docs and is_doc and not known_installer and not instructional_skillmd
@@ -575,7 +565,7 @@ class PipelineAnalyzer(BaseAnalyzer):
                     actual_severity = severity
                     note = ""
                     is_doc = self._DOC_PATH_PATTERNS.search(source_file)
-                    demote_in_docs = self.policy.get_rule_property_bool(rule_id, "demote_in_docs", default=True)
+                    demote_in_docs = self.policy.pipeline.demote_in_docs
                     if demote_in_docs and is_doc:
                         if actual_severity == Severity.CRITICAL:
                             actual_severity = Severity.MEDIUM
@@ -586,10 +576,7 @@ class PipelineAnalyzer(BaseAnalyzer):
                     # For COMPOUND_FETCH_EXECUTE, demote known installer URLs
                     # (same treatment as single-pipe PIPELINE_TAINT_FLOW).
                     if rule_id == "COMPOUND_FETCH_EXECUTE":
-                        check_installers = self.policy.get_rule_property_bool(
-                            rule_id, "check_known_installers", default=True
-                        )
-                        if check_installers and self._is_known_installer(block_text):
+                        if self.policy.pipeline.check_known_installers and self._is_known_installer(block_text):
                             actual_severity = Severity.LOW
                             note += " (uses a well-known installer URL — likely a standard installation)"
 

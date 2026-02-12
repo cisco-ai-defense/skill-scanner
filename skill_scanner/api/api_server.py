@@ -24,8 +24,6 @@ can be used interchangeably with the router-based ``api`` module.
 All endpoints, Pydantic models, and business logic live in ``router.py``.
 """
 
-from .api import app  # noqa: F401 – re-export for backward compatibility
-
 
 def run_server(host: str = "localhost", port: int = 8000, reload: bool = False) -> None:
     """Run the API server.

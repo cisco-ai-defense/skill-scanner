@@ -226,6 +226,6 @@ Reference: [arxiv.org/html/2512.12921v1](https://arxiv.org/html/2512.12921v1)
 
 ## Technical References
 
-- Rule definitions: `skill_scanner/data/rules/signatures.yaml`
-- YARA rules: `skill_scanner/data/yara_rules/`
+- Rule definitions: `skill_scanner/data/packs/core/signatures/`
+- YARA rules: `skill_scanner/data/packs/core/yara/`
 - Threat mappings: `skill_scanner/threats/threats.py`

@@ -38,10 +38,17 @@ class YaraScanner:
             rules_dir: Path to directory containing .yara files
         """
         if rules_dir is None:
-            # Default to yara_rules directory
-            from ...data import YARA_RULES_DIR
+            from ...data import DATA_DIR
 
-            rules_dir = YARA_RULES_DIR
+            # Prefer the pack-based yara/ directory (new layout)
+            pack_yara = DATA_DIR / "packs" / "core" / "yara"
+            if pack_yara.is_dir():
+                rules_dir = pack_yara
+            else:
+                # Fallback for external/custom installs
+                from ...data import YARA_RULES_DIR
+
+                rules_dir = YARA_RULES_DIR
 
         self.rules_dir = Path(rules_dir)
         self.rules = None

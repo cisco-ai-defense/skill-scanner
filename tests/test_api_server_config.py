@@ -176,16 +176,6 @@ class TestAppImportable:
         except ImportError as e:
             pytest.fail(f"Cannot import app from skill_scanner.api.api: {e}")
 
-    def test_api_server_app_importable(self):
-        """Test that skill_scanner.api.api_server:app is importable."""
-        try:
-            from skill_scanner.api.api_server import app
-
-            assert app is not None
-            assert hasattr(app, "routes"), "app should be a FastAPI instance with routes"
-        except ImportError as e:
-            pytest.fail(f"Cannot import app from skill_scanner.api.api_server: {e}")
-
     def test_api_init_exports_app(self):
         """Test that skill_scanner.api exports app."""
         try:

@@ -72,9 +72,7 @@ def suggest_expected_findings(actual_findings_by_key, existing_expected):
         # Check if this category+severity is already expected
         expected_key = None
         if existing_expected:
-            expected_findings = existing_expected.get(
-                "expected_findings", existing_expected.get("expected_threats", [])
-            )
+            expected_findings = existing_expected.get("expected_findings", [])
             for exp in expected_findings:
                 if exp.get("category") == category and exp.get("severity") == severity:
                     expected_key = exp
@@ -137,7 +135,7 @@ def main():
             result, findings_by_key = scan_skill_and_get_findings(skill_dir, use_llm=args.use_llm)
 
             # Get expected findings
-            expected_findings = existing.get("expected_findings", existing.get("expected_threats", []))
+            expected_findings = existing.get("expected_findings", [])
 
             print(f"  Expected: {len(expected_findings)} findings")
             print(f"  Actual: {len(result.findings)} findings")
@@ -172,9 +170,7 @@ def main():
             if missing_expected and args.update:
                 # Update the expected file
                 if "expected_findings" not in existing:
-                    existing["expected_findings"] = existing.get("expected_threats", [])
-                    if "expected_threats" in existing:
-                        del existing["expected_threats"]
+                    existing["expected_findings"] = []
 
                 # Add missing findings
                 for cat, sev in missing_expected:

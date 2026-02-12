@@ -148,13 +148,15 @@ class RuleLoader:
         Initialize rule loader.
 
         Args:
-            rules_file: Path to rules YAML file. If None, uses default.
+            rules_file: Path to a single YAML file **or** a directory
+                containing multiple ``*.yaml`` category files.  If *None*,
+                defaults to the core pack's ``signatures/`` directory.
         """
         if rules_file is None:
-            # Default to signatures.yaml in data/rules directory
             from ...data import DATA_DIR
 
-            rules_file = DATA_DIR / "rules" / "signatures.yaml"
+            sigs_dir = DATA_DIR / "packs" / "core" / "signatures"
+            rules_file = sigs_dir
 
         self.rules_file = rules_file
         self.rules: list[SecurityRule] = []
@@ -163,16 +165,28 @@ class RuleLoader:
 
     def load_rules(self) -> list[SecurityRule]:
         """
-        Load rules from YAML file.
+        Load rules from a YAML file or a directory of YAML files.
 
         Returns:
             List of SecurityRule objects
         """
-        try:
-            with open(self.rules_file, encoding="utf-8") as f:
-                rules_data = yaml.safe_load(f)
-        except Exception as e:
-            raise RuntimeError(f"Failed to load rules from {self.rules_file}: {e}")
+        rules_path = Path(self.rules_file)
+        if rules_path.is_dir():
+            rules_data: list[dict] = []
+            for yaml_file in sorted(rules_path.glob("*.yaml")):
+                try:
+                    with open(yaml_file, encoding="utf-8") as f:
+                        data = yaml.safe_load(f)
+                    if isinstance(data, list):
+                        rules_data.extend(data)
+                except Exception as e:
+                    logger.warning("Failed to load rules from %s: %s", yaml_file, e)
+        else:
+            try:
+                with open(rules_path, encoding="utf-8") as f:
+                    rules_data = yaml.safe_load(f)
+            except Exception as e:
+                raise RuntimeError(f"Failed to load rules from {rules_path}: {e}")
 
         self.rules = []
         self.rules_by_id = {}

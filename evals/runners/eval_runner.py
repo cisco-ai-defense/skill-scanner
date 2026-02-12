@@ -194,8 +194,7 @@ class EvaluationRunner:
         expected_safe = expected.get("expected_safe", True)
         actual_safe = scan_result.is_safe
 
-        # Support both "expected_findings" and "expected_threats" keys for backward compatibility
-        expected_findings = expected.get("expected_findings", expected.get("expected_threats", []))
+        expected_findings = expected.get("expected_findings", [])
         actual_findings = scan_result.findings
 
         # Count matches - try to match each expected finding to an actual finding

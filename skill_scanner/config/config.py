@@ -82,15 +82,18 @@ class Config:
             if env_model := os.getenv("SKILL_SCANNER_LLM_MODEL"):
                 self.llm_model = env_model
 
-        # AWS configuration from environment
-        if env_region := os.getenv("AWS_REGION"):
-            self.aws_region_name = env_region
+        # AWS configuration from environment (only when not explicitly provided)
+        if self.aws_region_name == "us-east-1":
+            if env_region := os.getenv("AWS_REGION"):
+                self.aws_region_name = env_region
 
-        if env_profile := os.getenv("AWS_PROFILE"):
-            self.aws_profile_name = env_profile
+        if self.aws_profile_name is None:
+            if env_profile := os.getenv("AWS_PROFILE"):
+                self.aws_profile_name = env_profile
 
-        if env_session := os.getenv("AWS_SESSION_TOKEN"):
-            self.aws_session_token = env_session
+        if self.aws_session_token is None:
+            if env_session := os.getenv("AWS_SESSION_TOKEN"):
+                self.aws_session_token = env_session
 
         # Analyzer toggles from environment
         if os.getenv("ENABLE_STATIC_ANALYZER", "").lower() in ("false", "0"):
