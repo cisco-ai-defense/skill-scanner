@@ -343,20 +343,20 @@ def main(args: list[str] | None = None) -> int:
     for skill_dir in sorted(affected_skills):
         print(f"\n📦 {skill_dir.name}")
 
-        result = scan_skill(skill_dir, config)
+        scan_result: dict = scan_skill(skill_dir, config)
 
-        if result.get("error"):
-            print(f"  ⚠️  Error: {result['error']}", file=sys.stderr)
+        if scan_result.get("error"):
+            print(f"  ⚠️  Error: {scan_result['error']}", file=sys.stderr)
             continue
 
-        findings = result.get("findings", [])
+        findings = scan_result.get("findings", [])
 
         if not findings:
             print("  ✅ No issues found")
             continue
 
         # Check if threshold is exceeded
-        if check_severity_threshold(result, config["severity_threshold"]):
+        if check_severity_threshold(scan_result, config["severity_threshold"]):
             blocked = True
             print(f"  🚫 Blocked (threshold: {config['severity_threshold'].upper()})")
         else:

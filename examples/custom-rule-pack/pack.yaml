@@ -2,9 +2,12 @@
 #
 # This is an example of an external rule pack that adds custom detection
 # rules to skill-scanner.  Place this directory anywhere on disk and
-# pass it to the scanner via --rule-packs:
+# pass it to the scanner via --custom-rules:
 #
-#   skill-scanner scan ./my-skill --rule-packs ./examples/custom-rule-pack/
+#   skill-scanner scan ./my-skill --custom-rules ./examples/custom-rule-pack/
+#
+# NOTE: --custom-rules currently applies to YARA rules only; signature YAML
+# rules in custom packs are not yet loaded at scan time.
 #
 # The pack manifest (this file) declares all rules and their default knobs.
 # The scanner merges these defaults with your policy YAML overrides.

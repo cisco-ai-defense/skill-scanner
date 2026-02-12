@@ -233,10 +233,10 @@ class ForwardDataflowAnalysis(DataFlowAnalyzer[ForwardFlowFact]):
             return "env_var"
         return "unknown"
 
-    def _get_attribute_name(self, node: ast.Attribute) -> str:
+    def _get_attribute_name(self, node: ast.expr) -> str:
         """Get full attribute name like 'os.environ'."""
-        parts = []
-        current = node
+        parts: list[str] = []
+        current: ast.expr = node
 
         while isinstance(current, ast.Attribute):
             parts.append(current.attr)
@@ -308,7 +308,9 @@ class ForwardDataflowAnalysis(DataFlowAnalyzer[ForwardFlowFact]):
                                         flow.reaches_assignments.append(assignment_str)
 
                                     # Deduplicate operations by creating a key
-                                    op_key = (
+                                    op_key: tuple[
+                                        str | None, str | None, str | None, str | None, str | None, str | int | None
+                                    ] = (
                                         "assignment",
                                         target.id,
                                         self._unparse_safe(node.value),
@@ -538,8 +540,8 @@ class ForwardDataflowAnalysis(DataFlowAnalyzer[ForwardFlowFact]):
         if isinstance(node.func, ast.Name):
             return node.func.id
         elif isinstance(node.func, ast.Attribute):
-            parts = []
-            current = node.func
+            parts: list[str] = []
+            current: ast.expr = node.func
             while isinstance(current, ast.Attribute):
                 parts.append(current.attr)
                 current = current.value

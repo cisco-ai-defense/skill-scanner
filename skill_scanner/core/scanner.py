@@ -139,7 +139,7 @@ class SkillScanner:
         self.loader = SkillLoader()
         self.content_extractor = ContentExtractor()
 
-    def scan_skill(self, skill_directory: Path) -> ScanResult:
+    def scan_skill(self, skill_directory: str | Path) -> ScanResult:
         """
         Scan a single skill package.
 
@@ -177,88 +177,91 @@ class SkillScanner:
         if extraction_result.extracted_files:
             skill.files.extend(extraction_result.extracted_files)
 
-        # Run all analyzers in two phases:
-        # Phase 1: Non-LLM analyzers (static, pipeline, behavioral, etc.)
-        # Phase 2: LLM analyzers (enriched with Phase 1 context)
-        all_findings: list[Finding] = []
-        # Include any archive extraction findings (zip bombs, path traversal, etc.)
-        all_findings.extend(extraction_result.findings)
-        analyzer_names: list[str] = []
-        validated_binary_files: set[str] = set()
-        llm_analyzers: list[BaseAnalyzer] = []
-        unreferenced_scripts: list[str] = []
+        try:
+            # Run all analyzers in two phases:
+            # Phase 1: Non-LLM analyzers (static, pipeline, behavioral, etc.)
+            # Phase 2: LLM analyzers (enriched with Phase 1 context)
+            all_findings: list[Finding] = []
+            # Include any archive extraction findings (zip bombs, path traversal, etc.)
+            all_findings.extend(extraction_result.findings)
+            analyzer_names: list[str] = []
+            validated_binary_files: set[str] = set()
+            llm_analyzers: list[BaseAnalyzer] = []
+            unreferenced_scripts: list[str] = []
 
-        for analyzer in self.analyzers:
-            # Defer LLM analyzers to Phase 2
-            if analyzer.get_name() in ("llm_analyzer", "meta_analyzer"):
-                llm_analyzers.append(analyzer)
-                continue
-            findings = analyzer.analyze(skill)
-            all_findings.extend(findings)
-            analyzer_names.append(analyzer.get_name())
-
-            if hasattr(analyzer, "validated_binary_files"):
-                validated_binary_files.update(analyzer.validated_binary_files)
-
-            # Collect unreferenced scripts from the static analyzer for
-            # LLM enrichment (no longer emitted as standalone findings).
-            if hasattr(analyzer, "get_unreferenced_scripts"):
-                unreferenced_scripts = analyzer.get_unreferenced_scripts()
-
-        # Phase 2: Run LLM analyzers with enrichment context from Phase 1
-        if llm_analyzers:
-            enrichment = self._build_enrichment_context(skill, all_findings, unreferenced_scripts)
-            for analyzer in llm_analyzers:
-                if hasattr(analyzer, "set_enrichment_context") and enrichment:
-                    # Build structured enrichment for the LLM
-                    type_counts: dict[str, int] = {}
-                    for sf in skill.files:
-                        type_counts[sf.file_type] = type_counts.get(sf.file_type, 0) + 1
-                    magic_mismatches = [
-                        f.file_path for f in all_findings if f.rule_id and "MAGIC" in f.rule_id and f.file_path
-                    ]
-                    static_summaries = [
-                        f"{f.rule_id}: {f.title}"
-                        for f in all_findings
-                        if f.severity in (Severity.CRITICAL, Severity.HIGH)
-                    ][:10]
-                    analyzer.set_enrichment_context(
-                        file_inventory={
-                            "total_files": len(skill.files),
-                            "types": type_counts,
-                            "unreferenced_scripts": unreferenced_scripts,
-                        },
-                        magic_mismatches=magic_mismatches if magic_mismatches else None,
-                        static_findings_summary=static_summaries if static_summaries else None,
-                    )
+            for analyzer in self.analyzers:
+                # Defer LLM analyzers to Phase 2
+                if analyzer.get_name() in ("llm_analyzer", "meta_analyzer"):
+                    llm_analyzers.append(analyzer)
+                    continue
                 findings = analyzer.analyze(skill)
                 all_findings.extend(findings)
                 analyzer_names.append(analyzer.get_name())
 
-        # Post-process findings: Suppress BINARY_FILE_DETECTED for VirusTotal-validated files
-        if validated_binary_files:
-            filtered_findings = []
-            for finding in all_findings:
-                if finding.rule_id == "BINARY_FILE_DETECTED" and finding.file_path in validated_binary_files:
-                    continue
-                filtered_findings.append(finding)
-            all_findings = filtered_findings
+                if hasattr(analyzer, "validated_binary_files"):
+                    validated_binary_files.update(analyzer.validated_binary_files)
 
-        # Global safety net: enforce disabled_rules across ALL analyzers
-        if self.policy.disabled_rules:
-            all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
+                # Collect unreferenced scripts from the static analyzer for
+                # LLM enrichment (no longer emitted as standalone findings).
+                if hasattr(analyzer, "get_unreferenced_scripts"):
+                    unreferenced_scripts = analyzer.get_unreferenced_scripts()
 
-        # Apply severity overrides from policy
-        self._apply_severity_overrides(all_findings)
+            # Phase 2: Run LLM analyzers with enrichment context from Phase 1
+            if llm_analyzers:
+                enrichment = self._build_enrichment_context(skill, all_findings, unreferenced_scripts)
+                for analyzer in llm_analyzers:
+                    if hasattr(analyzer, "set_enrichment_context") and enrichment:
+                        # Build structured enrichment for the LLM
+                        type_counts: dict[str, int] = {}
+                        for sf in skill.files:
+                            type_counts[sf.file_type] = type_counts.get(sf.file_type, 0) + 1
+                        magic_mismatches = [
+                            f.file_path for f in all_findings if f.rule_id and "MAGIC" in f.rule_id and f.file_path
+                        ]
+                        static_summaries = [
+                            f"{f.rule_id}: {f.title}"
+                            for f in all_findings
+                            if f.severity in (Severity.CRITICAL, Severity.HIGH)
+                        ][:10]
+                        analyzer.set_enrichment_context(
+                            file_inventory={
+                                "total_files": len(skill.files),
+                                "types": type_counts,
+                                "unreferenced_scripts": unreferenced_scripts,
+                            },
+                            magic_mismatches=magic_mismatches if magic_mismatches else None,
+                            static_findings_summary=static_summaries if static_summaries else None,
+                        )
+                    findings = analyzer.analyze(skill)
+                    all_findings.extend(findings)
+                    analyzer_names.append(analyzer.get_name())
 
-        # Compute analyzability score
-        analyzability = compute_analyzability(skill, policy=self.policy)
+            # Post-process findings: Suppress BINARY_FILE_DETECTED for VirusTotal-validated files
+            if validated_binary_files:
+                filtered_findings = []
+                for finding in all_findings:
+                    if finding.rule_id == "BINARY_FILE_DETECTED" and finding.file_path in validated_binary_files:
+                        continue
+                    filtered_findings.append(finding)
+                all_findings = filtered_findings
 
-        # Generate findings from low analyzability (fail-closed posture)
-        all_findings.extend(self._analyzability_findings(analyzability))
+            # Global safety net: enforce disabled_rules across ALL analyzers
+            if self.policy.disabled_rules:
+                all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
 
-        # Cleanup temporary extraction directories
-        self.content_extractor.cleanup()
+            # Apply severity overrides from policy
+            self._apply_severity_overrides(all_findings)
+
+            # Compute analyzability score
+            analyzability = compute_analyzability(skill, policy=self.policy)
+
+            # Generate findings from low analyzability (fail-closed posture)
+            all_findings.extend(self._analyzability_findings(analyzability))
+
+        finally:
+            # Always cleanup temporary extraction directories, even if an
+            # analyzer raises an exception, to avoid leaking temp files.
+            self.content_extractor.cleanup()
 
         scan_duration = time.time() - start_time
 
@@ -315,7 +318,7 @@ class SkillScanner:
                         file_path=fd.relative_path,
                         remediation=(
                             "Replace binary files with source code, or submit the binary "
-                            "to VirusTotal for independent verification (--enable-virustotal)."
+                            "to VirusTotal for independent verification (--use-virustotal)."
                         ),
                         analyzer="analyzability",
                         metadata={"skip_reason": fd.skip_reason, "weight": fd.weight},
@@ -402,7 +405,9 @@ class SkillScanner:
                 except (ValueError, KeyError):
                     logger.warning("Invalid severity override '%s' for rule %s", override, finding.rule_id)
 
-    def scan_directory(self, skills_directory: Path, recursive: bool = False, check_overlap: bool = False) -> Report:
+    def scan_directory(
+        self, skills_directory: str | Path, recursive: bool = False, check_overlap: bool = False
+    ) -> Report:
         """
         Scan all skill packages in a directory.
 
@@ -440,7 +445,12 @@ class SkillScanner:
                     loaded_skills.append(skill)
 
             except SkillLoadError as e:
-                logger.warning("Failed to scan %s: %s", skill_dir, e)
+                logger.warning("Failed to load %s: %s", skill_dir, e)
+                continue
+            except Exception as e:
+                # Isolate per-skill failures so one crash doesn't abort the
+                # entire batch / scan-all run.
+                logger.error("Unexpected error scanning %s: %s", skill_dir, e)
                 continue
 
         # Perform cross-skill analysis if requested
@@ -590,7 +600,7 @@ class SkillScanner:
         return [analyzer.get_name() for analyzer in self.analyzers]
 
 
-def scan_skill(skill_directory: Path, analyzers: list[BaseAnalyzer] | None = None) -> ScanResult:
+def scan_skill(skill_directory: str | Path, analyzers: list[BaseAnalyzer] | None = None) -> ScanResult:
     """
     Convenience function to scan a single skill.
 
@@ -606,7 +616,7 @@ def scan_skill(skill_directory: Path, analyzers: list[BaseAnalyzer] | None = Non
 
 
 def scan_directory(
-    skills_directory: Path,
+    skills_directory: str | Path,
     recursive: bool = False,
     analyzers: list[BaseAnalyzer] | None = None,
     check_overlap: bool = False,

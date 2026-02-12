@@ -146,14 +146,14 @@ def main():
         # Save outputs
         if args.output_json:
             reporter = JSONReporter()
-            json_output = reporter.generate(result)
+            json_output = reporter.generate_report(result)
             with open(args.output_json, "w") as f:
                 json.dump(json.loads(json_output), f, indent=2)
             print(f"\n[OK] Results saved to {args.output_json}")
 
         if args.output_markdown:
             reporter = MarkdownReporter()
-            markdown_output = reporter.generate(result)
+            markdown_output = reporter.generate_report(result)
             with open(args.output_markdown, "w") as f:
                 f.write(markdown_output)
             print(f"[OK] Results saved to {args.output_markdown}")

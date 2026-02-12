@@ -110,7 +110,7 @@ class MetaAnalysisResult:
         Returns:
             List of validated Finding objects with meta-analysis enrichments.
         """
-        findings = []
+        findings: list[Finding] = []
         for finding_data in self.validated_findings:
             try:
                 # Parse severity
@@ -651,7 +651,8 @@ Respond with a JSON object following the schema in the system prompt."""
         for attempt in range(self.max_retries):
             try:
                 response = await acompletion(**api_params)
-                return response.choices[0].message.content
+                content: str = response.choices[0].message.content or ""
+                return content
 
             except Exception as e:
                 last_exception = e
@@ -677,9 +678,13 @@ Respond with a JSON object following the schema in the system prompt."""
                     logger.warning("Meta-analysis LLM request failed (attempt %d): %s", attempt + 1, e)
                     await asyncio.sleep(delay)
                 else:
-                    raise last_exception
+                    if last_exception is not None:
+                        raise last_exception
+                    raise RuntimeError("LLM request failed")
 
-        raise last_exception
+        if last_exception is not None:
+            raise last_exception
+        raise RuntimeError("All retries exhausted")
 
     def _parse_response(self, response: str, original_findings: list[Finding]) -> MetaAnalysisResult:
         """Parse the LLM meta-analysis response."""
@@ -719,7 +724,8 @@ Respond with a JSON object following the schema in the system prompt."""
 
         # Strategy 1: Parse entire response as JSON
         try:
-            return json.loads(response.strip())
+            result: dict[str, Any] = json.loads(response.strip())
+            return result
         except json.JSONDecodeError:
             pass
 
@@ -735,7 +741,8 @@ Respond with a JSON object following the schema in the system prompt."""
 
                 if end_idx != -1:
                     json_str = response[content_start:end_idx].strip()
-                    return json.loads(json_str)
+                    parsed: dict[str, Any] = json.loads(json_str)
+                    return parsed
         except json.JSONDecodeError:
             pass
 
@@ -757,7 +764,8 @@ Respond with a JSON object following the schema in the system prompt."""
 
                 if end_idx != -1:
                     json_content = response[start_idx:end_idx]
-                    return json.loads(json_content)
+                    parsed_obj: dict[str, Any] = json.loads(json_content)
+                    return parsed_obj
         except json.JSONDecodeError:
             pass
 
@@ -828,9 +836,10 @@ def apply_meta_analysis_to_results(
         priority_lookup[idx] = rank
 
     for vf in meta_result.validated_findings:
-        idx = vf.get("_index")
-        if idx is not None:
-            enrichments[idx] = {
+        idx_raw = vf.get("_index")
+        vf_idx = idx_raw if isinstance(idx_raw, int) else None
+        if vf_idx is not None:
+            enrichments[vf_idx] = {
                 "meta_validated": True,
                 "meta_confidence": vf.get("confidence"),
                 "meta_confidence_reason": vf.get("confidence_reason"),
@@ -841,10 +850,6 @@ def apply_meta_analysis_to_results(
     # Enrich all findings (do not filter out false positives)
     result_findings = []
     for i, finding in enumerate(original_findings):
-        # Ensure metadata dict exists
-        if finding.metadata is None:
-            finding.metadata = {}
-
         # Mark false positives with metadata (but keep them in output)
         if i in fp_data:
             finding.metadata["meta_false_positive"] = True
@@ -872,9 +877,6 @@ def apply_meta_analysis_to_results(
     # Add missed threats as new findings
     missed_findings = meta_result.get_missed_threats(skill)
     for mf in missed_findings:
-        # Ensure missed threats are marked as validated (not false positives)
-        if mf.metadata is None:
-            mf.metadata = {}
         mf.metadata["meta_false_positive"] = False
     result_findings.extend(missed_findings)
 

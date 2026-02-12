@@ -28,7 +28,7 @@ class SkillScannerConstants:
 
     # Version – derived from pyproject.toml via hatch-vcs at install time.
     try:
-        from .._version import __version__ as VERSION  # type: ignore[assignment]
+        from .._version import __version__ as VERSION
     except Exception:  # pragma: no cover
         VERSION = "0.0.0-dev"
 
@@ -41,7 +41,6 @@ class SkillScannerConstants:
     PROMPTS_DIR = DATA_DIR / "prompts"
     YARA_RULES_DIR = DATA_DIR / "packs" / "core" / "yara"
     SIGNATURES_DIR = DATA_DIR / "packs" / "core" / "signatures"
-    RULES_DIR = PACKAGE_ROOT / "core" / "rules"
 
     # Default values
     DEFAULT_MAX_FILE_SIZE_MB = 10
@@ -72,11 +71,6 @@ class SkillScannerConstants:
     def get_prompts_path(cls) -> Path:
         """Get path to prompts directory."""
         return cls.PROMPTS_DIR
-
-    @classmethod
-    def get_rules_path(cls) -> Path:
-        """Get path to rules directory."""
-        return cls.RULES_DIR
 
     @classmethod
     def get_data_path(cls) -> Path:

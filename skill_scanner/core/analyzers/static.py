@@ -920,7 +920,7 @@ class StaticAnalyzer(BaseAnalyzer):
 
     def _check_allowed_tools_violations(self, skill: Skill) -> list[Finding]:
         """Check if code behavior violates allowed-tools restrictions."""
-        findings = []
+        findings: list[Finding] = []
 
         if not skill.manifest.allowed_tools:
             return findings
@@ -1248,7 +1248,10 @@ class StaticAnalyzer(BaseAnalyzer):
         - All text-readable files (scripts, markdown, configs, etc.)
         - Binary files are scanned by YARA directly on disk if the scanner supports it
         """
-        findings = []
+        if self.yara_scanner is None:
+            return []
+
+        findings: list[Finding] = []
 
         # Scan SKILL.md instruction body
         yara_matches = self.yara_scanner.scan_content(skill.instruction_body, "SKILL.md")
@@ -1371,7 +1374,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     if sf is None:
                         continue
                     content = sf.read_content()
-                    if content is None:
+                    if not content:
                         continue
                     zw_count = sum(1 for ch in content if ch in _ZW_CHARS)
                     has_decode = any(pat in content for pat in _DECODE_PATTERNS)
@@ -1719,7 +1722,7 @@ class StaticAnalyzer(BaseAnalyzer):
 
     def _check_file_inventory(self, skill: Skill) -> list[Finding]:
         """Analyze the file inventory of the skill package for anomalies."""
-        findings = []
+        findings: list[Finding] = []
 
         if not skill.files:
             return findings

@@ -33,17 +33,21 @@ from .llm_provider_config import ProviderConfig
 
 logger = logging.getLogger(__name__)
 
+acompletion: Any
 try:
-    from litellm import acompletion
+    from litellm import acompletion as _acompletion
 
+    acompletion = _acompletion
     LITELLM_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     LITELLM_AVAILABLE = False
     acompletion = None
 
+genai: Any
 try:
-    from google import genai
+    from google import genai as _genai
 
+    genai = _genai
     GOOGLE_GENAI_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     GOOGLE_GENAI_AVAILABLE = False
@@ -94,7 +98,8 @@ class LLMRequestHandler:
         try:
             schema_path = Path(__file__).parent.parent.parent / "data" / "prompts" / "llm_response_schema.json"
             if schema_path.exists():
-                return json.loads(schema_path.read_text(encoding="utf-8"))
+                loaded: dict[str, Any] = json.loads(schema_path.read_text(encoding="utf-8"))
+                return loaded
         except Exception as e:
             logger.warning("Could not load response schema: %s", e)
         return None
@@ -106,10 +111,7 @@ class LLMRequestHandler:
         Google SDK doesn't support additionalProperties in structured output schemas.
         This recursively removes it from the schema.
         """
-        if not isinstance(schema, dict):
-            return schema
-
-        sanitized = {}
+        sanitized: dict[str, Any] = {}
         for key, value in schema.items():
             if key == "additionalProperties":
                 # Skip additionalProperties - Google SDK doesn't support it
@@ -186,7 +188,8 @@ class LLMRequestHandler:
                     }
 
                 response = await acompletion(**request_params)
-                return response.choices[0].message.content
+                content: str = response.choices[0].message.content or ""
+                return content
 
             except Exception as e:
                 last_exception = e
@@ -213,7 +216,9 @@ class LLMRequestHandler:
                 logger.error("LLM API error for %s: %s", context, e)
                 break
 
-        raise last_exception
+        if last_exception is not None:
+            raise last_exception
+        raise RuntimeError("All retries exhausted")
 
     async def _make_google_sdk_request(self, prompt: str) -> str:
         """Make request using Google GenAI SDK (new SDK) with structured outputs."""
@@ -226,7 +231,7 @@ class LLMRequestHandler:
 
                 # Build generation config with structured output
                 # New SDK uses GenerateContentConfig type
-                config_dict = {
+                config_dict: dict[str, Any] = {
                     "max_output_tokens": self.max_tokens,
                     "temperature": self.temperature,
                 }
@@ -259,14 +264,16 @@ class LLMRequestHandler:
                 # Extract text from response (new SDK format)
                 # Response has .text attribute directly
                 if hasattr(response, "text") and response.text:
-                    return response.text
+                    text_val: str = response.text
+                    return text_val
                 elif hasattr(response, "candidates") and response.candidates:
                     # Fallback: check candidates array
                     candidate = response.candidates[0]
                     if hasattr(candidate, "content") and candidate.content:
                         parts = candidate.content.parts if hasattr(candidate.content, "parts") else []
                         if parts and hasattr(parts[0], "text"):
-                            return parts[0].text
+                            part_text: str = parts[0].text
+                            return part_text
                 elif hasattr(response, "content"):
                     # Another fallback
                     return str(response.content)
@@ -288,4 +295,6 @@ class LLMRequestHandler:
                 logger.error("LLM analysis failed: %s", e)
                 raise
 
-        raise last_exception
+        if last_exception is not None:
+            raise last_exception
+        raise RuntimeError("All retries exhausted")

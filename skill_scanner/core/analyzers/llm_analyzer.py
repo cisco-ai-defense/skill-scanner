@@ -199,6 +199,9 @@ class LLMAnalyzer(BaseAnalyzer):
         self.prompt_builder = PromptBuilder()
         self.response_parser = ResponseParser()
 
+        self.model = self.provider_config.model
+        self.api_key = self.provider_config.api_key
+        self.is_bedrock = self.provider_config.is_bedrock
         self.is_gemini = self.provider_config.is_gemini
         self.aws_region = self.provider_config.aws_region
         self.aws_profile = self.provider_config.aws_profile

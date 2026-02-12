@@ -112,7 +112,7 @@ jobs:
         run: |
           if [ -n "$SKILL_SCANNER_LLM_API_KEY" ]; then
             echo "Running evaluation with LLM analyzer..."
-            uv run python evals/eval_runner.py --test-skills-dir evals/skills --use-llm
+            uv run python evals/runners/eval_runner.py --test-skills-dir evals/skills --use-llm
           else
             echo "Skipping LLM evaluation - no API key configured"
           fi

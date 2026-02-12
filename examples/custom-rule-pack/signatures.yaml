@@ -1,7 +1,10 @@
 # Example custom signature rules
 #
 # These rules are loaded additively alongside the built-in rules
-# when this pack is passed via --rule-packs.
+# when this pack is passed via --custom-rules.
+#
+# NOTE: --custom-rules currently applies to YARA rules only; signature YAML
+# rules in custom packs are not yet loaded at scan time.
 
 - id: EXAMPLE_DANGEROUS_IMPORT
   category: command_injection

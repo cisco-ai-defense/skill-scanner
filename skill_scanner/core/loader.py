@@ -58,7 +58,7 @@ class SkillLoader:
         """
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
 
-    def load_skill(self, skill_directory: Path) -> Skill:
+    def load_skill(self, skill_directory: str | Path) -> Skill:
         """
         Load a skill package from a directory.
 
@@ -362,7 +362,7 @@ class SkillLoader:
         return list(set(references))
 
 
-def load_skill(skill_directory: Path, max_file_size_mb: int = 10) -> Skill:
+def load_skill(skill_directory: str | Path, max_file_size_mb: int = 10) -> Skill:
     """
     Convenience function to load a skill package.
 

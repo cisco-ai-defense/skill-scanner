@@ -107,15 +107,24 @@ skill_scanner/
 ├── core/
 │   ├── analyzers/     # Security analyzers (static, bytecode, pipeline, behavioral, LLM)
 │   ├── reporters/     # Output formatters (JSON, SARIF, Markdown)
-│   ├── rules/         # YARA and pattern rules
+│   ├── rules/         # Rule loaders (patterns.py, yara_scanner.py)
+│   ├── rule_registry.py  # Centralized rule registry and pack loader
 │   ├── static_analysis/  # AST parsing and dataflow analysis
 │   ├── loader.py      # Skill package loader
 │   ├── models.py      # Data models
+│   ├── scan_policy.py # Policy engine (single source of truth for all knobs)
 │   └── scanner.py     # Main scanner orchestrator
 ├── data/
-│   ├── prompts/       # LLM analysis prompts
-│   ├── rules/         # YAML detection rules
-│   └── yara_rules/    # YARA detection rules
+│   ├── packs/
+│   │   └── core/
+│   │       ├── pack.yaml       # Rule pack manifest
+│   │       ├── signatures/     # YAML regex detection rules
+│   │       ├── yara/           # YARA detection rules
+│   │       └── python/         # Python check modules
+│   ├── prompts/                # LLM analysis prompts
+│   ├── default_policy.yaml     # Balanced policy preset
+│   ├── strict_policy.yaml      # Strict policy preset
+│   └── permissive_policy.yaml  # Permissive policy preset
 ├── hooks/             # Pre-commit hooks
 ├── threats/           # Threat taxonomy
 └── utils/             # Shared utilities
@@ -123,8 +132,9 @@ tests/
 ├── conftest.py        # Shared fixtures
 └── test_*.py          # Test files
 evals/
-├── skills/            # Evaluation skill samples
-└── benchmark_runner.py
+├── runners/           # Benchmark and eval runners
+├── policies/          # Policy presets for benchmarking
+└── skills/            # Evaluation skill samples
 ```
 
 ## Running Individual Analyzers

@@ -90,8 +90,13 @@ class ContentExtractor:
             ext = skill_file.path.suffix.lower()
             full_name = skill_file.path.name.lower()
 
-            is_tar_gz = full_name.endswith(".tar.gz") or full_name.endswith(".tgz")
-            is_tar = ext in (".tar", ".tar.bz2", ".tar.xz") or is_tar_gz
+            is_tar = (
+                ext == ".tar"
+                or full_name.endswith(".tar.gz")
+                or full_name.endswith(".tgz")
+                or full_name.endswith(".tar.bz2")
+                or full_name.endswith(".tar.xz")
+            )
             is_zip = ext in self.ZIP_EXTENSIONS
 
             if not (is_zip or is_tar):
@@ -158,7 +163,14 @@ class ContentExtractor:
         ext = archive_path.suffix.lower()
         name_lower = archive_path.name.lower()
 
-        if name_lower.endswith(".tar.gz") or name_lower.endswith(".tgz") or ext in (".tar", ".tar.bz2", ".tar.xz"):
+        is_tar = (
+            ext == ".tar"
+            or name_lower.endswith(".tar.gz")
+            or name_lower.endswith(".tgz")
+            or name_lower.endswith(".tar.bz2")
+            or name_lower.endswith(".tar.xz")
+        )
+        if is_tar:
             self._extract_tar(archive_path, source_relative_path, result, depth)
         elif ext in self.ZIP_EXTENSIONS:
             self._extract_zip(archive_path, source_relative_path, result, depth)
@@ -264,8 +276,11 @@ class ContentExtractor:
                         nested_name = sf.path.name.lower()
                         is_nested_archive = (
                             nested_ext in self.ZIP_EXTENSIONS
-                            or nested_ext in self.TAR_EXTENSIONS
+                            or nested_ext == ".tar"
                             or nested_name.endswith(".tar.gz")
+                            or nested_name.endswith(".tgz")
+                            or nested_name.endswith(".tar.bz2")
+                            or nested_name.endswith(".tar.xz")
                         )
                         if is_nested_archive and sf.path.exists():
                             self._extract_archive(sf.path, sf.relative_path, result, depth + 1)
@@ -288,8 +303,7 @@ class ContentExtractor:
     def _extract_tar(self, archive_path: Path, source_relative_path: str, result: ExtractionResult, depth: int) -> None:
         """Extract a TAR-based archive."""
         try:
-            mode = "r:*"  # Auto-detect compression
-            with tarfile.open(archive_path, mode) as tf:
+            with tarfile.open(archive_path, "r:*") as tf:
                 # Safety: check for path traversal
                 for member in tf.getmembers():
                     if ".." in member.name or member.name.startswith("/"):
@@ -347,6 +361,22 @@ class ContentExtractor:
                         archive_depth=depth + 1,
                     )
                     result.extracted_files.append(sf)
+
+                # Recursively extract nested archives (mirrors ZIP path)
+                for sf in list(result.extracted_files):
+                    if sf.extracted_from == source_relative_path:
+                        nested_ext = sf.path.suffix.lower()
+                        nested_name = sf.path.name.lower()
+                        is_nested_archive = (
+                            nested_ext in self.ZIP_EXTENSIONS
+                            or nested_ext == ".tar"
+                            or nested_name.endswith(".tar.gz")
+                            or nested_name.endswith(".tgz")
+                            or nested_name.endswith(".tar.bz2")
+                            or nested_name.endswith(".tar.xz")
+                        )
+                        if is_nested_archive and sf.path.exists():
+                            self._extract_archive(sf.path, sf.relative_path, result, depth + 1)
 
         except (tarfile.TarError, OSError) as e:
             result.findings.append(

@@ -243,7 +243,7 @@ _DANGEROUS_ARG_PATTERNS = [
     # Command substitution is only high-risk when invoking dangerous programs.
     re.compile(r"\$\((?:curl|wget|bash|sh|python|perl|ruby|node|nc|ncat|netcat)[^)]*\)"),
     re.compile(r"`(?:curl|wget|bash|sh|python|perl|ruby|node|nc|ncat|netcat)[^`]*`"),
-    re.compile(r"\|\s*(bash|sh|eval|exec|python)"),  # Pipe to shell
+    re.compile(r"\|\s*(bash|sh|eval|exec|python|curl|wget|nc|ncat|netcat|socat)"),  # Pipe to shell/network
     re.compile(r"-{1,2}exec\b"),  # find -exec / --exec or similar
     re.compile(r"&&\s*(rm|dd|curl|wget|bash|sh)"),  # Chain with dangerous
     # --- GTFOBins-style abuse patterns ---
@@ -278,6 +278,7 @@ class CommandContext:
     has_subshell: bool = False
     has_background: bool = False
     chained_commands: list[str] = field(default_factory=list)
+    pipe_targets: list[str] = field(default_factory=list)
 
 
 def parse_command(raw: str) -> CommandContext:
@@ -297,6 +298,13 @@ def parse_command(raw: str) -> CommandContext:
     # Split chained commands (&&, ||, ;)
     parts = re.split(r"\s*(?:&&|\|\||;)\s*", raw)
     ctx.chained_commands = [p.strip() for p in parts if p.strip()]
+
+    # Split the first chain segment on pipes to find downstream pipe targets.
+    # This is critical: ``cat file | curl ...`` must surface ``curl`` as a
+    # pipe target so that downstream-danger checks work correctly.
+    if ctx.has_pipeline and ctx.chained_commands:
+        pipe_parts = re.split(r"\s*\|\s*", ctx.chained_commands[0])
+        ctx.pipe_targets = [p.strip() for p in pipe_parts[1:] if p.strip()]
 
     # Get first base command
     first_part = ctx.chained_commands[0] if ctx.chained_commands else raw
@@ -432,13 +440,14 @@ def evaluate_command(raw_command: str, *, policy=None) -> CommandVerdict:
     if base in safe_cmds:
         # Even safe commands can be risky in pipelines with dangerous downstream
         if ctx.has_pipeline:
-            # Check what's downstream
-            for chained in ctx.chained_commands[1:]:
-                chained_base = chained.split()[0].split("/")[-1] if chained.split() else ""
-                if chained_base in dangerous_cmds:
+            # Check pipe targets (split on |) and chained commands (split on &&/||/;)
+            downstream_segments = list(ctx.pipe_targets) + list(ctx.chained_commands[1:])
+            for segment in downstream_segments:
+                seg_base = segment.split()[0].split("/")[-1] if segment.split() else ""
+                if seg_base in dangerous_cmds or seg_base in risky_cmds:
                     return CommandVerdict(
                         CommandRisk.DANGEROUS,
-                        f"Safe command '{base}' piped to dangerous '{chained_base}'",
+                        f"Safe command '{base}' piped to dangerous '{seg_base}'",
                         False,
                     )
         # Version/help check modes

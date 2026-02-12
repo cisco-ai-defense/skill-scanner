@@ -18,9 +18,11 @@
 Unit tests for core data models.
 """
 
+from datetime import datetime
+
 import pytest
 
-from skill_scanner.core.models import Finding, Severity, ThreatCategory
+from skill_scanner.core.models import Finding, Report, ScanResult, Severity, ThreatCategory
 
 
 class TestFindingModel:
@@ -175,3 +177,133 @@ class TestFindingModel:
         # Round-trip should preserve analyzer
         parsed = json.loads(json_str)
         assert parsed["analyzer"] == "llm"
+
+
+def _mk_finding(finding_id: str, severity: Severity, category: ThreatCategory) -> Finding:
+    return Finding(
+        id=finding_id,
+        rule_id=f"RULE_{finding_id}",
+        category=category,
+        severity=severity,
+        title=f"Finding {finding_id}",
+        description=f"Description for {finding_id}",
+        analyzer="static",
+    )
+
+
+class TestScanResultModel:
+    """Behavioral tests for ScanResult aggregation methods."""
+
+    def test_is_safe_false_when_high_or_critical_exists(self):
+        result = ScanResult(
+            skill_name="unsafe-skill",
+            skill_directory="/tmp/unsafe-skill",
+            findings=[
+                _mk_finding("1", Severity.LOW, ThreatCategory.SOCIAL_ENGINEERING),
+                _mk_finding("2", Severity.HIGH, ThreatCategory.COMMAND_INJECTION),
+            ],
+        )
+        assert not result.is_safe
+
+    def test_max_severity_uses_priority_order(self):
+        result = ScanResult(
+            skill_name="mixed-skill",
+            skill_directory="/tmp/mixed-skill",
+            findings=[
+                _mk_finding("1", Severity.INFO, ThreatCategory.POLICY_VIOLATION),
+                _mk_finding("2", Severity.MEDIUM, ThreatCategory.OBFUSCATION),
+                _mk_finding("3", Severity.CRITICAL, ThreatCategory.MALWARE),
+                _mk_finding("4", Severity.HIGH, ThreatCategory.DATA_EXFILTRATION),
+            ],
+        )
+        assert result.max_severity == Severity.CRITICAL
+
+    def test_to_dict_has_duration_ms_and_serialized_findings(self):
+        result = ScanResult(
+            skill_name="serialize-skill",
+            skill_directory="/tmp/serialize-skill",
+            findings=[_mk_finding("1", Severity.MEDIUM, ThreatCategory.RESOURCE_ABUSE)],
+            scan_duration_seconds=2.789,
+            analyzers_used=["static", "behavioral"],
+            timestamp=datetime(2026, 1, 5, 9, 30, 0),
+        )
+
+        payload = result.to_dict()
+
+        assert payload["skill_name"] == "serialize-skill"
+        assert payload["is_safe"] is True
+        assert payload["max_severity"] == "MEDIUM"
+        assert payload["duration_ms"] == 2789
+        assert payload["findings"][0]["analyzer"] == "static"
+        assert payload["timestamp"] == "2026-01-05T09:30:00"
+
+    def test_get_findings_by_category_filters_exactly(self):
+        result = ScanResult(
+            skill_name="category-skill",
+            skill_directory="/tmp/category-skill",
+            findings=[
+                _mk_finding("1", Severity.MEDIUM, ThreatCategory.OBFUSCATION),
+                _mk_finding("2", Severity.HIGH, ThreatCategory.COMMAND_INJECTION),
+                _mk_finding("3", Severity.LOW, ThreatCategory.OBFUSCATION),
+            ],
+        )
+
+        obfuscation_findings = result.get_findings_by_category(ThreatCategory.OBFUSCATION)
+        assert [finding.id for finding in obfuscation_findings] == ["1", "3"]
+
+
+class TestReportModel:
+    """Behavioral tests for Report counter updates and serialization."""
+
+    def test_add_scan_result_updates_all_counters(self):
+        safe_result = ScanResult(
+            skill_name="safe",
+            skill_directory="/tmp/safe",
+            findings=[],
+        )
+        unsafe_result = ScanResult(
+            skill_name="unsafe",
+            skill_directory="/tmp/unsafe",
+            findings=[
+                _mk_finding("1", Severity.CRITICAL, ThreatCategory.MALWARE),
+                _mk_finding("2", Severity.HIGH, ThreatCategory.COMMAND_INJECTION),
+                _mk_finding("3", Severity.LOW, ThreatCategory.SOCIAL_ENGINEERING),
+            ],
+        )
+
+        report = Report(timestamp=datetime(2026, 1, 5, 10, 0, 0))
+        report.add_scan_result(safe_result)
+        report.add_scan_result(unsafe_result)
+
+        assert report.total_skills_scanned == 2
+        assert report.total_findings == 3
+        assert report.safe_count == 1
+        assert report.critical_count == 1
+        assert report.high_count == 1
+        assert report.medium_count == 0
+        assert report.low_count == 1
+        assert report.info_count == 0
+
+    def test_report_to_dict_summary_matches_runtime_counts(self):
+        result = ScanResult(
+            skill_name="summary-skill",
+            skill_directory="/tmp/summary-skill",
+            findings=[_mk_finding("1", Severity.INFO, ThreatCategory.POLICY_VIOLATION)],
+        )
+        report = Report(timestamp=datetime(2026, 1, 5, 11, 0, 0))
+        report.add_scan_result(result)
+
+        payload = report.to_dict()
+        summary = payload["summary"]
+
+        assert summary["total_skills_scanned"] == 1
+        assert summary["total_findings"] == 1
+        assert summary["safe_skills"] == 1
+        assert summary["findings_by_severity"] == {
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "info": 1,
+        }
+        assert summary["timestamp"] == "2026-01-05T11:00:00"

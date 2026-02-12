@@ -247,7 +247,7 @@ Parameter Flow Tracking:
         # Add reachability analysis
         if func_context.reachable_functions:
             total_reachable = len(func_context.reachable_functions)
-            functions_by_file = {}
+            functions_by_file: dict[str, list[str]] = {}
             for func in func_context.reachable_functions:
                 if "::" in func:
                     file_path, func_name = func.rsplit("::", 1)

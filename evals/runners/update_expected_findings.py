@@ -30,8 +30,6 @@ from pathlib import Path
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import os
-
 from skill_scanner.core.analyzer_factory import build_analyzers
 from skill_scanner.core.scan_policy import ScanPolicy
 from skill_scanner.core.scanner import SkillScanner
@@ -72,7 +70,9 @@ def suggest_expected_findings(actual_findings_by_key, existing_expected):
         # Check if this category+severity is already expected
         expected_key = None
         if existing_expected:
-            expected_findings = existing_expected.get("expected_findings", [])
+            expected_findings = existing_expected.get("expected_findings") or existing_expected.get(
+                "expected_threats", []
+            )
             for exp in expected_findings:
                 if exp.get("category") == category and exp.get("severity") == severity:
                     expected_key = exp
@@ -135,7 +135,8 @@ def main():
             result, findings_by_key = scan_skill_and_get_findings(skill_dir, use_llm=args.use_llm)
 
             # Get expected findings
-            expected_findings = existing.get("expected_findings", [])
+            # Support both the canonical key and the legacy key for backward compat
+            expected_findings = existing.get("expected_findings") or existing.get("expected_threats", [])
 
             print(f"  Expected: {len(expected_findings)} findings")
             print(f"  Actual: {len(result.findings)} findings")

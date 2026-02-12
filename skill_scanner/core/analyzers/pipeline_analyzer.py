@@ -299,7 +299,7 @@ class PipelineAnalyzer(BaseAnalyzer):
 
     def _analyze_pipeline(self, chain: PipelineChain) -> list[Finding]:
         """Analyze a pipeline chain for taint propagation."""
-        findings = []
+        findings: list[Finding] = []
 
         if len(chain.nodes) < 2:
             return findings

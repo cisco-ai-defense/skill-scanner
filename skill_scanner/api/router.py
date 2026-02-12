@@ -25,7 +25,10 @@ full CLI/API parity.
 import logging
 import shutil
 import tempfile
+import time
 import uuid
+from collections import OrderedDict
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -43,6 +46,7 @@ from ..core.scanner import SkillScanner
 
 logger = logging.getLogger("skill_scanner.api")
 
+LLMAnalyzer: type | None
 try:
     from ..core.analyzers.llm_analyzer import LLMAnalyzer
 
@@ -51,6 +55,7 @@ except (ImportError, ModuleNotFoundError):
     LLM_AVAILABLE = False
     LLMAnalyzer = None
 
+BehavioralAnalyzer: type | None
 try:
     from ..core.analyzers.behavioral_analyzer import BehavioralAnalyzer
 
@@ -59,6 +64,7 @@ except (ImportError, ModuleNotFoundError):
     BEHAVIORAL_AVAILABLE = False
     BehavioralAnalyzer = None
 
+AIDefenseAnalyzer: type | None
 try:
     from ..core.analyzers.aidefense_analyzer import AIDefenseAnalyzer
 
@@ -67,6 +73,7 @@ except (ImportError, ModuleNotFoundError):
     AIDEFENSE_AVAILABLE = False
     AIDefenseAnalyzer = None
 
+VirusTotalAnalyzer: type | None
 try:
     from ..core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
 
@@ -75,6 +82,7 @@ except (ImportError, ModuleNotFoundError):
     VIRUSTOTAL_AVAILABLE = False
     VirusTotalAnalyzer = None
 
+TriggerAnalyzer: type | None
 try:
     from ..core.analyzers.trigger_analyzer import TriggerAnalyzer
 
@@ -83,6 +91,8 @@ except (ImportError, ModuleNotFoundError):
     TRIGGER_AVAILABLE = False
     TriggerAnalyzer = None
 
+MetaAnalyzer: type | None
+apply_meta_analysis_to_results: Callable[..., list] | None
 try:
     from ..core.analyzers.meta_analyzer import MetaAnalyzer, apply_meta_analysis_to_results
 
@@ -94,8 +104,42 @@ except (ImportError, ModuleNotFoundError):
 
 router = APIRouter()
 
-# In-memory storage for async scans (in production, use Redis or database)
-scan_results_cache = {}
+# ---------------------------------------------------------------------------
+# Upload & cache safety limits
+# ---------------------------------------------------------------------------
+
+MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB max upload
+MAX_ZIP_ENTRIES = 500  # max files extracted from uploaded ZIP
+MAX_ZIP_UNCOMPRESSED_BYTES = 200 * 1024 * 1024  # 200 MB uncompressed limit
+MAX_CACHE_ENTRIES = 1_000  # evict oldest when exceeded
+CACHE_TTL_SECONDS = 3600  # 1 hour
+
+
+# In-memory storage for async scans with bounded LRU eviction and TTL.
+# In production, use Redis or a database instead.
+class _BoundedCache(OrderedDict[str, dict]):
+    """OrderedDict with max-size eviction and per-entry TTL."""
+
+    def set(self, key: str, value: dict) -> None:
+        value["_cached_at"] = time.monotonic()
+        self[key] = value
+        self.move_to_end(key)
+        # Evict oldest entries beyond max size
+        while len(self) > MAX_CACHE_ENTRIES:
+            self.popitem(last=False)
+
+    def get_valid(self, key: str) -> dict | None:
+        entry = self.get(key)
+        if entry is None:
+            return None
+        if time.monotonic() - entry.get("_cached_at", 0) > CACHE_TTL_SECONDS:
+            del self[key]
+            return None
+        result: dict = entry
+        return result
+
+
+scan_results_cache = _BoundedCache()
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +167,7 @@ class ScanRequest(BaseModel):
     aidefense_api_url: str | None = Field(None, description="AI Defense API URL")
     use_trigger: bool = Field(False, description="Enable trigger specificity analysis")
     enable_meta: bool = Field(False, description="Enable meta-analysis for false positive filtering")
+    llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
 
 
 class ScanResponse(BaseModel):
@@ -168,6 +213,7 @@ class BatchScanRequest(BaseModel):
     aidefense_api_url: str | None = None
     use_trigger: bool = False
     enable_meta: bool = Field(False, description="Enable meta-analysis")
+    llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +247,7 @@ def _build_analyzers(
     aidefense_api_key: str | None = None,
     aidefense_api_url: str | None = None,
     use_trigger: bool = False,
+    llm_consensus_runs: int = 1,
 ):
     """Build the analyzer list — delegates to the centralized factory."""
     return build_analyzers(
@@ -216,6 +263,7 @@ def _build_analyzers(
         aidefense_api_key=aidefense_api_key,
         aidefense_api_url=aidefense_api_url,
         use_trigger=use_trigger,
+        llm_consensus_runs=llm_consensus_runs,
     )
 
 
@@ -279,6 +327,7 @@ async def scan_skill(request: ScanRequest):
             aidefense_api_key=request.aidefense_api_key,
             aidefense_api_url=request.aidefense_api_url,
             use_trigger=request.use_trigger,
+            llm_consensus_runs=request.llm_consensus_runs,
         )
         scanner = SkillScanner(analyzers=analyzers, policy=policy)
         return scanner.scan_skill(skill_dir)
@@ -289,7 +338,13 @@ async def scan_skill(request: ScanRequest):
             result = await loop.run_in_executor(executor, run_scan)
 
         # Meta-analysis
-        if request.enable_meta and META_AVAILABLE and len(result.findings) > 0:
+        if (
+            request.enable_meta
+            and META_AVAILABLE
+            and MetaAnalyzer is not None
+            and apply_meta_analysis_to_results is not None
+            and len(result.findings) > 0
+        ):
             try:
                 from ..core.loader import SkillLoader
 
@@ -355,6 +410,7 @@ async def scan_uploaded_skill(
     aidefense_api_url: str | None = Query(None, description="AI Defense API URL"),
     use_trigger: bool = Query(False, description="Enable trigger specificity analysis"),
     enable_meta: bool = Query(False, description="Enable meta-analysis for FP filtering"),
+    llm_consensus_runs: int = Query(1, description="Number of LLM consensus runs"),
 ):
     """Scan an uploaded skill package (ZIP file)."""
     if not file.filename or not file.filename.endswith(".zip"):
@@ -363,14 +419,46 @@ async def scan_uploaded_skill(
     temp_dir = Path(tempfile.mkdtemp(prefix="skill_scanner_"))
 
     try:
+        # Stream upload with size limit to avoid memory exhaustion
         zip_path = temp_dir / file.filename
+        total_read = 0
+        chunk_size = 1024 * 1024  # 1 MB chunks
         with open(zip_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                total_read += len(chunk)
+                if total_read > MAX_UPLOAD_SIZE_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Upload exceeds maximum size of {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB",
+                    )
+                f.write(chunk)
 
         import zipfile
 
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            # Enforce entry count and uncompressed size limits
+            entries = [info for info in zip_ref.infolist() if not info.is_dir()]
+            if len(entries) > MAX_ZIP_ENTRIES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"ZIP contains {len(entries)} files, exceeding limit of {MAX_ZIP_ENTRIES}",
+                )
+            total_uncompressed = sum(info.file_size for info in entries)
+            if total_uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"ZIP uncompressed size ({total_uncompressed // (1024 * 1024)} MB) "
+                        f"exceeds limit of {MAX_ZIP_UNCOMPRESSED_BYTES // (1024 * 1024)} MB"
+                    ),
+                )
+            # Check for path traversal
+            for info in zip_ref.infolist():
+                if ".." in info.filename or info.filename.startswith("/"):
+                    raise HTTPException(status_code=400, detail="ZIP contains path traversal entries")
             zip_ref.extractall(temp_dir / "extracted")
 
         extracted_dir = temp_dir / "extracted"
@@ -396,6 +484,7 @@ async def scan_uploaded_skill(
             aidefense_api_url=aidefense_api_url,
             use_trigger=use_trigger,
             enable_meta=enable_meta,
+            llm_consensus_runs=llm_consensus_runs,
         )
 
         return await scan_skill(request)
@@ -413,7 +502,7 @@ async def scan_batch(request: BatchScanRequest, background_tasks: BackgroundTask
         raise HTTPException(status_code=404, detail=f"Skills directory not found: {skills_dir}")
 
     scan_id = str(uuid.uuid4())
-    scan_results_cache[scan_id] = {"status": "processing", "started_at": datetime.now().isoformat(), "result": None}
+    scan_results_cache.set(scan_id, {"status": "processing", "started_at": datetime.now().isoformat(), "result": None})
 
     background_tasks.add_task(run_batch_scan, scan_id, request)
 
@@ -427,10 +516,9 @@ async def scan_batch(request: BatchScanRequest, background_tasks: BackgroundTask
 @router.get("/scan-batch/{scan_id}")
 async def get_batch_scan_result(scan_id: str):
     """Get results of a batch scan."""
-    if scan_id not in scan_results_cache:
-        raise HTTPException(status_code=404, detail="Scan ID not found")
-
-    cached = scan_results_cache[scan_id]
+    cached = scan_results_cache.get_valid(scan_id)
+    if cached is None:
+        raise HTTPException(status_code=404, detail="Scan ID not found or expired")
 
     if cached["status"] == "processing":
         return {"scan_id": scan_id, "status": "processing", "started_at": cached["started_at"]}
@@ -463,6 +551,7 @@ def run_batch_scan(scan_id: str, request: BatchScanRequest):
             aidefense_api_key=request.aidefense_api_key,
             aidefense_api_url=request.aidefense_api_url,
             use_trigger=request.use_trigger,
+            llm_consensus_runs=request.llm_consensus_runs,
         )
 
         scanner = SkillScanner(analyzers=analyzers, policy=policy)
@@ -473,7 +562,12 @@ def run_batch_scan(scan_id: str, request: BatchScanRequest):
         )
 
         # Meta-analysis per skill
-        if request.enable_meta and META_AVAILABLE:
+        if (
+            request.enable_meta
+            and META_AVAILABLE
+            and MetaAnalyzer is not None
+            and apply_meta_analysis_to_results is not None
+        ):
             import asyncio
 
             try:
@@ -502,19 +596,27 @@ def run_batch_scan(scan_id: str, request: BatchScanRequest):
             except Exception:
                 pass
 
-        scan_results_cache[scan_id] = {
-            "status": "completed",
-            "started_at": scan_results_cache[scan_id]["started_at"],
-            "completed_at": datetime.now().isoformat(),
-            "result": report.to_dict(),
-        }
+        started_at = scan_results_cache.get(scan_id, {}).get("started_at", datetime.now().isoformat())
+        scan_results_cache.set(
+            scan_id,
+            {
+                "status": "completed",
+                "started_at": started_at,
+                "completed_at": datetime.now().isoformat(),
+                "result": report.to_dict(),
+            },
+        )
 
     except Exception as e:
-        scan_results_cache[scan_id] = {
-            "status": "error",
-            "started_at": scan_results_cache[scan_id]["started_at"],
-            "error": str(e),
-        }
+        started_at = scan_results_cache.get(scan_id, {}).get("started_at", datetime.now().isoformat())
+        scan_results_cache.set(
+            scan_id,
+            {
+                "status": "error",
+                "started_at": started_at,
+                "error": str(e),
+            },
+        )
 
 
 @router.get("/analyzers")
@@ -525,7 +627,7 @@ async def list_analyzers():
             "name": "static_analyzer",
             "description": "Pattern-based detection using YAML and YARA rules",
             "available": True,
-            "rules_count": "58+",
+            "rules_count": "90+",
         },
         {
             "name": "bytecode_analyzer",

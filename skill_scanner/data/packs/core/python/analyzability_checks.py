@@ -56,7 +56,7 @@ def check_analyzability(report: AnalyzabilityReport, policy: ScanPolicy) -> list
                     file_path=fd.relative_path,
                     remediation=(
                         "Replace binary files with source code, or submit the binary "
-                        "to VirusTotal for independent verification (--enable-virustotal)."
+                        "to VirusTotal for independent verification (--use-virustotal)."
                     ),
                     analyzer="analyzability",
                     metadata={"skip_reason": fd.skip_reason, "weight": fd.weight},

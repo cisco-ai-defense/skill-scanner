@@ -51,7 +51,8 @@ class ResponseParser:
 
         # Try direct JSON parse
         try:
-            return json.loads(response_content.strip())
+            result: dict[str, Any] = json.loads(response_content.strip())
+            return result
         except json.JSONDecodeError:
             pass
 
@@ -76,6 +77,7 @@ class ResponseParser:
                     brace_count -= 1
                     if brace_count == 0:
                         json_str = response_content[start_idx : i + 1]
-                        return json.loads(json_str)
+                        parsed: dict[str, Any] = json.loads(json_str)
+                        return parsed
 
         raise ValueError(f"Could not parse JSON from response: {response_content[:200]}")

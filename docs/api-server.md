@@ -209,7 +209,7 @@ GET /analyzers
       "name": "static_analyzer",
       "description": "Pattern-based detection using YAML and YARA rules",
       "available": true,
-      "rules_count": "58+"
+      "rules_count": "90+"
     },
     {
       "name": "bytecode_analyzer",
@@ -424,17 +424,21 @@ export API_PORT=8000
 
 ### CORS (for web apps)
 
-To enable CORS, modify `api_server.py`:
+To enable CORS, create a wrapper that imports the app from the router module and adds middleware:
 
 ```python
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from skill_scanner.api.router import router
 
+app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(router)
 ```
 
 ## CI/CD Integration
@@ -454,7 +458,7 @@ jobs:
 
       - name: Start API Server
         run: |
-          pip install -r requirements.txt
+          pip install cisco-ai-skill-scanner
           skill-scanner-api &
           sleep 5
 
@@ -494,14 +498,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
+COPY pyproject.toml .
 COPY skill_scanner/ ./skill_scanner/
+
+RUN pip install .
 
 EXPOSE 8000
 
-CMD ["python", "-m", "skill_scanner.api_cli", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["skill-scanner-api", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 ```bash

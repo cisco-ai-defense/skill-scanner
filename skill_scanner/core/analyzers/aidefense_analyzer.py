@@ -29,7 +29,7 @@ import hashlib
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 try:
     import httpx
@@ -138,12 +138,13 @@ class AIDefenseAnalyzer(BaseAnalyzer):
         self.enabled_rules = enabled_rules or DEFAULT_ENABLED_RULES
         self.include_rules = include_rules
 
-        # Initialize async client
-        self._client = None
+        # Initialize async client (api_key is guaranteed str after __init__)
+        self._client: httpx.AsyncClient | None = None
 
     def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None:
+            assert self.api_key is not None  # Validated in __init__
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.timeout),
                 headers={
@@ -152,6 +153,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                     "Accept": "application/json",
                 },
             )
+        assert self._client is not None  # Just assigned or was already set
         return self._client
 
     async def _close_client(self):
@@ -181,7 +183,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
         Returns:
             Complete payload dict
         """
-        payload = {
+        payload: dict[str, Any] = {
             "messages": messages,
         }
 
@@ -585,7 +587,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
         client = self._get_client()
         url = f"{self.api_url}{endpoint}"
 
-        last_exception = None
+        last_exception: Exception | None = None
         original_payload = payload.copy()
         tried_without_rules = False
 
@@ -594,7 +596,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                 response = await client.post(url, json=payload)
 
                 if response.status_code == 200:
-                    return response.json()
+                    return cast(dict[str, Any], response.json())
                 elif response.status_code == 400:
                     # Check if this is a pre-configured rules error
                     try:

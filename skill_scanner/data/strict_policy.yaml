@@ -46,6 +46,22 @@ pipeline:
   demote_in_docs: false
   demote_instructional: false
   check_known_installers: false
+  # Hint words for data exfiltration detection in tool-chaining
+  exfil_hints:
+    - "send"
+    - "upload"
+    - "transmit"
+    - "webhook"
+    - "slack"
+    - "exfil"
+    - "forward"
+  # Tokens that indicate API/framework docs (suppress tool-chaining FP)
+  api_doc_tokens:
+    - "@app."
+    - "app."
+    - "router."
+    - "route"
+    - "endpoint"
 
 # ---------------------------------------------------------------------------
 # Rule scoping – fire rules more broadly
@@ -92,6 +108,7 @@ system_cleanup:
 # File classification – inherited from default (no relaxation)
 # ---------------------------------------------------------------------------
 file_classification:
+  # In strict mode, still scan inert extensions (e.g. images) for embedded content
   skip_inert_extensions: false
 
 # ---------------------------------------------------------------------------
@@ -113,11 +130,11 @@ analysis_thresholds:
   zerowidth_threshold_alone: 100        # Lower bar for standalone zero-width
   analyzability_low_risk: 95            # Require higher analyzability for LOW
   analyzability_medium_risk: 80         # Higher bar for MEDIUM
-  min_dangerous_lines: 3
-  min_confidence_pct: 60
-  exception_handler_context_lines: 30
-  short_match_max_chars: 2
-  cyrillic_cjk_min_chars: 5
+  min_dangerous_lines: 3                # Min confusable-char lines for HOMOGLYPH_ATTACK
+  min_confidence_pct: 60                # Min confidence % for FILE_MAGIC_MISMATCH
+  exception_handler_context_lines: 30   # Context lines around exception handlers
+  short_match_max_chars: 2              # Max chars for "short match" in unicode steg
+  cyrillic_cjk_min_chars: 5            # Min Cyrillic/CJK chars to suppress steg FP
 
 # ---------------------------------------------------------------------------
 # Sensitive files – expanded patterns

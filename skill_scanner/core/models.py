@@ -75,7 +75,7 @@ class SkillManifest:
     description: str
     license: str | None = None
     compatibility: str | None = None
-    allowed_tools: list[str] | None = None
+    allowed_tools: list[str] | str | None = None
     metadata: dict[str, Any] | None = None
     disable_model_invocation: bool = False
 

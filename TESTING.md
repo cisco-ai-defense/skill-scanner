@@ -12,7 +12,7 @@ uv run pytest tests/ -v
 uv run pytest tests/ --cov=skill_scanner --cov-report=html
 
 # Run evaluation benchmark
-uv run python evals/benchmark_runner.py
+uv run python evals/runners/benchmark_runner.py
 ```
 
 ## Test Categories
@@ -103,13 +103,13 @@ The evaluation framework tests detection accuracy against curated skill samples.
 
 ```bash
 # Run full evaluation suite
-uv run python evals/eval_runner.py --test-skills-dir evals/skills
+uv run python evals/runners/eval_runner.py --test-skills-dir evals/skills
 
 # Run with LLM analyzer (requires API key)
-GEMINI_API_KEY=xxx uv run python evals/eval_runner.py --test-skills-dir evals/skills --use-llm
+SKILL_SCANNER_LLM_API_KEY=xxx uv run python evals/runners/eval_runner.py --test-skills-dir evals/skills --use-llm
 
 # Run benchmark
-uv run python evals/benchmark_runner.py
+uv run python evals/runners/benchmark_runner.py
 ```
 
 For detailed evaluation documentation, see [evals/README.md](/evals/README.md).

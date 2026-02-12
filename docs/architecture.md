@@ -6,7 +6,7 @@ The Skill Scanner is built with a modular, extensible architecture for Agent Ski
 
 **Structure**: Organized by component (core/, config/, data/, threats/, cli/, api/)
 **Coverage**: Static analysis (YAML + YARA), LLM analysis, Behavioral dataflow analysis
-**Validation**: 163 tests passing, enhanced with dataflow detection
+**Validation**: 800+ tests passing, enhanced with dataflow detection
 
 ## High-Level Architecture
 
@@ -342,7 +342,7 @@ Command-line interface built with `argparse`.
 Example:
 
 ```python
-from skill_scanner.analyzers.base import BaseAnalyzer
+from skill_scanner.core.analyzers.base import BaseAnalyzer
 
 class LLMAnalyzer(BaseAnalyzer):
     def __init__(self):

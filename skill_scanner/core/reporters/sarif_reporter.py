@@ -179,7 +179,7 @@ class SARIFReporter:
         results = []
 
         for finding in findings:
-            result = {
+            result: dict[str, Any] = {
                 "ruleId": finding.rule_id,
                 "level": self.SEVERITY_TO_LEVEL.get(finding.severity, "warning"),
                 "message": {
@@ -193,7 +193,7 @@ class SARIFReporter:
 
             # Add location if file path is available
             if finding.file_path:
-                location = {
+                location: dict[str, Any] = {
                     "physicalLocation": {
                         "artifactLocation": {
                             "uri": finding.file_path,

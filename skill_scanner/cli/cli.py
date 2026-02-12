@@ -27,12 +27,16 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..core.analyzer_factory import build_analyzers
+from ..core.loader import SkillLoadError
 from ..core.reporters.json_reporter import JSONReporter
+from ..core.reporters.markdown_reporter import MarkdownReporter
 from ..core.reporters.sarif_reporter import SARIFReporter
+from ..core.reporters.table_reporter import TableReporter
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
 
 # Optional LLM analyzer (needed only for LLM_AVAILABLE check)
+LLMAnalyzer: type | None
 try:
     from ..core.analyzers.llm_analyzer import LLMAnalyzer  # noqa: F401
 
@@ -42,6 +46,8 @@ except (ImportError, ModuleNotFoundError):
     LLMAnalyzer = None
 
 # Optional Meta analyzer
+MetaAnalyzer: type | None
+apply_meta_analysis_to_results: Callable[..., list] | None
 try:
     from ..core.analyzers.meta_analyzer import MetaAnalyzer, apply_meta_analysis_to_results
 
@@ -50,10 +56,6 @@ except (ImportError, ModuleNotFoundError):
     META_AVAILABLE = False
     MetaAnalyzer = None
     apply_meta_analysis_to_results = None
-
-from ..core.loader import SkillLoadError
-from ..core.reporters.markdown_reporter import MarkdownReporter
-from ..core.reporters.table_reporter import TableReporter
 
 logger = logging.getLogger("skill_scanner.cli")
 
@@ -106,6 +108,7 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
         aidefense_api_key=getattr(args, "aidefense_api_key", None),
         aidefense_api_url=getattr(args, "aidefense_api_url", None),
         use_trigger=getattr(args, "use_trigger", False),
+        llm_provider=getattr(args, "llm_provider", None),
         llm_consensus_runs=getattr(args, "llm_consensus_runs", 1),
     )
 
@@ -137,6 +140,8 @@ def _build_meta_analyzer(args: argparse.Namespace, analyzer_count: int, status: 
         return None
     if analyzer_count < 2:
         logger.warning("Meta-analysis requires at least 2 analyzers.  Skipping.")
+        return None
+    if MetaAnalyzer is None:
         return None
 
     try:
@@ -216,7 +221,7 @@ def scan_command(args: argparse.Namespace) -> int:
         result = scanner.scan_skill(skill_dir)
 
         # Meta-analysis
-        if meta_analyzer and result.findings:
+        if meta_analyzer and result.findings and apply_meta_analysis_to_results is not None:
             status("Running meta-analysis to filter false positives...")
             try:
                 skill = scanner.loader.load_skill(skill_dir)
@@ -274,7 +279,7 @@ def scan_all_command(args: argparse.Namespace) -> int:
             return 1
 
         # Per-skill meta-analysis
-        if meta_analyzer:
+        if meta_analyzer and apply_meta_analysis_to_results is not None:
             status("Running meta-analysis on scan results...")
             total_fp, total_new = 0, 0
             for result in report.scan_results:
@@ -418,7 +423,10 @@ def configure_policy_command(args: argparse.Namespace) -> int:
     """Handle the ``configure-policy`` command (interactive TUI)."""
     from .policy_tui import run_policy_tui
 
-    return run_policy_tui(getattr(args, "output", "scan_policy.yaml"))
+    return run_policy_tui(
+        output_path=getattr(args, "output", "scan_policy.yaml"),
+        input_path=getattr(args, "input", None),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -484,7 +492,7 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         help="Output format (default: summary). Use 'sarif' for GitHub Code Scanning.",
     )
     parser.add_argument("--output", "-o", help="Output file path")
-    parser.add_argument("--detailed", action="store_true", help="Include detailed findings")
+    parser.add_argument("--detailed", action="store_true", help="Include detailed findings (Markdown output only)")
     parser.add_argument("--compact", action="store_true", help="Compact JSON output")
     parser.add_argument("--fail-on-findings", action="store_true", help="Exit with error if critical/high findings")
     parser.add_argument("--use-behavioral", action="store_true", help="Enable behavioral dataflow analysis")
@@ -558,7 +566,7 @@ Examples:
 
     # -- validate-rules ----------------------------------------------------
     vr_p = subparsers.add_parser("validate-rules", help="Validate rule signatures")
-    vr_p.add_argument("--rules-file", help="Path to custom rules file")
+    vr_p.add_argument("--rules-file", help="Path to YAML rules file or directory (default: built-in signatures)")
 
     # -- generate-policy ---------------------------------------------------
     gp_p = subparsers.add_parser("generate-policy", help="Generate a default scan policy YAML")
@@ -568,6 +576,7 @@ Examples:
     # -- configure-policy --------------------------------------------------
     cp_p = subparsers.add_parser("configure-policy", help="Interactive TUI to build a custom scan policy")
     cp_p.add_argument("--output", "-o", default="scan_policy.yaml", help="Output file path")
+    cp_p.add_argument("--input", "-i", default=None, help="Load existing policy YAML for editing")
 
     # -- dispatch ----------------------------------------------------------
     args = parser.parse_args()

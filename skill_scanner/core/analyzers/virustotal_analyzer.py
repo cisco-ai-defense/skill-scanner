@@ -149,7 +149,7 @@ class VirusTotalAnalyzer(BaseAnalyzer):
         self.api_key = api_key
         self.enabled = enabled and api_key is not None
         self.upload_files = upload_files
-        self.validated_binary_files = []  # Track files validated as safe by VirusTotal
+        self.validated_binary_files: list[str] = []  # Track files validated as safe by VirusTotal
         self.base_url = "https://www.virustotal.com/api/v3"
         self.session = httpx.Client()
 
@@ -191,7 +191,7 @@ class VirusTotalAnalyzer(BaseAnalyzer):
 
                 vt_result, hash_found = self._query_virustotal(file_hash)
 
-                if hash_found:
+                if hash_found and vt_result is not None:
                     total = vt_result.get("total_engines", 0)
                     malicious = vt_result.get("malicious", 0)
                     suspicious = vt_result.get("suspicious", 0)

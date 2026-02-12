@@ -32,8 +32,6 @@ from typing import Any
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from skill_scanner.core.analyzers.static import StaticAnalyzer
-from skill_scanner.core.models import Severity, ThreatCategory
 from skill_scanner.core.scanner import SkillScanner
 
 
@@ -134,7 +132,8 @@ class SkillBenchmarkRunner:
 
         skill_name = expected.get("skill_name", skill_path.name)
         expected_safe = expected.get("expected_safe", True)
-        expected_threats = expected.get("expected_threats", [])
+        # Support both the canonical key and the legacy key for backward compat
+        expected_threats = expected.get("expected_findings") or expected.get("expected_threats", [])
 
         print(f"[EVAL] Evaluating: {skill_name}")
         print(f"   Expected: {'SAFE' if expected_safe else 'MALICIOUS'}")
@@ -164,7 +163,8 @@ class SkillBenchmarkRunner:
         expected_safe = expected.get("expected_safe", True)
         actual_safe = scan_result.is_safe
 
-        expected_threats = expected.get("expected_threats", [])
+        # Support both the canonical key and the legacy key for backward compat
+        expected_threats = expected.get("expected_findings") or expected.get("expected_threats", [])
         actual_findings = scan_result.findings
 
         # Count matches by category

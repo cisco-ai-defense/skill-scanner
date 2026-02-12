@@ -29,8 +29,6 @@ from typing import Any
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import os
-
 from skill_scanner.core.analyzer_factory import build_analyzers
 from skill_scanner.core.models import Severity
 from skill_scanner.core.scan_policy import ScanPolicy
@@ -194,7 +192,8 @@ class EvaluationRunner:
         expected_safe = expected.get("expected_safe", True)
         actual_safe = scan_result.is_safe
 
-        expected_findings = expected.get("expected_findings", [])
+        # Support both the canonical key and the legacy key for backward compat
+        expected_findings = expected.get("expected_findings") or expected.get("expected_threats", [])
         actual_findings = scan_result.findings
 
         # Count matches - try to match each expected finding to an actual finding

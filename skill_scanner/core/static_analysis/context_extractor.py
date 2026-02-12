@@ -386,7 +386,7 @@ class ContextExtractor:
         Returns:
             List of SkillFunctionContext for each function
         """
-        contexts = []
+        contexts: list[SkillFunctionContext] = []
 
         try:
             tree = ast.parse(source_code)
@@ -411,7 +411,7 @@ class ContextExtractor:
         return contexts
 
     def _extract_function_context(
-        self, node: ast.FunctionDef, imports: list[str], source_code: str, file_path: Path
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, imports: list[str], source_code: str, file_path: Path
     ) -> SkillFunctionContext:
         """Extract detailed context for a single function.
 
@@ -490,7 +490,7 @@ class ContextExtractor:
             dataflow_summary=dataflow_summary,
         )
 
-    def _extract_parameters(self, node: ast.FunctionDef) -> list[dict[str, Any]]:
+    def _extract_parameters(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[str, Any]]:
         """Extract function parameters with type hints."""
         params = []
         for arg in node.args.args:
@@ -503,7 +503,7 @@ class ContextExtractor:
             params.append(param_info)
         return params
 
-    def _extract_return_type(self, node: ast.FunctionDef) -> str:
+    def _extract_return_type(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
         """Extract return type annotation."""
         if node.returns:
             try:
@@ -512,7 +512,7 @@ class ContextExtractor:
                 return "<unknown>"
         return None
 
-    def _extract_function_calls(self, node: ast.FunctionDef) -> list[dict[str, Any]]:
+    def _extract_function_calls(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[str, Any]]:
         """Extract all function calls with arguments."""
         calls = []
         for child in ast.walk(node):
@@ -537,8 +537,8 @@ class ContextExtractor:
         if isinstance(node.func, ast.Name):
             return node.func.id
         elif isinstance(node.func, ast.Attribute):
-            parts = []
-            current = node.func
+            parts: list[str] = []
+            current: ast.expr = node.func
             while isinstance(current, ast.Attribute):
                 parts.append(current.attr)
                 current = current.value
@@ -550,7 +550,7 @@ class ContextExtractor:
         except (AttributeError, TypeError, ValueError):
             return "<unknown>"
 
-    def _extract_assignments(self, node: ast.FunctionDef) -> list[dict[str, Any]]:
+    def _extract_assignments(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[str, Any]]:
         """Extract all assignments."""
         assignments = []
         for child in ast.walk(node):
@@ -570,7 +570,7 @@ class ContextExtractor:
                         )
         return assignments
 
-    def _analyze_control_flow(self, node: ast.FunctionDef) -> dict[str, Any]:
+    def _analyze_control_flow(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, Any]:
         """Analyze control flow structure."""
         has_if = any(isinstance(n, ast.If) for n in ast.walk(node))
         has_for = any(isinstance(n, (ast.For, ast.AsyncFor)) for n in ast.walk(node))
@@ -583,13 +583,15 @@ class ContextExtractor:
             "has_exception_handling": has_try,
         }
 
-    def _analyze_parameter_flows(self, node: ast.FunctionDef, parameters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _analyze_parameter_flows(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, parameters: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Analyze how parameters flow through the function using CFG-based analysis.
 
         Uses proper control flow graph and fixpoint analysis for accurate tracking
         through branches, loops, and function calls.
         """
-        flows = []
+        flows: list[dict[str, Any]] = []
         param_names = [p["name"] for p in parameters]
 
         if not param_names:
@@ -637,7 +639,7 @@ class ContextExtractor:
 
         return flows
 
-    def _extract_constants(self, node: ast.FunctionDef) -> dict[str, Any]:
+    def _extract_constants(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, Any]:
         """Extract constant values."""
         constants = {}
         for child in ast.walk(node):
@@ -647,7 +649,7 @@ class ContextExtractor:
                         constants[target.id] = child.value.value
         return constants
 
-    def _analyze_variable_dependencies(self, node: ast.FunctionDef) -> dict[str, list[str]]:
+    def _analyze_variable_dependencies(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, list[str]]:
         """Analyze variable dependencies."""
         dependencies = {}
         for child in ast.walk(node):
@@ -661,7 +663,7 @@ class ContextExtractor:
                         dependencies[target.id] = deps
         return dependencies
 
-    def _has_file_operations(self, node: ast.FunctionDef) -> bool:
+    def _has_file_operations(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         """Check for file operations."""
         file_patterns = ["open", "read", "write", "path", "file", "os.remove", "shutil"]
         for child in ast.walk(node):
@@ -671,7 +673,7 @@ class ContextExtractor:
                     return True
         return False
 
-    def _has_network_operations(self, node: ast.FunctionDef) -> bool:
+    def _has_network_operations(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         """Check for network operations."""
         network_patterns = ["requests", "urllib", "http", "socket", "post", "get", "fetch"]
         for child in ast.walk(node):
@@ -681,7 +683,7 @@ class ContextExtractor:
                     return True
         return False
 
-    def _has_subprocess_calls(self, node: ast.FunctionDef) -> bool:
+    def _has_subprocess_calls(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         """Check for subprocess calls."""
         subprocess_patterns = ["subprocess", "os.system", "os.popen", "shell", "exec"]
         for child in ast.walk(node):
@@ -691,7 +693,7 @@ class ContextExtractor:
                     return True
         return False
 
-    def _has_eval_exec(self, node: ast.FunctionDef) -> bool:
+    def _has_eval_exec(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         """Check for eval/exec calls."""
         for child in ast.walk(node):
             if isinstance(child, ast.Call):
@@ -700,7 +702,7 @@ class ContextExtractor:
                     return True
         return False
 
-    def _extract_string_literals(self, node: ast.FunctionDef) -> list[str]:
+    def _extract_string_literals(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
         """Extract all string literals from function."""
         literals = []
         for child in ast.walk(node):
@@ -710,7 +712,7 @@ class ContextExtractor:
                     literals.append(literal)
         return literals[:20]
 
-    def _extract_return_expressions(self, node: ast.FunctionDef) -> list[str]:
+    def _extract_return_expressions(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
         """Extract return expressions from function."""
         returns = []
         for child in ast.walk(node):
@@ -722,7 +724,7 @@ class ContextExtractor:
                     returns.append("<unparseable>")
         return returns
 
-    def _extract_exception_handlers(self, node: ast.FunctionDef) -> list[dict[str, Any]]:
+    def _extract_exception_handlers(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[str, Any]]:
         """Extract exception handling details."""
         handlers = []
         for child in ast.walk(node):
@@ -735,7 +737,7 @@ class ContextExtractor:
                 handlers.append(handler_info)
         return handlers
 
-    def _extract_env_var_access(self, node: ast.FunctionDef) -> list[str]:
+    def _extract_env_var_access(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
         """Extract environment variable accesses."""
         env_accesses = []
         for child in ast.walk(node):
@@ -744,12 +746,12 @@ class ContextExtractor:
                 if "environ" in call_name or "getenv" in call_name:
                     if child.args and isinstance(child.args[0], ast.Constant):
                         key = child.args[0].value
-                        env_accesses.append(f"{call_name}('{key}')")
+                        env_accesses.append(f"{call_name}('{key!s}')")
                     else:
                         env_accesses.append(call_name)
         return env_accesses
 
-    def _extract_global_writes(self, node: ast.FunctionDef) -> list[dict[str, Any]]:
+    def _extract_global_writes(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[str, Any]]:
         """Extract global variable writes."""
         global_writes = []
         global_vars = set()
@@ -770,7 +772,7 @@ class ContextExtractor:
 
         return global_writes
 
-    def _extract_attribute_access(self, node: ast.FunctionDef) -> list[dict[str, Any]]:
+    def _extract_attribute_access(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[str, Any]]:
         """Extract attribute access patterns."""
         attribute_ops = []
 
@@ -797,7 +799,7 @@ class ContextExtractor:
 
         return attribute_ops[:20]
 
-    def _create_dataflow_summary(self, node: ast.FunctionDef) -> dict[str, Any]:
+    def _create_dataflow_summary(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, Any]:
         """Create dataflow summary."""
         return {
             "total_statements": len([n for n in ast.walk(node) if isinstance(n, ast.stmt)]),
@@ -805,7 +807,7 @@ class ContextExtractor:
             "complexity": self._calculate_complexity(node),
         }
 
-    def _calculate_complexity(self, node: ast.FunctionDef) -> int:
+    def _calculate_complexity(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
         """Calculate cyclomatic complexity."""
         complexity = 1
         for child in ast.walk(node):

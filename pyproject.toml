@@ -162,7 +162,7 @@ strict_equality = true
 exclude = ["evals/", "tests/", "examples/"]
 
 [[tool.mypy.overrides]]
-module = ["yaml.*", "tabulate.*", "requests.*", "yara.*", "frontmatter.*", "litellm.*", "anthropic.*", "openai.*", "google.*", "httpx.*"]
+module = ["yaml.*", "tabulate.*", "requests.*", "yara.*", "frontmatter.*", "litellm.*", "anthropic.*", "openai.*", "google.*", "httpx.*", "decompyle3.*", "uncompyle6.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

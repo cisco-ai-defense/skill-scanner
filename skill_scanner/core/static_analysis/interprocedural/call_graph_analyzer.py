@@ -137,7 +137,7 @@ class CallGraphAnalyzer:
                         method_full_name = f"{class_name}.{item.name}"
                         self.call_graph.add_function(method_full_name, item, file_path, False)
 
-    def _is_entry_point(self, func_def: ast.FunctionDef) -> bool:
+    def _is_entry_point(self, func_def: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         """Check if function is a skill entry point.
 
         Entry points are identified by:
@@ -250,7 +250,9 @@ class CallGraphAnalyzer:
                         caller_name = f"{file_path}::{class_name}.{item.name}"
                         self._extract_calls_from_function(file_path, item, caller_name)
 
-    def _extract_calls_from_function(self, file_path: Path, func_node: ast.FunctionDef, caller_name: str) -> None:
+    def _extract_calls_from_function(
+        self, file_path: Path, func_node: ast.FunctionDef | ast.AsyncFunctionDef, caller_name: str
+    ) -> None:
         """Extract calls from a single function.
 
         Args:
@@ -284,7 +286,7 @@ class CallGraphAnalyzer:
             return node.func.id
         elif isinstance(node.func, ast.Attribute):
             parts = []
-            current = node.func
+            current: ast.expr = node.func
             while isinstance(current, ast.Attribute):
                 parts.append(current.attr)
                 current = current.value

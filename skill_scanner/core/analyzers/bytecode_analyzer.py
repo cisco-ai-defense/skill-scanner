@@ -58,7 +58,7 @@ class BytecodeAnalyzer(BaseAnalyzer):
 
     def analyze(self, skill: Skill) -> list[Finding]:
         """Run bytecode integrity checks."""
-        findings = []
+        findings: list[Finding] = []
 
         # Gather all .pyc and .py files
         pyc_files: list[SkillFile] = []
@@ -169,7 +169,7 @@ class BytecodeAnalyzer(BaseAnalyzer):
 
     def _compare_bytecode_to_source(self, pyc_file: SkillFile, py_file: SkillFile) -> list[Finding]:
         """Compare a .pyc file against its .py source using ast.dump()."""
-        findings = []
+        findings: list[Finding] = []
 
         # Parse the .py source into AST
         source_content = py_file.read_content()

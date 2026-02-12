@@ -84,19 +84,89 @@ How file extensions are classified for analysis routing.
 | code_extensions | set | py, sh, js, etc. | Code file detection |
 | skip_inert_extensions | bool | true | Skip checks on inert files |
 
-### Other sections (brief)
+### hidden_files
 
-| Section | Purpose |
-|---------|---------|
-| **hidden_files** | `benign_dotfiles`, `benign_dotdirs` – dotfiles/dotdirs not flagged as HIDDEN_DATA_* |
-| **rule_scoping** | Which rules apply to which file types (`skillmd_and_scripts_only`, `skip_in_docs`, `code_only`, `doc_path_indicators`, `doc_filename_patterns`) |
-| **credentials** | `known_test_values`, `placeholder_markers` – suppress credential findings for known test/placeholder values |
-| **system_cleanup** | `safe_rm_targets` – paths considered safe for `rm` patterns |
-| **command_safety** | Tiered command classification: `safe_commands`, `caution_commands`, `risky_commands`, `dangerous_commands`, `dangerous_arg_patterns` |
-| **sensitive_files** | `patterns` – regex for sensitive file paths that upgrade pipeline taint |
-| **analyzers** | `static`, `bytecode`, `pipeline` – enable/disable analysis passes |
-| **severity_overrides** | Raise or lower rule severities |
-| **disabled_rules** | Completely suppress rule IDs |
+Dotfiles and dotdirs not in these lists trigger HIDDEN_DATA_FILE / HIDDEN_DATA_DIR findings.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| benign_dotfiles | set | 35 entries (version control, linting, etc.) | HIDDEN_DATA_FILE |
+| benign_dotdirs | set | 22 entries (.github, .vscode, etc.) | HIDDEN_DATA_DIR |
+
+### rule_scoping
+
+Restrict which rules fire on which file types. Reduces noise in doc-heavy skills.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| skillmd_and_scripts_only | list | `coercive_injection_generic`, `autonomy_abuse_generic` | Rules limited to SKILL.md + scripts |
+| skip_in_docs | list | 5 rules | Rules skipped in documentation directories |
+| code_only | list | `prompt_injection_unicode_steganography`, `sql_injection_generic` | Rules only on code files |
+| doc_path_indicators | set | `references`, `docs`, `examples`, etc. | Directory names marking "documentation" context |
+| doc_filename_patterns | list | regex patterns | Filename patterns marking educational/example content |
+
+### credentials
+
+Suppress well-known test credentials and placeholders.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| known_test_values | set | Stripe test keys, JWT.io example, common placeholders | Exact-match suppression of credential findings |
+| placeholder_markers | set | `your-`, `example`, `placeholder`, etc. | Substring match suppression of credential findings |
+
+### system_cleanup
+
+Targets that are considered safe for destructive cleanup operations.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| safe_rm_targets | set | `dist`, `build`, `tmp`, `node_modules`, etc. | DANGEROUS_CLEANUP finding suppression |
+
+### command_safety
+
+Tiered command classification for code execution findings.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| safe_commands | set | read-only utilities (cat, ls, grep, etc.) | Commands always considered safe |
+| caution_commands | set | cp, mv, find, git, npm, pip, etc. | Commands that need context to evaluate |
+| risky_commands | set | rm, docker, ssh, kubectl, etc. | Commands flagged at MEDIUM severity |
+| dangerous_commands | set | curl, wget, eval, exec, sudo, etc. | Commands flagged at HIGH/CRITICAL severity |
+| dangerous_arg_patterns | list[regex] | 8 patterns (inline code exec, shell spawning, etc.) | Regex patterns that immediately classify a command as DANGEROUS |
+
+### sensitive_files
+
+Regex patterns matching sensitive file paths. When a pipeline reads a matching file, the taint is upgraded to SENSITIVE_DATA.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| patterns | list[regex] | `/etc/passwd`, `~/.ssh`, `.env`, `.pem`, etc. | Pipeline taint upgrade to SENSITIVE_DATA |
+
+### analyzers
+
+Enable or disable built-in analysis passes.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| static | bool | true | Enable/disable YAML+YARA pattern analyzer |
+| bytecode | bool | true | Enable/disable .pyc bytecode analyzer |
+| pipeline | bool | true | Enable/disable shell pipeline taint analyzer |
+
+### severity_overrides
+
+Raise or lower any rule's severity.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| severity_overrides | list[{rule_id, severity, reason}] | `[]` | Override finding severity per rule |
+
+### disabled_rules
+
+Completely suppress specific rule IDs.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| disabled_rules | list[str] | `[]` | Remove matching findings from results |
 
 ## Disabling Rules
 

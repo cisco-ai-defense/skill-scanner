@@ -287,7 +287,7 @@ class ScanPolicy:
                 object.__setattr__(self, "_doc_fn_re_cache", re.compile(combined, re.IGNORECASE))
             else:
                 object.__setattr__(self, "_doc_fn_re_cache", None)
-        return self._doc_fn_re_cache  # type: ignore[attr-defined]
+        return self._doc_fn_re_cache  # type: ignore[attr-defined, no-any-return]
 
     @property
     def _compiled_benign_pipes(self) -> list[re.Pattern]:
@@ -295,7 +295,7 @@ class ScanPolicy:
         if not hasattr(self, "_benign_pipe_cache"):
             compiled = [re.compile(p) for p in self.pipeline.benign_pipe_targets]
             object.__setattr__(self, "_benign_pipe_cache", compiled)
-        return self._benign_pipe_cache  # type: ignore[attr-defined]
+        return self._benign_pipe_cache  # type: ignore[attr-defined, no-any-return]
 
     # -----------------------------------------------------------------------
     # Construction helpers

@@ -255,10 +255,10 @@ The eval runner supports comparing results with and without the meta-analyzer:
 
 ```bash
 # Run comparison evaluation
-uv run python evals/eval_runner.py --compare
+uv run python evals/runners/eval_runner.py --compare
 
 # With detailed per-skill breakdown
-uv run python evals/eval_runner.py --compare --show-details
+uv run python evals/runners/eval_runner.py --compare --show-details
 ```
 
 ### Sample Comparison Output

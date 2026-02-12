@@ -51,7 +51,7 @@ class YaraScanner:
                 rules_dir = YARA_RULES_DIR
 
         self.rules_dir = Path(rules_dir)
-        self.rules = None
+        self.rules: yara_x.Rules | None = None
         self._load_rules()
 
     def _load_rules(self):

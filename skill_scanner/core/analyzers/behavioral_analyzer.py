@@ -208,7 +208,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
         Returns:
             List of findings from alignment verification
         """
-        findings = []
+        findings: list[Finding] = []
 
         if not self.alignment_orchestrator:
             return findings

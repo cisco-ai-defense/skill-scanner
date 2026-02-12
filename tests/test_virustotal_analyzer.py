@@ -14,11 +14,15 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for VirusTotal analyzer."""
+"""Tests for VirusTotal analyzer behavior and parsing logic."""
 
+from __future__ import annotations
+
+import hashlib
 import os
 from pathlib import Path
 
+import httpx
 import pytest
 
 from skill_scanner.core.analyzers.virustotal_analyzer import VirusTotalAnalyzer
@@ -26,221 +30,238 @@ from skill_scanner.core.loader import SkillLoader
 from skill_scanner.core.models import Severity, ThreatCategory
 
 
+class DeterministicVirusTotalAnalyzer(VirusTotalAnalyzer):
+    """Test double that runs full analyze() logic without external API calls."""
+
+    def __init__(self, hash_results: dict[str, tuple[dict | None, bool]]):
+        super().__init__(api_key="test_key", enabled=True, upload_files=False)
+        self.hash_results = hash_results
+        self.queried_hashes: list[str] = []
+
+    def _query_virustotal(self, file_hash: str) -> tuple[dict | None, bool]:
+        self.queried_hashes.append(file_hash)
+        return self.hash_results.get(file_hash, (None, False))
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload: dict | None = None):
+        self.status_code = status_code
+        self._payload = payload or {}
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakeSession:
+    def __init__(self, responses=None, error: Exception | None = None):
+        self.responses = list(responses or [])
+        self.error = error
+
+    def get(self, _url: str, timeout: int = 10):  # noqa: ARG002
+        if self.error is not None:
+            raise self.error
+        return self.responses.pop(0)
+
+
 @pytest.fixture
-def example_skills_dir():
-    """Get path to example skills directory."""
+def example_skills_dir() -> Path:
     return Path(__file__).parent.parent / "evals" / "test_skills"
 
 
-@pytest.fixture
-def vt_analyzer_disabled():
-    """Create a disabled VT analyzer (for testing without API key)."""
-    return VirusTotalAnalyzer(api_key=None, enabled=False)
+def test_vt_analyzer_disabled_returns_empty(make_skill):
+    skill = make_skill({"assets/test.bin": b"binary-content"})
+    analyzer = VirusTotalAnalyzer(api_key="test_key", enabled=False)
+    assert analyzer.analyze(skill) == []
 
 
-@pytest.fixture
-def vt_analyzer_mock():
-    """Create a VT analyzer with mock API key (won't make real requests)."""
-    return VirusTotalAnalyzer(api_key="test_key_for_testing", enabled=True)
+def test_binary_file_detection_logic_uses_extension_filters():
+    analyzer = VirusTotalAnalyzer(api_key="test_key")
+
+    assert analyzer._is_binary_file("assets/image.png")
+    assert analyzer._is_binary_file("assets/archive.zip")
+    assert analyzer._is_binary_file("assets/payload.exe")
+
+    assert not analyzer._is_binary_file("scripts/tool.py")
+    assert not analyzer._is_binary_file("docs/README.md")
+    assert not analyzer._is_binary_file("config/settings.yaml")
+    assert not analyzer._is_binary_file("custom/file.unknown")
 
 
-@pytest.fixture
-def vt_analyzer_real():
-    """
-    Create a VT analyzer with real API key if available.
-    Tests using this fixture will be skipped if no API key is set.
-    """
-    api_key = os.getenv("VIRUSTOTAL_API_KEY")
-    if not api_key:
-        pytest.skip("VIRUSTOTAL_API_KEY environment variable not set")
-    return VirusTotalAnalyzer(api_key=api_key, enabled=True)
+def test_analyze_only_queries_binary_files_and_tracks_validated(make_skill):
+    skill = make_skill(
+        {
+            "assets/safe.bin": b"SAFE-BINARY",
+            "assets/malicious.bin": b"MAL-BINARY",
+            "scripts/ignored.py": "print('hello')",
+            "docs/ignored.md": "# docs",
+        }
+    )
+
+    safe_hash = hashlib.sha256(b"SAFE-BINARY").hexdigest()
+    mal_hash = hashlib.sha256(b"MAL-BINARY").hexdigest()
+
+    analyzer = DeterministicVirusTotalAnalyzer(
+        hash_results={
+            safe_hash: (
+                {
+                    "malicious": 0,
+                    "suspicious": 0,
+                    "total_engines": 64,
+                    "permalink": f"https://www.virustotal.com/gui/file/{safe_hash}",
+                },
+                True,
+            ),
+            mal_hash: (
+                {
+                    "malicious": 19,
+                    "suspicious": 3,
+                    "total_engines": 64,
+                    "permalink": f"https://www.virustotal.com/gui/file/{mal_hash}",
+                },
+                True,
+            ),
+        }
+    )
+
+    findings = analyzer.analyze(skill)
+
+    assert len(analyzer.queried_hashes) == 2
+    assert set(analyzer.queried_hashes) == {safe_hash, mal_hash}
+    assert analyzer.validated_binary_files == ["assets/safe.bin"]
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.file_path == "assets/malicious.bin"
+    assert finding.category == ThreatCategory.MALWARE
+    assert finding.severity == Severity.HIGH
+    assert finding.analyzer == "virustotal"
+    assert finding.metadata["file_hash"] == mal_hash
 
 
-def test_vt_analyzer_disabled_returns_empty(vt_analyzer_disabled, example_skills_dir):
-    """Test that disabled analyzer returns no findings."""
-    loader = SkillLoader()
-    skill_dir = example_skills_dir / "safe" / "simple-formatter"
-    skill = loader.load_skill(skill_dir)
+def test_analyze_unknown_hash_without_upload_returns_no_findings(make_skill):
+    skill = make_skill({"assets/unknown.bin": b"UNKNOWN"})
+    unknown_hash = hashlib.sha256(b"UNKNOWN").hexdigest()
 
-    findings = vt_analyzer_disabled.analyze(skill)
+    analyzer = DeterministicVirusTotalAnalyzer(hash_results={})
+    findings = analyzer.analyze(skill)
 
+    assert analyzer.queried_hashes == [unknown_hash]
     assert findings == []
+    assert analyzer.validated_binary_files == []
 
 
-def test_binary_file_detection(vt_analyzer_mock):
-    """Test binary vs text file detection."""
-    # Binary files that should be scanned
-    assert vt_analyzer_mock._is_binary_file("test.png")
-    assert vt_analyzer_mock._is_binary_file("document.pdf")
-    assert vt_analyzer_mock._is_binary_file("archive.zip")
-    assert vt_analyzer_mock._is_binary_file("image.jpg")
-    assert vt_analyzer_mock._is_binary_file("program.exe")
+@pytest.mark.parametrize(
+    ("malicious", "total", "expected_severity"),
+    [
+        (20, 60, Severity.CRITICAL),
+        (8, 60, Severity.HIGH),
+        (1, 60, Severity.MEDIUM),
+        (0, 0, Severity.MEDIUM),
+    ],
+)
+def test_create_finding_severity_thresholds(make_skill, malicious, total, expected_severity):
+    skill = make_skill({"assets/sample.bin": b"SAMPLE"})
+    sample_file = next(file for file in skill.files if file.relative_path == "assets/sample.bin")
+    file_hash = hashlib.sha256(b"SAMPLE").hexdigest()
 
-    # Code/text files that should NOT be scanned
-    assert not vt_analyzer_mock._is_binary_file("script.py")
-    assert not vt_analyzer_mock._is_binary_file("README.md")
-    assert not vt_analyzer_mock._is_binary_file("code.js")
-    assert not vt_analyzer_mock._is_binary_file("style.css")
-    assert not vt_analyzer_mock._is_binary_file("config.json")
-    assert not vt_analyzer_mock._is_binary_file("data.yaml")
-    assert not vt_analyzer_mock._is_binary_file("test.txt")
+    analyzer = VirusTotalAnalyzer(api_key="test_key")
+    finding = analyzer._create_finding(
+        skill_file=sample_file,
+        file_hash=file_hash,
+        vt_result={
+            "malicious": malicious,
+            "suspicious": 0,
+            "total_engines": total,
+            "permalink": f"https://www.virustotal.com/gui/file/{file_hash}",
+        },
+    )
 
-
-def test_excluded_extensions(vt_analyzer_mock):
-    """Test that all excluded extensions are properly filtered."""
-    excluded_exts = [".py", ".js", ".md", ".txt", ".json", ".yaml", ".html", ".css", ".xml", ".sh", ".sql"]
-
-    for ext in excluded_exts:
-        assert not vt_analyzer_mock._is_binary_file(f"file{ext}")
-
-
-def test_binary_extensions(vt_analyzer_mock):
-    """Test that all binary extensions are properly detected."""
-    binary_exts = [".png", ".jpg", ".pdf", ".zip", ".exe", ".dll", ".doc", ".docx", ".xls", ".xlsx"]
-
-    for ext in binary_exts:
-        assert vt_analyzer_mock._is_binary_file(f"file{ext}")
+    assert finding.severity == expected_severity
+    assert finding.file_path == "assets/sample.bin"
+    assert finding.rule_id == "VIRUSTOTAL_MALICIOUS_FILE"
+    assert finding.metadata["references"] == [f"https://www.virustotal.com/gui/file/{file_hash}"]
 
 
-def test_unknown_extension_defaults_to_not_binary(vt_analyzer_mock):
-    """Test that unknown extensions default to not scanning (conservative)."""
-    # Unknown/uncommon extensions should not be scanned by default
-    assert not vt_analyzer_mock._is_binary_file("file.xyz")
-    assert not vt_analyzer_mock._is_binary_file("file.unknown")
-    assert not vt_analyzer_mock._is_binary_file("file.custom")
+def test_query_virustotal_parses_success_response():
+    file_hash = "a" * 64
+    analyzer = VirusTotalAnalyzer(api_key="test_key")
+    analyzer.session = _FakeSession(
+        responses=[
+            _FakeResponse(
+                200,
+                payload={
+                    "data": {
+                        "attributes": {
+                            "last_analysis_stats": {
+                                "malicious": 2,
+                                "suspicious": 1,
+                                "undetected": 55,
+                                "harmless": 6,
+                            },
+                            "last_analysis_date": 1735689600,
+                        }
+                    }
+                },
+            )
+        ]
+    )
+
+    result, found = analyzer._query_virustotal(file_hash)
+
+    assert found is True
+    assert result is not None
+    assert result["malicious"] == 2
+    assert result["suspicious"] == 1
+    assert result["total_engines"] == 64
+    assert result["permalink"] == f"https://www.virustotal.com/gui/file/{file_hash}"
 
 
-def test_analyzer_initialization():
-    """Test analyzer initialization with different configurations."""
-    # Without API key
-    analyzer1 = VirusTotalAnalyzer(api_key=None)
-    assert not analyzer1.enabled
-    assert not analyzer1.upload_files
+def test_query_virustotal_404_returns_not_found():
+    analyzer = VirusTotalAnalyzer(api_key="test_key")
+    analyzer.session = _FakeSession(responses=[_FakeResponse(404)])
 
-    # With API key (hash-only mode by default)
-    analyzer2 = VirusTotalAnalyzer(api_key="test_key")
-    assert analyzer2.enabled
-    assert not analyzer2.upload_files
+    result, found = analyzer._query_virustotal("b" * 64)
 
-    # With file upload enabled
-    analyzer3 = VirusTotalAnalyzer(api_key="test_key", upload_files=True)
-    assert analyzer3.enabled
-    assert analyzer3.upload_files
-
-    # Explicitly disabled
-    analyzer4 = VirusTotalAnalyzer(api_key="test_key", enabled=False)
-    assert not analyzer4.enabled
+    assert found is False
+    assert result is None
 
 
-def test_sha256_calculation(tmp_path, vt_analyzer_mock):
-    """Test SHA256 hash calculation."""
-    # Create a test file
-    test_file = tmp_path / "test.bin"
-    test_file.write_bytes(b"Hello, World!")
+def test_query_virustotal_request_error_returns_not_found():
+    analyzer = VirusTotalAnalyzer(api_key="test_key")
+    analyzer.session = _FakeSession(error=httpx.RequestError("network failed"))
 
-    # Calculate hash
-    file_hash = vt_analyzer_mock._calculate_sha256(test_file)
+    result, found = analyzer._query_virustotal("c" * 64)
 
-    # Verify it's a valid SHA256 hash (64 hex characters)
-    assert len(file_hash) == 64
-    assert all(c in "0123456789abcdef" for c in file_hash)
-
-    # Verify it's consistent
-    file_hash2 = vt_analyzer_mock._calculate_sha256(test_file)
-    assert file_hash == file_hash2
-
-    # Known hash for "Hello, World!"
-    expected_hash = "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f"
-    assert file_hash == expected_hash
+    assert found is False
+    assert result is None
 
 
-def test_no_real_api_calls_in_tests(vt_analyzer_mock, example_skills_dir):
-    """
-    Test that analyzer handles missing API gracefully.
-    Note: This test won't make real API calls, it will just verify
-    the analyzer doesn't crash with invalid credentials.
-    """
-    loader = SkillLoader()
-    skill_dir = example_skills_dir / "safe" / "simple-formatter"
-    skill = loader.load_skill(skill_dir)
-
-    # Should not crash, even with invalid API key
-    # (will just print warnings and return empty findings)
-    try:
-        findings = vt_analyzer_mock.analyze(skill)
-        # Should return empty list since no binary files or API will fail
-        assert isinstance(findings, list)
-    except Exception as e:
-        # If it fails, it should be a network error, not a code error
-        assert "request" in str(e).lower() or "connection" in str(e).lower()
-
-
-def test_eicar_skill_structure(example_skills_dir):
-    """
-    Test that the EICAR test skill loads correctly and contains binary files.
-
-    Note: Due to antivirus software potentially quarantining real EICAR files,
-    we use a regular binary file for testing the file detection logic.
-    """
+def test_eicar_skill_structure(example_skills_dir: Path):
     loader = SkillLoader()
     eicar_skill_dir = example_skills_dir / "malicious" / "eicar-test"
-
-    # Check if test skill exists
     if not eicar_skill_dir.exists():
         pytest.skip("EICAR test skill not found")
 
-    # Load the skill
     skill = loader.load_skill(eicar_skill_dir)
-
-    # Verify skill loaded
-    assert skill.name == "eicar-test"
-
-    # Check for binary files in assets folder
     binary_files = [f for f in skill.files if "assets" in f.relative_path]
-    assert len(binary_files) > 0, "Should have at least one file in assets folder"
 
-    print("\n[OK] EICAR test skill structure verified")
-    print(f"  Skill name: {skill.name}")
-    print(f"  Total files: {len(skill.files)}")
-    print(f"  Binary files in assets: {len(binary_files)}")
+    assert skill.name == "eicar-test"
+    assert len(binary_files) > 0
 
 
 @pytest.mark.skipif(not os.getenv("VIRUSTOTAL_API_KEY"), reason="Requires VIRUSTOTAL_API_KEY")
-def test_virustotal_api_integration(vt_analyzer_real, example_skills_dir):
-    """
-    Test VirusTotal API integration with a real binary file.
-
-    This test requires VIRUSTOTAL_API_KEY environment variable.
-    The test uses a regular binary file (not EICAR) to verify the
-    VT API integration works correctly.
-
-    Note: The file is random data, so VT will likely return "not found" (404),
-    which is the expected behavior for unknown files.
-    """
+def test_virustotal_api_integration(example_skills_dir: Path):
     loader = SkillLoader()
+    analyzer = VirusTotalAnalyzer(api_key=os.getenv("VIRUSTOTAL_API_KEY"), enabled=True)
     eicar_skill_dir = example_skills_dir / "malicious" / "eicar-test"
 
-    # Check if test skill exists
     if not eicar_skill_dir.exists():
         pytest.skip("EICAR test skill not found")
 
-    # Load the skill containing binary file
     skill = loader.load_skill(eicar_skill_dir)
-
-    # Verify we have binary files to scan
-    binary_files = [f for f in skill.files if vt_analyzer_real._is_binary_file(f.relative_path)]
-
-    if len(binary_files) == 0:
+    binary_files = [f for f in skill.files if analyzer._is_binary_file(f.relative_path)]
+    if not binary_files:
         pytest.skip("No binary files found in test skill")
 
-    # Scan with VirusTotal (will make real API call)
-    findings = vt_analyzer_real.analyze(skill)
-
-    # For a random binary file, VT will likely return 404 (not found)
-    # So we expect 0 findings, which is correct behavior
-    assert isinstance(findings, list), "Should return a list of findings"
-
-    print("\n[OK] VirusTotal API integration test passed!")
-    print(f"  Binary files scanned: {len(binary_files)}")
-    print(f"  Findings: {len(findings)}")
-    print(f"  Status: {'Malicious files detected' if findings else 'No known threats (file not in VT database)'}")
+    findings = analyzer.analyze(skill)
+    assert isinstance(findings, list)

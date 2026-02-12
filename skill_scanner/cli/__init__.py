@@ -20,6 +20,15 @@ Command-line interface for Skill Scanner.
 Matches MCP Scanner's CLI structure.
 """
 
-from .cli import main
+
+def __getattr__(name: str):
+    """Lazy-load CLI main to avoid heavy imports on module entry."""
+    if name == "main":
+        from .cli import main
+
+        globals()["main"] = main
+        return main
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = ["main"]

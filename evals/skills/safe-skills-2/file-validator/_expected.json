@@ -2,6 +2,6 @@
   "skill_name": "file-validator",
   "expected_safe": true,
   "expected_severity": "SAFE",
-  "expected_threats": [],
+  "expected_findings": [],
   "notes": "Clean implementation with proper path validation, size limits, extension checks"
 }

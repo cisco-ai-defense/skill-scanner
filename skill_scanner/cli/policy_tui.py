@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, ScrollableContainer, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -30,7 +31,6 @@ from textual.widgets import (
     RadioButton,
     RadioSet,
     Rule,
-    Static,
     TextArea,
 )
 
@@ -192,9 +192,14 @@ class PolicyConfigApp(App[str | None]):
     }
     """
 
-    def __init__(self, output_path: str = "scan_policy.yaml") -> None:
+    def __init__(
+        self,
+        output_path: str = "scan_policy.yaml",
+        input_path: str | None = None,
+    ) -> None:
         super().__init__()
         self.output_path = output_path
+        self.input_path = input_path
         self.policy = ScanPolicy.default()
         self.preset_name = "balanced"
         # Track which field an edit-modal result should update
@@ -226,7 +231,10 @@ class PolicyConfigApp(App[str | None]):
 
             # ── Hidden Files ──────────────────────────────────────────
             yield Label("Hidden Files", classes="section-title")
-            yield Label("Control which dotfiles and dotdirs are treated as benign.", classes="section-desc")
+            yield Label(
+                "Dotfiles/dirs NOT in these lists trigger HIDDEN_DATA_FILE / HIDDEN_DATA_DIR findings.",
+                classes="section-desc",
+            )
             with Horizontal(classes="field-row"):
                 yield Label("Benign dotfiles")
                 yield Button("Edit list...", id="edit-dotfiles", classes="edit-btn")
@@ -238,7 +246,10 @@ class PolicyConfigApp(App[str | None]):
 
             # ── Pipeline ──────────────────────────────────────────────
             yield Label("Pipeline Analysis", classes="section-title")
-            yield Label("Trusted installer URLs and benign pipe patterns.", classes="section-desc")
+            yield Label(
+                "Trusted installer URLs, benign pipe patterns, and tool-chaining detection tuning.",
+                classes="section-desc",
+            )
             with Horizontal(classes="field-row"):
                 yield Label("Known installer domains")
                 yield Button("Edit list...", id="edit-installers", classes="edit-btn")
@@ -248,6 +259,12 @@ class PolicyConfigApp(App[str | None]):
             with Horizontal(classes="field-row"):
                 yield Label("Doc path indicators")
                 yield Button("Edit list...", id="edit-pipe-docpaths", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Exfil hint words")
+                yield Button("Edit list...", id="edit-exfil-hints", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("API doc tokens (suppress FP)")
+                yield Button("Edit list...", id="edit-api-doc-tokens", classes="edit-btn")
             with Vertical(classes="analyzer-checks"):
                 yield Checkbox("Demote findings in docs", value=True, id="chk-demote-in-docs")
                 yield Checkbox("Demote instructional examples", value=True, id="chk-demote-instructional")
@@ -257,7 +274,9 @@ class PolicyConfigApp(App[str | None]):
 
             # ── Rule Scoping ──────────────────────────────────────────
             yield Label("Rule Scoping", classes="section-title")
-            yield Label("Control which rules fire on which file types.", classes="section-desc")
+            yield Label(
+                "Restrict rules to specific file types. Reduces noise in doc-heavy skills.", classes="section-desc"
+            )
             with Horizontal(classes="field-row"):
                 yield Label("SKILL.md + scripts only")
                 yield Button("Edit list...", id="edit-rule-skillmd", classes="edit-btn")
@@ -278,7 +297,10 @@ class PolicyConfigApp(App[str | None]):
 
             # ── Credentials ───────────────────────────────────────────
             yield Label("Credentials", classes="section-title")
-            yield Label("Suppress well-known test credentials and placeholders.", classes="section-desc")
+            yield Label(
+                "Suppress well-known test credentials and placeholders to avoid false positives.",
+                classes="section-desc",
+            )
             with Horizontal(classes="field-row"):
                 yield Label("Known test values")
                 yield Button("Edit list...", id="edit-creds", classes="edit-btn")
@@ -290,6 +312,7 @@ class PolicyConfigApp(App[str | None]):
 
             # ── System Cleanup ────────────────────────────────────────
             yield Label("System Cleanup", classes="section-title")
+            yield Label("Safe rm targets that won't trigger DANGEROUS_CLEANUP findings.", classes="section-desc")
             with Horizontal(classes="field-row"):
                 yield Label("Safe rm targets")
                 yield Button("Edit list...", id="edit-safe-rm", classes="edit-btn")
@@ -298,7 +321,10 @@ class PolicyConfigApp(App[str | None]):
 
             # ── File Classification ───────────────────────────────────
             yield Label("File Classification", classes="section-title")
-            yield Label("Extension-based file categorisation for analysis routing.", classes="section-desc")
+            yield Label(
+                "Extension-based categorisation. Inert files are skipped; code files get deeper analysis.",
+                classes="section-desc",
+            )
             with Horizontal(classes="field-row"):
                 yield Label("Inert extensions")
                 yield Button("Edit list...", id="edit-inert-ext", classes="edit-btn")
@@ -318,6 +344,10 @@ class PolicyConfigApp(App[str | None]):
 
             # ── File Limits ───────────────────────────────────────────
             yield Label("File Limits", classes="section-title")
+            yield Label(
+                "Max sizes/counts before flagging. Affects EXCESSIVE_FILE_COUNT and OVERSIZED_FILE rules.",
+                classes="section-desc",
+            )
             with Horizontal(classes="field-row"):
                 yield Label("Max file count")
                 yield Input(value="100", id="max-file-count", type="integer")
@@ -341,6 +371,10 @@ class PolicyConfigApp(App[str | None]):
 
             # ── Analysis Thresholds ───────────────────────────────────
             yield Label("Analysis Thresholds", classes="section-title")
+            yield Label(
+                "Tune detection sensitivity. Lower values = more sensitive, higher = more permissive.",
+                classes="section-desc",
+            )
             with Horizontal(classes="field-row"):
                 yield Label("Zero-width (with decode)")
                 yield Input(value="50", id="zw-decode", type="integer")
@@ -373,6 +407,10 @@ class PolicyConfigApp(App[str | None]):
 
             # ── Sensitive Files ────────────────────────────────────────
             yield Label("Sensitive Files", classes="section-title")
+            yield Label(
+                "Regex patterns matching sensitive filenames. Upgrades pipeline taint to SENSITIVE_DATA.",
+                classes="section-desc",
+            )
             with Horizontal(classes="field-row"):
                 yield Label("Patterns (regex)")
                 yield Button("Edit list...", id="edit-sensitive", classes="edit-btn")
@@ -381,7 +419,10 @@ class PolicyConfigApp(App[str | None]):
 
             # ── Command Safety ────────────────────────────────────────
             yield Label("Command Safety Tiers", classes="section-title")
-            yield Label("Classify commands into safety tiers.", classes="section-desc")
+            yield Label(
+                "Classify shell commands into tiers. Dangerous arg patterns are regex matching risky flags.",
+                classes="section-desc",
+            )
             with Horizontal(classes="field-row"):
                 yield Label("Safe commands")
                 yield Button("Edit list...", id="edit-cmd-safe", classes="edit-btn")
@@ -394,12 +435,17 @@ class PolicyConfigApp(App[str | None]):
             with Horizontal(classes="field-row"):
                 yield Label("Dangerous commands")
                 yield Button("Edit list...", id="edit-cmd-dangerous", classes="edit-btn")
+            with Horizontal(classes="field-row"):
+                yield Label("Dangerous arg patterns (regex)")
+                yield Button("Edit list...", id="edit-dangerous-arg-patterns", classes="edit-btn")
 
             yield Rule()
 
             # ── Analyzers ─────────────────────────────────────────────
             yield Label("Analyzers", classes="section-title")
-            yield Label("Enable or disable analysis passes.", classes="section-desc")
+            yield Label(
+                "Enable or disable built-in analysis passes (static, pipeline, bytecode).", classes="section-desc"
+            )
             with Vertical(classes="analyzer-checks"):
                 yield Checkbox("Static analyzer (YAML + YARA patterns)", value=True, id="chk-static")
                 yield Checkbox("Bytecode analyzer (.pyc integrity)", value=True, id="chk-bytecode")
@@ -409,6 +455,7 @@ class PolicyConfigApp(App[str | None]):
 
             # ── Disabled Rules ────────────────────────────────────────
             yield Label("Disabled Rules & Severity Overrides", classes="section-title")
+            yield Label("Suppress specific rules entirely or override their severity level.", classes="section-desc")
             with Horizontal(classes="field-row"):
                 yield Label("Disabled rules")
                 yield Button("Edit list...", id="edit-disabled", classes="edit-btn")
@@ -426,8 +473,13 @@ class PolicyConfigApp(App[str | None]):
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
     def on_mount(self) -> None:
-        """Load the default (balanced) preset into the form."""
-        self._load_preset("balanced")
+        """Load an existing policy file or the balanced preset into the form."""
+        if self.input_path and Path(self.input_path).exists():
+            self.policy = ScanPolicy.from_yaml(Path(self.input_path))
+            self.preset_name = getattr(self.policy, "preset_base", "balanced") or "balanced"
+            self._sync_form_from_policy()
+        else:
+            self._load_preset("balanced")
 
     # ── Preset switching ──────────────────────────────────────────────────
 
@@ -579,6 +631,8 @@ class PolicyConfigApp(App[str | None]):
         "edit-installers": ("pipeline.known_installer_domains", "Known Installer Domains", False),
         "edit-pipes": ("pipeline.benign_pipe_targets", "Benign Pipe Targets (regex)", True),
         "edit-pipe-docpaths": ("pipeline.doc_path_indicators", "Pipeline Doc Path Indicators", False),
+        "edit-exfil-hints": ("pipeline.exfil_hints", "Exfil Hint Words", True),
+        "edit-api-doc-tokens": ("pipeline.api_doc_tokens", "API Doc Tokens (suppress FP)", True),
         "edit-rule-skillmd": ("rule_scoping.skillmd_and_scripts_only", "Rules: SKILL.md + scripts only", False),
         "edit-rule-docs": ("rule_scoping.skip_in_docs", "Rules: Skip in documentation", False),
         "edit-rule-code": ("rule_scoping.code_only", "Rules: Code-only", False),
@@ -596,6 +650,11 @@ class PolicyConfigApp(App[str | None]):
         "edit-cmd-caution": ("command_safety.caution_commands", "Caution Commands", False),
         "edit-cmd-risky": ("command_safety.risky_commands", "Risky Commands", False),
         "edit-cmd-dangerous": ("command_safety.dangerous_commands", "Dangerous Commands", False),
+        "edit-dangerous-arg-patterns": (
+            "command_safety.dangerous_arg_patterns",
+            "Dangerous Arg Patterns (regex)",
+            True,
+        ),
         "edit-disabled": ("disabled_rules", "Disabled Rules", False),
         "edit-overrides": ("severity_overrides", "Severity Overrides (rule_id:SEVERITY:reason)", True),
     }
@@ -603,12 +662,12 @@ class PolicyConfigApp(App[str | None]):
     def _get_field(self, path: str) -> set[str] | list[str]:
         """Get a policy field value by dotted path."""
         parts = path.split(".")
-        obj = self.policy
+        obj: Any = self.policy
         for part in parts:
             obj = getattr(obj, part)
         if path == "severity_overrides":
             return [f"{o.rule_id}:{o.severity}:{o.reason}" for o in obj]
-        return obj
+        return cast(set[str] | list[str], obj)
 
     def _set_field(self, path: str, value: set[str] | list[str]) -> None:
         """Set a policy field value by dotted path."""
@@ -677,9 +736,12 @@ class PolicyConfigApp(App[str | None]):
 # ─── Entry point (called by CLI) ─────────────────────────────────────────────
 
 
-def run_policy_tui(output_path: str = "scan_policy.yaml") -> int:
+def run_policy_tui(
+    output_path: str = "scan_policy.yaml",
+    input_path: str | None = None,
+) -> int:
     """Run the interactive policy configurator."""
-    app = PolicyConfigApp(output_path=output_path)
+    app = PolicyConfigApp(output_path=output_path, input_path=input_path)
     result = app.run()
 
     if result:

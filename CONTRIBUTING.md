@@ -50,7 +50,7 @@ major version release.
 
 - [ ] All pre-commit hooks pass (`uv run pre-commit run --all-files`)
 - [ ] All unit tests pass (`uv run pytest tests/`)
-- [ ] All benchmarks pass without significant regressions (`uv run python evals/benchmark_runner.py`)
+- [ ] All benchmarks pass without significant regressions (`uv run python evals/runners/benchmark_runner.py`)
 - [ ] Tests added/updated for changes (see [TESTING.md](/TESTING.md))
 - [ ] Documentation updated if needed
 - [ ] Commit messages follow conventional format (e.g., `feat:`, `fix:`, `docs:`)

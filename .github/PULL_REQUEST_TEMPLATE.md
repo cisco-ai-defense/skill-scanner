@@ -72,7 +72,7 @@ skill-scanner scan examples/test-skill
 
 ### Testing
 - [ ] Tests pass: `uv run pre-commit run --all-files`
-- [ ] Benchmark passes: `uv run python evals/benchmark_runner.py`
+- [ ] Benchmark passes: `uv run python evals/runners/benchmark_runner.py`
 - [ ] No regressions in existing functionality
 - [ ] Edge cases covered
 
