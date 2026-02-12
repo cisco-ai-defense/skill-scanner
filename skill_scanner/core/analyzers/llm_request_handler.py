@@ -53,11 +53,14 @@ except (ImportError, ModuleNotFoundError):
     GOOGLE_GENAI_AVAILABLE = False
     genai = None
 
-# Suppress LiteLLM pydantic serialization warnings (cosmetic, doesn't affect functionality)
+# Suppress LiteLLM cosmetic warnings (doesn't affect functionality)
 warnings.filterwarnings("ignore", message=".*Pydantic serializer warnings.*")
 warnings.filterwarnings("ignore", message=".*Expected `Message`.*")
 warnings.filterwarnings("ignore", message=".*Expected `StreamingChoices`.*")
 warnings.filterwarnings("ignore", message=".*close_litellm_async_clients.*")
+# LiteLLM's logging worker creates unawaited coroutines during sync teardown
+warnings.filterwarnings("ignore", message=".*async_success_handler.*was never awaited.*")
+warnings.filterwarnings("ignore", message=".*Enable tracemalloc.*")
 
 
 class LLMRequestHandler:
