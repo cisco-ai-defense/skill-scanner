@@ -132,8 +132,7 @@ class SkillBenchmarkRunner:
 
         skill_name = expected.get("skill_name", skill_path.name)
         expected_safe = expected.get("expected_safe", True)
-        # Support both the canonical key and the legacy key for backward compat
-        expected_threats = expected.get("expected_findings") or expected.get("expected_threats", [])
+        expected_threats = expected.get("expected_findings", [])
 
         print(f"[EVAL] Evaluating: {skill_name}")
         print(f"   Expected: {'SAFE' if expected_safe else 'MALICIOUS'}")
@@ -163,8 +162,7 @@ class SkillBenchmarkRunner:
         expected_safe = expected.get("expected_safe", True)
         actual_safe = scan_result.is_safe
 
-        # Support both the canonical key and the legacy key for backward compat
-        expected_threats = expected.get("expected_findings") or expected.get("expected_threats", [])
+        expected_threats = expected.get("expected_findings", [])
         actual_findings = scan_result.findings
 
         # Count matches by category

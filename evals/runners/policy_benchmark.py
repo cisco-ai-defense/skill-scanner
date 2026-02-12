@@ -135,7 +135,7 @@ def run_eval_benchmark(scanner: SkillScanner, eval_dir: Path) -> dict:
                     str(item.get("category", "")).lower(),
                     str(item.get("severity", "")).upper(),
                 )
-                for item in (expected.get("expected_findings") or expected.get("expected_threats", []))
+                for item in expected.get("expected_findings", [])
                 if item.get("category") and item.get("severity")
             ]
 
@@ -171,7 +171,7 @@ def run_eval_benchmark(scanner: SkillScanner, eval_dir: Path) -> dict:
                     "expected_safe": expected_safe,
                     "actual_safe": True,  # assume safe on error
                     "finding_count": 0,
-                    "expected_findings": len(expected.get("expected_findings") or expected.get("expected_threats", [])),
+                    "expected_findings": len(expected.get("expected_findings", [])),
                     "error": str(e),
                 }
             )
