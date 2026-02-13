@@ -22,7 +22,7 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: detect-private-key
-        exclude: '(code_alignment_threat_analysis_prompt\.md|\.env\.example|_policy\.yaml|scan-policy\.md|evals/policies/)'
+        exclude: '(code_alignment_threat_analysis_prompt\.md|\.env\.example|_policy\.yaml|scan-policy\.md|evals/policies/|tests/test_new_detections\.py)'
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.0

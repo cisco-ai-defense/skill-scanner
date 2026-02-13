@@ -271,6 +271,11 @@ class StaticAnalyzer(BaseAnalyzer):
         # Filter out well-known test/placeholder credentials
         findings = [f for f in findings if not self._is_known_test_credential(f)]
 
+        # Collapse duplicate findings emitted by overlapping scan phases
+        # (e.g., script scan + recursive reference scan on the same file/line).
+        if self.policy.rule_scoping.dedupe_duplicate_findings:
+            findings = self._dedupe_findings(findings)
+
         return findings
 
     def get_unreferenced_scripts(self) -> list[str]:
@@ -578,10 +583,6 @@ class StaticAnalyzer(BaseAnalyzer):
             return findings
 
         for ref_file_path in references:
-            if ref_file_path in visited:
-                continue
-            visited.add(ref_file_path)
-
             full_path = skill.directory / ref_file_path
             if not full_path.exists():
                 alt_paths = [
@@ -598,6 +599,35 @@ class StaticAnalyzer(BaseAnalyzer):
             if not full_path.exists():
                 continue
 
+            dedupe_reference_aliases = self.policy.rule_scoping.dedupe_reference_aliases
+            # De-duplicate aliases to the same physical file (e.g.
+            # "cover_art_generator.py" and "scripts/cover_art_generator.py").
+            if dedupe_reference_aliases:
+                try:
+                    visited_key = str(full_path.resolve())
+                except OSError:
+                    visited_key = str(full_path)
+            else:
+                visited_key = ref_file_path
+            if visited_key in visited:
+                continue
+            visited.add(visited_key)
+
+            # Prefer the canonical skill-relative path for reporting.
+            display_path = ref_file_path
+            if dedupe_reference_aliases:
+                try:
+                    resolved_full = full_path.resolve()
+                    for sf in skill.files:
+                        try:
+                            if sf.path.resolve() == resolved_full:
+                                display_path = sf.relative_path
+                                break
+                        except OSError:
+                            continue
+                except OSError:
+                    pass
+
             try:
                 with open(full_path, encoding="utf-8") as f:
                     content = f.read()
@@ -613,13 +643,13 @@ class StaticAnalyzer(BaseAnalyzer):
                     rules = []
 
                 skip_in_docs = set(self.policy.rule_scoping.skip_in_docs)
-                is_doc = self._is_doc_file(ref_file_path)
+                is_doc = self._is_doc_file(display_path)
 
                 for rule in rules:
                     # Skip rules scoped out of documentation files
                     if is_doc and rule.id in skip_in_docs:
                         continue
-                    matches = rule.scan_content(content, ref_file_path)
+                    matches = rule.scan_content(content, display_path)
                     for match in matches:
                         finding = self._create_finding_from_match(rule, match)
                         finding.metadata["reference_depth"] = current_depth
@@ -678,6 +708,8 @@ class StaticAnalyzer(BaseAnalyzer):
         INERT_EXTENSIONS = self.policy.file_classification.inert_extensions
         STRUCTURED_EXTENSIONS = self.policy.file_classification.structured_extensions
         ARCHIVE_EXTENSIONS = self.policy.file_classification.archive_extensions
+        allow_script_shebang_text_extensions = self.policy.file_classification.allow_script_shebang_text_extensions
+        shebang_compatible_extensions = self.policy.file_classification.script_shebang_extensions or None
 
         min_confidence = self.policy.analysis_thresholds.min_confidence_pct / 100.0
 
@@ -690,7 +722,12 @@ class StaticAnalyzer(BaseAnalyzer):
             # Run file magic mismatch check on ALL files with known extensions
             # (regardless of whether they're classified as binary)
             if skill_file.path.exists():
-                mismatch = check_extension_mismatch(skill_file.path, min_confidence=min_confidence)
+                mismatch = check_extension_mismatch(
+                    skill_file.path,
+                    min_confidence=min_confidence,
+                    allow_script_shebang_text_extensions=allow_script_shebang_text_extensions,
+                    shebang_compatible_extensions=shebang_compatible_extensions,
+                )
                 if mismatch:
                     mismatch_severity, mismatch_desc, magic_match = mismatch
                     severity_map = {
@@ -1173,12 +1210,21 @@ class StaticAnalyzer(BaseAnalyzer):
             if not content:
                 continue
 
+            is_doc = self._is_doc_file(skill_file.relative_path)
+
             for pattern, rule_id, severity, description in ASSET_PATTERNS:
                 matches = list(pattern.finditer(content))
 
                 for match in matches:
                     line_number = content[: match.start()].count("\n") + 1
                     line_content = content.split("\n")[line_number - 1] if content else ""
+
+                    if (
+                        rule_id == "ASSET_PROMPT_INJECTION"
+                        and is_doc
+                        and self.policy.rule_scoping.asset_prompt_injection_skip_in_docs
+                    ):
+                        continue
 
                     findings.append(
                         Finding(
@@ -1203,6 +1249,26 @@ class StaticAnalyzer(BaseAnalyzer):
                     )
 
         return findings
+
+    @staticmethod
+    def _dedupe_findings(findings: list[Finding]) -> list[Finding]:
+        """Drop exact duplicate findings while preserving order."""
+        deduped: list[Finding] = []
+        seen: set[tuple[Any, ...]] = set()
+        for f in findings:
+            key = (
+                f.rule_id,
+                f.file_path or "",
+                int(f.line_number or 0),
+                f.snippet or "",
+                f.metadata.get("matched_pattern"),
+                f.metadata.get("matched_text"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(f)
+        return deduped
 
     def _create_finding_from_match(self, rule: SecurityRule, match: dict[str, Any]) -> Finding:
         """Create a Finding object from a rule match, aligned with AITech taxonomy."""
@@ -1645,6 +1711,13 @@ class StaticAnalyzer(BaseAnalyzer):
         # Code-like tokens that suggest a line is an identifier / expression,
         # not natural-language prose (used for additional filtering).
         _CODE_TOKEN_RE = re.compile(r"[=\(\)\[\]\{\};]|import |def |class |if |for |while |return |print\(")
+        _MATH_OPERATOR_RE = re.compile(r"[=+\-*/×÷≤≥≈≠∑∏√]")
+        _STRING_LITERAL_RE = re.compile(r"(\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*')")
+        _GREEK_CHAR_RE = re.compile(r"[\u0370-\u03FF\u1F00-\u1FFF]")
+        filter_math_context = self.policy.analysis_thresholds.homoglyph_filter_math_context
+        low_risk_confusable_aliases = {
+            alias.upper() for alias in self.policy.analysis_thresholds.homoglyph_math_aliases
+        }
 
         for sf in skill.files:
             if sf.file_type not in code_file_types:
@@ -1656,6 +1729,8 @@ class StaticAnalyzer(BaseAnalyzer):
 
             # Check each line for mixed-script homoglyphs
             dangerous_lines: list[tuple[int, str, list[dict]]] = []
+            in_triple_quote_block = False
+            triple_quote_delim = ""
 
             for line_num, line in enumerate(content.split("\n"), 1):
                 # Skip comments and empty lines
@@ -1663,9 +1738,31 @@ class StaticAnalyzer(BaseAnalyzer):
                 if not stripped or stripped.startswith("#") or stripped.startswith("//"):
                     continue
 
+                # When benign-context filtering is enabled, skip Python docstring
+                # blocks to avoid flagging multilingual documentation text.
+                if filter_math_context and sf.file_type == "python":
+                    if in_triple_quote_block:
+                        if triple_quote_delim and triple_quote_delim in line:
+                            in_triple_quote_block = False
+                            triple_quote_delim = ""
+                        continue
+                    if '"""' in line or "'''" in line:
+                        delim = '"""' if '"""' in line else "'''"
+                        if line.count(delim) % 2 == 1:
+                            in_triple_quote_block = True
+                            triple_quote_delim = delim
+                        continue
+
                 # Only check lines that contain non-ASCII characters
                 if stripped.isascii():
                     continue
+
+                # Skip localized user-facing strings when all non-ASCII chars are
+                # confined to string literals (common in i18n output text).
+                if filter_math_context:
+                    outside_literals = _STRING_LITERAL_RE.sub("", stripped)
+                    if all(ord(ch) < 128 for ch in outside_literals):
+                        continue
 
                 # Heuristic: in code files, only flag lines that look like code
                 # (have operators, parens, etc.) — skip i18n strings
@@ -1675,6 +1772,22 @@ class StaticAnalyzer(BaseAnalyzer):
                 # Check for confusable characters
                 result = confusables.is_dangerous(stripped, preferred_aliases=["LATIN"])
                 if result:
+                    # Reduce FPs from scientific formulas that legitimately use
+                    # math symbols / Greek letters (e.g. "Q = π × r^4 ...").
+                    # These lines are code-like but not identifier spoofing.
+                    if filter_math_context:
+                        confusable_info = confusables.is_confusable(stripped, preferred_aliases=["LATIN"]) or []
+                        aliases = {
+                            str(entry.get("alias", "")).upper()
+                            for entry in confusable_info
+                            if isinstance(entry, dict) and entry.get("alias")
+                        }
+                        if (
+                            aliases
+                            and aliases.issubset(low_risk_confusable_aliases)
+                            and (_MATH_OPERATOR_RE.search(stripped) or _GREEK_CHAR_RE.search(stripped))
+                        ):
+                            continue
                     dangerous_lines.append((line_num, stripped, result))
 
             # Require multiple dangerous lines to reduce single-line i18n FPs.
@@ -1948,9 +2061,18 @@ class StaticAnalyzer(BaseAnalyzer):
 
             if rule_name == "system_manipulation_generic":
                 line_content = string_match.get("line_content", "").lower()
+                matched_data = string_match.get("matched_data", "").lower()
 
-                if "rm -rf" in line_content or "rm -r" in line_content:
-                    rm_targets = _RM_TARGET_PATTERN.findall(line_content)
+                # Reuse context-aware command safety policy for benign
+                # maintenance/admin commands that are non-executable in context.
+                cmd_to_eval = matched_data.strip() or line_content.strip()
+                verdict = evaluate_command(cmd_to_eval, policy=self.policy)
+                if verdict.should_suppress_yara:
+                    continue
+
+                rm_source = line_content if ("rm -rf" in line_content or "rm -r" in line_content) else matched_data
+                if "rm -rf" in rm_source or "rm -r" in rm_source:
+                    rm_targets = _RM_TARGET_PATTERN.findall(rm_source)
                     if rm_targets:
                         all_safe = all(
                             any(safe_dir in target for safe_dir in safe_cleanup_dirs) for target in rm_targets

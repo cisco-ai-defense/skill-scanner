@@ -18,6 +18,8 @@
 Core scanner engine for orchestrating skill analysis.
 """
 
+import hashlib
+import json
 import logging
 import re
 import time
@@ -258,6 +260,16 @@ class SkillScanner:
             # Generate findings from low analyzability (fail-closed posture)
             all_findings.extend(self._analyzability_findings(analyzability))
 
+            # Normalize duplicate findings at final output stage (policy-controlled).
+            all_findings = self._normalize_findings(all_findings)
+
+            # Attach same-path rule co-occurrence metadata (policy-controlled).
+            self._annotate_same_path_rule_cooccurrence(all_findings)
+
+            # Attach policy fingerprint metadata for traceability (policy-controlled).
+            policy_meta = self._policy_fingerprint_metadata()
+            self._annotate_findings_with_policy(all_findings, policy_meta)
+
         finally:
             # Always cleanup temporary extraction directories, even if an
             # analyzer raises an exception, to avoid leaking temp files.
@@ -273,6 +285,7 @@ class SkillScanner:
             analyzers_used=analyzer_names,
             analyzability_score=analyzability.score,
             analyzability_details=analyzability.to_dict(),
+            scan_metadata=policy_meta,
         )
 
         return result
@@ -404,6 +417,218 @@ class SkillScanner:
                     finding.severity = Severity(override)
                 except (ValueError, KeyError):
                     logger.warning("Invalid severity override '%s' for rule %s", override, finding.rule_id)
+
+    @staticmethod
+    def _normalize_snippet(snippet: str | None) -> str:
+        """Normalize snippets for stable dedupe keys."""
+        if not snippet:
+            return ""
+        lowered = snippet.lower()
+        collapsed = re.sub(r"\s+", " ", lowered).strip()
+        return collapsed[:240]
+
+    @staticmethod
+    def _severity_rank(severity: Severity) -> int:
+        order = {
+            Severity.CRITICAL: 5,
+            Severity.HIGH: 4,
+            Severity.MEDIUM: 3,
+            Severity.LOW: 2,
+            Severity.INFO: 1,
+            Severity.SAFE: 0,
+        }
+        return order.get(severity, 0)
+
+    def _analyzer_rank(self, name: str | None) -> int:
+        """Policy-driven analyzer precedence for same-issue collapse."""
+        if not name:
+            return 0
+        lower = name.lower()
+        prefs = [p.lower() for p in self.policy.finding_output.same_issue_preferred_analyzers]
+        for idx, token in enumerate(prefs):
+            if token and token in lower:
+                # Earlier entries in preference list should rank higher.
+                return len(prefs) - idx
+        return 0
+
+    def _normalize_findings(self, findings: list[Finding]) -> list[Finding]:
+        """Global final-stage finding de-duplication."""
+        fo = self.policy.finding_output
+        if not findings or (not fo.dedupe_exact_findings and not fo.dedupe_same_issue_per_location):
+            return findings
+
+        normalized = list(findings)
+
+        if fo.dedupe_exact_findings:
+            deduped_exact: list[Finding] = []
+            seen_exact: set[tuple[object, ...]] = set()
+            for f in normalized:
+                key = (
+                    f.rule_id,
+                    f.category.value,
+                    f.severity.value,
+                    (f.file_path or "").lower(),
+                    int(f.line_number or 0),
+                    self._normalize_snippet(f.snippet),
+                    (f.analyzer or "").lower(),
+                )
+                if key in seen_exact:
+                    continue
+                seen_exact.add(key)
+                deduped_exact.append(f)
+            normalized = deduped_exact
+
+        if not fo.dedupe_same_issue_per_location:
+            return normalized
+
+        grouped: dict[tuple[object, ...], list[Finding]] = {}
+        passthrough: list[Finding] = []
+        for f in normalized:
+            file_key = (f.file_path or "").lower()
+            line_key = int(f.line_number or 0)
+            snippet_key = self._normalize_snippet(f.snippet)
+            # Only collapse when we have meaningful location/surface context.
+            has_location = bool(file_key) and (line_key > 0 or bool(snippet_key))
+            if not has_location:
+                passthrough.append(f)
+                continue
+            key = (file_key, line_key, snippet_key, f.category.value)
+            grouped.setdefault(key, []).append(f)
+
+        merged: list[Finding] = []
+        for group in grouped.values():
+            if len(group) == 1:
+                merged.append(group[0])
+                continue
+            analyzers_in_group = {(f.analyzer or "").lower() for f in group if (f.analyzer or "").strip()}
+            # Same-issue collapse is intended to remove overlap across analyzers.
+            # If all findings come from one analyzer, keep them as separate signals.
+            if len(analyzers_in_group) <= 1 and not fo.same_issue_collapse_within_analyzer:
+                merged.extend(
+                    sorted(
+                        group,
+                        key=lambda f: (
+                            self._severity_rank(f.severity) * -1,
+                            f.rule_id,
+                        ),
+                    )
+                )
+                continue
+            winner = max(
+                group,
+                key=lambda f: (
+                    self._analyzer_rank(f.analyzer),
+                    self._severity_rank(f.severity),
+                    f.rule_id,
+                ),
+            )
+            max_severity = max((f.severity for f in group), key=self._severity_rank)
+            if self._severity_rank(max_severity) > self._severity_rank(winner.severity):
+                winner.metadata["deduped_original_severity"] = winner.severity.value
+                winner.severity = max_severity
+
+            merged_rule_ids = sorted({f.rule_id for f in group if f.rule_id != winner.rule_id})
+            merged_analyzers = sorted(
+                {(f.analyzer or "") for f in group if (f.analyzer or "") != (winner.analyzer or "")}
+            )
+
+            # If preferred winner has no remediation, inherit the strongest
+            # available remediation from merged findings.
+            if not winner.remediation:
+                fallback = max(
+                    group,
+                    key=lambda f: (
+                        self._severity_rank(f.severity),
+                        self._analyzer_rank(f.analyzer),
+                        bool(f.remediation),
+                    ),
+                )
+                if fallback.remediation:
+                    winner.remediation = fallback.remediation
+
+            if merged_rule_ids:
+                winner.metadata["deduped_rule_ids"] = merged_rule_ids
+            if merged_analyzers:
+                winner.metadata["deduped_analyzers"] = merged_analyzers
+            winner.metadata["deduped_count"] = len(group) - 1
+            merged.append(winner)
+
+        # Preserve deterministic output order for stable benchmarks.
+        final = merged + passthrough
+        final.sort(
+            key=lambda f: (
+                (f.file_path or ""),
+                int(f.line_number or 0),
+                self._severity_rank(f.severity) * -1,
+                f.rule_id,
+            )
+        )
+        return final
+
+    @staticmethod
+    def _finding_rule_ids(finding: Finding) -> set[str]:
+        """Rule IDs represented by a finding, including merged dedupe aliases."""
+        rule_ids = {finding.rule_id}
+        deduped = finding.metadata.get("deduped_rule_ids")
+        if isinstance(deduped, list):
+            for rid in deduped:
+                if isinstance(rid, str) and rid:
+                    rule_ids.add(rid)
+        return rule_ids
+
+    def _annotate_same_path_rule_cooccurrence(self, findings: list[Finding]) -> None:
+        """Add metadata about other rules that triggered on the same file path."""
+        if not self.policy.finding_output.annotate_same_path_rule_cooccurrence:
+            return
+        if not findings:
+            return
+
+        grouped: dict[str, list[Finding]] = {}
+        for f in findings:
+            path = (f.file_path or "").strip()
+            if not path:
+                continue
+            grouped.setdefault(path.lower(), []).append(f)
+
+        for group in grouped.values():
+            if not group:
+                continue
+            path_rule_universe: set[str] = set()
+            for f in group:
+                path_rule_universe.update(self._finding_rule_ids(f))
+            if len(path_rule_universe) <= 1:
+                continue
+
+            sorted_universe = sorted(path_rule_universe)
+            for f in group:
+                other_rules = sorted(path_rule_universe - self._finding_rule_ids(f))
+                if not other_rules:
+                    continue
+                f.metadata["same_path_other_rule_ids"] = other_rules
+                f.metadata["same_path_unique_rule_count"] = len(sorted_universe)
+                f.metadata["same_path_findings_count"] = len(group)
+
+    def _policy_fingerprint_metadata(self) -> dict[str, str]:
+        """Build deterministic policy fingerprint metadata."""
+        payload = self.policy._to_dict()
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return {
+            "policy_name": self.policy.policy_name,
+            "policy_version": self.policy.policy_version,
+            "policy_preset_base": self.policy.preset_base,
+            "policy_fingerprint_sha256": digest,
+        }
+
+    def _annotate_findings_with_policy(self, findings: list[Finding], policy_meta: dict[str, str]) -> None:
+        """Attach scan-policy metadata to each finding (policy-controlled)."""
+        if not self.policy.finding_output.attach_policy_fingerprint:
+            return
+        for f in findings:
+            f.metadata.setdefault("scan_policy_name", policy_meta["policy_name"])
+            f.metadata.setdefault("scan_policy_version", policy_meta["policy_version"])
+            f.metadata.setdefault("scan_policy_preset_base", policy_meta["policy_preset_base"])
+            f.metadata.setdefault("scan_policy_fingerprint_sha256", policy_meta["policy_fingerprint_sha256"])
 
     def scan_directory(
         self, skills_directory: str | Path, recursive: bool = False, check_overlap: bool = False

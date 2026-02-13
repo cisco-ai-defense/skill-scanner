@@ -23,9 +23,12 @@
   category: data_exfiltration
   severity: CRITICAL
   patterns:
-    - "requests\\.post\\s*\\("
-    - "urllib\\.request\\.urlopen\\s*\\([^)]*POST"
-    - "http\\.client\\.(?:HTTPConnection|HTTPSConnection).*\\.request\\s*\\(['\"]POST"
+    # Keep this rule focused on high-confidence exfiltration indicators.
+    # Generic POST usage is covered by DATA_EXFIL_NETWORK_REQUESTS (MEDIUM).
+    - "(?i)requests\\.post\\s*\\([^\\n)]{0,240}(?:attacker|evil|webhook|exfil|steal|leak|collect|backup_endpoint|analytics_endpoint|discord\\.com/api/webhooks|pastebin|telegram)"
+    - "(?i)requests\\.post\\s*\\([^\\n)]{0,240}(?:data|json)\\s*=\\s*(?:\\{[^\\n\\}]{0,240}(?:password|passwd|secret|token|api[_-]?key|credential|auth|cookie|session|private[_-]?key)|[A-Za-z_][A-Za-z0-9_]*(?:secret|token|credential|passwd|password|api[_-]?key))"
+    - "(?i)urllib\\.request\\.urlopen\\s*\\([^\\n)]{0,240}(?:attacker|evil|webhook|exfil|steal|leak|collect)"
+    - "(?i)http\\.client\\.(?:HTTPConnection|HTTPSConnection).*\\.request\\s*\\(['\"]POST['\"][^\\n)]{0,200}(?:attacker|evil|webhook|exfil|steal|leak|collect)"
   file_types: [python]
   description: "HTTP POST request that may send data externally"
   remediation: "Review all POST requests. Ensure they don't send sensitive data"
@@ -53,19 +56,23 @@
   severity: HIGH
   patterns:
     # Opening/reading sensitive files with explicit paths
-    - "(?:open|read)\\s*\\([^)]*[\\\"/](?:etc/passwd|etc/shadow)"
+    - "(?:open|read)\\s*\\([^)]*[\\\"/](?:etc/passwd|etc/shadow|etc/sudoers)"
+    - "(?:open|read)\\s*\\([^)]*['\\\"]/etc/[^'\\\")]{1,120}['\\\"]"
     - "(?:open|read)\\s*\\([^)]*\\.aws/credentials"
-    - "(?:open|read)\\s*\\([^)]*\\.ssh/(?:id_rsa|id_dsa|authorized_keys)"
+    - "(?:open|read)\\s*\\([^)]*\\.ssh/(?:id_rsa|id_dsa|id_ed25519|authorized_keys)"
+    - "(?:open|read)\\s*\\([^)]*\\.(?:gnupg|netrc|pgpass)"
     # .env file actually being opened (not just Path reference)
-    - "open\\s*\\([^)]*\\.env['\"]\\s*[,)]"
-    # Path traversal vulnerability - user-controlled path to sensitive files
-    - "(?:open|read)\\s*\\([^)]*(?:\\/etc\\/|config_name|path\\s*\\))"
+    - "open\\s*\\([^)]*\\.env(?:\\.[A-Za-z0-9_-]+)?['\"]\\s*[,)]"
+    # Variable names with clear sensitive-file intent being opened
+    - "(?:open|read)\\s*\\([^)]*\\b(?:cred(?:ential)?s?_path|secret(?:s)?_path|key(?:s)?_path|token(?:s)?_path)\\b"
   exclude_patterns:
     # Path references (not actual file access)
     - "Path\\s*\\([^)]*\\.env"
     - "DEFAULT_"
     - "env_path\\s*="
     - "env_file\\s*="
+    # Generic/open-ended variable paths (benign file I/O)
+    - "\\b(?:image|img|icon|logo|pdf|doc|markdown|md|schema|config|manifest|plugin|asset|template)_path\\b"
     # Writing files (not exfiltration)
     - "'w'"
     - "\"w\""

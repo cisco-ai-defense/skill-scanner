@@ -40,8 +40,10 @@ rule system_manipulation_generic{
         // "kill -9 2" matched on PIDs like 2xxx. Require explicit dangerous context
         $process_manipulation = /\b(killall\s+-9\s+\w+|pkill\s+-9\s+\w+)\b/i
 
-        // Dangerous recursive operations with system-critical paths
-        $recursive_operations = /\b(rm\s+-rf\s+(\/\s|\/root|\/home|\$HOME|~\/|\/etc|\/usr))\b/i
+        // Dangerous recursive operations with system-critical paths.
+        // Match root-like targets only (/, /etc, /usr, /root, /home, $HOME, ~/)
+        // and avoid matching routine subdirectory cleanup like ~/Library/...
+        $recursive_operations = /\brm\s+-rf\s+(\/\s|\/root(?:\s|\/\*|$)|\/home(?:\s|\/\*|$)|\$HOME(?:\s|\/\*|$)|~\/(?:\s|\*|$)|\/etc(?:\s|\/\*|$)|\/usr(?:\s|\/\*|$))/i
 
         // Safe cleanup patterns to exclude - EXPANDED
         $safe_cleanup = /(rm\s+-rf\s+(\/var\/lib\/apt\/lists|\/tmp\/|node_modules|__pycache__|\.cache|\.npm|\/var\/cache|dist\/|build\/|target\/|\.git\/|coverage\/|\.tox\/|\.mypy_cache|\.pytest_cache|\.next\/|\.nuxt\/|out\/|\.turbo\/)|find\s+[^\n]*-mtime\s+\+[0-9]+[^\n]*-delete|find\s+[^\n]*backup[^\n]*-delete|rm\s+-rf\s+\$\{?[A-Za-z_]+\}?\/)/i

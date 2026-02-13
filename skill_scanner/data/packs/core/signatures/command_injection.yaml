@@ -5,10 +5,16 @@
   category: command_injection
   severity: CRITICAL
   patterns:
-    - "\\beval\\s*\\("
-    - "\\bexec\\s*\\("
-    - "\\b__import__\\s*\\("
-    - "(?<!re\\.)\\bcompile\\s*\\("  # compile() but not re.compile()
+    - "(?<!['\\\"])\\beval\\s*\\("
+    - "(?<!['\\\"])\\bexec\\s*\\("
+    - "\\b__import__\\s*\\(\\s*(?:input\\s*\\(|request\\.|os\\.environ|sys\\.argv|argv|args\\[|user_)"
+    - "(?<!re\\.)(?<!['\\\"])(?<!\\.)\\bcompile\\s*\\("  # compile() but not re.compile() or method calls
+  exclude_patterns:
+    - '(?i)never\s+use\s+eval\s*\('
+    - '(?i)use\s+of\s+eval\s*\('
+    - '(?i)use\s+of\s+exec\s*\('
+    - "r[\\'\\\"].*eval\\\\s\\*\\\\\\("
+    - "r[\\'\\\"].*exec\\\\s\\*\\\\\\("
   file_types: [python]
   description: "Dangerous code execution functions that can execute arbitrary code"
   remediation: "Avoid eval(), exec(), and compile(). Use safer alternatives like ast.literal_eval() or operator module"
@@ -143,9 +149,14 @@
   severity: HIGH
   patterns:
     # Exclude safe -exec targets: file, stat, grep, ls, basename, dirname, readlink, wc, cat, head
-    - "find\\s+[^|;]*-exec\\s+(?!file\\b|stat\\b|grep\\b|ls\\b|basename\\b|dirname\\b|readlink\\b|wc\\b|cat\\b|head\\b)"
-    - "find\\s+[^|;]*-execdir\\s+(?!file\\b|stat\\b|grep\\b|ls\\b|basename\\b|dirname\\b|readlink\\b|wc\\b|cat\\b|head\\b)"
+    - "find\\s+[^|;]*-exec\\s+(?!file\\b|stat\\b|grep\\b|ls\\b|basename\\b|dirname\\b|readlink\\b|wc\\b|cat\\b|head\\b|shellcheck\\b|echo\\b|test\\b|du\\b|md5\\b|md5sum\\b|sha1sum\\b|sha256sum\\b|sed\\b)"
+    - "find\\s+[^|;]*-execdir\\s+(?!file\\b|stat\\b|grep\\b|ls\\b|basename\\b|dirname\\b|readlink\\b|wc\\b|cat\\b|head\\b|shellcheck\\b|echo\\b|test\\b|du\\b|md5\\b|md5sum\\b|sha1sum\\b|sha256sum\\b|sed\\b)"
     - "find\\s+[^|;]*\\|\\s*xargs\\s+(?:bash|sh|zsh|eval|exec)"
+  exclude_patterns:
+    # Common repository cleanup patterns (low-risk maintenance usage)
+    - "find\\s+[^\\n]*-name\\s+[\"']?(?:__pycache__|\\.pytest_cache|\\.mypy_cache|\\.ruff_cache|\\.tox|node_modules|dist|build|\\.cache|\\.next|\\.nuxt|\\.egg-info|\\*\\.egg-info)[\"']?[^\\n]*-exec\\s+rm\\b"
+    # Time-based cleanup routines over temp/worktree directories
+    - "find\\s+[^\\n]*-mtime\\s+\\+[0-9]+[^\\n]*-exec\\s+rm\\b"
   file_types: [bash, markdown]
   description: "find command with -exec flag can execute arbitrary commands on discovered files"
   remediation: "Avoid find -exec with untrusted directories. Use explicit file lists instead"

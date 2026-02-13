@@ -115,13 +115,14 @@ class YaraScanner:
                         # Extract matched data from content bytes
                         matched_data_bytes = content_bytes[match.offset : match.offset + match.length]
 
-                        # Find line number for this match
-                        line_num = content[: match.offset].count("\n") + 1
-                        line_start = content.rfind("\n", 0, match.offset) + 1
-                        line_end = content.find("\n", match.offset)
+                        # YARA-X reports offsets in bytes. Compute line/column using
+                        # byte slices to avoid drift on multi-byte UTF-8 content.
+                        line_num = content_bytes[: match.offset].count(b"\n") + 1
+                        line_start = content_bytes.rfind(b"\n", 0, match.offset) + 1
+                        line_end = content_bytes.find(b"\n", match.offset)
                         if line_end == -1:
-                            line_end = len(content)
-                        line_content = content[line_start:line_end].strip()
+                            line_end = len(content_bytes)
+                        line_content = content_bytes[line_start:line_end].decode("utf-8", errors="ignore").strip()
 
                         matched_strings.append(
                             {

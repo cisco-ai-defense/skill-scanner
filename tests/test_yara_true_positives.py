@@ -258,6 +258,20 @@ class TestFalsePositiveRegression:
         unicode_matches = [m for m in matches if "unicode" in m["rule_name"].lower()]
         assert len(unicode_matches) == 0, "Low zero-width count should not trigger"
 
+    def test_ignores_xcode_deriveddata_cleanup(self, yara_scanner):
+        """Routine Xcode cache cleanup should not trigger destructive rm rule."""
+        content = "rm -rf ~/Library/Developer/Xcode/DerivedData"
+        matches = yara_scanner.scan_content(content, "debug.md")
+        system_matches = [m for m in matches if m["rule_name"] == "system_manipulation_generic"]
+        assert len(system_matches) == 0, "DerivedData cleanup should not trigger system_manipulation_generic"
+
+    def test_detects_home_root_wipe_pattern(self, yara_scanner):
+        """Dangerous home-root wipe pattern should still trigger."""
+        content = "rm -rf ~/"
+        matches = yara_scanner.scan_content(content, "dangerous.sh")
+        system_matches = [m for m in matches if m["rule_name"] == "system_manipulation_generic"]
+        assert len(system_matches) >= 1, "rm -rf ~/ should still trigger system_manipulation_generic"
+
 
 # ============================================================================
 # EMBEDDED BINARY DETECTION (embedded_binary_detection.yara)

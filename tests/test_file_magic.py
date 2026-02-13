@@ -321,6 +321,34 @@ class TestTextFormatMismatch:
         result = check_extension_mismatch(f)
         assert result is None
 
+    def test_node_shebang_in_js_no_mismatch(self, tmp_path):
+        """A .js file with a node shebang is legitimate and should not be flagged."""
+        f = tmp_path / "run_actor.js"
+        f.write_text(
+            "#!/usr/bin/env node\n"
+            "import { readFileSync } from 'node:fs';\n"
+            "console.log(readFileSync('package.json', 'utf8'));\n"
+        )
+        result = check_extension_mismatch(f)
+        assert result is None
+
+    def test_node_shebang_in_js_mismatch_when_policy_knob_disabled(self, tmp_path):
+        """Disabling shebang-text compatibility should restore mismatch finding."""
+        f = tmp_path / "run_actor.js"
+        f.write_text(
+            "#!/usr/bin/env node\n"
+            "import { readFileSync } from 'node:fs';\n"
+            "console.log(readFileSync('package.json', 'utf8'));\n"
+        )
+        result = check_extension_mismatch(
+            f,
+            allow_script_shebang_text_extensions=False,
+            shebang_compatible_extensions={".js"},
+        )
+        assert result is not None
+        severity, _desc, _magic = result
+        assert severity == "CRITICAL"
+
     def test_normal_markdown_no_mismatch(self, tmp_path):
         """A .md file with real Markdown → no mismatch."""
         f = tmp_path / "README.md"

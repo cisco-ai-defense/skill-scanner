@@ -199,6 +199,20 @@ _EXTENSION_EXPECTED_LABELS: dict[str, frozenset[str]] = {
     ".conf": frozenset({"ini", "txt", "txtascii", "txtutf8", "shell"}),
 }
 
+# Script extensions where a shebang header is normal and not deceptive.
+_DEFAULT_SHEBANG_COMPATIBLE_EXTENSIONS = frozenset(
+    {
+        ".py",
+        ".sh",
+        ".bash",
+        ".js",
+        ".ts",
+        ".rb",
+        ".pl",
+        ".php",
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # Legacy magic byte fallback
@@ -395,6 +409,8 @@ def get_extension_family(ext: str) -> str | None:
 def check_extension_mismatch(
     file_path: Path,
     min_confidence: float = 0.8,
+    allow_script_shebang_text_extensions: bool = True,
+    shebang_compatible_extensions: set[str] | frozenset[str] | None = None,
 ) -> tuple[str, str, MagicMatch] | None:
     """
     Check if a file's extension mismatches its actual content type.
@@ -414,6 +430,12 @@ def check_extension_mismatch(
         Tuple of (severity, description, magic_match) if mismatch found,
         None otherwise.  Severity is one of: "CRITICAL", "HIGH", "MEDIUM"
     """
+    shebang_exts = (
+        set(shebang_compatible_extensions)
+        if shebang_compatible_extensions is not None
+        else set(_DEFAULT_SHEBANG_COMPATIBLE_EXTENSIONS)
+    )
+
     ext = file_path.suffix.lower()
     if file_path.name.endswith(".tar.gz"):
         ext = ".tar.gz"
@@ -443,7 +465,15 @@ def check_extension_mismatch(
         pass  # Fall through to label-level check
     else:
         # True group-level mismatch — apply severity rules
-        return _severity_for_group_mismatch(file_path, ext, expected_family, actual_family, magic)
+        return _severity_for_group_mismatch(
+            file_path,
+            ext,
+            expected_family,
+            actual_family,
+            magic,
+            allow_script_shebang_text_extensions=allow_script_shebang_text_extensions,
+            shebang_compatible_extensions=shebang_exts,
+        )
 
     # --- Label-level mismatch detection (text/code files only) ---
     if expected_family in _TEXT_COMPATIBLE_FAMILIES and actual_family in _TEXT_COMPATIBLE_FAMILIES:
@@ -458,9 +488,27 @@ def _severity_for_group_mismatch(
     expected_family: str,
     actual_family: str,
     magic: MagicMatch,
+    allow_script_shebang_text_extensions: bool = True,
+    shebang_compatible_extensions: set[str] | frozenset[str] | None = None,
 ) -> tuple[str, str, MagicMatch] | None:
     """Determine severity for a group-level family mismatch."""
     name = file_path.name
+    shebang_exts = (
+        set(shebang_compatible_extensions)
+        if shebang_compatible_extensions is not None
+        else set(_DEFAULT_SHEBANG_COMPATIBLE_EXTENSIONS)
+    )
+
+    # Shebang scripts are legitimate for script-like extensions (e.g. .js with
+    # "#!/usr/bin/env node"). Treat these as compatible, not deceptive.
+    if (
+        allow_script_shebang_text_extensions
+        and expected_family in _TEXT_COMPATIBLE_FAMILIES
+        and actual_family == "executable"
+        and ext in shebang_exts
+        and magic.content_type.startswith("executable/script")
+    ):
+        return None
 
     # Text/code extension but actually executable → CRITICAL
     if expected_family in _TEXT_COMPATIBLE_FAMILIES and actual_family == "executable":

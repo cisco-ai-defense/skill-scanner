@@ -90,6 +90,20 @@ class PipelinePolicy:
     demote_instructional: bool = True
     # Check URLs against known_installer_domains and demote matches to LOW
     check_known_installers: bool = True
+    # Collapse equivalent pipelines discovered via multiple extraction paths
+    dedupe_equivalent_pipelines: bool = True
+    # COMPOUND_FETCH_EXECUTE heuristics
+    compound_fetch_require_download_intent: bool = True
+    compound_fetch_filter_api_requests: bool = True
+    compound_fetch_filter_shell_wrapped_fetch: bool = True
+    # Wrapper commands allowed before execution sinks (e.g. sudo bash script.sh)
+    compound_fetch_exec_prefixes: list[str] = field(
+        default_factory=lambda: ["sudo", "env", "command", "time", "nohup", "nice"]
+    )
+    # Commands considered "execution sinks" for fetch+execute detection
+    compound_fetch_exec_commands: list[str] = field(
+        default_factory=lambda: ["bash", "sh", "zsh", "source", "python", "python3", "."]
+    )
     # Hint words that suggest data exfiltration in tool-chaining detection
     exfil_hints: list[str] = field(
         default_factory=lambda: ["send", "upload", "transmit", "webhook", "slack", "exfil", "forward"]
@@ -112,6 +126,12 @@ class RuleScopingPolicy:
     doc_path_indicators: set[str] = field(default_factory=set)
     # Regex patterns that match educational/example filenames
     doc_filename_patterns: list[str] = field(default_factory=list)
+    # De-duplicate reference aliases that resolve to the same physical file
+    dedupe_reference_aliases: bool = True
+    # De-duplicate identical findings emitted by multiple static scan passes
+    dedupe_duplicate_findings: bool = True
+    # Skip ASSET_PROMPT_INJECTION findings for files in documentation paths
+    asset_prompt_injection_skip_in_docs: bool = True
 
 
 @dataclass
@@ -143,6 +163,11 @@ class FileClassificationPolicy:
     code_extensions: set[str] = field(default_factory=set)
     # Skip binary/shebang checks on files with inert extensions
     skip_inert_extensions: bool = True
+    # Treat shebang scripts (e.g. .js with #!/usr/bin/env node) as compatible
+    # with text/code extensions for FILE_MAGIC_MISMATCH.
+    allow_script_shebang_text_extensions: bool = True
+    # Script-like extensions allowed to carry shebang headers.
+    script_shebang_extensions: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -183,6 +208,10 @@ class AnalysisThresholdsPolicy:
     short_match_max_chars: int = 2
     # Minimum Cyrillic/CJK chars to suppress false-positive unicode steganography
     cyrillic_cjk_min_chars: int = 10
+    # HOMOGLYPH_ATTACK: suppress scientific/mathematical unicode contexts
+    homoglyph_filter_math_context: bool = True
+    # Confusable aliases considered low-risk in formula/math context.
+    homoglyph_math_aliases: list[str] = field(default_factory=lambda: ["COMMON", "GREEK"])
 
 
 @dataclass
@@ -226,6 +255,39 @@ class AnalyzersPolicy:
 
 
 @dataclass
+class FindingOutputPolicy:
+    """Controls final finding normalization and traceability metadata."""
+
+    # Drop exact duplicates emitted by overlapping analyzers/passes
+    dedupe_exact_findings: bool = True
+    # Collapse same issue repeated on the same file/line/snippet/category
+    dedupe_same_issue_per_location: bool = True
+    # Preferred analyzer order when collapsing same-issue duplicates.
+    # Earlier entries win (for richer remediation/context), while max severity
+    # from the merged set is still preserved.
+    same_issue_preferred_analyzers: list[str] = field(
+        default_factory=lambda: [
+            "meta_analyzer",
+            "llm_analyzer",
+            "meta",
+            "llm",
+            "behavioral",
+            "pipeline",
+            "static",
+            "yara",
+            "analyzability",
+        ]
+    )
+    # Also collapse same-issue findings emitted by one analyzer
+    # (usually disabled to preserve distinct static rule signals).
+    same_issue_collapse_within_analyzer: bool = True
+    # Attach per-finding context about other rules that fired on same file path
+    annotate_same_path_rule_cooccurrence: bool = True
+    # Add policy metadata fingerprint to each finding for auditability
+    attach_policy_fingerprint: bool = True
+
+
+@dataclass
 class SeverityOverride:
     """A per-rule severity override."""
 
@@ -263,6 +325,7 @@ class ScanPolicy:
     sensitive_files: SensitiveFilesPolicy = field(default_factory=SensitiveFilesPolicy)
     command_safety: CommandSafetyPolicy = field(default_factory=CommandSafetyPolicy)
     analyzers: AnalyzersPolicy = field(default_factory=AnalyzersPolicy)
+    finding_output: FindingOutputPolicy = field(default_factory=FindingOutputPolicy)
     severity_overrides: list[SeverityOverride] = field(default_factory=list)
     disabled_rules: set[str] = field(default_factory=set)
 
@@ -396,6 +459,7 @@ class ScanPolicy:
         sf = d.get("sensitive_files", {})
         cs = d.get("command_safety", {})
         az = d.get("analyzers", {})
+        fo = d.get("finding_output", {})
 
         severity_overrides = [SeverityOverride(**ovr) for ovr in d.get("severity_overrides", [])]
 
@@ -414,6 +478,16 @@ class ScanPolicy:
                 demote_in_docs=pl.get("demote_in_docs", True),
                 demote_instructional=pl.get("demote_instructional", True),
                 check_known_installers=pl.get("check_known_installers", True),
+                dedupe_equivalent_pipelines=pl.get("dedupe_equivalent_pipelines", True),
+                compound_fetch_require_download_intent=pl.get("compound_fetch_require_download_intent", True),
+                compound_fetch_filter_api_requests=pl.get("compound_fetch_filter_api_requests", True),
+                compound_fetch_filter_shell_wrapped_fetch=pl.get("compound_fetch_filter_shell_wrapped_fetch", True),
+                compound_fetch_exec_prefixes=pl.get(
+                    "compound_fetch_exec_prefixes", ["sudo", "env", "command", "time", "nohup", "nice"]
+                ),
+                compound_fetch_exec_commands=pl.get(
+                    "compound_fetch_exec_commands", ["bash", "sh", "zsh", "source", "python", "python3", "."]
+                ),
                 exfil_hints=pl.get(
                     "exfil_hints", ["send", "upload", "transmit", "webhook", "slack", "exfil", "forward"]
                 ),
@@ -425,6 +499,9 @@ class ScanPolicy:
                 code_only=set(ys.get("code_only", [])),
                 doc_path_indicators=set(ys.get("doc_path_indicators", [])),
                 doc_filename_patterns=ys.get("doc_filename_patterns", []),
+                dedupe_reference_aliases=ys.get("dedupe_reference_aliases", True),
+                dedupe_duplicate_findings=ys.get("dedupe_duplicate_findings", True),
+                asset_prompt_injection_skip_in_docs=ys.get("asset_prompt_injection_skip_in_docs", True),
             ),
             credentials=CredentialPolicy(
                 known_test_values=set(cr.get("known_test_values", [])),
@@ -439,6 +516,8 @@ class ScanPolicy:
                 archive_extensions=set(fc.get("archive_extensions", [])),
                 code_extensions=set(fc.get("code_extensions", [])),
                 skip_inert_extensions=fc.get("skip_inert_extensions", True),
+                allow_script_shebang_text_extensions=fc.get("allow_script_shebang_text_extensions", True),
+                script_shebang_extensions=set(fc.get("script_shebang_extensions", [])),
             ),
             file_limits=FileLimitsPolicy(
                 max_file_count=fl.get("max_file_count", 100),
@@ -458,6 +537,8 @@ class ScanPolicy:
                 exception_handler_context_lines=at.get("exception_handler_context_lines", 20),
                 short_match_max_chars=at.get("short_match_max_chars", 2),
                 cyrillic_cjk_min_chars=at.get("cyrillic_cjk_min_chars", 10),
+                homoglyph_filter_math_context=at.get("homoglyph_filter_math_context", True),
+                homoglyph_math_aliases=at.get("homoglyph_math_aliases", ["COMMON", "GREEK"]),
             ),
             sensitive_files=SensitiveFilesPolicy(
                 patterns=sf.get("patterns", []),
@@ -473,6 +554,27 @@ class ScanPolicy:
                 static=az.get("static", True),
                 bytecode=az.get("bytecode", True),
                 pipeline=az.get("pipeline", True),
+            ),
+            finding_output=FindingOutputPolicy(
+                dedupe_exact_findings=fo.get("dedupe_exact_findings", True),
+                dedupe_same_issue_per_location=fo.get("dedupe_same_issue_per_location", True),
+                same_issue_preferred_analyzers=fo.get(
+                    "same_issue_preferred_analyzers",
+                    [
+                        "meta_analyzer",
+                        "llm_analyzer",
+                        "meta",
+                        "llm",
+                        "behavioral",
+                        "pipeline",
+                        "static",
+                        "yara",
+                        "analyzability",
+                    ],
+                ),
+                same_issue_collapse_within_analyzer=fo.get("same_issue_collapse_within_analyzer", True),
+                annotate_same_path_rule_cooccurrence=fo.get("annotate_same_path_rule_cooccurrence", True),
+                attach_policy_fingerprint=fo.get("attach_policy_fingerprint", True),
             ),
             severity_overrides=severity_overrides,
             disabled_rules=set(d.get("disabled_rules", [])),
@@ -494,6 +596,12 @@ class ScanPolicy:
                 "demote_in_docs": self.pipeline.demote_in_docs,
                 "demote_instructional": self.pipeline.demote_instructional,
                 "check_known_installers": self.pipeline.check_known_installers,
+                "dedupe_equivalent_pipelines": self.pipeline.dedupe_equivalent_pipelines,
+                "compound_fetch_require_download_intent": self.pipeline.compound_fetch_require_download_intent,
+                "compound_fetch_filter_api_requests": self.pipeline.compound_fetch_filter_api_requests,
+                "compound_fetch_filter_shell_wrapped_fetch": self.pipeline.compound_fetch_filter_shell_wrapped_fetch,
+                "compound_fetch_exec_prefixes": self.pipeline.compound_fetch_exec_prefixes,
+                "compound_fetch_exec_commands": self.pipeline.compound_fetch_exec_commands,
                 "exfil_hints": self.pipeline.exfil_hints,
                 "api_doc_tokens": self.pipeline.api_doc_tokens,
             },
@@ -503,6 +611,9 @@ class ScanPolicy:
                 "code_only": sorted(self.rule_scoping.code_only),
                 "doc_path_indicators": sorted(self.rule_scoping.doc_path_indicators),
                 "doc_filename_patterns": self.rule_scoping.doc_filename_patterns,
+                "dedupe_reference_aliases": self.rule_scoping.dedupe_reference_aliases,
+                "dedupe_duplicate_findings": self.rule_scoping.dedupe_duplicate_findings,
+                "asset_prompt_injection_skip_in_docs": self.rule_scoping.asset_prompt_injection_skip_in_docs,
             },
             "credentials": {
                 "known_test_values": sorted(self.credentials.known_test_values),
@@ -517,6 +628,8 @@ class ScanPolicy:
                 "archive_extensions": sorted(self.file_classification.archive_extensions),
                 "code_extensions": sorted(self.file_classification.code_extensions),
                 "skip_inert_extensions": self.file_classification.skip_inert_extensions,
+                "allow_script_shebang_text_extensions": self.file_classification.allow_script_shebang_text_extensions,
+                "script_shebang_extensions": sorted(self.file_classification.script_shebang_extensions),
             },
             "file_limits": {
                 "max_file_count": self.file_limits.max_file_count,
@@ -536,6 +649,8 @@ class ScanPolicy:
                 "exception_handler_context_lines": self.analysis_thresholds.exception_handler_context_lines,
                 "short_match_max_chars": self.analysis_thresholds.short_match_max_chars,
                 "cyrillic_cjk_min_chars": self.analysis_thresholds.cyrillic_cjk_min_chars,
+                "homoglyph_filter_math_context": self.analysis_thresholds.homoglyph_filter_math_context,
+                "homoglyph_math_aliases": self.analysis_thresholds.homoglyph_math_aliases,
             },
             "sensitive_files": {
                 "patterns": self.sensitive_files.patterns,
@@ -551,6 +666,14 @@ class ScanPolicy:
                 "static": self.analyzers.static,
                 "bytecode": self.analyzers.bytecode,
                 "pipeline": self.analyzers.pipeline,
+            },
+            "finding_output": {
+                "dedupe_exact_findings": self.finding_output.dedupe_exact_findings,
+                "dedupe_same_issue_per_location": self.finding_output.dedupe_same_issue_per_location,
+                "same_issue_preferred_analyzers": self.finding_output.same_issue_preferred_analyzers,
+                "same_issue_collapse_within_analyzer": self.finding_output.same_issue_collapse_within_analyzer,
+                "annotate_same_path_rule_cooccurrence": self.finding_output.annotate_same_path_rule_cooccurrence,
+                "attach_policy_fingerprint": self.finding_output.attach_policy_fingerprint,
             },
             "severity_overrides": [
                 {"rule_id": o.rule_id, "severity": o.severity, "reason": o.reason} for o in self.severity_overrides

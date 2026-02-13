@@ -43,12 +43,21 @@ class TestScanPolicyDefaults:
         # Should compile without error
         compiled = policy._compiled_benign_pipes
         assert len(compiled) > 0
+        assert policy.pipeline.dedupe_equivalent_pipelines is True
+        assert policy.pipeline.compound_fetch_require_download_intent is True
+        assert policy.pipeline.compound_fetch_filter_api_requests is True
+        assert policy.pipeline.compound_fetch_filter_shell_wrapped_fetch is True
+        assert "sudo" in policy.pipeline.compound_fetch_exec_prefixes
+        assert "bash" in policy.pipeline.compound_fetch_exec_commands
 
     def test_default_has_rule_scoping(self):
         policy = ScanPolicy.default()
         assert "coercive_injection_generic" in policy.rule_scoping.skillmd_and_scripts_only
         assert "code_execution_generic" in policy.rule_scoping.skip_in_docs
         assert "prompt_injection_unicode_steganography" in policy.rule_scoping.code_only
+        assert policy.rule_scoping.dedupe_reference_aliases is True
+        assert policy.rule_scoping.dedupe_duplicate_findings is True
+        assert policy.rule_scoping.asset_prompt_injection_skip_in_docs is True
 
     def test_default_has_test_creds(self):
         policy = ScanPolicy.default()
@@ -64,6 +73,13 @@ class TestScanPolicyDefaults:
         assert "dist" in policy.system_cleanup.safe_rm_targets
         assert "node_modules" in policy.system_cleanup.safe_rm_targets
 
+    def test_default_has_shebang_and_homoglyph_knobs(self):
+        policy = ScanPolicy.default()
+        assert policy.file_classification.allow_script_shebang_text_extensions is True
+        assert ".js" in policy.file_classification.script_shebang_extensions
+        assert policy.analysis_thresholds.homoglyph_filter_math_context is True
+        assert "GREEK" in policy.analysis_thresholds.homoglyph_math_aliases
+
     def test_default_has_no_disabled_rules(self):
         policy = ScanPolicy.default()
         assert len(policy.disabled_rules) == 0
@@ -71,6 +87,16 @@ class TestScanPolicyDefaults:
     def test_default_has_no_severity_overrides(self):
         policy = ScanPolicy.default()
         assert len(policy.severity_overrides) == 0
+
+    def test_default_has_finding_output_knobs(self):
+        policy = ScanPolicy.default()
+        assert policy.finding_output.dedupe_exact_findings is True
+        assert policy.finding_output.dedupe_same_issue_per_location is True
+        assert policy.finding_output.same_issue_preferred_analyzers[0] == "meta_analyzer"
+        assert "llm_analyzer" in policy.finding_output.same_issue_preferred_analyzers
+        assert policy.finding_output.same_issue_collapse_within_analyzer is True
+        assert policy.finding_output.annotate_same_path_rule_cooccurrence is True
+        assert policy.finding_output.attach_policy_fingerprint is True
 
 
 class TestScanPolicyCustomisation:
@@ -201,11 +227,26 @@ class TestScanPolicyPresets:
     def test_strict_has_no_known_installers(self):
         strict = ScanPolicy.from_preset("strict")
         assert len(strict.pipeline.known_installer_domains) == 0
+        assert strict.pipeline.dedupe_equivalent_pipelines is False
+        assert strict.pipeline.compound_fetch_require_download_intent is False
+        assert strict.pipeline.compound_fetch_filter_api_requests is False
+        assert strict.pipeline.compound_fetch_filter_shell_wrapped_fetch is False
+        assert "sudo" in strict.pipeline.compound_fetch_exec_prefixes
+        assert "node" in strict.pipeline.compound_fetch_exec_commands
 
     def test_strict_has_no_test_creds(self):
         strict = ScanPolicy.from_preset("strict")
         assert len(strict.credentials.known_test_values) == 0
         assert len(strict.credentials.placeholder_markers) == 0
+        assert strict.rule_scoping.dedupe_reference_aliases is False
+        assert strict.rule_scoping.dedupe_duplicate_findings is False
+        assert strict.rule_scoping.asset_prompt_injection_skip_in_docs is False
+        assert strict.file_classification.allow_script_shebang_text_extensions is False
+        assert strict.analysis_thresholds.homoglyph_filter_math_context is False
+        assert strict.finding_output.same_issue_preferred_analyzers[0] == "meta_analyzer"
+        assert strict.finding_output.same_issue_collapse_within_analyzer is True
+        assert strict.finding_output.annotate_same_path_rule_cooccurrence is True
+        assert strict.finding_output.attach_policy_fingerprint is True
 
     def test_strict_has_severity_promotions(self):
         strict = ScanPolicy.from_preset("strict")
@@ -220,6 +261,17 @@ class TestScanPolicyPresets:
         permissive = ScanPolicy.from_preset("permissive")
         balanced = ScanPolicy.from_preset("balanced")
         assert len(permissive.pipeline.known_installer_domains) > len(balanced.pipeline.known_installer_domains)
+        assert permissive.pipeline.dedupe_equivalent_pipelines is True
+        assert permissive.pipeline.compound_fetch_require_download_intent is True
+        assert permissive.pipeline.compound_fetch_filter_api_requests is True
+        assert permissive.pipeline.compound_fetch_filter_shell_wrapped_fetch is True
+        assert permissive.finding_output.same_issue_preferred_analyzers[0] == "meta_analyzer"
+        assert permissive.finding_output.same_issue_collapse_within_analyzer is True
+        assert permissive.finding_output.annotate_same_path_rule_cooccurrence is True
+        assert "sudo" in permissive.pipeline.compound_fetch_exec_prefixes
+        assert "bash" in permissive.pipeline.compound_fetch_exec_commands
+        assert permissive.rule_scoping.asset_prompt_injection_skip_in_docs is True
+        assert permissive.finding_output.dedupe_same_issue_per_location is True
 
     def test_permissive_has_disabled_rules(self):
         permissive = ScanPolicy.from_preset("permissive")

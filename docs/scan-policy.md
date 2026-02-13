@@ -254,9 +254,13 @@ rule_scoping:
 
   doc_filename_patterns:     # Regex for educational/example filenames
     - 'tutorial|guide|howto'
+
+  dedupe_reference_aliases: true          # Collapse duplicate SKILL.md script refs
+  dedupe_duplicate_findings: true         # De-dupe duplicate findings across passes
+  asset_prompt_injection_skip_in_docs: true  # Skip ASSET_PROMPT_INJECTION in docs
 ```
 
-**Impact:** Controls which rules fire on which files, reducing false positives from educational or documentation content.
+**Impact:** Controls which rules fire on which files, reducing false positives from educational or documentation content. `dedupe_duplicate_findings` is a top-level `rule_scoping` knob and applies broadly (not per-rule).
 
 ### credentials
 
@@ -422,6 +426,40 @@ analyzers:
 ```
 
 **Impact:** Set `pipeline: false` to skip pipeline analysis entirely (useful if your skills never contain shell scripts).  Disabling an analyzer removes all its findings from the scan results.
+
+### finding_output
+
+Controls final finding dedupe behavior and metadata stamping.
+
+```yaml
+finding_output:
+  dedupe_exact_findings: true
+  dedupe_same_issue_per_location: true
+  same_issue_preferred_analyzers:
+    - "meta_analyzer"
+    - "llm_analyzer"
+    - "meta"
+    - "llm"
+    - "behavioral"
+    - "pipeline"
+    - "static"
+    - "yara"
+    - "analyzability"
+  same_issue_collapse_within_analyzer: true
+  annotate_same_path_rule_cooccurrence: true
+  attach_policy_fingerprint: true
+```
+
+Field behavior:
+
+- `dedupe_exact_findings`: Drops byte-for-byte duplicate finding tuples from overlapping passes.
+- `dedupe_same_issue_per_location`: Collapses same issue on the same file/line/snippet/category into one record when emitted by multiple analyzers.
+- `same_issue_preferred_analyzers`: Preference order for which analyzer's title/description/remediation survives collapse.
+- `same_issue_collapse_within_analyzer`: If enabled, also collapses same-issue findings from one analyzer.
+- `annotate_same_path_rule_cooccurrence`: Adds per-finding metadata about other `rule_id`s seen on the same file path (`same_path_other_rule_ids`).
+- `attach_policy_fingerprint`: Adds `scan_policy_*` metadata fields for auditability and reproducibility.
+
+**Impact:** Keeps output concise while preserving richer LLM/meta context, adds traceability (policy fingerprint), and captures co-occurrence signals for future deterministic tuning.
 
 ### severity_overrides
 

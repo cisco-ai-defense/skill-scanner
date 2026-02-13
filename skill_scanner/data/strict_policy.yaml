@@ -46,6 +46,28 @@ pipeline:
   demote_in_docs: false
   demote_instructional: false
   check_known_installers: false
+  dedupe_equivalent_pipelines: false
+  compound_fetch_require_download_intent: false
+  compound_fetch_filter_api_requests: false
+  compound_fetch_filter_shell_wrapped_fetch: false
+  compound_fetch_exec_prefixes:
+    - "sudo"
+    - "env"
+    - "command"
+    - "time"
+    - "nohup"
+    - "nice"
+  compound_fetch_exec_commands:
+    - "bash"
+    - "sh"
+    - "zsh"
+    - "source"
+    - "python"
+    - "python3"
+    - "perl"
+    - "ruby"
+    - "node"
+    - "."
   # Hint words for data exfiltration detection in tool-chaining
   exfil_hints:
     - "send"
@@ -86,6 +108,9 @@ rule_scoping:
 
   doc_filename_patterns:
     - 'tutorial|guide|howto'
+  dedupe_reference_aliases: false
+  dedupe_duplicate_findings: false
+  asset_prompt_injection_skip_in_docs: false
 
 # ---------------------------------------------------------------------------
 # Credentials – no test credentials are suppressed
@@ -110,6 +135,16 @@ system_cleanup:
 file_classification:
   # In strict mode, still scan inert extensions (e.g. images) for embedded content
   skip_inert_extensions: false
+  allow_script_shebang_text_extensions: false
+  script_shebang_extensions:
+    - ".py"
+    - ".sh"
+    - ".bash"
+    - ".js"
+    - ".ts"
+    - ".rb"
+    - ".pl"
+    - ".php"
 
 # ---------------------------------------------------------------------------
 # File limits – tighter thresholds
@@ -135,6 +170,10 @@ analysis_thresholds:
   exception_handler_context_lines: 30   # Context lines around exception handlers
   short_match_max_chars: 2              # Max chars for "short match" in unicode steg
   cyrillic_cjk_min_chars: 5            # Min Cyrillic/CJK chars to suppress steg FP
+  homoglyph_filter_math_context: false
+  homoglyph_math_aliases:
+    - "COMMON"
+    - "GREEK"
 
 # ---------------------------------------------------------------------------
 # Sensitive files – expanded patterns
@@ -235,6 +274,26 @@ analyzers:
   static: true
   bytecode: true
   pipeline: true
+
+# ---------------------------------------------------------------------------
+# Finding output – strict still dedupes duplicate issue records
+# ---------------------------------------------------------------------------
+finding_output:
+  dedupe_exact_findings: true
+  dedupe_same_issue_per_location: true
+  same_issue_preferred_analyzers:
+    - "meta_analyzer"
+    - "llm_analyzer"
+    - "meta"
+    - "llm"
+    - "behavioral"
+    - "pipeline"
+    - "static"
+    - "yara"
+    - "analyzability"
+  same_issue_collapse_within_analyzer: true
+  annotate_same_path_rule_cooccurrence: true
+  attach_policy_fingerprint: true
 
 # ---------------------------------------------------------------------------
 # Severity overrides – promote some rules to higher severity

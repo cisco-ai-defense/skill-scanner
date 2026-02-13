@@ -215,6 +215,7 @@ class ScanResult:
     timestamp: datetime = field(default_factory=datetime.now)
     analyzability_score: float | None = None
     analyzability_details: dict[str, Any] | None = None
+    scan_metadata: dict[str, Any] | None = None
 
     @property
     def is_safe(self) -> bool:
@@ -258,6 +259,7 @@ class ScanResult:
             "duration_ms": int(self.scan_duration_seconds * 1000),  # Plugin expects duration_ms
             "analyzers_used": self.analyzers_used,
             "timestamp": self.timestamp.isoformat(),
+            "scan_metadata": self.scan_metadata or {},
         }
 
 

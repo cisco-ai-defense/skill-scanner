@@ -150,6 +150,7 @@ pipeline:
 
   # Path segments that indicate documentation context (lower severity)
   doc_path_indicators:
+    - "doc"
     - "references"
     - "docs"
     - "examples"
@@ -162,6 +163,29 @@ pipeline:
   demote_instructional: true
   # Check URLs against known_installer_domains and demote matches to LOW
   check_known_installers: true
+  # De-duplicate equivalent pipelines extracted via multiple regex paths
+  dedupe_equivalent_pipelines: true
+  # COMPOUND_FETCH_EXECUTE heuristics (FP suppression)
+  compound_fetch_require_download_intent: true
+  compound_fetch_filter_api_requests: true
+  compound_fetch_filter_shell_wrapped_fetch: true
+  # Wrapper commands allowed before execution sinks (e.g. sudo bash script.sh)
+  compound_fetch_exec_prefixes:
+    - "sudo"
+    - "env"
+    - "command"
+    - "time"
+    - "nohup"
+    - "nice"
+  # Execution sink commands for fetch+execute detection
+  compound_fetch_exec_commands:
+    - "bash"
+    - "sh"
+    - "zsh"
+    - "source"
+    - "python"
+    - "python3"
+    - "."
   # Hint words for data exfiltration detection in tool-chaining
   exfil_hints:
     - "send"
@@ -194,8 +218,13 @@ rule_scoping:
     - "code_execution_generic"
     - "system_manipulation_generic"
     - "script_injection_generic"
+    - "command_injection_generic"
+    - "credential_harvesting_generic"
     - "GLOB_HIDDEN_FILE_TARGETING"
     - "FIND_EXEC_PATTERN"
+    - "TOOL_ABUSE_SYSTEM_MODIFICATION"
+    - "PROMPT_INJECTION_IGNORE_INSTRUCTIONS"
+    - "SECRET_CONNECTION_STRING"
 
   # Rules that only fire on code files (python, bash), not markdown/configs
   code_only:
@@ -213,11 +242,18 @@ rule_scoping:
     - "indexes"
     - "demos"
     - "fixtures"
+    - "patterns"
     - "test"
 
   # Filename patterns (regex) that mark educational/example content
   doc_filename_patterns:
     - 'security[_-]patterns|examples?|patterns?|samples?|demo|tutorial|guide|howto|cheatsheet'
+  # De-duplicate reference aliases that resolve to the same file
+  dedupe_reference_aliases: true
+  # De-duplicate identical findings emitted by overlapping static scan passes
+  dedupe_duplicate_findings: true
+  # Skip ASSET_PROMPT_INJECTION in documentation/reference paths
+  asset_prompt_injection_skip_in_docs: true
 
 # ---------------------------------------------------------------------------
 # Credential allow-list – well-known test values to suppress
@@ -266,6 +302,7 @@ system_cleanup:
     - ".next"
     - ".nuxt"
     - ".cache"
+    - "deriveddata"
 
 # ---------------------------------------------------------------------------
 # File classification – how extensions are routed for analysis
@@ -330,6 +367,18 @@ file_classification:
 
   # Skip binary/shebang checks on files with inert extensions
   skip_inert_extensions: true
+  # Treat script shebangs (e.g. .js with #!/usr/bin/env node) as compatible
+  allow_script_shebang_text_extensions: true
+  # Script-like extensions where shebang headers are considered normal
+  script_shebang_extensions:
+    - ".py"
+    - ".sh"
+    - ".bash"
+    - ".js"
+    - ".ts"
+    - ".rb"
+    - ".pl"
+    - ".php"
 
 # ---------------------------------------------------------------------------
 # File limits – numeric thresholds for inventory checks
@@ -355,6 +404,10 @@ analysis_thresholds:
   exception_handler_context_lines: 20    # Context lines around exception handlers
   short_match_max_chars: 2              # Max chars for "short match" in unicode steg
   cyrillic_cjk_min_chars: 10            # Min Cyrillic/CJK chars to suppress steg FP
+  homoglyph_filter_math_context: true   # Suppress scientific math formula contexts
+  homoglyph_math_aliases:
+    - "COMMON"
+    - "GREEK"
 
 # ---------------------------------------------------------------------------
 # Sensitive files – patterns that upgrade taint in pipelines
@@ -559,6 +612,28 @@ analyzers:
   static: true
   bytecode: true
   pipeline: true
+
+# ---------------------------------------------------------------------------
+# Finding output – final dedupe + policy traceability metadata
+# ---------------------------------------------------------------------------
+finding_output:
+  dedupe_exact_findings: true
+  dedupe_same_issue_per_location: true
+  # Earlier entries win when collapsing same issue at the same location.
+  # Keep meta/LLM first so richer remediation/context is preserved.
+  same_issue_preferred_analyzers:
+    - "meta_analyzer"
+    - "llm_analyzer"
+    - "meta"
+    - "llm"
+    - "behavioral"
+    - "pipeline"
+    - "static"
+    - "yara"
+    - "analyzability"
+  same_issue_collapse_within_analyzer: true
+  annotate_same_path_rule_cooccurrence: true
+  attach_policy_fingerprint: true
 
 # ---------------------------------------------------------------------------
 # Severity overrides – raise or lower any rule's severity

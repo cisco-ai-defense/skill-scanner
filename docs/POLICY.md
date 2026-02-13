@@ -104,6 +104,9 @@ Restrict which rules fire on which file types. Reduces noise in doc-heavy skills
 | code_only | list | `prompt_injection_unicode_steganography`, `sql_injection_generic` | Rules only on code files |
 | doc_path_indicators | set | `references`, `docs`, `examples`, etc. | Directory names marking "documentation" context |
 | doc_filename_patterns | list | regex patterns | Filename patterns marking educational/example content |
+| dedupe_reference_aliases | bool | true | De-dupes duplicate script references in SKILL.md parsing |
+| dedupe_duplicate_findings | bool | true | De-dupes duplicate findings emitted across script/reference passes |
+| asset_prompt_injection_skip_in_docs | bool | true | Suppresses ASSET_PROMPT_INJECTION findings in doc-style paths |
 
 ### credentials
 
@@ -151,6 +154,19 @@ Enable or disable built-in analysis passes.
 | static | bool | true | Enable/disable YAML+YARA pattern analyzer |
 | bytecode | bool | true | Enable/disable .pyc bytecode analyzer |
 | pipeline | bool | true | Enable/disable shell pipeline taint analyzer |
+
+### finding_output
+
+Controls final output normalization, dedupe behavior, and traceability metadata.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| dedupe_exact_findings | bool | true | Removes exact duplicates from overlapping analyzers |
+| dedupe_same_issue_per_location | bool | true | Collapses same issue at same file/line/snippet/category across analyzers |
+| same_issue_preferred_analyzers | list[str] | `["meta_analyzer", "llm_analyzer", ...]` | Chooses which analyzer's details survive same-issue collapse |
+| same_issue_collapse_within_analyzer | bool | true | If true, also collapses same-issue findings from one analyzer |
+| annotate_same_path_rule_cooccurrence | bool | true | Adds `same_path_other_rule_ids` metadata for findings on the same path |
+| attach_policy_fingerprint | bool | true | Adds policy name/version/fingerprint metadata to each finding |
 
 ### severity_overrides
 
