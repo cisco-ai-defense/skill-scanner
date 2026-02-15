@@ -21,16 +21,30 @@ Aligned with Cisco AI Security Framework taxonomy.
 """
 
 from .cisco_ai_taxonomy import (
+    AISUBTECH_FRAMEWORK_MAPPINGS,
     AISUBTECH_TAXONOMY,
+    AITECH_FRAMEWORK_MAPPINGS,
     AITECH_TAXONOMY,
+    TAXONOMY_ENV_VAR,
     VALID_AISUBTECH_CODES,
     VALID_AITECH_CODES,
+    get_aisubtech_framework_mappings,
     get_aisubtech_name,
+    get_aitech_framework_mappings,
     get_aitech_name,
+    get_framework_mappings,
+    get_taxonomy_source,
     is_valid_aisubtech,
     is_valid_aitech,
+    reload_taxonomy,
 )
-from .threats import LLM_THREAT_MAPPING, YARA_THREAT_MAPPING, ThreatMapping
+from .threats import (
+    LLM_THREAT_MAPPING,
+    YARA_THREAT_MAPPING,
+    ThreatMapping,
+    configure_threat_mappings,
+    get_threat_mapping_source,
+)
 
 __all__ = [
     "ThreatMapping",
@@ -38,10 +52,20 @@ __all__ = [
     "YARA_THREAT_MAPPING",
     "AITECH_TAXONOMY",
     "AISUBTECH_TAXONOMY",
+    "AITECH_FRAMEWORK_MAPPINGS",
+    "AISUBTECH_FRAMEWORK_MAPPINGS",
+    "TAXONOMY_ENV_VAR",
     "VALID_AITECH_CODES",
     "VALID_AISUBTECH_CODES",
     "is_valid_aitech",
     "is_valid_aisubtech",
     "get_aitech_name",
     "get_aisubtech_name",
+    "get_aitech_framework_mappings",
+    "get_aisubtech_framework_mappings",
+    "get_framework_mappings",
+    "reload_taxonomy",
+    "get_taxonomy_source",
+    "configure_threat_mappings",
+    "get_threat_mapping_source",
 ]

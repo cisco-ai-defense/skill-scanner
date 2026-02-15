@@ -84,9 +84,16 @@ uv run pre-commit run --all-files
 
 This runs:
 - **ruff**: Linting and formatting
-- **mypy**: Type checking (if configured)
+- **pre-commit-hooks**: Whitespace, file, and config hygiene checks
 - **gitleaks**: Secret detection
 - **addlicense**: Apache 2.0 license headers
+- **check-taxonomy**: Validates taxonomy enum parity with Cisco taxonomy profile
+
+Run mypy separately:
+
+```bash
+uv run mypy skill_scanner
+```
 
 ### Before Submitting a PR
 
@@ -102,7 +109,7 @@ This runs:
 skill_scanner/
 ├── __init__.py
 ├── api/               # FastAPI REST endpoints
-├── cli/               # Click CLI interface
+├── cli/               # argparse-based CLI commands and policy TUI
 ├── config/            # Configuration and constants
 ├── core/
 │   ├── analyzers/     # Security analyzers (static, bytecode, pipeline, behavioral, LLM)
@@ -140,7 +147,7 @@ evals/
 ## Running Individual Analyzers
 
 ```bash
-# Static analysis only (default)
+# Core analyzers only (default: static + bytecode + pipeline)
 skill-scanner scan /path/to/skill
 
 # With behavioral analysis
@@ -149,8 +156,14 @@ skill-scanner scan /path/to/skill --use-behavioral
 # With LLM analysis (requires API key)
 skill-scanner scan /path/to/skill --use-llm
 
+# With trigger specificity analysis
+skill-scanner scan /path/to/skill --use-trigger
+
 # All analyzers
 skill-scanner scan /path/to/skill --use-behavioral --use-llm --use-virustotal
+
+# Cross-skill overlap analysis
+skill-scanner scan-all /path/to/skills --check-overlap
 ```
 
 ## Versioning

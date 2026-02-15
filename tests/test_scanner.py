@@ -24,8 +24,9 @@ import pytest
 
 from skill_scanner.core.analyzers.base import BaseAnalyzer
 from skill_scanner.core.models import Finding, Severity, ThreatCategory
-from skill_scanner.core.scan_policy import ScanPolicy
+from skill_scanner.core.scan_policy import ScanPolicy, SeverityOverride
 from skill_scanner.core.scanner import SkillScanner, scan_skill
+from skill_scanner.core.scanner import scan_directory as convenience_scan_directory
 
 
 @pytest.fixture
@@ -225,6 +226,50 @@ def _mk_finding(
         remediation=remediation,
         analyzer=analyzer,
     )
+
+
+def test_convenience_scan_skill_infers_policy_from_analyzers(example_skills_dir):
+    """Convenience scan_skill should use policy attached to provided analyzers."""
+    skill_dir = example_skills_dir / "safe" / "simple-formatter"
+    policy = ScanPolicy.default()
+    policy.severity_overrides = [SeverityOverride(rule_id="RULE_POLICY_TEST", severity="LOW", reason="test")]
+
+    finding = _mk_finding(
+        rule_id="RULE_POLICY_TEST",
+        category=ThreatCategory.COMMAND_INJECTION,
+        severity=Severity.HIGH,
+        analyzer="stub",
+    )
+    analyzers = [_StubAnalyzer("stub", [finding], policy=policy)]
+
+    result = scan_skill(skill_dir, analyzers=analyzers)
+    matched = [f for f in result.findings if f.rule_id == "RULE_POLICY_TEST"]
+
+    assert matched
+    assert matched[0].severity == Severity.LOW
+
+
+def test_convenience_scan_directory_infers_policy_from_analyzers(example_skills_dir):
+    """Convenience scan_directory should apply disabled_rules from analyzer policy."""
+    policy = ScanPolicy.default()
+    policy.disabled_rules.add("RULE_POLICY_TEST")
+    finding = _mk_finding(
+        rule_id="RULE_POLICY_TEST",
+        category=ThreatCategory.COMMAND_INJECTION,
+        severity=Severity.HIGH,
+        analyzer="stub",
+    )
+    analyzers = [_StubAnalyzer("stub", [finding], policy=policy)]
+
+    report = convenience_scan_directory(
+        example_skills_dir,
+        recursive=True,
+        analyzers=analyzers,
+    )
+
+    assert report.scan_results
+    for result in report.scan_results:
+        assert all(f.rule_id != "RULE_POLICY_TEST" for f in result.findings)
 
 
 def test_finding_output_dedupe_exact_knob(example_skills_dir):

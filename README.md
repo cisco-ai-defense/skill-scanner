@@ -36,6 +36,8 @@ Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agen
 | [Meta-Analyzer](docs/meta-analyzer.md) | False positive filtering and prioritization |
 | [Behavioral Analyzer](docs/behavioral-analyzer.md) | Dataflow analysis details |
 | [Scan Policy](docs/scan-policy.md) | Custom policies, presets, and tuning guide |
+| [Policy Quick Reference](docs/POLICY.md) | Compact reference for policy sections and knobs |
+| [Rule Authoring](docs/AUTHORING.md) | How to add signature, YARA, and Python rules |
 | [API Reference](docs/api-server.md) | REST API documentation |
 | [Development Guide](docs/developing.md) | Contributing and development setup |
 
@@ -93,7 +95,7 @@ export AI_DEFENSE_API_KEY="your_aidefense_api_key"
 ### CLI Usage
 
 ```bash
-# Scan a single skill (static analyzer only)
+# Scan a single skill (core analyzers: static + bytecode + pipeline)
 skill-scanner scan /path/to/skill
 
 # Scan with behavioral analyzer (dataflow analysis)
@@ -105,14 +107,29 @@ skill-scanner scan /path/to/skill --use-behavioral --use-llm --use-aidefense
 # Scan with meta-analyzer for false positive filtering
 skill-scanner scan /path/to/skill --use-llm --enable-meta
 
+# Scan with trigger analyzer for vague description checks
+skill-scanner scan /path/to/skill --use-trigger
+
+# Run LLM analyzer multiple times and keep majority-agreed findings
+skill-scanner scan /path/to/skill --use-llm --llm-consensus-runs 3
+
 # Scan multiple skills recursively
 skill-scanner scan-all /path/to/skills --recursive --use-behavioral
+
+# Scan multiple skills with cross-skill overlap detection
+skill-scanner scan-all /path/to/skills --recursive --check-overlap
 
 # CI/CD: Fail build if threats found
 skill-scanner scan-all ./skills --fail-on-findings --format sarif --output results.sarif
 
 # Use custom YARA rules
 skill-scanner scan /path/to/skill --custom-rules /path/to/my-rules/
+
+# Use custom taxonomy + threat mapping profiles (JSON/YAML)
+skill-scanner scan /path/to/skill --taxonomy /path/to/taxonomy.json --threat-mapping /path/to/threat_mapping.json
+
+# VirusTotal hash scan with optional unknown-file uploads
+skill-scanner scan /path/to/skill --use-virustotal --vt-upload-files
 
 # Use a scan policy preset (strict, balanced, permissive)
 skill-scanner scan /path/to/skill --policy strict
@@ -127,16 +144,18 @@ skill-scanner generate-policy -o my_org_policy.yaml
 skill-scanner configure-policy
 ```
 
+**LLM provider note:** `--llm-provider` currently accepts `anthropic` or `openai`.
+For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, set provider-specific model strings and environment variables (see `docs/llm-analyzer.md`).
+
 ### Python SDK
 
 ```python
 from skill_scanner import SkillScanner
-from skill_scanner.core.analyzers import StaticAnalyzer, BehavioralAnalyzer
+from skill_scanner.core.analyzers import BehavioralAnalyzer
 
 # Create scanner with analyzers
 scanner = SkillScanner(analyzers=[
-    StaticAnalyzer(),
-    BehavioralAnalyzer(use_static_analysis=True),
+    BehavioralAnalyzer(),
 ])
 
 # Scan a skill
@@ -170,22 +189,33 @@ print(f"Findings: {len(result.findings)}")
 | `--policy` | Scan policy: preset name (`strict`, `balanced`, `permissive`) or path to custom YAML |
 | `--use-behavioral` | Enable behavioral analyzer (dataflow analysis) |
 | `--use-llm` | Enable LLM analyzer (requires API key) |
+| `--llm-provider` | LLM provider for CLI routing: `anthropic` or `openai` |
+| `--llm-consensus-runs N` | Run LLM analysis `N` times and keep majority-agreed findings |
 | `--use-virustotal` | Enable VirusTotal binary scanner |
+| `--vt-api-key KEY` | Provide VirusTotal API key directly (optional) |
+| `--vt-upload-files` | Upload unknown binaries to VirusTotal (optional) |
 | `--use-aidefense` | Enable Cisco AI Defense analyzer |
+| `--aidefense-api-url URL` | Override AI Defense API URL (optional) |
+| `--use-trigger` | Enable trigger specificity analyzer |
 | `--enable-meta` | Enable meta-analyzer for false positive filtering |
 | `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif` |
+| `--detailed` | Include detailed findings in Markdown output |
+| `--compact` | Compact JSON output |
 | `--output PATH` | Save report to file |
 | `--fail-on-findings` | Exit with error if HIGH/CRITICAL found |
 | `--custom-rules PATH` | Use custom YARA rules from directory |
+| `--taxonomy PATH` | Load custom taxonomy profile (JSON/YAML) for this run |
+| `--threat-mapping PATH` | Load custom scanner threat mapping profile (JSON) for this run |
+| `--check-overlap` | (`scan-all`) Enable cross-skill description overlap checks |
 
 | Command | Description |
 |---------|-------------|
 | `scan` | Scan a single skill directory |
-| `scan-all` | Scan multiple skills (with `--recursive`) |
+| `scan-all` | Scan multiple skills (with `--recursive`, `--check-overlap`) |
 | `generate-policy` | Generate a scan policy YAML for customisation |
-| `configure-policy` | Interactive TUI to build a custom scan policy |
+| `configure-policy` | Interactive TUI to build/edit a custom scan policy (`--input` supported) |
 | `list-analyzers` | Show available analyzers |
-| `validate-rules` | Validate rule signatures |
+| `validate-rules` | Validate rule signatures (`--rules-file` supported) |
 
 ---
 

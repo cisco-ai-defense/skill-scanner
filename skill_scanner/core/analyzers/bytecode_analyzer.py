@@ -21,12 +21,11 @@ Compares .pyc files against their corresponding .py source files using
 Python's standard `ast` module. Detects tampering where bytecode was modified
 after compilation (cf. xz-utils backdoor pattern).
 
-Dependencies: Python stdlib only (ast, dis, marshal, struct).
+Dependencies: Python stdlib only (ast, marshal, struct).
 Optional: decompyle3 or uncompyle6 for decompiling bytecode without source.
 """
 
 import ast
-import dis
 import hashlib
 import importlib.util
 import io

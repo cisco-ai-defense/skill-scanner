@@ -102,6 +102,41 @@ class TestTaxonomyValidation:
             f"  - {e}" for e in invalid_codes
         )
 
+    def test_taxonomy_names_match_codes(self):
+        """AITech/AISubtech names in threats.py must match canonical taxonomy names."""
+        mismatches = []
+
+        for (
+            dict_name,
+            threat_name,
+            aitech,
+            aisubtech,
+        ) in self._get_all_codes_from_threats():
+            # Pull raw threat info for label comparison
+            threat_dict = getattr(ThreatMapping, dict_name)
+            info = threat_dict[threat_name]
+
+            aitech_name = info.get("aitech_name")
+            aisubtech_name = info.get("aisubtech_name")
+
+            if aitech and self.PLACEHOLDER_CODE not in aitech:
+                expected_aitech_name = get_aitech_name(aitech)
+                if expected_aitech_name and aitech_name != expected_aitech_name:
+                    mismatches.append(
+                        f"{dict_name}['{threat_name}']: aitech_name '{aitech_name}' != '{expected_aitech_name}'"
+                    )
+
+            if aisubtech and self.PLACEHOLDER_CODE not in aisubtech:
+                expected_aisubtech_name = get_aisubtech_name(aisubtech)
+                if expected_aisubtech_name and aisubtech_name != expected_aisubtech_name:
+                    mismatches.append(
+                        f"{dict_name}['{threat_name}']: aisubtech_name '{aisubtech_name}' != '{expected_aisubtech_name}'"
+                    )
+
+        assert not mismatches, f"Found {len(mismatches)} taxonomy name mismatch(es):\n" + "\n".join(
+            f"  - {e}" for e in mismatches
+        )
+
     def test_aitech_code_format(self):
         """AITech codes must follow AITech-X.Y format."""
         pattern = re.compile(r"^AITech-\d+\.\d+$")
@@ -299,11 +334,11 @@ class TestLLMAnalyzerTaxonomy:
         invalid_codes = []
 
         # Navigate to aitech enum in schema
-        # Schema structure: properties -> threats -> items -> properties -> aitech -> enum
+        # Schema structure: properties -> findings -> items -> properties -> aitech -> enum
         try:
             aitech_enum = (
                 schema.get("properties", {})
-                .get("threats", {})
+                .get("findings", {})
                 .get("items", {})
                 .get("properties", {})
                 .get("aitech", {})

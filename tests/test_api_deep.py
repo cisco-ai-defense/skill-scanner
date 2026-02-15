@@ -241,17 +241,14 @@ class TestMalformedUpload:
     """Malformed uploads should return 400, not 500."""
 
     def test_truncated_zip_returns_error(self, client):
-        """Truncated bytes → server error (BadZipFile)."""
+        """Truncated bytes should be rejected with 400."""
         truncated = b"PK\x03\x04" + b"\x00" * 10  # not a valid ZIP
-        # The server doesn't currently catch BadZipFile, so the test client
-        # will raise the exception.  Verify it raises rather than silently succeeding.
-        import zipfile as zf
-
-        with pytest.raises((zf.BadZipFile, Exception)):
-            client.post(
-                "/scan-upload",
-                files={"file": ("bad.zip", truncated, "application/zip")},
-            )
+        resp = client.post(
+            "/scan-upload",
+            files={"file": ("bad.zip", truncated, "application/zip")},
+        )
+        assert resp.status_code == 400
+        assert "ZIP" in resp.json().get("detail", "")
 
     def test_empty_zip_returns_error(self, client):
         """ZIP with no files → 400 (no SKILL.md found)."""

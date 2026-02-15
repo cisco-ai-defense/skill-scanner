@@ -144,6 +144,7 @@ ignore = ["E501", "F401", "F841", "B904", "B006", "B007", "B008", "B023"]
 "tests/*.py" = ["B", "E"]
 "evals/*.py" = ["B", "E"]
 "examples/*.py" = ["B", "E"]
+"skill_scanner/_version.py" = ["I", "UP"]
 
 [tool.mypy]
 python_version = "3.12"

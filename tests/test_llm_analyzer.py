@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer, SecurityError
+from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
 from skill_scanner.core.models import Finding, Severity, Skill, SkillManifest, ThreatCategory
 
 

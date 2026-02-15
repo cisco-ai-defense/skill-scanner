@@ -188,6 +188,20 @@ def _format_output(args: argparse.Namespace, result_or_report) -> str:
     return _generate_summary(result_or_report)
 
 
+def _configure_taxonomy_and_threat_mapping(args: argparse.Namespace, status: Callable[[str], None]) -> None:
+    """Apply runtime taxonomy and threat-mapping overrides from CLI flags."""
+    from ..threats.cisco_ai_taxonomy import reload_taxonomy
+    from ..threats.threats import configure_threat_mappings
+
+    taxonomy_source = reload_taxonomy(getattr(args, "taxonomy", None))
+    threat_mapping_source = configure_threat_mappings(getattr(args, "threat_mapping", None))
+
+    if taxonomy_source != "builtin":
+        status(f"Using custom taxonomy profile: {taxonomy_source}")
+    if threat_mapping_source != "builtin":
+        status(f"Using custom threat mapping profile: {threat_mapping_source}")
+
+
 def _write_output(args: argparse.Namespace, output: str) -> None:
     """Write *output* to a file or stdout."""
     if args.output:
@@ -210,8 +224,14 @@ def scan_command(args: argparse.Namespace) -> int:
         print(f"Error: Directory does not exist: {skill_dir}", file=sys.stderr)
         return 1
 
-    policy = _load_policy(args)
     status = _make_status_printer(args)
+    try:
+        _configure_taxonomy_and_threat_mapping(args, status)
+    except Exception as e:
+        print(f"Error loading taxonomy configuration: {e}", file=sys.stderr)
+        return 1
+
+    policy = _load_policy(args)
     analyzers = _build_analyzers(policy, args, status)
     meta_analyzer = _build_meta_analyzer(args, len(analyzers), status)
 
@@ -263,8 +283,14 @@ def scan_all_command(args: argparse.Namespace) -> int:
         print(f"Error: Directory does not exist: {skills_dir}", file=sys.stderr)
         return 1
 
-    policy = _load_policy(args)
     status = _make_status_printer(args)
+    try:
+        _configure_taxonomy_and_threat_mapping(args, status)
+    except Exception as e:
+        print(f"Error loading taxonomy configuration: {e}", file=sys.stderr)
+        return 1
+
+    policy = _load_policy(args)
     analyzers = _build_analyzers(policy, args, status)
     meta_analyzer = _build_meta_analyzer(args, len(analyzers), status)
 
@@ -522,6 +548,16 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         "--custom-rules",
         metavar="PATH",
         help="Path to directory containing custom YARA rules (.yara files)",
+    )
+    parser.add_argument(
+        "--taxonomy",
+        metavar="PATH",
+        help="Path to custom taxonomy JSON/YAML (overrides SKILL_SCANNER_TAXONOMY_PATH)",
+    )
+    parser.add_argument(
+        "--threat-mapping",
+        metavar="PATH",
+        help="Path to custom threat mapping JSON (overrides SKILL_SCANNER_THREAT_MAPPING_PATH)",
     )
 
 

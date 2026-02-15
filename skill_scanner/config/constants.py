@@ -22,15 +22,17 @@ Mirrors MCP Scanner's constants structure.
 
 from pathlib import Path
 
+try:
+    from .._version import __version__ as PACKAGE_VERSION
+except Exception:  # pragma: no cover
+    PACKAGE_VERSION = "0.0.0-dev"
+
 
 class SkillScannerConstants:
     """Constants used throughout the analyzer."""
 
-    # Version – derived from pyproject.toml via hatch-vcs at install time.
-    try:
-        from .._version import __version__ as VERSION
-    except Exception:  # pragma: no cover
-        VERSION = "0.0.0-dev"
+    # Version derived from pyproject.toml via hatch-vcs at install time.
+    VERSION = PACKAGE_VERSION
 
     # Project paths
     PROJECT_ROOT = Path(__file__).parent.parent.parent

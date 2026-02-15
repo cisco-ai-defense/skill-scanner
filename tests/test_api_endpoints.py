@@ -27,6 +27,8 @@ from pathlib import Path
 
 import pytest
 
+from skill_scanner import __version__ as PACKAGE_VERSION
+
 try:
     from fastapi.testclient import TestClient
 
@@ -136,7 +138,7 @@ class TestHealthEndpoint:
         response = client.get("/health")
         data = response.json()
 
-        assert data["version"] == "0.3.0"
+        assert data["version"] == PACKAGE_VERSION
 
 
 # =============================================================================
@@ -465,6 +467,21 @@ class TestUploadEndpoint:
         # Should accept the parameters
         assert response.status_code in [200, 400, 500]
 
+    def test_upload_validates_form_parameter_types(self, client, safe_skill_dir):
+        """Test upload validates multipart form fields."""
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            skill_md = safe_skill_dir / "SKILL.md"
+            if skill_md.exists():
+                zf.write(skill_md, "SKILL.md")
+
+        zip_buffer.seek(0)
+        files = {"file": ("skill.zip", zip_buffer, "application/zip")}
+        data = {"llm_consensus_runs": "not-an-int"}
+
+        response = client.post("/scan-upload", files=files, data=data)
+        assert response.status_code == 422
+
 
 # =============================================================================
 # Error Handling Tests
@@ -638,6 +655,24 @@ class TestPolicyParameter:
     def test_scan_with_no_policy_uses_default(self, client, safe_skill_dir):
         """Test scanning without policy uses balanced default."""
         request_data = {"skill_directory": str(safe_skill_dir)}
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+
+    def test_scan_with_blank_policy_uses_default(self, client, safe_skill_dir):
+        """Blank policy string should be treated as default policy."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "policy": "",
+        }
+        response = client.post("/scan", json=request_data)
+        assert response.status_code == 200
+
+    def test_scan_with_whitespace_policy_uses_default(self, client, safe_skill_dir):
+        """Whitespace-only policy string should be treated as default policy."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "policy": "   ",
+        }
         response = client.post("/scan", json=request_data)
         assert response.status_code == 200
 

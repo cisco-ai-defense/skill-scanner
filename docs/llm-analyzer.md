@@ -48,16 +48,19 @@ skill-scanner scan /path/to/skill --use-llm
 # Use OpenAI
 skill-scanner scan /path/to/skill --use-llm --llm-provider openai
 
-# AWS Bedrock (enterprise compliance)
+# AWS Bedrock (enterprise compliance) via model prefix
 export AWS_REGION=us-east-1
-skill-scanner scan /path/to/skill --use-llm --llm-provider bedrock
+export SKILL_SCANNER_LLM_MODEL=bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0
+skill-scanner scan /path/to/skill --use-llm
 ```
+
+`--llm-provider` currently accepts `anthropic` or `openai`. Other LiteLLM backends (Bedrock, Vertex, Azure, Gemini, etc.) are selected via model/env configuration.
 
 ### Python API
 
 ```python
 from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
-from skill_scanner.core.loader import load_skill
+from skill_scanner.core.loader import SkillLoader
 
 # Initialize analyzer
 analyzer = LLMAnalyzer(
@@ -66,7 +69,7 @@ analyzer = LLMAnalyzer(
 )
 
 # Scan skill
-skill = load_skill("/path/to/skill")
+skill = SkillLoader().load_skill("/path/to/skill")
 findings = analyzer.analyze(skill)
 
 # Or async (preferred for batch)

@@ -290,7 +290,8 @@ def parse_command(raw: str) -> CommandContext:
         return ctx
 
     # Detect pipelines, redirects, subshells
-    ctx.has_pipeline = "|" in raw and "||" not in raw.replace("||", "")
+    # Match a single pipe token and exclude logical OR (||).
+    ctx.has_pipeline = bool(re.search(r"(?<!\|)\|(?!\|)", raw))
     ctx.has_redirect = bool(re.search(r"[12]?>", raw))
     ctx.has_subshell = "$(" in raw or "`" in raw.replace("``", "")
     ctx.has_background = raw.rstrip().endswith("&") and not raw.rstrip().endswith("&&")

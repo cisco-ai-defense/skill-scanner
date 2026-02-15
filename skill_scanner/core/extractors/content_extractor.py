@@ -29,7 +29,6 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from xml.etree import ElementTree
 
 from ..models import Finding, Severity, SkillFile, ThreatCategory
 

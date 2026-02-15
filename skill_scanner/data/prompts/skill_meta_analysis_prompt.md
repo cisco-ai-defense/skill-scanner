@@ -263,7 +263,7 @@ Use these **exact strings** for the `category` field. Invalid values will cause 
 | `command_injection` | AITech-9.1 | Command, SQL, code injection |
 | `data_exfiltration` | AITech-8.2 | Unauthorized data access/transmission |
 | `unauthorized_tool_use` | AITech-12.1 | Tool abuse, poisoning, shadowing |
-| `obfuscation` | AITech-9.1 | Deliberately obfuscated malicious code |
+| `obfuscation` | AITech-9.2 | Detection evasion and deliberately obfuscated malicious code |
 | `hardcoded_secrets` | AITech-8.2 | Credentials, API keys in code |
 | `social_engineering` | AITech-15.1 | Deceptive/harmful content |
 | `resource_abuse` | AITech-13.1 | DoS, infinite loops, resource exhaustion |
@@ -273,7 +273,7 @@ Use these **exact strings** for the `category` field. Invalid values will cause 
 | `transitive_trust_abuse` | AITech-1.2 | Indirect prompt injection via instruction manipulation from external sources |
 | `autonomy_abuse` | AITech-13.1 | Unbounded autonomy, no confirmation, resource exhaustion |
 | `tool_chaining_abuse` | AITech-8.2 | Read→send, collect→post patterns |
-| `unicode_steganography` | AITech-9.1 | Hidden unicode characters |
+| `unicode_steganography` | AITech-9.2 | Hidden unicode characters used for evasion |
 
 ## Critical Rules
 

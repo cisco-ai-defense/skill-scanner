@@ -323,7 +323,8 @@ When selecting AITech codes for findings, use these mappings:
 - AITech-1.2: Indirect prompt injection - instruction manipulation (embedding malicious instructions in external sources)
 - AITech-4.3: Protocol manipulation - capability inflation (skill discovery abuse, keyword baiting, over-broad claims)
 - AITech-8.2: Data exfiltration/exposure (unauthorized access, credential theft, hardcoded secrets)
-- AITech-9.1: Model/agentic manipulation (command injection, code injection, SQL injection, obfuscation)
+- AITech-9.1: Model/agentic manipulation (command injection, code injection, SQL injection)
+- AITech-9.2: Detection evasion (obfuscation vulnerabilities, encoded/hiding payloads)
 - AITech-9.3: Supply chain compromise (dependency/plugin compromise, malicious package injection)
 - AITech-12.1: Tool exploitation (tool poisoning, shadowing, unauthorized use)
 - AITech-13.1: Disruption of Availability (resource abuse, DoS, infinite loops) - AISubtech-13.1.1: Compute Exhaustion

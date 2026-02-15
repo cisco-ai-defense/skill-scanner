@@ -13,7 +13,7 @@ When enabled via the `--enable-meta` CLI flag or `enable_meta` API parameter, th
 - **Remediation Guidance**: Provides specific, actionable fixes with code examples
 - **Confidence Enrichment**: Adds `meta_confidence`, `meta_exploitability`, and `meta_impact` to validated findings
 
-> **Key Insight**: The Meta-Analyzer has full access to skill content (SKILL.md and all code files) allowing it to verify whether pattern-based detections represent actual threats.
+The meta-analyzer has full access to skill content (`SKILL.md` and code files), which helps it validate whether pattern-based detections are likely real threats.
 
 ## How It Works
 
@@ -244,7 +244,8 @@ The meta-analyzer uses the AITech taxonomy for threat classification:
 | AITech-1.2 | Indirect Prompt Injection - Instruction Manipulation | Embedding malicious instructions in external data sources |
 | AITech-4.3 | Protocol Manipulation - Capability Inflation | Skill discovery abuse, over-broad capability claims |
 | AITech-8.2 | Data Exfiltration | Credential theft, unauthorized data transmission |
-| AITech-9.1 | System Manipulation | Command injection, code injection, obfuscation |
+| AITech-9.1 | System Manipulation | Command injection, code injection |
+| AITech-9.2 | Detection Evasion | Obfuscation and evasion patterns |
 | AITech-12.1 | Tool Exploitation | Tool poisoning, shadowing, unauthorized use |
 | AITech-13.1 | Disruption of Availability | Compute exhaustion, resource abuse |
 | AITech-15.1 | Harmful Content | Misleading or deceptive content |
@@ -285,11 +286,11 @@ SUMMARY
 Safe Skills Detection:   2/2 -> 2/2
 Unsafe Skills Detection: 9/9 -> 9/9
 
-Key Insight:
+Summary:
   Meta-Analyzer filtered 50 low-value findings
   while maintaining 9/9 unsafe skill detection rate
 
-  ✓ Meta-Analyzer IMPROVED signal-to-noise without losing detection capability!
+  Meta-analyzer improved signal-to-noise without reducing unsafe-skill detection in this sample run.
 ```
 
 The comparison shows that while raw metrics like "true positives" decrease (because redundant pattern matches are consolidated), the threat detection capability is preserved. Results may vary depending on your specific skills and threat patterns.

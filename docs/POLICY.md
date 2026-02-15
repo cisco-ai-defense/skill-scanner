@@ -4,6 +4,8 @@
 
 Scan policies control all tuning knobs, detection thresholds, and rule enablement in Skill Scanner. A policy specifies which file types are benign, which rules fire on which files, which installer URLs are trusted, severity overrides, and more. Every setting has a sensible default; custom policies merge on top of defaults so you only specify what you want to change.
 
+This page is a compact reference. For full walkthroughs and policy design examples, see [docs/scan-policy.md](scan-policy.md).
+
 ## Presets
 
 Three built-in presets provide different security postures:
@@ -56,6 +58,8 @@ Numeric thresholds for YARA and analyzability scoring.
 | exception_handler_context_lines | int | 20 | RESOURCE_ABUSE_INFINITE_LOOP |
 | short_match_max_chars | int | 2 | Unicode steganography (short match filter) |
 | cyrillic_cjk_min_chars | int | 10 | Unicode steganography (CJK suppression) |
+| homoglyph_filter_math_context | bool | true | Suppress scientific/math contexts in HOMOGLYPH_ATTACK |
+| homoglyph_math_aliases | list[str] | `["COMMON", "GREEK"]` | Allowed confusable alias groups in math contexts |
 
 ### pipeline
 
@@ -69,6 +73,12 @@ Pipeline taint and tool-chaining analysis behaviour.
 | demote_in_docs | bool | true | Demote findings in doc paths |
 | demote_instructional | bool | true | Demote instructional patterns (e.g. SKILL.md) |
 | check_known_installers | bool | true | Demote known installer URLs |
+| dedupe_equivalent_pipelines | bool | true | Collapse equivalent pipeline detections from overlapping extraction passes |
+| compound_fetch_require_download_intent | bool | true | Require explicit download intent for fetch+execute detection |
+| compound_fetch_filter_api_requests | bool | true | Suppress API-request false positives in fetch+execute heuristics |
+| compound_fetch_filter_shell_wrapped_fetch | bool | true | Suppress shell-wrapped fetch false positives |
+| compound_fetch_exec_prefixes | list | wrapper commands | Allowed wrappers before execution sinks (for example `sudo`) |
+| compound_fetch_exec_commands | list | execution sinks | Commands treated as execution sinks in fetch+execute detection |
 | exfil_hints | list | `send`, `upload`, etc. | Hint words for exfiltration detection |
 | api_doc_tokens | list | `@app.`, `app.`, etc. | Tokens suppressing tool-chaining FP |
 
@@ -83,6 +93,8 @@ How file extensions are classified for analysis routing.
 | archive_extensions | set | zip, tar, etc. | Flagged as archives |
 | code_extensions | set | py, sh, js, etc. | Code file detection |
 | skip_inert_extensions | bool | true | Skip checks on inert files |
+| allow_script_shebang_text_extensions | bool | true | Allow shebang headers for script-like text/code files |
+| script_shebang_extensions | set | script extensions | Extensions treated as valid shebang script targets |
 
 ### hidden_files
 
@@ -90,8 +102,8 @@ Dotfiles and dotdirs not in these lists trigger HIDDEN_DATA_FILE / HIDDEN_DATA_D
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
-| benign_dotfiles | set | 35 entries (version control, linting, etc.) | HIDDEN_DATA_FILE |
-| benign_dotdirs | set | 22 entries (.github, .vscode, etc.) | HIDDEN_DATA_DIR |
+| benign_dotfiles | set | preset-defined allowlist | HIDDEN_DATA_FILE |
+| benign_dotdirs | set | preset-defined allowlist | HIDDEN_DATA_DIR |
 
 ### rule_scoping
 
@@ -99,8 +111,8 @@ Restrict which rules fire on which file types. Reduces noise in doc-heavy skills
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
-| skillmd_and_scripts_only | list | `coercive_injection_generic`, `autonomy_abuse_generic` | Rules limited to SKILL.md + scripts |
-| skip_in_docs | list | 5 rules | Rules skipped in documentation directories |
+| skillmd_and_scripts_only | list | preset-defined set | Rules limited to SKILL.md + scripts |
+| skip_in_docs | list | preset-defined set | Rules skipped in documentation directories |
 | code_only | list | `prompt_injection_unicode_steganography`, `sql_injection_generic` | Rules only on code files |
 | doc_path_indicators | set | `references`, `docs`, `examples`, etc. | Directory names marking "documentation" context |
 | doc_filename_patterns | list | regex patterns | Filename patterns marking educational/example content |

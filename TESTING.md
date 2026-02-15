@@ -148,7 +148,7 @@ class TestExampleFeature:
     def test_basic_functionality(self):
         """Test that basic case works."""
         scanner = SkillScanner()
-        result = scanner.scan("/path/to/skill")
+        result = scanner.scan_skill("/path/to/skill")
         assert result is not None
 
     def test_edge_case(self):

@@ -33,13 +33,14 @@ from datetime import datetime
 from pathlib import Path
 
 try:
-    from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
+    from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
     from pydantic import BaseModel, Field
 
     MULTIPART_AVAILABLE = True
 except ImportError:
     raise ImportError("API server requires FastAPI. Install with: pip install fastapi uvicorn python-multipart")
 
+from .. import __version__ as PACKAGE_VERSION
 from ..core.analyzer_factory import build_analyzers
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
@@ -223,12 +224,15 @@ class BatchScanRequest(BaseModel):
 
 def _resolve_policy(policy_str: str | None) -> ScanPolicy:
     """Resolve a policy string to a ScanPolicy object."""
-    if policy_str is None:
+    if policy_str is None or not policy_str.strip():
         return ScanPolicy.default()
+    policy_str = policy_str.strip()
     if policy_str.lower() in ("strict", "balanced", "permissive"):
         return ScanPolicy.from_preset(policy_str)
     policy_path = Path(policy_str)
     if policy_path.exists():
+        if not policy_path.is_file():
+            raise ValueError(f"Policy path '{policy_str}' is not a file.")
         return ScanPolicy.from_yaml(str(policy_path))
     raise ValueError(f"Unknown policy '{policy_str}'. Use a preset name or a path to a YAML file.")
 
@@ -275,7 +279,7 @@ def _build_analyzers(
 @router.get("/", response_model=dict)
 async def root():
     """Root endpoint."""
-    return {"service": "Skill Scanner API", "version": "0.3.0", "docs": "/docs", "health": "/health"}
+    return {"service": "Skill Scanner API", "version": PACKAGE_VERSION, "docs": "/docs", "health": "/health"}
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -295,7 +299,7 @@ async def health_check():
     if META_AVAILABLE:
         analyzers.append("meta_analyzer")
 
-    return HealthResponse(status="healthy", version="0.3.0", analyzers_available=analyzers)
+    return HealthResponse(status="healthy", version=PACKAGE_VERSION, analyzers_available=analyzers)
 
 
 @router.post("/scan", response_model=ScanResponse)
@@ -397,20 +401,20 @@ async def scan_skill(request: ScanRequest):
 @router.post("/scan-upload")
 async def scan_uploaded_skill(
     file: UploadFile = File(..., description="ZIP file containing skill package"),
-    policy: str | None = Query(None, description="Scan policy: preset name or path to YAML"),
-    custom_rules: str | None = Query(None, description="Path to custom YARA rules directory"),
-    use_llm: bool = Query(False, description="Enable LLM analyzer"),
-    llm_provider: str = Query("anthropic", description="LLM provider"),
-    use_behavioral: bool = Query(False, description="Enable behavioral analyzer"),
-    use_virustotal: bool = Query(False, description="Enable VirusTotal scanner"),
-    vt_api_key: str | None = Query(None, description="VirusTotal API key"),
-    vt_upload_files: bool = Query(False, description="Upload unknown files to VirusTotal"),
-    use_aidefense: bool = Query(False, description="Enable AI Defense analyzer"),
-    aidefense_api_key: str | None = Query(None, description="AI Defense API key"),
-    aidefense_api_url: str | None = Query(None, description="AI Defense API URL"),
-    use_trigger: bool = Query(False, description="Enable trigger specificity analysis"),
-    enable_meta: bool = Query(False, description="Enable meta-analysis for FP filtering"),
-    llm_consensus_runs: int = Query(1, description="Number of LLM consensus runs"),
+    policy: str | None = Form(None, description="Scan policy: preset name or path to YAML"),
+    custom_rules: str | None = Form(None, description="Path to custom YARA rules directory"),
+    use_llm: bool = Form(False, description="Enable LLM analyzer"),
+    llm_provider: str = Form("anthropic", description="LLM provider"),
+    use_behavioral: bool = Form(False, description="Enable behavioral analyzer"),
+    use_virustotal: bool = Form(False, description="Enable VirusTotal scanner"),
+    vt_api_key: str | None = Form(None, description="VirusTotal API key"),
+    vt_upload_files: bool = Form(False, description="Upload unknown files to VirusTotal"),
+    use_aidefense: bool = Form(False, description="Enable AI Defense analyzer"),
+    aidefense_api_key: str | None = Form(None, description="AI Defense API key"),
+    aidefense_api_url: str | None = Form(None, description="AI Defense API URL"),
+    use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
+    enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
+    llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
 ):
     """Scan an uploaded skill package (ZIP file)."""
     if not file.filename or not file.filename.endswith(".zip"):
@@ -438,28 +442,33 @@ async def scan_uploaded_skill(
 
         import zipfile
 
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            # Enforce entry count and uncompressed size limits
-            entries = [info for info in zip_ref.infolist() if not info.is_dir()]
-            if len(entries) > MAX_ZIP_ENTRIES:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"ZIP contains {len(entries)} files, exceeding limit of {MAX_ZIP_ENTRIES}",
-                )
-            total_uncompressed = sum(info.file_size for info in entries)
-            if total_uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"ZIP uncompressed size ({total_uncompressed // (1024 * 1024)} MB) "
-                        f"exceeds limit of {MAX_ZIP_UNCOMPRESSED_BYTES // (1024 * 1024)} MB"
-                    ),
-                )
-            # Check for path traversal
-            for info in zip_ref.infolist():
-                if ".." in info.filename or info.filename.startswith("/"):
-                    raise HTTPException(status_code=400, detail="ZIP contains path traversal entries")
-            zip_ref.extractall(temp_dir / "extracted")
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                # Enforce entry count and uncompressed size limits
+                entries = [info for info in zip_ref.infolist() if not info.is_dir()]
+                if len(entries) > MAX_ZIP_ENTRIES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"ZIP contains {len(entries)} files, exceeding limit of {MAX_ZIP_ENTRIES}",
+                    )
+                total_uncompressed = sum(info.file_size for info in entries)
+                if total_uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"ZIP uncompressed size ({total_uncompressed // (1024 * 1024)} MB) "
+                            f"exceeds limit of {MAX_ZIP_UNCOMPRESSED_BYTES // (1024 * 1024)} MB"
+                        ),
+                    )
+                # Check for path traversal using resolved extraction targets.
+                extract_root = (temp_dir / "extracted").resolve()
+                for info in zip_ref.infolist():
+                    dest_path = (extract_root / info.filename).resolve()
+                    if not dest_path.is_relative_to(extract_root):
+                        raise HTTPException(status_code=400, detail="ZIP contains path traversal entries")
+                zip_ref.extractall(extract_root)
+        except zipfile.BadZipFile as e:
+            raise HTTPException(status_code=400, detail="Invalid ZIP archive") from e
 
         extracted_dir = temp_dir / "extracted"
         skill_dirs = list(extracted_dir.rglob("SKILL.md"))

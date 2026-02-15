@@ -28,7 +28,7 @@ Every organisation has a different security bar. A **scan policy** captures what
   - [severity_overrides](#severity_overrides)
   - [disabled_rules](#disabled_rules)
 - [Interactive Configurator (TUI)](#interactive-configurator-tui)
-- [Migration from Legacy Flags](#migration-from-legacy-flags)
+- [Legacy Flags (Removed)](#legacy-flags-removed)
 - [Examples](#examples)
 
 ---
@@ -225,12 +225,22 @@ pipeline:
   doc_path_indicators:       # Path segments marking documentation context
     - "references"
     - "docs"
+
+  # Advanced fetch+execute heuristics
+  dedupe_equivalent_pipelines: true
+  compound_fetch_require_download_intent: true
+  compound_fetch_filter_api_requests: true
+  compound_fetch_filter_shell_wrapped_fetch: true
+  compound_fetch_exec_prefixes: ["sudo", "env", "time"]
+  compound_fetch_exec_commands: ["bash", "sh", "python"]
 ```
 
 **Impact:**
 - `known_installer_domains`: Matching `curl|sh` patterns are flagged at LOW instead of HIGH.
 - `benign_pipe_targets`: Matching pipe chains are suppressed entirely.
 - `doc_path_indicators`: Findings in doc paths get reduced severity.
+- `dedupe_equivalent_pipelines`: De-dupes equivalent pipeline chains found by multiple extraction paths.
+- `compound_fetch_*` knobs: Tune fetch-and-execute detection strictness and false-positive suppression.
 
 ### rule_scoping
 
@@ -320,6 +330,13 @@ file_classification:
     - ".py"
     - ".sh"
     - ".js"
+
+  # Shebang compatibility controls
+  allow_script_shebang_text_extensions: true
+  script_shebang_extensions:
+    - ".py"
+    - ".sh"
+    - ".js"
 ```
 
 **Impact:**
@@ -327,6 +344,7 @@ file_classification:
 - `structured_extensions`: Files are noted but not flagged as unknown binaries.
 - `archive_extensions`: Files trigger `ARCHIVE_FILE_DETECTED` at MEDIUM severity (unless overridden).
 - `code_extensions`: Hidden files with these extensions trigger `HIDDEN_CODE_FILE` (higher severity) instead of `HIDDEN_DATA_FILE`.
+- `allow_script_shebang_text_extensions` + `script_shebang_extensions`: Prevent false positives for valid shebang script files.
 
 ### file_limits
 
@@ -354,11 +372,19 @@ analysis_thresholds:
   zerowidth_threshold_alone: 200        # Zero-width chars without decode context
   analyzability_low_risk: 90            # Score >= this → LOW risk
   analyzability_medium_risk: 70         # Score >= this → MEDIUM risk
+  min_dangerous_lines: 5                # Min lines for HOMOGLYPH_ATTACK
+  min_confidence_pct: 80                # Min confidence for FILE_MAGIC_MISMATCH
+  exception_handler_context_lines: 20   # Infinite-loop context window
+  short_match_max_chars: 2              # Unicode steg short-match filter
+  cyrillic_cjk_min_chars: 10            # Unicode steg suppression threshold
+  homoglyph_filter_math_context: true   # Suppress math/scientific contexts
+  homoglyph_math_aliases: ["COMMON", "GREEK"]
 ```
 
 **Impact:**
 - `zerowidth_*`: Controls when the Unicode steganography detector fires. Lower values are more sensitive (stricter).
 - `analyzability_*`: Controls the risk-level classification based on how much of the skill can be statically analyzed. Higher values are harder to achieve (stricter).
+- `homoglyph_*`: Reduces false positives in formulas and scientific notation while keeping suspicious confusable text detections.
 
 ### sensitive_files
 
@@ -517,17 +543,15 @@ For each section, you can add/remove individual items from lists, adjust numeric
 
 ---
 
-## Migration from Legacy Flags
+## Legacy Flags (Removed)
 
-The policy system replaces several older CLI flags. These flags still work but are **deprecated** and will be removed in a future release:
+Legacy tuning flags such as `--yara-mode` and `--disable-rule` are no longer part of the CLI. Use policy YAML instead:
 
-| Old flag | Policy equivalent |
-|----------|-------------------|
-| `--yara-mode strict` | `--policy strict` (preset) or custom `analysis_thresholds` + `rule_scoping` |
-| `--yara-mode permissive` | `--policy permissive` (preset) |
-| `--disable-rule RULE_ID` | `disabled_rules: [RULE_ID]` in policy YAML |
-
-When both `--policy` and a legacy flag are provided, the policy takes precedence.
+| Legacy intent | Current approach |
+|---------------|------------------|
+| stricter / looser YARA behavior | `--policy strict|balanced|permissive` or custom `analysis_thresholds` + `rule_scoping` |
+| disable a noisy rule | `disabled_rules: [RULE_ID]` in policy YAML |
+| tune severity without silencing | `severity_overrides` in policy YAML |
 
 ---
 

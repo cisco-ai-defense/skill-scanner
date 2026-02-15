@@ -2,7 +2,7 @@
 
 ## Installation
 
-### Using UV (Recommended)
+### Using uv (Recommended)
 
 ```bash
 # Install uv if you haven't already
@@ -25,6 +25,20 @@ pip install cisco-ai-skill-scanner[all]
 
 ## Basic Usage
 
+### Environment Setup (Optional)
+
+```bash
+# For LLM analyzer and Meta-analyzer
+export SKILL_SCANNER_LLM_API_KEY="your_api_key"
+export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"
+
+# For VirusTotal binary scanning
+export VIRUSTOTAL_API_KEY="your_virustotal_api_key"
+
+# For Cisco AI Defense
+export AI_DEFENSE_API_KEY="your_aidefense_api_key"
+```
+
 ### Scan a Single Skill
 
 ```bash
@@ -34,6 +48,8 @@ uv run skill-scanner scan evals/skills/safe-skills/simple-math
 # Installed package
 skill-scanner scan evals/skills/safe-skills/simple-math
 ```
+
+By default, `scan` runs the core analyzers: **static + bytecode + pipeline**.
 
 ### Scan Multiple Skills
 
@@ -53,38 +69,38 @@ The project includes test skills in `evals/skills/` for evaluation and testing:
 ```bash
 $ skill-scanner scan evals/skills/safe-skills/simple-math
 ============================================================
-Skill: safe-calculator
+Skill: simple-math
 ============================================================
 Status: [OK] SAFE
 Max Severity: SAFE
 Total Findings: 0
-Scan Duration: 0.00s
+Scan Duration: 0.27s
 ```
 
 ### [FAIL] multi-file-exfiltration (CRITICAL)
 ```bash
-$ skill-scanner scan evals/skills/behavioral-analysis/multi-file-exfiltration
+$ skill-scanner scan evals/skills/behavioral-analysis/multi-file-exfiltration --use-behavioral
 ============================================================
-Skill: data-analyzer
+Skill: config-analyzer
 ============================================================
 Status: [FAIL] ISSUES FOUND
 Max Severity: CRITICAL
-Total Findings: 12
-Scan Duration: 0.00s
+Total Findings: 11
+Scan Duration: 0.42s
 
 Findings Summary:
-  Critical: 5
+  Critical: 3
   High:     3
-  Medium:   3
+  Medium:   4
   Low:      1
 ```
 
 **Detected Threats:**
-- ✅ Data exfiltration (HTTP POST to external server)
-- ✅ Reading sensitive files (~/.aws/credentials)
-- ✅ Environment variable theft (API_KEY, SECRET_TOKEN)
-- ✅ Command injection (eval on user input)
-- ✅ Base64 encoding + network (exfiltration pattern)
+- Data exfiltration (HTTP POST to external server)
+- Reading sensitive files (`~/.aws/credentials`)
+- Environment variable theft (`API_KEY`, `SECRET_TOKEN`)
+- Command injection (`eval` on user input)
+- Base64 encoding + network exfiltration pattern
 
 ## Useful Commands
 
@@ -153,6 +169,9 @@ skill-scanner scan /path/to/skill \
   --use-aidefense \
   --use-virustotal
 ```
+
+**LLM provider note:** `--llm-provider` currently accepts `anthropic` or `openai`.
+For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, set provider-specific model strings and environment variables (see `docs/llm-analyzer.md`).
 
 ### Cross-Skill Analysis
 ```bash

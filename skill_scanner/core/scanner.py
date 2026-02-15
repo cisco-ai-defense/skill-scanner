@@ -463,7 +463,7 @@ class SkillScanner:
             deduped_exact: list[Finding] = []
             seen_exact: set[tuple[object, ...]] = set()
             for f in normalized:
-                key = (
+                exact_key = (
                     f.rule_id,
                     f.category.value,
                     f.severity.value,
@@ -472,9 +472,9 @@ class SkillScanner:
                     self._normalize_snippet(f.snippet),
                     (f.analyzer or "").lower(),
                 )
-                if key in seen_exact:
+                if exact_key in seen_exact:
                     continue
-                seen_exact.add(key)
+                seen_exact.add(exact_key)
                 deduped_exact.append(f)
             normalized = deduped_exact
 
@@ -492,8 +492,8 @@ class SkillScanner:
             if not has_location:
                 passthrough.append(f)
                 continue
-            key = (file_key, line_key, snippet_key, f.category.value)
-            grouped.setdefault(key, []).append(f)
+            group_key = (file_key, line_key, snippet_key, f.category.value)
+            grouped.setdefault(group_key, []).append(f)
 
         merged: list[Finding] = []
         for group in grouped.values():
@@ -825,18 +825,27 @@ class SkillScanner:
         return [analyzer.get_name() for analyzer in self.analyzers]
 
 
-def scan_skill(skill_directory: str | Path, analyzers: list[BaseAnalyzer] | None = None) -> ScanResult:
+def scan_skill(
+    skill_directory: str | Path,
+    analyzers: list[BaseAnalyzer] | None = None,
+    policy: ScanPolicy | None = None,
+) -> ScanResult:
     """
     Convenience function to scan a single skill.
 
     Args:
         skill_directory: Path to skill directory
         analyzers: Optional list of analyzers
+        policy: Optional scan policy. If omitted and analyzers are provided,
+            the policy from the first analyzer is used when available.
 
     Returns:
         ScanResult
     """
-    scanner = SkillScanner(analyzers=analyzers)
+    scanner_policy = policy
+    if scanner_policy is None and analyzers:
+        scanner_policy = getattr(analyzers[0], "policy", None)
+    scanner = SkillScanner(analyzers=analyzers, policy=scanner_policy)
     return scanner.scan_skill(skill_directory)
 
 
@@ -845,6 +854,7 @@ def scan_directory(
     recursive: bool = False,
     analyzers: list[BaseAnalyzer] | None = None,
     check_overlap: bool = False,
+    policy: ScanPolicy | None = None,
 ) -> Report:
     """
     Convenience function to scan multiple skills.
@@ -854,9 +864,14 @@ def scan_directory(
         recursive: Search recursively
         analyzers: Optional list of analyzers
         check_overlap: If True, check for description overlap between skills
+        policy: Optional scan policy. If omitted and analyzers are provided,
+            the policy from the first analyzer is used when available.
 
     Returns:
         Report with all results
     """
-    scanner = SkillScanner(analyzers=analyzers)
+    scanner_policy = policy
+    if scanner_policy is None and analyzers:
+        scanner_policy = getattr(analyzers[0], "policy", None)
+    scanner = SkillScanner(analyzers=analyzers, policy=scanner_policy)
     return scanner.scan_directory(skills_directory, recursive=recursive, check_overlap=check_overlap)

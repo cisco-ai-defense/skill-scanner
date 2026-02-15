@@ -23,13 +23,8 @@ from pathlib import Path
 
 import frontmatter
 
+from .exceptions import SkillLoadError
 from .models import Skill, SkillFile, SkillManifest
-
-
-class SkillLoadError(Exception):
-    """Exception raised when skill loading fails."""
-
-    pass
 
 
 class SkillLoader:

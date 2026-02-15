@@ -102,6 +102,15 @@ class LLMRequestHandler:
             schema_path = Path(__file__).parent.parent.parent / "data" / "prompts" / "llm_response_schema.json"
             if schema_path.exists():
                 loaded: dict[str, Any] = json.loads(schema_path.read_text(encoding="utf-8"))
+                # Keep schema in sync with active taxonomy profile, including
+                # custom profiles loaded via SKILL_SCANNER_TAXONOMY_PATH.
+                try:
+                    from ...threats.cisco_ai_taxonomy import VALID_AITECH_CODES
+
+                    aitech_codes = sorted(VALID_AITECH_CODES)
+                    loaded["properties"]["findings"]["items"]["properties"]["aitech"]["enum"] = aitech_codes
+                except Exception as e:
+                    logger.warning("Could not inject runtime AITech enum into schema: %s", e)
                 return loaded
         except Exception as e:
             logger.warning("Could not load response schema: %s", e)

@@ -144,7 +144,8 @@ class TestMetaAnalyzerInit:
             with patch("skill_scanner.core.analyzers.meta_analyzer.acompletion", AsyncMock()):
                 yield
 
-    def test_separate_meta_api_key(self, mock_litellm):
+    @pytest.mark.usefixtures("mock_litellm")
+    def test_separate_meta_api_key(self):
         """Test that meta-analyzer can use separate API key from LLM analyzer."""
         with patch.dict(
             os.environ,
@@ -164,7 +165,8 @@ class TestMetaAnalyzerInit:
             assert analyzer.api_key == "test-meta-key-for-testing"
             assert analyzer.model == "gpt-4o"
 
-    def test_fallback_to_llm_key(self, mock_litellm):
+    @pytest.mark.usefixtures("mock_litellm")
+    def test_fallback_to_llm_key(self):
         """Test that meta-analyzer falls back to LLM analyzer key if meta key not set."""
         with patch.dict(
             os.environ,
@@ -182,7 +184,8 @@ class TestMetaAnalyzerInit:
             assert analyzer.api_key == "test-regular-key-for-testing"
             assert analyzer.model == "claude-3-5-sonnet"
 
-    def test_explicit_parameters_override_env(self, mock_litellm):
+    @pytest.mark.usefixtures("mock_litellm")
+    def test_explicit_parameters_override_env(self):
         """Test that explicit parameters override environment variables."""
         with patch.dict(
             os.environ,

@@ -16,7 +16,6 @@
 
 """Tests for bytecode integrity verifier (Feature #2)."""
 
-import compileall
 import importlib
 import py_compile
 from pathlib import Path

@@ -12,6 +12,19 @@ Every rule must be registered in `pack.yaml`. The pack manifest is the single so
 
 ---
 
+## Authoring Workflow (Checklist)
+
+1. Pick the rule type (`signature`, `yara`, `python`) based on detection complexity.
+2. Implement the rule in the correct directory under `skill_scanner/data/packs/core/`.
+3. Add or update the `pack.yaml` entry (`source`, `description`, `severity`, and `knobs.enabled`).
+4. Wire policy knobs in `scan_policy.py` and `default_policy.yaml` if your rule introduces new tunables.
+5. Add tests that prove true positives and expected suppression behavior.
+6. Run validation before opening a PR:
+   - `skill-scanner validate-rules`
+   - `uv run pytest tests/test_rule_registry.py tests/test_static_policy_integration.py -q`
+
+---
+
 ## Signature Rules
 
 **Location:** `skill_scanner/data/packs/core/signatures/`
@@ -129,8 +142,10 @@ def check_<aspect>(skill: Skill, policy: ScanPolicy) -> list[Finding]:
 
 - `policy.file_limits.max_file_count`, `policy.file_limits.max_file_size_bytes`
 - `policy.analysis_thresholds.min_dangerous_lines`, `policy.analysis_thresholds.min_confidence_pct`
-- `policy.pipeline.demote_in_docs`, `policy.pipeline.benign_pipe_targets`
-- `policy.file_classification.*`, `policy.hidden_files.*`
+- `policy.pipeline.*` (for taint, installer allowlists, and compound fetch/execute knobs)
+- `policy.file_classification.*`, `policy.hidden_files.*`, `policy.rule_scoping.*`
+- `policy.credentials.*`, `policy.system_cleanup.*`, `policy.command_safety.*`
+- `policy.finding_output.*` for dedupe and finding metadata behavior
 - `policy.disabled_rules` — check before emitting to respect rule disabling
 
 **Example** (from `python/file_inventory_checks.py`):
@@ -225,18 +240,24 @@ To add a tunable threshold for your rule:
 |---------|---------|
 | `file_limits` | `max_file_count`, `max_file_size_bytes`, `max_reference_depth`, `min_description_length`, etc. |
 | `analysis_thresholds` | `min_dangerous_lines`, `min_confidence_pct`, `zerowidth_threshold_*`, etc. |
-| `pipeline` | `demote_in_docs`, `demote_instructional`, `benign_pipe_targets`, `exfil_hints` |
-| `file_classification` | `inert_extensions`, `archive_extensions`, `code_extensions` |
+| `pipeline` | `demote_in_docs`, `demote_instructional`, `benign_pipe_targets`, fetch/execute tuning knobs |
+| `rule_scoping` | Rule scope by file context (`skillmd_and_scripts_only`, `skip_in_docs`, `code_only`) |
+| `file_classification` | `inert_extensions`, `archive_extensions`, `code_extensions`, shebang compatibility knobs |
 | `hidden_files` | `benign_dotfiles`, `benign_dotdirs` |
+| `credentials` | Test values/placeholders to suppress in hardcoded-secret filtering |
+| `system_cleanup` | Safe cleanup targets for destructive command heuristics |
+| `command_safety` | Safe/caution/risky/dangerous command tiers and dangerous arg patterns |
+| `finding_output` | Dedupe strategy and policy-fingerprint attachment |
 | `disabled_rules` | Rule IDs to suppress entirely |
 
 ---
 
 ## Testing
 
-1. **Run the full suite:** `make test`
-2. **Audit test:** Ensures every rule in signatures/, yara/, and Python check modules has a corresponding entry in pack.yaml. Missing entries cause failures.
-3. **Add unit tests:** For new detection logic, add tests in `tests/` (e.g., `tests/test_static_policy_integration.py`, `tests/test_rule_registry.py`).
+1. **Validate rule loading and schema:** `skill-scanner validate-rules`
+2. **Run targeted rule/policy regression tests:** `uv run pytest tests/test_rule_registry.py tests/test_static_policy_integration.py -q`
+3. **Run the full suite before merge:** `make test`
+4. **Add unit tests for new behavior:** Add coverage in `tests/` (for example, `tests/test_new_detections.py` or analyzer-specific test modules).
 
 ---
 

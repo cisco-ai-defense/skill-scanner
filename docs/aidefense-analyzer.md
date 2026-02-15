@@ -72,7 +72,7 @@ skill-scanner scan-all /path/to/skills --recursive --use-aidefense
 
 ```python
 from skill_scanner.core.analyzers import AIDefenseAnalyzer
-from skill_scanner.core.loader import load_skill
+from skill_scanner.core.loader import SkillLoader
 
 # Initialize analyzer with default rules
 analyzer = AIDefenseAnalyzer(
@@ -96,7 +96,7 @@ analyzer = AIDefenseAnalyzer(
 )
 
 # Synchronous analysis
-skill = load_skill("/path/to/skill")
+skill = SkillLoader().load_skill("/path/to/skill")
 findings = analyzer.analyze(skill)
 
 # Async analysis (preferred for batch operations)
