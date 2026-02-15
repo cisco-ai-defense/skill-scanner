@@ -1,0 +1,106 @@
+name: Build macOS Binary
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Install PyInstaller
+        run: uv pip install pyinstaller
+
+      - name: Fix yara-python OpenSSL dylib
+        run: |
+          YARA_DYLIBS=$(find .venv -path "*/yara_python.dylibs" -type d 2>/dev/null | head -1)
+          if [ -n "$YARA_DYLIBS" ] && [ -f "$YARA_DYLIBS/libcrypto.3.dylib" ]; then
+            BREW_LIBCRYPTO=$(brew --prefix openssl@3)/lib/libcrypto.3.dylib
+            if [ -f "$BREW_LIBCRYPTO" ]; then
+              echo "Replacing yara-python libcrypto with Homebrew version"
+              cp "$BREW_LIBCRYPTO" "$YARA_DYLIBS/libcrypto.3.dylib"
+            else
+              echo "Warning: Homebrew libcrypto.3.dylib not found"
+            fi
+          else
+            echo "Warning: yara_python.dylibs not found"
+          fi
+
+      - name: Build binary
+        run: uv run pyinstaller skill-scanner.spec --clean --noconfirm
+
+      - name: Smoke test
+        run: ./dist/skill-scanner --help
+
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Create archive
+        run: >
+          tar -czf skill-scanner-${{ steps.version.outputs.version }}-macos-arm64.tar.gz
+          -C dist skill-scanner
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "skill-scanner-*-macos-arm64.tar.gz"
+
+  update-homebrew:
+    needs: build-macos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: cisco-ai-defense/homebrew-ai-defense
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Get version and SHA
+        id: info
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          URL="https://github.com/cisco-ai-defense/skill-scanner/releases/download/${GITHUB_REF_NAME}/skill-scanner-${VERSION}-macos-arm64.tar.gz"
+          for i in $(seq 1 10); do
+            HTTP_CODE=$(curl -sL -o /tmp/asset.tar.gz -w "%{http_code}" "$URL")
+            if [ "$HTTP_CODE" = "200" ]; then
+              SHA=$(shasum -a 256 /tmp/asset.tar.gz | cut -d' ' -f1)
+              break
+            fi
+            echo "Attempt $i: HTTP $HTTP_CODE, retrying in 15s..."
+            sleep 15
+          done
+          if [ -z "$SHA" ] || [ ${#SHA} -ne 64 ]; then
+            echo "Failed to download release asset"
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "sha256=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Update formula
+        run: |
+          sed -i 's/version ".*"/version "${{ steps.info.outputs.version }}"/' Formula/skill-scanner.rb
+          sed -i 's|url ".*"|url "https://github.com/cisco-ai-defense/skill-scanner/releases/download/${{ github.ref_name }}/skill-scanner-${{ steps.info.outputs.version }}-macos-arm64.tar.gz"|' Formula/skill-scanner.rb
+          sed -i 's/sha256 ".*"/sha256 "${{ steps.info.outputs.sha256 }}"/' Formula/skill-scanner.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/skill-scanner.rb
+          git diff --staged --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Update skill-scanner to ${{ steps.info.outputs.version }}"
+          git push
