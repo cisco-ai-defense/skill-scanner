@@ -173,20 +173,29 @@ class RuleLoader:
         rules_path = Path(self.rules_file)
         if rules_path.is_dir():
             rules_data: list[dict] = []
-            for yaml_file in sorted(rules_path.glob("*.yaml")):
+            yaml_files = sorted(rules_path.glob("*.yaml"))
+            if not yaml_files:
+                raise RuntimeError(f"No .yaml rule files found in {rules_path}")
+
+            for yaml_file in yaml_files:
                 try:
                     with open(yaml_file, encoding="utf-8") as f:
                         data = yaml.safe_load(f)
-                    if isinstance(data, list):
-                        rules_data.extend(data)
                 except Exception as e:
-                    logger.warning("Failed to load rules from %s: %s", yaml_file, e)
+                    raise RuntimeError(f"Failed to load rules from {yaml_file}: {e}") from e
+
+                if not isinstance(data, list):
+                    raise RuntimeError(f"Failed to load rules from {yaml_file}: expected a YAML list of rule objects")
+                rules_data.extend(data)
         else:
             try:
                 with open(rules_path, encoding="utf-8") as f:
                     rules_data = yaml.safe_load(f)
             except Exception as e:
                 raise RuntimeError(f"Failed to load rules from {rules_path}: {e}")
+
+            if not isinstance(rules_data, list):
+                raise RuntimeError(f"Failed to load rules from {rules_path}: expected a YAML list of rule objects")
 
         self.rules = []
         self.rules_by_id = {}

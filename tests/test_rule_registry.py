@@ -444,6 +444,34 @@ class TestDirectorySignatureLoading:
         assert len(rules) == 1
         assert rules[0].id == "TEST_RULE"
 
+    def test_loader_raises_on_malformed_yaml_in_directory(self, tmp_path):
+        """Malformed YAML in a rules directory should fail fast."""
+        from skill_scanner.core.rules.patterns import RuleLoader
+
+        (tmp_path / "good.yaml").write_text(
+            textwrap.dedent("""\
+            - id: TEST_RULE
+              category: obfuscation
+              severity: LOW
+              patterns: ["ok"]
+              description: "Test rule"
+            """)
+        )
+        # Intentionally malformed YAML (missing closing bracket)
+        (tmp_path / "bad.yaml").write_text(
+            textwrap.dedent("""\
+            - id: BAD_RULE
+              category: obfuscation
+              severity: LOW
+              patterns: ["oops"
+              description: "Broken rule"
+            """)
+        )
+
+        loader = RuleLoader(rules_file=tmp_path)
+        with pytest.raises(RuntimeError, match="Failed to load rules from"):
+            loader.load_rules()
+
     def test_packloader_detects_signatures_dir(self):
         """PackLoader should detect signatures/ directory over signatures.yaml."""
         loader = PackLoader()

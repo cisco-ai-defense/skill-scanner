@@ -330,6 +330,73 @@ class TestBatchScan:
         resp = client.get("/scan-batch/nonexistent-id")
         assert resp.status_code == 404
 
+    def test_run_batch_scan_recomputes_summary_after_meta_filter(self, monkeypatch):
+        """Batch summary counters should match findings after meta filtering."""
+        from skill_scanner.api import router
+        from skill_scanner.core.models import Finding, Report, ScanResult, Severity, ThreatCategory
+
+        finding = Finding(
+            id="f1",
+            rule_id="TEST_HIGH",
+            category=ThreatCategory.POLICY_VIOLATION,
+            severity=Severity.HIGH,
+            title="High finding",
+            description="Synthetic finding for regression test",
+            analyzer="static",
+        )
+        scan_result = ScanResult(
+            skill_name="synthetic-skill",
+            skill_directory="/tmp/synthetic-skill",
+            findings=[finding],
+            analyzers_used=["static_analyzer"],
+        )
+        report = Report()
+        report.add_scan_result(scan_result)
+
+        class DummyLoader:
+            @staticmethod
+            def load_skill(_path):
+                class _Skill:
+                    name = "synthetic-skill"
+
+                return _Skill()
+
+        class DummyScanner:
+            def __init__(self, *args, **kwargs):
+                self.loader = DummyLoader()
+
+            @staticmethod
+            def scan_directory(*args, **kwargs):
+                return report
+
+        class DummyMetaAnalyzer:
+            async def analyze_with_findings(self, **kwargs):
+                return {}
+
+        monkeypatch.setattr(router, "_resolve_policy", lambda _policy: None)
+        monkeypatch.setattr(router, "_build_analyzers", lambda *args, **kwargs: [])
+        monkeypatch.setattr(router, "SkillScanner", DummyScanner)
+        monkeypatch.setattr(router, "META_AVAILABLE", True)
+        monkeypatch.setattr(router, "MetaAnalyzer", DummyMetaAnalyzer)
+        monkeypatch.setattr(router, "apply_meta_analysis_to_results", lambda **kwargs: [])
+
+        scan_id = "meta-summary-regression"
+        router.scan_results_cache.set(
+            scan_id,
+            {"status": "processing", "started_at": datetime.now().isoformat(), "result": None},
+        )
+        request = router.BatchScanRequest(skills_directory=".", enable_meta=True)
+
+        router.run_batch_scan(scan_id, request)
+        cached = router.scan_results_cache.get_valid(scan_id)
+
+        assert cached is not None
+        assert cached["status"] == "completed"
+        result_payload = cached["result"]
+        assert result_payload["summary"]["total_findings"] == 0
+        assert result_payload["summary"]["findings_by_severity"]["high"] == 0
+        assert result_payload["results"][0]["findings_count"] == 0
+
 
 # ===================================================================
 # B6 — Custom policy YAML through API

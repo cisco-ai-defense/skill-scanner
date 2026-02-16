@@ -271,6 +271,32 @@ def _build_analyzers(
     )
 
 
+def _recompute_report_summary(report) -> None:
+    """Recompute Report aggregate counters from current per-skill findings."""
+    report.total_skills_scanned = len(report.scan_results)
+    report.total_findings = sum(len(r.findings) for r in report.scan_results)
+    report.critical_count = 0
+    report.high_count = 0
+    report.medium_count = 0
+    report.low_count = 0
+    report.info_count = 0
+    report.safe_count = sum(1 for r in report.scan_results if r.is_safe)
+
+    for scan_result in report.scan_results:
+        for finding in scan_result.findings:
+            sev = getattr(finding.severity, "value", str(finding.severity)).upper()
+            if sev == "CRITICAL":
+                report.critical_count += 1
+            elif sev == "HIGH":
+                report.high_count += 1
+            elif sev == "MEDIUM":
+                report.medium_count += 1
+            elif sev == "LOW":
+                report.low_count += 1
+            elif sev == "INFO":
+                report.info_count += 1
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -604,6 +630,10 @@ def run_batch_scan(scan_id: str, request: BatchScanRequest):
                             pass
             except Exception:
                 pass
+
+        # Keep batch summary counters consistent with potentially mutated
+        # per-skill findings (e.g., after meta-analysis filtering).
+        _recompute_report_summary(report)
 
         started_at = scan_results_cache.get(scan_id, {}).get("started_at", datetime.now().isoformat())
         scan_results_cache.set(
