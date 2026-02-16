@@ -5,24 +5,24 @@
 Authoritative threat classification for agent skills security analysis, aligned with the [Cisco Integrated AI Security and Safety Framework](https://arxiv.org/html/2512.12921v1) (December 2025).
 
 **Detection Engines:**
-- Static Analyzer: 58 pattern-based rules (YAML + YARA + Python)
+- Static Analyzer: 59 pattern-based rules (YAML + YARA + Python)
 - LLM Analyzer: Semantic analysis via Claude/GPT/Gemini
 
-**Validation:** 149 tests passing, 0% false CRITICAL rate on official skills
+**Validation:** 385 tests passing, 0% false CRITICAL rate on official skills
 
 ---
 
 ## Threat Categories
 
-### 1. Prompt Injection
+### 1. Prompt Injection & Jailbreak
 
-**AITech**: AITech-1.1, AITech-1.2 | **Risk**: HIGH-CRITICAL
+**AITech**: AITech-1.1, AITech-1.2, AITech-2.1 | **Risk**: HIGH-CRITICAL
 
-Malicious instructions that manipulate AI behavior or bypass safety systems.
+Malicious instructions that manipulate AI behavior, bypass safety systems, or attempt to jailbreak AI guardrails.
 
-**Detected by**: YAML rules, YARA (prompt_injection_generic, coercive_injection_generic), LLM analysis
+**Detected by**: YAML rules, YARA (prompt_injection_generic, coercive_injection_generic, jailbreak_generic), LLM analysis
 
-**Examples**: "Ignore previous instructions", "unrestricted mode", "don't tell user"
+**Examples**: "Ignore previous instructions", "unrestricted mode", "don't tell user", DAN jailbreaks, persona manipulation, grandma exploit, logic traps
 
 ---
 
@@ -148,9 +148,9 @@ Excessive resource consumption causing instability (compute exhaustion).
 
 ## Detection Architecture
 
-### Static Analyzer (58 methods)
+### Static Analyzer (59 methods)
 - 35 YAML regex rules
-- 13 YARA pattern files
+- 14 YARA pattern files
 - 6 Python validation checks
 - 5 consistency validations
 
