@@ -92,7 +92,13 @@ class ValidationResult:
 class SkillValidator:
     """Strict structural validator for Agent Skills directories."""
 
-    ALLOWED_EXTENSIONS = frozenset({".md", ".py", ".sh", ".json", ".yaml"})
+    ALLOWED_EXTENSIONS = frozenset({
+        ".md", ".py", ".sh", ".json", ".yaml",  # spec-defined
+        ".txt",                                   # plain text (LICENSE.txt, etc.)
+        ".js", ".ts",                             # script languages
+        ".html", ".css", ".svg",                  # web assets
+        ".xml", ".xsd",                           # declarative data/schemas
+    })
     ALLOWED_SUBDIRS = frozenset({"scripts", "references", "assets"})
     NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?!-))*[a-z0-9]$|^[a-z0-9]$")
 

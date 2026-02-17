@@ -46,6 +46,8 @@ class SkillLoader:
     # File type mappings
     PYTHON_EXTENSIONS = {".py"}
     BASH_EXTENSIONS = {".sh", ".bash"}
+    JAVASCRIPT_EXTENSIONS = {".js", ".mjs", ".cjs"}
+    TYPESCRIPT_EXTENSIONS = {".ts", ".tsx"}
     MARKDOWN_EXTENSIONS = {".md", ".markdown"}
     BINARY_EXTENSIONS = {".exe", ".so", ".dylib", ".dll", ".bin"}
 
@@ -238,6 +240,10 @@ class SkillLoader:
             return "python"
         elif suffix in self.BASH_EXTENSIONS:
             return "bash"
+        elif suffix in self.JAVASCRIPT_EXTENSIONS:
+            return "javascript"
+        elif suffix in self.TYPESCRIPT_EXTENSIONS:
+            return "typescript"
         elif suffix in self.MARKDOWN_EXTENSIONS:
             return "markdown"
         elif suffix in self.BINARY_EXTENSIONS:

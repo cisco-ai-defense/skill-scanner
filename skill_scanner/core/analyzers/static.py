@@ -275,7 +275,7 @@ class StaticAnalyzer(BaseAnalyzer):
         findings = []
 
         for skill_file in skill.files:
-            if skill_file.file_type not in ("python", "bash"):
+            if skill_file.file_type not in ("python", "bash", "javascript", "typescript"):
                 continue
 
             rules = self.rule_loader.get_rules_for_file_type(skill_file.file_type)
@@ -435,6 +435,10 @@ class StaticAnalyzer(BaseAnalyzer):
                     rules = self.rule_loader.get_rules_for_file_type("python")
                 elif suffix in (".sh", ".bash"):
                     rules = self.rule_loader.get_rules_for_file_type("bash")
+                elif suffix in (".js", ".mjs", ".cjs"):
+                    rules = self.rule_loader.get_rules_for_file_type("javascript")
+                elif suffix in (".ts", ".tsx"):
+                    rules = self.rule_loader.get_rules_for_file_type("typescript")
                 else:
                     rules = []
 
@@ -843,7 +847,10 @@ class StaticAnalyzer(BaseAnalyzer):
                 or skill_file.relative_path.endswith((".template", ".tmpl", ".tpl"))
                 or (
                     skill_file.file_type == "other"
-                    and skill_file.relative_path.endswith((".txt", ".json", ".yaml", ".yml"))
+                    and skill_file.relative_path.endswith((
+                        ".txt", ".json", ".yaml", ".yml",
+                        ".html", ".css", ".svg", ".xml", ".xsd",
+                    ))
                 )
             )
 

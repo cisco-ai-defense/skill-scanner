@@ -73,9 +73,33 @@
     - "\\bexec\\s*\\("
     - "\\b__import__\\s*\\("
     - "(?<!re\\.)\\bcompile\\s*\\("  # compile() but not re.compile()
-  file_types: [python]
+  file_types: [python, javascript, typescript]
   description: "Dangerous code execution functions that can execute arbitrary code"
   remediation: "Avoid eval(), exec(), and compile(). Use safer alternatives like ast.literal_eval() or operator module"
+
+- id: COMMAND_INJECTION_JS_CHILD_PROCESS
+  category: command_injection
+  severity: CRITICAL
+  patterns:
+    - "require\\s*\\(['\"]child_process['\"]\\)"
+    - "from\\s+['\"]child_process['\"]"
+    - "\\bexecSync\\s*\\("
+    - "\\bspawnSync\\s*\\("
+    - "\\bchild_process\\.exec\\s*\\("
+  file_types: [javascript, typescript]
+  description: "Shell command execution via child_process module"
+  remediation: "Avoid child_process. If necessary, use spawn with argument arrays, never exec with shell strings"
+
+- id: COMMAND_INJECTION_JS_FUNCTION_CONSTRUCTOR
+  category: command_injection
+  severity: CRITICAL
+  patterns:
+    - "new\\s+Function\\s*\\("
+    - "setTimeout\\s*\\(\\s*['\"`]"
+    - "setInterval\\s*\\(\\s*['\"`]"
+  file_types: [javascript, typescript]
+  description: "Dynamic code execution via Function constructor or string-eval in timers"
+  remediation: "Use direct function references instead of string-based code execution"
 
 - id: COMMAND_INJECTION_OS_SYSTEM
   category: command_injection
@@ -148,6 +172,19 @@
   description: "HTTP client library imports that enable external communication"
   remediation: "Ensure network access is necessary and documented. Review all URLs"
 
+- id: DATA_EXFIL_JS_NETWORK
+  category: data_exfiltration
+  severity: MEDIUM
+  patterns:
+    - "\\bfetch\\s*\\("
+    - "new\\s+XMLHttpRequest"
+    - "\\baxios\\b"
+    - "require\\s*\\(['\"]https?['\"]\\)"
+    - "require\\s*\\(['\"]node-fetch['\"]\\)"
+  file_types: [javascript, typescript]
+  description: "Network request APIs that enable external communication"
+  remediation: "Ensure network access is necessary and documented. Review all URLs"
+
 # Socket is commonly used for legitimate local purposes (port checking, IPC)
 # Don't flag socket usage by default - it's usually for local port checking
 # Only flag actual external connections with explicit IP addresses or domains
@@ -194,6 +231,19 @@
   file_types: [python, bash]
   description: "Accessing sensitive system or credential files"
   remediation: "Do not access credential files or sensitive system files"
+
+- id: DATA_EXFIL_JS_FS_ACCESS
+  category: data_exfiltration
+  severity: HIGH
+  patterns:
+    - "require\\s*\\(['\"]fs['\"]\\)"
+    - "from\\s+['\"]fs['\"]"
+    - "from\\s+['\"]fs/promises['\"]"
+    - "readFileSync\\s*\\([^)]*(?:\\.env|\\.aws|id_rsa|etc/passwd)"
+    - "readFile\\s*\\([^)]*(?:\\.env|\\.aws|id_rsa|etc/passwd)"
+  file_types: [javascript, typescript]
+  description: "File system access that may read sensitive files"
+  remediation: "Review file system access. Do not read credential or system files"
 
 - id: DATA_EXFIL_ENV_VARS
   category: data_exfiltration
@@ -258,7 +308,7 @@
   severity: MEDIUM
   patterns:
     - "(?:[A-Za-z0-9+/]{100,}={0,2})"
-  file_types: [python, bash, markdown]
+  file_types: [python, bash, markdown, javascript, typescript]
   description: "Large base64 encoded string (possible code obfuscation)"
   remediation: "Avoid obfuscation. Use clear, readable code"
 
@@ -268,7 +318,7 @@
   patterns:
     - "(?:\\\\x[0-9a-fA-F]{2}){20,}"
     - "(?:0x[0-9a-fA-F]{2},?\\s*){20,}"
-  file_types: [python]
+  file_types: [python, javascript, typescript]
   description: "Large hex-encoded blob (possible obfuscation)"
   remediation: "Use clear code instead of hex encoding"
 
@@ -278,7 +328,7 @@
   patterns:
     - "\\^\\s*0x[0-9a-fA-F]+"
     - "\\bxor\\b"
-  file_types: [python]
+  file_types: [python, javascript, typescript]
   description: "XOR operations often used for obfuscation"
   remediation: "Remove XOR encoding unless clearly justified"
 
@@ -300,7 +350,7 @@
   severity: CRITICAL
   patterns:
     - "(?:AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}"
-  file_types: [python, bash, markdown]
+  file_types: [python, bash, markdown, javascript, typescript]
   description: "AWS access key detected"
   remediation: "Remove hardcoded AWS keys. Use environment variables or IAM roles"
 
@@ -309,7 +359,7 @@
   severity: CRITICAL
   patterns:
     - "(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{24,}"
-  file_types: [python, bash, markdown]
+  file_types: [python, bash, markdown, javascript, typescript]
   description: "Stripe API key detected"
   remediation: "Remove hardcoded Stripe keys. Use environment variables"
 
@@ -318,7 +368,7 @@
   severity: CRITICAL
   patterns:
     - "AIza[A-Za-z0-9_-]{35}"
-  file_types: [python, bash, markdown]
+  file_types: [python, bash, markdown, javascript, typescript]
   description: "Google API key detected"
   remediation: "Remove hardcoded Google API keys"
 
@@ -327,7 +377,7 @@
   severity: CRITICAL
   patterns:
     - "gh[pousr]_[A-Za-z0-9]{36,}"
-  file_types: [python, bash, markdown]
+  file_types: [python, bash, markdown, javascript, typescript]
   description: "GitHub token detected"
   remediation: "Remove hardcoded GitHub tokens"
 
@@ -336,7 +386,7 @@
   severity: HIGH
   patterns:
     - "eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"
-  file_types: [python, bash, markdown]
+  file_types: [python, bash, markdown, javascript, typescript]
   description: "JWT token detected"
   remediation: "Remove hardcoded JWT tokens"
 
@@ -345,7 +395,7 @@
   severity: CRITICAL
   patterns:
     - "-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"
-  file_types: [python, bash, markdown]
+  file_types: [python, bash, markdown, javascript, typescript]
   description: "Private key block detected"
   remediation: "Remove hardcoded private keys"
 
@@ -356,7 +406,7 @@
     - "(?:password|passwd|pwd)\\s*=\\s*['\\\"][^'\\\"]{8,}['\\\"]"
     - "(?:api_key|apikey|api-key)\\s*=\\s*['\\\"][^'\\\"]{16,}['\\\"]"
     - "(?:secret|token)\\s*=\\s*['\\\"][^'\\\"]{16,}['\\\"]"
-  file_types: [python, bash]
+  file_types: [python, bash, javascript, typescript]
   description: "Hardcoded password or secret in variable"
   remediation: "Use environment variables or secure vaults for secrets"
 
@@ -365,7 +415,7 @@
   severity: HIGH
   patterns:
     - "(?:mongodb|mysql|postgresql|postgres)://[^:]+:[^@]+@"
-  file_types: [python, bash, markdown]
+  file_types: [python, bash, markdown, javascript, typescript]
   description: "Database connection string with embedded credentials"
   remediation: "Remove credentials from connection strings"
 
