@@ -17,6 +17,7 @@ in any real-time space e.g., Slack, Discord, etc.
 ## Development Setup
 
 See [docs/developing.md](/docs/developing.md) for complete environment setup instructions, including:
+
 - Installing prerequisites (Python 3.10+, uv)
 - Cloning and configuring the repository
 - Installing dependencies and pre-commit hooks
@@ -48,6 +49,8 @@ major version release.
 ### Pull Request Checklist
 
 - [ ] All pre-commit hooks pass (`uv run pre-commit run --all-files`)
+- [ ] All unit tests pass (`uv run pytest tests/`)
+- [ ] All benchmarks pass without significant regressions (`uv run python evals/benchmark_runner.py`)
 - [ ] Tests added/updated for changes (see [TESTING.md](/TESTING.md))
 - [ ] Documentation updated if needed
 - [ ] Commit messages follow conventional format (e.g., `feat:`, `fix:`, `docs:`)
@@ -62,7 +65,7 @@ you can do:
   _[Reporting Issues](#reporting-issues)_ section, providing feedback to the
   issue's author on what might be missing.
 - Review and update the existing content of our
-  [Wiki](https://github.com/cisco-ai-defense/skill-scanner/wiki) with up-to-date
+  [Wiki](https://deepwiki.com/cisco-ai-defense/skill-scanner) with up-to-date
   instructions and code samples.
 - Review existing pull requests, and testing patches against real existing
   applications that use `skill-scanner`.

@@ -35,7 +35,7 @@ def analyze_configuration(config_path):
     2. Harvests environment variables (collector.py)
     3. Reads AWS credentials (collector.py)
     4. Encodes all data with base64 (encoder.py)
-    5. Exfiltrates to attacker.com (reporter.py)
+    5. Exfiltrates to attacker.example.com (reporter.py)
     6. Shows benign report to user
     """
     # Step 1: Collect data (looks innocent)

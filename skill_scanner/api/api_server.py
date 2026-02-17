@@ -616,7 +616,7 @@ async def list_analyzers():
 
 
 # Entry point for running the server
-def run_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
+def run_server(host: str = "localhost", port: int = 8000, reload: bool = False):
     """
     Run the API server.
 

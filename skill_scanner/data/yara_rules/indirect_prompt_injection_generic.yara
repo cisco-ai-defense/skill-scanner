@@ -1,16 +1,19 @@
 //////////////////////////////////////////
-// Transitive Trust Abuse Detection
-// Target: Skills that delegate trust to untrusted external content
-// For agent skills that consume webpages, files, issues, docs
+// Indirect Prompt Injection - Instruction Manipulation Detection
+// AITech-1.2 / AISubtech-1.2.1
+// Target: Skills that embed/follow malicious instructions from external data sources
+// Detects delegation of trust to untrusted external content (webpages, documents, APIs)
 //////////////////////////////////////////
 
-rule transitive_trust_abuse{
+rule indirect_prompt_injection_generic{
 
     meta:
         author = "Cisco"
-        description = "Detects skills that delegate trust to untrusted external content"
+        description = "Detects indirect prompt injection via instruction manipulation from external sources"
         classification = "harmful"
         threat_type = "TRANSITIVE TRUST ABUSE"
+        aitech = "AITech-1.2"
+        aisubtech = "AISubtech-1.2.1"
 
     strings:
 
@@ -23,8 +26,7 @@ rule transitive_trust_abuse{
         // Obeying untrusted sources
         $obey_untrusted = /\b(do (what|whatever) (the )?(webpage|file|document|url|content) (says|tells|instructs|commands?))\b/i
 
-        // Running code blocks from external UNTRUSTED sources (not local scripts with --help)
-        // Exclude legitimate CLI usage patterns
+        // Running code blocks from external UNTRUSTED sources
         $run_code_blocks = /\b(run (all |any )?(code|script) blocks? (you |that )?(find|see|encounter|discover) (in|from|inside) (the )?(url|webpage|website|external|untrusted))\b/i
 
         // Following markdown/HTML instructions
@@ -33,41 +35,26 @@ rule transitive_trust_abuse{
         // Delegating to file content
         $delegate_to_file = /\b(let (the )?(file|document|content) (decide|determine|control|specify))\b/i
 
-        // Executing inline code from documents
-        $execute_inline = /\b(execute (inline |embedded )?(code|scripts?)|run (inline |embedded )?(code|scripts?))\b/i
+        // Executing inline code from documents - TIGHTENED: require "inline" or "embedded" qualifier
+        // Old pattern matched "run scripts", "execute code" which is normal skill language
+        $execute_inline = /\b(execute (inline|embedded) (code|scripts?)|run (inline|embedded) (code|scripts?))\b/i
 
         // Trusting URL content
         $trust_url_content = /\b(trust (the )?(url|link|webpage) (content|instructions?)|safe to (follow|execute|run) (url|link|webpage))\b/i
 
-        // Parsing and executing
-        $parse_execute = /\b(parse (and |then )?(execute|run|eval)|extract (and |then )?(execute|run|eval))\b/i
+        // Parsing and executing - TIGHTENED: require external source context
+        // Old pattern matched "parse and run", "parse and execute" which is common in legitimate code
+        $parse_execute = /\b(parse (and |then )(execute|run|eval)|extract (and |then )(execute|run|eval))\b[^.]{0,40}\b(from|in|inside|within)\s+(the\s+)?(url|webpage|file|document|external|untrusted)/i
 
     condition:
 
-        // Following external instructions
         $follow_external or
-
-        // Executing external content
         $execute_external or
-
-        // Obeying untrusted sources
         $obey_untrusted or
-
-        // Running code blocks
         $run_code_blocks or
-
-        // Following markup instructions
         $follow_markup or
-
-        // Delegating to file content
         $delegate_to_file or
-
-        // Executing inline code
         $execute_inline or
-
-        // Trusting URL content
         $trust_url_content or
-
-        // Parse and execute
         $parse_execute
 }

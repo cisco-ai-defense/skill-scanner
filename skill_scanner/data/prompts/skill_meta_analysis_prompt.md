@@ -107,11 +107,12 @@ When validating or creating findings, use these exact AITech codes:
 ### Prompt Injection (AITech-1.x)
 - **AITech-1.1**: Direct Prompt Injection - explicit override attempts in SKILL.md
   - "ignore previous instructions", "you are now in admin mode", jailbreak attempts
-- **AITech-1.2**: Indirect Prompt Injection - transitive trust abuse
+- **AITech-1.2**: Indirect Prompt Injection - Instruction Manipulation (AISubtech-1.2.1)
+  - Embedding malicious instructions in external data sources (webpages, documents, APIs)
   - Following instructions from external URLs, executing code from untrusted files
 
-### Social Engineering (AITech-2.1)
-- Deceptive skill descriptions that mislead about true functionality
+### Protocol Manipulation - Capability Inflation (AITech-4.3)
+- Manipulation of skill discovery mechanisms to inflate perceived capabilities
 - Name/description mismatch (e.g., "safe-calculator" that exfiltrates data)
 
 ### Data Exfiltration (AITech-8.2)
@@ -130,7 +131,7 @@ When validating or creating findings, use these exact AITech codes:
 - Tool shadowing: replacing legitimate tools
 - Violating declared allowed-tools restrictions
 
-### Availability Disruption (AITech-13.3)
+### Disruption of Availability (AITech-13.1 / AISubtech-13.1.1: Compute Exhaustion)
 - Infinite loops, unbounded retries
 - Resource exhaustion, denial of service patterns
 
@@ -264,13 +265,13 @@ Use these **exact strings** for the `category` field. Invalid values will cause 
 | `unauthorized_tool_use` | AITech-12.1 | Tool abuse, poisoning, shadowing |
 | `obfuscation` | AITech-9.1 | Deliberately obfuscated malicious code |
 | `hardcoded_secrets` | AITech-8.2 | Credentials, API keys in code |
-| `social_engineering` | AITech-2.1, AITech-15.1 | Deceptive descriptions/content |
-| `resource_abuse` | AITech-13.3 | DoS, infinite loops, resource exhaustion |
+| `social_engineering` | AITech-15.1 | Deceptive/harmful content |
+| `resource_abuse` | AITech-13.1 | DoS, infinite loops, resource exhaustion |
 | `policy_violation` | - | Generic policy violations |
 | `malware` | - | Known malware signatures |
-| `skill_discovery_abuse` | AITech-2.1 | Keyword baiting, over-broad descriptions |
-| `transitive_trust_abuse` | AITech-1.2 | Following untrusted external content |
-| `autonomy_abuse` | AITech-9.1 | Unbounded autonomy, no confirmation |
+| `skill_discovery_abuse` | AITech-4.3 | Protocol manipulation, capability inflation, keyword baiting |
+| `transitive_trust_abuse` | AITech-1.2 | Indirect prompt injection via instruction manipulation from external sources |
+| `autonomy_abuse` | AITech-13.1 | Unbounded autonomy, no confirmation, resource exhaustion |
 | `tool_chaining_abuse` | AITech-8.2 | Read→send, collect→post patterns |
 | `unicode_steganography` | AITech-9.1 | Hidden unicode characters |
 

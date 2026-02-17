@@ -1,10 +1,10 @@
 //////////////////////////////////////////
 // Detects coercive or attention-grabbing prompt injections.
-// Target: Directives forcing execution order (e.g., “Always execute this tool first”).
+// Target: Directives forcing execution order (e.g., "Always execute this tool first").
 // (Mandatory language to override normal tool chains)
 //////////////////////////////////////////
 
-rule coercive_injection {
+rule coercive_injection_generic {
 
     meta:
         author = "Cisco"
@@ -18,7 +18,7 @@ rule coercive_injection {
         $mandatory_execution = /(Always\s+(consult|use|run|execute|invoke|call|trigger|employ)\s+this\s+(tool|function|command|operation)\s+(immediately|first|before|prior|initially))/i
 
         // Priority override commands
-        $priority_overrides = /(Before\s+(executing|invoking|running|using|accessing|calling|employing)\s+any\s+other\s+(tool|action|function|command|operation)s?|(You|User)\s+(must|need to|have to|should|are required to)\s+(use|execute|run|invoke|call)\s+this\s+(tool|function|command|operation))/i
+        $priority_overrides = /(Before\s+(executing|invoking|running|using|accessing|calling|employing)\s+any\s+other\s+(tool|action|function|command|operation)s?|(You|User)\s+(must|need to|have to|are required to)\s+(use|execute|run|invoke|call)\s+this\s+(tool|function|command|operation))/i
 
         // Required precedence patterns
         $required_precedence = /(Required|Mandatory|Essential)\s+to\s+(execute|use|run|invoke|call)\s+(this|the current)\s+(tool|function|command|operation)\s+(first|before|initially|prior)/i
@@ -39,7 +39,7 @@ rule coercive_injection {
         $html_tag_with_commands = /\b<(IMPORTANT|critical|urgent)>[^\n]*(read [^\n]*contents?|pass [^\n]*contents?|add [^\n]*entire|send [^\n]*to[^\n]*@|execute[^\n]*before|call[^\n]*first|use[^\n]*authentication)[^\n]*<\/(IMPORTANT|critical|urgent)>\b/i
 
         // Tool execution override patterns
-        $execution_overrides = /\b(do not execute[^\n]*other[^\n]*tool|must[^\n]*this tool|only[^\n]*this tool|tool[^\n]*will not work)\b/i
+        $execution_overrides = /\b(do not execute[^\n]*other[^\n]*tool|tool[^\n]*will not work)\b/i
 
         // Behavioral control instructions
         $behavior_control = /\b(tell (the )?user only|hide (the )?user)\b/i
@@ -47,69 +47,40 @@ rule coercive_injection {
         // MCP tool poisoning patterns
         $tool_poisoning = /\b(sidenote\W+(required|otherwise) [^\n]*tool [^\n]*work|tool\s+will\s+not\s+work\s+unless|must\s+first [^\n]*read [^\n]*config|shadow [^\n]*trusted [^\n]*tool)\b/i
 
-        // Data exfiltration coercion
-        $data_exfiltration_coercion = /\b(list\s+all\s+(api\s+)?keys?|show\s+me?\s+(all\s+)?passwords?|concatenate [^\n]*\s+conversation\s+history|include [^\n]*\b(secrets?|passwords?|keys?|credentials?|tokens?|config|sensitive|private|confidential|internal|system\s+prompt|conversation\s+history) [^\n]*in\s+(your\s+)?response|base64\s+encode [^\n]*\s+credentials?)\b/i
+        // Data exfiltration coercion - TIGHTENED
+        // Removed "list all keys" and "show me passwords" which can appear in legitimate contexts
+        $data_exfiltration_coercion = /\b(concatenate [^\n]*\s+conversation\s+history|include [^\n]*\b(secrets?|passwords?|credentials?|tokens?|system\s+prompt|conversation\s+history)\s+[^\n]*in\s+(your\s+)?response|base64\s+encode [^\n]*\s+credentials?)\b/i
 
         // Behavioral triggers
         $behavioral_triggers = /\b(if [^\n]*trusted [^\n]*then|when [^\n]*admin [^\n]*detected|random\.(random|choice) [^\n]*instructions?)\b/i
 
-        // Pre-execution attacks
-        $pre_execution_attacks = /\b(retrieve [^\n]*description [^\n]*user [^\n]*workstation|all\s+commands\s+must\s+include|before [^\n]*using [^\n]*tool [^\n]*read|permission [^\n]*manipulation)\b/i
+        // Pre-execution attacks - TIGHTENED
+        // Removed "permission manipulation" which is too generic
+        $pre_execution_attacks = /\b(retrieve [^\n]*description [^\n]*user [^\n]*workstation|all\s+commands\s+must\s+include|before [^\n]*using [^\n]*tool [^\n]*read [^\n]*config)\b/i
 
         // Conversation theft triggers
-        $conversation_theft = /\b(send [^\n]*conversation\s+history|when [^\n]*detected [^\n]*send [^\n]*full [^\n]*history|highest\s+priority [^\n]*over [^\n]*other [^\n]*tools)\b/i
+        $conversation_theft = /\b(send [^\n]*conversation\s+history[^\n]*(to|via)|when [^\n]*detected [^\n]*send [^\n]*full [^\n]*history|highest\s+priority [^\n]*over [^\n]*other [^\n]*tools)\b/i
 
         // Code manipulation instructions
         $code_manipulation = /\b(duplicate [^\n]*code [^\n]*snippets [^\n]*silently|insert [^\n]*vulnerability [^\n]*generated [^\n]*code)\b/i
 
     condition:
 
-        // Mandatory execution directives
         $mandatory_execution or
-
-        // Priority override commands
         $priority_overrides or
-
-        // Required precedence patterns
         $required_precedence or
-
-        // Hidden parameter requests
         $hidden_param or
-
-        // Specific file access coercion
         $file_access_coercion or
-
-        // Model data extraction coercion
         $model_data_coercion or
-
-        // Model internal extraction
         $model_internals or
-
-        // HTML-like tag instructions with commands
         $html_tag_with_commands or
-
-        // Tool execution override patterns
         $execution_overrides or
-
-        // Behavioral control instructions
         $behavior_control or
-
-        // MCP tool poisoning patterns
         $tool_poisoning or
-
-        // Data exfiltration coercion
         $data_exfiltration_coercion or
-
-        // Behavioral triggers
         $behavioral_triggers or
-
-        // Pre-execution attacks
         $pre_execution_attacks or
-
-        // Conversation theft triggers
         $conversation_theft or
-
-        // Code manipulation instructions
         $code_manipulation
 
 }

@@ -18,6 +18,8 @@
 Markdown format reporter for scan results.
 """
 
+import re
+
 from ...core.models import Finding, Report, ScanResult, Severity
 
 
@@ -137,6 +139,7 @@ class MarkdownReporter:
         lines.append("")
 
         for result in report.scan_results:
+            lines.append("\n---\n")
             status_icon = "[OK]" if result.is_safe else "[FAIL]"
             lines.append(f"### {status_icon} {result.skill_name}")
             lines.append("")
@@ -186,9 +189,12 @@ class MarkdownReporter:
             if finding.snippet:
                 lines.append(f"{indent_str}")
                 lines.append(f"{indent_str}**Code Snippet:**")
-                lines.append(f"{indent_str}```")
-                lines.append(f"{indent_str}{finding.snippet}")
-                lines.append(f"{indent_str}```")
+                if not re.search(r"```", finding.snippet):
+                    lines.append(f"{indent_str}```")
+                for line in finding.snippet.splitlines():
+                    lines.append(f"{indent_str}{line}")
+                if not re.search(r"```", finding.snippet):
+                    lines.append(f"{indent_str}```")
 
             if finding.remediation:
                 lines.append(f"{indent_str}")

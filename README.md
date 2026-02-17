@@ -109,6 +109,18 @@ skill-scanner scan-all /path/to/skills --recursive --use-behavioral
 
 # CI/CD: Fail build if threats found
 skill-scanner scan-all ./skills --fail-on-findings --format sarif --output results.sarif
+
+# Use custom YARA rules
+skill-scanner scan /path/to/skill --custom-rules /path/to/my-rules/
+
+# Disable specific noisy rules
+skill-scanner scan /path/to/skill --disable-rule YARA_script_injection --disable-rule MANIFEST_MISSING_LICENSE
+
+# Strict mode (more findings, higher FP rate)
+skill-scanner scan /path/to/skill --yara-mode strict
+
+# Permissive mode (fewer findings, may miss some threats)
+skill-scanner scan /path/to/skill --yara-mode permissive
 ```
 
 ### Python SDK
@@ -157,6 +169,9 @@ print(f"Findings: {len(result.findings)}")
 | `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif` |
 | `--output PATH` | Save report to file |
 | `--fail-on-findings` | Exit with error if HIGH/CRITICAL found |
+| `--yara-mode` | Detection mode: `strict`, `balanced` (default), `permissive` |
+| `--custom-rules PATH` | Use custom YARA rules from directory |
+| `--disable-rule RULE` | Disable specific rule (can repeat) |
 
 ---
 

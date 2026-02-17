@@ -418,11 +418,11 @@ class TestAITechTaxonomy:
         expected_codes = [
             "AITech-1.1",
             "AITech-1.2",
-            "AITech-2.1",
+            "AITech-4.3",
             "AITech-8.2",
             "AITech-9.1",
             "AITech-12.1",
-            "AITech-13.3",
+            "AITech-13.1",
             "AITech-15.1",
         ]
 
@@ -440,11 +440,11 @@ class TestAITechTaxonomy:
         aitech_codes = [
             "AITech-1.1",
             "AITech-1.2",
-            "AITech-2.1",
+            "AITech-4.3",
             "AITech-8.2",
             "AITech-9.1",
             "AITech-12.1",
-            "AITech-13.3",
+            "AITech-13.1",
             "AITech-15.1",
         ]
 

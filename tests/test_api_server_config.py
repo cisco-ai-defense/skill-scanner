@@ -225,7 +225,7 @@ class TestRunServerFunction:
         sig = inspect.signature(run_server)
 
         # Check default values
-        assert sig.parameters["host"].default == "0.0.0.0"
+        assert sig.parameters["host"].default == "localhost"
         assert sig.parameters["port"].default == 8000
         assert sig.parameters["reload"].default is False
 

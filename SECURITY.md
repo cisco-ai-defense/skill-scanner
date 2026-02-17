@@ -1,109 +1,57 @@
-# Security Policy
+# Security Policies and Procedures
 
-## Supported Versions
+This document outlines security procedures and general policies for the
+`skill-scanner` project.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.2.x   | :white_check_mark: |
-| 0.1.x   | :x:                |
+- [Disclosing a security issue](#disclosing-a-security-issue)
+- [Vulnerability management](#vulnerability-management)
+- [Suggesting changes](#suggesting-changes)
 
-## Reporting a Vulnerability
+## Disclosing a security issue
 
-We take security seriously. If you discover a security vulnerability in the Skill Scanner, please report it responsibly.
+The `skill-scanner` maintainers take all security issues in the project
+seriously. Thank you for improving the security of `skill-scanner`. We
+appreciate your dedication to responsible disclosure and will make every effort
+to acknowledge your contributions.
 
-### How to Report
+`skill-scanner` leverages GitHub's private vulnerability reporting.
 
-**DO NOT** open a public GitHub issue for security vulnerabilities.
+To learn more about this feature and how to submit a vulnerability report,
+review [GitHub's documentation on private reporting](https://docs.github.com/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability).
 
-Instead, please email: oss-security@cisco.com
+Here are some helpful details to include in your report:
 
-Include:
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
+- a detailed description of the issue
+- the steps required to reproduce the issue
+- versions of the project that may be affected by the issue
+- if known, any mitigations for the issue
 
-### What to Expect
+A maintainer will acknowledge the report within three (3) business days, and
+will send a more detailed response within an additional three (3) business days
+indicating the next steps in handling your report.
 
-- **Acknowledgment**: Within 48 hours
-- **Initial Assessment**: Within 1 week
-- **Fix Timeline**: Depends on severity
-  - Critical: 1-7 days
-  - High: 1-2 weeks
-  - Medium: 2-4 weeks
-  - Low: Best effort
+If you've been unable to successfully draft a vulnerability report via GitHub
+or have not received a response during the alloted response window, please
+reach out via the [Cisco Open security contact email](mailto:oss-security@cisco.com).
 
-### Disclosure Policy
+After the initial reply to your report, the maintainers will endeavor to keep
+you informed of the progress towards a fix and full announcement, and may ask
+for additional information or guidance.
 
-- We follow coordinated disclosure
-- We will credit researchers (unless they prefer anonymity)
-- We will publish security advisories for confirmed vulnerabilities
-- We request 90 days before public disclosure
+## Vulnerability management
 
-## Security Features
+When the maintainers receive a disclosure report, they will assign it to a
+primary handler.
 
-### Built-in Protections
+This person will coordinate the fix and release process, which involves the
+following steps:
 
-1. **Prompt Injection Protection**
-   - Random delimiter system prevents analyzer manipulation
-   - Validates delimiter integrity before LLM analysis
+- confirming the issue
+- determining affected versions of the project
+- auditing code to find any potential similar problems
+- preparing fixes for all releases under maintenance
 
-2. **Input Validation**
-   - File path validation
-   - Size limits on uploaded files
-   - Sanitization of user inputs
+## Suggesting changes
 
-3. **Sandboxed Execution**
-   - Behavioral analyzer runs in Docker (optional)
-   - Read-only file system by default
-   - Network isolation available
-
-4. **No Credential Exposure**
-   - No hardcoded credentials
-   - API keys from environment only
-   - Secrets never logged
-
-### Security Best Practices
-
-When using the analyzer:
-
-1. **Run in isolated environment** for untrusted skills
-2. **Use Docker sandbox** for behavioral analysis
-3. **Review findings manually** before taking action
-4. **Keep dependencies updated** (`pip install --upgrade cisco-ai-skill-scanner`)
-5. **Use environment variables** for API keys (never hardcode)
-
-## Known Limitations
-
-1. **Behavioral Analyzer**: Executes skill code - only use on skills you're analyzing
-2. **LLM Analyzer**: Sends skill content to LLM provider (use Bedrock for compliance)
-3. **Static Analysis**: Pattern-based, may miss sophisticated obfuscation
-
-## Security Scanning
-
-This tool scans agent skills for security threats. It is not a substitute for:
-- Manual security review
-- Penetration testing
-- Compliance audits
-- Legal review
-
-Always perform comprehensive security assessment before deploying skills in production.
-
-## Dependencies
-
-We regularly update dependencies to address security vulnerabilities. Run:
-
-```bash
-pip install --upgrade cisco-ai-skill-scanner
-```
-
-To check for dependency vulnerabilities:
-
-```bash
-uv run pip-audit
-```
-
-## Contact
-
-For security concerns: oss-security@cisco.com
-For general issues: https://github.com/cisco-ai-defense/skill-scanner/issues
+If you have suggestions on how this process could be improved please submit an
+issue or pull request.
