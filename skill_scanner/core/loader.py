@@ -197,16 +197,6 @@ class SkillLoader:
             if not path.is_file():
                 continue
 
-            # Skip hidden files and __pycache__ (relative to the skill directory)
-            #
-            # Important: Skills may live under hidden parent directories like `.claude/skills/`.
-            # We only want to skip hidden files/folders *inside* the skill package, not its parents.
-            rel_parts = path.relative_to(skill_directory).parts
-            if any(part.startswith(".") for part in rel_parts):
-                continue
-            if "__pycache__" in rel_parts:
-                continue
-
             relative_path = str(path.relative_to(skill_directory))
             file_type = self._determine_file_type(path)
             size_bytes = path.stat().st_size
