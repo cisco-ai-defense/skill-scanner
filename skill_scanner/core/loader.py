@@ -46,6 +46,8 @@ class SkillLoader:
     # File type mappings
     PYTHON_EXTENSIONS = {".py"}
     BASH_EXTENSIONS = {".sh", ".bash"}
+    JAVASCRIPT_EXTENSIONS = {".js", ".mjs", ".cjs"}
+    TYPESCRIPT_EXTENSIONS = {".ts", ".tsx"}
     MARKDOWN_EXTENSIONS = {".md", ".markdown"}
     BINARY_EXTENSIONS = {".exe", ".so", ".dylib", ".dll", ".bin"}
 
@@ -197,16 +199,6 @@ class SkillLoader:
             if not path.is_file():
                 continue
 
-            # Skip hidden files and __pycache__ (relative to the skill directory)
-            #
-            # Important: Skills may live under hidden parent directories like `.claude/skills/`.
-            # We only want to skip hidden files/folders *inside* the skill package, not its parents.
-            rel_parts = path.relative_to(skill_directory).parts
-            if any(part.startswith(".") for part in rel_parts):
-                continue
-            if "__pycache__" in rel_parts:
-                continue
-
             relative_path = str(path.relative_to(skill_directory))
             file_type = self._determine_file_type(path)
             size_bytes = path.stat().st_size
@@ -248,6 +240,10 @@ class SkillLoader:
             return "python"
         elif suffix in self.BASH_EXTENSIONS:
             return "bash"
+        elif suffix in self.JAVASCRIPT_EXTENSIONS:
+            return "javascript"
+        elif suffix in self.TYPESCRIPT_EXTENSIONS:
+            return "typescript"
         elif suffix in self.MARKDOWN_EXTENSIONS:
             return "markdown"
         elif suffix in self.BINARY_EXTENSIONS:

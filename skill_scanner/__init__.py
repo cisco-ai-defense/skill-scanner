@@ -31,6 +31,7 @@ from .config.constants import SkillScannerConstants
 from .core.loader import SkillLoader, load_skill
 from .core.models import Finding, Report, ScanResult, Severity, Skill, ThreatCategory
 from .core.scanner import SkillScanner, scan_directory, scan_skill
+from .core.strict_structure import SkillValidator, validate_skill
 
 __all__ = [
     "SkillScanner",
@@ -44,6 +45,8 @@ __all__ = [
     "ThreatCategory",
     "SkillLoader",
     "load_skill",
+    "SkillValidator",
+    "validate_skill",
     "Config",
     "SkillScannerConstants",
 ]
