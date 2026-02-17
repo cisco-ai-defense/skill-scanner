@@ -421,6 +421,10 @@ The structured output schema will enforce these exact codes."""
         """Convert LLM analysis results to Finding objects."""
         findings = []
 
+        # Store skill-level assessment for scan_metadata (not per-finding)
+        self.last_overall_assessment = analysis_result.get("overall_assessment", "")
+        self.last_primary_threats = analysis_result.get("primary_threats", [])
+
         for idx, llm_finding in enumerate(analysis_result.get("findings", [])):
             try:
                 # Parse severity
@@ -483,15 +487,22 @@ The structured output schema will enforce these exact codes."""
                     severity = Severity.LOW  # Downgrade from MEDIUM/HIGH to LOW
 
                 # Parse location
-                location = llm_finding.get("location", "")
+                location = (llm_finding.get("location") or "").strip()
                 file_path = None
                 line_number = None
 
-                if ":" in location:
-                    parts = location.split(":")
-                    file_path = parts[0]
-                    if len(parts) > 1 and parts[1].isdigit():
-                        line_number = int(parts[1])
+                if location:
+                    if ":" in location:
+                        parts = location.split(":")
+                        file_path = parts[0].strip()
+                        if len(parts) > 1 and parts[1].strip().isdigit():
+                            line_number = int(parts[1].strip())
+                    else:
+                        file_path = location
+
+                # If LLM didn't provide a usable location, infer from description/title/snippet
+                if not file_path:
+                    file_path = self._infer_file_path(skill, title, description, llm_finding.get("evidence", ""))
 
                 # Get AISubtech code if provided
                 aisubtech_code = llm_finding.get("aisubtech")
@@ -511,8 +522,6 @@ The structured output schema will enforce these exact codes."""
                     analyzer="llm",
                     metadata={
                         "model": self.provider_config.model,
-                        "overall_assessment": analysis_result.get("overall_assessment", ""),
-                        "primary_threats": analysis_result.get("primary_threats", []),
                         "aitech": aitech_code,
                         "aitech_name": threat_mapping.get("aitech_name"),
                         "aisubtech": aisubtech_code or threat_mapping.get("aisubtech"),
@@ -528,6 +537,47 @@ The structured output schema will enforce these exact codes."""
                 continue
 
         return findings
+
+    @staticmethod
+    def _infer_file_path(skill: Skill, title: str, description: str, evidence: str) -> str | None:
+        """Infer the primary file path from LLM finding text when location is missing.
+
+        Searches the title, description, and evidence for known skill file names,
+        preferring more specific paths (scripts/backdoor.py) over generic ones (SKILL.md).
+        """
+        text = f"{title}\n{description}\n{evidence}"
+
+        # Build candidate list from skill files, sorted longest-first for greedy matching
+        candidates: list[str] = []
+        for sf in skill.files:
+            candidates.append(sf.relative_path)
+            # Also match just the filename (LLMs often say "backdoor.py" not "scripts/backdoor.py")
+            name = sf.path.name
+            if name != sf.relative_path:
+                candidates.append(name)
+        # Always include SKILL.md
+        if "SKILL.md" not in candidates:
+            candidates.append("SKILL.md")
+
+        # Sort longest-first so "scripts/backdoor.py" matches before "backdoor.py"
+        candidates.sort(key=len, reverse=True)
+
+        for candidate in candidates:
+            if candidate in text:
+                # Return the relative_path for the matching file
+                for sf in skill.files:
+                    if sf.relative_path == candidate or sf.path.name == candidate:
+                        return sf.relative_path
+                # Fallback for SKILL.md
+                if candidate == "SKILL.md":
+                    return "SKILL.md"
+
+        # Last resort: if title/description mentions "SKILL.md" patterns
+        skillmd_hints = ["skill.md", "skill instructions", "skill's instructions", "in the skill"]
+        if any(hint in text.lower() for hint in skillmd_hints):
+            return "SKILL.md"
+
+        return None
 
     def _is_internal_file(self, skill: Skill, file_path: str) -> bool:
         """Check if a file path is internal to the skill package."""

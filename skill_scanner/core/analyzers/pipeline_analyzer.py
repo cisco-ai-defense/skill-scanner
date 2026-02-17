@@ -218,7 +218,13 @@ class PipelineAnalyzer(BaseAnalyzer):
         """Collapse equivalent pipelines to reduce duplicate findings noise."""
         by_key: dict[tuple[str, str], PipelineChain] = {}
         for chain in pipelines:
-            key = (chain.source_file, " ".join(chain.raw.split()))
+            normalized = " ".join(chain.raw.split())
+            # Strip leading shell prompt markers ($ , > ) for dedup
+            if normalized.startswith("$ "):
+                normalized = normalized[2:]
+            elif normalized.startswith("> "):
+                normalized = normalized[2:]
+            key = (chain.source_file, normalized)
             prev = by_key.get(key)
             if prev is None or chain.line_number < prev.line_number:
                 by_key[key] = chain

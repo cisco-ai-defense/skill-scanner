@@ -124,10 +124,7 @@ skill-scanner-api = "skill_scanner.api.api_cli:main"
 skill-scanner-pre-commit = "skill_scanner.hooks.pre_commit:main"
 
 [tool.hatch.version]
-source = "vcs"
-
-[tool.hatch.build.hooks.vcs]
-version-file = "skill_scanner/_version.py"
+path = "skill_scanner/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["skill_scanner"]

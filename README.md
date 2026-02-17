@@ -198,6 +198,7 @@ print(f"Findings: {len(result.findings)}")
 | `--aidefense-api-url URL` | Override AI Defense API URL (optional) |
 | `--use-trigger` | Enable trigger specificity analyzer |
 | `--enable-meta` | Enable meta-analyzer for false positive filtering |
+| `--verbose` | Include per-finding policy fingerprints, co-occurrence metadata, and keep meta-analyzer false positives |
 | `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif` |
 | `--detailed` | Include detailed findings in Markdown output |
 | `--compact` | Compact JSON output |

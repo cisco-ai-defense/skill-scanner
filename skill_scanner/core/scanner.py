@@ -18,12 +18,15 @@
 Core scanner engine for orchestrating skill analysis.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 from .analyzability import AnalyzabilityReport, compute_analyzability
 from .analyzer_factory import build_core_analyzers
@@ -190,6 +193,7 @@ class SkillScanner:
             validated_binary_files: set[str] = set()
             llm_analyzers: list[BaseAnalyzer] = []
             unreferenced_scripts: list[str] = []
+            llm_scan_meta: dict[str, Any] = {}
 
             for analyzer in self.analyzers:
                 # Defer LLM analyzers to Phase 2
@@ -238,6 +242,11 @@ class SkillScanner:
                     all_findings.extend(findings)
                     analyzer_names.append(analyzer.get_name())
 
+                    # Capture skill-level LLM assessment for scan_metadata
+                    if hasattr(analyzer, "last_overall_assessment"):
+                        llm_scan_meta["llm_overall_assessment"] = analyzer.last_overall_assessment
+                        llm_scan_meta["llm_primary_threats"] = getattr(analyzer, "last_primary_threats", [])
+
             # Post-process findings: Suppress BINARY_FILE_DETECTED for VirusTotal-validated files
             if validated_binary_files:
                 filtered_findings = []
@@ -268,6 +277,8 @@ class SkillScanner:
 
             # Attach policy fingerprint metadata for traceability (policy-controlled).
             policy_meta = self._policy_fingerprint_metadata()
+            if llm_scan_meta:
+                policy_meta.update(llm_scan_meta)
             self._annotate_findings_with_policy(all_findings, policy_meta)
 
         finally:

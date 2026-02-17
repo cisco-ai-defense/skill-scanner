@@ -414,7 +414,12 @@ Respond with JSON containing your analysis following the required schema."""
             # Parse response
             result = self._parse_response(response, findings)
 
-            logger.warning(
+            # Follow-up pass for uncovered findings
+            result = await self._cover_remaining_findings(
+                result, findings, skill, skill_context, analyzers_used, start_tag, end_tag
+            )
+
+            logger.info(
                 "Meta-analysis complete: %d validated, %d false positives filtered, %d new threats detected",
                 len(result.validated_findings),
                 len(result.false_positives),
@@ -433,6 +438,105 @@ Respond with JSON containing your analysis following the required schema."""
                     "summary": f"Meta-analysis failed: {str(e)}. Original findings preserved.",
                 },
             )
+
+    async def _cover_remaining_findings(
+        self,
+        result: MetaAnalysisResult,
+        findings: list[Finding],
+        skill: Skill,
+        skill_context: str,
+        analyzers_used: list[str],
+        start_tag: str,
+        end_tag: str,
+    ) -> MetaAnalysisResult:
+        """Send a follow-up request for any findings the first pass didn't classify."""
+        all_indices = set(range(len(findings)))
+
+        covered = set()
+        for vf in result.validated_findings:
+            idx = vf.get("_index")
+            if isinstance(idx, int):
+                covered.add(idx)
+        for fp in result.false_positives:
+            idx = fp.get("_index")
+            if isinstance(idx, int):
+                covered.add(idx)
+
+        remaining = sorted(all_indices - covered)
+        if not remaining:
+            return result
+
+        logger.info(
+            "Meta follow-up: %d/%d findings uncovered, sending follow-up request",
+            len(remaining),
+            len(findings),
+        )
+
+        # Build a focused list of only the uncovered findings
+        remaining_findings = [findings[i] for i in remaining]
+        remaining_data = []
+        for orig_idx, f in zip(remaining, remaining_findings, strict=False):
+            remaining_data.append(
+                {
+                    "_index": orig_idx,
+                    "rule_id": f.rule_id,
+                    "category": f.category.value,
+                    "severity": f.severity.value,
+                    "title": f.title,
+                    "description": f.description[:200],
+                    "file_path": f.file_path,
+                    "analyzer": f.analyzer,
+                }
+            )
+        remaining_json = json.dumps(remaining_data, indent=2)
+
+        followup_prompt = f"""## Follow-Up: Classify Remaining Findings
+
+The previous analysis covered {len(covered)}/{len(findings)} findings. The following {len(remaining)} findings were NOT classified.
+
+Classify each into EITHER `validated_findings` or `false_positives`.
+
+### Skill Context
+{start_tag}
+Skill: {skill.name}
+Description: {skill.description}
+{end_tag}
+
+### Unclassified Findings
+```json
+{remaining_json}
+```
+
+Respond with a JSON object. Use COMPACT format for validated entries:
+```json
+{{
+  "validated_findings": [
+    {{"_index": N, "confidence": "HIGH|MEDIUM|LOW", "confidence_reason": "brief reason", "exploitability": "brief", "impact": "brief"}}
+  ],
+  "false_positives": [
+    {{"_index": N, "false_positive_reason": "brief reason"}}
+  ]
+}}
+```
+Every `_index` above MUST appear in exactly one list."""
+
+        try:
+            followup_response = await self._make_llm_request(self.system_prompt, followup_prompt)
+            followup_result = self._parse_response(followup_response, findings)
+
+            # Merge into original result
+            result.validated_findings.extend(followup_result.validated_findings)
+            result.false_positives.extend(followup_result.false_positives)
+
+            logger.info(
+                "Meta follow-up complete: +%d validated, +%d false positives",
+                len(followup_result.validated_findings),
+                len(followup_result.false_positives),
+            )
+        except Exception as e:
+            logger.warning("Meta follow-up failed: %s — uncovered findings will pass through as-is", e)
+
+        return result
 
     def _build_skill_context(self, skill: Skill) -> str:
         """Build comprehensive skill context for meta-analysis.
@@ -530,9 +634,8 @@ Respond with JSON containing your analysis following the required schema."""
                     "description": f.description,
                     "file_path": f.file_path,
                     "line_number": f.line_number,
-                    "snippet": f.snippet[:500] if f.snippet else None,
+                    "snippet": f.snippet[:200] if f.snippet else None,
                     "analyzer": f.analyzer,
-                    "metadata": f.metadata,
                 }
             )
         return json.dumps(findings_list, indent=2)
@@ -586,31 +689,32 @@ You have {num_findings} findings from {len(analyzers_used)} analyzers. Your job 
 
 ### Your Task (IN ORDER OF IMPORTANCE)
 
-1. **FILTER FALSE POSITIVES** (Most Important)
-   - VERIFY each finding against the actual code above. If the code doesn't match the claim → FALSE POSITIVE
-   - Pattern matches without actual malicious behavior → FALSE POSITIVE
-   - Static-only findings not confirmed by LLM/behavioral → likely FALSE POSITIVE
-   - Reading internal files, using standard libraries normally → FALSE POSITIVE
-   - Aim to filter 30-70% of static analyzer findings as noise
+1. **CORRELATE AND GROUP** (Most Important)
+   - Group related findings into `correlations` (e.g., 4 YARA autonomy_abuse hits on consecutive lines = 1 group, pipeline + static findings about the same exfil chain = 1 group)
+   - Keep ALL grouped findings in `validated_findings` — correlations are for GROUPING, not removing
 
-2. **PRIORITIZE BY ACTUAL RISK**
+2. **FILTER GENUINE FALSE POSITIVES**
+   - VERIFY each finding against the actual code above
+   - Only mark as FP if the code is genuinely benign (keyword in comment, safe library use, internal file read)
+   - Do NOT mark a finding as FP just because another analyzer already covers it
+
+3. **PRIORITIZE BY ACTUAL RISK**
    - What should the developer fix FIRST? Put it at index 0 in priority_order
-   - CRITICAL: Active data exfiltration, credential theft
-   - HIGH: Command injection, prompt injection with clear exploitation path
+   - CRITICAL: Active data exfiltration, credential theft, prompt injection
+   - HIGH: Command injection, system modification
    - MEDIUM: Potential issues that need more context
-   - LOW/Filter: Informational, style, missing optional metadata
 
-3. **CONSOLIDATE RELATED FINDINGS**
-   - Multiple findings about the same issue = ONE entry in correlations
-   - Example: "Reads AWS creds" + "Makes HTTP POST" + "Sends data" = ONE "Credential Exfiltration" issue
-
-4. **MAKE ACTIONABLE**
-   - Every recommendation needs a specific fix (code example if possible)
+4. **MAKE ACTIONABLE RECOMMENDATIONS**
+   - Every recommendation needs a specific fix
    - "Don't do X" is not actionable. "Replace X with Y" is actionable.
 
 5. **DETECT MISSED THREATS** (ONLY if obvious)
-   - This should be RARE. Leave missed_threats EMPTY unless there's something critical and obvious.
-   - Don't invent problems to fill this field.
+   - Leave missed_threats EMPTY unless there's something critical all analyzers missed.
+
+**IMPORTANT: COMPACT OUTPUT FORMAT**
+- Use COMPACT format for `validated_findings`: only `_index`, `confidence`, `confidence_reason`, `exploitability`, `impact`. Do NOT echo back title, description, file_path, snippet.
+- Output `overall_risk_assessment` and `correlations` FIRST in the JSON (before the large arrays).
+- Classify every finding (`_index` 0 to {num_findings - 1}) into either `validated_findings` or `false_positives`.
 
 Respond with a JSON object following the schema in the system prompt."""
 
@@ -767,6 +871,28 @@ Respond with a JSON object following the schema in the system prompt."""
                     parsed_obj: dict[str, Any] = json.loads(json_content)
                     return parsed_obj
         except json.JSONDecodeError:
+            pass
+
+        # Strategy 4: Attempt to repair truncated JSON (common with large outputs)
+        try:
+            start_idx = response.find("{")
+            if start_idx != -1:
+                json_fragment = response[start_idx:]
+                # Close unclosed braces/brackets
+                open_braces = json_fragment.count("{") - json_fragment.count("}")
+                open_brackets = json_fragment.count("[") - json_fragment.count("]")
+
+                if open_braces > 0 or open_brackets > 0:
+                    # Truncate to last complete entry (last comma or closing bracket)
+                    last_good = max(json_fragment.rfind("},"), json_fragment.rfind("],"), json_fragment.rfind("}"))
+                    if last_good > 0:
+                        repaired = json_fragment[: last_good + 1]
+                        repaired += "]}" * open_brackets
+                        repaired += "}" * max(0, repaired.count("{") - repaired.count("}"))
+                        parsed_repaired: dict[str, Any] = json.loads(repaired)
+                        logger.warning("Recovered truncated meta-analysis JSON response")
+                        return parsed_repaired
+        except (json.JSONDecodeError, ValueError):
             pass
 
         raise ValueError("No valid JSON found in response")

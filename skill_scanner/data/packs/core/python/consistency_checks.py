@@ -69,6 +69,8 @@ def check_consistency(skill: Skill) -> list[Finding]:
     uses_network = skill_uses_network(skill)
     declared_network = manifest_declares_network(skill)
 
+    skillmd = str(skill.skill_md_path)
+
     if uses_network and not declared_network:
         findings.append(
             Finding(
@@ -78,7 +80,7 @@ def check_consistency(skill: Skill) -> list[Finding]:
                 severity=Severity.MEDIUM,
                 title="Undeclared network usage",
                 description="Skill code uses network libraries but doesn't declare network requirement",
-                file_path=None,
+                file_path=skillmd,
                 remediation="Declare network usage in compatibility field or remove network calls",
                 analyzer="static",
             )

@@ -244,7 +244,8 @@ class TestFindingConversion:
         assert finding.file_path == "SKILL.md"
         assert finding.line_number == 15
         assert finding.snippet == "Line 15: ignore previous instructions"
-        assert "Malicious skill" in finding.metadata["overall_assessment"]
+        assert analyzer.last_overall_assessment == "Malicious skill"
+        assert analyzer.last_primary_threats == ["PROMPT INJECTION"]
 
     def test_converts_multiple_findings(self):
         """Test conversion of multiple findings."""

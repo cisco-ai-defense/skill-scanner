@@ -491,6 +491,8 @@ class StaticAnalyzer(BaseAnalyzer):
         uses_network = self._skill_uses_network(skill)
         declared_network = self._manifest_declares_network(skill)
 
+        skillmd = str(skill.skill_md_path)
+
         if uses_network and not declared_network:
             findings.append(
                 Finding(
@@ -500,7 +502,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     severity=Severity.MEDIUM,
                     title="Undeclared network usage",
                     description="Skill code uses network libraries but doesn't declare network requirement",
-                    file_path=None,
+                    file_path=skillmd,
                     remediation="Declare network usage in compatibility field or remove network calls",
                     analyzer="static",
                 )
@@ -963,6 +965,7 @@ class StaticAnalyzer(BaseAnalyzer):
             return findings
 
         allowed_tools_lower = [tool.lower() for tool in skill.manifest.allowed_tools]
+        skillmd = str(skill.skill_md_path)
 
         if "read" not in allowed_tools_lower:
             if self._code_reads_files(skill):
@@ -977,7 +980,7 @@ class StaticAnalyzer(BaseAnalyzer):
                             f"Skill restricts tools to {skill.manifest.allowed_tools} but bundled scripts appear to "
                             f"read files from the filesystem."
                         ),
-                        file_path=None,
+                        file_path=skillmd,
                         remediation="Add 'Read' to allowed-tools or remove file reading operations from scripts",
                         analyzer="static",
                     )
@@ -996,7 +999,7 @@ class StaticAnalyzer(BaseAnalyzer):
                             f"Skill restricts tools to {skill.manifest.allowed_tools} but bundled scripts appear to "
                             f"write to the filesystem, which conflicts with a read-only tool declaration."
                         ),
-                        file_path=None,
+                        file_path=skillmd,
                         remediation="Either add 'Write' to allowed-tools (if intentional) or remove filesystem writes from scripts",
                         analyzer="static",
                     )
@@ -1012,7 +1015,7 @@ class StaticAnalyzer(BaseAnalyzer):
                         severity=Severity.HIGH,
                         title="Code executes bash but Bash tool not in allowed-tools",
                         description=f"Skill restricts tools to {skill.manifest.allowed_tools} but code executes bash commands",
-                        file_path=None,
+                        file_path=skillmd,
                         remediation="Add 'Bash' to allowed-tools or remove bash execution from code",
                         analyzer="static",
                     )
@@ -1034,7 +1037,7 @@ class StaticAnalyzer(BaseAnalyzer):
                         severity=Severity.LOW,
                         title="Code uses search/grep patterns but Grep tool not in allowed-tools",
                         description=f"Skill restricts tools to {skill.manifest.allowed_tools} but code uses regex search patterns",
-                        file_path=None,
+                        file_path=skillmd,
                         remediation="Add 'Grep' to allowed-tools or remove regex search operations",
                         analyzer="static",
                     )
@@ -1050,7 +1053,7 @@ class StaticAnalyzer(BaseAnalyzer):
                         severity=Severity.LOW,
                         title="Code uses glob/file patterns but Glob tool not in allowed-tools",
                         description=f"Skill restricts tools to {skill.manifest.allowed_tools} but code uses glob patterns",
-                        file_path=None,
+                        file_path=skillmd,
                         remediation="Add 'Glob' to allowed-tools or remove glob operations",
                         analyzer="static",
                     )
@@ -1068,7 +1071,7 @@ class StaticAnalyzer(BaseAnalyzer):
                         "Skill code makes network requests. While not controlled by allowed-tools, "
                         "network access should be documented and justified in the skill description."
                     ),
-                    file_path=None,
+                    file_path=skillmd,
                     remediation="Document network usage in skill description or remove network operations if not needed",
                     analyzer="static",
                 )

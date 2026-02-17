@@ -6,12 +6,12 @@ The Meta-Analyzer is an optional second-pass LLM analysis feature that reviews f
 
 When enabled via the `--enable-meta` CLI flag or `enable_meta` API parameter, the Meta-Analyzer performs:
 
-- **False Positive Filtering**: Aggressively identifies and removes false positives based on full skill context
-- **Finding Consolidation**: Merges redundant pattern-based findings into comprehensive threat descriptions
+- **False Positive Filtering**: Identifies genuinely benign findings based on full skill context (only marks FPs when code is actually safe)
+- **Finding Correlation**: Groups related findings from different analyzers into logical threat groups (e.g., 4 autonomy-abuse YARA matches = 1 correlation group)
 - **Priority Ranking**: Ranks findings by actual exploitability and business impact
-- **Correlation**: Groups related findings representing the same root cause
-- **Remediation Guidance**: Provides specific, actionable fixes with code examples
-- **Confidence Enrichment**: Adds `meta_confidence`, `meta_exploitability`, and `meta_impact` to validated findings
+- **Remediation Guidance**: Provides specific, actionable recommendations per correlation group
+- **Risk Assessment**: Overall skill verdict (SAFE/SUSPICIOUS/MALICIOUS) with reasoning
+- **Confidence Enrichment**: Adds `meta_confidence`, `meta_exploitability`, and `meta_impact` to every validated finding
 
 The meta-analyzer has full access to skill content (`SKILL.md` and code files), which helps it validate whether pattern-based detections are likely real threats.
 
@@ -24,10 +24,11 @@ The meta-analyzer has full access to skill content (`SKILL.md` and code files), 
    - All code files (.py, .js, .ts, .sh, .bash) with content (up to 30KB per file, 150KB total)
 3. **Authority-Based Review**: Uses an analyzer authority hierarchy to weight findings:
    - LLM Analyzer (highest) > Behavioral > AI Defense > Static/Pipeline/Bytecode > Trigger (lowest)
-4. **Filter & Consolidate**:
-   - Redundant pattern-based findings are consolidated into comprehensive descriptions
-   - False positives are removed based on actual code analysis
-   - Validated findings are enriched with confidence scores and reasoning
+4. **Validate & Correlate**:
+   - Each finding is verified against actual code content
+   - Genuinely benign findings are marked as false positives
+   - Related findings are grouped into correlation groups
+   - A follow-up pass covers any findings the initial analysis missed
 5. **Enrich Findings**: Each validated finding receives:
    - `meta_confidence`: HIGH/MEDIUM/LOW with reasoning
    - `meta_exploitability`: How easy it is to exploit
@@ -191,9 +192,11 @@ The meta-analyzer weights findings based on which analyzer produced them:
 ### Authority-Based Rules
 
 - **LLM + Behavioral agree** → HIGH confidence true positive
-- **LLM says SAFE, Static flags** → Likely false positive (trust LLM)
+- **LLM says SAFE, Static flags pattern-only (no malicious context)** → Likely false positive
 - **LLM says THREAT, others missed** → True positive (trust LLM)
-- **Only Static flagged (pattern match)** → Review carefully, may be false positive
+- **Only Static flagged, but code confirms the issue** → True positive (MEDIUM confidence)
+- **Only Static flagged, keyword-only with no malicious context** → Likely false positive
+- **Multiple analyzers flag different aspects of same issue** → Correlated — group, keep all
 
 ## Output Format
 
@@ -222,17 +225,25 @@ Meta-analyzed findings include enriched metadata:
 }
 ```
 
-### Finding Consolidation
+### Finding Correlation
 
-When multiple analyzers report overlapping threats, the meta-analyzer consolidates them into a single comprehensive finding. For example, if static analysis reports:
-- "HTTP POST request detected"
-- "Base64 encoding detected"
-- "Network library import detected"
+When multiple analyzers report overlapping threats, the meta-analyzer groups them into correlation groups rather than removing them. All findings are preserved in `validated_findings`, and the `correlations` block shows how they relate. For example:
 
-And LLM analysis reports:
-- "Data exfiltration via network"
+```json
+{
+  "correlations": [
+    {
+      "group_name": "Credential Theft Chain",
+      "finding_indices": [3, 12, 13, 24, 46],
+      "relationship": "Pipeline taint flows and static pattern matches all confirm credential exfiltration",
+      "combined_severity": "CRITICAL",
+      "consolidated_remediation": "Remove all credential exfiltration code and network calls to untrusted endpoints"
+    }
+  ]
+}
+```
 
-The meta-analyzer will keep only the LLM finding (which provides full context) and filter the redundant static pattern matches as they're covered by the comprehensive LLM finding.
+This preserves the granular evidence from each analyzer (line numbers, exact patterns, taint chains) while providing the consolidated view for executive reporting. Use `--verbose` to also include findings the meta-analyzer marked as false positives.
 
 ## AITech Taxonomy
 

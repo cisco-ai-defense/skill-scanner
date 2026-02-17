@@ -74,20 +74,25 @@ def _load_policy(args: argparse.Namespace) -> ScanPolicy:
         if policy_value.lower() in presets:
             policy = ScanPolicy.from_preset(policy_value)
             logger.info("Using %s scan policy (preset)", policy.policy_name)
-            return policy
+        else:
+            try:
+                policy = ScanPolicy.from_yaml(policy_value)
+                logger.info("Using scan policy: %s (%s)", policy_value, policy.policy_name)
+            except FileNotFoundError:
+                print(f"Error: Policy file not found: {policy_value}", file=sys.stderr)
+                sys.exit(1)
+            except Exception as e:
+                print(f"Error loading policy file: {e}", file=sys.stderr)
+                sys.exit(1)
+    else:
+        policy = ScanPolicy.default()
 
-        try:
-            policy = ScanPolicy.from_yaml(policy_value)
-            logger.info("Using scan policy: %s (%s)", policy_value, policy.policy_name)
-            return policy
-        except FileNotFoundError:
-            print(f"Error: Policy file not found: {policy_value}", file=sys.stderr)
-            sys.exit(1)
-        except Exception as e:
-            print(f"Error loading policy file: {e}", file=sys.stderr)
-            sys.exit(1)
+    # When --verbose is NOT set, disable per-finding metadata bloat
+    if not getattr(args, "verbose", False):
+        policy.finding_output.attach_policy_fingerprint = False
+        policy.finding_output.annotate_same_path_rule_cooccurrence = False
 
-    return ScanPolicy.default()
+    return policy
 
 
 def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Callable[[str], None]) -> list:
@@ -253,14 +258,36 @@ def scan_command(args: argparse.Namespace) -> int:
                 filtered = apply_meta_analysis_to_results(
                     original_findings=result.findings, meta_result=meta_result, skill=skill
                 )
-                orig = len(result.findings)
                 result.findings = filtered
                 result.analyzers_used.append("meta_analyzer")
-                fp = orig - len([f for f in filtered if f.analyzer != "meta"])
-                new = len([f for f in filtered if f.analyzer == "meta"])
-                status(f"Meta-analysis complete: {fp} false positives filtered, {new} new threats detected")
+
+                # Surface meta-analysis insights into scan_metadata
+                if result.scan_metadata is None:
+                    result.scan_metadata = {}
+                if meta_result.correlations:
+                    result.scan_metadata["meta_correlations"] = meta_result.correlations
+                if meta_result.recommendations:
+                    result.scan_metadata["meta_recommendations"] = meta_result.recommendations
+                if meta_result.overall_risk_assessment:
+                    result.scan_metadata["meta_risk_assessment"] = meta_result.overall_risk_assessment
+
+                fp_count = len(meta_result.false_positives)
+                original_count = len(result.findings)
+                retained = original_count - fp_count
+                new = len(meta_result.missed_threats)
+                corr = len(meta_result.correlations)
+                parts = [f"{fp_count} false positives removed", f"{retained} findings retained"]
+                if corr:
+                    parts.append(f"{corr} correlation groups")
+                if new:
+                    parts.append(f"{new} new threats detected")
+                status(f"Meta-analysis complete: {', '.join(parts)}")
             except Exception as e:
                 logger.warning("Meta-analysis failed: %s", e)
+
+        # Strip false positives from output unless --verbose
+        if not getattr(args, "verbose", False):
+            result.findings = [f for f in result.findings if not f.metadata.get("meta_false_positive", False)]
 
         _write_output(args, _format_output(args, result))
 
@@ -307,12 +334,13 @@ def scan_all_command(args: argparse.Namespace) -> int:
         # Per-skill meta-analysis
         if meta_analyzer and apply_meta_analysis_to_results is not None:
             status("Running meta-analysis on scan results...")
-            total_fp, total_new = 0, 0
+            total_original, total_fp, total_new = 0, 0, 0
             for result in report.scan_results:
                 if not result.findings:
                     continue
                 try:
                     skill = scanner.loader.load_skill(Path(result.skill_directory))
+                    original_count = len(result.findings)
                     meta_result = asyncio.run(
                         meta_analyzer.analyze_with_findings(
                             skill=skill, findings=result.findings, analyzers_used=result.analyzers_used
@@ -321,27 +349,45 @@ def scan_all_command(args: argparse.Namespace) -> int:
                     filtered = apply_meta_analysis_to_results(
                         original_findings=result.findings, meta_result=meta_result, skill=skill
                     )
-                    total_fp += len(result.findings) - len([f for f in filtered if f.analyzer != "meta"])
-                    total_new += len([f for f in filtered if f.analyzer == "meta"])
+                    total_original += original_count
+                    total_fp += len(meta_result.false_positives)
+                    total_new += len(meta_result.missed_threats)
                     result.findings = filtered
                     result.analyzers_used.append("meta_analyzer")
+
+                    # Surface meta-analysis insights
+                    if result.scan_metadata is None:
+                        result.scan_metadata = {}
+                    if meta_result.correlations:
+                        result.scan_metadata["meta_correlations"] = meta_result.correlations
+                    if meta_result.recommendations:
+                        result.scan_metadata["meta_recommendations"] = meta_result.recommendations
+                    if meta_result.overall_risk_assessment:
+                        result.scan_metadata["meta_risk_assessment"] = meta_result.overall_risk_assessment
                 except Exception as e:
                     logger.warning("Meta-analysis failed for %s: %s", result.skill_name, e)
 
-            status(f"Meta-analysis complete: {total_fp} FPs filtered, {total_new} new threats detected")
+            retained = total_original - total_fp
+            parts = [f"{total_fp} false positives removed", f"{retained} findings retained"]
+            if total_new:
+                parts.append(f"{total_new} new threats detected")
+            status(f"Meta-analysis complete: {', '.join(parts)}")
 
-            # Recalculate report totals
-            report.total_findings = sum(len(r.findings) for r in report.scan_results)
-            report.critical_count = sum(
-                1 for r in report.scan_results for f in r.findings if f.severity.value == "CRITICAL"
-            )
-            report.high_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "HIGH")
-            report.medium_count = sum(
-                1 for r in report.scan_results for f in r.findings if f.severity.value == "MEDIUM"
-            )
-            report.low_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "LOW")
-            report.info_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "INFO")
-            report.safe_count = sum(1 for r in report.scan_results if r.is_safe)
+        # Strip false positives from output unless --verbose
+        if not getattr(args, "verbose", False):
+            for result in report.scan_results:
+                result.findings = [f for f in result.findings if not f.metadata.get("meta_false_positive", False)]
+
+        # Recalculate report totals after meta-analysis and FP stripping
+        report.total_findings = sum(len(r.findings) for r in report.scan_results)
+        report.critical_count = sum(
+            1 for r in report.scan_results for f in r.findings if f.severity.value == "CRITICAL"
+        )
+        report.high_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "HIGH")
+        report.medium_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "MEDIUM")
+        report.low_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "LOW")
+        report.info_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "INFO")
+        report.safe_count = sum(1 for r in report.scan_results if r.is_safe)
 
         _write_output(args, _format_output(args, report))
 
@@ -520,6 +566,11 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output", "-o", help="Output file path")
     parser.add_argument("--detailed", action="store_true", help="Include detailed findings (Markdown output only)")
     parser.add_argument("--compact", action="store_true", help="Compact JSON output")
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Include per-finding policy fingerprints, co-occurrence metadata, and keep meta-analyzer false positives in output",
+    )
     parser.add_argument("--fail-on-findings", action="store_true", help="Exit with error if critical/high findings")
     parser.add_argument("--use-behavioral", action="store_true", help="Enable behavioral dataflow analysis")
     parser.add_argument("--use-llm", action="store_true", help="Enable LLM-based semantic analysis (requires API key)")
@@ -575,8 +626,9 @@ def main() -> int:
 Examples:
   skill-scanner scan /path/to/skill
   skill-scanner scan /path/to/skill --use-behavioral --use-llm
+  skill-scanner scan /path/to/skill --use-llm --enable-meta --format json
+  skill-scanner scan /path/to/skill --format json --verbose
   skill-scanner scan /path/to/skill --policy strict
-  skill-scanner scan /path/to/skill --format json
   skill-scanner scan-all /path/to/skills --recursive
   skill-scanner generate-policy -o my_policy.yaml
   skill-scanner configure-policy
