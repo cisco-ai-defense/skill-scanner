@@ -48,6 +48,8 @@ def __getattr__(name: str):
         "SkillScanner": (".core.scanner", "SkillScanner"),
         "scan_skill": (".core.scanner", "scan_skill"),
         "scan_directory": (".core.scanner", "scan_directory"),
+        "SkillValidator": (".core.strict_structure", "SkillValidator"),
+        "validate_skill": (".core.strict_structure", "validate_skill"),
     }
     if name in _lazy_map:
         module_path, attr = _lazy_map[name]
@@ -73,6 +75,8 @@ __all__ = [
     "ThreatCategory",
     "SkillLoader",
     "load_skill",
+    "SkillValidator",
+    "validate_skill",
     "Config",
     "SkillScannerConstants",
 ]

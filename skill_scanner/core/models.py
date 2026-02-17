@@ -160,8 +160,8 @@ class Skill:
         return self.manifest.description
 
     def get_scripts(self) -> list[SkillFile]:
-        """Get all script files (Python, Bash)."""
-        return [f for f in self.files if f.file_type in ("python", "bash")]
+        """Get all script files (Python, Bash, JavaScript, TypeScript)."""
+        return [f for f in self.files if f.file_type in ("python", "bash", "javascript", "typescript")]
 
     def get_markdown_files(self) -> list[SkillFile]:
         """Get all markdown files."""
