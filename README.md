@@ -8,7 +8,9 @@
 [![Cisco AI Defense](https://img.shields.io/badge/Cisco-AI%20Defense-049fd9?logo=cisco&logoColor=white)](https://www.cisco.com/site/us/en/products/security/ai-defense/index.html)
 [![AI Security Framework](https://img.shields.io/badge/AI%20Security-Framework-orange)](https://learn-cloudsecurity.cisco.com/ai-security-framework)
 
-A security scanner for AI Agent Skills that detects prompt injection, data exfiltration, and malicious code patterns. Combines **pattern-based detection** (YAML + YARA), **LLM-as-a-judge**, and **behavioral dataflow analysis** for comprehensive threat detection.
+A best-effort security scanner for AI Agent Skills that detects prompt injection, data exfiltration, and malicious code patterns. Combines **pattern-based detection** (YAML + YARA), **LLM-as-a-judge**, and **behavioral dataflow analysis** to maximize detection coverage of probable threats while minimizing false positives.
+
+> **Important:** This scanner provides best-effort detection, not comprehensive or complete coverage. A scan that returns no findings does not guarantee that a skill is free of all threats. See [Scope and Limitations](#scope-and-limitations) below.
 
 Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agent Skills](https://docs.cursor.com/context/rules) formats following the [Agent Skills specification](https://agentskills.io).
 
@@ -16,12 +18,28 @@ Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agen
 
 ## Highlights
 
-- **Multi-Engine Detection** - Static analysis, behavioral dataflow, LLM semantic analysis, and cloud-based scanning
+- **Multi-Engine Detection** - Static analysis, behavioral dataflow, LLM semantic analysis, and cloud-based scanning for layered, best-effort coverage
 - **False Positive Filtering** - Meta-analyzer significantly reduces noise while preserving detection capability
 - **CI/CD Ready** - SARIF output for GitHub Code Scanning, exit codes for build failures
 - **Extensible** - Plugin architecture for custom analyzers
 
 **[Join the Cisco AI Discord](https://discord.com/invite/nKWtDcXxtx)** to discuss, share feedback, or connect with the team.
+
+---
+
+## Scope and Limitations
+
+> [!WARNING]
+> Skill Scanner is a **best-effort** detection tool -- not a guarantee of safety. Like antivirus software, no scanner can catch every possible threat: the input space for adversarial AI agent skills is unbounded and continuously evolving.
+>
+> **What this means in practice:**
+>
+> - **No findings ≠ no risk.** A scan that returns zero results means the scanner did not detect any known threat patterns. It does not certify that a skill is safe, benign, or free of all vulnerabilities. The scan output uses neutral language like "No findings" rather than "safe" or "clean" to reflect this.
+> - **Detection is not comprehensive.** The scanner uses multiple engines (regex/YARA signatures, LLM semantic analysis, behavioral dataflow, and optional cloud services), custom rule packs, and configurable scan policies. These layers maximize coverage of probable attack patterns, but they cannot cover every conceivable technique -- especially novel or zero-day attacks.
+> - **False positives and false negatives are expected.** The meta-analyzer and consensus modes reduce noise, but no configuration eliminates all false positives or catches all true positives. Tune the [scan policy](docs/scan-policy.md) to your risk tolerance.
+> - **Human review is still essential.** Automated scanning is one layer of a defense-in-depth strategy. Critical deployments should pair scanner results with manual code review and threat modeling.
+>
+> We are transparent about these boundaries because security tools that overstate their coverage create a false sense of safety. The goal is to give you the best available signal, not a rubber stamp.
 
 ---
 
@@ -164,8 +182,13 @@ scanner = SkillScanner(analyzers=[
 # Scan a skill
 result = scanner.scan_skill("/path/to/skill")
 
-print(f"Safe: {result.is_safe}")
 print(f"Findings: {len(result.findings)}")
+print(f"Max severity: {result.max_severity}")
+
+# Note: is_safe indicates no HIGH/CRITICAL findings were detected.
+# It does not guarantee the skill is free of all risk.
+if not result.is_safe:
+    print("Issues detected -- review findings before deployment")
 ```
 
 ---
@@ -231,11 +254,13 @@ $ skill-scanner scan ./my-skill --use-behavioral
 ============================================================
 Skill: my-skill
 ============================================================
-Status: [OK] SAFE
-Max Severity: SAFE
+Status: [OK] No findings
+Max Severity: NONE
 Total Findings: 0
 Scan Duration: 0.15s
 ```
+
+> **Note:** "No findings" means the scanner did not detect any known threat patterns -- it is not a guarantee that the skill is free of all risk. See [Scope and Limitations](#scope-and-limitations).
 
 ---
 

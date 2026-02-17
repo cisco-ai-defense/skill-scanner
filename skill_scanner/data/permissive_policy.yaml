@@ -519,6 +519,16 @@ analyzers:
   pipeline: true
 
 # ---------------------------------------------------------------------------
+# LLM analysis – relaxed context budgets for permissive mode
+# ---------------------------------------------------------------------------
+llm_analysis:
+  max_instruction_body_chars: 50000
+  max_code_file_chars: 30000
+  max_referenced_file_chars: 20000
+  max_total_prompt_chars: 200000
+  meta_budget_multiplier: 3.0
+
+# ---------------------------------------------------------------------------
 # Finding output – permissive dedupes duplicates and stamps policy metadata
 # ---------------------------------------------------------------------------
 finding_output:

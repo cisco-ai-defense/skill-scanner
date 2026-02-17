@@ -33,6 +33,8 @@ Requirements:
     - Works best with 2+ analyzers for cross-correlation
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -40,13 +42,16 @@ import os
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ...threats.threats import ThreatMapping
 from ..models import Finding, Severity, Skill, ThreatCategory
 from .base import BaseAnalyzer
 from .llm_provider_config import ProviderConfig
 from .llm_request_handler import LLMRequestHandler
+
+if TYPE_CHECKING:
+    from ...core.scan_policy import LLMAnalysisPolicy, ScanPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +251,8 @@ class MetaAnalyzer(BaseAnalyzer):
         aws_region: str | None = None,
         aws_profile: str | None = None,
         aws_session_token: str | None = None,
+        # Policy (optional – uses generous defaults × meta multiplier)
+        policy: ScanPolicy | None = None,
     ):
         """Initialize the Meta Analyzer.
 
@@ -261,8 +268,19 @@ class MetaAnalyzer(BaseAnalyzer):
             aws_region: AWS region (for Bedrock)
             aws_profile: AWS profile name (for Bedrock)
             aws_session_token: AWS session token (for Bedrock)
+            policy: Scan policy providing LLM context budget thresholds.
+                The meta analyzer applies ``meta_budget_multiplier`` on top of
+                the base limits.  When ``None``, generous defaults are used.
         """
         super().__init__("meta_analyzer")
+
+        # Store LLM analysis budget policy (lazy import to avoid circular deps)
+        if policy is not None:
+            self.llm_policy: LLMAnalysisPolicy = policy.llm_analysis
+        else:
+            from ...core.scan_policy import LLMAnalysisPolicy
+
+            self.llm_policy = LLMAnalysisPolicy()
 
         if not LITELLM_AVAILABLE:
             raise ImportError("LiteLLM is required for MetaAnalyzer. Install with: pip install litellm")
@@ -391,8 +409,31 @@ Respond with JSON containing your analysis following the required schema."""
         start_tag = f"<!---SKILL_CONTENT_START_{random_id}--->"
         end_tag = f"<!---SKILL_CONTENT_END_{random_id}--->"
 
-        # Build skill context
-        skill_context = self._build_skill_context(skill)
+        # Build skill context with budget gating
+        skill_context, budget_skipped = self._build_skill_context(skill)
+
+        # Emit INFO findings for content that exceeded the meta budget
+        lp = self.llm_policy
+        for item in budget_skipped:
+            threshold = item["threshold_name"]
+            findings.append(
+                Finding(
+                    id=f"meta_budget_{item['path']}",
+                    rule_id="LLM_CONTEXT_BUDGET_EXCEEDED",
+                    category=ThreatCategory.POLICY_VIOLATION,
+                    severity=Severity.INFO,
+                    title=f"'{item['path']}' excluded from meta-analysis ({item['size']:,} chars)",
+                    description=item["reason"],
+                    file_path=item["path"],
+                    remediation=(
+                        f"Increase {threshold} (currently "
+                        f"{getattr(lp, threshold.split('.')[-1], '?'):,} x "
+                        f"{lp.meta_budget_multiplier}) or "
+                        f"llm_analysis.meta_budget_multiplier in your scan policy."
+                    ),
+                    analyzer="meta_analyzer",
+                )
+            )
 
         # Build findings data
         findings_data = self._serialize_findings(findings)
@@ -538,12 +579,27 @@ Every `_index` above MUST appear in exactly one list."""
 
         return result
 
-    def _build_skill_context(self, skill: Skill) -> str:
+    def _build_skill_context(self, skill: Skill) -> tuple[str, list[dict]]:
         """Build comprehensive skill context for meta-analysis.
 
-        Includes full skill content to enable accurate validation of findings.
+        Uses policy-driven budget gating (meta multiplier applied).
+        Content that fits within budget is included in full — **no truncation**.
+        Content that exceeds the budget is skipped and reported.
+
+        Returns:
+            Tuple of (context_string, skipped_items) where *skipped_items*
+            is a list of dicts with keys ``path``, ``size``, ``reason``,
+            and ``threshold_name``.
         """
-        lines = []
+        lp = self.llm_policy
+        max_instruction = lp.meta_max_instruction_body_chars
+        max_code_file = lp.meta_max_code_file_chars
+        max_total = lp.meta_max_total_prompt_chars
+
+        lines: list[str] = []
+        skipped: list[dict] = []
+        total_size = 0
+
         lines.append(f"## Skill: {skill.name}")
         lines.append(f"**Description:** {skill.description}")
         lines.append(f"**Directory:** {skill.directory}")
@@ -558,16 +614,25 @@ Every `_index` above MUST appear in exactly one list."""
         )
         lines.append("")
 
-        # Full instruction body (SKILL.md content)
+        # Full instruction body — include full or skip entirely
         lines.append("### SKILL.md Instructions (Full)")
-        # Limit to 50KB to avoid excessive token usage
-        max_instruction_size = 50000
-        if len(skill.instruction_body) > max_instruction_size:
-            lines.append(
-                f"```markdown\n{skill.instruction_body[:max_instruction_size]}\n... [TRUNCATED - {len(skill.instruction_body)} chars total]\n```"
+        instruction_size = len(skill.instruction_body)
+        if instruction_size > max_instruction:
+            skipped.append(
+                {
+                    "path": "SKILL.md (instruction body)",
+                    "size": instruction_size,
+                    "reason": (
+                        f"instruction body ({instruction_size:,} chars) exceeds meta limit "
+                        f"({max_instruction:,} = {lp.max_instruction_body_chars:,} x {lp.meta_budget_multiplier})"
+                    ),
+                    "threshold_name": "llm_analysis.max_instruction_body_chars",
+                }
             )
+            lines.append("*(instruction body excluded — exceeds budget)*")
         else:
             lines.append(f"```markdown\n{skill.instruction_body}\n```")
+            total_size += instruction_size
         lines.append("")
 
         # Files summary
@@ -576,37 +641,58 @@ Every `_index` above MUST appear in exactly one list."""
             lines.append(f"- {f.relative_path} ({f.file_type}, {f.size_bytes} bytes)")
         lines.append("")
 
-        # Full file contents for code files
+        # Full file contents for code files — budget gated, no truncation
         lines.append("### File Contents")
         code_extensions = {".py", ".sh", ".bash", ".js", ".ts", ".rb", ".pl", ".yaml", ".yml", ".json", ".toml"}
-        max_file_size = 30000  # 30KB per file
-        total_code_size = 0
-        max_total_code_size = 150000  # 150KB total for all code
 
         for f in skill.files:
-            # Skip if we've already included too much code
-            if total_code_size >= max_total_code_size:
-                lines.append("\n... [REMAINING FILES OMITTED - total code size limit reached]")
-                break
-
-            # Check if it's a code file worth including
             file_ext = Path(f.relative_path).suffix.lower()
-            if file_ext in code_extensions or f.file_type in ["python", "bash", "script"]:
-                try:
-                    file_path = Path(skill.directory) / f.relative_path
-                    if file_path.exists() and file_path.is_file():
-                        content = file_path.read_text(encoding="utf-8", errors="replace")
+            if file_ext not in code_extensions and f.file_type not in ("python", "bash", "script"):
+                continue
 
-                        # Truncate large files
-                        if len(content) > max_file_size:
-                            content = content[:max_file_size] + f"\n... [TRUNCATED - {len(content)} chars total]"
+            try:
+                file_path = Path(skill.directory) / f.relative_path
+                if not (file_path.exists() and file_path.is_file()):
+                    continue
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+                file_size = len(content)
 
-                        lines.append(f"\n#### {f.relative_path}")
-                        lines.append(f"```{file_ext.lstrip('.') or 'text'}\n{content}\n```")
-                        total_code_size += len(content)
-                except Exception:
-                    # Skip files that can't be read
-                    pass
+                # Per-file budget check
+                if file_size > max_code_file:
+                    skipped.append(
+                        {
+                            "path": str(f.relative_path),
+                            "size": file_size,
+                            "reason": (
+                                f"file size ({file_size:,} chars) exceeds meta per-file limit "
+                                f"({max_code_file:,} = {lp.max_code_file_chars:,} x {lp.meta_budget_multiplier})"
+                            ),
+                            "threshold_name": "llm_analysis.max_code_file_chars",
+                        }
+                    )
+                    continue
+
+                # Total budget check
+                if total_size + file_size > max_total:
+                    skipped.append(
+                        {
+                            "path": str(f.relative_path),
+                            "size": file_size,
+                            "reason": (
+                                f"including this file would exceed the meta total prompt budget "
+                                f"({total_size + file_size:,} > {max_total:,} = "
+                                f"{lp.max_total_prompt_chars:,} x {lp.meta_budget_multiplier})"
+                            ),
+                            "threshold_name": "llm_analysis.max_total_prompt_chars",
+                        }
+                    )
+                    continue
+
+                lines.append(f"\n#### {f.relative_path}")
+                lines.append(f"```{file_ext.lstrip('.') or 'text'}\n{content}\n```")
+                total_size += file_size
+            except Exception:
+                pass
 
         lines.append("")
 
@@ -617,7 +703,7 @@ Every `_index` above MUST appear in exactly one list."""
                 lines.append(f"- {ref}")
             lines.append("")
 
-        return "\n".join(lines)
+        return "\n".join(lines), skipped
 
     def _serialize_findings(self, findings: list[Finding]) -> str:
         """Serialize findings to JSON for the prompt."""

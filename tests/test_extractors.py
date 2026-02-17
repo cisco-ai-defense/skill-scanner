@@ -122,6 +122,110 @@ class TestZipExtraction:
         extractor.cleanup()
 
 
+class TestZipSymlinkRejection:
+    """ZIP archives containing symlinks must be rejected."""
+
+    @staticmethod
+    def _create_zip_with_symlink(zip_path: Path) -> None:
+        """Build a ZIP that contains a symbolic link entry.
+
+        The ZIP format encodes Unix symlinks by setting the S_IFLNK bit in
+        the upper 16 bits of ``external_attr`` and storing the link target
+        as the entry's data payload.
+        """
+        import stat as _stat
+
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            # Normal file
+            zf.writestr("legit.txt", "hello")
+
+            # Craft a symlink entry pointing to /etc/passwd
+            info = zipfile.ZipInfo("evil_link")
+            info.create_system = 3  # Unix
+            # Set symlink mode: S_IFLNK | 0o777
+            info.external_attr = (_stat.S_IFLNK | 0o777) << 16
+            zf.writestr(info, "/etc/passwd")
+
+    def test_zip_symlink_produces_critical_finding(self, tmp_path):
+        """A ZIP with a symlink entry should produce an ARCHIVE_SYMLINK finding."""
+        zip_path = tmp_path / "symlink.zip"
+        self._create_zip_with_symlink(zip_path)
+
+        extractor = ContentExtractor()
+        sf = _make_skill_file(zip_path, "symlink.zip")
+        result = extractor.extract_skill_archives([sf])
+
+        symlink_findings = [f for f in result.findings if f.rule_id == "ARCHIVE_SYMLINK"]
+        assert len(symlink_findings) >= 1
+        assert symlink_findings[0].severity.value == "CRITICAL"
+        assert "evil_link" in symlink_findings[0].description
+        # No files should have been extracted
+        assert result.total_extracted_count == 0
+        extractor.cleanup()
+
+
+class TestTarSymlinkRejection:
+    """TAR archives containing symlinks must be rejected."""
+
+    def test_tar_symlink_produces_critical_finding(self, tmp_path):
+        """A TAR with a symlink entry should produce an ARCHIVE_SYMLINK finding."""
+        tar_path = tmp_path / "symlink.tar"
+        with tarfile.open(tar_path, "w") as tf:
+            # Normal file
+            import io
+
+            data = b"hello"
+            info = tarfile.TarInfo(name="legit.txt")
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+            # Symlink entry
+            link_info = tarfile.TarInfo(name="evil_link")
+            link_info.type = tarfile.SYMTYPE
+            link_info.linkname = "/etc/passwd"
+            tf.addfile(link_info)
+
+        extractor = ContentExtractor()
+        sf = _make_skill_file(tar_path, "symlink.tar")
+        result = extractor.extract_skill_archives([sf])
+
+        symlink_findings = [f for f in result.findings if f.rule_id == "ARCHIVE_SYMLINK"]
+        assert len(symlink_findings) >= 1
+        assert symlink_findings[0].severity.value == "CRITICAL"
+        assert "evil_link" in symlink_findings[0].description
+        assert "/etc/passwd" in symlink_findings[0].description
+        # No files should have been extracted
+        assert result.total_extracted_count == 0
+        extractor.cleanup()
+
+    def test_tar_hardlink_produces_critical_finding(self, tmp_path):
+        """A TAR with a hard link entry should produce an ARCHIVE_SYMLINK finding."""
+        tar_path = tmp_path / "hardlink.tar"
+        with tarfile.open(tar_path, "w") as tf:
+            import io
+
+            data = b"hello"
+            info = tarfile.TarInfo(name="legit.txt")
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+            link_info = tarfile.TarInfo(name="hard_link")
+            link_info.type = tarfile.LNKTYPE
+            link_info.linkname = "/etc/shadow"
+            tf.addfile(link_info)
+
+        extractor = ContentExtractor()
+        sf = _make_skill_file(tar_path, "hardlink.tar")
+        result = extractor.extract_skill_archives([sf])
+
+        symlink_findings = [f for f in result.findings if f.rule_id == "ARCHIVE_SYMLINK"]
+        assert len(symlink_findings) >= 1
+        assert symlink_findings[0].severity.value == "CRITICAL"
+        assert "hard_link" in symlink_findings[0].description
+        assert result.total_extracted_count == 0
+        extractor.cleanup()
+
+
 class TestTarExtraction:
     """Test TAR archive extraction."""
 

@@ -125,9 +125,9 @@ def build_analyzers(
             base_url = llm_base_url or os.getenv("SKILL_SCANNER_LLM_BASE_URL")
             api_version = llm_api_version or os.getenv("SKILL_SCANNER_LLM_API_VERSION")
             if llm_provider and not llm_model and not os.getenv("SKILL_SCANNER_LLM_MODEL"):
-                llm = LLMAnalyzer(provider=llm_provider)
+                llm = LLMAnalyzer(provider=llm_provider, policy=policy)
             else:
-                llm = LLMAnalyzer(model=model, api_key=key, base_url=base_url, api_version=api_version)
+                llm = LLMAnalyzer(model=model, api_key=key, base_url=base_url, api_version=api_version, policy=policy)
             if llm_consensus_runs > 1:
                 llm.consensus_runs = llm_consensus_runs
             analyzers.append(llm)

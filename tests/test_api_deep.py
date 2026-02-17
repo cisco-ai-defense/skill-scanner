@@ -274,6 +274,39 @@ class TestMalformedUpload:
 
 
 # ===================================================================
+# B4b — ZIP symlink rejection
+# ===================================================================
+
+
+class TestSymlinkUploadRejected:
+    """ZIP uploads containing symlinks should be rejected with 400."""
+
+    @staticmethod
+    def _create_zip_with_symlink() -> bytes:
+        """Build an in-memory ZIP that contains a symbolic link entry."""
+        import stat
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("SKILL.md", "# Legit skill")
+            info = zipfile.ZipInfo("evil_link")
+            info.create_system = 3  # Unix
+            info.external_attr = (stat.S_IFLNK | 0o777) << 16
+            zf.writestr(info, "/etc/passwd")
+        return buf.getvalue()
+
+    def test_symlink_zip_rejected(self, client):
+        """ZIP with symlink entry → 400."""
+        zip_bytes = self._create_zip_with_symlink()
+        resp = client.post(
+            "/scan-upload",
+            files={"file": ("evil.zip", zip_bytes, "application/zip")},
+        )
+        assert resp.status_code == 400
+        assert "symbolic link" in resp.json().get("detail", "").lower()
+
+
+# ===================================================================
 # B5 — Batch scan completion flow
 # ===================================================================
 
@@ -370,6 +403,9 @@ class TestBatchScan:
                 return report
 
         class DummyMetaAnalyzer:
+            def __init__(self, **kwargs):
+                pass
+
             async def analyze_with_findings(self, **kwargs):
                 return {}
 

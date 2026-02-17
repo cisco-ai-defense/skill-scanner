@@ -255,6 +255,51 @@ class AnalyzersPolicy:
 
 
 @dataclass
+class LLMAnalysisPolicy:
+    """Controls LLM context budget thresholds for LLM and meta analyzers.
+
+    Both the LLM analyzer and the meta analyzer read from this single policy
+    section.  The meta analyzer multiplies the base limits by
+    ``meta_budget_multiplier`` so it always has more headroom for
+    cross-correlation.
+
+    Content that fits within budget is sent in full — **no truncation**.
+    Content that exceeds the budget is skipped entirely and an
+    ``LLM_CONTEXT_BUDGET_EXCEEDED`` INFO finding is emitted with guidance
+    on which policy knob to increase.
+    """
+
+    # -- Per-item limits (LLM analyzer uses these directly) --
+    max_instruction_body_chars: int = 20_000
+    max_code_file_chars: int = 15_000
+    max_referenced_file_chars: int = 10_000
+    max_total_prompt_chars: int = 100_000
+
+    # -- Meta analyzer multiplier --
+    # Meta analyzer multiplies the above limits by this factor.
+    # e.g. 3× means meta gets 60 K instruction, 45 K/file, 300 K total.
+    meta_budget_multiplier: float = 3.0
+
+    # -- Convenience helpers for the meta analyzer --
+
+    @property
+    def meta_max_instruction_body_chars(self) -> int:
+        return int(self.max_instruction_body_chars * self.meta_budget_multiplier)
+
+    @property
+    def meta_max_code_file_chars(self) -> int:
+        return int(self.max_code_file_chars * self.meta_budget_multiplier)
+
+    @property
+    def meta_max_referenced_file_chars(self) -> int:
+        return int(self.max_referenced_file_chars * self.meta_budget_multiplier)
+
+    @property
+    def meta_max_total_prompt_chars(self) -> int:
+        return int(self.max_total_prompt_chars * self.meta_budget_multiplier)
+
+
+@dataclass
 class FindingOutputPolicy:
     """Controls final finding normalization and traceability metadata."""
 
@@ -325,6 +370,7 @@ class ScanPolicy:
     sensitive_files: SensitiveFilesPolicy = field(default_factory=SensitiveFilesPolicy)
     command_safety: CommandSafetyPolicy = field(default_factory=CommandSafetyPolicy)
     analyzers: AnalyzersPolicy = field(default_factory=AnalyzersPolicy)
+    llm_analysis: LLMAnalysisPolicy = field(default_factory=LLMAnalysisPolicy)
     finding_output: FindingOutputPolicy = field(default_factory=FindingOutputPolicy)
     severity_overrides: list[SeverityOverride] = field(default_factory=list)
     disabled_rules: set[str] = field(default_factory=set)
@@ -459,6 +505,7 @@ class ScanPolicy:
         sf = d.get("sensitive_files", {})
         cs = d.get("command_safety", {})
         az = d.get("analyzers", {})
+        la = d.get("llm_analysis", {})
         fo = d.get("finding_output", {})
 
         severity_overrides = [SeverityOverride(**ovr) for ovr in d.get("severity_overrides", [])]
@@ -554,6 +601,13 @@ class ScanPolicy:
                 static=az.get("static", True),
                 bytecode=az.get("bytecode", True),
                 pipeline=az.get("pipeline", True),
+            ),
+            llm_analysis=LLMAnalysisPolicy(
+                max_instruction_body_chars=la.get("max_instruction_body_chars", 20_000),
+                max_code_file_chars=la.get("max_code_file_chars", 15_000),
+                max_referenced_file_chars=la.get("max_referenced_file_chars", 10_000),
+                max_total_prompt_chars=la.get("max_total_prompt_chars", 100_000),
+                meta_budget_multiplier=la.get("meta_budget_multiplier", 3.0),
             ),
             finding_output=FindingOutputPolicy(
                 dedupe_exact_findings=fo.get("dedupe_exact_findings", True),
@@ -666,6 +720,13 @@ class ScanPolicy:
                 "static": self.analyzers.static,
                 "bytecode": self.analyzers.bytecode,
                 "pipeline": self.analyzers.pipeline,
+            },
+            "llm_analysis": {
+                "max_instruction_body_chars": self.llm_analysis.max_instruction_body_chars,
+                "max_code_file_chars": self.llm_analysis.max_code_file_chars,
+                "max_referenced_file_chars": self.llm_analysis.max_referenced_file_chars,
+                "max_total_prompt_chars": self.llm_analysis.max_total_prompt_chars,
+                "meta_budget_multiplier": self.llm_analysis.meta_budget_multiplier,
             },
             "finding_output": {
                 "dedupe_exact_findings": self.finding_output.dedupe_exact_findings,

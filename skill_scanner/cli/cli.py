@@ -136,7 +136,7 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
     return analyzers
 
 
-def _build_meta_analyzer(args: argparse.Namespace, analyzer_count: int, status: Callable[[str], None]):
+def _build_meta_analyzer(args: argparse.Namespace, analyzer_count: int, status: Callable[[str], None], policy=None):
     """Optionally build a MetaAnalyzer if ``--enable-meta`` is set."""
     if not getattr(args, "enable_meta", False):
         return None
@@ -156,7 +156,11 @@ def _build_meta_analyzer(args: argparse.Namespace, analyzer_count: int, status: 
         meta_base_url = os.getenv("SKILL_SCANNER_META_LLM_BASE_URL") or os.getenv("SKILL_SCANNER_LLM_BASE_URL")
         meta_api_version = os.getenv("SKILL_SCANNER_META_LLM_API_VERSION") or os.getenv("SKILL_SCANNER_LLM_API_VERSION")
         meta = MetaAnalyzer(
-            model=meta_model, api_key=meta_api_key, base_url=meta_base_url, api_version=meta_api_version
+            model=meta_model,
+            api_key=meta_api_key,
+            base_url=meta_base_url,
+            api_version=meta_api_version,
+            policy=policy,
         )
         status("Using Meta-Analyzer for false positive filtering and finding prioritization")
         return meta
@@ -241,7 +245,7 @@ def scan_command(args: argparse.Namespace) -> int:
 
     policy = _load_policy(args)
     analyzers = _build_analyzers(policy, args, status)
-    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status)
+    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy)
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
 
@@ -322,7 +326,7 @@ def scan_all_command(args: argparse.Namespace) -> int:
 
     policy = _load_policy(args)
     analyzers = _build_analyzers(policy, args, status)
-    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status)
+    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy)
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
 

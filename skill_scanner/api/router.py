@@ -342,8 +342,12 @@ async def scan_skill(request: ScanRequest):
     if not (skill_dir / "SKILL.md").exists():
         raise HTTPException(status_code=400, detail="SKILL.md not found in directory")
 
-    def run_scan():
+    try:
         policy = _resolve_policy(request.policy)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    def run_scan():
         analyzers = _build_analyzers(
             policy,
             custom_rules=request.custom_rules,
@@ -378,7 +382,7 @@ async def scan_skill(request: ScanRequest):
             try:
                 from ..core.loader import SkillLoader
 
-                meta_analyzer = MetaAnalyzer()
+                meta_analyzer = MetaAnalyzer(policy=policy)
                 loader = SkillLoader()
                 skill = loader.load_skill(skill_dir)
 
@@ -466,6 +470,7 @@ async def scan_uploaded_skill(
                     )
                 f.write(chunk)
 
+        import stat
         import zipfile
 
         try:
@@ -486,13 +491,28 @@ async def scan_uploaded_skill(
                             f"exceeds limit of {MAX_ZIP_UNCOMPRESSED_BYTES // (1024 * 1024)} MB"
                         ),
                     )
-                # Check for path traversal using resolved extraction targets.
+                # Check for path traversal and symlinks using resolved extraction targets.
                 extract_root = (temp_dir / "extracted").resolve()
                 for info in zip_ref.infolist():
+                    # Reject symlink entries — they can escape the extraction directory
+                    unix_mode = (info.external_attr >> 16) & 0xFFFF
+                    if unix_mode != 0 and stat.S_ISLNK(unix_mode):
+                        raise HTTPException(status_code=400, detail="ZIP contains symbolic link entries")
                     dest_path = (extract_root / info.filename).resolve()
                     if not dest_path.is_relative_to(extract_root):
                         raise HTTPException(status_code=400, detail="ZIP contains path traversal entries")
-                zip_ref.extractall(extract_root)
+
+                # Extract member-by-member, verifying no symlink appears on disk
+                extract_root.mkdir(parents=True, exist_ok=True)
+                for info in zip_ref.infolist():
+                    zip_ref.extract(info, extract_root)
+                    dest_path = (extract_root / info.filename).resolve()
+                    if dest_path.is_symlink():
+                        dest_path.unlink()
+                        raise HTTPException(
+                            status_code=400,
+                            detail="ZIP extraction produced a symbolic link — rejected",
+                        )
         except zipfile.BadZipFile as e:
             raise HTTPException(status_code=400, detail="Invalid ZIP archive") from e
 
@@ -606,7 +626,7 @@ def run_batch_scan(scan_id: str, request: BatchScanRequest):
             import asyncio
 
             try:
-                meta_analyzer = MetaAnalyzer()
+                meta_analyzer = MetaAnalyzer(policy=policy)
                 for result in report.scan_results:
                     if result.findings:
                         try:

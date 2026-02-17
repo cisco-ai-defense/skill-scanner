@@ -453,6 +453,31 @@ class PolicyConfigApp(App[str | None]):
 
             yield Rule()
 
+            # ── LLM Analysis ─────────────────────────────────────────
+            yield Label("LLM Analysis – Context Budgets", classes="section-title")
+            yield Label(
+                "Controls how much content is sent to LLM and meta analyzers. "
+                "Content exceeding these limits is skipped (not truncated) with an INFO finding.",
+                classes="section-desc",
+            )
+            with Horizontal(classes="field-row"):
+                yield Label("Max instruction body (chars)")
+                yield Input(value="20000", id="llm-max-instruction", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Max code file (chars)")
+                yield Input(value="15000", id="llm-max-code-file", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Max referenced file (chars)")
+                yield Input(value="10000", id="llm-max-ref-file", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Max total prompt (chars)")
+                yield Input(value="100000", id="llm-max-total-prompt", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Meta budget multiplier")
+                yield Input(value="3.0", id="llm-meta-multiplier")
+
+            yield Rule()
+
             # ── Disabled Rules ────────────────────────────────────────
             yield Label("Disabled Rules & Severity Overrides", classes="section-title")
             yield Label("Suppress specific rules entirely or override their severity level.", classes="section-desc")
@@ -535,6 +560,13 @@ class PolicyConfigApp(App[str | None]):
         self.query_one("#chk-static", Checkbox).value = p.analyzers.static
         self.query_one("#chk-bytecode", Checkbox).value = p.analyzers.bytecode
         self.query_one("#chk-pipeline", Checkbox).value = p.analyzers.pipeline
+
+        # LLM Analysis budgets
+        self.query_one("#llm-max-instruction", Input).value = str(p.llm_analysis.max_instruction_body_chars)
+        self.query_one("#llm-max-code-file", Input).value = str(p.llm_analysis.max_code_file_chars)
+        self.query_one("#llm-max-ref-file", Input).value = str(p.llm_analysis.max_referenced_file_chars)
+        self.query_one("#llm-max-total-prompt", Input).value = str(p.llm_analysis.max_total_prompt_chars)
+        self.query_one("#llm-meta-multiplier", Input).value = str(p.llm_analysis.meta_budget_multiplier)
 
     def _sync_policy_from_form(self) -> None:
         """Pull form widget values back into the policy object."""
@@ -621,6 +653,28 @@ class PolicyConfigApp(App[str | None]):
         p.analyzers.static = self.query_one("#chk-static", Checkbox).value
         p.analyzers.bytecode = self.query_one("#chk-bytecode", Checkbox).value
         p.analyzers.pipeline = self.query_one("#chk-pipeline", Checkbox).value
+
+        # LLM Analysis budgets
+        try:
+            p.llm_analysis.max_instruction_body_chars = int(self.query_one("#llm-max-instruction", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.llm_analysis.max_code_file_chars = int(self.query_one("#llm-max-code-file", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.llm_analysis.max_referenced_file_chars = int(self.query_one("#llm-max-ref-file", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.llm_analysis.max_total_prompt_chars = int(self.query_one("#llm-max-total-prompt", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.llm_analysis.meta_budget_multiplier = float(self.query_one("#llm-meta-multiplier", Input).value)
+        except ValueError:
+            pass
 
     # ── Edit-list button handlers ─────────────────────────────────────────
 

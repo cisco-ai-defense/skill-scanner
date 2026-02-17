@@ -614,6 +614,22 @@ analyzers:
   pipeline: true
 
 # ---------------------------------------------------------------------------
+# LLM analysis – context budget thresholds for LLM and meta analyzers
+# ---------------------------------------------------------------------------
+# Content that fits within budget is sent in full (no truncation).
+# Content that exceeds the budget is skipped entirely and an INFO finding
+# is emitted telling you which threshold to increase.
+#
+# The meta analyzer multiplies these limits by meta_budget_multiplier
+# (default 3×) because it needs more context for cross-correlation.
+llm_analysis:
+  max_instruction_body_chars: 20000   # SKILL.md instruction body
+  max_code_file_chars: 15000          # Per code file (scripts)
+  max_referenced_file_chars: 10000    # Per referenced file
+  max_total_prompt_chars: 100000      # Total budget across all content
+  meta_budget_multiplier: 3.0         # Meta analyzer multiplier (3× above)
+
+# ---------------------------------------------------------------------------
 # Finding output – final dedupe + policy traceability metadata
 # ---------------------------------------------------------------------------
 finding_output:

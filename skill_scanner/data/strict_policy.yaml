@@ -276,6 +276,16 @@ analyzers:
   pipeline: true
 
 # ---------------------------------------------------------------------------
+# LLM analysis – tighter context budgets for strict mode
+# ---------------------------------------------------------------------------
+llm_analysis:
+  max_instruction_body_chars: 15000
+  max_code_file_chars: 10000
+  max_referenced_file_chars: 8000
+  max_total_prompt_chars: 80000
+  meta_budget_multiplier: 3.0
+
+# ---------------------------------------------------------------------------
 # Finding output – strict still dedupes duplicate issue records
 # ---------------------------------------------------------------------------
 finding_output:

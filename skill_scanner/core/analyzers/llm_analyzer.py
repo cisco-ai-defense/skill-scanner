@@ -26,10 +26,12 @@ Production analyzer with:
 - AITech taxonomy alignment
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...threats.threats import ThreatMapping
@@ -38,6 +40,9 @@ from .llm_prompt_builder import PromptBuilder
 from .llm_provider_config import ProviderConfig
 from .llm_request_handler import LLMRequestHandler
 from .llm_response_parser import ResponseParser
+
+if TYPE_CHECKING:
+    from ...core.scan_policy import LLMAnalysisPolicy, ScanPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +128,8 @@ class LLMAnalyzer(BaseAnalyzer):
         aws_session_token: str | None = None,
         # Provider selection (can be enum or string)
         provider: str | None = None,
+        # Policy (optional – uses generous defaults when omitted)
+        policy: ScanPolicy | None = None,
     ):
         """
         Initialize enhanced LLM analyzer.
@@ -142,8 +149,19 @@ class LLMAnalyzer(BaseAnalyzer):
             aws_session_token: AWS session token (for Bedrock)
             provider: LLM provider name (e.g., "openai", "anthropic", "aws-bedrock", etc.)
                 Can be enum or string (e.g., "openai", "anthropic", "aws-bedrock")
+            policy: Scan policy providing LLM context budget thresholds.
+                When ``None``, generous defaults from ``LLMAnalysisPolicy()``
+                are used.
         """
         super().__init__("llm_analyzer")
+
+        # Store LLM analysis budget policy (lazy import to avoid circular deps)
+        if policy is not None:
+            self.llm_policy = policy.llm_analysis
+        else:
+            from ...core.scan_policy import LLMAnalysisPolicy
+
+            self.llm_policy = LLMAnalysisPolicy()
 
         # Handle provider selection: if provider is specified, map to default model
         if provider is not None and model is None:
@@ -279,19 +297,76 @@ class LLMAnalyzer(BaseAnalyzer):
             List of security findings
         """
         findings = []
+        budget_skipped: list[dict] = []
 
         try:
-            # Format all skill components
+            # ---- Budget gating (policy-driven, no truncation) ----
+            lp = self.llm_policy
+            total_budget = lp.max_total_prompt_chars
+
+            # Instruction body: include full or skip entirely
+            instruction_body = skill.instruction_body
+            if len(instruction_body) > lp.max_instruction_body_chars:
+                budget_skipped.append(
+                    {
+                        "path": "SKILL.md (instruction body)",
+                        "size": len(instruction_body),
+                        "reason": (
+                            f"instruction body ({len(instruction_body):,} chars) exceeds "
+                            f"limit ({lp.max_instruction_body_chars:,})"
+                        ),
+                        "threshold_name": "llm_analysis.max_instruction_body_chars",
+                    }
+                )
+                instruction_body = ""
+
+            # Track budget consumed by instruction body
+            budget_used = len(instruction_body)
+
+            # Format all skill components with budget gating
             manifest_text = self.prompt_builder.format_manifest(skill.manifest)
-            code_files_text = self.prompt_builder.format_code_files(skill)
-            referenced_files_text = self.prompt_builder.format_referenced_files(skill)
+            budget_used += len(manifest_text)
+
+            code_files_text, code_skipped = self.prompt_builder.format_code_files(
+                skill,
+                max_file_chars=lp.max_code_file_chars,
+                max_total_chars=max(0, total_budget - budget_used),
+            )
+            budget_skipped.extend(code_skipped)
+            budget_used += len(code_files_text)
+
+            referenced_files_text, ref_skipped = self.prompt_builder.format_referenced_files(
+                skill,
+                max_file_chars=lp.max_referenced_file_chars,
+                remaining_budget=max(0, total_budget - budget_used),
+            )
+            budget_skipped.extend(ref_skipped)
+
+            # Emit INFO findings for any skipped content
+            for item in budget_skipped:
+                findings.append(
+                    Finding(
+                        id=f"llm_budget_{item['path']}",
+                        rule_id="LLM_CONTEXT_BUDGET_EXCEEDED",
+                        category=ThreatCategory.POLICY_VIOLATION,
+                        severity=Severity.INFO,
+                        title=f"'{item['path']}' excluded from LLM analysis ({item['size']:,} chars)",
+                        description=item["reason"],
+                        file_path=item["path"],
+                        remediation=(
+                            f"Increase {item['threshold_name']} in your scan policy "
+                            f"to include this content in LLM analysis."
+                        ),
+                        analyzer="llm",
+                    )
+                )
 
             # Create protected prompt with optional enrichment context
             prompt, injection_detected = self.prompt_builder.build_threat_analysis_prompt(
                 skill.name,
                 skill.description,
                 manifest_text,
-                skill.instruction_body[:3000],
+                instruction_body,
                 code_files_text,
                 referenced_files_text,
                 enrichment_context=self.enrichment_context,
@@ -343,15 +418,15 @@ The structured output schema will enforce these exact codes."""
                     messages, context=f"threat analysis for {skill.name}"
                 )
                 analysis_result = self.response_parser.parse(response_content)
-                findings = self._convert_to_findings(analysis_result, skill)
+                findings.extend(self._convert_to_findings(analysis_result, skill))
             else:
                 # Consensus judging: run N times, keep findings that appear in majority
-                findings = await self._consensus_analyze(messages, skill)
+                findings.extend(await self._consensus_analyze(messages, skill))
 
         except Exception as e:
             logger.error("LLM analysis failed for %s: %s", skill.name, e)
-            # Return empty findings - don't pollute results with errors
-            return []
+            # Return budget findings even if LLM call failed
+            return findings
 
         return findings
 

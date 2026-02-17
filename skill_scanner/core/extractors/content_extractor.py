@@ -23,6 +23,7 @@ Extracts contents from ZIP, TAR, DOCX, XLSX, etc. with safety limits
 
 import logging
 import os
+import stat
 import tarfile
 import tempfile
 import zipfile
@@ -174,6 +175,16 @@ class ContentExtractor:
         elif ext in self.ZIP_EXTENSIONS:
             self._extract_zip(archive_path, source_relative_path, result, depth)
 
+    @staticmethod
+    def _is_zip_symlink(info: zipfile.ZipInfo) -> bool:
+        """Check whether a ZIP entry encodes a symbolic link.
+
+        ZIP archives store Unix file-mode bits in the upper 16 bits of
+        ``external_attr``.  A symlink is indicated by the ``S_IFLNK`` flag.
+        """
+        unix_mode = (info.external_attr >> 16) & 0xFFFF
+        return unix_mode != 0 and stat.S_ISLNK(unix_mode)
+
     def _extract_zip(self, archive_path: Path, source_relative_path: str, result: ExtractionResult, depth: int) -> None:
         """Extract a ZIP-based archive."""
         try:
@@ -203,7 +214,7 @@ class ContentExtractor:
                         )
                         return
 
-                # Check for path traversal
+                # Check for path traversal and symlinks
                 for info in zf.infolist():
                     if ".." in info.filename or info.filename.startswith("/"):
                         result.findings.append(
@@ -224,6 +235,26 @@ class ContentExtractor:
                         )
                         return
 
+                    if self._is_zip_symlink(info):
+                        result.findings.append(
+                            Finding(
+                                id=f"SYMLINK_{hash(source_relative_path + info.filename) & 0xFFFFFFFF:08x}",
+                                rule_id="ARCHIVE_SYMLINK",
+                                category=ThreatCategory.COMMAND_INJECTION,
+                                severity=Severity.CRITICAL,
+                                title="Symlink entry in archive",
+                                description=(
+                                    f"Archive {source_relative_path} contains a symbolic link entry: "
+                                    f"'{info.filename}'. Symlinks inside archives can be used to read or "
+                                    f"overwrite files outside the extraction directory."
+                                ),
+                                file_path=source_relative_path,
+                                remediation="Remove symbolic links from the archive and include files directly.",
+                                analyzer="static",
+                            )
+                        )
+                        return
+
                 # Extract to temp dir
                 temp_dir = tempfile.mkdtemp(prefix="skill_extract_")
                 self._temp_dirs.append(temp_dir)
@@ -239,6 +270,27 @@ class ContentExtractor:
                     extracted_path = Path(temp_dir) / info.filename
                     extracted_path.parent.mkdir(parents=True, exist_ok=True)
                     zf.extract(info, temp_dir)
+
+                    # Post-extraction safety: verify no symlink was created on disk
+                    if extracted_path.is_symlink():
+                        extracted_path.unlink()
+                        result.findings.append(
+                            Finding(
+                                id=f"SYMLINK_ON_DISK_{hash(source_relative_path + info.filename) & 0xFFFFFFFF:08x}",
+                                rule_id="ARCHIVE_SYMLINK",
+                                category=ThreatCategory.COMMAND_INJECTION,
+                                severity=Severity.CRITICAL,
+                                title="Symlink created during archive extraction",
+                                description=(
+                                    f"Extracting '{info.filename}' from {source_relative_path} created "
+                                    f"a symbolic link on disk. The link has been removed."
+                                ),
+                                file_path=source_relative_path,
+                                remediation="Remove symbolic links from the archive and include files directly.",
+                                analyzer="static",
+                            )
+                        )
+                        continue
 
                     result.total_extracted_count += 1
                     result.total_extracted_size += info.file_size
@@ -303,7 +355,7 @@ class ContentExtractor:
         """Extract a TAR-based archive."""
         try:
             with tarfile.open(archive_path, "r:*") as tf:
-                # Safety: check for path traversal
+                # Safety: check for path traversal and symlinks/hardlinks
                 for member in tf.getmembers():
                     if ".." in member.name or member.name.startswith("/"):
                         result.findings.append(
@@ -319,6 +371,27 @@ class ContentExtractor:
                                 ),
                                 file_path=source_relative_path,
                                 remediation="Remove malicious archive entries.",
+                                analyzer="static",
+                            )
+                        )
+                        return
+
+                    if member.issym() or member.islnk():
+                        result.findings.append(
+                            Finding(
+                                id=f"SYMLINK_{hash(source_relative_path + member.name) & 0xFFFFFFFF:08x}",
+                                rule_id="ARCHIVE_SYMLINK",
+                                category=ThreatCategory.COMMAND_INJECTION,
+                                severity=Severity.CRITICAL,
+                                title="Symlink or hardlink entry in archive",
+                                description=(
+                                    f"Archive {source_relative_path} contains a "
+                                    f"{'symbolic' if member.issym() else 'hard'} link entry: "
+                                    f"'{member.name}' -> '{member.linkname}'. Links inside archives "
+                                    f"can be used to read or overwrite files outside the extraction directory."
+                                ),
+                                file_path=source_relative_path,
+                                remediation="Remove symbolic/hard links from the archive and include files directly.",
                                 analyzer="static",
                             )
                         )
