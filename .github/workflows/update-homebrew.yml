@@ -1,0 +1,74 @@
+name: Update Homebrew Formula
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to generate formula for (must be published on PyPI, e.g. 2.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  update-formula:
+    name: Regenerate Homebrew formula
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Resolve version
+        id: version
+        run: echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6.7.0
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Wait for PyPI propagation
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          echo "Waiting for cisco-ai-skill-scanner==${VERSION} on PyPI..."
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              "https://pypi.org/pypi/cisco-ai-skill-scanner/${VERSION}/json")
+            if [[ "$STATUS" == "200" ]]; then
+              echo "Package available on PyPI after ~$(( i * 10 ))s"
+              exit 0
+            fi
+            echo "  Attempt ${i}/30 — HTTP ${STATUS}, retrying in 10s..."
+            sleep 10
+          done
+          echo "ERROR: Package not found on PyPI after 5 minutes" >&2
+          exit 1
+
+      - name: Regenerate formula
+        run: |
+          python scripts/update_brew_formula.py \
+            --version "${{ steps.version.outputs.value }}"
+
+      - name: Commit and push
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          git diff --quiet Formula/skill-scanner.rb && {
+            echo "No changes to formula — skipping commit."
+            exit 0
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/skill-scanner.rb
+          git commit -m "$(cat <<EOF
+          chore: update Homebrew formula to ${VERSION}
+          EOF
+          )"
+          git push

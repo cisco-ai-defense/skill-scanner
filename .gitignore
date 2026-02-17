@@ -72,6 +72,7 @@ docs/_build/
 # Project-specific
 **/mcp-scanner-reference/
 /mcp-scanner-reference/
+demo/
 
 # OS
 .DS_Store

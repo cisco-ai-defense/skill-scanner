@@ -3,7 +3,7 @@ name: Integration Tests (External APIs)
 # This workflow runs tests that require external API keys (LLM, AI Defense, VirusTotal).
 # It only runs when:
 # 1. Manually triggered via workflow_dispatch
-# 2. A maintainer adds the 'run-integration-tests' label to a PR
+# 2. A PR has the 'run-integration-tests' label (checked on open, push, reopen, or label add)
 #
 # This prevents resource exhaustion and protects API keys from untrusted PRs.
 
@@ -26,13 +26,15 @@ on:
         type: boolean
         default: true
   pull_request:
-    types: [labeled]
+    types: [labeled, opened, synchronize, reopened]
 
 jobs:
   # Only run on labeled PRs if the label is 'run-integration-tests'
   check-label:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'run-integration-tests'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'run-integration-tests')
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
