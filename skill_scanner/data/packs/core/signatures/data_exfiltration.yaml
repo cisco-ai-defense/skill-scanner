@@ -123,9 +123,6 @@
   category: data_exfiltration
   severity: HIGH
   patterns:
-    - "require\\s*\\(\\s*['\"]fs['\"]\\s*\\)"
-    - "require\\s*\\(\\s*['\"]fs/promises['\"]\\s*\\)"
-    - "from\\s+['\"](?:fs|fs/promises|node:fs|node:fs/promises)['\"]"
     - "fs\\.(?:readFile|readFileSync|readdir|readdirSync|createReadStream)\\s*\\("
     - "fs\\.(?:writeFile|writeFileSync|createWriteStream|appendFile|appendFileSync)\\s*\\("
   exclude_patterns:

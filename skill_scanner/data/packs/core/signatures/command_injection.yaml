@@ -6,7 +6,7 @@
   severity: CRITICAL
   patterns:
     - "(?<!['\\\"])\\beval\\s*\\("
-    - "(?<!['\\\"])\\bexec\\s*\\("
+    - "(?<!['\\\"\\.])\\bexec\\s*\\("
     - "\\b__import__\\s*\\(\\s*(?:input\\s*\\(|request\\.|os\\.environ|sys\\.argv|argv|args\\[|user_)"
     - "(?<!re\\.)(?<!['\\\"])(?<!\\.)\\bcompile\\s*\\("  # compile() but not re.compile() or method calls
   exclude_patterns:
