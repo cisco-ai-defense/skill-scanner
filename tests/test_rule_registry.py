@@ -403,7 +403,7 @@ class TestDirectorySignatureLoading:
 
         loader = RuleLoader()  # defaults to signatures/ directory
         rules = loader.load_rules()
-        assert len(rules) == 41, f"Expected 41 rules, got {len(rules)}"
+        assert len(rules) == 45, f"Expected 45 rules, got {len(rules)}"
 
     def test_loader_has_all_categories(self):
         """All 9 categories should be represented."""

@@ -99,3 +99,40 @@
   file_types: [python]
   description: "Base64 encoding combined with network operations (potential exfiltration staging)"
   remediation: "Review data flow from encoding to network sinks and remove unnecessary transfers"
+
+- id: DATA_EXFIL_JS_NETWORK
+  category: data_exfiltration
+  severity: MEDIUM
+  patterns:
+    - "\\bfetch\\s*\\("
+    - "\\baxios\\.(?:get|post|put|delete|patch|request)\\s*\\("
+    - "(?:https?)\\.request\\s*\\("
+    - "(?:https?)\\.get\\s*\\("
+    - "new\\s+XMLHttpRequest\\s*\\("
+    - "require\\s*\\(\\s*['\"](?:node-fetch|axios|got|superagent|request)['\"]\\s*\\)"
+  exclude_patterns:
+    - "(?i)example"
+    - "(?i)mock"
+    - "(?i)test"
+    - "//.*fetch"
+  file_types: [javascript, typescript]
+  description: "Outbound network request primitives in JavaScript/TypeScript"
+  remediation: "Ensure network operations are necessary and document allowed destinations"
+
+- id: DATA_EXFIL_JS_FS_ACCESS
+  category: data_exfiltration
+  severity: HIGH
+  patterns:
+    - "require\\s*\\(\\s*['\"]fs['\"]\\s*\\)"
+    - "require\\s*\\(\\s*['\"]fs/promises['\"]\\s*\\)"
+    - "from\\s+['\"](?:fs|fs/promises|node:fs|node:fs/promises)['\"]"
+    - "fs\\.(?:readFile|readFileSync|readdir|readdirSync|createReadStream)\\s*\\("
+    - "fs\\.(?:writeFile|writeFileSync|createWriteStream|appendFile|appendFileSync)\\s*\\("
+  exclude_patterns:
+    - "(?i)example"
+    - "(?i)mock"
+    - "(?i)test"
+    - "//.*fs\\."
+  file_types: [javascript, typescript]
+  description: "Node.js filesystem access that could read or write sensitive data"
+  remediation: "Review filesystem operations. Ensure they don't access sensitive system files or credential stores"

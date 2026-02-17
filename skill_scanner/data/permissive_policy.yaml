@@ -203,6 +203,7 @@ pipeline:
     - "source"
     - "python"
     - "python3"
+    - "node"
     - "."
   # Hint words for data exfiltration detection in tool-chaining
   exfil_hints:
@@ -240,6 +241,11 @@ rule_scoping:
     - "TOOL_ABUSE_SYSTEM_MODIFICATION"
     - "PROMPT_INJECTION_IGNORE_INSTRUCTIONS"
     - "SECRET_CONNECTION_STRING"
+    # JS/TS rules – skip in documentation context
+    - "COMMAND_INJECTION_JS_CHILD_PROCESS"
+    - "COMMAND_INJECTION_JS_FUNCTION_CONSTRUCTOR"
+    - "DATA_EXFIL_JS_NETWORK"
+    - "DATA_EXFIL_JS_FS_ACCESS"
 
   code_only:
     - "prompt_injection_unicode_steganography"
@@ -558,6 +564,9 @@ severity_overrides:
   - rule_id: TOOL_ABUSE_SYSTEM_PACKAGE_INSTALL
     severity: LOW
     reason: "System package installs are expected"
+  - rule_id: DATA_EXFIL_JS_FS_ACCESS
+    severity: MEDIUM
+    reason: "Filesystem access is common in JS/TS skills"
 
 # ---------------------------------------------------------------------------
 # Disabled rules – suppress noisy rules entirely
@@ -572,3 +581,5 @@ disabled_rules:
   - GLOB_HIDDEN_FILE_TARGETING
   - HOMOGLYPH_ATTACK
   - embedded_shebang_in_binary
+  # JS/TS network calls are extremely common; disable in permissive to minimise FPs
+  - DATA_EXFIL_JS_NETWORK

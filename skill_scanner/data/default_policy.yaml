@@ -185,6 +185,7 @@ pipeline:
     - "source"
     - "python"
     - "python3"
+    - "node"
     - "."
   # Hint words for data exfiltration detection in tool-chaining
   exfil_hints:
@@ -225,6 +226,11 @@ rule_scoping:
     - "TOOL_ABUSE_SYSTEM_MODIFICATION"
     - "PROMPT_INJECTION_IGNORE_INSTRUCTIONS"
     - "SECRET_CONNECTION_STRING"
+    # JS/TS rules – skip in documentation context to reduce FPs
+    - "COMMAND_INJECTION_JS_CHILD_PROCESS"
+    - "COMMAND_INJECTION_JS_FUNCTION_CONSTRUCTOR"
+    - "DATA_EXFIL_JS_NETWORK"
+    - "DATA_EXFIL_JS_FS_ACCESS"
 
   # Rules that only fire on code files (python, bash), not markdown/configs
   code_only:

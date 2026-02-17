@@ -97,6 +97,11 @@ rule_scoping:
     - "code_execution_generic"
     - "system_manipulation_generic"
     - "script_injection_generic"
+    # JS/TS rules – skip in documentation context even in strict mode
+    - "COMMAND_INJECTION_JS_CHILD_PROCESS"
+    - "COMMAND_INJECTION_JS_FUNCTION_CONSTRUCTOR"
+    - "DATA_EXFIL_JS_NETWORK"
+    - "DATA_EXFIL_JS_FS_ACCESS"
 
   # Unicode steganography fires on everything (strict wants max coverage)
   code_only:

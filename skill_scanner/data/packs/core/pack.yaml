@@ -99,6 +99,22 @@ rules:
       enabled: true
     description: "User input fed into command execution"
 
+  COMMAND_INJECTION_JS_CHILD_PROCESS:
+    source: signature
+    category: command_injection
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: "Node.js child_process shell command execution"
+
+  COMMAND_INJECTION_JS_FUNCTION_CONSTRUCTOR:
+    source: signature
+    category: command_injection
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: "Dynamic code execution via Function constructor or string-based timers"
+
   # --- Path traversal ---
   PATH_TRAVERSAL_OPEN:
     source: signature
@@ -157,6 +173,22 @@ rules:
     knobs:
       enabled: true
     description: "Base64 encoding combined with network access"
+
+  DATA_EXFIL_JS_NETWORK:
+    source: signature
+    category: data_exfiltration
+    severity: MEDIUM
+    knobs:
+      enabled: true
+    description: "Outbound network requests in JavaScript/TypeScript"
+
+  DATA_EXFIL_JS_FS_ACCESS:
+    source: signature
+    category: data_exfiltration
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: "Node.js filesystem access to sensitive data"
 
   # --- Tool abuse ---
   TOOL_ABUSE_SYSTEM_PACKAGE_INSTALL:

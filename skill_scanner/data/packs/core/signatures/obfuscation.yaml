@@ -8,7 +8,7 @@
     # Prioritize decode/execute chains instead of generic long base64 blobs
     - "(?:base64\\.(?:b64decode|decodebytes)|atob\\s*\\()[^\\n]{0,140}(?:eval|exec|os\\.system|subprocess)"
     - "(?:eval|exec|os\\.system|subprocess)[^\\n]{0,140}(?:base64\\.(?:b64decode|decodebytes)|atob\\s*\\()"
-  file_types: [python, bash, markdown]
+  file_types: [python, bash, markdown, javascript, typescript]
   description: "Base64 decode and execution chain (possible obfuscation)"
   remediation: "Avoid encoded execution paths; decode and inspect content explicitly"
 
@@ -18,7 +18,7 @@
   patterns:
     - "(?:\\\\x[0-9a-fA-F]{2}){20,}"
     - "(?:0x[0-9a-fA-F]{2},?\\s*){20,}"
-  file_types: [python]
+  file_types: [python, javascript, typescript]
   description: "Large hex-encoded blob (possible obfuscation)"
   remediation: "Use clear code instead of hex encoding"
 
@@ -28,7 +28,7 @@
   patterns:
     - "\\^\\s*0x[0-9a-fA-F]{2,}"
     - "\\bxor\\b[^\\n]{0,80}(?:decode|decrypt|obfuscat|payload|shellcode|exec|eval)"
-  file_types: [python]
+  file_types: [python, javascript, typescript]
   description: "XOR used in decode/execute context (possible obfuscation)"
   remediation: "Use transparent transformations and document any required XOR logic"
 

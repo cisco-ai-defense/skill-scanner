@@ -15,7 +15,7 @@
     - '(?i)use\s+of\s+exec\s*\('
     - "r[\\'\\\"].*eval\\\\s\\*\\\\\\("
     - "r[\\'\\\"].*exec\\\\s\\*\\\\\\("
-  file_types: [python]
+  file_types: [python, javascript, typescript]
   description: "Dangerous code execution functions that can execute arbitrary code"
   remediation: "Avoid eval(), exec(), and compile(). Use safer alternatives like ast.literal_eval() or operator module"
 
@@ -160,3 +160,35 @@
   file_types: [bash, markdown]
   description: "find command with -exec flag can execute arbitrary commands on discovered files"
   remediation: "Avoid find -exec with untrusted directories. Use explicit file lists instead"
+
+- id: COMMAND_INJECTION_JS_CHILD_PROCESS
+  category: command_injection
+  severity: CRITICAL
+  patterns:
+    - "require\\s*\\(\\s*['\"]child_process['\"]\\s*\\)"
+    - "from\\s+['\"]child_process['\"]"
+    - "child_process\\.(?:exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\\s*\\("
+    - "\\bexecSync\\s*\\("
+    - "\\bspawnSync\\s*\\("
+  exclude_patterns:
+    - "(?i)never\\s+use\\s+child_process"
+    - "(?i)avoid\\s+child_process"
+    - "^\\s*//"
+  file_types: [javascript, typescript]
+  description: "Node.js child_process module usage for shell command execution"
+  remediation: "Avoid child_process. If required, use execFile with explicit arguments instead of exec with shell strings"
+
+- id: COMMAND_INJECTION_JS_FUNCTION_CONSTRUCTOR
+  category: command_injection
+  severity: CRITICAL
+  patterns:
+    - "new\\s+Function\\s*\\("
+    - "(?<!\\.)Function\\s*\\(\\s*['\"]"
+    - "\\bsetTimeout\\s*\\(\\s*['\"]"
+    - "\\bsetInterval\\s*\\(\\s*['\"]"
+  exclude_patterns:
+    - "(?i)never\\s+use\\s+Function"
+    - "(?i)avoid\\s+new\\s+Function"
+  file_types: [javascript, typescript]
+  description: "Dynamic code execution via Function constructor or string-based setTimeout/setInterval"
+  remediation: "Avoid new Function() and string arguments to setTimeout/setInterval. Use direct function references instead"
