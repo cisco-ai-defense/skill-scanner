@@ -28,6 +28,7 @@ from pathlib import Path
 
 from ..core.analyzer_factory import build_analyzers
 from ..core.loader import SkillLoadError
+from ..core.reporters.html_reporter import HTMLReporter
 from ..core.reporters.json_reporter import JSONReporter
 from ..core.reporters.markdown_reporter import MarkdownReporter
 from ..core.reporters.sarif_reporter import SARIFReporter
@@ -185,6 +186,8 @@ def _format_output(args: argparse.Namespace, result_or_report) -> str:
         return TableReporter().generate_report(result_or_report)
     if fmt == "sarif":
         return SARIFReporter().generate_report(result_or_report)
+    if fmt == "html":
+        return HTMLReporter().generate_report(result_or_report)
     # summary (default)
     from ..core.models import Report
 
@@ -559,9 +562,9 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     """Add flags shared between ``scan`` and ``scan-all``."""
     parser.add_argument(
         "--format",
-        choices=["summary", "json", "markdown", "table", "sarif"],
+        choices=["summary", "json", "markdown", "table", "sarif", "html"],
         default="summary",
-        help="Output format (default: summary). Use 'sarif' for GitHub Code Scanning.",
+        help="Output format (default: summary). Use 'sarif' for GitHub Code Scanning, 'html' for interactive report.",
     )
     parser.add_argument("--output", "-o", help="Output file path")
     parser.add_argument("--detailed", action="store_true", help="Include detailed findings (Markdown output only)")

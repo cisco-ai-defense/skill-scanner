@@ -122,6 +122,9 @@ skill-scanner scan-all /path/to/skills --recursive --check-overlap
 # CI/CD: Fail build if threats found
 skill-scanner scan-all ./skills --fail-on-findings --format sarif --output results.sarif
 
+# Generate interactive HTML report with attack correlation groups
+skill-scanner scan /path/to/skill --use-llm --enable-meta --format html --output report.html
+
 # Use custom YARA rules
 skill-scanner scan /path/to/skill --custom-rules /path/to/my-rules/
 
@@ -199,7 +202,7 @@ print(f"Findings: {len(result.findings)}")
 | `--use-trigger` | Enable trigger specificity analyzer |
 | `--enable-meta` | Enable meta-analyzer for false positive filtering |
 | `--verbose` | Include per-finding policy fingerprints, co-occurrence metadata, and keep meta-analyzer false positives |
-| `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif` |
+| `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif`, `html`. The `html` format produces a self-contained interactive report with collapsible correlation groups, expandable code snippets, and pipeline taint flow diagrams |
 | `--detailed` | Include detailed findings in Markdown output |
 | `--compact` | Compact JSON output |
 | `--output PATH` | Save report to file |

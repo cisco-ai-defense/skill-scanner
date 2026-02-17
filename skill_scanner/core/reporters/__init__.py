@@ -18,9 +18,10 @@
 Report generation modules for different output formats.
 """
 
+from .html_reporter import HTMLReporter
 from .json_reporter import JSONReporter
 from .markdown_reporter import MarkdownReporter
 from .sarif_reporter import SARIFReporter
 from .table_reporter import TableReporter
 
-__all__ = ["JSONReporter", "MarkdownReporter", "TableReporter", "SARIFReporter"]
+__all__ = ["HTMLReporter", "JSONReporter", "MarkdownReporter", "TableReporter", "SARIFReporter"]

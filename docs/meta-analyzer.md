@@ -245,6 +245,22 @@ When multiple analyzers report overlapping threats, the meta-analyzer groups the
 
 This preserves the granular evidence from each analyzer (line numbers, exact patterns, taint chains) while providing the consolidated view for executive reporting. Use `--verbose` to also include findings the meta-analyzer marked as false positives.
 
+### Visual Reports
+
+Correlation groups can be visualized as Mermaid attack-path diagrams in two formats:
+
+- **Markdown** (`--format markdown`): Each correlation group renders as a `mermaid` code block showing source files → detections → attack outcome, followed by a findings table and remediation guidance.
+- **HTML** (`--format html`): A self-contained, interactive HTML report with:
+  - Risk verdict banner and severity bar
+  - Collapsible correlation group cards with embedded Mermaid diagrams
+  - Prioritized recommendation cards with effort badges
+  - Sortable findings table
+
+```bash
+# Generate an interactive HTML report
+skill-scanner scan /path/to/skill --use-llm --enable-meta --format html --output report.html
+```
+
 ## AITech Taxonomy
 
 The meta-analyzer uses the AITech taxonomy for threat classification:
