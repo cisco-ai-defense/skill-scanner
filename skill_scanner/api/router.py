@@ -80,6 +80,12 @@ class ScanRequest(BaseModel):
     skill_directory: str = Field(..., description="Path to skill directory")
     use_llm: bool = Field(False, description="Enable LLM analyzer")
     llm_provider: str | None = Field("anthropic", description="LLM provider (anthropic or openai)")
+    llm_script_char_limit: int = Field(
+        1500, ge=1, description="Max chars from each script file to include in LLM prompt context"
+    )
+    llm_referenced_char_limit: int = Field(
+        2000, ge=1, description="Max chars from each referenced file to include in LLM prompt context"
+    )
     use_behavioral: bool = Field(False, description="Enable behavioral analyzer")
     use_aidefense: bool = Field(False, description="Enable AI Defense analyzer")
     aidefense_api_key: str | None = Field(None, description="AI Defense API key")
@@ -114,6 +120,12 @@ class BatchScanRequest(BaseModel):
     recursive: bool = False
     use_llm: bool = False
     llm_provider: str | None = "anthropic"
+    llm_script_char_limit: int = Field(
+        1500, ge=1, description="Max chars from each script file to include in LLM prompt context"
+    )
+    llm_referenced_char_limit: int = Field(
+        2000, ge=1, description="Max chars from each referenced file to include in LLM prompt context"
+    )
     use_behavioral: bool = False
     use_aidefense: bool = False
     aidefense_api_key: str | None = None
@@ -181,10 +193,18 @@ async def scan_skill(request: ScanRequest):
             provider_str = request.llm_provider or "anthropic"
             if llm_model:
                 # Use explicit model from environment
-                llm_analyzer = LLMAnalyzer(model=llm_model)
+                llm_analyzer = LLMAnalyzer(
+                    model=llm_model,
+                    script_file_char_limit=request.llm_script_char_limit,
+                    referenced_file_char_limit=request.llm_referenced_char_limit,
+                )
             else:
                 # Use provider default model
-                llm_analyzer = LLMAnalyzer(provider=provider_str)
+                llm_analyzer = LLMAnalyzer(
+                    provider=provider_str,
+                    script_file_char_limit=request.llm_script_char_limit,
+                    referenced_file_char_limit=request.llm_referenced_char_limit,
+                )
             analyzers.append(llm_analyzer)
 
         if request.use_aidefense and AIDEFENSE_AVAILABLE:
@@ -261,6 +281,12 @@ async def scan_uploaded_skill(
     file: UploadFile = File(..., description="ZIP file containing skill package"),
     use_llm: bool = Query(False, description="Enable LLM analyzer"),
     llm_provider: str = Query("anthropic", description="LLM provider"),
+    llm_script_char_limit: int = Query(
+        1500, ge=1, description="Max chars from each script file to include in LLM prompt context"
+    ),
+    llm_referenced_char_limit: int = Query(
+        2000, ge=1, description="Max chars from each referenced file to include in LLM prompt context"
+    ),
     use_behavioral: bool = Query(False, description="Enable behavioral analyzer"),
     use_aidefense: bool = Query(False, description="Enable AI Defense analyzer"),
     aidefense_api_key: str | None = Query(None, description="AI Defense API key"),
@@ -272,6 +298,8 @@ async def scan_uploaded_skill(
         file: ZIP file containing skill package
         use_llm: Enable LLM analyzer
         llm_provider: LLM provider to use
+        llm_script_char_limit: Max chars from each script file for LLM prompt context
+        llm_referenced_char_limit: Max chars from each referenced file for LLM prompt context
         use_behavioral: Enable behavioral analyzer
         use_aidefense: Enable AI Defense analyzer
         aidefense_api_key: AI Defense API key
@@ -307,6 +335,8 @@ async def scan_uploaded_skill(
             skill_directory=str(skill_dir),
             use_llm=use_llm,
             llm_provider=llm_provider,
+            llm_script_char_limit=llm_script_char_limit,
+            llm_referenced_char_limit=llm_referenced_char_limit,
             use_behavioral=use_behavioral,
             use_aidefense=use_aidefense,
             aidefense_api_key=aidefense_api_key,
@@ -349,6 +379,8 @@ async def scan_batch(request: BatchScanRequest, background_tasks: BackgroundTask
         request.recursive,
         request.use_llm,
         request.llm_provider,
+        request.llm_script_char_limit,
+        request.llm_referenced_char_limit,
         request.use_behavioral,
         request.use_aidefense,
         request.aidefense_api_key,
@@ -397,6 +429,8 @@ def run_batch_scan(
     recursive: bool,
     use_llm: bool,
     llm_provider: str | None,
+    llm_script_char_limit: int = 1500,
+    llm_referenced_char_limit: int = 2000,
     use_behavioral: bool = False,
     use_aidefense: bool = False,
     aidefense_api_key: str | None = None,
@@ -410,6 +444,8 @@ def run_batch_scan(
         recursive: Search recursively
         use_llm: Use LLM analyzer
         llm_provider: LLM provider
+        llm_script_char_limit: Max chars from each script file for LLM prompt context
+        llm_referenced_char_limit: Max chars from each referenced file for LLM prompt context
         use_behavioral: Use behavioral analyzer
         use_aidefense: Use AI Defense analyzer
         aidefense_api_key: AI Defense API key
@@ -435,10 +471,18 @@ def run_batch_scan(
                 provider_str = llm_provider or "anthropic"
                 if llm_model:
                     # Use explicit model from environment
-                    llm_analyzer = LLMAnalyzer(model=llm_model)
+                    llm_analyzer = LLMAnalyzer(
+                        model=llm_model,
+                        script_file_char_limit=llm_script_char_limit,
+                        referenced_file_char_limit=llm_referenced_char_limit,
+                    )
                 else:
                     # Use provider default model
-                    llm_analyzer = LLMAnalyzer(provider=provider_str)
+                    llm_analyzer = LLMAnalyzer(
+                        provider=provider_str,
+                        script_file_char_limit=llm_script_char_limit,
+                        referenced_file_char_limit=llm_referenced_char_limit,
+                    )
                 analyzers.append(llm_analyzer)
             except Exception:
                 pass  # Continue without LLM analyzer

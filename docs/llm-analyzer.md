@@ -45,6 +45,11 @@ export SKILL_SCANNER_LLM_API_KEY=your_key
 export SKILL_SCANNER_LLM_MODEL=claude-3-5-sonnet-20241022
 skill-scanner scan /path/to/skill --use-llm
 
+# Increase LLM prompt context limits (defaults: 1500 script / 2000 referenced)
+skill-scanner scan /path/to/skill --use-llm \
+  --llm-script-char-limit 6000 \
+  --llm-referenced-char-limit 8000
+
 # Use OpenAI
 skill-scanner scan /path/to/skill --use-llm --llm-provider openai
 
@@ -62,7 +67,9 @@ from skill_scanner.core.loader import load_skill
 # Initialize analyzer
 analyzer = LLMAnalyzer(
     model="claude-3-5-sonnet-20241022",
-    api_key="your_key"
+    api_key="your_key",
+    script_file_char_limit=6000,
+    referenced_file_char_limit=8000,
 )
 
 # Scan skill

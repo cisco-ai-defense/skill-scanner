@@ -116,6 +116,40 @@ class TestYaraMode:
         assert "invalid" in stderr.lower() or "choice" in stderr.lower()
 
 
+class TestLlmPromptContextLimits:
+    """Tests for LLM prompt context size CLI options."""
+
+    def test_scan_accepts_llm_char_limit_options(self, safe_skill_dir):
+        """Test scan command accepts LLM char limit options."""
+        stdout, stderr, code = run_cli(
+            [
+                "scan",
+                str(safe_skill_dir),
+                "--format",
+                "json",
+                "--llm-script-char-limit",
+                "2500",
+                "--llm-referenced-char-limit",
+                "3500",
+            ]
+        )
+        assert code == 0, f"CLI failed: {stderr}"
+        _ = json.loads(stdout)
+
+    def test_scan_rejects_non_positive_llm_char_limit(self, safe_skill_dir):
+        """Test scan command rejects invalid non-positive LLM char limit options."""
+        _, stderr, code = run_cli(
+            [
+                "scan",
+                str(safe_skill_dir),
+                "--llm-script-char-limit",
+                "0",
+            ]
+        )
+        assert code != 0
+        assert "must be >= 1" in stderr
+
+
 # =============================================================================
 # Disable Rule Tests
 # =============================================================================
@@ -236,6 +270,24 @@ class TestScanAllCustomOptions:
             ["scan-all", str(test_dir), "--format", "json", "--disable-rule", "MANIFEST_MISSING_LICENSE"]
         )
         assert code == 0, f"CLI failed: {stderr}"
+
+    def test_scan_all_accepts_llm_char_limit_options(self):
+        """Test scan-all accepts LLM char limit options."""
+        test_dir = Path(__file__).parent.parent / "evals" / "test_skills" / "safe"
+        stdout, stderr, code = run_cli(
+            [
+                "scan-all",
+                str(test_dir),
+                "--format",
+                "json",
+                "--llm-script-char-limit",
+                "2500",
+                "--llm-referenced-char-limit",
+                "3500",
+            ]
+        )
+        assert code == 0, f"CLI failed: {stderr}"
+        _ = json.loads(stdout)
 
 
 # =============================================================================

@@ -244,6 +244,8 @@ class TestScanEndpoint:
             "use_behavioral": True,
             "use_llm": False,
             "llm_provider": "anthropic",
+            "llm_script_char_limit": 2500,
+            "llm_referenced_char_limit": 3500,
             "use_aidefense": False,
         }
 
@@ -265,6 +267,8 @@ class TestBatchScanEndpoint:
             "skills_directory": str(test_skills_dir),
             "recursive": False,
             "use_llm": False,
+            "llm_script_char_limit": 2500,
+            "llm_referenced_char_limit": 3500,
         }
 
         response = client.post("/scan-batch", json=request_data)

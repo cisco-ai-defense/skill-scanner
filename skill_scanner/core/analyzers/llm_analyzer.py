@@ -33,7 +33,11 @@ from typing import Any
 from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
-from .llm_prompt_builder import PromptBuilder
+from .llm_prompt_builder import (
+    DEFAULT_REFERENCED_FILE_CHAR_LIMIT,
+    DEFAULT_SCRIPT_FILE_CHAR_LIMIT,
+    PromptBuilder,
+)
 from .llm_provider_config import ProviderConfig
 from .llm_request_handler import LLMRequestHandler
 from .llm_response_parser import ResponseParser
@@ -111,6 +115,8 @@ class LLMAnalyzer(BaseAnalyzer):
         max_retries: int = 3,
         rate_limit_delay: float = 2.0,
         timeout: int = 120,
+        script_file_char_limit: int = DEFAULT_SCRIPT_FILE_CHAR_LIMIT,
+        referenced_file_char_limit: int = DEFAULT_REFERENCED_FILE_CHAR_LIMIT,
         # Azure-specific
         base_url: str | None = None,
         api_version: str | None = None,
@@ -132,6 +138,8 @@ class LLMAnalyzer(BaseAnalyzer):
             max_retries: Max retry attempts on rate limits
             rate_limit_delay: Base delay for exponential backoff
             timeout: Request timeout in seconds
+            script_file_char_limit: Max characters included per script file in prompt context
+            referenced_file_char_limit: Max characters included per referenced file in prompt context
             base_url: Custom base URL (for Azure)
             api_version: API version (for Azure)
             aws_region: AWS region (for Bedrock)
@@ -173,6 +181,11 @@ class LLMAnalyzer(BaseAnalyzer):
             model = "claude-3-5-sonnet-20241022"
 
         # Initialize components
+        if script_file_char_limit < 1:
+            raise ValueError("script_file_char_limit must be at least 1")
+        if referenced_file_char_limit < 1:
+            raise ValueError("referenced_file_char_limit must be at least 1")
+
         self.provider_config = ProviderConfig(
             model=model,
             api_key=api_key,
@@ -193,7 +206,10 @@ class LLMAnalyzer(BaseAnalyzer):
             timeout=timeout,
         )
 
-        self.prompt_builder = PromptBuilder()
+        self.prompt_builder = PromptBuilder(
+            script_file_char_limit=script_file_char_limit,
+            referenced_file_char_limit=referenced_file_char_limit,
+        )
         self.response_parser = ResponseParser()
 
         # Expose commonly accessed attributes for backward compatibility
@@ -209,6 +225,8 @@ class LLMAnalyzer(BaseAnalyzer):
         self.max_retries = max_retries
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
+        self.script_file_char_limit = script_file_char_limit
+        self.referenced_file_char_limit = referenced_file_char_limit
 
     def analyze(self, skill: Skill) -> list[Finding]:
         """

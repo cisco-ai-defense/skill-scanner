@@ -61,6 +61,14 @@ class TestLLMAnalyzerInitialization:
             with pytest.raises(ValueError, match="API key required"):
                 LLMAnalyzer(model="claude-3-5-sonnet-20241022", api_key=None)
 
+    def test_init_with_invalid_prompt_limits_raises_error(self):
+        """Test invalid prompt context size limits are rejected."""
+        with pytest.raises(ValueError, match="script_file_char_limit"):
+            LLMAnalyzer(api_key="test-key", script_file_char_limit=0)
+
+        with pytest.raises(ValueError, match="referenced_file_char_limit"):
+            LLMAnalyzer(api_key="test-key", referenced_file_char_limit=0)
+
 
 class TestPromptLoading:
     """Test prompt loading functionality."""
@@ -466,6 +474,60 @@ class TestCodeFileFormatting:
 
         assert "No script files" in formatted or len(formatted) == 0
 
+    def test_uses_custom_script_char_limit(self):
+        """Test custom script char limit affects truncation behavior."""
+        analyzer = LLMAnalyzer(api_key="test-key", script_file_char_limit=2500)
+
+        long_content = "x" * 2000
+        mock_script = MagicMock()
+        mock_script.relative_path = "long.py"
+        mock_script.file_type = "python"
+        mock_script.read_content = MagicMock(return_value=long_content)
+
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=[mock_script])
+
+        formatted = analyzer.prompt_builder.format_code_files(skill)
+
+        assert "truncated" not in formatted.lower()
+        assert long_content in formatted
+
+
+class TestReferencedFileFormatting:
+    """Test formatting of referenced files for LLM analysis."""
+
+    def test_truncates_referenced_files_by_default(self, tmp_path):
+        """Test referenced files use default truncation behavior."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+
+        ref_file = tmp_path / "rules.md"
+        ref_file.write_text("x" * 2500, encoding="utf-8")
+
+        skill = MagicMock()
+        skill.directory = tmp_path
+        skill.referenced_files = ["rules.md"]
+
+        formatted = analyzer.prompt_builder.format_referenced_files(skill)
+
+        assert "truncated" in formatted.lower()
+
+    def test_uses_custom_referenced_char_limit(self, tmp_path):
+        """Test custom referenced file char limit affects truncation behavior."""
+        analyzer = LLMAnalyzer(api_key="test-key", referenced_file_char_limit=3000)
+
+        content = "x" * 2500
+        ref_file = tmp_path / "rules.md"
+        ref_file.write_text(content, encoding="utf-8")
+
+        skill = MagicMock()
+        skill.directory = tmp_path
+        skill.referenced_files = ["rules.md"]
+
+        formatted = analyzer.prompt_builder.format_referenced_files(skill)
+
+        assert "truncated" not in formatted.lower()
+        assert content in formatted
+
 
 class TestLLMRequestMaking:
     """Test LLM API request functionality."""
@@ -585,6 +647,8 @@ class TestModelConfiguration:
             max_retries=5,
             rate_limit_delay=3.0,
             timeout=180,
+            script_file_char_limit=5000,
+            referenced_file_char_limit=7000,
         )
 
         assert analyzer.max_tokens == 8000
@@ -592,3 +656,5 @@ class TestModelConfiguration:
         assert analyzer.max_retries == 5
         assert analyzer.rate_limit_delay == 3.0
         assert analyzer.timeout == 180
+        assert analyzer.script_file_char_limit == 5000
+        assert analyzer.referenced_file_char_limit == 7000

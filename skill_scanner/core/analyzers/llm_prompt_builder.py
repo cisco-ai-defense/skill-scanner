@@ -25,12 +25,26 @@ from pathlib import Path
 
 from ...core.models import Skill
 
+DEFAULT_SCRIPT_FILE_CHAR_LIMIT = 1500
+DEFAULT_REFERENCED_FILE_CHAR_LIMIT = 2000
+
 
 class PromptBuilder:
     """Builds analysis prompts with injection protection."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        script_file_char_limit: int = DEFAULT_SCRIPT_FILE_CHAR_LIMIT,
+        referenced_file_char_limit: int = DEFAULT_REFERENCED_FILE_CHAR_LIMIT,
+    ):
         """Initialize prompt builder and load prompts."""
+        if script_file_char_limit < 1:
+            raise ValueError("script_file_char_limit must be at least 1")
+        if referenced_file_char_limit < 1:
+            raise ValueError("referenced_file_char_limit must be at least 1")
+
+        self.script_file_char_limit = script_file_char_limit
+        self.referenced_file_char_limit = referenced_file_char_limit
         self.protection_rules = ""
         self.threat_analysis_prompt = ""
         self._load_prompts()
@@ -147,12 +161,13 @@ Referenced Files:
     def format_code_files(self, skill: Skill) -> str:
         """Format code files for LLM analysis."""
         lines = []
+        max_file_size = self.script_file_char_limit
 
         for skill_file in skill.get_scripts():
             content = skill_file.read_content()
             if content:
-                truncated = content[:1500]
-                if len(content) > 1500:
+                truncated = content[:max_file_size]
+                if len(content) > max_file_size:
                     truncated += f"\n... (truncated, total {len(content)} chars)"
 
                 lines.append(f"**File: {skill_file.relative_path}**")
@@ -187,7 +202,7 @@ Referenced Files:
             # or other path resolution issues
             return False
 
-    def format_referenced_files(self, skill: Skill, max_file_size: int = 2000) -> str:
+    def format_referenced_files(self, skill: Skill, max_file_size: int | None = None) -> str:
         """
         Format referenced files for LLM analysis, including their content.
 
@@ -199,13 +214,17 @@ Referenced Files:
 
         Args:
             skill: The skill being analyzed
-            max_file_size: Maximum characters to include per file (default 2000)
+            max_file_size: Maximum characters to include per file.
+                Uses analyzer-configured default when not provided.
 
         Returns:
             Formatted string with referenced file contents
         """
         if not skill.referenced_files:
             return "No referenced files."
+
+        if max_file_size is None:
+            max_file_size = self.referenced_file_char_limit
 
         lines = []
         lines.append(f"Files referenced in instructions: {', '.join(skill.referenced_files)}")

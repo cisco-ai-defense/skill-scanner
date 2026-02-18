@@ -54,6 +54,14 @@ from ..core.reporters.markdown_reporter import MarkdownReporter
 from ..core.reporters.table_reporter import TableReporter
 
 
+def positive_int(value: str) -> int:
+    """Argparse validator for positive integer values."""
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("Value must be >= 1")
+    return parsed
+
+
 def scan_command(args):
     """Handle the scan command for a single skill."""
     skill_dir = Path(args.skill_directory)
@@ -113,6 +121,8 @@ def scan_command(args):
                     api_key=api_key,
                     base_url=base_url,
                     api_version=api_version,
+                    script_file_char_limit=args.llm_script_char_limit,
+                    referenced_file_char_limit=args.llm_referenced_char_limit,
                 )
                 analyzers.append(llm_analyzer)
                 status_print(f"Using LLM analyzer with model: {model}")
@@ -330,6 +340,8 @@ def scan_all_command(args):
                 api_key=api_key,
                 base_url=base_url,
                 api_version=api_version,
+                script_file_char_limit=args.llm_script_char_limit,
+                referenced_file_char_limit=args.llm_referenced_char_limit,
             )
             analyzers.append(llm_analyzer)
             status_print(f"Using LLM analyzer with model: {model}")
@@ -741,6 +753,18 @@ Examples:
         "--llm-provider", choices=["anthropic", "openai"], default="anthropic", help="LLM provider (default: anthropic)"
     )
     scan_parser.add_argument(
+        "--llm-script-char-limit",
+        type=positive_int,
+        default=1500,
+        help="Max chars from each script file to include in LLM prompt context (default: 1500)",
+    )
+    scan_parser.add_argument(
+        "--llm-referenced-char-limit",
+        type=positive_int,
+        default=2000,
+        help="Max chars from each referenced file to include in LLM prompt context (default: 2000)",
+    )
+    scan_parser.add_argument(
         "--use-trigger",
         action="store_true",
         help="Enable trigger specificity analysis (detects overly generic descriptions)",
@@ -809,6 +833,18 @@ Examples:
     scan_all_parser.add_argument("--aidefense-api-url", help="AI Defense API URL (optional, defaults to US region)")
     scan_all_parser.add_argument(
         "--llm-provider", choices=["anthropic", "openai"], default="anthropic", help="LLM provider (default: anthropic)"
+    )
+    scan_all_parser.add_argument(
+        "--llm-script-char-limit",
+        type=positive_int,
+        default=1500,
+        help="Max chars from each script file to include in LLM prompt context (default: 1500)",
+    )
+    scan_all_parser.add_argument(
+        "--llm-referenced-char-limit",
+        type=positive_int,
+        default=2000,
+        help="Max chars from each referenced file to include in LLM prompt context (default: 2000)",
     )
     scan_all_parser.add_argument(
         "--use-trigger",
