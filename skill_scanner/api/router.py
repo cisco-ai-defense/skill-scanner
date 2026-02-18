@@ -23,6 +23,7 @@ full CLI/API parity.
 """
 
 import logging
+import os
 import shutil
 import tempfile
 import time
@@ -142,6 +143,33 @@ class _BoundedCache(OrderedDict[str, dict]):
 
 scan_results_cache = _BoundedCache()
 
+# Environment-configurable allowlist of directories the API may access.
+# When empty (default) any *resolved* absolute path is accepted — operators
+# should set SKILL_SCANNER_ALLOWED_ROOTS to restrict access in production.
+_ALLOWED_ROOTS: list[Path] = [
+    Path(p).resolve() for p in os.environ.get("SKILL_SCANNER_ALLOWED_ROOTS", "").split(":") if p.strip()
+]
+
+
+def _validate_path(user_input: str, *, label: str = "path") -> Path:
+    """Sanitize and validate a user-supplied filesystem path.
+
+    Rejects null bytes and path-traversal attempts, resolves symlinks, and
+    enforces the optional SKILL_SCANNER_ALLOWED_ROOTS allowlist.
+    """
+    if "\x00" in user_input:
+        raise HTTPException(status_code=400, detail=f"Invalid {label}: null bytes are not allowed")
+
+    resolved = Path(user_input).resolve()
+
+    if _ALLOWED_ROOTS and not any(resolved == root or resolved.is_relative_to(root) for root in _ALLOWED_ROOTS):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: {label} is outside the allowed directories",
+        )
+
+    return resolved
+
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -229,10 +257,12 @@ def _resolve_policy(policy_str: str | None) -> ScanPolicy:
     policy_str = policy_str.strip()
     if policy_str.lower() in ("strict", "balanced", "permissive"):
         return ScanPolicy.from_preset(policy_str)
-    policy_path = Path(policy_str)
+    policy_path = _validate_path(policy_str, label="policy path")
     if policy_path.exists():
         if not policy_path.is_file():
             raise ValueError(f"Policy path '{policy_str}' is not a file.")
+        if policy_path.suffix not in (".yaml", ".yml"):
+            raise ValueError("Policy file must have a .yaml or .yml extension.")
         return ScanPolicy.from_yaml(str(policy_path))
     raise ValueError(f"Unknown policy '{policy_str}'. Use a preset name or a path to a YAML file.")
 
@@ -334,13 +364,23 @@ async def scan_skill(request: ScanRequest):
     import asyncio
     import concurrent.futures
 
-    skill_dir = Path(request.skill_directory)
+    skill_dir = _validate_path(request.skill_directory, label="skill_directory")
 
     if not skill_dir.exists():
         raise HTTPException(status_code=404, detail=f"Skill directory not found: {skill_dir}")
 
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=400, detail="skill_directory must be a directory")
+
     if not (skill_dir / "SKILL.md").exists():
         raise HTTPException(status_code=400, detail="SKILL.md not found in directory")
+
+    custom_rules_path: str | None = None
+    if request.custom_rules:
+        validated_rules = _validate_path(request.custom_rules, label="custom_rules")
+        if not validated_rules.is_dir():
+            raise HTTPException(status_code=400, detail="custom_rules must be a directory")
+        custom_rules_path = str(validated_rules)
 
     try:
         policy = _resolve_policy(request.policy)
@@ -350,7 +390,7 @@ async def scan_skill(request: ScanRequest):
     def run_scan():
         analyzers = _build_analyzers(
             policy,
-            custom_rules=request.custom_rules,
+            custom_rules=custom_rules_path,
             use_behavioral=request.use_behavioral,
             use_llm=request.use_llm,
             llm_provider=request.llm_provider,
@@ -551,10 +591,13 @@ async def scan_uploaded_skill(
 @router.post("/scan-batch")
 async def scan_batch(request: BatchScanRequest, background_tasks: BackgroundTasks):
     """Scan multiple skills in a directory (batch scan)."""
-    skills_dir = Path(request.skills_directory)
+    skills_dir = _validate_path(request.skills_directory, label="skills_directory")
 
     if not skills_dir.exists():
         raise HTTPException(status_code=404, detail=f"Skills directory not found: {skills_dir}")
+
+    if not skills_dir.is_dir():
+        raise HTTPException(status_code=400, detail="skills_directory must be a directory")
 
     scan_id = str(uuid.uuid4())
     scan_results_cache.set(scan_id, {"status": "processing", "started_at": datetime.now().isoformat(), "result": None})
@@ -593,9 +636,14 @@ def run_batch_scan(scan_id: str, request: BatchScanRequest):
     """Background task to run batch scan."""
     try:
         policy = _resolve_policy(request.policy)
+
+        custom_rules_path: str | None = None
+        if request.custom_rules:
+            custom_rules_path = str(_validate_path(request.custom_rules, label="custom_rules"))
+
         analyzers = _build_analyzers(
             policy,
-            custom_rules=request.custom_rules,
+            custom_rules=custom_rules_path,
             use_behavioral=request.use_behavioral,
             use_llm=request.use_llm,
             llm_provider=request.llm_provider,
@@ -611,7 +659,7 @@ def run_batch_scan(scan_id: str, request: BatchScanRequest):
 
         scanner = SkillScanner(analyzers=analyzers, policy=policy)
         report = scanner.scan_directory(
-            Path(request.skills_directory),
+            _validate_path(request.skills_directory, label="skills_directory"),
             recursive=request.recursive,
             check_overlap=request.check_overlap,
         )

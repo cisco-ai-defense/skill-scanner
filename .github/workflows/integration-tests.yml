@@ -29,17 +29,20 @@ on:
     types: [labeled, opened, synchronize, reopened]
 
 jobs:
-  # Only run on labeled PRs if the label is 'run-integration-tests'
   check-label:
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.pull_request.labels.*.name, 'run-integration-tests')
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
       - id: check
-        run: echo "should_run=true" >> $GITHUB_OUTPUT
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || \
+             [[ "${{ contains(github.event.pull_request.labels.*.name, 'run-integration-tests') }}" == "true" ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "Skipping integration tests — 'run-integration-tests' label not present"
+          fi
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -120,3 +123,19 @@ jobs:
           else
             echo "Skipping LLM evaluation - no API key configured"
           fi
+
+  # This job always runs so it can be used as a required status check.
+  # When the label is missing, integration-tests is skipped (which GitHub
+  # treats as "not passed" for required checks). This conclusion job
+  # reports success unless integration-tests actually failed.
+  integration-tests-conclusion:
+    if: always()
+    needs: [check-label, integration-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [[ "${{ needs.integration-tests.result }}" == "failure" ]]; then
+            echo "Integration tests failed"
+            exit 1
+          fi
+          echo "Integration tests passed or were not required"
