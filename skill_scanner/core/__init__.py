@@ -21,4 +21,4 @@ This module contains the core components including analyzers, scanner engine,
 and data models.
 """
 
-__all__ = ["analyzers", "scanner", "loader", "models"]
+__all__ = ["analyzers", "scanner", "loader", "models", "strict_structure"]
