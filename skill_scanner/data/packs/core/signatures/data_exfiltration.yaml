@@ -109,12 +109,16 @@
     - "(?:https?)\\.request\\s*\\("
     - "(?:https?)\\.get\\s*\\("
     - "new\\s+XMLHttpRequest\\s*\\("
-    - "require\\s*\\(\\s*['\"](?:node-fetch|axios|got|superagent|request)['\"]\\s*\\)"
+    # Removed: require('axios'|'node-fetch'|...) import-only pattern.
+    # Actual API call patterns above already catch real usage;
+    # bare imports without calls are FPs.
   exclude_patterns:
     - "(?i)example"
     - "(?i)mock"
     - "(?i)test"
     - "//.*fetch"
+    # Method definitions (e.g. service worker fetch handler)
+    - "fetch\\s*\\([^)]*\\)\\s*\\{"
   file_types: [javascript, typescript]
   description: "Outbound network request primitives in JavaScript/TypeScript"
   remediation: "Ensure network operations are necessary and document allowed destinations"
@@ -123,7 +127,9 @@
   category: data_exfiltration
   severity: HIGH
   patterns:
-    - "fs\\.(?:readFile|readFileSync|readdir|readdirSync|createReadStream)\\s*\\("
+    # Focus on actual file content read/write; exclude readdir/readdirSync
+    # (directory listing is very common in Node.js and rarely exfiltrates data)
+    - "fs\\.(?:readFile|readFileSync|createReadStream)\\s*\\("
     - "fs\\.(?:writeFile|writeFileSync|createWriteStream|appendFile|appendFileSync)\\s*\\("
   exclude_patterns:
     - "(?i)example"

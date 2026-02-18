@@ -54,7 +54,7 @@ jobs:
 
       - name: Regenerate formula
         run: |
-          python scripts/update_brew_formula.py \
+          uv run python scripts/update_brew_formula.py \
             --version "${{ steps.version.outputs.value }}"
 
       - name: Commit and push

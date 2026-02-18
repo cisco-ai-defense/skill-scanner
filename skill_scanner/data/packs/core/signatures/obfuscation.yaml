@@ -18,6 +18,10 @@
   patterns:
     - "(?:\\\\x[0-9a-fA-F]{2}){20,}"
     - "(?:0x[0-9a-fA-F]{2},?\\s*){20,}"
+  exclude_patterns:
+    # iconv-lite / encoding library character map tables in bundled JS
+    - "\"chars\"\\s*:"
+    - "'chars'\\s*:"
   file_types: [python, javascript, typescript]
   description: "Large hex-encoded blob (possible obfuscation)"
   remediation: "Use clear code instead of hex encoding"
