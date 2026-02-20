@@ -26,6 +26,7 @@ import pytest
 from skill_scanner.core.models import Finding, Report, ScanResult, Severity, ThreatCategory
 from skill_scanner.core.reporters.json_reporter import JSONReporter
 from skill_scanner.core.reporters.markdown_reporter import MarkdownReporter
+from skill_scanner.core.reporters.sarif_reporter import SARIFReporter
 from skill_scanner.core.reporters.table_reporter import TableReporter
 
 
@@ -194,3 +195,47 @@ def test_save_report_writes_exact_generated_content(tmp_path, scan_result: ScanR
         expected = reporter.generate_report(scan_result)
         reporter.save_report(scan_result, str(target))
         assert target.read_text(encoding="utf-8") == expected
+
+
+def test_sarif_reporter_results_always_have_locations(scan_result: ScanResult):
+    reporter = SARIFReporter()
+    output = reporter.generate_report(scan_result)
+    data = json.loads(output)
+    results = data["runs"][0]["results"]
+    assert len(results) > 0
+    for result in results:
+        assert "locations" in result, f"Result for {result['ruleId']} missing locations"
+        assert len(result["locations"]) > 0
+        loc = result["locations"][0]
+        assert "physicalLocation" in loc
+        assert "artifactLocation" in loc["physicalLocation"]
+        assert "uri" in loc["physicalLocation"]["artifactLocation"]
+
+
+def test_sarif_reporter_no_fixes_property(scan_result: ScanResult):
+    reporter = SARIFReporter()
+    output = reporter.generate_report(scan_result)
+    data = json.loads(output)
+    results = data["runs"][0]["results"]
+    for result in results:
+        assert "fixes" not in result
+
+
+def test_sarif_reporter_preserves_per_finding_remediation(scan_result: ScanResult):
+    reporter = SARIFReporter()
+    output = reporter.generate_report(scan_result)
+    data = json.loads(output)
+    results = data["runs"][0]["results"]
+    results_with_remediation = [r for r in results if "remediation" in r.get("properties", {})]
+    assert len(results_with_remediation) > 0
+
+
+def test_sarif_reporter_multi_skill_github_compat(report: Report):
+    reporter = SARIFReporter()
+    output = reporter.generate_report(report)
+    data = json.loads(output)
+    assert data["version"] == "2.1.0"
+    results = data["runs"][0]["results"]
+    for result in results:
+        assert "locations" in result
+        assert "fixes" not in result
