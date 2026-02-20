@@ -686,7 +686,7 @@ class SkillScanner:
             except Exception as e:
                 # Isolate per-skill failures so one crash doesn't abort the
                 # entire batch / scan-all run.
-                logger.error("Unexpected error scanning %s: %s", skill_dir, e)
+                logger.error("Unexpected error scanning %s: %s", skill_dir, e, exc_info=True)
                 continue
 
         # Perform cross-skill analysis if requested
