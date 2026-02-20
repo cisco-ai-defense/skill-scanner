@@ -140,18 +140,20 @@ class TestModulePathFormat:
     """Test that module paths follow the correct format after refactoring."""
 
     def test_api_server_path_includes_api_subpackage(self):
-        """Test that api_server.py delegates to the correct module path."""
+        """Test that api_server.py path includes 'api' subpackage."""
         api_server_path = Path(__file__).parent.parent / "skill_scanner" / "api" / "api_server.py"
         content = api_server_path.read_text()
 
-        # api_server.py is a thin wrapper; it should reference the canonical
-        # app location: skill_scanner.api.api:app (not skill_scanner.api_server:app)
-        assert "skill_scanner.api.api" in content, "api_server.py should reference 'skill_scanner.api.api:app'"
+        # The path should be skill_scanner.api.api_server, not skill_scanner.api_server
+        assert "skill_scanner.api.api_server" in content, (
+            "api_server.py should use 'skill_scanner.api.api_server:app' not 'skill_scanner.api_server:app'"
+        )
 
-        # Should NOT have the incorrect path (top-level module reference)
+        # Should NOT have the incorrect path
+        # Use regex to avoid matching the correct path
         incorrect_pattern = r'["\']skill_scanner\.api_server:'
         assert not re.search(incorrect_pattern, content), (
-            "Found incorrect module path 'skill_scanner.api_server:' - should be 'skill_scanner.api.api:'"
+            "Found incorrect module path 'skill_scanner.api_server:' - should be 'skill_scanner.api.api_server:'"
         )
 
     def test_api_cli_path_includes_api_subpackage(self):
@@ -175,6 +177,16 @@ class TestAppImportable:
             assert hasattr(app, "routes"), "app should be a FastAPI instance with routes"
         except ImportError as e:
             pytest.fail(f"Cannot import app from skill_scanner.api.api: {e}")
+
+    def test_api_server_app_importable(self):
+        """Test that skill_scanner.api.api_server:app is importable."""
+        try:
+            from skill_scanner.api.api_server import app
+
+            assert app is not None
+            assert hasattr(app, "routes"), "app should be a FastAPI instance with routes"
+        except ImportError as e:
+            pytest.fail(f"Cannot import app from skill_scanner.api.api_server: {e}")
 
     def test_api_init_exports_app(self):
         """Test that skill_scanner.api exports app."""
@@ -232,7 +244,9 @@ class TestRunServerFunction:
         # First positional argument should be the module path
         module_path = call_args[0][0] if call_args[0] else call_args[1].get("app")
 
-        assert module_path == "skill_scanner.api.api:app", f"Expected 'skill_scanner.api.api:app', got '{module_path}'"
+        assert module_path == "skill_scanner.api.api_server:app", (
+            f"Expected 'skill_scanner.api.api_server:app', got '{module_path}'"
+        )
 
         # Verify other arguments
         assert call_args[1]["host"] == "127.0.0.1"

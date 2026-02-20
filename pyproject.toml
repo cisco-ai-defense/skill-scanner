@@ -50,23 +50,14 @@ dependencies = [
     "python-frontmatter>=1.0.0",
     "click>=8.1.0",
     "rich>=13.0.0",
-    "textual>=1.0.0",
     "tabulate>=0.9.0",
     "pydantic>=2.6.0",
     "fastapi>=0.125.0",
     "uvicorn[standard]>=0.29.0",
     "python-multipart>=0.0.6",
-    "yara-x>=1.12.0",
+    "yara-python>=4.5.4",
     "python-dotenv>=1.0.0",
     "httpx>=0.28.1",
-    # AI-powered file type detection (200+ types, ~99% accuracy)
-    "magika>=0.6.0",
-    # Structural PDF analysis (detects JS, OpenAction, Launch, etc.)
-    "pdfid>=1.1.0",
-    # Office document macro/VBA detection (oleid + olevba)
-    "oletools>=0.60.1",
-    # Unicode homoglyph attack detection (confusables.txt backed)
-    "confusable-homoglyphs>=3.3.0",
     # LLM support (required)
     "anthropic>=0.40.0",
     "openai>=1.0.0",
@@ -88,10 +79,6 @@ vertex = [
 azure = [
     "azure-identity>=1.15.0",
 ]
-# Supply chain dependency scanning (requires network access)
-# NOTE: guarddog has a dependency conflict with pip-audit via tomli.
-# Install separately: pip install guarddog
-# supply-chain = ["guarddog>=2.0.0"]
 # All optional provider extras
 all = [
     "boto3>=1.28.57",
@@ -125,7 +112,6 @@ skill-scanner-pre-commit = "skill_scanner.hooks.pre_commit:main"
 
 [tool.hatch.version]
 source = "vcs"
-raw-options.git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--abbrev=40", "--match", "[0-9]*"]
 
 [tool.hatch.build.hooks.vcs]
 version-file = "skill_scanner/_version.py"
@@ -145,7 +131,6 @@ ignore = ["E501", "F401", "F841", "B904", "B006", "B007", "B008", "B023"]
 "tests/*.py" = ["B", "E"]
 "evals/*.py" = ["B", "E"]
 "examples/*.py" = ["B", "E"]
-"skill_scanner/_version.py" = ["I", "UP"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -164,7 +149,7 @@ strict_equality = true
 exclude = ["evals/", "tests/", "examples/"]
 
 [[tool.mypy.overrides]]
-module = ["yaml.*", "tabulate.*", "requests.*", "yara.*", "frontmatter.*", "litellm.*", "anthropic.*", "openai.*", "google.*", "httpx.*", "decompyle3.*", "uncompyle6.*"]
+module = ["yaml.*", "tabulate.*", "requests.*", "yara.*", "frontmatter.*", "litellm.*", "anthropic.*", "openai.*", "google.*", "httpx.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -181,7 +166,6 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests that hit external services (run with -m integration)",
     "requires_llm: marks tests that require LLM API keys",
-    "e2e: marks end-to-end tests (CLI subprocess + full scan chain)",
 ]
 
 [tool.coverage.run]

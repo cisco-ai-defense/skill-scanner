@@ -72,7 +72,6 @@ docs/_build/
 # Project-specific
 **/mcp-scanner-reference/
 /mcp-scanner-reference/
-demo/
 
 # OS
 .DS_Store
@@ -97,10 +96,3 @@ Thumbs.db
 
 # Jupyter notebooks (local analysis)
 *.ipynb
-
-# Benchmark results (generated from local/internal corpus data)
-BENCHMARK_RESULTS.md
-evals/results/
-
-# User-generated scan policy (default TUI output)
-scan_policy.yaml

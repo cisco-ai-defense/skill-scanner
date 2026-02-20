@@ -8,9 +8,7 @@
 [![Cisco AI Defense](https://img.shields.io/badge/Cisco-AI%20Defense-049fd9?logo=cisco&logoColor=white)](https://www.cisco.com/site/us/en/products/security/ai-defense/index.html)
 [![AI Security Framework](https://img.shields.io/badge/AI%20Security-Framework-orange)](https://learn-cloudsecurity.cisco.com/ai-security-framework)
 
-A best-effort security scanner for AI Agent Skills that detects prompt injection, data exfiltration, and malicious code patterns. Combines **pattern-based detection** (YAML + YARA), **LLM-as-a-judge**, and **behavioral dataflow analysis** to maximize detection coverage of probable threats while minimizing false positives.
-
-> **Important:** This scanner provides best-effort detection, not comprehensive or complete coverage. A scan that returns no findings does not guarantee that a skill is free of all threats. See [Scope and Limitations](#scope-and-limitations) below.
+A security scanner for AI Agent Skills that detects prompt injection, data exfiltration, and malicious code patterns. Combines **pattern-based detection** (YAML + YARA), **LLM-as-a-judge**, and **behavioral dataflow analysis** for comprehensive threat detection.
 
 Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agent Skills](https://docs.cursor.com/context/rules) formats following the [Agent Skills specification](https://agentskills.io).
 
@@ -18,28 +16,12 @@ Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agen
 
 ## Highlights
 
-- **Multi-Engine Detection** - Static analysis, behavioral dataflow, LLM semantic analysis, and cloud-based scanning for layered, best-effort coverage
+- **Multi-Engine Detection** - Static analysis, behavioral dataflow, LLM semantic analysis, and cloud-based scanning
 - **False Positive Filtering** - Meta-analyzer significantly reduces noise while preserving detection capability
 - **CI/CD Ready** - SARIF output for GitHub Code Scanning, exit codes for build failures
 - **Extensible** - Plugin architecture for custom analyzers
 
 **[Join the Cisco AI Discord](https://discord.com/invite/nKWtDcXxtx)** to discuss, share feedback, or connect with the team.
-
----
-
-## Scope and Limitations
-
-> [!WARNING]
-> Skill Scanner is a **best-effort** detection tool -- not a guarantee of safety. Like antivirus software, no scanner can catch every possible threat: the input space for adversarial AI agent skills is unbounded and continuously evolving.
->
-> **What this means in practice:**
->
-> - **No findings ≠ no risk.** A scan that returns zero results means the scanner did not detect any known threat patterns. It does not certify that a skill is safe, benign, or free of all vulnerabilities. The scan output uses neutral language like "No findings" rather than "safe" or "clean" to reflect this.
-> - **Detection is not comprehensive.** The scanner uses multiple engines (regex/YARA signatures, LLM semantic analysis, behavioral dataflow, and optional cloud services), custom rule packs, and configurable scan policies. These layers maximize coverage of probable attack patterns, but they cannot cover every conceivable technique -- especially novel or zero-day attacks.
-> - **False positives and false negatives are expected.** The meta-analyzer and consensus modes reduce noise, but no configuration eliminates all false positives or catches all true positives. Tune the [scan policy](docs/scan-policy.md) to your risk tolerance.
-> - **Human review is still essential.** Automated scanning is one layer of a defense-in-depth strategy. Critical deployments should pair scanner results with manual code review and threat modeling.
->
-> We are transparent about these boundaries because security tools that overstate their coverage create a false sense of safety. The goal is to give you the best available signal, not a rubber stamp.
 
 ---
 
@@ -53,9 +35,6 @@ Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agen
 | [LLM Analyzer](docs/llm-analyzer.md) | LLM configuration and usage |
 | [Meta-Analyzer](docs/meta-analyzer.md) | False positive filtering and prioritization |
 | [Behavioral Analyzer](docs/behavioral-analyzer.md) | Dataflow analysis details |
-| [Scan Policy](docs/scan-policy.md) | Custom policies, presets, and tuning guide |
-| [Policy Quick Reference](docs/POLICY.md) | Compact reference for policy sections and knobs |
-| [Rule Authoring](docs/AUTHORING.md) | How to add signature, YARA, and Python rules |
 | [API Reference](docs/api-server.md) | REST API documentation |
 | [Development Guide](docs/developing.md) | Contributing and development setup |
 
@@ -113,7 +92,7 @@ export AI_DEFENSE_API_KEY="your_aidefense_api_key"
 ### CLI Usage
 
 ```bash
-# Scan a single skill (core analyzers: static + bytecode + pipeline)
+# Scan a single skill (static analyzer only)
 skill-scanner scan /path/to/skill
 
 # Scan with behavioral analyzer (dataflow analysis)
@@ -125,70 +104,42 @@ skill-scanner scan /path/to/skill --use-behavioral --use-llm --use-aidefense
 # Scan with meta-analyzer for false positive filtering
 skill-scanner scan /path/to/skill --use-llm --enable-meta
 
-# Scan with trigger analyzer for vague description checks
-skill-scanner scan /path/to/skill --use-trigger
-
-# Run LLM analyzer multiple times and keep majority-agreed findings
-skill-scanner scan /path/to/skill --use-llm --llm-consensus-runs 3
-
 # Scan multiple skills recursively
 skill-scanner scan-all /path/to/skills --recursive --use-behavioral
-
-# Scan multiple skills with cross-skill overlap detection
-skill-scanner scan-all /path/to/skills --recursive --check-overlap
 
 # CI/CD: Fail build if threats found
 skill-scanner scan-all ./skills --fail-on-findings --format sarif --output results.sarif
 
-# Generate interactive HTML report with attack correlation groups
-skill-scanner scan /path/to/skill --use-llm --enable-meta --format html --output report.html
-
 # Use custom YARA rules
 skill-scanner scan /path/to/skill --custom-rules /path/to/my-rules/
 
-# Use custom taxonomy + threat mapping profiles (JSON/YAML)
-skill-scanner scan /path/to/skill --taxonomy /path/to/taxonomy.json --threat-mapping /path/to/threat_mapping.json
+# Disable specific noisy rules
+skill-scanner scan /path/to/skill --disable-rule YARA_script_injection --disable-rule MANIFEST_MISSING_LICENSE
 
-# VirusTotal hash scan with optional unknown-file uploads
-skill-scanner scan /path/to/skill --use-virustotal --vt-upload-files
+# Strict mode (more findings, higher FP rate)
+skill-scanner scan /path/to/skill --yara-mode strict
 
-# Use a scan policy preset (strict, balanced, permissive)
-skill-scanner scan /path/to/skill --policy strict
-
-# Use a custom org policy file
-skill-scanner scan /path/to/skill --policy my_org_policy.yaml
-
-# Generate a policy file to customise
-skill-scanner generate-policy -o my_org_policy.yaml
-
-# Interactive policy configurator (TUI)
-skill-scanner configure-policy
+# Permissive mode (fewer findings, may miss some threats)
+skill-scanner scan /path/to/skill --yara-mode permissive
 ```
-
-**LLM provider note:** `--llm-provider` currently accepts `anthropic` or `openai`.
-For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, set provider-specific model strings and environment variables (see `docs/llm-analyzer.md`).
 
 ### Python SDK
 
 ```python
 from skill_scanner import SkillScanner
-from skill_scanner.core.analyzers import BehavioralAnalyzer
+from skill_scanner.core.analyzers import StaticAnalyzer, BehavioralAnalyzer
 
 # Create scanner with analyzers
 scanner = SkillScanner(analyzers=[
-    BehavioralAnalyzer(),
+    StaticAnalyzer(),
+    BehavioralAnalyzer(use_static_analysis=True),
 ])
 
 # Scan a skill
 result = scanner.scan_skill("/path/to/skill")
 
+print(f"Safe: {result.is_safe}")
 print(f"Findings: {len(result.findings)}")
-print(f"Max severity: {result.max_severity}")
-
-# Note: is_safe indicates no HIGH/CRITICAL findings were detected.
-# It does not guarantee the skill is free of all risk.
-if not result.is_safe:
-    print("Issues detected -- review findings before deployment")
 ```
 
 ---
@@ -198,8 +149,6 @@ if not result.is_safe:
 | Analyzer | Detection Method | Scope | Requirements |
 |----------|------------------|-------|--------------|
 | **Static** | YAML + YARA patterns | All files | None |
-| **Bytecode** | .pyc integrity verification | Python bytecode | None |
-| **Pipeline** | Command taint analysis | Shell pipelines | None |
 | **Behavioral** | AST dataflow analysis | Python files | None |
 | **LLM** | Semantic analysis | SKILL.md + scripts | API key |
 | **Meta** | False positive filtering | All findings | API key |
@@ -212,37 +161,17 @@ if not result.is_safe:
 
 | Option | Description |
 |--------|-------------|
-| `--policy` | Scan policy: preset name (`strict`, `balanced`, `permissive`) or path to custom YAML |
 | `--use-behavioral` | Enable behavioral analyzer (dataflow analysis) |
 | `--use-llm` | Enable LLM analyzer (requires API key) |
-| `--llm-provider` | LLM provider for CLI routing: `anthropic` or `openai` |
-| `--llm-consensus-runs N` | Run LLM analysis `N` times and keep majority-agreed findings |
 | `--use-virustotal` | Enable VirusTotal binary scanner |
-| `--vt-api-key KEY` | Provide VirusTotal API key directly (optional) |
-| `--vt-upload-files` | Upload unknown binaries to VirusTotal (optional) |
 | `--use-aidefense` | Enable Cisco AI Defense analyzer |
-| `--aidefense-api-url URL` | Override AI Defense API URL (optional) |
-| `--use-trigger` | Enable trigger specificity analyzer |
 | `--enable-meta` | Enable meta-analyzer for false positive filtering |
-| `--verbose` | Include per-finding policy fingerprints, co-occurrence metadata, and keep meta-analyzer false positives |
-| `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif`, `html`. The `html` format produces a self-contained interactive report with collapsible correlation groups, expandable code snippets, and pipeline taint flow diagrams |
-| `--detailed` | Include detailed findings in Markdown output |
-| `--compact` | Compact JSON output |
+| `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif` |
 | `--output PATH` | Save report to file |
 | `--fail-on-findings` | Exit with error if HIGH/CRITICAL found |
+| `--yara-mode` | Detection mode: `strict`, `balanced` (default), `permissive` |
 | `--custom-rules PATH` | Use custom YARA rules from directory |
-| `--taxonomy PATH` | Load custom taxonomy profile (JSON/YAML) for this run |
-| `--threat-mapping PATH` | Load custom scanner threat mapping profile (JSON) for this run |
-| `--check-overlap` | (`scan-all`) Enable cross-skill description overlap checks |
-
-| Command | Description |
-|---------|-------------|
-| `scan` | Scan a single skill directory |
-| `scan-all` | Scan multiple skills (with `--recursive`, `--check-overlap`) |
-| `generate-policy` | Generate a scan policy YAML for customisation |
-| `configure-policy` | Interactive TUI to build/edit a custom scan policy (`--input` supported) |
-| `list-analyzers` | Show available analyzers |
-| `validate-rules` | Validate rule signatures (`--rules-file` supported) |
+| `--disable-rule RULE` | Disable specific rule (can repeat) |
 
 ---
 
@@ -254,13 +183,11 @@ $ skill-scanner scan ./my-skill --use-behavioral
 ============================================================
 Skill: my-skill
 ============================================================
-Status: [OK] No findings
-Max Severity: NONE
+Status: [OK] SAFE
+Max Severity: SAFE
 Total Findings: 0
 Scan Duration: 0.15s
 ```
-
-> **Note:** "No findings" means the scanner did not detect any known threat patterns -- it is not a guarantee that the skill is free of all risk. See [Scope and Limitations](#scope-and-limitations).
 
 ---
 

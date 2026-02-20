@@ -266,7 +266,7 @@ class TriggerAnalyzer(BaseAnalyzer):
 
     def _check_keyword_baiting(self, skill: Skill) -> list[Finding]:
         """Check for keyword stuffing / SEO-style baiting."""
-        findings: list[Finding] = []
+        findings = []
         description = skill.description.strip()
 
         # Look for comma-separated lists of 8+ keywords (not just 5)

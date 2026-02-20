@@ -33,27 +33,19 @@ Requirements:
     - Works best with 2+ analyzers for cross-correlation
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
-import logging
 import os
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ...threats.threats import ThreatMapping
 from ..models import Finding, Severity, Skill, ThreatCategory
 from .base import BaseAnalyzer
 from .llm_provider_config import ProviderConfig
 from .llm_request_handler import LLMRequestHandler
-
-if TYPE_CHECKING:
-    from ...core.scan_policy import LLMAnalysisPolicy, ScanPolicy
-
-logger = logging.getLogger(__name__)
 
 # Check for LiteLLM availability
 try:
@@ -115,7 +107,7 @@ class MetaAnalysisResult:
         Returns:
             List of validated Finding objects with meta-analysis enrichments.
         """
-        findings: list[Finding] = []
+        findings = []
         for finding_data in self.validated_findings:
             try:
                 # Parse severity
@@ -251,8 +243,6 @@ class MetaAnalyzer(BaseAnalyzer):
         aws_region: str | None = None,
         aws_profile: str | None = None,
         aws_session_token: str | None = None,
-        # Policy (optional – uses generous defaults × meta multiplier)
-        policy: ScanPolicy | None = None,
     ):
         """Initialize the Meta Analyzer.
 
@@ -268,19 +258,8 @@ class MetaAnalyzer(BaseAnalyzer):
             aws_region: AWS region (for Bedrock)
             aws_profile: AWS profile name (for Bedrock)
             aws_session_token: AWS session token (for Bedrock)
-            policy: Scan policy providing LLM context budget thresholds.
-                The meta analyzer applies ``meta_budget_multiplier`` on top of
-                the base limits.  When ``None``, generous defaults are used.
         """
         super().__init__("meta_analyzer")
-
-        # Store LLM analysis budget policy (lazy import to avoid circular deps)
-        if policy is not None:
-            self.llm_policy: LLMAnalysisPolicy = policy.llm_analysis
-        else:
-            from ...core.scan_policy import LLMAnalysisPolicy
-
-            self.llm_policy = LLMAnalysisPolicy()
 
         if not LITELLM_AVAILABLE:
             raise ImportError("LiteLLM is required for MetaAnalyzer. Install with: pip install litellm")
@@ -352,10 +331,10 @@ class MetaAnalyzer(BaseAnalyzer):
             if meta_prompt_file.exists():
                 self.system_prompt = meta_prompt_file.read_text(encoding="utf-8")
             else:
-                logger.warning("Meta-analysis prompt not found at %s", meta_prompt_file)
+                print(f"Warning: Meta-analysis prompt not found at {meta_prompt_file}")
                 self.system_prompt = self._get_default_system_prompt()
         except Exception as e:
-            logger.warning("Failed to load meta-analysis prompt: %s", e)
+            print(f"Warning: Failed to load meta-analysis prompt: {e}")
             self.system_prompt = self._get_default_system_prompt()
 
     def _get_default_system_prompt(self) -> str:
@@ -409,31 +388,8 @@ Respond with JSON containing your analysis following the required schema."""
         start_tag = f"<!---SKILL_CONTENT_START_{random_id}--->"
         end_tag = f"<!---SKILL_CONTENT_END_{random_id}--->"
 
-        # Build skill context with budget gating
-        skill_context, budget_skipped = self._build_skill_context(skill)
-
-        # Emit INFO findings for content that exceeded the meta budget
-        lp = self.llm_policy
-        for item in budget_skipped:
-            threshold = item["threshold_name"]
-            findings.append(
-                Finding(
-                    id=f"meta_budget_{item['path']}",
-                    rule_id="LLM_CONTEXT_BUDGET_EXCEEDED",
-                    category=ThreatCategory.POLICY_VIOLATION,
-                    severity=Severity.INFO,
-                    title=f"'{item['path']}' excluded from meta-analysis ({item['size']:,} chars)",
-                    description=item["reason"],
-                    file_path=item["path"],
-                    remediation=(
-                        f"Increase {threshold} (currently "
-                        f"{getattr(lp, threshold.split('.')[-1], '?'):,} x "
-                        f"{lp.meta_budget_multiplier}) or "
-                        f"llm_analysis.meta_budget_multiplier in your scan policy."
-                    ),
-                    analyzer="meta_analyzer",
-                )
-            )
+        # Build skill context
+        skill_context = self._build_skill_context(skill)
 
         # Build findings data
         findings_data = self._serialize_findings(findings)
@@ -455,22 +411,16 @@ Respond with JSON containing your analysis following the required schema."""
             # Parse response
             result = self._parse_response(response, findings)
 
-            # Follow-up pass for uncovered findings
-            result = await self._cover_remaining_findings(
-                result, findings, skill, skill_context, analyzers_used, start_tag, end_tag
-            )
-
-            logger.info(
-                "Meta-analysis complete: %d validated, %d false positives filtered, %d new threats detected",
-                len(result.validated_findings),
-                len(result.false_positives),
-                len(result.missed_threats),
+            print(
+                f"Meta-analysis complete: {len(result.validated_findings)} validated, "
+                f"{len(result.false_positives)} false positives filtered, "
+                f"{len(result.missed_threats)} new threats detected"
             )
 
             return result
 
         except Exception as e:
-            logger.error("Meta-analysis failed: %s", e)
+            print(f"Meta-analysis failed: {e}")
             # Return original findings as validated if analysis fails
             return MetaAnalysisResult(
                 validated_findings=[self._finding_to_dict(f) for f in findings],
@@ -480,126 +430,12 @@ Respond with JSON containing your analysis following the required schema."""
                 },
             )
 
-    async def _cover_remaining_findings(
-        self,
-        result: MetaAnalysisResult,
-        findings: list[Finding],
-        skill: Skill,
-        skill_context: str,
-        analyzers_used: list[str],
-        start_tag: str,
-        end_tag: str,
-    ) -> MetaAnalysisResult:
-        """Send a follow-up request for any findings the first pass didn't classify."""
-        all_indices = set(range(len(findings)))
-
-        covered = set()
-        for vf in result.validated_findings:
-            idx = vf.get("_index")
-            if isinstance(idx, int):
-                covered.add(idx)
-        for fp in result.false_positives:
-            idx = fp.get("_index")
-            if isinstance(idx, int):
-                covered.add(idx)
-
-        remaining = sorted(all_indices - covered)
-        if not remaining:
-            return result
-
-        logger.info(
-            "Meta follow-up: %d/%d findings uncovered, sending follow-up request",
-            len(remaining),
-            len(findings),
-        )
-
-        # Build a focused list of only the uncovered findings
-        remaining_findings = [findings[i] for i in remaining]
-        remaining_data = []
-        for orig_idx, f in zip(remaining, remaining_findings, strict=False):
-            remaining_data.append(
-                {
-                    "_index": orig_idx,
-                    "rule_id": f.rule_id,
-                    "category": f.category.value,
-                    "severity": f.severity.value,
-                    "title": f.title,
-                    "description": f.description[:200],
-                    "file_path": f.file_path,
-                    "analyzer": f.analyzer,
-                }
-            )
-        remaining_json = json.dumps(remaining_data, indent=2)
-
-        followup_prompt = f"""## Follow-Up: Classify Remaining Findings
-
-The previous analysis covered {len(covered)}/{len(findings)} findings. The following {len(remaining)} findings were NOT classified.
-
-Classify each into EITHER `validated_findings` or `false_positives`.
-
-### Skill Context
-{start_tag}
-Skill: {skill.name}
-Description: {skill.description}
-{end_tag}
-
-### Unclassified Findings
-```json
-{remaining_json}
-```
-
-Respond with a JSON object. Use COMPACT format for validated entries:
-```json
-{{
-  "validated_findings": [
-    {{"_index": N, "confidence": "HIGH|MEDIUM|LOW", "confidence_reason": "brief reason", "exploitability": "brief", "impact": "brief"}}
-  ],
-  "false_positives": [
-    {{"_index": N, "false_positive_reason": "brief reason"}}
-  ]
-}}
-```
-Every `_index` above MUST appear in exactly one list."""
-
-        try:
-            followup_response = await self._make_llm_request(self.system_prompt, followup_prompt)
-            followup_result = self._parse_response(followup_response, findings)
-
-            # Merge into original result
-            result.validated_findings.extend(followup_result.validated_findings)
-            result.false_positives.extend(followup_result.false_positives)
-
-            logger.info(
-                "Meta follow-up complete: +%d validated, +%d false positives",
-                len(followup_result.validated_findings),
-                len(followup_result.false_positives),
-            )
-        except Exception as e:
-            logger.warning("Meta follow-up failed: %s — uncovered findings will pass through as-is", e)
-
-        return result
-
-    def _build_skill_context(self, skill: Skill) -> tuple[str, list[dict]]:
+    def _build_skill_context(self, skill: Skill) -> str:
         """Build comprehensive skill context for meta-analysis.
 
-        Uses policy-driven budget gating (meta multiplier applied).
-        Content that fits within budget is included in full — **no truncation**.
-        Content that exceeds the budget is skipped and reported.
-
-        Returns:
-            Tuple of (context_string, skipped_items) where *skipped_items*
-            is a list of dicts with keys ``path``, ``size``, ``reason``,
-            and ``threshold_name``.
+        Includes full skill content to enable accurate validation of findings.
         """
-        lp = self.llm_policy
-        max_instruction = lp.meta_max_instruction_body_chars
-        max_code_file = lp.meta_max_code_file_chars
-        max_total = lp.meta_max_total_prompt_chars
-
-        lines: list[str] = []
-        skipped: list[dict] = []
-        total_size = 0
-
+        lines = []
         lines.append(f"## Skill: {skill.name}")
         lines.append(f"**Description:** {skill.description}")
         lines.append(f"**Directory:** {skill.directory}")
@@ -614,25 +450,16 @@ Every `_index` above MUST appear in exactly one list."""
         )
         lines.append("")
 
-        # Full instruction body — include full or skip entirely
+        # Full instruction body (SKILL.md content)
         lines.append("### SKILL.md Instructions (Full)")
-        instruction_size = len(skill.instruction_body)
-        if instruction_size > max_instruction:
-            skipped.append(
-                {
-                    "path": "SKILL.md (instruction body)",
-                    "size": instruction_size,
-                    "reason": (
-                        f"instruction body ({instruction_size:,} chars) exceeds meta limit "
-                        f"({max_instruction:,} = {lp.max_instruction_body_chars:,} x {lp.meta_budget_multiplier})"
-                    ),
-                    "threshold_name": "llm_analysis.max_instruction_body_chars",
-                }
+        # Limit to 50KB to avoid excessive token usage
+        max_instruction_size = 50000
+        if len(skill.instruction_body) > max_instruction_size:
+            lines.append(
+                f"```markdown\n{skill.instruction_body[:max_instruction_size]}\n... [TRUNCATED - {len(skill.instruction_body)} chars total]\n```"
             )
-            lines.append("*(instruction body excluded — exceeds budget)*")
         else:
             lines.append(f"```markdown\n{skill.instruction_body}\n```")
-            total_size += instruction_size
         lines.append("")
 
         # Files summary
@@ -641,58 +468,37 @@ Every `_index` above MUST appear in exactly one list."""
             lines.append(f"- {f.relative_path} ({f.file_type}, {f.size_bytes} bytes)")
         lines.append("")
 
-        # Full file contents for code files — budget gated, no truncation
+        # Full file contents for code files
         lines.append("### File Contents")
         code_extensions = {".py", ".sh", ".bash", ".js", ".ts", ".rb", ".pl", ".yaml", ".yml", ".json", ".toml"}
+        max_file_size = 30000  # 30KB per file
+        total_code_size = 0
+        max_total_code_size = 150000  # 150KB total for all code
 
         for f in skill.files:
+            # Skip if we've already included too much code
+            if total_code_size >= max_total_code_size:
+                lines.append("\n... [REMAINING FILES OMITTED - total code size limit reached]")
+                break
+
+            # Check if it's a code file worth including
             file_ext = Path(f.relative_path).suffix.lower()
-            if file_ext not in code_extensions and f.file_type not in ("python", "bash", "script"):
-                continue
+            if file_ext in code_extensions or f.file_type in ["python", "bash", "script"]:
+                try:
+                    file_path = Path(skill.directory) / f.relative_path
+                    if file_path.exists() and file_path.is_file():
+                        content = file_path.read_text(encoding="utf-8", errors="replace")
 
-            try:
-                file_path = Path(skill.directory) / f.relative_path
-                if not (file_path.exists() and file_path.is_file()):
-                    continue
-                content = file_path.read_text(encoding="utf-8", errors="replace")
-                file_size = len(content)
+                        # Truncate large files
+                        if len(content) > max_file_size:
+                            content = content[:max_file_size] + f"\n... [TRUNCATED - {len(content)} chars total]"
 
-                # Per-file budget check
-                if file_size > max_code_file:
-                    skipped.append(
-                        {
-                            "path": str(f.relative_path),
-                            "size": file_size,
-                            "reason": (
-                                f"file size ({file_size:,} chars) exceeds meta per-file limit "
-                                f"({max_code_file:,} = {lp.max_code_file_chars:,} x {lp.meta_budget_multiplier})"
-                            ),
-                            "threshold_name": "llm_analysis.max_code_file_chars",
-                        }
-                    )
-                    continue
-
-                # Total budget check
-                if total_size + file_size > max_total:
-                    skipped.append(
-                        {
-                            "path": str(f.relative_path),
-                            "size": file_size,
-                            "reason": (
-                                f"including this file would exceed the meta total prompt budget "
-                                f"({total_size + file_size:,} > {max_total:,} = "
-                                f"{lp.max_total_prompt_chars:,} x {lp.meta_budget_multiplier})"
-                            ),
-                            "threshold_name": "llm_analysis.max_total_prompt_chars",
-                        }
-                    )
-                    continue
-
-                lines.append(f"\n#### {f.relative_path}")
-                lines.append(f"```{file_ext.lstrip('.') or 'text'}\n{content}\n```")
-                total_size += file_size
-            except Exception:
-                pass
+                        lines.append(f"\n#### {f.relative_path}")
+                        lines.append(f"```{file_ext.lstrip('.') or 'text'}\n{content}\n```")
+                        total_code_size += len(content)
+                except Exception:
+                    # Skip files that can't be read
+                    pass
 
         lines.append("")
 
@@ -703,7 +509,7 @@ Every `_index` above MUST appear in exactly one list."""
                 lines.append(f"- {ref}")
             lines.append("")
 
-        return "\n".join(lines), skipped
+        return "\n".join(lines)
 
     def _serialize_findings(self, findings: list[Finding]) -> str:
         """Serialize findings to JSON for the prompt."""
@@ -720,8 +526,9 @@ Every `_index` above MUST appear in exactly one list."""
                     "description": f.description,
                     "file_path": f.file_path,
                     "line_number": f.line_number,
-                    "snippet": f.snippet[:200] if f.snippet else None,
+                    "snippet": f.snippet[:500] if f.snippet else None,
                     "analyzer": f.analyzer,
+                    "metadata": f.metadata,
                 }
             )
         return json.dumps(findings_list, indent=2)
@@ -775,32 +582,31 @@ You have {num_findings} findings from {len(analyzers_used)} analyzers. Your job 
 
 ### Your Task (IN ORDER OF IMPORTANCE)
 
-1. **CORRELATE AND GROUP** (Most Important)
-   - Group related findings into `correlations` (e.g., 4 YARA autonomy_abuse hits on consecutive lines = 1 group, pipeline + static findings about the same exfil chain = 1 group)
-   - Keep ALL grouped findings in `validated_findings` — correlations are for GROUPING, not removing
+1. **FILTER FALSE POSITIVES** (Most Important)
+   - VERIFY each finding against the actual code above. If the code doesn't match the claim → FALSE POSITIVE
+   - Pattern matches without actual malicious behavior → FALSE POSITIVE
+   - Static-only findings not confirmed by LLM/behavioral → likely FALSE POSITIVE
+   - Reading internal files, using standard libraries normally → FALSE POSITIVE
+   - Aim to filter 30-70% of static analyzer findings as noise
 
-2. **FILTER GENUINE FALSE POSITIVES**
-   - VERIFY each finding against the actual code above
-   - Only mark as FP if the code is genuinely benign (keyword in comment, safe library use, internal file read)
-   - Do NOT mark a finding as FP just because another analyzer already covers it
-
-3. **PRIORITIZE BY ACTUAL RISK**
+2. **PRIORITIZE BY ACTUAL RISK**
    - What should the developer fix FIRST? Put it at index 0 in priority_order
-   - CRITICAL: Active data exfiltration, credential theft, prompt injection
-   - HIGH: Command injection, system modification
+   - CRITICAL: Active data exfiltration, credential theft
+   - HIGH: Command injection, prompt injection with clear exploitation path
    - MEDIUM: Potential issues that need more context
+   - LOW/Filter: Informational, style, missing optional metadata
 
-4. **MAKE ACTIONABLE RECOMMENDATIONS**
-   - Every recommendation needs a specific fix
+3. **CONSOLIDATE RELATED FINDINGS**
+   - Multiple findings about the same issue = ONE entry in correlations
+   - Example: "Reads AWS creds" + "Makes HTTP POST" + "Sends data" = ONE "Credential Exfiltration" issue
+
+4. **MAKE ACTIONABLE**
+   - Every recommendation needs a specific fix (code example if possible)
    - "Don't do X" is not actionable. "Replace X with Y" is actionable.
 
 5. **DETECT MISSED THREATS** (ONLY if obvious)
-   - Leave missed_threats EMPTY unless there's something critical all analyzers missed.
-
-**IMPORTANT: COMPACT OUTPUT FORMAT**
-- Use COMPACT format for `validated_findings`: only `_index`, `confidence`, `confidence_reason`, `exploitability`, `impact`. Do NOT echo back title, description, file_path, snippet.
-- Output `overall_risk_assessment` and `correlations` FIRST in the JSON (before the large arrays).
-- Classify every finding (`_index` 0 to {num_findings - 1}) into either `validated_findings` or `false_positives`.
+   - This should be RARE. Leave missed_threats EMPTY unless there's something critical and obvious.
+   - Don't invent problems to fill this field.
 
 Respond with a JSON object following the schema in the system prompt."""
 
@@ -841,8 +647,7 @@ Respond with a JSON object following the schema in the system prompt."""
         for attempt in range(self.max_retries):
             try:
                 response = await acompletion(**api_params)
-                content: str = response.choices[0].message.content or ""
-                return content
+                return response.choices[0].message.content
 
             except Exception as e:
                 last_exception = e
@@ -865,16 +670,12 @@ Respond with a JSON object following the schema in the system prompt."""
 
                 if attempt < self.max_retries - 1 and is_retryable:
                     delay = (2**attempt) * 1.0
-                    logger.warning("Meta-analysis LLM request failed (attempt %d): %s", attempt + 1, e)
+                    print(f"Meta-analysis LLM request failed (attempt {attempt + 1}): {e}")
                     await asyncio.sleep(delay)
                 else:
-                    if last_exception is not None:
-                        raise last_exception
-                    raise RuntimeError("LLM request failed")
+                    raise last_exception
 
-        if last_exception is not None:
-            raise last_exception
-        raise RuntimeError("All retries exhausted")
+        raise last_exception
 
     def _parse_response(self, response: str, original_findings: list[Finding]) -> MetaAnalysisResult:
         """Parse the LLM meta-analysis response."""
@@ -897,7 +698,7 @@ Respond with a JSON object following the schema in the system prompt."""
             return result
 
         except (json.JSONDecodeError, ValueError) as e:
-            logger.error("Failed to parse meta-analysis response: %s", e)
+            print(f"Failed to parse meta-analysis response: {e}")
             # Return original findings as validated
             return MetaAnalysisResult(
                 validated_findings=[self._finding_to_dict(f) for f in original_findings],
@@ -914,8 +715,7 @@ Respond with a JSON object following the schema in the system prompt."""
 
         # Strategy 1: Parse entire response as JSON
         try:
-            result: dict[str, Any] = json.loads(response.strip())
-            return result
+            return json.loads(response.strip())
         except json.JSONDecodeError:
             pass
 
@@ -931,8 +731,7 @@ Respond with a JSON object following the schema in the system prompt."""
 
                 if end_idx != -1:
                     json_str = response[content_start:end_idx].strip()
-                    parsed: dict[str, Any] = json.loads(json_str)
-                    return parsed
+                    return json.loads(json_str)
         except json.JSONDecodeError:
             pass
 
@@ -954,31 +753,8 @@ Respond with a JSON object following the schema in the system prompt."""
 
                 if end_idx != -1:
                     json_content = response[start_idx:end_idx]
-                    parsed_obj: dict[str, Any] = json.loads(json_content)
-                    return parsed_obj
+                    return json.loads(json_content)
         except json.JSONDecodeError:
-            pass
-
-        # Strategy 4: Attempt to repair truncated JSON (common with large outputs)
-        try:
-            start_idx = response.find("{")
-            if start_idx != -1:
-                json_fragment = response[start_idx:]
-                # Close unclosed braces/brackets
-                open_braces = json_fragment.count("{") - json_fragment.count("}")
-                open_brackets = json_fragment.count("[") - json_fragment.count("]")
-
-                if open_braces > 0 or open_brackets > 0:
-                    # Truncate to last complete entry (last comma or closing bracket)
-                    last_good = max(json_fragment.rfind("},"), json_fragment.rfind("],"), json_fragment.rfind("}"))
-                    if last_good > 0:
-                        repaired = json_fragment[: last_good + 1]
-                        repaired += "]}" * open_brackets
-                        repaired += "}" * max(0, repaired.count("{") - repaired.count("}"))
-                        parsed_repaired: dict[str, Any] = json.loads(repaired)
-                        logger.warning("Recovered truncated meta-analysis JSON response")
-                        return parsed_repaired
-        except (json.JSONDecodeError, ValueError):
             pass
 
         raise ValueError("No valid JSON found in response")
@@ -1048,10 +824,9 @@ def apply_meta_analysis_to_results(
         priority_lookup[idx] = rank
 
     for vf in meta_result.validated_findings:
-        idx_raw = vf.get("_index")
-        vf_idx = idx_raw if isinstance(idx_raw, int) else None
-        if vf_idx is not None:
-            enrichments[vf_idx] = {
+        idx = vf.get("_index")
+        if idx is not None:
+            enrichments[idx] = {
                 "meta_validated": True,
                 "meta_confidence": vf.get("confidence"),
                 "meta_confidence_reason": vf.get("confidence_reason"),
@@ -1062,6 +837,10 @@ def apply_meta_analysis_to_results(
     # Enrich all findings (do not filter out false positives)
     result_findings = []
     for i, finding in enumerate(original_findings):
+        # Ensure metadata dict exists
+        if finding.metadata is None:
+            finding.metadata = {}
+
         # Mark false positives with metadata (but keep them in output)
         if i in fp_data:
             finding.metadata["meta_false_positive"] = True
@@ -1089,6 +868,9 @@ def apply_meta_analysis_to_results(
     # Add missed threats as new findings
     missed_findings = meta_result.get_missed_threats(skill)
     for mf in missed_findings:
+        # Ensure missed threats are marked as validated (not false positives)
+        if mf.metadata is None:
+            mf.metadata = {}
         mf.metadata["meta_false_positive"] = False
     result_findings.extend(missed_findings)
 

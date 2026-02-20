@@ -31,12 +31,10 @@ import asyncio
 import hashlib
 import logging
 import os
-import re
 from pathlib import Path
 from typing import Any
 
 from ...core.models import Finding, Severity, Skill, ThreatCategory
-from ...core.static_analysis.bash_taint_tracker import BashTaintFlow, BashTaintType, analyze_bash_script
 from ...core.static_analysis.context_extractor import (
     ContextExtractor,
     SkillFunctionContext,
@@ -65,6 +63,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
 
     def __init__(
         self,
+        use_static_analysis: bool = True,
         use_alignment_verification: bool = False,
         llm_model: str | None = None,
         llm_api_key: str | None = None,
@@ -73,18 +72,26 @@ class BehavioralAnalyzer(BaseAnalyzer):
         Initialize behavioral analyzer.
 
         Args:
+            use_static_analysis: Deprecated parameter, kept for backward compatibility.
+                Static analysis is always enabled as it's required for the analyzer to function.
             use_alignment_verification: Enable LLM-powered alignment verification
             llm_model: LLM model for alignment verification (e.g., "gemini/gemini-2.0-flash")
             llm_api_key: API key for the LLM provider (or resolved from environment)
 
         Note:
-            This analyzer processes Python (.py) files with full AST-based dataflow
-            analysis, and bash (.sh) scripts with lightweight taint tracking.
-            Markdown files with code blocks are not analyzed directly here;
-            use the LLM analyzer for comprehensive markdown code block analysis.
+            This analyzer currently only processes Python (.py) files.
+            Markdown files with code blocks (e.g., bash in .md files) are not analyzed.
+            Use the LLM analyzer for comprehensive markdown/bash code block analysis.
         """
         super().__init__("behavioral_analyzer")
 
+        # Static analysis is always required - the parameter is kept for backward compatibility
+        if not use_static_analysis:
+            logger.warning(
+                "use_static_analysis=False is deprecated and ignored. "
+                "Static analysis is required for the behavioral analyzer to function."
+            )
+        self.use_static_analysis = True  # Always enabled
         self.use_alignment_verification = use_alignment_verification
         self.context_extractor = ContextExtractor()  # Always initialized
 
@@ -166,22 +173,6 @@ class BehavioralAnalyzer(BaseAnalyzer):
             except Exception as e:
                 logger.warning("Failed to analyze %s: %s", script_file.relative_path, e)
 
-        # Analyze bash scripts for taint flows
-        for script_file in skill.get_scripts():
-            if script_file.file_type != "bash":
-                continue
-            content = script_file.read_content()
-            if not content:
-                continue
-            try:
-                bash_flows = analyze_bash_script(content, script_file.relative_path)
-                findings.extend(self._generate_findings_from_bash_flows(bash_flows, script_file.relative_path))
-            except Exception as e:
-                logger.warning("Failed to analyze bash script %s: %s", script_file.relative_path, e)
-
-        # Analyze code blocks embedded in markdown files
-        findings.extend(self._analyze_markdown_code_blocks(skill))
-
         # Build call graph for cross-file analysis
         call_graph_analyzer.build_call_graph()
 
@@ -208,7 +199,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
         Returns:
             List of findings from alignment verification
         """
-        findings: list[Finding] = []
+        findings = []
 
         if not self.alignment_orchestrator:
             return findings
@@ -458,196 +449,5 @@ class BehavioralAnalyzer(BaseAnalyzer):
                 },
             )
             findings.append(finding)
-
-        return findings
-
-    # Regex for fenced code blocks with optional language tag
-    _CODE_BLOCK_RE = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
-
-    # Languages routed to bash taint tracker
-    _BASH_LANGS = {"bash", "sh", "shell", "zsh", ""}
-
-    def _analyze_markdown_code_blocks(self, skill: Skill) -> list[Finding]:
-        """Extract fenced code blocks from markdown files and route through analyzers.
-
-        Bash/shell blocks are run through the bash taint tracker.
-        Python blocks are run through lightweight pattern checks.
-        """
-        findings: list[Finding] = []
-
-        # Collect markdown sources: SKILL.md + other .md files
-        md_sources: list[tuple[str, str]] = [("SKILL.md", skill.instruction_body)]
-        for sf in skill.files:
-            if sf.file_type == "markdown" and sf.relative_path.lower() != "skill.md":
-                content = sf.read_content()
-                if content:
-                    md_sources.append((sf.relative_path, content))
-
-        for source_file, content in md_sources:
-            for match in self._CODE_BLOCK_RE.finditer(content):
-                lang = match.group(1).lower()
-                block = match.group(2)
-                line_num = content[: match.start()].count("\n") + 1
-
-                if not block.strip():
-                    continue
-
-                # Route bash/shell blocks through bash taint tracker
-                if lang in self._BASH_LANGS and len(block.strip().split("\n")) >= 2:
-                    try:
-                        flows = analyze_bash_script(block, source_file)
-                        for flow_finding in self._generate_findings_from_bash_flows(flows, source_file):
-                            # Adjust line number to be relative to the markdown file
-                            flow_finding.line_number = line_num + (flow_finding.line_number or 0)
-                            flow_finding.metadata["from_code_block"] = True
-                            flow_finding.metadata["block_language"] = lang or "shell"
-                            findings.append(flow_finding)
-                    except Exception as e:
-                        logger.debug(
-                            "Failed to analyze %s code block in %s: %s",
-                            lang or "shell",
-                            source_file,
-                            e,
-                        )
-
-                # Route python blocks through lightweight pattern check
-                elif lang == "python" and len(block.strip().split("\n")) >= 2:
-                    findings.extend(self._check_python_code_block(block, source_file, line_num))
-
-        return findings
-
-    def _check_python_code_block(self, block: str, source_file: str, base_line: int) -> list[Finding]:
-        """Lightweight security check for Python code blocks in markdown.
-
-        Full AST analysis is not applied to code blocks (they may be fragments).
-        Instead, check for the most dangerous patterns.
-        """
-        findings: list[Finding] = []
-        dangerous_patterns = [
-            (
-                re.compile(r"(?:eval|exec)\s*\("),
-                "MDBLOCK_PYTHON_EVAL_EXEC",
-                "Python code block uses eval/exec",
-                Severity.HIGH,
-                ThreatCategory.COMMAND_INJECTION,
-            ),
-            (
-                re.compile(r"(?:os\.system|subprocess\.(?:call|run|Popen|check_output))\s*\("),
-                "MDBLOCK_PYTHON_SUBPROCESS",
-                "Python code block executes shell commands",
-                Severity.MEDIUM,
-                ThreatCategory.COMMAND_INJECTION,
-            ),
-            (
-                re.compile(r"requests\.post\s*\("),
-                "MDBLOCK_PYTHON_HTTP_POST",
-                "Python code block sends HTTP POST request",
-                Severity.MEDIUM,
-                ThreatCategory.DATA_EXFILTRATION,
-            ),
-        ]
-
-        for pattern, rule_id, title, severity, category in dangerous_patterns:
-            for line_idx, line in enumerate(block.split("\n")):
-                if pattern.search(line):
-                    findings.append(
-                        Finding(
-                            id=self._generate_id(rule_id, f"{source_file}:{base_line + line_idx}"),
-                            rule_id=rule_id,
-                            category=category,
-                            severity=severity,
-                            title=title,
-                            description=(
-                                f"Code block in {source_file} at line {base_line + line_idx} "
-                                f"contains potentially dangerous Python code."
-                            ),
-                            file_path=source_file,
-                            line_number=base_line + line_idx,
-                            snippet=line.strip(),
-                            remediation="Review the code block for security implications.",
-                            analyzer="behavioral",
-                            metadata={
-                                "from_code_block": True,
-                                "block_language": "python",
-                            },
-                        )
-                    )
-                    break  # One finding per pattern per block
-
-        return findings
-
-    def _generate_findings_from_bash_flows(self, flows: list[BashTaintFlow], file_path: str) -> list[Finding]:
-        """Generate findings from bash script taint flows."""
-        findings = []
-
-        severity_map = {
-            "CRITICAL": Severity.CRITICAL,
-            "HIGH": Severity.HIGH,
-            "MEDIUM": Severity.MEDIUM,
-        }
-
-        for flow in flows:
-            severity = severity_map.get(flow.severity, Severity.MEDIUM)
-
-            # Determine category based on taint types and sink
-            if BashTaintType.CREDENTIAL in flow.taints or BashTaintType.SENSITIVE_FILE in flow.taints:
-                if "curl" in flow.sink_command or "wget" in flow.sink_command or "nc" in flow.sink_command:
-                    category = ThreatCategory.DATA_EXFILTRATION
-                    title = "Bash: sensitive data exfiltration via network"
-                    desc = (
-                        f"Variable ${flow.source_var} (tainted at line {flow.source_line}: "
-                        f"`{flow.source_snippet}`) flows to network sink "
-                        f"`{flow.sink_command}` at line {flow.sink_line}. "
-                        f"This sends sensitive data over the network."
-                    )
-                else:
-                    category = ThreatCategory.COMMAND_INJECTION
-                    title = "Bash: sensitive data flows to execution sink"
-                    desc = (
-                        f"Variable ${flow.source_var} (tainted at line {flow.source_line}: "
-                        f"`{flow.source_snippet}`) flows to execution sink "
-                        f"`{flow.sink_command}` at line {flow.sink_line}."
-                    )
-            elif BashTaintType.NETWORK_INPUT in flow.taints:
-                category = ThreatCategory.COMMAND_INJECTION
-                title = "Bash: network input flows to execution"
-                desc = (
-                    f"Variable ${flow.source_var} (from network at line {flow.source_line}: "
-                    f"`{flow.source_snippet}`) flows to execution sink "
-                    f"`{flow.sink_command}` at line {flow.sink_line}. "
-                    f"Executing network-sourced data is a remote code execution vector."
-                )
-            else:
-                category = ThreatCategory.COMMAND_INJECTION
-                title = "Bash: tainted data flows to dangerous sink"
-                desc = (
-                    f"Variable ${flow.source_var} (line {flow.source_line}) "
-                    f"flows to `{flow.sink_command}` at line {flow.sink_line}."
-                )
-
-            findings.append(
-                Finding(
-                    id=self._generate_id("BASH_TAINT", f"{file_path}:{flow.source_line}:{flow.sink_line}"),
-                    rule_id="BEHAVIOR_BASH_TAINT_FLOW",
-                    category=category,
-                    severity=severity,
-                    title=title,
-                    description=desc,
-                    file_path=file_path,
-                    line_number=flow.sink_line,
-                    snippet=flow.sink_snippet,
-                    remediation=(
-                        "Review the data flow from source to sink. "
-                        "Avoid sending sensitive or untrusted data to network or execution commands."
-                    ),
-                    analyzer="behavioral",
-                    metadata={
-                        "source_var": flow.source_var,
-                        "source_line": flow.source_line,
-                        "sink_command": flow.sink_command,
-                        "taints": [t.name for t in flow.taints],
-                    },
-                )
-            )
 
         return findings

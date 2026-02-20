@@ -23,8 +23,13 @@ from pathlib import Path
 
 import frontmatter
 
-from .exceptions import SkillLoadError
 from .models import Skill, SkillFile, SkillManifest
+
+
+class SkillLoadError(Exception):
+    """Exception raised when skill loading fails."""
+
+    pass
 
 
 class SkillLoader:
@@ -55,7 +60,7 @@ class SkillLoader:
         """
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
 
-    def load_skill(self, skill_directory: str | Path) -> Skill:
+    def load_skill(self, skill_directory: Path) -> Skill:
         """
         Load a skill package from a directory.
 
@@ -192,16 +197,6 @@ class SkillLoader:
 
         for path in skill_directory.rglob("*"):
             if not path.is_file():
-                continue
-
-            # Skip .git/ directory only (version control metadata, not an attack vector).
-            # All other hidden files and __pycache__ are now discovered so they can be
-            # flagged and scanned by downstream analyzers.
-            #
-            # Important: Skills may live under hidden parent directories like `.claude/skills/`.
-            # We only want to skip .git *inside* the skill package, not its parents.
-            rel_parts = path.relative_to(skill_directory).parts
-            if any(part == ".git" for part in rel_parts):
                 continue
 
             relative_path = str(path.relative_to(skill_directory))
@@ -363,7 +358,7 @@ class SkillLoader:
         return list(set(references))
 
 
-def load_skill(skill_directory: str | Path, max_file_size_mb: int = 10) -> Skill:
+def load_skill(skill_directory: Path, max_file_size_mb: int = 10) -> Skill:
     """
     Convenience function to load a skill package.
 

@@ -175,7 +175,7 @@ class TestConstants:
         """Test get_yara_rules_path method."""
         path = SkillScannerConstants.get_yara_rules_path()
         assert path is not None
-        assert "yara" in str(path)
+        assert "yara_rules" in str(path)
 
     def test_severity_constants(self):
         """Test severity level constants."""

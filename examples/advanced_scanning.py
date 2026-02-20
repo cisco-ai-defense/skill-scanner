@@ -67,7 +67,7 @@ def create_scanner(use_llm=False, use_behavioral=False, use_virustotal=False, us
     analyzers = [StaticAnalyzer()]
 
     if use_behavioral:
-        analyzers.append(BehavioralAnalyzer())
+        analyzers.append(BehavioralAnalyzer(use_static_analysis=True))
 
     if use_llm and LLM_AVAILABLE:
         analyzers.append(LLMAnalyzer())
@@ -146,14 +146,14 @@ def main():
         # Save outputs
         if args.output_json:
             reporter = JSONReporter()
-            json_output = reporter.generate_report(result)
+            json_output = reporter.generate(result)
             with open(args.output_json, "w") as f:
                 json.dump(json.loads(json_output), f, indent=2)
             print(f"\n[OK] Results saved to {args.output_json}")
 
         if args.output_markdown:
             reporter = MarkdownReporter()
-            markdown_output = reporter.generate_report(result)
+            markdown_output = reporter.generate(result)
             with open(args.output_markdown, "w") as f:
                 f.write(markdown_output)
             print(f"[OK] Results saved to {args.output_markdown}")

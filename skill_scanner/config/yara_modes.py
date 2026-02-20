@@ -31,6 +31,7 @@ Each mode configures:
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Optional
 
 
 class YaraMode(Enum):
@@ -276,3 +277,38 @@ class YaraModeConfig:
 
 # Default mode
 DEFAULT_YARA_MODE = YaraModeConfig.balanced()
+
+
+# Mode descriptions for CLI/API documentation
+MODE_DESCRIPTIONS = {
+    "strict": """
+STRICT Mode - Maximum Security
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Lower detection thresholds
+• Minimal post-processing filters
+• Flags more potential threats
+• Higher false positive rate acceptable
+
+Use for: Untrusted skills, security audits, compliance
+""",
+    "balanced": """
+BALANCED Mode - Default
+━━━━━━━━━━━━━━━━━━━━━━━
+• Moderate detection thresholds
+• Context-aware post-processing
+• Good tradeoff between FP and TP
+• Suitable for most use cases
+
+Use for: Regular scanning, CI/CD, development
+""",
+    "permissive": """
+PERMISSIVE Mode - Minimal False Positives
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Higher detection thresholds
+• Aggressive filtering
+• Focus on critical threats only
+• May miss some edge-case threats
+
+Use for: Trusted skills, high FP disruption
+""",
+}

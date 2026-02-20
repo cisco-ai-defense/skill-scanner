@@ -27,9 +27,8 @@ Integrates with Cisco AI Defense API (https://api.aidefense.cisco.com) for:
 import asyncio
 import hashlib
 import json
-import logging
 import os
-from typing import Any, cast
+from typing import Any
 
 try:
     import httpx
@@ -41,8 +40,6 @@ except ImportError:
 from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
-
-logger = logging.getLogger(__name__)
 
 # AI Defense API endpoint - Cisco AI Defense Inspect API
 AI_DEFENSE_API_URL = "https://us.api.inspect.aidefense.security.cisco.com/api/v1"
@@ -138,13 +135,12 @@ class AIDefenseAnalyzer(BaseAnalyzer):
         self.enabled_rules = enabled_rules or DEFAULT_ENABLED_RULES
         self.include_rules = include_rules
 
-        # Initialize async client (api_key is guaranteed str after __init__)
-        self._client: httpx.AsyncClient | None = None
+        # Initialize async client
+        self._client = None
 
     def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None:
-            assert self.api_key is not None  # Validated in __init__
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.timeout),
                 headers={
@@ -153,7 +149,6 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                     "Accept": "application/json",
                 },
             )
-        assert self._client is not None  # Just assigned or was already set
         return self._client
 
     async def _close_client(self):
@@ -183,7 +178,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
         Returns:
             Complete payload dict
         """
-        payload: dict[str, Any] = {
+        payload = {
             "messages": messages,
         }
 
@@ -292,7 +287,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                     findings.extend(code_findings)
 
         except Exception as e:
-            logger.error("AI Defense API analysis failed for %s: %s", skill.name, e)
+            print(f"AI Defense API analysis failed for {skill.name}: {e}")
             # Return partial findings - don't fail completely
 
         return findings
@@ -433,7 +428,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                         )
 
         except Exception as e:
-            logger.error("AI Defense prompt analysis failed for %s: %s", file_path, e)
+            print(f"AI Defense prompt analysis failed for {file_path}: {e}")
 
         return findings
 
@@ -562,7 +557,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                     )
 
         except Exception as e:
-            logger.error("AI Defense code analysis failed for %s: %s", file_path, e)
+            print(f"AI Defense code analysis failed for {file_path}: {e}")
 
         return findings
 
@@ -587,7 +582,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
         client = self._get_client()
         url = f"{self.api_url}{endpoint}"
 
-        last_exception: Exception | None = None
+        last_exception = None
         original_payload = payload.copy()
         tried_without_rules = False
 
@@ -596,7 +591,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                 response = await client.post(url, json=payload)
 
                 if response.status_code == 200:
-                    return cast(dict[str, Any], response.json())
+                    return response.json()
                 elif response.status_code == 400:
                     # Check if this is a pre-configured rules error
                     try:
@@ -612,7 +607,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                             if "config" in payload_without_rules:
                                 del payload_without_rules["config"]
 
-                            logger.warning(
+                            print(
                                 "AI Defense API key has pre-configured rules, retrying without enabled_rules config..."
                             )
                             payload = payload_without_rules
@@ -623,12 +618,12 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                         pass
 
                     # Generic 400 error
-                    logger.error("AI Defense API error: %s - %s", response.status_code, response.text)
+                    print(f"AI Defense API error: {response.status_code} - {response.text}")
                     return None
                 elif response.status_code == 429:
                     # Rate limited - wait and retry
                     delay = (2**attempt) * 1.0
-                    logger.warning("AI Defense API rate limited, retrying in %ds...", delay)
+                    print(f"AI Defense API rate limited, retrying in {delay}s...")
                     await asyncio.sleep(delay)
                     continue
                 elif response.status_code == 401:
@@ -636,7 +631,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                 elif response.status_code == 403:
                     raise ValueError("AI Defense API access denied - check permissions")
                 else:
-                    logger.error("AI Defense API error: %s - %s", response.status_code, response.text)
+                    print(f"AI Defense API error: {response.status_code} - {response.text}")
                     return None
 
             except httpx.TimeoutException:
@@ -651,11 +646,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                     continue
 
         if last_exception:
-            logger.error(
-                "AI Defense API request failed after %d attempts: %s",
-                self.max_retries,
-                last_exception,
-            )
+            print(f"AI Defense API request failed after {self.max_retries} attempts: {last_exception}")
 
         return None
 
@@ -704,7 +695,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
             )
 
         except Exception as e:
-            logger.warning("Failed to convert AI Defense violation: %s", e)
+            print(f"Failed to convert AI Defense violation: {e}")
             return None
 
     def _map_violation_severity(self, severity_str: str) -> Severity:
@@ -810,7 +801,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
             )
 
         except Exception as e:
-            logger.warning("Failed to convert AI Defense vulnerability: %s", e)
+            print(f"Failed to convert AI Defense vulnerability: {e}")
             return None
 
     def _map_threat_type_to_category(self, threat_type: str) -> ThreatCategory:

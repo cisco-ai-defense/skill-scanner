@@ -34,7 +34,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from skill_scanner.core.models import Finding, Severity, Skill, SkillFile, SkillManifest, ThreatCategory
-from skill_scanner.core.scan_policy import LLMAnalysisPolicy, ScanPolicy
 
 
 # Test MetaAnalysisResult
@@ -145,8 +144,7 @@ class TestMetaAnalyzerInit:
             with patch("skill_scanner.core.analyzers.meta_analyzer.acompletion", AsyncMock()):
                 yield
 
-    @pytest.mark.usefixtures("mock_litellm")
-    def test_separate_meta_api_key(self):
+    def test_separate_meta_api_key(self, mock_litellm):
         """Test that meta-analyzer can use separate API key from LLM analyzer."""
         with patch.dict(
             os.environ,
@@ -166,8 +164,7 @@ class TestMetaAnalyzerInit:
             assert analyzer.api_key == "test-meta-key-for-testing"
             assert analyzer.model == "gpt-4o"
 
-    @pytest.mark.usefixtures("mock_litellm")
-    def test_fallback_to_llm_key(self):
+    def test_fallback_to_llm_key(self, mock_litellm):
         """Test that meta-analyzer falls back to LLM analyzer key if meta key not set."""
         with patch.dict(
             os.environ,
@@ -185,8 +182,7 @@ class TestMetaAnalyzerInit:
             assert analyzer.api_key == "test-regular-key-for-testing"
             assert analyzer.model == "claude-3-5-sonnet"
 
-    @pytest.mark.usefixtures("mock_litellm")
-    def test_explicit_parameters_override_env(self):
+    def test_explicit_parameters_override_env(self, mock_litellm):
         """Test that explicit parameters override environment variables."""
         with patch.dict(
             os.environ,
@@ -459,125 +455,3 @@ class TestAITechTaxonomy:
                 ThreatCategory(category)
             except ValueError:
                 pytest.fail(f"AITech code {code} maps to invalid category: {category}")
-
-
-class TestMetaAnalyzerBudgetGating:
-    """Tests for policy-driven context budget gating in MetaAnalyzer."""
-
-    def _make_skill(self, instruction_body: str = "short", tmp_path: Path | None = None) -> MagicMock:
-        """Create a minimal mock skill for budget tests."""
-        skill = MagicMock()
-        skill.name = "budget-test"
-        skill.description = "Budget gating test skill"
-        skill.directory = str(tmp_path) if tmp_path else "/tmp/test"
-        skill.manifest = SkillManifest(name="budget-test", description="test")
-        skill.instruction_body = instruction_body
-        skill.files = []
-        skill.referenced_files = []
-        return skill
-
-    def test_meta_analyzer_uses_default_policy(self):
-        """MetaAnalyzer defaults to generous limits when no policy given."""
-        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
-
-        analyzer = MetaAnalyzer(api_key="test-key")
-        assert analyzer.llm_policy.max_instruction_body_chars == 20_000
-        assert analyzer.llm_policy.meta_budget_multiplier == 3.0
-
-    def test_meta_analyzer_uses_provided_policy(self):
-        """MetaAnalyzer picks up policy.llm_analysis values."""
-        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
-
-        policy = ScanPolicy.default()
-        policy.llm_analysis = LLMAnalysisPolicy(
-            max_instruction_body_chars=5_000,
-            meta_budget_multiplier=2.0,
-        )
-        analyzer = MetaAnalyzer(api_key="test-key", policy=policy)
-        assert analyzer.llm_policy.max_instruction_body_chars == 5_000
-        assert analyzer.llm_policy.meta_budget_multiplier == 2.0
-        assert analyzer.llm_policy.meta_max_instruction_body_chars == 10_000
-
-    def test_build_skill_context_includes_small_instruction(self):
-        """Instruction body under meta budget is included in full."""
-        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
-
-        policy = ScanPolicy.default()
-        policy.llm_analysis = LLMAnalysisPolicy(max_instruction_body_chars=100, meta_budget_multiplier=2.0)
-        analyzer = MetaAnalyzer(api_key="test-key", policy=policy)
-
-        skill = self._make_skill(instruction_body="Hello world")  # 11 chars, limit=200
-
-        context, skipped = analyzer._build_skill_context(skill)
-        assert "Hello world" in context
-        assert skipped == []
-
-    def test_build_skill_context_skips_oversized_instruction(self):
-        """Instruction body over meta budget is skipped entirely."""
-        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
-
-        policy = ScanPolicy.default()
-        policy.llm_analysis = LLMAnalysisPolicy(max_instruction_body_chars=10, meta_budget_multiplier=1.0)
-        analyzer = MetaAnalyzer(api_key="test-key", policy=policy)
-
-        skill = self._make_skill(instruction_body="x" * 50)  # 50 chars, limit=10
-
-        context, skipped = analyzer._build_skill_context(skill)
-        assert "x" * 50 not in context
-        assert "exceeds budget" in context or "excluded" in context
-        assert len(skipped) == 1
-        assert skipped[0]["threshold_name"] == "llm_analysis.max_instruction_body_chars"
-
-    def test_build_skill_context_skips_oversized_code_file(self, tmp_path):
-        """Code file over meta per-file budget is skipped entirely."""
-        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
-
-        policy = ScanPolicy.default()
-        policy.llm_analysis = LLMAnalysisPolicy(max_code_file_chars=10, meta_budget_multiplier=1.0)
-        analyzer = MetaAnalyzer(api_key="test-key", policy=policy)
-
-        # Create a real file on disk
-        code_file = tmp_path / "big.py"
-        code_file.write_text("x" * 50)
-
-        mock_file = MagicMock()
-        mock_file.relative_path = "big.py"
-        mock_file.file_type = "python"
-        mock_file.size_bytes = 50
-
-        skill = self._make_skill(tmp_path=tmp_path)
-        skill.files = [mock_file]
-
-        context, skipped = analyzer._build_skill_context(skill)
-        assert "x" * 50 not in context
-        assert len(skipped) == 1
-        assert skipped[0]["path"] == "big.py"
-        assert skipped[0]["threshold_name"] == "llm_analysis.max_code_file_chars"
-
-    def test_build_skill_context_includes_code_file_under_budget(self, tmp_path):
-        """Code file under meta budget is included in full."""
-        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
-
-        policy = ScanPolicy.default()
-        policy.llm_analysis = LLMAnalysisPolicy(
-            max_code_file_chars=1000,
-            max_total_prompt_chars=10000,
-            meta_budget_multiplier=1.0,
-        )
-        analyzer = MetaAnalyzer(api_key="test-key", policy=policy)
-
-        code_content = "print('hello')"
-        code_file = tmp_path / "small.py"
-        code_file.write_text(code_content)
-
-        mock_file = MagicMock()
-        mock_file.relative_path = "small.py"
-        mock_file.file_type = "python"
-        mock_file.size_bytes = len(code_content)
-
-        skill = self._make_skill(instruction_body="test", tmp_path=tmp_path)
-        skill.files = [mock_file]
-
-        context, skipped = analyzer._build_skill_context(skill)
-        assert code_content in context
-        assert skipped == []

@@ -25,43 +25,13 @@ except ImportError:
 
 __author__ = "Cisco Systems, Inc."
 
-
-def __getattr__(name: str):
-    """Lazy-load public API symbols on first access.
-
-    This avoids heavy imports (YARA, Magika, AST analysis, etc.) when the
-    package is merely *imported* — e.g. ``python -m skill_scanner.cli.cli``
-    or ``python -m skill_scanner.hooks.pre_commit`` — which previously
-    triggered ``runpy`` warnings from eager top-level imports.
-    """
-    _lazy_map = {
-        "Config": (".config.config", "Config"),
-        "SkillScannerConstants": (".config.constants", "SkillScannerConstants"),
-        "SkillLoader": (".core.loader", "SkillLoader"),
-        "load_skill": (".core.loader", "load_skill"),
-        "Finding": (".core.models", "Finding"),
-        "Report": (".core.models", "Report"),
-        "ScanResult": (".core.models", "ScanResult"),
-        "Severity": (".core.models", "Severity"),
-        "Skill": (".core.models", "Skill"),
-        "ThreatCategory": (".core.models", "ThreatCategory"),
-        "SkillScanner": (".core.scanner", "SkillScanner"),
-        "scan_skill": (".core.scanner", "scan_skill"),
-        "scan_directory": (".core.scanner", "scan_directory"),
-        "SkillValidator": (".core.strict_structure", "SkillValidator"),
-        "validate_skill": (".core.strict_structure", "validate_skill"),
-    }
-    if name in _lazy_map:
-        module_path, attr = _lazy_map[name]
-        import importlib
-
-        mod = importlib.import_module(module_path, __package__)
-        val = getattr(mod, attr)
-        # Cache on the module so __getattr__ is only called once per symbol
-        globals()[name] = val
-        return val
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
+# Core exports
+from .config.config import Config
+from .config.constants import SkillScannerConstants
+from .core.loader import SkillLoader, load_skill
+from .core.models import Finding, Report, ScanResult, Severity, Skill, ThreatCategory
+from .core.scanner import SkillScanner, scan_directory, scan_skill
+from .core.strict_structure import SkillValidator, validate_skill
 
 __all__ = [
     "SkillScanner",

@@ -6,14 +6,14 @@ The Meta-Analyzer is an optional second-pass LLM analysis feature that reviews f
 
 When enabled via the `--enable-meta` CLI flag or `enable_meta` API parameter, the Meta-Analyzer performs:
 
-- **False Positive Filtering**: Identifies genuinely benign findings based on full skill context (only marks FPs when code is actually safe)
-- **Finding Correlation**: Groups related findings from different analyzers into logical threat groups (e.g., 4 autonomy-abuse YARA matches = 1 correlation group)
+- **False Positive Filtering**: Aggressively identifies and removes false positives based on full skill context
+- **Finding Consolidation**: Merges redundant pattern-based findings into comprehensive threat descriptions
 - **Priority Ranking**: Ranks findings by actual exploitability and business impact
-- **Remediation Guidance**: Provides specific, actionable recommendations per correlation group
-- **Risk Assessment**: Overall skill verdict (SAFE/SUSPICIOUS/MALICIOUS) with reasoning
-- **Confidence Enrichment**: Adds `meta_confidence`, `meta_exploitability`, and `meta_impact` to every validated finding
+- **Correlation**: Groups related findings representing the same root cause
+- **Remediation Guidance**: Provides specific, actionable fixes with code examples
+- **Confidence Enrichment**: Adds `meta_confidence`, `meta_exploitability`, and `meta_impact` to validated findings
 
-The meta-analyzer has full access to skill content (`SKILL.md` and code files), which helps it validate whether pattern-based detections are likely real threats.
+> **Key Insight**: The Meta-Analyzer has full access to skill content (SKILL.md and all code files) allowing it to verify whether pattern-based detections represent actual threats.
 
 ## How It Works
 
@@ -23,12 +23,11 @@ The meta-analyzer has full access to skill content (`SKILL.md` and code files), 
    - Complete SKILL.md content (up to 50KB)
    - All code files (.py, .js, .ts, .sh, .bash) with content (up to 30KB per file, 150KB total)
 3. **Authority-Based Review**: Uses an analyzer authority hierarchy to weight findings:
-   - LLM Analyzer (highest) > Behavioral > AI Defense > Static/Pipeline/Bytecode > Trigger (lowest)
-4. **Validate & Correlate**:
-   - Each finding is verified against actual code content
-   - Genuinely benign findings are marked as false positives
-   - Related findings are grouped into correlation groups
-   - A follow-up pass covers any findings the initial analysis missed
+   - LLM Analyzer (highest) > Behavioral > AI Defense > Static > Trigger (lowest)
+4. **Filter & Consolidate**:
+   - Redundant pattern-based findings are consolidated into comprehensive descriptions
+   - False positives are removed based on actual code analysis
+   - Validated findings are enriched with confidence scores and reasoning
 5. **Enrich Findings**: Each validated finding receives:
    - `meta_confidence`: HIGH/MEDIUM/LOW with reasoning
    - `meta_exploitability`: How easy it is to exploit
@@ -184,19 +183,15 @@ The meta-analyzer weights findings based on which analyzer produced them:
 | Behavioral | High | Dataflow tracking, source→sink analysis, multi-file chains |
 | AI Defense | Medium-High | Known attack patterns, threat intelligence |
 | Static | Medium | Pattern matching, hardcoded secrets, obvious violations |
-| Pipeline | Medium | Command pipeline taint flows, data exfiltration chains |
-| Bytecode | Medium | Python .pyc integrity, source/bytecode mismatch |
 | Trigger | Lower | Description specificity (informational) |
 | VirusTotal | Specialized | Binary file malware (not code) |
 
 ### Authority-Based Rules
 
 - **LLM + Behavioral agree** → HIGH confidence true positive
-- **LLM says SAFE, Static flags pattern-only (no malicious context)** → Likely false positive
+- **LLM says SAFE, Static flags** → Likely false positive (trust LLM)
 - **LLM says THREAT, others missed** → True positive (trust LLM)
-- **Only Static flagged, but code confirms the issue** → True positive (MEDIUM confidence)
-- **Only Static flagged, keyword-only with no malicious context** → Likely false positive
-- **Multiple analyzers flag different aspects of same issue** → Correlated — group, keep all
+- **Only Static flagged (pattern match)** → Review carefully, may be false positive
 
 ## Output Format
 
@@ -225,41 +220,17 @@ Meta-analyzed findings include enriched metadata:
 }
 ```
 
-### Finding Correlation
+### Finding Consolidation
 
-When multiple analyzers report overlapping threats, the meta-analyzer groups them into correlation groups rather than removing them. All findings are preserved in `validated_findings`, and the `correlations` block shows how they relate. For example:
+When multiple analyzers report overlapping threats, the meta-analyzer consolidates them into a single comprehensive finding. For example, if static analysis reports:
+- "HTTP POST request detected"
+- "Base64 encoding detected"
+- "Network library import detected"
 
-```json
-{
-  "correlations": [
-    {
-      "group_name": "Credential Theft Chain",
-      "finding_indices": [3, 12, 13, 24, 46],
-      "relationship": "Pipeline taint flows and static pattern matches all confirm credential exfiltration",
-      "combined_severity": "CRITICAL",
-      "consolidated_remediation": "Remove all credential exfiltration code and network calls to untrusted endpoints"
-    }
-  ]
-}
-```
+And LLM analysis reports:
+- "Data exfiltration via network"
 
-This preserves the granular evidence from each analyzer (line numbers, exact patterns, taint chains) while providing the consolidated view for executive reporting. Use `--verbose` to also include findings the meta-analyzer marked as false positives.
-
-### Visual Reports
-
-Correlation groups can be visualized as Mermaid attack-path diagrams in two formats:
-
-- **Markdown** (`--format markdown`): Each correlation group renders as a `mermaid` code block showing source files → detections → attack outcome, followed by a findings table and remediation guidance.
-- **HTML** (`--format html`): A self-contained, interactive HTML report with:
-  - Risk verdict banner and severity bar
-  - Collapsible correlation group cards with embedded Mermaid diagrams
-  - Prioritized recommendation cards with effort badges
-  - Sortable findings table
-
-```bash
-# Generate an interactive HTML report
-skill-scanner scan /path/to/skill --use-llm --enable-meta --format html --output report.html
-```
+The meta-analyzer will keep only the LLM finding (which provides full context) and filter the redundant static pattern matches as they're covered by the comprehensive LLM finding.
 
 ## AITech Taxonomy
 
@@ -271,8 +242,7 @@ The meta-analyzer uses the AITech taxonomy for threat classification:
 | AITech-1.2 | Indirect Prompt Injection - Instruction Manipulation | Embedding malicious instructions in external data sources |
 | AITech-4.3 | Protocol Manipulation - Capability Inflation | Skill discovery abuse, over-broad capability claims |
 | AITech-8.2 | Data Exfiltration | Credential theft, unauthorized data transmission |
-| AITech-9.1 | System Manipulation | Command injection, code injection |
-| AITech-9.2 | Detection Evasion | Obfuscation and evasion patterns |
+| AITech-9.1 | System Manipulation | Command injection, code injection, obfuscation |
 | AITech-12.1 | Tool Exploitation | Tool poisoning, shadowing, unauthorized use |
 | AITech-13.1 | Disruption of Availability | Compute exhaustion, resource abuse |
 | AITech-15.1 | Harmful Content | Misleading or deceptive content |
@@ -283,10 +253,10 @@ The eval runner supports comparing results with and without the meta-analyzer:
 
 ```bash
 # Run comparison evaluation
-uv run python evals/runners/eval_runner.py --compare
+uv run python evals/eval_runner.py --compare
 
 # With detailed per-skill breakdown
-uv run python evals/runners/eval_runner.py --compare --show-details
+uv run python evals/eval_runner.py --compare --show-details
 ```
 
 ### Sample Comparison Output
@@ -313,11 +283,11 @@ SUMMARY
 Safe Skills Detection:   2/2 -> 2/2
 Unsafe Skills Detection: 9/9 -> 9/9
 
-Summary:
+Key Insight:
   Meta-Analyzer filtered 50 low-value findings
   while maintaining 9/9 unsafe skill detection rate
 
-  Meta-analyzer improved signal-to-noise without reducing unsafe-skill detection in this sample run.
+  ✓ Meta-Analyzer IMPROVED signal-to-noise without losing detection capability!
 ```
 
 The comparison shows that while raw metrics like "true positives" decrease (because redundant pattern matches are consolidated), the threat detection capability is preserved. Results may vary depending on your specific skills and threat patterns.

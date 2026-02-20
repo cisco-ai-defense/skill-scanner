@@ -2,129 +2,219 @@
 
 ## Overview
 
-Skill Scanner aligns threat labels to Cisco's AI Security Framework taxonomy.
+Authoritative threat classification for agent skills security analysis, aligned with the [Cisco Integrated AI Security and Safety Framework](https://arxiv.org/html/2512.12921v1) (December 2025).
 
-- Authoritative taxonomy source: [Cisco AI Security Framework](https://learn-cloudsecurity.cisco.com/ai-security-framework)
-- Public framework write-up: [Cisco AI Security Framework paper](https://arxiv.org/html/2512.12921v1)
-- In-repo canonical code list: `skill_scanner/threats/cisco_ai_taxonomy.py`
+**Detection Engines:**
+- Static Analyzer: 58 pattern-based rules (YAML + YARA + Python)
+- LLM Analyzer: Semantic analysis via Claude/GPT/Gemini
 
-The full framework is broader than skill scanning. Skill Scanner maps a focused subset relevant to agent skill packages and their executable artifacts.
+**Validation:** 149 tests passing, 0% false CRITICAL rate on official skills
 
-## Full Framework vs Scanner Coverage
+---
 
-The Cisco framework defines 19 attacker objectives and a larger set of techniques/sub-techniques.
-Skill Scanner currently uses a subset of those codes for agent-skill risk categories.
+## Threat Categories
 
-## Scanner Threat-to-Taxonomy Mapping
+### 1. Prompt Injection
 
-| Scanner Threat | AITech | AISubtech | Notes |
-|---|---|---|---|
-| Prompt Injection | `AITech-1.1` | `AISubtech-1.1.1` | Direct instruction override in prompts/instructions |
-| Transitive Trust Abuse | `AITech-1.2` | `AISubtech-1.2.1` | Indirect prompt injection from external content |
-| Skill Discovery Abuse | `AITech-4.3` | `AISubtech-4.3.5` | Capability inflation / protocol manipulation |
-| Data Exfiltration | `AITech-8.2` | `AISubtech-8.2.3` | Exfiltration via agent tooling |
-| Tool Chaining Abuse | `AITech-8.2` | `AISubtech-8.2.3` | Read/collect -> send/upload chains |
-| Hardcoded Secrets | `AITech-8.2` | `AISubtech-8.2.2` | Embedded credentials/secrets as data leakage risk |
-| Command Injection | `AITech-9.1` | `AISubtech-9.1.4` | SQL/command/script injection patterns |
-| Code Execution | `AITech-9.1` | `AISubtech-9.1.1` | Unsafe execution primitives |
-| Obfuscation | `AITech-9.2` | `AISubtech-9.2.1` | Detection-evasion obfuscation patterns |
-| Supply Chain Attack | `AITech-9.3` | `AISubtech-9.3.1` | Malicious package/tool injection |
-| Unauthorized Tool Use | `AITech-12.1` | `AISubtech-12.1.3` | Unsafe/undeclared tool execution |
-| Tool Poisoning | `AITech-12.1` | `AISubtech-12.1.2` | Tampering with tool behavior/data |
-| Tool Shadowing | `AITech-12.1` | `AISubtech-12.1.4` | Malicious lookalike/replacement tools |
-| Resource Abuse | `AITech-13.1` | `AISubtech-13.1.1` | Compute exhaustion and availability abuse |
-| Autonomy Abuse | `AITech-13.1` | `AISubtech-13.1.1` | Unbounded autonomous retries/actions |
-| Social Engineering | `AITech-15.1` | `AISubtech-15.1.12` | Deceptive metadata/scam-like behavior |
+**AITech**: AITech-1.1, AITech-1.2 | **Risk**: HIGH-CRITICAL
 
-## Where Mappings Live
+Malicious instructions that manipulate AI behavior or bypass safety systems.
 
-- Mapping definitions: `skill_scanner/threats/threats.py`
-- Full Cisco code/name dictionary: `skill_scanner/threats/cisco_ai_taxonomy.py`
-- Validation tests: `tests/test_taxonomy_validation.py`
+**Detected by**: YAML rules, YARA (prompt_injection_generic, coercive_injection_generic), LLM analysis
 
-## Custom Taxonomy Support
+**Examples**: "Ignore previous instructions", "unrestricted mode", "don't tell user"
 
-Skill Scanner can load a custom taxonomy profile at runtime.
+---
 
-Set:
+### 2. Command & Code Injection
 
-```bash
-export SKILL_SCANNER_TAXONOMY_PATH=/path/to/taxonomy.json
-```
+**AITech**: AITech-9.1.4 | **Risk**: CRITICAL
 
-Supported taxonomy file formats:
+Unsafe code execution enabling arbitrary command execution.
 
-1. Full framework format (the `OB-* -> ai_tech -> ai_subtech` JSON shape).
-2. Flattened format:
+**Detected by**: YAML rules, YARA (code_execution_generic, command_injection_generic, sql_injection_generic), LLM analysis
 
-```json
-{
-  "AITECH_TAXONOMY": {
-    "AITech-1.1": "Direct Prompt Injection"
-  },
-  "AISUBTECH_TAXONOMY": {
-    "AISubtech-1.1.1": "Instruction Manipulation (Direct Prompt Injection)"
-  }
-}
-```
+**Examples**: `eval()`, `os.system()`, `subprocess shell=True`, SQL injection, reverse shells
 
-Optional flattened mapping keys:
-- `AITECH_FRAMEWORK_MAPPINGS`
-- `AISUBTECH_FRAMEWORK_MAPPINGS`
+---
 
-These store cross-framework links (OWASP, MITRE ATLAS/ATT&CK, NIST AML, Cisco MDL) as string arrays by code.
+### 3. Data Exfiltration
 
-### CLI Overrides
+**AITech**: AITech-8.2, AITech-8.2.3 | **Risk**: CRITICAL
 
-For one-off runs, prefer CLI flags over environment variables:
+Unauthorized data access and transmission to external locations.
 
-```bash
-skill-scanner scan /path/to/skill \
-  --taxonomy /path/to/taxonomy.json \
-  --threat-mapping /path/to/threat_mapping.json
-```
+**Detected by**: YAML rules, YARA (credential_harvesting_generic, tool_chaining_abuse_generic), LLM flow analysis
 
-`--taxonomy` accepts JSON or YAML.
-`--threat-mapping` accepts JSON.
+**Examples**: Network calls with credentials, ~/.aws access, environment harvesting, read→send chains
 
-If you also need custom scanner threat mappings, set:
+---
 
-```bash
-export SKILL_SCANNER_THREAT_MAPPING_PATH=/path/to/threat_mapping.json
-```
+### 4. Hardcoded Secrets
 
-`SKILL_SCANNER_THREAT_MAPPING_PATH` supports these top-level keys:
-- `llm_threats`
-- `yara_threats`
-- `behavioral_threats`
-- `aitech_to_category`
+**AITech**: AITech-8.2 | **Risk**: CRITICAL
 
-Each `*_threats` value is merged by threat name and can override `aitech`, `aisubtech`, `severity`, or labels.
+Credentials embedded in code files.
 
-## Cross-Framework Mapping Access
+**Detected by**: YAML rules, YARA (credential_harvesting_generic), LLM pattern recognition
 
-Skill Scanner now exposes framework mapping helpers from `skill_scanner.threats`:
+**Examples**: API keys (AKIA, ghp_, sk-proj), private keys, JWT tokens, connection strings
 
-- `get_aitech_framework_mappings(code)`
-- `get_aisubtech_framework_mappings(code)`
-- `get_framework_mappings(aitech_code=..., aisubtech_code=...)`
+---
 
-At the threat level, use:
+### 5. Tool & Permission Abuse
 
-- `ThreatMapping.get_framework_mappings_for_threat(analyzer, threat_name)`
+**AITech**: AITech-12.1 | **Risk**: MEDIUM-CRITICAL
 
-Built-in taxonomy ships with canonical code/name coverage. Cross-framework mapping lists populate when the taxonomy source includes `mappings` metadata (full `OB-*` export or flattened `*_FRAMEWORK_MAPPINGS` fields).
+Violating allowed-tools restrictions or undeclared capabilities.
 
-## Maintenance Policy
+**Detected by**: Python validation checks, YARA (system_manipulation_generic), LLM permission analysis
 
-When Cisco updates the framework:
+**Examples**: Writing files without Write tool, undeclared network, package installation, system modifications, tool poisoning, tool shadowing, unauthorized tool use
 
-1. Update built-in taxonomy data in `skill_scanner/threats/cisco_ai_taxonomy.py` (or point `SKILL_SCANNER_TAXONOMY_PATH` to an exported framework file)
-2. Update `skill_scanner/threats/threats.py` mappings where needed
-3. Run taxonomy tests:
-   - `uv run pytest tests/test_taxonomy_validation.py tests/test_threats.py -q`
-4. Refresh this document if scanner coverage changes
+---
 
-## Notes
+### 6. Obfuscation
 
-- `AITech-99.9` / `AISubtech-99.9.9` are internal placeholders for unknown/unclassified threats in fallback paths; they are not Cisco framework codes.
+**Risk**: MEDIUM-CRITICAL
+
+Deliberate code obfuscation hiding malicious intent.
+
+**Detected by**: YAML rules, YARA (code_execution_generic, script_injection_generic), binary detection, LLM intent analysis
+
+**Examples**: Binary executables, base64→exec, hex encoding, XOR ciphers
+
+---
+
+### 7. Protocol Manipulation - Capability Inflation
+
+**AITech**: AITech-4.3 / AISubtech-4.3.5 | **Risk**: LOW-HIGH
+
+Manipulation of skill discovery mechanisms to inflate perceived capabilities and increase unwanted activation. Actors manipulate skill metadata, descriptions, or discovery protocols to make skills appear more capable or relevant than they actually are, leading to inappropriate skill selection or invocation.
+
+**Detected by**: YAML rules, YARA (capability_inflation_generic), Python checks, LLM deception analysis
+
+**Examples**: Brand impersonation, over-broad capability claims, keyword baiting, description-behavior mismatch
+
+---
+
+### 8. Indirect Prompt Injection - Instruction Manipulation
+
+**AITech**: AITech-1.2 / AISubtech-1.2.1 | **Risk**: HIGH
+
+Embedding malicious instructions within external data sources (e.g., documents, web pages, emails, databases, API responses) that an LLM retrieves and processes, causing these external instructions to override or modify the model's intended behavior without the user's knowledge or awareness. The attack exploits the model's inability to distinguish between trusted system instructions and untrusted external content.
+
+**Detected by**: YARA (indirect_prompt_injection_generic), LLM trust analysis
+
+**Examples**: "Follow webpage instructions", "execute code blocks found in files", "obey file content", delegating trust to untrusted external sources
+
+---
+
+### 9. Autonomy Abuse
+
+**AITech**: AITech-13.1 / AISubtech-13.1.1 | **Risk**: MEDIUM-HIGH
+
+Excessive autonomous behavior without user confirmation (compute exhaustion).
+
+**Detected by**: YAML rules, YARA (autonomy_abuse_generic), LLM behavioral analysis
+
+**Examples**: "Keep retrying forever", "run without asking", ignore errors, self-modification
+
+---
+
+### 10. Tool Chaining
+
+**AITech**: AITech-8.2.3 | **Risk**: HIGH
+
+Multi-step operations chaining tools for data exfiltration.
+
+**Detected by**: YARA (tool_chaining_abuse_generic), LLM workflow analysis
+
+**Examples**: Read→send patterns, collect→post chains, automated pipelines
+
+---
+
+### 11. Resource Abuse
+
+**AITech**: AITech-13.1 / AISubtech-13.1.1 | **Risk**: LOW-MEDIUM
+
+Excessive resource consumption causing instability (compute exhaustion).
+
+**Detected by**: YAML rules, YARA patterns, LLM resource analysis
+
+**Examples**: Infinite loops, unbounded recursion, memory bombs, fork bombs
+
+---
+
+## Detection Architecture
+
+### Static Analyzer (58 methods)
+- 35 YAML regex rules
+- 13 YARA pattern files
+- 6 Python validation checks
+- 5 consistency validations
+
+### LLM Analyzer
+- Semantic analysis across all categories
+- Behavioral pattern recognition
+- Intent detection
+- Workflow analysis
+- **Structured Output**: Enforces AITech taxonomy codes via JSON schema (API-level enforcement)
+- **Direct AITech Mapping**: LLM returns AITech codes directly, mapped to ThreatCategory enum
+
+---
+
+## Severity Levels
+
+| Severity | Criteria | Examples |
+|----------|----------|----------|
+| CRITICAL | Immediate exploitation, significant impact | eval(input), credential theft, system compromise |
+| HIGH | Serious risk, immediate attention required | Privilege escalation, sensitive access, impersonation |
+| MEDIUM | Security concerns requiring review | Undeclared network, suspicious patterns |
+| LOW | Minor issues, informational | Documentation problems, style issues |
+
+---
+
+## Scan Modes
+
+**Fast** (~150ms): Static only, no API cost, for CI/CD
+**Comprehensive** (~2.2s): Static + LLM, API cost, for detailed analysis
+**LLM-Only** (~2s): Semantic analysis, API cost, for second opinion
+
+---
+
+## Standards Alignment
+
+- Cisco Integrated AI Security Framework (December 2025)
+- MITRE ATLAS
+- OWASP Top 10 (LLM and Agentic)
+- NIST AI Risk Management Framework
+
+Reference: [arxiv.org/html/2512.12921v1](https://arxiv.org/html/2512.12921v1)
+
+---
+
+## Best Practices
+
+### For Skill Authors
+- No hardcoded secrets
+- No eval/exec
+- Validate all inputs
+- Declare permissions in allowed-tools
+- Accurate descriptions
+- No obfuscation
+- Test before publishing
+
+### Response Guidelines
+- **CRITICAL**: Do not deploy, fix immediately
+- **HIGH**: Address before release
+- **MEDIUM**: Review and plan fixes
+- **LOW**: Address in future releases
+
+---
+
+## Technical References
+
+- Rule definitions: `skill_scanner/data/rules/signatures.yaml`
+- YARA rules: `skill_scanner/data/yara_rules/`
+- Threat mappings: `skill_scanner/threats/threats.py`

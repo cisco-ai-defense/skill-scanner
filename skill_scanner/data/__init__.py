@@ -24,10 +24,7 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).parent
 PROMPTS_DIR = DATA_DIR / "prompts"
+YARA_RULES_DIR = DATA_DIR / "yara_rules"
+RULES_DIR = DATA_DIR / "rules"
 
-# Canonical locations under the core pack (new layout)
-_CORE_PACK = DATA_DIR / "packs" / "core"
-YARA_RULES_DIR = _CORE_PACK / "yara"
-SIGNATURES_DIR = _CORE_PACK / "signatures"
-
-__all__ = ["DATA_DIR", "PROMPTS_DIR", "YARA_RULES_DIR", "SIGNATURES_DIR"]
+__all__ = ["DATA_DIR", "PROMPTS_DIR", "YARA_RULES_DIR", "RULES_DIR"]

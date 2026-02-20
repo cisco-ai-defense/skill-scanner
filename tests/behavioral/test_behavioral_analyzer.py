@@ -36,7 +36,14 @@ class TestBehavioralAnalyzerInitialization:
     def test_default_init(self):
         """Test default initialization."""
         analyzer = BehavioralAnalyzer()
+        assert analyzer.use_static_analysis is True
         assert analyzer.context_extractor is not None
+
+    def test_static_analysis_always_enabled(self):
+        """Test that static analysis is always enabled even if False is passed."""
+        # This should log a warning but still enable static analysis
+        analyzer = BehavioralAnalyzer(use_static_analysis=False)
+        assert analyzer.use_static_analysis is True
 
     def test_alignment_verification_disabled_by_default(self):
         """Test that alignment verification is disabled by default."""

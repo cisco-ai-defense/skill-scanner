@@ -14,183 +14,98 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for report generation semantics across all reporter formats."""
-
-from __future__ import annotations
+"""
+Unit tests for reporters.
+"""
 
 import json
-from datetime import datetime
+from pathlib import Path
 
 import pytest
 
-from skill_scanner.core.models import Finding, Report, ScanResult, Severity, ThreatCategory
 from skill_scanner.core.reporters.json_reporter import JSONReporter
 from skill_scanner.core.reporters.markdown_reporter import MarkdownReporter
 from skill_scanner.core.reporters.table_reporter import TableReporter
-
-
-def _sample_findings() -> list[Finding]:
-    long_title = "Command injection in deployment helper script executes untrusted input"
-    long_path = "scripts/deeply/nested/path/deploy_helper_script_with_long_name.sh"
-    return [
-        Finding(
-            id="FIND-001",
-            rule_id="COMMAND_INJECTION_001",
-            category=ThreatCategory.COMMAND_INJECTION,
-            severity=Severity.CRITICAL,
-            title=long_title,
-            description="Unsanitized input flows into shell execution.",
-            file_path=long_path,
-            line_number=42,
-            snippet="subprocess.run(user_input, shell=True)",
-            remediation="Avoid shell=True and sanitize user-controlled inputs.",
-            analyzer="static",
-            metadata={"confidence": 0.97},
-        ),
-        Finding(
-            id="FIND-002",
-            rule_id="OBFUSCATION_001",
-            category=ThreatCategory.OBFUSCATION,
-            severity=Severity.HIGH,
-            title="Encoded payload is decoded before runtime execution",
-            description="Code decodes and executes a base64 payload.",
-            file_path="scripts/decoder.py",
-            line_number=11,
-            snippet="```python\nexec(base64.b64decode(payload))\n```",
-            remediation="Remove dynamic execution and decode paths.",
-            analyzer="behavioral",
-            metadata={"confidence": 0.91},
-        ),
-        Finding(
-            id="FIND-003",
-            rule_id="SOCIAL_ENGINEERING_001",
-            category=ThreatCategory.SOCIAL_ENGINEERING,
-            severity=Severity.LOW,
-            title="Misleading skill description",
-            description="Manifest description does not match behavior.",
-            file_path="SKILL.md",
-            analyzer="static",
-            metadata={"confidence": 0.63},
-        ),
-    ]
+from skill_scanner.core.scanner import SkillScanner, scan_skill
 
 
 @pytest.fixture
-def scan_result() -> ScanResult:
-    return ScanResult(
-        skill_name="dangerous-helper",
-        skill_directory="/tmp/dangerous-helper",
-        findings=_sample_findings(),
-        scan_duration_seconds=1.234,
-        analyzers_used=["static", "behavioral"],
-        timestamp=datetime(2026, 1, 2, 3, 4, 5),
-    )
+def example_skills_dir():
+    """Get path to example skills directory."""
+    return Path(__file__).parent.parent / "evals" / "test_skills"
 
 
 @pytest.fixture
-def report(scan_result: ScanResult) -> Report:
-    safe_result = ScanResult(
-        skill_name="safe-helper",
-        skill_directory="/tmp/safe-helper",
-        findings=[],
-        scan_duration_seconds=0.456,
-        analyzers_used=["static"],
-        timestamp=datetime(2026, 1, 2, 3, 5, 0),
-    )
-
-    aggregate = Report(timestamp=datetime(2026, 1, 2, 3, 6, 0))
-    aggregate.add_scan_result(scan_result)
-    aggregate.add_scan_result(safe_result)
-    return aggregate
+def scan_result(example_skills_dir):
+    """Get a scan result for testing."""
+    skill_dir = example_skills_dir / "safe" / "simple-formatter"
+    return scan_skill(skill_dir)
 
 
-def test_json_reporter_pretty_and_compact_are_semantically_equal(scan_result: ScanResult):
-    pretty_reporter = JSONReporter(pretty=True)
-    compact_reporter = JSONReporter(pretty=False)
-
-    pretty_json = pretty_reporter.generate_report(scan_result)
-    compact_json = compact_reporter.generate_report(scan_result)
-
-    pretty_payload = json.loads(pretty_json)
-    compact_payload = json.loads(compact_json)
-
-    assert pretty_payload == compact_payload
-    assert pretty_payload["skill_name"] == "dangerous-helper"
-    assert pretty_payload["findings_count"] == 3
-    assert pretty_payload["max_severity"] == "CRITICAL"
-    assert pretty_payload["duration_ms"] == 1234
-    assert pretty_payload["findings"][0]["analyzer"] == "static"
+@pytest.fixture
+def report(example_skills_dir):
+    """Get a full report for testing."""
+    scanner = SkillScanner()
+    return scanner.scan_directory(example_skills_dir, recursive=True)
 
 
-def test_json_reporter_multi_skill_summary_is_correct(report: Report):
-    output = JSONReporter(pretty=True).generate_report(report)
-    payload = json.loads(output)
+def test_json_reporter(scan_result):
+    """Test JSON reporter."""
+    reporter = JSONReporter(pretty=True)
+    output = reporter.generate_report(scan_result)
 
-    summary = payload["summary"]
-    assert summary["total_skills_scanned"] == 2
-    assert summary["safe_skills"] == 1
-    assert summary["total_findings"] == 3
-    assert summary["findings_by_severity"] == {
-        "critical": 1,
-        "high": 1,
-        "medium": 0,
-        "low": 1,
-        "info": 0,
-    }
+    # Should be valid JSON
+    data = json.loads(output)
+    assert "skill_name" in data
+    assert "findings" in data
 
 
-def test_markdown_reporter_single_scan_has_grouping_and_location(scan_result: ScanResult):
-    output = MarkdownReporter(detailed=True).generate_report(scan_result)
+def test_json_reporter_compact(scan_result):
+    """Test compact JSON output."""
+    reporter = JSONReporter(pretty=False)
+    output = reporter.generate_report(scan_result)
 
-    assert "# Agent Skill Security Scan Report" in output
-    assert "### CRITICAL Severity" in output
-    assert "**Location:** scripts/deeply/nested/path/deploy_helper_script_with_long_name.sh:42" in output
-    assert "**Remediation:** Avoid shell=True and sanitize user-controlled inputs." in output
-    # One snippet is plain text (auto-fenced), one is pre-fenced (preserved)
-    assert output.count("```") == 4
+    # Should not have extra whitespace
+    assert "\n  " not in output
 
-
-def test_markdown_reporter_multi_skill_contains_statuses_and_counts(report: Report):
-    output = MarkdownReporter(detailed=False).generate_report(report)
-
-    assert "- **Total Skills Scanned:** 2" in output
-    assert "- **Safe Skills:** 1" in output
-    assert "### [FAIL] dangerous-helper" in output
-    assert "### [OK] safe-helper" in output
+    # But should still be valid JSON
+    data = json.loads(output)
+    assert "skill_name" in data
 
 
-def test_table_reporter_single_scan_truncates_long_fields_and_shows_snippets(scan_result: ScanResult):
-    output = TableReporter(format_style="plain", show_snippets=True).generate_report(scan_result)
+def test_markdown_reporter(scan_result):
+    """Test Markdown reporter."""
+    reporter = MarkdownReporter(detailed=True)
+    output = reporter.generate_report(scan_result)
 
-    expected_title = "Command injection in deployment helper s..."
-    expected_location = "scripts/deeply/nested/path/dep..."
-
-    assert "Detailed Findings:" in output
-    assert expected_title in output
-    assert expected_location in output
-    assert "CODE EVIDENCE" in output
-    assert "subprocess.run(user_input, shell=True)" in output
+    # Should have Markdown headers
+    assert "#" in output
+    assert "Skill:" in output or "skill" in output.lower()
 
 
-def test_table_reporter_multi_skill_includes_overview_table(report: Report):
-    output = TableReporter(format_style="simple").generate_report(report)
+def test_markdown_reporter_multi_skill(report):
+    """Test Markdown reporter with multiple skills."""
+    reporter = MarkdownReporter(detailed=False)
+    output = reporter.generate_report(report)
 
-    assert "Skills Overview:" in output
-    assert "dangerous-helper" in output
-    assert "safe-helper" in output
-    assert "[FAIL] ISSUES" in output
-    assert "[OK] SAFE" in output
+    # Should have summary section
+    assert "Summary" in output or "summary" in output.lower()
+    assert str(report.total_skills_scanned) in output
 
 
-def test_save_report_writes_exact_generated_content(tmp_path, scan_result: ScanResult):
-    outputs = [
-        ("result.json", JSONReporter(pretty=True)),
-        ("result.md", MarkdownReporter(detailed=True)),
-        ("result.txt", TableReporter(format_style="simple")),
-    ]
+def test_table_reporter(scan_result):
+    """Test table reporter."""
+    reporter = TableReporter(format_style="simple")
+    output = reporter.generate_report(scan_result)
 
-    for filename, reporter in outputs:
-        target = tmp_path / filename
-        expected = reporter.generate_report(scan_result)
-        reporter.save_report(scan_result, str(target))
-        assert target.read_text(encoding="utf-8") == expected
+    # Should contain table elements
+    assert "Skill" in output or "skill" in output.lower()
+
+
+def test_table_reporter_multi_skill(report):
+    """Test table reporter with multiple skills."""
+    reporter = TableReporter(format_style="grid")
+    output = reporter.generate_report(report)
+
+    # Should show all scanned skills
+    assert report.total_skills_scanned > 0

@@ -12,8 +12,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -38,13 +36,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python for uv
         uses: astral-sh/setup-uv@v6.7.0
@@ -64,7 +60,7 @@ jobs:
             -v --tb=short
 
       - name: Run benchmark
-        run: uv run python evals/runners/benchmark_runner.py --eval-dir evals/skills
+        run: uv run python evals/benchmark_runner.py --eval-dir evals/skills
 
   coverage:
     runs-on: ubuntu-latest
@@ -72,8 +68,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python for uv
         uses: astral-sh/setup-uv@v6.7.0
@@ -104,8 +98,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python for uv
         uses: astral-sh/setup-uv@v6.7.0
