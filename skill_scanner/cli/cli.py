@@ -306,7 +306,10 @@ def scan_command(args: argparse.Namespace) -> int:
         print(f"Error loading skill: {e}", file=sys.stderr)
         return 1
     except Exception as e:
+        import traceback
+
         print(f"Unexpected error: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return 1
 
 
@@ -403,7 +406,10 @@ def scan_all_command(args: argparse.Namespace) -> int:
         return 0
 
     except Exception as e:
+        import traceback
+
         print(f"Unexpected error: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return 1
 
 
