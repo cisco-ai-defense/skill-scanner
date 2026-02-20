@@ -24,43 +24,33 @@ Uses structured outputs (JSON schema) when available.
 
 import asyncio
 import json
-import logging
 import warnings
 from pathlib import Path
 from typing import Any
 
 from .llm_provider_config import ProviderConfig
 
-logger = logging.getLogger(__name__)
-
-acompletion: Any
 try:
-    from litellm import acompletion as _acompletion
+    from litellm import acompletion
 
-    acompletion = _acompletion
     LITELLM_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     LITELLM_AVAILABLE = False
     acompletion = None
 
-genai: Any
 try:
-    from google import genai as _genai
+    from google import genai
 
-    genai = _genai
     GOOGLE_GENAI_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     GOOGLE_GENAI_AVAILABLE = False
     genai = None
 
-# Suppress LiteLLM cosmetic warnings (doesn't affect functionality)
+# Suppress LiteLLM pydantic serialization warnings (cosmetic, doesn't affect functionality)
 warnings.filterwarnings("ignore", message=".*Pydantic serializer warnings.*")
 warnings.filterwarnings("ignore", message=".*Expected `Message`.*")
 warnings.filterwarnings("ignore", message=".*Expected `StreamingChoices`.*")
 warnings.filterwarnings("ignore", message=".*close_litellm_async_clients.*")
-# LiteLLM's logging worker creates unawaited coroutines during sync teardown
-warnings.filterwarnings("ignore", message=".*async_success_handler.*was never awaited.*")
-warnings.filterwarnings("ignore", message=".*Enable tracemalloc.*")
 
 
 class LLMRequestHandler:
@@ -101,19 +91,9 @@ class LLMRequestHandler:
         try:
             schema_path = Path(__file__).parent.parent.parent / "data" / "prompts" / "llm_response_schema.json"
             if schema_path.exists():
-                loaded: dict[str, Any] = json.loads(schema_path.read_text(encoding="utf-8"))
-                # Keep schema in sync with active taxonomy profile, including
-                # custom profiles loaded via SKILL_SCANNER_TAXONOMY_PATH.
-                try:
-                    from ...threats.cisco_ai_taxonomy import VALID_AITECH_CODES
-
-                    aitech_codes = sorted(VALID_AITECH_CODES)
-                    loaded["properties"]["findings"]["items"]["properties"]["aitech"]["enum"] = aitech_codes
-                except Exception as e:
-                    logger.warning("Could not inject runtime AITech enum into schema: %s", e)
-                return loaded
+                return json.loads(schema_path.read_text(encoding="utf-8"))
         except Exception as e:
-            logger.warning("Could not load response schema: %s", e)
+            print(f"Warning: Could not load response schema: {e}")
         return None
 
     def _sanitize_schema_for_google(self, schema: dict[str, Any]) -> dict[str, Any]:
@@ -123,7 +103,10 @@ class LLMRequestHandler:
         Google SDK doesn't support additionalProperties in structured output schemas.
         This recursively removes it from the schema.
         """
-        sanitized: dict[str, Any] = {}
+        if not isinstance(schema, dict):
+            return schema
+
+        sanitized = {}
         for key, value in schema.items():
             if key == "additionalProperties":
                 # Skip additionalProperties - Google SDK doesn't support it
@@ -200,8 +183,7 @@ class LLMRequestHandler:
                     }
 
                 response = await acompletion(**request_params)
-                content: str = response.choices[0].message.content or ""
-                return content
+                return response.choices[0].message.content
 
             except Exception as e:
                 last_exception = e
@@ -214,23 +196,17 @@ class LLMRequestHandler:
                 ):
                     if attempt < self.max_retries:
                         delay = (2**attempt) * self.rate_limit_delay
-                        logger.warning(
-                            "Rate limit hit for %s, retrying in %ss (attempt %d/%d)",
-                            context,
-                            delay,
-                            attempt + 1,
-                            self.max_retries + 1,
+                        print(
+                            f"Rate limit hit for {context}, retrying in {delay}s (attempt {attempt + 1}/{self.max_retries + 1})"
                         )
                         await asyncio.sleep(delay)
                         continue
 
                 # For other errors, don't retry
-                logger.error("LLM API error for %s: %s", context, e)
+                print(f"LLM API error for {context}: {e}")
                 break
 
-        if last_exception is not None:
-            raise last_exception
-        raise RuntimeError("All retries exhausted")
+        raise last_exception
 
     async def _make_google_sdk_request(self, prompt: str) -> str:
         """Make request using Google GenAI SDK (new SDK) with structured outputs."""
@@ -243,7 +219,7 @@ class LLMRequestHandler:
 
                 # Build generation config with structured output
                 # New SDK uses GenerateContentConfig type
-                config_dict: dict[str, Any] = {
+                config_dict = {
                     "max_output_tokens": self.max_tokens,
                     "temperature": self.temperature,
                 }
@@ -276,16 +252,14 @@ class LLMRequestHandler:
                 # Extract text from response (new SDK format)
                 # Response has .text attribute directly
                 if hasattr(response, "text") and response.text:
-                    text_val: str = response.text
-                    return text_val
+                    return response.text
                 elif hasattr(response, "candidates") and response.candidates:
                     # Fallback: check candidates array
                     candidate = response.candidates[0]
                     if hasattr(candidate, "content") and candidate.content:
                         parts = candidate.content.parts if hasattr(candidate.content, "parts") else []
                         if parts and hasattr(parts[0], "text"):
-                            part_text: str = parts[0].text
-                            return part_text
+                            return parts[0].text
                 elif hasattr(response, "content"):
                     # Another fallback
                     return str(response.content)
@@ -303,10 +277,8 @@ class LLMRequestHandler:
                         await asyncio.sleep(wait_time)
                         continue
 
-                # Non-retryable error - log for debugging
-                logger.error("LLM analysis failed: %s", e)
+                # Non-retryable error - print for debugging
+                print(f"LLM analysis failed: {e}")
                 raise
 
-        if last_exception is not None:
-            raise last_exception
-        raise RuntimeError("All retries exhausted")
+        raise last_exception

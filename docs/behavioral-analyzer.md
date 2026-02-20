@@ -166,9 +166,8 @@ reporter.py: Sends to attacker.example.com
 from skill_scanner.core.analyzers import BehavioralAnalyzer
 from skill_scanner.core.scanner import SkillScanner
 
-# Create analyzer (alignment verification optional)
-behavioral = BehavioralAnalyzer()
-# behavioral = BehavioralAnalyzer(use_alignment_verification=True)
+# Create analyzer (static analysis mode by default)
+behavioral = BehavioralAnalyzer(use_static_analysis=True)
 
 # Use with scanner
 scanner = SkillScanner(analyzers=[behavioral])
@@ -178,10 +177,20 @@ result = scanner.scan_skill("/path/to/skill")
 ### CLI
 
 ```bash
-# Enable behavioral analyzer explicitly
-skill-scanner scan /path/to/skill --use-behavioral
+# Behavioral analyzer is included by default in static analyzer
+skill-scanner scan /path/to/skill
 
 # Results include behavioral findings (BEHAVIOR_* rule IDs)
+```
+
+### Legacy Docker Mode (Deprecated)
+
+```python
+# Old Docker-based execution (not recommended)
+behavioral = BehavioralAnalyzer(
+    use_static_analysis=False,
+    sandbox_type="docker"
+)
 ```
 
 ---
@@ -254,11 +263,16 @@ def process(user_input):
 **Safety**: 100% safe (no code execution)
 **Dependencies**: Pure Python (no Docker required)
 
+**Comparison**:
+
+- Old Docker approach: 2-5 seconds, requires Docker
+- New static approach: 50-100ms, pure Python
+
 ---
 
 ## Testing
 
-**Test Suite**: `tests/behavioral/test_enhanced_behavioral.py`
+**Test Suite**: `tests/test_enhanced_behavioral.py`
 **Tests**: 14 comprehensive tests
 **Coverage**: AST parsing, dataflow tracking, multi-file analysis
 
@@ -274,14 +288,15 @@ def process(user_input):
 
 ### Current Scope
 
-- **No code execution**: Analysis is static only (AST/dataflow/taint + heuristics)
-- **Primary depth in Python**: Most precise source-to-sink tracking is in Python analysis
-- **Bash support is heuristic**: Bash taint tracking is lighter than Python CFG-based analysis
-- **Markdown code blocks**: Embedded shell/python snippets are scanned, but full runtime semantics are not modeled
+- **Python only**: Analyzes Python scripts (not Bash yet)
+- **Intra-file dataflow**: CFG-based flow tracking within single file
+- **CFG-based taint**: Proper fixpoint analysis through control structures
+- **Pattern-based sinks**: Predefined list of dangerous operations
 
 ### Future Enhancements
 
 - Cross-file dataflow (track imports and calls between files) - **Partially implemented** via call graph
+- Bash script analysis
 - More sophisticated taint analysis
 - Interprocedural analysis - **Partially implemented** via call graph analyzer
 

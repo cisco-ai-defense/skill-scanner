@@ -2,6 +2,6 @@
   "skill_name": "simple-math",
   "expected_safe": true,
   "expected_severity": "SAFE",
-  "expected_findings": [],
+  "expected_threats": [],
   "notes": "Clean implementation using operator module, no eval/exec, proper validation"
 }

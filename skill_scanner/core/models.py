@@ -56,7 +56,6 @@ class ThreatCategory(str, Enum):
     AUTONOMY_ABUSE = "autonomy_abuse"
     TOOL_CHAINING_ABUSE = "tool_chaining_abuse"
     UNICODE_STEGANOGRAPHY = "unicode_steganography"
-    SUPPLY_CHAIN_ATTACK = "supply_chain_attack"
 
 
 @dataclass
@@ -75,7 +74,7 @@ class SkillManifest:
     description: str
     license: str | None = None
     compatibility: str | None = None
-    allowed_tools: list[str] | str | None = None
+    allowed_tools: list[str] | None = None
     metadata: dict[str, Any] | None = None
     disable_model_invocation: bool = False
 
@@ -106,9 +105,6 @@ class SkillFile:
     file_type: str  # 'markdown', 'python', 'bash', 'binary', 'other'
     content: str | None = None
     size_bytes: int = 0
-    # Extraction metadata (populated when file was extracted from an archive)
-    extracted_from: str | None = None
-    archive_depth: int = 0
 
     def read_content(self) -> str:
         """Read file content if not already loaded."""
@@ -119,17 +115,6 @@ class SkillFile:
             except (OSError, UnicodeDecodeError):
                 self.content = ""  # Binary or unreadable file
         return self.content or ""
-
-    @property
-    def is_hidden(self) -> bool:
-        """Check if this file is a hidden file (dotfile) or inside a hidden directory."""
-        parts = Path(self.relative_path).parts
-        return any(part.startswith(".") and part != "." for part in parts)
-
-    @property
-    def is_pycache(self) -> bool:
-        """Check if this file is inside a __pycache__ directory."""
-        return "__pycache__" in Path(self.relative_path).parts
 
 
 @dataclass
@@ -213,9 +198,6 @@ class ScanResult:
     scan_duration_seconds: float = 0.0
     analyzers_used: list[str] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
-    analyzability_score: float | None = None
-    analyzability_details: dict[str, Any] | None = None
-    scan_metadata: dict[str, Any] | None = None
 
     @property
     def is_safe(self) -> bool:
@@ -250,7 +232,8 @@ class ScanResult:
         """
         return {
             "skill_name": self.skill_name,
-            "skill_path": self.skill_directory,
+            "skill_path": self.skill_directory,  # Plugin expects skill_path
+            "skill_directory": self.skill_directory,  # Keep for backward compatibility
             "is_safe": self.is_safe,
             "max_severity": self.max_severity.value,
             "findings_count": len(self.findings),
@@ -259,7 +242,6 @@ class ScanResult:
             "duration_ms": int(self.scan_duration_seconds * 1000),  # Plugin expects duration_ms
             "analyzers_used": self.analyzers_used,
             "timestamp": self.timestamp.isoformat(),
-            "scan_metadata": self.scan_metadata or {},
         }
 
 

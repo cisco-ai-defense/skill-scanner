@@ -203,8 +203,7 @@ Choose the appropriate AITech code based on the threat type you detect:
 
 - **AITech-8.2 (Data Exfiltration / Exposure)**: Use for unauthorized data access, transmission, or exposure. Examples: Network calls sending credentials/data to external servers, reading ~/.aws/credentials or ~/.ssh keys, hardcoded API keys/secrets in code, environment variable harvesting, data exfiltration via tool chaining (read→send patterns).
 
-- **AITech-9.1 (Model or Agentic System Manipulation)**: Use for injection attacks that manipulate system behavior. Examples: Command injection (eval, exec, os.system with user input), SQL injection, code injection, XSS, reverse shells, arbitrary code execution.
-- **AITech-9.2 (Detection Evasion)**: Use for obfuscation/evasion patterns designed to hide malicious intent. Examples: encoded payload chains (base64 -> exec), intentionally obfuscated scripts, hidden execution stagers.
+- **AITech-9.1 (Model or Agentic System Manipulation)**: Use for injection attacks that manipulate system behavior. Examples: Command injection (eval, exec, os.system with user input), SQL injection, code injection, XSS, obfuscated malicious code, reverse shells, arbitrary code execution.
 
 - **AITech-12.1 (Tool Exploitation)**: Use for tool-related attacks. Examples: Tool poisoning (corrupting tool behavior via data/configuration), tool shadowing (replacing legitimate tools), unauthorized tool use (violating allowed-tools restrictions), manipulating tool outputs.
 

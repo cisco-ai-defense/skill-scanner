@@ -21,13 +21,12 @@ This module provides a FastAPI application for scanning agent skills packages.
 
 from fastapi import FastAPI
 
-from .. import __version__ as PACKAGE_VERSION
 from .router import router as api_router
 
 app = FastAPI(
     title="Skill Scanner API",
     description="Security scanning API for agent skills packages",
-    version=PACKAGE_VERSION,
+    version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )

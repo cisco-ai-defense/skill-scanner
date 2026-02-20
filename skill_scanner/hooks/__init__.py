@@ -16,15 +16,6 @@
 
 """Git hooks for skill-scanner."""
 
-
-def __getattr__(name: str):
-    """Lazy-load pre_commit_hook to avoid heavy imports on module entry."""
-    if name == "pre_commit_hook":
-        from .pre_commit import main as pre_commit_hook
-
-        globals()["pre_commit_hook"] = pre_commit_hook
-        return pre_commit_hook
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
+from .pre_commit import main as pre_commit_hook
 
 __all__ = ["pre_commit_hook"]

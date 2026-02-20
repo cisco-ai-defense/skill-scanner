@@ -19,10 +19,7 @@ Python AST parser for agent skills scripts.
 """
 
 import ast
-import logging
 from dataclasses import dataclass, field
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -154,7 +151,7 @@ class PythonParser:
             self._extract_global_code()
             return True
         except SyntaxError as e:
-            logger.warning("Syntax error in source: %s", e)
+            print(f"Syntax error in source: {e}")
             return False
 
     def _extract_module_level_strings(self) -> None:

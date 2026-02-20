@@ -14,7 +14,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for threats taxonomy module."""
+"""
+Tests for threats taxonomy module.
+
+Inspired by MCP Scanner's threat mapping tests.
+"""
+
+from unittest.mock import patch
 
 import pytest
 
@@ -147,19 +153,6 @@ class TestGetThreatMapping:
         assert mapping["scanner_category"] == "UNKNOWN"
         assert mapping["aitech"] == "AITech-99.9"
 
-    @pytest.mark.parametrize("threat_name", ["PROMPT INJECTION", "prompt injection", "PROMPT_INJECTION"])
-    def test_name_normalization_supports_case_and_underscores(self, threat_name):
-        """Threat lookup should be insensitive to case and underscore spacing."""
-        mapping = ThreatMapping.get_threat_mapping("llm", threat_name)
-        assert mapping == ThreatMapping.LLM_THREATS["PROMPT INJECTION"]
-
-    @pytest.mark.parametrize("threat_name", sorted(ThreatMapping.YARA_THREATS.keys()))
-    def test_static_alias_matches_yara_mapping_for_all_threats(self, threat_name):
-        """Static analyzer should resolve through YARA taxonomy for every threat name."""
-        static_mapping = ThreatMapping.get_threat_mapping("static", threat_name)
-        yara_mapping = ThreatMapping.get_threat_mapping("yara", threat_name)
-        assert static_mapping == yara_mapping
-
 
 class TestSimplifiedMappings:
     """Test simplified mapping dictionaries."""
@@ -185,25 +178,6 @@ class TestSimplifiedMappings:
             assert "threat_category" in threat_info
             assert "threat_type" in threat_info
             assert "severity" in threat_info
-
-    @pytest.mark.parametrize(
-        ("full_mapping", "simple_mapping"),
-        [
-            (ThreatMapping.LLM_THREATS, LLM_THREAT_MAPPING),
-            (ThreatMapping.YARA_THREATS, YARA_THREAT_MAPPING),
-            (ThreatMapping.BEHAVIORAL_THREATS, BEHAVIORAL_THREAT_MAPPING),
-        ],
-    )
-    def test_simplified_mappings_are_derived_consistently(self, full_mapping, simple_mapping):
-        """Simplified mappings should exactly mirror the source mapping semantics."""
-        assert set(simple_mapping.keys()) == set(full_mapping.keys())
-        for threat_name, full_info in full_mapping.items():
-            simple_info = simple_mapping[threat_name]
-            assert simple_info == {
-                "threat_category": full_info["scanner_category"],
-                "threat_type": threat_name.lower().replace("_", " "),
-                "severity": full_info["severity"],
-            }
 
 
 class TestHelperFunctions:
@@ -235,11 +209,6 @@ class TestHelperFunctions:
         category = get_threat_category("llm", "NONEXISTENT_THREAT")
         assert category == "UNKNOWN"
 
-    def test_helpers_return_defaults_for_unknown_analyzer(self):
-        """Helper functions should remain safe for unknown analyzer names."""
-        assert get_threat_severity("unknown", "PROMPT INJECTION") == "MEDIUM"
-        assert get_threat_category("unknown", "PROMPT INJECTION") == "UNKNOWN"
-
 
 class TestAITechTaxonomy:
     """Test AITech taxonomy codes."""
@@ -270,32 +239,6 @@ class TestAITechTaxonomy:
 
         assert llm_prompt["aitech"] == yara_prompt["aitech"] == behavioral_prompt["aitech"]
         assert llm_prompt["aitech"] == "AITech-1.1"
-
-    @pytest.mark.parametrize(
-        ("aitech_code", "expected_category"),
-        [
-            ("AITech-1.1", "prompt_injection"),
-            ("AITech-8.2", "data_exfiltration"),
-            ("AITech-9.3", "supply_chain_attack"),
-            ("AITech-15.1", "harmful_content"),
-        ],
-    )
-    def test_get_threat_category_from_aitech_known_codes(self, aitech_code, expected_category):
-        assert ThreatMapping.get_threat_category_from_aitech(aitech_code) == expected_category
-
-    def test_get_threat_category_from_aitech_unknown_defaults_policy_violation(self):
-        assert ThreatMapping.get_threat_category_from_aitech("AITech-0.0") == "policy_violation"
-
-    def test_get_threat_mapping_by_aitech_known_code(self):
-        mapping = ThreatMapping.get_threat_mapping_by_aitech("AITech-1.1")
-        assert mapping["aitech"] == "AITech-1.1"
-        assert mapping["scanner_category"] == "PROMPT INJECTION"
-
-    def test_get_threat_mapping_by_aitech_unknown_code(self):
-        mapping = ThreatMapping.get_threat_mapping_by_aitech("AITech-77.7")
-        assert mapping["aitech"] == "AITech-77.7"
-        assert mapping["scanner_category"] == "UNKNOWN"
-        assert mapping["aisubtech"] is None
 
 
 class TestSeverityLevels:

@@ -26,12 +26,9 @@ Production analyzer with:
 - AITech taxonomy alignment
 """
 
-from __future__ import annotations
-
 import asyncio
-import logging
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...threats.threats import ThreatMapping
@@ -41,12 +38,7 @@ from .llm_provider_config import ProviderConfig
 from .llm_request_handler import LLMRequestHandler
 from .llm_response_parser import ResponseParser
 
-if TYPE_CHECKING:
-    from ...core.scan_policy import LLMAnalysisPolicy, ScanPolicy
-
-logger = logging.getLogger(__name__)
-
-# Import provider availability flags
+# Export constants for backward compatibility with tests
 try:
     from .llm_provider_config import GOOGLE_GENAI_AVAILABLE, LITELLM_AVAILABLE
 except (ImportError, ModuleNotFoundError):
@@ -128,8 +120,6 @@ class LLMAnalyzer(BaseAnalyzer):
         aws_session_token: str | None = None,
         # Provider selection (can be enum or string)
         provider: str | None = None,
-        # Policy (optional – uses generous defaults when omitted)
-        policy: ScanPolicy | None = None,
     ):
         """
         Initialize enhanced LLM analyzer.
@@ -149,19 +139,8 @@ class LLMAnalyzer(BaseAnalyzer):
             aws_session_token: AWS session token (for Bedrock)
             provider: LLM provider name (e.g., "openai", "anthropic", "aws-bedrock", etc.)
                 Can be enum or string (e.g., "openai", "anthropic", "aws-bedrock")
-            policy: Scan policy providing LLM context budget thresholds.
-                When ``None``, generous defaults from ``LLMAnalysisPolicy()``
-                are used.
         """
         super().__init__("llm_analyzer")
-
-        # Store LLM analysis budget policy (lazy import to avoid circular deps)
-        if policy is not None:
-            self.llm_policy = policy.llm_analysis
-        else:
-            from ...core.scan_policy import LLMAnalysisPolicy
-
-            self.llm_policy = LLMAnalysisPolicy()
 
         # Handle provider selection: if provider is specified, map to default model
         if provider is not None and model is None:
@@ -217,6 +196,7 @@ class LLMAnalyzer(BaseAnalyzer):
         self.prompt_builder = PromptBuilder()
         self.response_parser = ResponseParser()
 
+        # Expose commonly accessed attributes for backward compatibility
         self.model = self.provider_config.model
         self.api_key = self.provider_config.api_key
         self.is_bedrock = self.provider_config.is_bedrock
@@ -229,46 +209,6 @@ class LLMAnalyzer(BaseAnalyzer):
         self.max_retries = max_retries
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
-
-        # Enriched context from other analyzers (set externally before analyze())
-        self.enrichment_context: str | None = None
-
-        # Consensus judging: number of runs to perform (1 = no consensus)
-        self.consensus_runs: int = 1
-
-    def set_enrichment_context(
-        self,
-        *,
-        file_inventory: dict | None = None,
-        magic_mismatches: list[str] | None = None,
-        static_findings_summary: list[str] | None = None,
-        analyzability_score: float | None = None,
-    ) -> None:
-        """Set enriched context from other analyzers to improve LLM analysis.
-
-        This should be called before analyze() to provide the LLM with
-        pre-computed context that focuses its analysis.
-
-        Args:
-            file_inventory: Dict with file counts by type, unreferenced files, etc.
-            magic_mismatches: List of files with extension/content mismatches.
-            static_findings_summary: Brief summary of key static analysis findings.
-            analyzability_score: Overall analyzability score (0-100).
-        """
-        parts: list[str] = []
-
-        if file_inventory:
-            parts.append(f"File inventory: {file_inventory}")
-        if magic_mismatches:
-            parts.append(f"File type mismatches (extension != content): {', '.join(magic_mismatches)}")
-        if static_findings_summary:
-            parts.append("Key static findings:")
-            for f in static_findings_summary[:10]:  # Limit to top 10
-                parts.append(f"  - {f}")
-        if analyzability_score is not None:
-            parts.append(f"Analyzability score: {analyzability_score:.0f}%")
-
-        self.enrichment_context = "\n".join(parts) if parts else None
 
     def analyze(self, skill: Skill) -> list[Finding]:
         """
@@ -287,9 +227,6 @@ class LLMAnalyzer(BaseAnalyzer):
         """
         Analyze skill using LLM (async).
 
-        Supports enriched context from other analyzers and opt-in consensus
-        judging (multiple runs with majority agreement).
-
         Args:
             skill: Skill to analyze
 
@@ -297,79 +234,21 @@ class LLMAnalyzer(BaseAnalyzer):
             List of security findings
         """
         findings = []
-        budget_skipped: list[dict] = []
 
         try:
-            # ---- Budget gating (policy-driven, no truncation) ----
-            lp = self.llm_policy
-            total_budget = lp.max_total_prompt_chars
-
-            # Instruction body: include full or skip entirely
-            instruction_body = skill.instruction_body
-            if len(instruction_body) > lp.max_instruction_body_chars:
-                budget_skipped.append(
-                    {
-                        "path": "SKILL.md (instruction body)",
-                        "size": len(instruction_body),
-                        "reason": (
-                            f"instruction body ({len(instruction_body):,} chars) exceeds "
-                            f"limit ({lp.max_instruction_body_chars:,})"
-                        ),
-                        "threshold_name": "llm_analysis.max_instruction_body_chars",
-                    }
-                )
-                instruction_body = ""
-
-            # Track budget consumed by instruction body
-            budget_used = len(instruction_body)
-
-            # Format all skill components with budget gating
+            # Format all skill components
             manifest_text = self.prompt_builder.format_manifest(skill.manifest)
-            budget_used += len(manifest_text)
+            code_files_text = self.prompt_builder.format_code_files(skill)
+            referenced_files_text = self.prompt_builder.format_referenced_files(skill)
 
-            code_files_text, code_skipped = self.prompt_builder.format_code_files(
-                skill,
-                max_file_chars=lp.max_code_file_chars,
-                max_total_chars=max(0, total_budget - budget_used),
-            )
-            budget_skipped.extend(code_skipped)
-            budget_used += len(code_files_text)
-
-            referenced_files_text, ref_skipped = self.prompt_builder.format_referenced_files(
-                skill,
-                max_file_chars=lp.max_referenced_file_chars,
-                remaining_budget=max(0, total_budget - budget_used),
-            )
-            budget_skipped.extend(ref_skipped)
-
-            # Emit INFO findings for any skipped content
-            for item in budget_skipped:
-                findings.append(
-                    Finding(
-                        id=f"llm_budget_{item['path']}",
-                        rule_id="LLM_CONTEXT_BUDGET_EXCEEDED",
-                        category=ThreatCategory.POLICY_VIOLATION,
-                        severity=Severity.INFO,
-                        title=f"'{item['path']}' excluded from LLM analysis ({item['size']:,} chars)",
-                        description=item["reason"],
-                        file_path=item["path"],
-                        remediation=(
-                            f"Increase {item['threshold_name']} in your scan policy "
-                            f"to include this content in LLM analysis."
-                        ),
-                        analyzer="llm",
-                    )
-                )
-
-            # Create protected prompt with optional enrichment context
+            # Create protected prompt
             prompt, injection_detected = self.prompt_builder.build_threat_analysis_prompt(
                 skill.name,
                 skill.description,
                 manifest_text,
-                instruction_body,
+                skill.instruction_body[:3000],
                 code_files_text,
                 referenced_files_text,
-                enrichment_context=self.enrichment_context,
             )
 
             # If injection detected, create immediate finding
@@ -391,114 +270,46 @@ class LLMAnalyzer(BaseAnalyzer):
 
             # Query LLM with retry logic
             # System message includes context about AITech taxonomy for structured outputs
-            system_content = """You are a security expert analyzing agent skills. Follow the analysis framework provided.
+            messages = [
+                {
+                    "role": "system",
+                    "content": """You are a security expert analyzing agent skills. Follow the analysis framework provided.
 
 When selecting AITech codes for findings, use these mappings:
 - AITech-1.1: Direct prompt injection in SKILL.md (jailbreak, instruction override)
 - AITech-1.2: Indirect prompt injection - instruction manipulation (embedding malicious instructions in external sources)
 - AITech-4.3: Protocol manipulation - capability inflation (skill discovery abuse, keyword baiting, over-broad claims)
 - AITech-8.2: Data exfiltration/exposure (unauthorized access, credential theft, hardcoded secrets)
-- AITech-9.1: Model/agentic manipulation (command injection, code injection, SQL injection)
-- AITech-9.2: Detection evasion (obfuscation vulnerabilities, encoded/hiding payloads)
-- AITech-9.3: Supply chain compromise (dependency/plugin compromise, malicious package injection)
+- AITech-9.1: Model/agentic manipulation (command injection, code injection, SQL injection, obfuscation)
 - AITech-12.1: Tool exploitation (tool poisoning, shadowing, unauthorized use)
 - AITech-13.1: Disruption of Availability (resource abuse, DoS, infinite loops) - AISubtech-13.1.1: Compute Exhaustion
 - AITech-15.1: Harmful/misleading content (deceptive content, misinformation)
 
-The structured output schema will enforce these exact codes."""
-
-            messages = [
-                {"role": "system", "content": system_content},
+The structured output schema will enforce these exact codes.""",
+                },
                 {"role": "user", "content": prompt},
             ]
 
-            if self.consensus_runs <= 1:
-                # Standard single-run analysis
-                response_content = await self.request_handler.make_request(
-                    messages, context=f"threat analysis for {skill.name}"
-                )
-                analysis_result = self.response_parser.parse(response_content)
-                findings.extend(self._convert_to_findings(analysis_result, skill))
-            else:
-                # Consensus judging: run N times, keep findings that appear in majority
-                findings.extend(await self._consensus_analyze(messages, skill))
+            response_content = await self.request_handler.make_request(
+                messages, context=f"threat analysis for {skill.name}"
+            )
+
+            # Parse response
+            analysis_result = self.response_parser.parse(response_content)
+
+            # Convert to findings
+            findings = self._convert_to_findings(analysis_result, skill)
 
         except Exception as e:
-            logger.error("LLM analysis failed for %s: %s", skill.name, e)
-            # Return budget findings even if LLM call failed
-            return findings
+            print(f"LLM analysis failed for {skill.name}: {e}")
+            # Return empty findings - don't pollute results with errors
+            return []
 
         return findings
-
-    async def _consensus_analyze(self, messages: list[dict], skill: Skill) -> list[Finding]:
-        """Run LLM analysis multiple times and keep findings with majority agreement.
-
-        This reduces false positives by requiring agreement across N independent
-        LLM runs. A finding is kept if it appears in more than N/2 runs.
-
-        Args:
-            messages: The LLM messages to send.
-            skill: The skill being analyzed.
-
-        Returns:
-            Findings that achieved majority consensus.
-        """
-        all_run_findings: list[list[Finding]] = []
-
-        for run_idx in range(self.consensus_runs):
-            try:
-                response_content = await self.request_handler.make_request(
-                    messages, context=f"consensus run {run_idx + 1}/{self.consensus_runs} for {skill.name}"
-                )
-                analysis_result = self.response_parser.parse(response_content)
-                run_findings = self._convert_to_findings(analysis_result, skill)
-                all_run_findings.append(run_findings)
-            except Exception as e:
-                logger.warning("Consensus run %d failed for %s: %s", run_idx + 1, skill.name, e)
-                all_run_findings.append([])
-
-        # Count how many runs produced each unique finding (by rule_id + category)
-        finding_counts: dict[str, int] = {}
-        finding_map: dict[str, Finding] = {}
-
-        for run_findings in all_run_findings:
-            seen_in_run: set[str] = set()
-            for f in run_findings:
-                key = f"{f.rule_id}:{f.category.value}:{f.file_path or ''}"
-                if key not in seen_in_run:
-                    finding_counts[key] = finding_counts.get(key, 0) + 1
-                    seen_in_run.add(key)
-                    # Keep the first occurrence for the finding details
-                    if key not in finding_map:
-                        finding_map[key] = f
-
-        # Keep findings with majority agreement
-        threshold = self.consensus_runs / 2
-        consensus_findings: list[Finding] = []
-        for key, count in finding_counts.items():
-            if count > threshold:
-                finding = finding_map[key]
-                finding.metadata["consensus_agreement"] = f"{count}/{self.consensus_runs}"
-                consensus_findings.append(finding)
-
-        logger.info(
-            "Consensus judging for %s: %d unique findings, %d with majority agreement (%d/%d runs)",
-            skill.name,
-            len(finding_counts),
-            len(consensus_findings),
-            self.consensus_runs,
-            self.consensus_runs,
-        )
-
-        return consensus_findings
 
     def _convert_to_findings(self, analysis_result: dict[str, Any], skill: Skill) -> list[Finding]:
         """Convert LLM analysis results to Finding objects."""
         findings = []
-
-        # Store skill-level assessment for scan_metadata (not per-finding)
-        self.last_overall_assessment = analysis_result.get("overall_assessment", "")
-        self.last_primary_threats = analysis_result.get("primary_threats", [])
 
         for idx, llm_finding in enumerate(analysis_result.get("findings", [])):
             try:
@@ -509,7 +320,7 @@ The structured output schema will enforce these exact codes."""
                 # Parse AITech code (required by structured output)
                 aitech_code = llm_finding.get("aitech")
                 if not aitech_code:
-                    logger.warning("Missing AITech code in LLM finding, skipping")
+                    print("Warning: Missing AITech code in LLM finding, skipping")
                     continue
 
                 # Get threat mapping from AITech code
@@ -520,10 +331,8 @@ The structured output schema will enforce these exact codes."""
                 try:
                     category = ThreatCategory(category_str)
                 except ValueError:
-                    logger.warning(
-                        "Invalid ThreatCategory '%s' for AITech '%s', using policy_violation",
-                        category_str,
-                        aitech_code,
+                    print(
+                        f"Warning: Invalid ThreatCategory '{category_str}' for AITech '{aitech_code}', using policy_violation"
                     )
                     category = ThreatCategory.POLICY_VIOLATION
 
@@ -562,22 +371,15 @@ The structured output schema will enforce these exact codes."""
                     severity = Severity.LOW  # Downgrade from MEDIUM/HIGH to LOW
 
                 # Parse location
-                location = (llm_finding.get("location") or "").strip()
+                location = llm_finding.get("location", "")
                 file_path = None
                 line_number = None
 
-                if location:
-                    if ":" in location:
-                        parts = location.split(":")
-                        file_path = parts[0].strip()
-                        if len(parts) > 1 and parts[1].strip().isdigit():
-                            line_number = int(parts[1].strip())
-                    else:
-                        file_path = location
-
-                # If LLM didn't provide a usable location, infer from description/title/snippet
-                if not file_path:
-                    file_path = self._infer_file_path(skill, title, description, llm_finding.get("evidence", ""))
+                if ":" in location:
+                    parts = location.split(":")
+                    file_path = parts[0]
+                    if len(parts) > 1 and parts[1].isdigit():
+                        line_number = int(parts[1])
 
                 # Get AISubtech code if provided
                 aisubtech_code = llm_finding.get("aisubtech")
@@ -596,7 +398,9 @@ The structured output schema will enforce these exact codes."""
                     remediation=llm_finding.get("remediation", ""),
                     analyzer="llm",
                     metadata={
-                        "model": self.provider_config.model,
+                        "model": self.model,
+                        "overall_assessment": analysis_result.get("overall_assessment", ""),
+                        "primary_threats": analysis_result.get("primary_threats", []),
                         "aitech": aitech_code,
                         "aitech_name": threat_mapping.get("aitech_name"),
                         "aisubtech": aisubtech_code or threat_mapping.get("aisubtech"),
@@ -608,51 +412,10 @@ The structured output schema will enforce these exact codes."""
                 findings.append(finding)
 
             except (ValueError, KeyError) as e:
-                logger.warning("Failed to parse LLM finding: %s", e)
+                print(f"Warning: Failed to parse LLM finding: {e}")
                 continue
 
         return findings
-
-    @staticmethod
-    def _infer_file_path(skill: Skill, title: str, description: str, evidence: str) -> str | None:
-        """Infer the primary file path from LLM finding text when location is missing.
-
-        Searches the title, description, and evidence for known skill file names,
-        preferring more specific paths (scripts/backdoor.py) over generic ones (SKILL.md).
-        """
-        text = f"{title}\n{description}\n{evidence}"
-
-        # Build candidate list from skill files, sorted longest-first for greedy matching
-        candidates: list[str] = []
-        for sf in skill.files:
-            candidates.append(sf.relative_path)
-            # Also match just the filename (LLMs often say "backdoor.py" not "scripts/backdoor.py")
-            name = sf.path.name
-            if name != sf.relative_path:
-                candidates.append(name)
-        # Always include SKILL.md
-        if "SKILL.md" not in candidates:
-            candidates.append("SKILL.md")
-
-        # Sort longest-first so "scripts/backdoor.py" matches before "backdoor.py"
-        candidates.sort(key=len, reverse=True)
-
-        for candidate in candidates:
-            if candidate in text:
-                # Return the relative_path for the matching file
-                for sf in skill.files:
-                    if sf.relative_path == candidate or sf.path.name == candidate:
-                        return sf.relative_path
-                # Fallback for SKILL.md
-                if candidate == "SKILL.md":
-                    return "SKILL.md"
-
-        # Last resort: if title/description mentions "SKILL.md" patterns
-        skillmd_hints = ["skill.md", "skill instructions", "skill's instructions", "in the skill"]
-        if any(hint in text.lower() for hint in skillmd_hints):
-            return "SKILL.md"
-
-        return None
 
     def _is_internal_file(self, skill: Skill, file_path: str) -> bool:
         """Check if a file path is internal to the skill package."""
@@ -663,7 +426,14 @@ The structured output schema will enforce these exact codes."""
 
         # If it's an absolute path, check if it's within skill directory
         if file_path_obj.is_absolute():
-            return skill_dir in file_path_obj.parents or file_path_obj.is_relative_to(skill_dir)
+            try:
+                return skill_dir in file_path_obj.parents or file_path_obj.is_relative_to(skill_dir)
+            except AttributeError:
+                # Python < 3.9 compatibility
+                try:
+                    return skill_dir.resolve() in file_path_obj.resolve().parents
+                except OSError:
+                    return False
 
         # Relative path - check if it exists within skill directory
         full_path = skill_dir / file_path

@@ -74,7 +74,7 @@ class SARIFReporter:
     def _generate_from_scan_result(self, result: ScanResult) -> dict[str, Any]:
         """Generate SARIF from a single ScanResult."""
         rules = self._extract_rules(result.findings)
-        results = self._convert_findings(result.findings)
+        results = self._convert_findings(result.findings, result.skill_directory)
 
         return {
             "$schema": self.SARIF_SCHEMA,
@@ -104,7 +104,7 @@ class SARIFReporter:
         # Create results with proper artifact locations
         all_results = []
         for scan_result in report.scan_results:
-            results = self._convert_findings(scan_result.findings)
+            results = self._convert_findings(scan_result.findings, scan_result.skill_directory)
             all_results.extend(results)
 
         return {
@@ -174,12 +174,12 @@ class SARIFReporter:
 
         return rules
 
-    def _convert_findings(self, findings: list[Finding]) -> list[dict[str, Any]]:
+    def _convert_findings(self, findings: list[Finding], base_path: str) -> list[dict[str, Any]]:
         """Convert findings to SARIF results."""
         results = []
 
         for finding in findings:
-            result: dict[str, Any] = {
+            result = {
                 "ruleId": finding.rule_id,
                 "level": self.SEVERITY_TO_LEVEL.get(finding.severity, "warning"),
                 "message": {
@@ -188,30 +188,41 @@ class SARIFReporter:
                 "properties": {
                     "category": finding.category.value,
                     "severity": finding.severity.value,
-                    **({"remediation": finding.remediation} if finding.remediation else {}),
                 },
             }
 
-            artifact_uri = finding.file_path if finding.file_path else "SKILL.md"
-            location: dict[str, Any] = {
-                "physicalLocation": {
-                    "artifactLocation": {
-                        "uri": artifact_uri,
-                        "uriBaseId": "%SRCROOT%",
-                    },
-                }
-            }
-
-            if finding.line_number:
-                location["physicalLocation"]["region"] = {
-                    "startLine": finding.line_number,
-                }
-                if finding.snippet:
-                    location["physicalLocation"]["region"]["snippet"] = {
-                        "text": finding.snippet,
+            # Add location if file path is available
+            if finding.file_path:
+                location = {
+                    "physicalLocation": {
+                        "artifactLocation": {
+                            "uri": finding.file_path,
+                            "uriBaseId": "%SRCROOT%",
+                        },
                     }
+                }
 
-            result["locations"] = [location]
+                # Add region if line number is available
+                if finding.line_number:
+                    location["physicalLocation"]["region"] = {
+                        "startLine": finding.line_number,
+                    }
+                    if finding.snippet:
+                        location["physicalLocation"]["region"]["snippet"] = {
+                            "text": finding.snippet,
+                        }
+
+                result["locations"] = [location]
+
+            # Add fixes/remediation if available
+            if finding.remediation:
+                result["fixes"] = [
+                    {
+                        "description": {
+                            "text": finding.remediation,
+                        }
+                    }
+                ]
 
             # Add fingerprint for deduplication
             result["fingerprints"] = {

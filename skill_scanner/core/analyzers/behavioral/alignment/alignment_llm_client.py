@@ -173,8 +173,6 @@ class AlignmentLLMClient:
                     self.logger.error(f"LLM request failed after {max_retries} attempts: {e}")
                     raise
 
-        raise RuntimeError("All retry attempts exhausted")
-
     async def _make_llm_request(self, prompt: str) -> str:
         """Make a single LLM API request.
 

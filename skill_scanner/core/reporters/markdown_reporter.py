@@ -18,35 +18,9 @@
 Markdown format reporter for scan results.
 """
 
-from __future__ import annotations
-
 import re
-from typing import Any
 
 from ...core.models import Finding, Report, ScanResult, Severity
-
-
-def parse_pipeline_steps(snippet: str) -> list[str]:
-    """Split a pipeline snippet like ``cat /etc/shadow | base64 | curl …`` into steps."""
-    if not snippet:
-        return []
-    for line in snippet.splitlines():
-        line = line.strip().lstrip("$> ")
-        if "|" in line:
-            return [s.strip() for s in line.split("|") if s.strip()]
-    return []
-
-
-def extract_pipeline_flows(group: dict[str, Any], findings: list[Finding]) -> list[list[str]]:
-    """Return a list of parsed pipe-chains for PIPELINE_TAINT_FLOW findings in a group."""
-    chains: list[list[str]] = []
-    for idx in group.get("finding_indices", []):
-        if 0 <= idx < len(findings):
-            f = findings[idx]
-            steps = parse_pipeline_steps(f.snippet or "")
-            if steps and len(steps) >= 2:
-                chains.append(steps)
-    return chains
 
 
 class MarkdownReporter:
@@ -123,12 +97,6 @@ class MarkdownReporter:
             lines.append("This skill passed all security checks.")
             lines.append("")
 
-        # Meta-analysis sections (correlations, recommendations, risk)
-        meta = result.scan_metadata or {}
-        lines.extend(self._format_risk_assessment(meta))
-        lines.extend(self._format_correlations(meta, result.findings))
-        lines.extend(self._format_recommendations(meta))
-
         # Analyzers used
         lines.append("## Analyzers")
         lines.append("")
@@ -186,98 +154,6 @@ class MarkdownReporter:
                     lines.append("")
 
         return "\n".join(lines)
-
-    def _format_risk_assessment(self, meta: dict[str, Any]) -> list[str]:
-        """Format overall risk assessment as a markdown section."""
-        ra = meta.get("meta_risk_assessment")
-        if not ra:
-            return []
-        lines: list[str] = []
-        lines.append("## Risk Assessment")
-        lines.append("")
-        verdict = ra.get("skill_verdict", "UNKNOWN")
-        risk = ra.get("risk_level", "UNKNOWN")
-        lines.append(f"**Verdict:** {verdict} | **Risk Level:** {risk}")
-        lines.append("")
-        if ra.get("summary"):
-            lines.append(f"> {ra['summary']}")
-            lines.append("")
-        if ra.get("verdict_reasoning"):
-            lines.append(f"**Reasoning:** {ra['verdict_reasoning']}")
-            lines.append("")
-        return lines
-
-    def _format_correlations(self, meta: dict[str, Any], findings: list[Finding]) -> list[str]:
-        """Format correlation groups with pipeline flow diagrams."""
-        correlations = meta.get("meta_correlations")
-        if not correlations:
-            return []
-        lines: list[str] = []
-        lines.append("## Attack Correlation Groups")
-        lines.append("")
-        for group in correlations:
-            name = group.get("group_name", "Correlated Findings")
-            severity = group.get("combined_severity", "UNKNOWN")
-            indices = group.get("finding_indices", [])
-            relationship = group.get("relationship", "")
-            remediation = group.get("consolidated_remediation", "")
-
-            lines.append(f"### {name} ({severity}, {len(indices)} findings)")
-            lines.append("")
-            if relationship:
-                lines.append(f"> {relationship}")
-                lines.append("")
-
-            # Pipeline taint flows (ASCII arrows)
-            chains = extract_pipeline_flows(group, findings)
-            if chains:
-                lines.append("**Pipeline taint flows:**")
-                lines.append("```")
-                for chain in chains:
-                    lines.append("  " + "  -->  ".join(chain))
-                lines.append("```")
-                lines.append("")
-
-            # Findings table for this group
-            lines.append("| # | Severity | Rule | File | Analyzer |")
-            lines.append("|---|----------|------|------|----------|")
-            for idx in indices:
-                if 0 <= idx < len(findings):
-                    f = findings[idx]
-                    loc = f.file_path or "?"
-                    if f.line_number:
-                        loc += f":{f.line_number}"
-                    lines.append(f"| {idx} | {f.severity.value} | {f.rule_id} | {loc} | {f.analyzer} |")
-            lines.append("")
-
-            if remediation:
-                lines.append(f"**Remediation:** {remediation}")
-                lines.append("")
-        return lines
-
-    def _format_recommendations(self, meta: dict[str, Any]) -> list[str]:
-        """Format meta-analysis recommendations."""
-        recs = meta.get("meta_recommendations")
-        if not recs:
-            return []
-        lines: list[str] = []
-        lines.append("## Recommendations")
-        lines.append("")
-        for rec in recs:
-            priority = rec.get("priority", "?")
-            title = rec.get("title", "")
-            effort = rec.get("effort", "")
-            fix = rec.get("fix", "")
-            affected = rec.get("affected_findings", [])
-            lines.append(f"### {priority}. {title}")
-            lines.append("")
-            if effort:
-                lines.append(f"**Effort:** {effort} | **Affected findings:** {len(affected)}")
-                lines.append("")
-            if fix:
-                lines.append(f"{fix}")
-                lines.append("")
-        return lines
 
     def _format_finding(self, finding: Finding, indent: int = 0) -> list:
         """Format a single finding as markdown lines."""

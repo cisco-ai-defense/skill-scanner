@@ -64,7 +64,7 @@ def main():
         return 1
 
     # Create scanner with multiple analyzers
-    analyzers = [StaticAnalyzer(), BehavioralAnalyzer()]
+    analyzers = [StaticAnalyzer(), BehavioralAnalyzer(use_static_analysis=True)]
 
     scanner = SkillScanner(analyzers=analyzers)
 

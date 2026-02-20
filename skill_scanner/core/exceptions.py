@@ -20,13 +20,13 @@ This module defines custom exceptions for Skill Scanner operations.
 All exceptions inherit from SkillScannerError for easy catching.
 
 Example:
-    >>> from skill_scanner.core.scanner import SkillScanner
+    >>> from skill_scanner import Scanner
     >>> from skill_scanner.core.exceptions import SkillLoadError
     >>>
-    >>> scanner = SkillScanner()
+    >>> scanner = Scanner()
     >>>
     >>> try:
-    ...     result = scanner.scan_skill("path/to/skill")
+    ...     skill = scanner.load_skill("path/to/skill")
     ... except SkillLoadError as e:
     ...     print(f"Failed to load skill: {e}")
     ... except SkillAnalysisError as e:

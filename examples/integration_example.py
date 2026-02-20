@@ -60,7 +60,7 @@ def main():
     # Create scanner
     analyzers = [StaticAnalyzer()]
     if args.use_behavioral:
-        analyzers.append(BehavioralAnalyzer())
+        analyzers.append(BehavioralAnalyzer(use_static_analysis=True))
 
     scanner = SkillScanner(analyzers=analyzers)
 

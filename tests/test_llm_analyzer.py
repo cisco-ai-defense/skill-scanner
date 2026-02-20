@@ -26,9 +26,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
+from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer, SecurityError
 from skill_scanner.core.models import Finding, Severity, Skill, SkillManifest, ThreatCategory
-from skill_scanner.core.scan_policy import LLMAnalysisPolicy, ScanPolicy
 
 
 class TestLLMAnalyzerInitialization:
@@ -86,16 +85,7 @@ class TestPromptLoading:
 
     def test_fallback_prompts_on_missing_files(self):
         """Test that analyzer falls back to basic prompts if files missing."""
-        # Only patch the prompt-file existence checks, not all Path.exists()
-        # (ScanPolicy.default() needs Path.exists to load the default YAML)
-        _real_exists = Path.exists
-
-        def _fake_exists(self):
-            if "prompts" in str(self):
-                return False
-            return _real_exists(self)
-
-        with patch.object(Path, "exists", _fake_exists):
+        with patch("pathlib.Path.exists", return_value=False):
             analyzer = LLMAnalyzer(api_key="test-key")
 
             # Should have fallback prompts
@@ -245,8 +235,7 @@ class TestFindingConversion:
         assert finding.file_path == "SKILL.md"
         assert finding.line_number == 15
         assert finding.snippet == "Line 15: ignore previous instructions"
-        assert analyzer.last_overall_assessment == "Malicious skill"
-        assert analyzer.last_primary_threats == ["PROMPT INJECTION"]
+        assert "Malicious skill" in finding.metadata["overall_assessment"]
 
     def test_converts_multiple_findings(self):
         """Test conversion of multiple findings."""
@@ -441,86 +430,30 @@ class TestCodeFileFormatting:
         skill = MagicMock()
         skill.get_scripts = MagicMock(return_value=[mock_script])
 
-        formatted, skipped = analyzer.prompt_builder.format_code_files(skill)
+        formatted = analyzer.prompt_builder.format_code_files(skill)
 
         assert "calculate.py" in formatted
         assert "python" in formatted
         assert "def add" in formatted
-        assert skipped == []
 
-    def test_skips_oversized_files(self):
-        """Test that files exceeding per-file budget are skipped entirely (no truncation)."""
+    def test_truncates_long_files(self):
+        """Test that long files are truncated."""
         analyzer = LLMAnalyzer(api_key="test-key")
 
-        # Content larger than the default per-file limit (15,000)
-        large_content = "x" * 16_000
+        # Create mock script with long content (needs to be > 1500 to truncate)
+        long_content = "x" * 2000
         mock_script = MagicMock()
-        mock_script.relative_path = "large.py"
+        mock_script.relative_path = "long.py"
         mock_script.file_type = "python"
-        mock_script.read_content = MagicMock(return_value=large_content)
+        mock_script.read_content = MagicMock(return_value=long_content)
 
         skill = MagicMock()
         skill.get_scripts = MagicMock(return_value=[mock_script])
 
-        formatted, skipped = analyzer.prompt_builder.format_code_files(skill)
+        formatted = analyzer.prompt_builder.format_code_files(skill)
 
-        # File should be completely absent from output (not truncated)
-        assert "large.py" not in formatted
-        assert len(skipped) == 1
-        assert skipped[0]["path"] == "large.py"
-        assert skipped[0]["threshold_name"] == "llm_analysis.max_code_file_chars"
-
-    def test_file_under_budget_included_in_full(self):
-        """Test that files under budget are included in full without truncation."""
-        analyzer = LLMAnalyzer(api_key="test-key")
-
-        content = "def hello():\n    print('hello world')\n" * 100  # ~3800 chars
-        mock_script = MagicMock()
-        mock_script.relative_path = "hello.py"
-        mock_script.file_type = "python"
-        mock_script.read_content = MagicMock(return_value=content)
-
-        skill = MagicMock()
-        skill.get_scripts = MagicMock(return_value=[mock_script])
-
-        formatted, skipped = analyzer.prompt_builder.format_code_files(skill)
-
-        # Full content should be present, not truncated
-        assert content in formatted
-        assert "truncated" not in formatted.lower()
-        assert skipped == []
-
-    def test_total_budget_exhaustion_skips_remaining(self):
-        """Test that remaining files are skipped once total budget is exhausted."""
-        analyzer = LLMAnalyzer(api_key="test-key")
-
-        # Two files, each 8K chars; with a 10K total budget only first fits
-        content_a = "a" * 8_000
-        content_b = "b" * 8_000
-
-        mock_a = MagicMock()
-        mock_a.relative_path = "a.py"
-        mock_a.file_type = "python"
-        mock_a.read_content = MagicMock(return_value=content_a)
-
-        mock_b = MagicMock()
-        mock_b.relative_path = "b.py"
-        mock_b.file_type = "python"
-        mock_b.read_content = MagicMock(return_value=content_b)
-
-        skill = MagicMock()
-        skill.get_scripts = MagicMock(return_value=[mock_a, mock_b])
-
-        formatted, skipped = analyzer.prompt_builder.format_code_files(
-            skill, max_file_chars=15_000, max_total_chars=10_000
-        )
-
-        assert "a.py" in formatted
-        assert content_a in formatted
-        assert "b.py" not in formatted
-        assert len(skipped) == 1
-        assert skipped[0]["path"] == "b.py"
-        assert skipped[0]["threshold_name"] == "llm_analysis.max_total_prompt_chars"
+        assert "truncated" in formatted.lower() or len(formatted) < len(long_content)
+        assert len(formatted) < len(long_content)
 
     def test_handles_no_scripts(self):
         """Test formatting when skill has no scripts."""
@@ -529,10 +462,9 @@ class TestCodeFileFormatting:
         skill = MagicMock()
         skill.get_scripts = MagicMock(return_value=[])
 
-        formatted, skipped = analyzer.prompt_builder.format_code_files(skill)
+        formatted = analyzer.prompt_builder.format_code_files(skill)
 
         assert "No script files" in formatted or len(formatted) == 0
-        assert skipped == []
 
 
 class TestLLMRequestMaking:
@@ -660,111 +592,3 @@ class TestModelConfiguration:
         assert analyzer.max_retries == 5
         assert analyzer.rate_limit_delay == 3.0
         assert analyzer.timeout == 180
-
-
-class TestLLMAnalysisPolicyIntegration:
-    """Test policy-driven LLM context budget gating."""
-
-    def test_default_policy_generous_limits(self):
-        """Test that default LLMAnalysisPolicy has generous limits."""
-        policy = LLMAnalysisPolicy()
-        assert policy.max_instruction_body_chars == 20_000
-        assert policy.max_code_file_chars == 15_000
-        assert policy.max_referenced_file_chars == 10_000
-        assert policy.max_total_prompt_chars == 100_000
-        assert policy.meta_budget_multiplier == 3.0
-
-    def test_meta_budget_properties(self):
-        """Test meta analyzer effective limits via multiplier."""
-        policy = LLMAnalysisPolicy(
-            max_instruction_body_chars=10_000,
-            max_code_file_chars=5_000,
-            max_referenced_file_chars=3_000,
-            max_total_prompt_chars=50_000,
-            meta_budget_multiplier=2.0,
-        )
-        assert policy.meta_max_instruction_body_chars == 20_000
-        assert policy.meta_max_code_file_chars == 10_000
-        assert policy.meta_max_referenced_file_chars == 6_000
-        assert policy.meta_max_total_prompt_chars == 100_000
-
-    def test_analyzer_uses_default_policy_when_none(self):
-        """Test LLMAnalyzer defaults to LLMAnalysisPolicy() when no policy given."""
-        analyzer = LLMAnalyzer(api_key="test-key")
-        assert analyzer.llm_policy.max_instruction_body_chars == 20_000
-
-    def test_analyzer_uses_provided_policy(self):
-        """Test LLMAnalyzer picks up policy.llm_analysis values."""
-        policy = ScanPolicy.default()
-        policy.llm_analysis = LLMAnalysisPolicy(max_instruction_body_chars=5_000)
-        analyzer = LLMAnalyzer(api_key="test-key", policy=policy)
-        assert analyzer.llm_policy.max_instruction_body_chars == 5_000
-
-    @pytest.mark.asyncio
-    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
-    async def test_instruction_body_over_budget_emits_info_finding(self, mock_make_request):
-        """Test that oversized instruction body produces LLM_CONTEXT_BUDGET_EXCEEDED finding."""
-        mock_make_request.return_value = json.dumps({"findings": []})
-
-        policy = ScanPolicy.default()
-        policy.llm_analysis = LLMAnalysisPolicy(max_instruction_body_chars=50)
-        analyzer = LLMAnalyzer(api_key="test-key", policy=policy)
-
-        skill = MagicMock()
-        skill.name = "test"
-        skill.manifest = SkillManifest(name="test", description="test")
-        skill.description = "test"
-        skill.instruction_body = "x" * 100  # exceeds 50
-        skill.get_scripts = MagicMock(return_value=[])
-        skill.referenced_files = []
-
-        findings = await analyzer.analyze_async(skill)
-
-        budget_findings = [f for f in findings if f.rule_id == "LLM_CONTEXT_BUDGET_EXCEEDED"]
-        assert len(budget_findings) >= 1
-        assert budget_findings[0].severity == Severity.INFO
-        assert "max_instruction_body_chars" in budget_findings[0].remediation
-
-    @pytest.mark.asyncio
-    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
-    async def test_code_file_over_budget_emits_info_finding(self, mock_make_request):
-        """Test that oversized code file produces LLM_CONTEXT_BUDGET_EXCEEDED finding."""
-        mock_make_request.return_value = json.dumps({"findings": []})
-
-        policy = ScanPolicy.default()
-        policy.llm_analysis = LLMAnalysisPolicy(max_code_file_chars=50)
-        analyzer = LLMAnalyzer(api_key="test-key", policy=policy)
-
-        mock_script = MagicMock()
-        mock_script.relative_path = "big.py"
-        mock_script.file_type = "python"
-        mock_script.read_content = MagicMock(return_value="x" * 100)
-
-        skill = MagicMock()
-        skill.name = "test"
-        skill.manifest = SkillManifest(name="test", description="test")
-        skill.description = "test"
-        skill.instruction_body = "short"
-        skill.get_scripts = MagicMock(return_value=[mock_script])
-        skill.referenced_files = []
-
-        findings = await analyzer.analyze_async(skill)
-
-        budget_findings = [f for f in findings if f.rule_id == "LLM_CONTEXT_BUDGET_EXCEEDED"]
-        assert len(budget_findings) >= 1
-        assert "big.py" in budget_findings[0].title
-        assert "max_code_file_chars" in budget_findings[0].remediation
-
-    def test_policy_round_trip_via_yaml(self):
-        """Test that LLMAnalysisPolicy survives to_dict / from_dict round-trip."""
-        original = ScanPolicy.default()
-        original.llm_analysis = LLMAnalysisPolicy(
-            max_instruction_body_chars=12_345,
-            max_code_file_chars=6_789,
-            meta_budget_multiplier=2.5,
-        )
-        d = original._to_dict()
-        restored = ScanPolicy._from_dict(d)
-        assert restored.llm_analysis.max_instruction_body_chars == 12_345
-        assert restored.llm_analysis.max_code_file_chars == 6_789
-        assert restored.llm_analysis.meta_budget_multiplier == 2.5
