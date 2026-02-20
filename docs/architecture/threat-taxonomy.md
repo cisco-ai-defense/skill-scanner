@@ -1,14 +1,53 @@
 # Agent Skills Threat Taxonomy
 
+::: tip TL;DR
+All findings map to Cisco's AI Security Framework (`AITech` / `AISubtech` codes). Custom taxonomies and cross-framework mappings (OWASP, MITRE ATLAS, NIST AML) are supported via JSON/YAML files or CLI flags.
+:::
+
 ## Overview
 
 Skill Scanner aligns threat labels to Cisco's AI Security Framework taxonomy.
 
 - Authoritative taxonomy source: [Cisco AI Security Framework](https://learn-cloudsecurity.cisco.com/ai-security-framework)
 - Public framework write-up: [Cisco AI Security Framework paper](https://arxiv.org/html/2512.12921v1)
-- In-repo canonical code list: `skill_scanner/threats/cisco_ai_taxonomy.py`
+- In-repo canonical code list: [`skill_scanner/threats/cisco_ai_taxonomy.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/threats/cisco_ai_taxonomy.py)
 
 The full framework is broader than skill scanning. Skill Scanner maps a focused subset relevant to agent skill packages and their executable artifacts.
+
+## Mapping Flow
+
+```mermaid
+flowchart LR
+    subgraph detection [Detection]
+        STATIC["Static Analyzer findings"]
+        YARA["YARA rule matches"]
+        BEHAVIORAL["Behavioral findings"]
+        LLM["LLM threat labels"]
+    end
+
+    subgraph mapping [Threat Mapping]
+        TM["ThreatMapping\n(threats.py)"]
+    end
+
+    subgraph taxonomy [Cisco AI Security Framework]
+        AITECH["AITech codes"]
+        AISUBTECH["AISubtech codes"]
+    end
+
+    subgraph frameworks [Cross-Framework References]
+        OWASP["OWASP"]
+        MITRE["MITRE ATLAS / ATT&CK"]
+        NIST["NIST AML"]
+        MDL["Cisco MDL"]
+    end
+
+    detection --> TM
+    TM --> AITECH
+    AITECH --> AISUBTECH
+    AISUBTECH --> frameworks
+```
+
+Each analyzer produces findings with a `ThreatCategory`. The `ThreatMapping` layer translates these into Cisco framework codes (`AITech-*` / `AISubtech-*`). When the taxonomy source includes mapping metadata, cross-framework references (OWASP, MITRE ATLAS/ATT&CK, NIST AML, Cisco MDL) are also available.
 
 ## Full Framework vs Scanner Coverage
 
@@ -38,9 +77,9 @@ Skill Scanner currently uses a subset of those codes for agent-skill risk catego
 
 ## Where Mappings Live
 
-- Mapping definitions: `skill_scanner/threats/threats.py`
-- Full Cisco code/name dictionary: `skill_scanner/threats/cisco_ai_taxonomy.py`
-- Validation tests: `tests/test_taxonomy_validation.py`
+- Mapping definitions: [`skill_scanner/threats/threats.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/threats/threats.py)
+- Full Cisco code/name dictionary: [`skill_scanner/threats/cisco_ai_taxonomy.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/threats/cisco_ai_taxonomy.py)
+- Validation tests: [`tests/test_taxonomy_validation.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/tests/test_taxonomy_validation.py)
 
 ## Custom Taxonomy Support
 
@@ -119,8 +158,8 @@ Built-in taxonomy ships with canonical code/name coverage. Cross-framework mappi
 
 When Cisco updates the framework:
 
-1. Update built-in taxonomy data in `skill_scanner/threats/cisco_ai_taxonomy.py` (or point `SKILL_SCANNER_TAXONOMY_PATH` to an exported framework file)
-2. Update `skill_scanner/threats/threats.py` mappings where needed
+1. Update built-in taxonomy data in [`skill_scanner/threats/cisco_ai_taxonomy.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/threats/cisco_ai_taxonomy.py) (or point `SKILL_SCANNER_TAXONOMY_PATH` to an exported framework file)
+2. Update [`skill_scanner/threats/threats.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/threats/threats.py) mappings where needed
 3. Run taxonomy tests:
    - `uv run pytest tests/test_taxonomy_validation.py tests/test_threats.py -q`
 4. Refresh this document if scanner coverage changes
@@ -128,3 +167,9 @@ When Cisco updates the framework:
 ## Notes
 
 - `AITech-99.9` / `AISubtech-99.9.9` are internal placeholders for unknown/unclassified threats in fallback paths; they are not Cisco framework codes.
+
+## Related Pages
+
+- [Writing Custom Rules](/architecture/analyzers/writing-custom-rules) -- Author rules that use threat categories
+- [Scanning Pipeline](/architecture/scanning-pipeline) -- How findings flow through the system
+- [Custom Policy Configuration](/user-guide/custom-policy-configuration) -- Override severity and disable rules by threat type

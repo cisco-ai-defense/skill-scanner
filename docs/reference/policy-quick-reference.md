@@ -1,22 +1,18 @@
-# Policy Configuration Guide
+# Policy Quick Reference
 
 ## Overview
 
-Scan policies control all tuning knobs, detection thresholds, and rule enablement in Skill Scanner. A policy specifies which file types are benign, which rules fire on which files, which installer URLs are trusted, severity overrides, and more. Every setting has a sensible default; custom policies merge on top of defaults so you only specify what you want to change.
+Scan policies control all tuning knobs, detection thresholds, and rule enablement in Skill Scanner. Every setting has a sensible default; custom policies merge on top so you only specify what you want to change.
 
-This page is a compact reference. For full walkthroughs and policy design examples, see [docs/scan-policy.md](scan-policy.md).
+This page is a compact reference. For full walkthroughs, see [Custom Policy Configuration](/user-guide/custom-policy-configuration).
 
 ## Presets
-
-Three built-in presets provide different security postures:
 
 | Preset | Use case |
 |--------|----------|
 | **balanced** (default) | Good balance of detection and false-positive rate. Broad benign allowlists, demotion in docs, known installer domains trusted. |
 | **strict** | Lowest thresholds, most sensitive. Scans all files (no inert extension skip), no known installer demotions, narrow allowlists. Best for untrusted/external skills and compliance audits. |
 | **permissive** | Highest thresholds, fewer findings, broader whitelists. Best for trusted internal skills or high-FP workflows. |
-
-## Using Policies
 
 ```bash
 skill-scanner scan --policy balanced ./my-skill
@@ -28,11 +24,83 @@ skill-scanner configure-policy  # Interactive TUI
 
 Use `--preset strict|balanced|permissive` with `generate-policy` to base a new file on a specific preset.
 
+## Most Common Tweaks
+
+Copy-paste these into your policy YAML. You only need the sections you want to change.
+
+### CI strict mode
+
+```yaml
+# Strict scanning for CI pipelines
+analyzers:
+  static: true
+  bytecode: true
+  pipeline: true
+disabled_rules: []
+```
+
+### Raise file limits for large projects
+
+```yaml
+file_limits:
+  max_file_count: 500
+  max_file_size_bytes: 20971520  # 20 MB
+```
+
+### Disable noisy rules
+
+```yaml
+disabled_rules:
+  - LAZY_LOAD_DEEP_NESTING
+  - ARCHIVE_FILE_DETECTED
+  - MANIFEST_DESCRIPTION_TOO_LONG
+```
+
+### Override a rule severity
+
+```yaml
+severity_overrides:
+  - rule_id: BINARY_FILE_DETECTED
+    severity: MEDIUM
+    reason: "Our policy treats unknown binaries as medium risk"
+```
+
+### Add custom benign dotfiles
+
+```yaml
+hidden_files:
+  benign_dotfiles:
+    - ".bazelrc"
+    - ".bazelversion"
+    - ".terraform.lock.hcl"
+```
+
+### Tune LLM context budgets
+
+```yaml
+llm_analysis:
+  max_instruction_body_chars: 40000   # double default
+  max_code_file_chars: 30000
+  max_total_prompt_chars: 200000
+  meta_budget_multiplier: 2.0
+```
+
+### Tighten detection thresholds
+
+```yaml
+analysis_thresholds:
+  zerowidth_threshold_with_decode: 30   # stricter (lower = more sensitive)
+  zerowidth_threshold_alone: 150
+  analyzability_low_risk: 95
+  analyzability_medium_risk: 75
+```
+
 ## Section Reference
 
-### file_limits
+Each section below documents every field, its type, default, and what it affects. Click to expand.
 
-Numeric thresholds for file inventory and manifest checks.
+<details>
+<summary><strong>file_limits</strong> — Numeric thresholds for file inventory and manifest checks</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
@@ -43,9 +111,10 @@ Numeric thresholds for file inventory and manifest checks.
 | max_description_length | int | 1024 | MANIFEST_DESCRIPTION_TOO_LONG |
 | min_description_length | int | 20 | SOCIAL_ENG_VAGUE_DESCRIPTION |
 
-### analysis_thresholds
+</details>
 
-Numeric thresholds for YARA and analyzability scoring.
+<details>
+<summary><strong>analysis_thresholds</strong> — Numeric thresholds for YARA and analyzability scoring</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
@@ -61,9 +130,10 @@ Numeric thresholds for YARA and analyzability scoring.
 | homoglyph_filter_math_context | bool | true | Suppress scientific/math contexts in HOMOGLYPH_ATTACK |
 | homoglyph_math_aliases | list[str] | `["COMMON", "GREEK"]` | Allowed confusable alias groups in math contexts |
 
-### pipeline
+</details>
 
-Pipeline taint and tool-chaining analysis behaviour.
+<details>
+<summary><strong>pipeline</strong> — Pipeline taint and tool-chaining analysis behaviour</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
@@ -82,9 +152,10 @@ Pipeline taint and tool-chaining analysis behaviour.
 | exfil_hints | list | `send`, `upload`, etc. | Hint words for exfiltration detection |
 | api_doc_tokens | list | `@app.`, `app.`, etc. | Tokens suppressing tool-chaining FP |
 
-### file_classification
+</details>
 
-How file extensions are classified for analysis routing.
+<details>
+<summary><strong>file_classification</strong> — How file extensions are classified for analysis routing</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
@@ -96,7 +167,10 @@ How file extensions are classified for analysis routing.
 | allow_script_shebang_text_extensions | bool | true | Allow shebang headers for script-like text/code files |
 | script_shebang_extensions | set | script extensions | Extensions treated as valid shebang script targets |
 
-### hidden_files
+</details>
+
+<details>
+<summary><strong>hidden_files</strong> — Dotfile/dotdir allowlists</summary>
 
 Dotfiles and dotdirs not in these lists trigger HIDDEN_DATA_FILE / HIDDEN_DATA_DIR findings.
 
@@ -105,9 +179,12 @@ Dotfiles and dotdirs not in these lists trigger HIDDEN_DATA_FILE / HIDDEN_DATA_D
 | benign_dotfiles | set | preset-defined allowlist | HIDDEN_DATA_FILE |
 | benign_dotdirs | set | preset-defined allowlist | HIDDEN_DATA_DIR |
 
-### rule_scoping
+</details>
 
-Restrict which rules fire on which file types. Reduces noise in doc-heavy skills.
+<details>
+<summary><strong>rule_scoping</strong> — Restrict which rules fire on which file types</summary>
+
+Reduces noise in doc-heavy skills.
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
@@ -120,26 +197,29 @@ Restrict which rules fire on which file types. Reduces noise in doc-heavy skills
 | dedupe_duplicate_findings | bool | true | De-dupes duplicate findings emitted across script/reference passes |
 | asset_prompt_injection_skip_in_docs | bool | true | Suppresses ASSET_PROMPT_INJECTION findings in doc-style paths |
 
-### credentials
+</details>
 
-Suppress well-known test credentials and placeholders.
+<details>
+<summary><strong>credentials</strong> — Suppress well-known test credentials and placeholders</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
 | known_test_values | set | Stripe test keys, JWT.io example, common placeholders | Exact-match suppression of credential findings |
 | placeholder_markers | set | `your-`, `example`, `placeholder`, etc. | Substring match suppression of credential findings |
 
-### system_cleanup
+</details>
 
-Targets that are considered safe for destructive cleanup operations.
+<details>
+<summary><strong>system_cleanup</strong> — Safe destructive cleanup targets</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
 | safe_rm_targets | set | `dist`, `build`, `tmp`, `node_modules`, etc. | DANGEROUS_CLEANUP finding suppression |
 
-### command_safety
+</details>
 
-Tiered command classification for code execution findings.
+<details>
+<summary><strong>command_safety</strong> — Tiered command classification for code execution findings</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
@@ -149,17 +229,36 @@ Tiered command classification for code execution findings.
 | dangerous_commands | set | curl, wget, eval, exec, sudo, etc. | Commands flagged at HIGH/CRITICAL severity |
 | dangerous_arg_patterns | list[regex] | 8 patterns (inline code exec, shell spawning, etc.) | Regex patterns that immediately classify a command as DANGEROUS |
 
-### sensitive_files
+</details>
 
-Regex patterns matching sensitive file paths. When a pipeline reads a matching file, the taint is upgraded to SENSITIVE_DATA.
+<details>
+<summary><strong>sensitive_files</strong> — Regex patterns matching sensitive file paths</summary>
+
+When a pipeline reads a matching file, the taint is upgraded to SENSITIVE_DATA.
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
 | patterns | list[regex] | `/etc/passwd`, `~/.ssh`, `.env`, `.pem`, etc. | Pipeline taint upgrade to SENSITIVE_DATA |
 
-### analyzers
+</details>
 
-Enable or disable built-in analysis passes.
+<details>
+<summary><strong>llm_analysis</strong> — LLM context budget thresholds</summary>
+
+Controls LLM context budget thresholds for LLM and meta analyzers. Content within budget is sent in full; content exceeding the budget is skipped entirely and an `LLM_CONTEXT_BUDGET_EXCEEDED` INFO finding is emitted.
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| max_instruction_body_chars | int | 20000 | Maximum character length for a single instruction body sent to the LLM |
+| max_code_file_chars | int | 15000 | Maximum character length for a single code file sent to the LLM |
+| max_referenced_file_chars | int | 10000 | Maximum character length for a single referenced file sent to the LLM |
+| max_total_prompt_chars | int | 100000 | Maximum total characters across the entire LLM prompt |
+| meta_budget_multiplier | float | 3.0 | Multiplier applied to all limits above for the meta analyzer (e.g. 3x = 60K instruction, 45K/file, 300K total) |
+
+</details>
+
+<details>
+<summary><strong>analyzers</strong> — Enable or disable built-in analysis passes</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
@@ -167,9 +266,10 @@ Enable or disable built-in analysis passes.
 | bytecode | bool | true | Enable/disable .pyc bytecode analyzer |
 | pipeline | bool | true | Enable/disable shell pipeline taint analyzer |
 
-### finding_output
+</details>
 
-Controls final output normalization, dedupe behavior, and traceability metadata.
+<details>
+<summary><strong>finding_output</strong> — Output normalization, dedupe behavior, and traceability metadata</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
@@ -180,31 +280,14 @@ Controls final output normalization, dedupe behavior, and traceability metadata.
 | annotate_same_path_rule_cooccurrence | bool | true | Adds `same_path_other_rule_ids` metadata for findings on the same path |
 | attach_policy_fingerprint | bool | true | Adds policy name/version/fingerprint metadata to each finding |
 
-### severity_overrides
+</details>
 
-Raise or lower any rule's severity.
+<details>
+<summary><strong>severity_overrides</strong> — Raise or lower any rule's severity</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
 | severity_overrides | list[{rule_id, severity, reason}] | `[]` | Override finding severity per rule |
-
-### disabled_rules
-
-Completely suppress specific rule IDs.
-
-| Field | Type | Default | Affects |
-|-------|------|---------|---------|
-| disabled_rules | list[str] | `[]` | Remove matching findings from results |
-
-## Disabling Rules
-
-```yaml
-disabled_rules:
-  - LAZY_LOAD_DEEP_NESTING
-  - ARCHIVE_FILE_DETECTED
-```
-
-## Severity Overrides
 
 ```yaml
 severity_overrides:
@@ -213,41 +296,19 @@ severity_overrides:
     reason: "Our policy treats unknown binaries as medium risk"
 ```
 
-## Common Customizations
+</details>
 
-### 1. Raising file limits for large projects
+<details>
+<summary><strong>disabled_rules</strong> — Completely suppress specific rule IDs</summary>
 
-```yaml
-file_limits:
-  max_file_count: 500
-  max_file_size_bytes: 20971520  # 20 MB
-```
-
-### 2. Adding custom benign dotfiles
-
-```yaml
-hidden_files:
-  benign_dotfiles:
-    - ".bazelrc"
-    - ".bazelversion"
-    - ".terraform.lock.hcl"
-```
-
-### 3. Tuning detection thresholds
-
-```yaml
-analysis_thresholds:
-  zerowidth_threshold_with_decode: 30   # Stricter (lower = more sensitive)
-  zerowidth_threshold_alone: 150
-  analyzability_low_risk: 95
-  analyzability_medium_risk: 75
-```
-
-### 4. Disabling noisy rules
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| disabled_rules | list[str] | `[]` | Remove matching findings from results |
 
 ```yaml
 disabled_rules:
   - LAZY_LOAD_DEEP_NESTING
   - ARCHIVE_FILE_DETECTED
-  - MANIFEST_DESCRIPTION_TOO_LONG
 ```
+
+</details>

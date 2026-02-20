@@ -36,7 +36,7 @@ Finding Generation
 
 ### 1. AST Parser
 
-**Module**: `skill_scanner/core/static_analysis/parser/python_parser.py`
+**Module**: [`skill_scanner/core/static_analysis/parser/python_parser.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/core/static_analysis/parser/python_parser.py)
 
 **Functionality**:
 
@@ -65,7 +65,7 @@ if parser.parse():
 
 ### 2. Forward Dataflow Analysis (CFG-Based)
 
-**Module**: `skill_scanner/core/static_analysis/dataflow/forward_analysis.py`
+**Module**: [`skill_scanner/core/static_analysis/dataflow/forward_analysis.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/core/static_analysis/dataflow/forward_analysis.py)
 
 **Functionality**:
 
@@ -107,7 +107,7 @@ for flow in flows:
 
 ### 3. Context Extractor
 
-**Module**: `skill_scanner/core/static_analysis/context_extractor.py`
+**Module**: [`skill_scanner/core/static_analysis/context_extractor.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/core/static_analysis/context_extractor.py)
 
 **Functionality**:
 
@@ -249,20 +249,19 @@ def process(user_input):
 
 ## Performance
 
-**Speed**: ~50-100ms per script
-**Memory**: <1MB per skill typically
-**Safety**: 100% safe (no code execution)
-**Dependencies**: Pure Python (no Docker required)
+- **Execution model**: Static AST/dataflow analysis only (no runtime code execution)
+- **Runtime**: Depends on script size/count and control-flow complexity
+- **Dependencies**: Pure Python (no Docker required)
 
 ---
 
 ## Testing
 
-**Test Suite**: `tests/behavioral/test_enhanced_behavioral.py`
-**Tests**: 14 comprehensive tests
+**Test Suite**: [`tests/behavioral/test_enhanced_behavioral.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/tests/behavioral/test_enhanced_behavioral.py)
+**Tests**: 12 test cases
 **Coverage**: AST parsing, dataflow tracking, multi-file analysis
 
-**Complex Eval Skill**: `evals/skills/behavioral-analysis/multi-file-exfiltration/`
+**Complex Eval Skill**: [`evals/skills/behavioral-analysis/multi-file-exfiltration/`](https://github.com/cisco-ai-defense/skill-scanner/tree/main/evals/skills/behavioral-analysis/multi-file-exfiltration)
 
 - 4 Python files
 - Demonstrates multi-step exfiltration
@@ -291,7 +290,7 @@ def process(user_input):
 
 | Capability            | Static (YAML/YARA) | Behavioral (AST/Dataflow) | LLM (Semantic) |
 | --------------------- | ------------------ | ------------------------- | -------------- |
-| Speed                 | Fast (~30ms)       | Fast (~50-100ms)          | Slow (~2s)     |
+| Speed profile         | Fast local rules   | Fast local AST/dataflow   | Provider/network dependent |
 | Pattern matching      | Excellent          | Good                      | Excellent      |
 | Correlation detection | Limited            | Excellent                 | Excellent      |
 | Multi-file analysis   | Per-file           | All files                 | All files      |
@@ -305,8 +304,14 @@ def process(user_input):
 
 ## Technical References
 
-- Implementation: `skill_scanner/core/analyzers/behavioral_analyzer.py`
-- AST Parser: `skill_scanner/core/static_analysis/parser/`
-- Dataflow: `skill_scanner/core/static_analysis/dataflow/`
-- Tests: `tests/test_enhanced_behavioral.py`
-- Complex eval: `evals/skills/behavioral-analysis/multi-file-exfiltration/`
+- Implementation: [`skill_scanner/core/analyzers/behavioral_analyzer.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/core/analyzers/behavioral_analyzer.py)
+- AST Parser: [`skill_scanner/core/static_analysis/parser/`](https://github.com/cisco-ai-defense/skill-scanner/tree/main/skill_scanner/core/static_analysis/parser/)
+- Dataflow: [`skill_scanner/core/static_analysis/dataflow/`](https://github.com/cisco-ai-defense/skill-scanner/tree/main/skill_scanner/core/static_analysis/dataflow/)
+- Tests: [`tests/behavioral/test_enhanced_behavioral.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/tests/behavioral/test_enhanced_behavioral.py)
+- Complex eval: [`evals/skills/behavioral-analysis/multi-file-exfiltration/`](https://github.com/cisco-ai-defense/skill-scanner/tree/main/evals/skills/behavioral-analysis/multi-file-exfiltration)
+
+## Related Pages
+
+- [Static Analyzer](/architecture/analyzers/static-analyzer) -- Pattern-based detection (comparison with behavioral approach)
+- [LLM Analyzer](/architecture/analyzers/llm-analyzer) -- Semantic analysis that complements dataflow findings
+- [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) -- When to enable `--use-behavioral`

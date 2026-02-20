@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 100" fill="none">
+  <g stroke="#049fd9" stroke-linecap="round">
+    <!-- Bridge bars -->
+    <line x1="20" y1="52" x2="20" y2="45" stroke-width="6.5"/>
+    <line x1="33" y1="52" x2="33" y2="30" stroke-width="6.5"/>
+    <line x1="46" y1="52" x2="46" y2="20" stroke-width="6.5"/>
+    <line x1="59" y1="52" x2="59" y2="12" stroke-width="6.5"/>
+    <line x1="72" y1="52" x2="72" y2="6" stroke-width="6.5"/>
+    <line x1="85" y1="52" x2="85" y2="6" stroke-width="6.5"/>
+    <line x1="98" y1="52" x2="98" y2="12" stroke-width="6.5"/>
+    <line x1="111" y1="52" x2="111" y2="20" stroke-width="6.5"/>
+    <line x1="124" y1="52" x2="124" y2="30" stroke-width="6.5"/>
+    <line x1="137" y1="52" x2="137" y2="45" stroke-width="6.5"/>
+  </g>
+  <!-- CISCO wordmark -->
+  <text x="78.5" y="82" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="30" fill="#049fd9" letter-spacing="3">cisco</text>
+</svg>

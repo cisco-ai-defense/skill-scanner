@@ -28,8 +28,24 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
       - name: Install dependencies
         run: uv sync --all-extras
+
+      - name: Check generated reference docs are up to date
+        run: uv run python scripts/generate_reference_docs.py --check
+
+      - name: Install docs dependencies
+        run: npm ci --prefix docs
+
+      - name: Build documentation site
+        run: npm --prefix docs run docs:build
 
       - name: Run pre-commit hooks
         run: uv run pre-commit run --all-files

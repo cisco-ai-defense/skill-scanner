@@ -8,7 +8,7 @@ Agent skills are local file packages. Skill Scanner analyzes directories or uplo
 
 ### Local Loader Model
 
-`skill_scanner/core/loader.py` expects a local directory containing `SKILL.md` and related files.
+[`skill_scanner/core/loader.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/core/loader.py) expects a local directory containing `SKILL.md` and related files.
 
 ### Local Scan Entrypoints
 

@@ -1,0 +1,381 @@
+:root {
+  --home-accent-border: rgba(100, 116, 139, 0.28);
+  --home-accent-border-hover: rgba(59, 130, 246, 0.55);
+  --terminal-bg: #1a1b26;
+  --terminal-text: #a9b1d6;
+  --terminal-header-bg: #24283b;
+  --terminal-dot-red: #f7768e;
+  --terminal-dot-yellow: #e0af68;
+  --terminal-dot-green: #9ece6a;
+  --code-block-bg: rgba(100, 116, 139, 0.08);
+}
+
+.dark {
+  --code-block-bg: rgba(100, 116, 139, 0.18);
+}
+
+/* ── Hero badges ───────────────────────────────────────── */
+
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 1.5rem;
+}
+
+.hero-badges a {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.hero-badges img {
+  height: 20px;
+}
+
+/* ── Install + Demo section ────────────────────────────── */
+
+.install-demo {
+  margin-top: 1.5rem;
+}
+
+.install-panels {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.install-panel {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--home-accent-border);
+  background: var(--terminal-bg);
+  transition: border-color 0.18s ease;
+}
+
+.install-panel:hover {
+  border-color: var(--home-accent-border-hover);
+}
+
+.install-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.5rem 0.9rem;
+  background: var(--terminal-header-bg);
+}
+
+.install-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vp-c-brand-1);
+  flex-shrink: 0;
+}
+
+.install-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #565f89;
+}
+
+.install-cmd {
+  padding: 0.7rem 0.9rem;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.88rem;
+  color: var(--terminal-text);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.install-prompt {
+  color: var(--terminal-dot-green);
+  margin-right: 0.4em;
+  user-select: none;
+}
+
+.cmd-bin {
+  color: #7aa2f7;
+}
+
+.cmd-arg {
+  color: #e0af68;
+}
+
+/* ── Terminal demo ─────────────────────────────────────── */
+
+.terminal-demo {
+  margin-top: 1.25rem;
+  border-radius: 10px 10px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--home-accent-border);
+  border-bottom: none;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.55rem 0.85rem;
+  background: var(--terminal-header-bg);
+}
+
+.terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.terminal-dot.red { background: var(--terminal-dot-red); }
+.terminal-dot.yellow { background: var(--terminal-dot-yellow); }
+.terminal-dot.green { background: var(--terminal-dot-green); }
+
+.terminal-title {
+  margin-left: 6px;
+  font-size: 0.78rem;
+  color: #565f89;
+  font-weight: 500;
+}
+
+.terminal-demo + div[class*="language-"] {
+  margin-top: 0 !important;
+  border-radius: 0 0 10px 10px !important;
+  border: 1px solid var(--home-accent-border);
+  border-top: none;
+}
+
+.terminal-demo + div[class*="language-"] pre {
+  background: var(--terminal-bg) !important;
+  color: var(--terminal-text) !important;
+}
+
+.terminal-demo + div[class*="language-"] code {
+  color: var(--terminal-text) !important;
+}
+
+.terminal-demo + div[class*="language-"] .lang,
+.terminal-demo + div[class*="language-"] .copy {
+  display: none !important;
+}
+
+.terminal-demo + div[class*="language-"] .line-numbers-wrapper {
+  display: none !important;
+}
+
+.vp-doc .terminal-demo {
+  margin-top: 1rem;
+  margin-bottom: 0;
+}
+
+.vp-doc .terminal-demo + div[class*="language-"] {
+  margin-top: 0 !important;
+  margin-bottom: 1.5rem;
+  border-radius: 0 0 10px 10px !important;
+  border: 1px solid var(--home-accent-border);
+  border-top: none;
+}
+
+/* ── Explore the Docs section ──────────────────────────── */
+
+.explore-docs {
+  margin-top: 2rem;
+}
+
+.explore-heading {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-bottom: 0.7rem;
+  color: var(--vp-c-text-1);
+}
+
+.explore-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.explore-card {
+  display: block;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--home-accent-border);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.explore-card:hover {
+  border-color: var(--home-accent-border-hover);
+  transform: translateY(-1px);
+}
+
+.explore-card-icon {
+  margin-bottom: 0.5rem;
+  color: var(--vp-c-brand-1);
+  line-height: 0;
+}
+
+.explore-card-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+.explore-card-desc {
+  margin-top: 0.38rem;
+  color: var(--vp-c-text-2);
+  font-size: 0.94rem;
+}
+
+/* ── Feature highlight cards (features page) ──────────── */
+
+.feature-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(2, 1fr);
+  margin: 1.5rem 0 2rem;
+}
+
+.feature-card {
+  display: block;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--home-accent-border);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.feature-card:hover {
+  border-color: var(--home-accent-border-hover);
+  transform: translateY(-2px);
+}
+
+.feature-card-icon {
+  margin-bottom: 0.55rem;
+  color: var(--vp-c-brand-1);
+  line-height: 0;
+}
+
+.feature-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+  margin-bottom: 0.3rem;
+}
+
+.feature-card-desc {
+  color: var(--vp-c-text-2);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+/* ── Architecture section cards ────────────────────────── */
+
+.arch-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(2, 1fr);
+  margin: 1.2rem 0 1.8rem;
+}
+
+.arch-card {
+  display: block;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--home-accent-border);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.arch-card:hover {
+  border-color: var(--home-accent-border-hover);
+  transform: translateY(-2px);
+}
+
+.arch-card-icon {
+  margin-bottom: 0.45rem;
+  color: var(--vp-c-brand-1);
+  line-height: 0;
+}
+
+.arch-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+  margin-bottom: 0.25rem;
+}
+
+.arch-card-desc {
+  color: var(--vp-c-text-2);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+/* ── Reference page details/collapsibles ──────────────── */
+
+.vp-doc details {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  padding: 0;
+  margin: 0.8rem 0;
+}
+
+.vp-doc details summary {
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc details summary:hover {
+  color: var(--vp-c-brand-1);
+}
+
+.vp-doc details[open] summary {
+  border-bottom: 1px solid var(--vp-c-divider);
+  margin-bottom: 0;
+}
+
+.vp-doc details > :not(summary) {
+  padding: 0 1rem;
+}
+
+.vp-doc details > table {
+  margin: 0.5rem 1rem 1rem;
+  width: calc(100% - 2rem);
+}
+
+/* ── Footer note ───────────────────────────────────────── */
+
+.home-notes {
+  margin-top: 1.5rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--vp-c-divider);
+  color: var(--vp-c-text-2);
+  font-size: 0.92rem;
+}
+
+/* ── Responsive ────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .install-panels {
+    grid-template-columns: 1fr;
+  }
+
+  .explore-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .arch-grid {
+    grid-template-columns: 1fr;
+  }
+}

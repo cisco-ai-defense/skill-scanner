@@ -233,3 +233,8 @@ pip install httpx
 
 - [Cisco AI Defense](https://www.cisco.com/site/us/en/products/security/ai-defense/index.html)
 - [AI Defense API Documentation](https://developer.cisco.com/docs/ai-defense/)
+
+## Related Pages
+
+- [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) -- When to enable `--use-aidefense`
+- [Scanning Pipeline](/architecture/scanning-pipeline) -- How AI Defense fits into Phase 1 analysis

@@ -17,17 +17,11 @@ It provides:
 
 ## When to Use Which Interface
 
-### Prefer CLI/SDK
+::: info Quick Decision
+**CLI/SDK** — local development, one-off scans, scripted scans in the same runtime environment.
 
-- local development
-- one-off scans
-- scripted scans in the same runtime environment
-
-### Prefer API
-
-- external systems that already integrate via REST
-- web upload/review portals
-- queued or remote orchestration workflows
+**API** — external systems that already integrate via REST, web upload/review portals, queued or remote orchestration workflows.
+:::
 
 ## Practical Recommendation
 
@@ -39,5 +33,5 @@ Keep the API server available and documented as an optional interface.
 
 See:
 
-- `docs/api-server.md` for endpoint usage
-- `docs/remote-skills-analysis.md` for local-vs-remote model details
+- [API Server](/user-guide/api-server) for endpoint usage
+- [Remote Skills Analysis](/concepts/remote-skills-analysis) for local-vs-remote model details

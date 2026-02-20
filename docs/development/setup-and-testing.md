@@ -72,7 +72,7 @@ uv run pytest tests/test_scanner.py::test_scan_safe_skill -v
 uv run pytest tests/ -v --tb=short --cov=skill_scanner --cov-report=html
 ```
 
-For detailed testing requirements, see [TESTING.md](/TESTING.md).
+For detailed testing requirements, see [TESTING.md](https://github.com/cisco-ai-defense/skill-scanner/blob/main/TESTING.md).
 
 ### Code Quality
 

@@ -68,6 +68,9 @@ dmypy.json
 
 # Documentation
 docs/_build/
+docs/.vitepress/dist
+docs/.vitepress/cache
+docs/node_modules
 
 # Project-specific
 **/mcp-scanner-reference/
@@ -93,7 +96,7 @@ Thumbs.db
 .agents/
 .claude/
 .codex/
-.cursor/skills/
+.cursor/
 
 # Jupyter notebooks (local analysis)
 *.ipynb

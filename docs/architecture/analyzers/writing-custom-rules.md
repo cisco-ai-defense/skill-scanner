@@ -8,16 +8,16 @@ skill-scanner supports three rule types:
 2. **YARA rules** — binary/pattern matching for complex detection
 3. **Python rules** — programmatic logic for nuanced checks
 
-Every rule must be registered in `pack.yaml`. The pack manifest is the single source of truth for rule metadata; the rule registry audit in tests will fail if a rule exists in the codebase but has no pack entry.
+Every rule must be registered in [`pack.yaml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/packs/core/pack.yaml). The pack manifest is the single source of truth for rule metadata; the rule registry audit in tests will fail if a rule exists in the codebase but has no pack entry.
 
 ---
 
 ## Authoring Workflow (Checklist)
 
 1. Pick the rule type (`signature`, `yara`, `python`) based on detection complexity.
-2. Implement the rule in the correct directory under `skill_scanner/data/packs/core/`.
-3. Add or update the `pack.yaml` entry (`source`, `description`, `severity`, and `knobs.enabled`).
-4. Wire policy knobs in `scan_policy.py` and `default_policy.yaml` if your rule introduces new tunables.
+2. Implement the rule in the correct directory under [`skill_scanner/data/packs/core/`](https://github.com/cisco-ai-defense/skill-scanner/tree/main/skill_scanner/data/packs/core/).
+3. Add or update the [`pack.yaml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/packs/core/pack.yaml) entry (`source`, `description`, `severity`, and `knobs.enabled`).
+4. Wire policy knobs in [`scan_policy.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/core/scan_policy.py) and [`default_policy.yaml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/default_policy.yaml) if your rule introduces new tunables.
 5. Add tests that prove true positives and expected suppression behavior.
 6. Run validation before opening a PR:
    - `skill-scanner validate-rules`
@@ -27,9 +27,9 @@ Every rule must be registered in `pack.yaml`. The pack manifest is the single so
 
 ## Signature Rules
 
-**Location:** `skill_scanner/data/packs/core/signatures/`
+**Location:** [`skill_scanner/data/packs/core/signatures/`](https://github.com/cisco-ai-defense/skill-scanner/tree/main/skill_scanner/data/packs/core/signatures/)
 
-One YAML file per category (e.g., `command_injection.yaml`, `prompt_injection.yaml`). Each rule is a list item with these fields:
+One YAML file per category (e.g., [`command_injection.yaml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/packs/core/signatures/command_injection.yaml), [`prompt_injection.yaml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/packs/core/signatures/prompt_injection.yaml)). Each rule is a list item with these fields:
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -42,7 +42,7 @@ One YAML file per category (e.g., `command_injection.yaml`, `prompt_injection.ya
 | `file_types` | No | Restrict rule to `python`, `bash`, `markdown`, etc. If omitted, applies to all |
 | `remediation` | No | Guidance for fixing the issue |
 
-**Example** (from `signatures/command_injection.yaml`):
+**Example** (from [`signatures/command_injection.yaml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/packs/core/signatures/command_injection.yaml)):
 
 ```yaml
 - id: COMMAND_INJECTION_EVAL
@@ -62,7 +62,7 @@ One YAML file per category (e.g., `command_injection.yaml`, `prompt_injection.ya
 
 ## YARA Rules
 
-**Location:** `skill_scanner/data/packs/core/yara/`
+**Location:** [`skill_scanner/data/packs/core/yara/`](https://github.com/cisco-ai-defense/skill-scanner/tree/main/skill_scanner/data/packs/core/yara/)
 
 Standard `.yara` syntax. Rule names become rule IDs with a `YARA_` prefix (e.g., `rule command_injection_generic` becomes `YARA_command_injection_generic`).
 
@@ -76,7 +76,7 @@ Standard `.yara` syntax. Rule names become rule IDs with a `YARA_` prefix (e.g.,
 
 Severity and category are derived from `threat_type` at runtime. The pack.yaml entry documents the rule and may include knob defaults.
 
-**Example structure** (from `yara/command_injection_generic.yara`):
+**Example structure** (from [`yara/command_injection_generic.yara`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/packs/core/yara/command_injection_generic.yara)):
 
 ```yara
 rule command_injection_generic {
@@ -102,7 +102,7 @@ rule command_injection_generic {
 
 ## Python Rules
 
-**Location:** `skill_scanner/data/packs/core/python/`
+**Location:** [`skill_scanner/data/packs/core/python/`](https://github.com/cisco-ai-defense/skill-scanner/tree/main/skill_scanner/data/packs/core/python/)
 
 Each module defines one or more `check_*` functions. The analyzer imports and invokes these; findings are aggregated by the analyzer.
 
@@ -148,7 +148,7 @@ def check_<aspect>(skill: Skill, policy: ScanPolicy) -> list[Finding]:
 - `policy.finding_output.*` for dedupe and finding metadata behavior
 - `policy.disabled_rules` — check before emitting to respect rule disabling
 
-**Example** (from `python/file_inventory_checks.py`):
+**Example** (from [`python/file_inventory_checks.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/packs/core/python/file_inventory_checks.py)):
 
 ```python
 def check_file_inventory(skill: Skill, policy: ScanPolicy) -> list[Finding]:
@@ -176,7 +176,7 @@ def check_file_inventory(skill: Skill, policy: ScanPolicy) -> list[Finding]:
 
 ## Registering in pack.yaml
 
-Every rule must have an entry in `skill_scanner/data/packs/core/pack.yaml`.
+Every rule must have an entry in [`skill_scanner/data/packs/core/pack.yaml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/packs/core/pack.yaml).
 
 **Required fields:**
 
@@ -229,9 +229,9 @@ Tunable parameters live in policy YAML sections, not in pack.yaml. The `knobs` i
 
 To add a tunable threshold for your rule:
 
-1. Add the field to the appropriate policy dataclass in `scan_policy.py` (e.g., `FileLimitsPolicy`, `AnalysisThresholdsPolicy`).
+1. Add the field to the appropriate policy dataclass in [`scan_policy.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/core/scan_policy.py) (e.g., `FileLimitsPolicy`, `AnalysisThresholdsPolicy`).
 2. Wire it in `_from_dict` and `_to_dict`.
-3. Add it to the default policy YAML (`default_policy.yaml`).
+3. Add it to the default policy YAML ([`default_policy.yaml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/default_policy.yaml)).
 4. Use it in your Python check: `policy.file_limits.my_new_threshold`.
 
 **Available sections:**
@@ -257,7 +257,7 @@ To add a tunable threshold for your rule:
 1. **Validate rule loading and schema:** `skill-scanner validate-rules`
 2. **Run targeted rule/policy regression tests:** `uv run pytest tests/test_rule_registry.py tests/test_static_policy_integration.py -q`
 3. **Run the full suite before merge:** `make test`
-4. **Add unit tests for new behavior:** Add coverage in `tests/` (for example, `tests/test_new_detections.py` or analyzer-specific test modules).
+4. **Add unit tests for new behavior:** Add coverage in [`tests/`](https://github.com/cisco-ai-defense/skill-scanner/tree/main/tests) (for example, `tests/test_new_detections.py` or analyzer-specific test modules).
 
 ---
 
@@ -265,7 +265,7 @@ To add a tunable threshold for your rule:
 
 ```
 skill_scanner/data/packs/core/
-├── pack.yaml              # Manifest – declares all rules + metadata
+├── [pack.yaml](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/packs/core/pack.yaml)              # Manifest – declares all rules + metadata
 ├── signatures/            # Regex-based rules
 │   ├── command_injection.yaml
 │   ├── data_exfiltration.yaml
@@ -297,3 +297,9 @@ skill_scanner/data/packs/core/
     ├── manifest_checks.py
     └── trigger_checks.py
 ```
+
+## Related Pages
+
+- [Static Analyzer](/architecture/analyzers/static-analyzer) -- How custom rules are loaded and matched
+- [Threat Taxonomy](/architecture/threat-taxonomy) -- Threat categories and severity levels for rule authoring
+- [Custom Policy Configuration](/user-guide/custom-policy-configuration) -- Policy knobs that affect rule behavior

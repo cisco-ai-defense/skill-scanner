@@ -1,6 +1,6 @@
 # Meta-Analyzer
 
-The Meta-Analyzer is an optional second-pass LLM analysis feature that reviews findings from other analyzers to improve accuracy and provide actionable insights. In our testing, it significantly reduces false positives while preserving threat detection capability.
+The Meta-Analyzer is an optional second-pass LLM analysis feature that reviews findings from other analyzers and enriches results with correlation, prioritization, and remediation context.
 
 ## Overview
 
@@ -13,17 +13,18 @@ When enabled via the `--enable-meta` CLI flag or `enable_meta` API parameter, th
 - **Risk Assessment**: Overall skill verdict (SAFE/SUSPICIOUS/MALICIOUS) with reasoning
 - **Confidence Enrichment**: Adds `meta_confidence`, `meta_exploitability`, and `meta_impact` to every validated finding
 
-The meta-analyzer has full access to skill content (`SKILL.md` and code files), which helps it validate whether pattern-based detections are likely real threats.
+The meta-analyzer is given `SKILL.md` and source content within policy-controlled prompt budgets, which it uses to validate whether detections are likely true threats.
 
 ## How It Works
 
 1. **Collect Findings**: All selected analyzers (static, behavioral, LLM, etc.) run and produce findings
 2. **Aggregate Full Context**: The meta-analyzer receives:
    - All findings from other analyzers
-   - Complete SKILL.md content (up to 50KB)
-   - All code files (.py, .js, .ts, .sh, .bash) with content (up to 30KB per file, 150KB total)
+   - `SKILL.md` instruction body up to the policy-defined meta budget
+   - Code/reference files up to per-file and total meta budgets
+   - With default policy values: `60,000` chars for instruction body, `45,000` chars per code file, and `300,000` chars total (`llm_analysis.*` limits multiplied by `meta_budget_multiplier`)
 3. **Authority-Based Review**: Uses an analyzer authority hierarchy to weight findings:
-   - LLM Analyzer (highest) > Behavioral > AI Defense > Static/Pipeline/Bytecode > Trigger (lowest)
+   - LLM Analyzer (highest) > Behavioral > AI Defense > Static > Trigger (informational), with VirusTotal treated as specialized for binary reputation
 4. **Validate & Correlate**:
    - Each finding is verified against actual code content
    - Genuinely benign findings are marked as false positives
@@ -52,8 +53,8 @@ skill-scanner scan /path/to/skill --use-llm --enable-meta --format json
 ```
 
 **Requirements:**
-- **Minimum 2 analyzers**: Meta-analysis requires at least 2 analyzers (e.g., static + LLM, or behavioral + LLM). This ensures the meta-analyzer has multiple perspectives to correlate.
-- **LLM API key**: An API key must be configured for the meta-analyzer's LLM calls (see Configuration section for supported providers)
+- **Analyzer count**: CLI enforces at least 2 analyzers for meta-analysis (`_build_meta_analyzer` guard). API endpoints expose `enable_meta` and apply meta-analysis when findings exist; using multiple analyzers is still recommended for correlation quality.
+- **LLM credentials**: Configure `SKILL_SCANNER_META_LLM_API_KEY` / `SKILL_SCANNER_LLM_API_KEY`, or use a `bedrock/...` model with AWS credentials/IAM
 - **Recommended**: Use `--use-llm` with meta-analysis for best results, as LLM findings provide the semantic understanding the meta-analyzer relies on
 
 ## API Usage
@@ -107,13 +108,12 @@ export SKILL_SCANNER_META_LLM_API_VERSION="..."
 | Base URL | `SKILL_SCANNER_META_LLM_BASE_URL` → `SKILL_SCANNER_LLM_BASE_URL` |
 | API Version | `SKILL_SCANNER_META_LLM_API_VERSION` → `SKILL_SCANNER_LLM_API_VERSION` |
 
-### Special Cases
+### Auth Behavior
 
 | Provider | Auth Method | Notes |
 |----------|-------------|-------|
-| Google Vertex AI | Service account | Uses `GOOGLE_APPLICATION_CREDENTIALS` |
-| Ollama | None | Local, no API key needed |
-| All others | `SKILL_SCANNER_LLM_API_KEY` | Including Bedrock, Azure, OpenAI, Anthropic, Gemini |
+| Bedrock (`bedrock/...` model) | AWS credentials/IAM **or** API key | API key is optional when Bedrock auth is available |
+| Non-Bedrock models | `SKILL_SCANNER_META_LLM_API_KEY` or `SKILL_SCANNER_LLM_API_KEY` | Required by current meta-analyzer validation logic |
 
 ### Setup Examples
 
@@ -164,19 +164,17 @@ export SKILL_SCANNER_LLM_MODEL="gemini/gemini-1.5-pro"
 
 **AWS Bedrock:**
 ```bash
-export SKILL_SCANNER_LLM_API_KEY="bedrock-api-key-..."
 export SKILL_SCANNER_LLM_MODEL="bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"
-```
-
-**Google Vertex AI (uses service account):**
-```bash
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
-export SKILL_SCANNER_LLM_MODEL="vertex_ai/gemini-1.5-pro"
+# Optional if using bearer auth:
+export SKILL_SCANNER_LLM_API_KEY="bedrock-api-key-..."
+# Or use AWS credentials/profile/role:
+export AWS_REGION="us-east-1"
+export AWS_PROFILE="security-prod"
 ```
 
 ## Analyzer Authority Hierarchy
 
-The meta-analyzer weights findings based on which analyzer produced them:
+The meta-analysis system prompt instructs the model to apply this authority order while reviewing findings:
 
 | Analyzer | Authority | Best At |
 |----------|-----------|---------|
@@ -184,8 +182,6 @@ The meta-analyzer weights findings based on which analyzer produced them:
 | Behavioral | High | Dataflow tracking, source→sink analysis, multi-file chains |
 | AI Defense | Medium-High | Known attack patterns, threat intelligence |
 | Static | Medium | Pattern matching, hardcoded secrets, obvious violations |
-| Pipeline | Medium | Command pipeline taint flows, data exfiltration chains |
-| Bytecode | Medium | Python .pyc integrity, source/bytecode mismatch |
 | Trigger | Lower | Description specificity (informational) |
 | VirusTotal | Specialized | Binary file malware (not code) |
 
@@ -247,12 +243,12 @@ This preserves the granular evidence from each analyzer (line numbers, exact pat
 
 ### Visual Reports
 
-Correlation groups can be visualized as Mermaid attack-path diagrams in two formats:
+Correlation groups are rendered in two output formats:
 
-- **Markdown** (`--format markdown`): Each correlation group renders as a `mermaid` code block showing source files → detections → attack outcome, followed by a findings table and remediation guidance.
+- **Markdown** (`--format markdown`): Correlation groups render with per-group findings tables, remediation text, and pipeline flow chains as ASCII arrows when available.
 - **HTML** (`--format html`): A self-contained, interactive HTML report with:
   - Risk verdict banner and severity bar
-  - Collapsible correlation group cards with embedded Mermaid diagrams
+  - Collapsible correlation group cards with inline pipeline flow steps
   - Prioritized recommendation cards with effort badges
   - Sortable findings table
 
@@ -289,38 +285,7 @@ uv run python evals/runners/eval_runner.py --compare
 uv run python evals/runners/eval_runner.py --compare --show-details
 ```
 
-### Sample Comparison Output
-
-```
-======================================================================
-COMPARISON RESULTS
-======================================================================
-
-Metric                       Without Meta       With Meta       Change
-----------------------------------------------------------------------
-True Positives                         40              16          -24
-False Positives                        17              11           -6
-----------------------------------------------------------------------
-Meta-Analyzer Impact:
-  Total findings filtered: 50
-  Total findings validated: 27
-  Noise reduction rate: 64.9%
-
-======================================================================
-SUMMARY
-======================================================================
-
-Safe Skills Detection:   2/2 -> 2/2
-Unsafe Skills Detection: 9/9 -> 9/9
-
-Summary:
-  Meta-Analyzer filtered 50 low-value findings
-  while maintaining 9/9 unsafe skill detection rate
-
-  Meta-analyzer improved signal-to-noise without reducing unsafe-skill detection in this sample run.
-```
-
-The comparison shows that while raw metrics like "true positives" decrease (because redundant pattern matches are consolidated), the threat detection capability is preserved. Results may vary depending on your specific skills and threat patterns.
+The comparison command prints per-run metrics (`true positives`, `false positives`, validated/filtered totals, and safe/unsafe detection summary) for your own evaluation set.
 
 ## Best Practices
 
@@ -328,7 +293,7 @@ The comparison shows that while raw metrics like "true positives" decrease (beca
 2. **Include LLM analyzer**: The LLM analyzer provides the semantic understanding meta-analysis relies on
 3. **Review filtered findings**: Check verbose output for false positives that were filtered
 4. **Configure appropriate model**: Use a capable model (GPT-4, Claude 3.5+) for best results
-5. **Consider latency**: Meta-analysis adds one LLM call, increasing scan time by ~5-15 seconds
+5. **Consider latency**: Meta-analysis adds one additional LLM request per skill
 6. **Use --compare for validation**: Run the eval comparison to verify meta-analyzer effectiveness on your skills
 
 ## Troubleshooting
@@ -336,7 +301,7 @@ The comparison shows that while raw metrics like "true positives" decrease (beca
 **Meta-analyzer not running:**
 - Ensure `--enable-meta` flag is provided
 - Verify at least 2 analyzers are enabled
-- Check that LLM API key is configured
+- Check that LLM credentials are configured (`SKILL_SCANNER_META_LLM_API_KEY` or `SKILL_SCANNER_LLM_API_KEY`), or use Bedrock model + AWS credentials
 - Look for "Using Meta-Analyzer" in output
 
 **No findings after meta-analysis:**
@@ -350,6 +315,12 @@ The comparison shows that while raw metrics like "true positives" decrease (beca
 - For batch scans, meta-analysis runs per-skill (not aggregated)
 
 **Different results than expected:**
-- Meta-analyzer uses authority hierarchy - LLM findings take precedence
+- The model is prompted with an analyzer authority hierarchy
 - Pattern-only matches from static analyzer may be filtered as FPs
 - Check `meta_confidence_reason` for explanation
+
+## Related Pages
+
+- [LLM Analyzer](/architecture/analyzers/llm-analyzer) -- Primary semantic analysis (runs before meta)
+- [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) -- When to enable `--enable-meta`
+- [Scanning Pipeline](/architecture/scanning-pipeline) -- How meta-analysis fits into the two-phase pipeline
