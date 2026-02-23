@@ -26,6 +26,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from .. import __version__
 from ..core.analyzer_factory import build_analyzers
 from ..core.loader import SkillLoadError
 from ..core.reporters.html_reporter import HTMLReporter
