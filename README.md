@@ -30,17 +30,14 @@ Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agen
 
 ## Scope and Limitations
 
-> [!WARNING]
-> Skill Scanner is a **best-effort** detection tool -- not a guarantee of safety. Like antivirus software, no scanner can catch every possible threat: the input space for adversarial AI agent skills is unbounded and continuously evolving.
->
-> **What this means in practice:**
->
-> - **No findings ≠ no risk.** A scan that returns zero results means the scanner did not detect any known threat patterns. It does not certify that a skill is safe, benign, or free of all vulnerabilities. The scan output uses neutral language like "No findings" rather than "safe" or "clean" to reflect this.
-> - **Detection is not comprehensive.** The scanner uses multiple engines (regex/YARA signatures, LLM semantic analysis, behavioral dataflow, and optional cloud services), custom rule packs, and configurable scan policies. These layers maximize coverage of probable attack patterns, but they cannot cover every conceivable technique -- especially novel or zero-day attacks.
-> - **False positives and false negatives are expected.** The meta-analyzer and consensus modes reduce noise, but no configuration eliminates all false positives or catches all true positives. Tune the [scan policy](docs/scan-policy.md) to your risk tolerance.
-> - **Human review is still essential.** Automated scanning is one layer of a defense-in-depth strategy. Critical deployments should pair scanner results with manual code review and threat modeling.
->
-> We are transparent about these boundaries because security tools that overstate their coverage create a false sense of safety. The goal is to give you the best available signal, not a rubber stamp.
+Skill Scanner is a detection tool. It identifies known and probable risk patterns, but it does not certify security.
+
+**Key limitations:**
+
+- **No findings ≠ no risk.** A scan that returns "No findings" indicates that no known threat patterns were detected. It does not guarantee that a skill is secure, benign, or free of vulnerabilities.
+- **Coverage is inherently incomplete.** The scanner combines signature-based detection, LLM-based semantic analysis, behavioral dataflow analysis, optional cloud services, and configurable rule packs. While this approach improve coverage, no automated tool can detect every technique, especially novel or zero-day attacks.
+- **False positives and false negatives can occur.** Consensus modes and meta-analysis reduce noise, but no configuration eliminates all incorrect classifications. Tune the [scan policy](docs/scan-policy.md) to your risk tolerance.
+- **Human review remains essential.** Automated scanning is one component of a defense-in-depth strategy. High-risk or production deployments should pair scanner results with manual code review and/or  threat modeling.
 
 ---
 
