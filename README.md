@@ -36,7 +36,7 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 
 - **No findings ≠ no risk.** A scan that returns "No findings" indicates that no known threat patterns were detected. It does not guarantee that a skill is secure, benign, or free of vulnerabilities.
 - **Coverage is inherently incomplete.** The scanner combines signature-based detection, LLM-based semantic analysis, behavioral dataflow analysis, optional cloud services, and configurable rule packs. While this approach improve coverage, no automated tool can detect every technique, especially novel or zero-day attacks.
-- **False positives and false negatives can occur.** Consensus modes and meta-analysis reduce noise, but no configuration eliminates all incorrect classifications. Tune the [scan policy](docs/scan-policy.md) to your risk tolerance.
+- **False positives and false negatives can occur.** Consensus modes and meta-analysis reduce noise, but no configuration eliminates all incorrect classifications. Tune the [scan policy](docs/user-guide/custom-policy-configuration.md) to your risk tolerance.
 - **Human review remains essential.** Automated scanning is one component of a defense-in-depth strategy. High-risk or production deployments should pair scanner results with manual code review and/or  threat modeling.
 
 ---
@@ -45,17 +45,17 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 
 | Guide | Description |
 |-------|-------------|
-| [Quick Start](docs/quickstart.md) | Get started in 5 minutes |
-| [Architecture](docs/architecture.md) | System design and components |
-| [Threat Taxonomy](docs/threat-taxonomy.md) | Complete AITech threat taxonomy with examples |
-| [LLM Analyzer](docs/llm-analyzer.md) | LLM configuration and usage |
-| [Meta-Analyzer](docs/meta-analyzer.md) | False positive filtering and prioritization |
-| [Behavioral Analyzer](docs/behavioral-analyzer.md) | Dataflow analysis details |
-| [Scan Policy](docs/scan-policy.md) | Custom policies, presets, and tuning guide |
-| [Policy Quick Reference](docs/POLICY.md) | Compact reference for policy sections and knobs |
-| [Rule Authoring](docs/AUTHORING.md) | How to add signature, YARA, and Python rules |
-| [API Reference](docs/api-server.md) | REST API documentation |
-| [Development Guide](docs/developing.md) | Contributing and development setup |
+| [Quick Start](docs/getting-started/quick-start.md) | Get started in 5 minutes |
+| [Architecture](docs/architecture/index.md) | System design and components |
+| [Threat Taxonomy](docs/architecture/threat-taxonomy.md) | Complete AITech threat taxonomy with examples |
+| [LLM Analyzer](docs/architecture/analyzers/llm-analyzer.md) | LLM configuration and usage |
+| [Meta-Analyzer](docs/architecture/analyzers/meta-analyzer.md) | False positive filtering and prioritization |
+| [Behavioral Analyzer](docs/architecture/analyzers/behavioral-analyzer.md) | Dataflow analysis details |
+| [Scan Policy](docs/user-guide/custom-policy-configuration.md) | Custom policies, presets, and tuning guide |
+| [Policy Quick Reference](docs/reference/policy-quick-reference.md) | Compact reference for policy sections and knobs |
+| [Rule Authoring](docs/architecture/analyzers/writing-custom-rules.md) | How to add signature, YARA, and Python rules |
+| [API Reference](docs/user-guide/api-server.md) | REST API documentation |
+| [Development Guide](docs/development/setup-and-testing.md) | Contributing and development setup |
 
 ---
 
@@ -164,7 +164,7 @@ skill-scanner configure-policy
 ```
 
 **LLM provider note:** `--llm-provider` currently accepts `anthropic` or `openai`.
-For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, set provider-specific model strings and environment variables (see `docs/llm-analyzer.md`).
+For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, set provider-specific model strings and environment variables (see [LLM Analyzer docs](docs/architecture/analyzers/llm-analyzer.md)).
 
 ### Python SDK
 
