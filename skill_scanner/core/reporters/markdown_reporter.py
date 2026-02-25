@@ -185,6 +185,17 @@ class MarkdownReporter:
                     lines.extend(self._format_finding(finding, indent=1))
                     lines.append("")
 
+        if report.cross_skill_findings:
+            lines.append("\n---\n")
+            lines.append("### Cross-Skill Findings")
+            lines.append("")
+            lines.append(f"- **Findings:** {len(report.cross_skill_findings)}")
+            lines.append("")
+            if self.detailed:
+                for finding in report.cross_skill_findings:
+                    lines.extend(self._format_finding(finding, indent=1))
+                    lines.append("")
+
         return "\n".join(lines)
 
     def _format_risk_assessment(self, meta: dict[str, Any]) -> list[str]:

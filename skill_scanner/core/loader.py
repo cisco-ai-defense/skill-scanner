@@ -20,10 +20,12 @@ Skill package loader and SKILL.md parser.
 
 import logging
 import re
+import sys
 from pathlib import Path
 
 import frontmatter
 
+from ..utils.file_utils import get_file_type
 from .exceptions import SkillLoadError
 from .models import Skill, SkillFile, SkillManifest
 
@@ -41,22 +43,18 @@ class SkillLoader:
     - assets/ (optional): Templates, images, and other resources
     """
 
-    # File type mappings
-    PYTHON_EXTENSIONS = {".py"}
-    BASH_EXTENSIONS = {".sh", ".bash"}
-    JAVASCRIPT_EXTENSIONS = {".js", ".mjs", ".cjs"}
-    TYPESCRIPT_EXTENSIONS = {".ts", ".tsx"}
-    MARKDOWN_EXTENSIONS = {".md", ".markdown"}
-    BINARY_EXTENSIONS = {".exe", ".so", ".dylib", ".dll", ".bin"}
-
-    def __init__(self, max_file_size_mb: int = 10):
+    def __init__(self, max_file_size_mb: int = 10, *, max_file_size_bytes: int | None = None):
         """
         Initialize skill loader.
 
         Args:
-            max_file_size_mb: Maximum file size to read in MB
+            max_file_size_mb: Maximum file size to read in MB (used if max_file_size_bytes not set)
+            max_file_size_bytes: Maximum file size in bytes (takes precedence over max_file_size_mb)
         """
-        self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
+        if max_file_size_bytes is not None:
+            self.max_file_size_bytes = max_file_size_bytes
+        else:
+            self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
 
     def load_skill(self, skill_directory: str | Path, *, lenient: bool = False) -> Skill:
         """
@@ -215,9 +213,18 @@ class SkillLoader:
             List of SkillFile objects
         """
         files = []
+        skill_root = skill_directory.resolve()
 
         for path in skill_directory.rglob("*"):
             if not path.is_file():
+                continue
+            if path.is_symlink():
+                continue
+            try:
+                resolved = path.resolve()
+                if not resolved.is_relative_to(skill_root):
+                    continue
+            except (OSError, ValueError):
                 continue
 
             # Skip .git/ directory only (version control metadata, not an attack vector).
@@ -231,7 +238,7 @@ class SkillLoader:
                 continue
 
             relative_path = str(path.relative_to(skill_directory))
-            file_type = self._determine_file_type(path)
+            file_type = get_file_type(path)
             size_bytes = path.stat().st_size
 
             # Read content if not too large and not binary
@@ -254,33 +261,6 @@ class SkillLoader:
             files.append(skill_file)
 
         return files
-
-    def _determine_file_type(self, path: Path) -> str:
-        """
-        Determine the type of a file based on extension.
-
-        Args:
-            path: File path
-
-        Returns:
-            File type string
-        """
-        suffix = path.suffix.lower()
-
-        if suffix in self.PYTHON_EXTENSIONS:
-            return "python"
-        elif suffix in self.BASH_EXTENSIONS:
-            return "bash"
-        elif suffix in self.JAVASCRIPT_EXTENSIONS:
-            return "javascript"
-        elif suffix in self.TYPESCRIPT_EXTENSIONS:
-            return "typescript"
-        elif suffix in self.MARKDOWN_EXTENSIONS:
-            return "markdown"
-        elif suffix in self.BINARY_EXTENSIONS:
-            return "binary"
-        else:
-            return "other"
 
     def _extract_referenced_files(self, instruction_body: str) -> list[str]:
         """
@@ -333,9 +313,31 @@ class SkillLoader:
 
         # Match file paths in code blocks that look like references
         code_file_refs = re.findall(r"(?:from|import)\s+([A-Za-z0-9_]+)\s", instruction_body)
-        # Only add if it looks like a local module (not standard lib)
+        stdlib_names = getattr(sys, "stdlib_module_names", set())
+        KNOWN_THIRD_PARTY = {
+            "requests",
+            "numpy",
+            "pandas",
+            "flask",
+            "django",
+            "fastapi",
+            "pydantic",
+            "boto3",
+            "httpx",
+            "aiohttp",
+            "celery",
+            "sqlalchemy",
+            "pytest",
+            "click",
+            "rich",
+            "typer",
+            "litellm",
+            "openai",
+            "anthropic",
+        }
+        skip_modules = stdlib_names | KNOWN_THIRD_PARTY
         for ref in code_file_refs:
-            if not ref.startswith(("os", "sys", "re", "json", "yaml", "typing")):
+            if ref.lower() not in skip_modules:
                 references.append(f"{ref}.py")
 
         # Match references/* or assets/* patterns
@@ -371,11 +373,33 @@ class SkillLoader:
             import_patterns = re.findall(r"^from\s+([A-Za-z0-9_.]+)\s+import", content, re.MULTILINE)
             relative_imports = re.findall(r"^from\s+\.([A-Za-z0-9_.]*)\s+import", content, re.MULTILINE)
 
+            stdlib_names = getattr(sys, "stdlib_module_names", set())
+            _known_3p = {
+                "requests",
+                "numpy",
+                "pandas",
+                "flask",
+                "django",
+                "fastapi",
+                "pydantic",
+                "boto3",
+                "httpx",
+                "aiohttp",
+                "celery",
+                "sqlalchemy",
+                "pytest",
+                "click",
+                "rich",
+                "typer",
+                "litellm",
+                "openai",
+                "anthropic",
+            }
+            skip_modules = stdlib_names | _known_3p
             for imp in import_patterns:
-                # Only include if it looks like a local module
-                if not imp.startswith(("os", "sys", "re", "json", "pathlib", "typing", "collections")):
-                    parts = imp.split(".")
-                    references.append(f"{parts[0]}.py")
+                top_module = imp.split(".")[0]
+                if top_module.lower() not in skip_modules:
+                    references.append(f"{top_module}.py")
 
             for imp in relative_imports:
                 if imp:
@@ -389,16 +413,19 @@ class SkillLoader:
         return list(set(references))
 
 
-def load_skill(skill_directory: str | Path, max_file_size_mb: int = 10) -> Skill:
+def load_skill(
+    skill_directory: str | Path, max_file_size_mb: int = 10, *, max_file_size_bytes: int | None = None
+) -> Skill:
     """
     Convenience function to load a skill package.
 
     Args:
         skill_directory: Path to skill directory
-        max_file_size_mb: Maximum file size to read
+        max_file_size_mb: Maximum file size to read in MB (used if max_file_size_bytes not set)
+        max_file_size_bytes: Maximum file size in bytes (takes precedence over max_file_size_mb)
 
     Returns:
         Loaded Skill object
     """
-    loader = SkillLoader(max_file_size_mb=max_file_size_mb)
+    loader = SkillLoader(max_file_size_mb=max_file_size_mb, max_file_size_bytes=max_file_size_bytes)
     return loader.load_skill(skill_directory)

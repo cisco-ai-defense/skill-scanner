@@ -120,6 +120,9 @@ The table below highlights the key differences between the three presets. Values
 | **Max name length** | 48 | 64 | 128 |
 | **Max description length** | 512 | 1024 | 4096 |
 | **Min description length** | 30 | 20 | 10 |
+| **Max YARA scan file size** | 20 MB | 50 MB | 100 MB |
+| **Max loader file size** | 5 MB | 10 MB | 20 MB |
+| **Max regex pattern length** | 500 | 1000 | 2000 |
 | **Zero-width threshold (with decode)** | 20 | 50 | 100 |
 | **Zero-width threshold (alone)** | 100 | 200 | 500 |
 | **Analyzability LOW risk** | 95% | 90% | 80% |
@@ -358,9 +361,13 @@ file_limits:
   max_name_length: 64           # Skill name character limit
   max_description_length: 1024  # Skill description character limit
   min_description_length: 20    # Below this → vague description warning
+  max_yara_scan_file_size_bytes: 52428800  # 50 MB — YARA binary scan limit
+  max_loader_file_size_bytes: 10485760     # 10 MB — content loader limit
 ```
 
 **Impact:** Controls when inventory-related rules fire. Larger orgs or monorepo skills may need higher limits.
+- `max_yara_scan_file_size_bytes`: Binary files above this size are skipped during YARA scanning (default 50 MB). Prevents OOM on very large files.
+- `max_loader_file_size_bytes`: Files above this size are not loaded for content analysis (default 10 MB). Configures the content loader limit separately from the OVERSIZED_FILE threshold.
 
 ### analysis_thresholds
 
@@ -379,12 +386,14 @@ analysis_thresholds:
   cyrillic_cjk_min_chars: 10            # Unicode steg suppression threshold
   homoglyph_filter_math_context: true   # Suppress math/scientific contexts
   homoglyph_math_aliases: ["COMMON", "GREEK"]
+  max_regex_pattern_length: 1000        # Max chars for user-supplied regex (ReDoS protection)
 ```
 
 **Impact:**
 - `zerowidth_*`: Controls when the Unicode steganography detector fires. Lower values are more sensitive (stricter).
 - `analyzability_*`: Controls the risk-level classification based on how much of the skill can be statically analyzed. Higher values are harder to achieve (stricter).
 - `homoglyph_*`: Reduces false positives in formulas and scientific notation while keeping suspicious confusable text detections.
+- `max_regex_pattern_length`: Maximum length for user-supplied regex patterns in policy (ReDoS protection). Patterns longer than this limit are silently skipped.
 
 ### sensitive_files
 

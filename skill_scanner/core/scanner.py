@@ -141,7 +141,8 @@ class SkillScanner:
         else:
             self.analyzers = analyzers
 
-        self.loader = SkillLoader()
+        loader_max_bytes = self.policy.file_limits.max_loader_file_size_bytes
+        self.loader = SkillLoader(max_file_size_bytes=loader_max_bytes)
         self.content_extractor = ContentExtractor()
 
     def scan_skill(self, skill_directory: str | Path, *, lenient: bool = False) -> ScanResult:
@@ -697,11 +698,11 @@ class SkillScanner:
                 continue
 
         # Perform cross-skill analysis if requested
+        overlap_findings: list[Finding] = []
+        cross_findings: list[Finding] = []
         if check_overlap and len(loaded_skills) > 1:
             try:
                 overlap_findings = self._check_description_overlap(loaded_skills)
-                if overlap_findings and report.scan_results:
-                    report.scan_results[0].findings.extend(overlap_findings)
             except Exception as e:
                 logger.error("Cross-skill description overlap check failed: %s", e)
 
@@ -710,12 +711,15 @@ class SkillScanner:
 
                 cross_analyzer = CrossSkillScanner()
                 cross_findings = cross_analyzer.analyze_skill_set(loaded_skills)
-                if cross_findings and report.scan_results:
-                    report.scan_results[0].findings.extend(cross_findings)
             except ImportError:
                 pass
             except Exception as e:
                 logger.error("Cross-skill pattern detection failed: %s", e)
+
+        if overlap_findings or cross_findings:
+            all_cross_findings = list(overlap_findings or []) + list(cross_findings or [])
+            if all_cross_findings:
+                report.add_cross_skill_findings(all_cross_findings)
 
         return report
 
@@ -739,9 +743,10 @@ class SkillScanner:
                 similarity = self._jaccard_similarity(skill_a.description, skill_b.description)
 
                 if similarity > 0.7:
+                    digest = hashlib.sha256((skill_a.name + skill_b.name).encode()).hexdigest()[:8]
                     findings.append(
                         Finding(
-                            id=f"OVERLAP_{hash(skill_a.name + skill_b.name) & 0xFFFFFFFF:08x}",
+                            id=f"OVERLAP_{digest}",
                             rule_id="TRIGGER_OVERLAP_RISK",
                             category=ThreatCategory.SOCIAL_ENGINEERING,
                             severity=Severity.MEDIUM,
@@ -764,9 +769,10 @@ class SkillScanner:
                         )
                     )
                 elif similarity > 0.5:
+                    digest = hashlib.sha256((skill_a.name + skill_b.name).encode()).hexdigest()[:8]
                     findings.append(
                         Finding(
-                            id=f"OVERLAP_WARN_{hash(skill_a.name + skill_b.name) & 0xFFFFFFFF:08x}",
+                            id=f"OVERLAP_WARN_{digest}",
                             rule_id="TRIGGER_OVERLAP_WARNING",
                             category=ThreatCategory.SOCIAL_ENGINEERING,
                             severity=Severity.LOW,

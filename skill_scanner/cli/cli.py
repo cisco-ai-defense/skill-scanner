@@ -295,6 +295,7 @@ def scan_command(args: argparse.Namespace) -> int:
             status("Running meta-analysis to filter false positives...")
             try:
                 skill = scanner.loader.load_skill(skill_dir, lenient=lenient)
+                original_count = len(result.findings)
                 meta_result = asyncio.run(
                     meta_analyzer.analyze_with_findings(
                         skill=skill, findings=result.findings, analyzers_used=result.analyzers_used
@@ -317,7 +318,6 @@ def scan_command(args: argparse.Namespace) -> int:
                     result.scan_metadata["meta_risk_assessment"] = meta_result.overall_risk_assessment
 
                 fp_count = len(meta_result.false_positives)
-                original_count = len(result.findings)
                 retained = original_count - fp_count
                 new = len(meta_result.missed_threats)
                 corr = len(meta_result.correlations)
@@ -427,16 +427,18 @@ def scan_all_command(args: argparse.Namespace) -> int:
         if not getattr(args, "verbose", False):
             for result in report.scan_results:
                 result.findings = [f for f in result.findings if not f.metadata.get("meta_false_positive", False)]
+            report.cross_skill_findings = [
+                f for f in report.cross_skill_findings if not f.metadata.get("meta_false_positive", False)
+            ]
 
         # Recalculate report totals after meta-analysis and FP stripping
-        report.total_findings = sum(len(r.findings) for r in report.scan_results)
-        report.critical_count = sum(
-            1 for r in report.scan_results for f in r.findings if f.severity.value == "CRITICAL"
-        )
-        report.high_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "HIGH")
-        report.medium_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "MEDIUM")
-        report.low_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "LOW")
-        report.info_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "INFO")
+        all_findings = [f for r in report.scan_results for f in r.findings] + report.cross_skill_findings
+        report.total_findings = len(all_findings)
+        report.critical_count = sum(1 for f in all_findings if f.severity.value == "CRITICAL")
+        report.high_count = sum(1 for f in all_findings if f.severity.value == "HIGH")
+        report.medium_count = sum(1 for f in all_findings if f.severity.value == "MEDIUM")
+        report.low_count = sum(1 for f in all_findings if f.severity.value == "LOW")
+        report.info_count = sum(1 for f in all_findings if f.severity.value == "INFO")
         report.safe_count = sum(1 for r in report.scan_results if r.is_safe)
 
         _write_output(args, _format_output(args, report))
@@ -602,6 +604,11 @@ def _generate_multi_skill_summary(report) -> str:
     for r in report.scan_results:
         tag = "[OK]" if r.is_safe else "[FAIL]"
         lines.append(f"  {tag} {r.skill_name} - {len(r.findings)} findings ({r.max_severity.value})")
+    if report.cross_skill_findings:
+        lines.append("")
+        lines.append("Cross-Skill Findings:")
+        for f in report.cross_skill_findings:
+            lines.append(f"  [{f.severity.value}] {f.title}")
     if report.skills_skipped:
         lines.append("")
         lines.append("Skipped Skills:")
