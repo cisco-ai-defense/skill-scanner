@@ -1,0 +1,31 @@
+# Auto-fix formatting on all PRs (including from forks) using autofix.ci.
+# https://autofix.ci/setup
+#
+# autofix.ci pushes fix commits via its own GitHub App credentials,
+# bypassing the read-only GITHUB_TOKEN limitation on fork PRs.
+
+name: autofix.ci  # needed to securely identify the workflow
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv run ruff check --fix-only .
+      - run: uv run ruff format .
+
+      - uses: autofix-ci/action@7a166d7532b277f34e16238930461bf77f9d7ed8

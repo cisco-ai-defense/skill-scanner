@@ -44,7 +44,7 @@ uv run pre-commit install
 
 This ensures code quality checks (formatting, trailing whitespace, secret detection, etc.) run automatically before each commit. **This step is required** — the CI lint job runs the same hooks and will fail if your code isn't formatted.
 
-> **Fork contributors:** If you skip this step, [pre-commit.ci](https://pre-commit.ci/) will auto-fix formatting on your PR. But installing hooks locally avoids the extra round-trip.
+> **Fork contributors:** If you skip this step, [autofix.ci](https://autofix.ci/) will auto-fix formatting and push a commit to your PR. But installing hooks locally avoids the extra round-trip.
 
 ### 5. Verify Setup
 

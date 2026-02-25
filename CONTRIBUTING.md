@@ -57,8 +57,9 @@ uv run pre-commit install        # one-time setup
 uv run pre-commit run --all-files # check everything now
 ```
 
-If you forget, [pre-commit.ci](https://pre-commit.ci/) will auto-fix formatting on
-your PR and push a commit. However, running hooks locally avoids the extra round-trip.
+If you forget, [autofix.ci](https://autofix.ci/) will auto-fix formatting and push a
+commit to your PR — including PRs from forks. Running hooks locally avoids the extra
+round-trip.
 
 ### Pull Request Checklist
 
