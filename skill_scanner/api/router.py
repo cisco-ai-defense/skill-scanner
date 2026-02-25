@@ -314,19 +314,23 @@ def _recompute_report_summary(report) -> None:
     report.info_count = 0
     report.safe_count = sum(1 for r in report.scan_results if r.is_safe)
 
-    for scan_result in report.scan_results:
-        for finding in scan_result.findings:
-            sev = getattr(finding.severity, "value", str(finding.severity)).upper()
-            if sev == "CRITICAL":
-                report.critical_count += 1
-            elif sev == "HIGH":
-                report.high_count += 1
-            elif sev == "MEDIUM":
-                report.medium_count += 1
-            elif sev == "LOW":
-                report.low_count += 1
-            elif sev == "INFO":
-                report.info_count += 1
+    all_findings = [f for r in report.scan_results for f in r.findings]
+    cross = getattr(report, "cross_skill_findings", None) or []
+    report.total_findings += len(cross)
+    all_findings.extend(cross)
+
+    for finding in all_findings:
+        sev = getattr(finding.severity, "value", str(finding.severity)).upper()
+        if sev == "CRITICAL":
+            report.critical_count += 1
+        elif sev == "HIGH":
+            report.high_count += 1
+        elif sev == "MEDIUM":
+            report.medium_count += 1
+        elif sev == "LOW":
+            report.low_count += 1
+        elif sev == "INFO":
+            report.info_count += 1
 
 
 # ---------------------------------------------------------------------------
