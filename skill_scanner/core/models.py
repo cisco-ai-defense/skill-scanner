@@ -19,7 +19,7 @@ Data models for agent skills and security findings.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -213,7 +213,7 @@ class ScanResult:
     scan_duration_seconds: float = 0.0
     analyzers_used: list[str] = field(default_factory=list)
     analyzers_failed: list[dict[str, str]] = field(default_factory=list)
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     analyzability_score: float | None = None
     analyzability_details: dict[str, Any] | None = None
     scan_metadata: dict[str, Any] | None = None
@@ -280,15 +280,12 @@ class Report:
     low_count: int = 0
     info_count: int = 0
     safe_count: int = 0
-    timestamp: datetime = field(default_factory=datetime.now)
+    skills_skipped: list[dict[str, str]] = field(default_factory=list)
+    cross_skill_findings: list[Finding] = field(default_factory=list)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
-    def add_scan_result(self, result: ScanResult):
-        """Add a scan result and update counters."""
-        self.scan_results.append(result)
-        self.total_skills_scanned += 1
-        self.total_findings += len(result.findings)
-
-        for finding in result.findings:
+    def _increment_severity_counters(self, findings: list[Finding]) -> None:
+        for finding in findings:
             if finding.severity == Severity.CRITICAL:
                 self.critical_count += 1
             elif finding.severity == Severity.HIGH:
@@ -300,12 +297,25 @@ class Report:
             elif finding.severity == Severity.INFO:
                 self.info_count += 1
 
+    def add_scan_result(self, result: ScanResult):
+        """Add a scan result and update counters."""
+        self.scan_results.append(result)
+        self.total_skills_scanned += 1
+        self.total_findings += len(result.findings)
+        self._increment_severity_counters(result.findings)
+
         if result.is_safe:
             self.safe_count += 1
 
+    def add_cross_skill_findings(self, findings: list[Finding]) -> None:
+        """Add cross-skill findings without inflating skill counts."""
+        self.cross_skill_findings.extend(findings)
+        self.total_findings += len(findings)
+        self._increment_severity_counters(findings)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert report to dictionary."""
-        return {
+        result: dict[str, Any] = {
             "summary": {
                 "total_skills_scanned": self.total_skills_scanned,
                 "total_findings": self.total_findings,
@@ -319,5 +329,10 @@ class Report:
                 },
                 "timestamp": self.timestamp.isoformat(),
             },
-            "results": [result.to_dict() for result in self.scan_results],
+            "results": [r.to_dict() for r in self.scan_results],
         }
+        if self.cross_skill_findings:
+            result["cross_skill_findings"] = [f.to_dict() for f in self.cross_skill_findings]
+        if self.skills_skipped:
+            result["summary"]["skills_skipped"] = self.skills_skipped
+        return result

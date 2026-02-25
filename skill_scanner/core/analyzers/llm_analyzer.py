@@ -29,8 +29,10 @@ Production analyzer with:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ...core.models import Finding, Severity, Skill, ThreatCategory
@@ -283,8 +285,12 @@ class LLMAnalyzer(BaseAnalyzer):
         Returns:
             List of security findings
         """
-        # Run async analysis in event loop
-        return asyncio.run(self.analyze_async(skill))
+        try:
+            asyncio.get_running_loop()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(asyncio.run, self.analyze_async(skill)).result()
+        except RuntimeError:
+            return asyncio.run(self.analyze_async(skill))
 
     async def analyze_async(self, skill: Skill) -> list[Finding]:
         """
@@ -555,21 +561,18 @@ The structured output schema will enforce these exact codes."""
                 title = llm_finding.get("title", "")
                 description = llm_finding.get("description", "")
 
-                # Check if this is about reading internal/referenced files
+                desc_lower = description.lower()
                 is_internal_file_reading = (
-                    aitech_code == "AITech-1.2"  # Indirect prompt injection
+                    aitech_code == "AITech-1.2"
                     and category == ThreatCategory.PROMPT_INJECTION
                     and (
-                        "local files" in description.lower()
-                        or "referenced files" in description.lower()
-                        or "external guideline files" in description.lower()
-                        or "unvalidated local files" in description.lower()
-                        or "transitive trust" in description.lower()
-                        and "external" not in description.lower()
+                        "local files" in desc_lower
+                        or "referenced files" in desc_lower
+                        or "external guideline files" in desc_lower
+                        or "unvalidated local files" in desc_lower
+                        or ("transitive trust" in desc_lower and "external" not in desc_lower)
                     )
-                    and
-                    # Check if referenced files are internal (within skill package)
-                    all(self._is_internal_file(skill, ref_file) for ref_file in skill.referenced_files)
+                    and all(self._is_internal_file(skill, ref_file) for ref_file in skill.referenced_files)
                 )
 
                 if is_internal_file_reading:
@@ -598,7 +601,19 @@ The structured output schema will enforce these exact codes."""
                     else:
                         file_path = location
 
-                # If LLM didn't provide a usable location, infer from description/title/snippet
+                if file_path:
+                    file_path = file_path.replace("\\", "/").lstrip("/")
+                    if ".." in file_path:
+                        file_path = None
+                    elif hasattr(skill, "files") and skill.files:
+                        known_paths = {
+                            f.relative_path
+                            for f in skill.files
+                            if hasattr(f, "relative_path") and isinstance(getattr(f, "relative_path", None), str)
+                        }
+                        if known_paths and file_path not in known_paths:
+                            file_path = None
+
                 if not file_path:
                     file_path = self._infer_file_path(skill, title, description, llm_finding.get("evidence", ""))
 
@@ -679,7 +694,6 @@ The structured output schema will enforce these exact codes."""
 
     def _is_internal_file(self, skill: Skill, file_path: str) -> bool:
         """Check if a file path is internal to the skill package."""
-        from pathlib import Path
 
         skill_dir = Path(skill.directory)
         file_path_obj = Path(file_path)

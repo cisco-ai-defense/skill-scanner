@@ -113,8 +113,8 @@ def build_analyzers(
             from .analyzers.behavioral_analyzer import BehavioralAnalyzer
 
             analyzers.append(BehavioralAnalyzer())
-        except (ImportError, Exception) as exc:
-            logger.warning("Could not initialise behavioral analyzer: %s", exc)
+        except (ImportError, ValueError, TypeError) as exc:
+            logger.warning("Could not load behavioral analyzer: %s", exc)
 
     if use_llm:
         try:
@@ -131,8 +131,8 @@ def build_analyzers(
             if llm_consensus_runs > 1:
                 llm.consensus_runs = llm_consensus_runs
             analyzers.append(llm)
-        except (ImportError, Exception) as exc:
-            logger.warning("Could not initialise LLM analyzer: %s", exc)
+        except (ImportError, ValueError, TypeError) as exc:
+            logger.warning("Could not load LLM analyzer: %s", exc)
 
     if use_virustotal:
         try:
@@ -143,8 +143,8 @@ def build_analyzers(
                 logger.warning("VirusTotal requested but no API key.  Set VIRUSTOTAL_API_KEY or pass vt_api_key")
             else:
                 analyzers.append(VirusTotalAnalyzer(api_key=key, enabled=True, upload_files=vt_upload_files))
-        except (ImportError, Exception) as exc:
-            logger.warning("Could not initialise VirusTotal analyzer: %s", exc)
+        except (ImportError, ValueError, TypeError) as exc:
+            logger.warning("Could not load VirusTotal analyzer: %s", exc)
 
     if use_aidefense:
         try:
@@ -156,15 +156,15 @@ def build_analyzers(
                 logger.warning("AI Defense requested but no API key.  Set AI_DEFENSE_API_KEY or pass aidefense_api_key")
             else:
                 analyzers.append(AIDefenseAnalyzer(api_key=key, api_url=url))
-        except (ImportError, Exception) as exc:
-            logger.warning("Could not initialise AI Defense analyzer: %s", exc)
+        except (ImportError, ValueError, TypeError) as exc:
+            logger.warning("Could not load AI Defense analyzer: %s", exc)
 
     if use_trigger:
         try:
             from .analyzers.trigger_analyzer import TriggerAnalyzer
 
             analyzers.append(TriggerAnalyzer())
-        except (ImportError, Exception) as exc:
-            logger.warning("Could not initialise Trigger analyzer: %s", exc)
+        except (ImportError, ValueError, TypeError) as exc:
+            logger.warning("Could not load Trigger analyzer: %s", exc)
 
     return analyzers

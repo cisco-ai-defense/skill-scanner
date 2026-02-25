@@ -25,10 +25,25 @@ that considers:
   - Environment (variable manipulation, subshells)
 """
 
+import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import NamedTuple
+
+logger = logging.getLogger(__name__)
+_MAX_PATTERN_LENGTH = 1000
+
+
+def _safe_compile(pattern: str, flags: int = 0, *, max_length: int = _MAX_PATTERN_LENGTH) -> re.Pattern | None:
+    if len(pattern) > max_length:
+        logger.warning("Regex pattern too long (%d chars), skipping: %.60s...", len(pattern), pattern)
+        return None
+    try:
+        return re.compile(pattern, flags)
+    except re.error as e:
+        logger.warning("Invalid regex pattern %r: %s", pattern, e)
+        return None
 
 
 class CommandRisk(Enum):
@@ -371,18 +386,23 @@ def evaluate_command(raw_command: str, *, policy=None) -> CommandVerdict:
                 False,
             )
 
-    # Check policy-provided dangerous arg patterns (additive to built-in)
     if policy is not None and hasattr(policy, "command_safety"):
+        max_pat_len = getattr(
+            getattr(policy, "analysis_thresholds", None),
+            "max_regex_pattern_length",
+            _MAX_PATTERN_LENGTH,
+        )
         for pat_str in getattr(policy.command_safety, "dangerous_arg_patterns", []):
             try:
-                if re.search(pat_str, ctx.raw_command):
+                compiled = _safe_compile(pat_str, max_length=max_pat_len)
+                if compiled and compiled.search(ctx.raw_command):
                     return CommandVerdict(
                         CommandRisk.DANGEROUS,
                         f"Policy dangerous arg pattern matched: {pat_str}",
                         False,
                     )
-            except re.error:
-                pass  # Skip invalid regex patterns gracefully
+            except Exception:
+                logger.warning("Failed to apply pattern %r", pat_str)
 
     # Classify base command
     # Check safe first, then caution, then risky, then dangerous
