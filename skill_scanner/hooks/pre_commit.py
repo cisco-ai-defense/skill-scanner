@@ -125,6 +125,10 @@ def get_affected_skills(staged_files: list[str], skills_path: str) -> set[Path]:
     """
     Identify skill directories affected by staged changes.
 
+    Walks up from each staged file to find the nearest parent containing a
+    SKILL.md.  Also honours the configured ``skills_path`` prefix so that
+    changes inside a known skills tree are always detected.
+
     Args:
         staged_files: List of staged file paths
         skills_path: Base path for skills
@@ -132,13 +136,12 @@ def get_affected_skills(staged_files: list[str], skills_path: str) -> set[Path]:
     Returns:
         Set of affected skill directory paths
     """
-    affected_skills = set()
+    affected_skills: set[Path] = set()
     skills_prefix = skills_path.rstrip("/") + "/"
 
     for file_path in staged_files:
-        # Check if file is in skills directory
+        # 1. Check if file is in the configured skills directory
         if file_path.startswith(skills_prefix) or file_path.startswith(skills_path):
-            # Extract the skill directory (first subdirectory under skills_path)
             relative = file_path[len(skills_path) :].lstrip("/")
             parts = relative.split("/")
 
@@ -148,10 +151,13 @@ def get_affected_skills(staged_files: list[str], skills_path: str) -> set[Path]:
                 if skill_md.exists():
                     affected_skills.add(skill_dir)
 
-        # Also check for SKILL.md directly in case skills are at different paths
-        if file_path.endswith("SKILL.md"):
-            skill_dir = Path(file_path).parent
-            affected_skills.add(skill_dir)
+        # 2. Walk up from the staged file to locate the nearest SKILL.md
+        candidate = Path(file_path).parent
+        while str(candidate) not in ("", "."):
+            if (candidate / "SKILL.md").exists():
+                affected_skills.add(candidate)
+                break
+            candidate = candidate.parent
 
     return affected_skills
 
@@ -286,6 +292,11 @@ def main(args: list[str] | None = None) -> int:
         help="Scan all skills, not just staged ones",
     )
     parser.add_argument(
+        "--lenient",
+        action="store_true",
+        help="Tolerate malformed skills instead of failing",
+    )
+    parser.add_argument(
         "install",
         nargs="?",
         help="Install pre-commit hook",
@@ -318,6 +329,8 @@ def main(args: list[str] | None = None) -> int:
         config["severity_threshold"] = parsed_args.severity
     if parsed_args.skills_path:
         config["skills_path"] = parsed_args.skills_path
+    if parsed_args.lenient:
+        config["lenient"] = True
 
     # Get staged files and affected skills
     if parsed_args.all:

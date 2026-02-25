@@ -248,9 +248,10 @@ def scan_command(args: argparse.Namespace) -> int:
     meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy)
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
+    lenient = getattr(args, "lenient", False)
 
     try:
-        result = scanner.scan_skill(skill_dir)
+        result = scanner.scan_skill(skill_dir, lenient=lenient)
 
         # Meta-analysis
         if meta_analyzer and result.findings and apply_meta_analysis_to_results is not None:
@@ -330,9 +331,13 @@ def scan_all_command(args: argparse.Namespace) -> int:
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
 
+    lenient = getattr(args, "lenient", False)
+
     try:
         check_overlap = getattr(args, "check_overlap", False)
-        report = scanner.scan_directory(skills_dir, recursive=args.recursive, check_overlap=check_overlap)
+        report = scanner.scan_directory(
+            skills_dir, recursive=args.recursive, check_overlap=check_overlap, lenient=lenient
+        )
 
         if report.total_skills_scanned == 0:
             print("No skills found to scan.", file=sys.stderr)
@@ -541,6 +546,10 @@ def _generate_multi_skill_summary(report) -> str:
         f"Skills Scanned: {report.total_skills_scanned}",
         f"Safe Skills: {report.safe_count}",
         f"Total Findings: {report.total_findings}",
+    ]
+    if report.skills_skipped:
+        lines.append(f"Skills Skipped: {len(report.skills_skipped)}")
+    lines += [
         "",
         "Findings by Severity:",
         f"  Critical: {report.critical_count}",
@@ -554,6 +563,11 @@ def _generate_multi_skill_summary(report) -> str:
     for r in report.scan_results:
         tag = "[OK]" if r.is_safe else "[FAIL]"
         lines.append(f"  {tag} {r.skill_name} - {len(r.findings)} findings ({r.max_severity.value})")
+    if report.skills_skipped:
+        lines.append("")
+        lines.append("Skipped Skills:")
+        for entry in report.skills_skipped:
+            lines.append(f"  [SKIP] {entry['skill']} - {entry['reason']}")
     return "\n".join(lines)
 
 
@@ -603,6 +617,11 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         help="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
     )
     parser.add_argument(
+        "--lenient",
+        action="store_true",
+        help="Tolerate malformed skills: coerce bad fields, fill defaults, and continue instead of failing",
+    )
+    parser.add_argument(
         "--custom-rules",
         metavar="PATH",
         help="Path to directory containing custom YARA rules (.yara files)",
@@ -624,8 +643,8 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
-    """Main CLI entry point."""
+def build_parser() -> argparse.ArgumentParser:
+    """Build and return the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description="Skill Scanner - Security scanner for agent skills packages",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -672,6 +691,13 @@ Examples:
     cp_p = subparsers.add_parser("configure-policy", help="Interactive TUI to build a custom scan policy")
     cp_p.add_argument("--output", "-o", default="scan_policy.yaml", help="Output file path")
     cp_p.add_argument("--input", "-i", default=None, help="Load existing policy YAML for editing")
+
+    return parser
+
+
+def main() -> int:
+    """Main CLI entry point."""
+    parser = build_parser()
 
     # -- dispatch ----------------------------------------------------------
     args = parser.parse_args()

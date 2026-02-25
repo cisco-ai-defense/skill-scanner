@@ -18,6 +18,7 @@
 Skill package loader and SKILL.md parser.
 """
 
+import logging
 import re
 from pathlib import Path
 
@@ -25,6 +26,8 @@ import frontmatter
 
 from .exceptions import SkillLoadError
 from .models import Skill, SkillFile, SkillManifest
+
+logger = logging.getLogger(__name__)
 
 
 class SkillLoader:
@@ -55,18 +58,20 @@ class SkillLoader:
         """
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
 
-    def load_skill(self, skill_directory: str | Path) -> Skill:
+    def load_skill(self, skill_directory: str | Path, *, lenient: bool = False) -> Skill:
         """
         Load a skill package from a directory.
 
         Args:
             skill_directory: Path to the skill directory
+            lenient: When True, tolerate missing/malformed fields and return
+                a best-effort Skill instead of raising ``SkillLoadError``.
 
         Returns:
             Parsed Skill object
 
         Raises:
-            SkillLoadError: If skill cannot be loaded
+            SkillLoadError: If skill cannot be loaded (strict mode only)
         """
         if not isinstance(skill_directory, Path):
             skill_directory = Path(skill_directory)
@@ -83,7 +88,7 @@ class SkillLoader:
             raise SkillLoadError(f"SKILL.md not found in {skill_directory}")
 
         # Parse SKILL.md
-        manifest, instruction_body = self._parse_skill_md(skill_md_path)
+        manifest, instruction_body = self._parse_skill_md(skill_md_path, lenient=lenient)
 
         # Discover all files in the skill package
         files = self._discover_files(skill_directory)
@@ -100,18 +105,20 @@ class SkillLoader:
             referenced_files=referenced_files,
         )
 
-    def _parse_skill_md(self, skill_md_path: Path) -> tuple[SkillManifest, str]:
+    def _parse_skill_md(self, skill_md_path: Path, *, lenient: bool = False) -> tuple[SkillManifest, str]:
         """
         Parse SKILL.md file with YAML frontmatter.
 
         Args:
             skill_md_path: Path to SKILL.md
+            lenient: When True, fill missing fields with defaults instead of
+                raising ``SkillLoadError``.
 
         Returns:
             Tuple of (SkillManifest, instruction_body)
 
         Raises:
-            SkillLoadError: If parsing fails
+            SkillLoadError: If parsing fails (strict mode only)
         """
         try:
             with open(skill_md_path, encoding="utf-8") as f:
@@ -125,13 +132,26 @@ class SkillLoader:
             metadata = post.metadata
             body = post.content
         except Exception as e:
-            raise SkillLoadError(f"Failed to parse YAML frontmatter: {e}")
+            if lenient:
+                logger.warning("Failed to parse YAML frontmatter in %s: %s – using raw body", skill_md_path, e)
+                metadata = {}
+                body = content
+            else:
+                raise SkillLoadError(f"Failed to parse YAML frontmatter: {e}")
 
-        # Validate required fields
+        # Validate required fields (lenient: fill defaults)
         if "name" not in metadata:
-            raise SkillLoadError("SKILL.md missing required field: name")
+            if lenient:
+                metadata["name"] = skill_md_path.parent.name
+                logger.warning("SKILL.md missing 'name'; using directory name: %s", metadata["name"])
+            else:
+                raise SkillLoadError("SKILL.md missing required field: name")
         if "description" not in metadata:
-            raise SkillLoadError("SKILL.md missing required field: description")
+            if lenient:
+                metadata["description"] = "(no description)"
+                logger.warning("SKILL.md missing 'description'; using placeholder")
+            else:
+                raise SkillLoadError("SKILL.md missing required field: description")
 
         # Extract metadata field - if YAML has a 'metadata' key, use it directly
         # Otherwise, collect remaining fields as metadata
@@ -165,10 +185,16 @@ class SkillLoader:
         if disable_model_invocation is None:
             disable_model_invocation = metadata.get("disable_model_invocation", False)
 
+        # Coerce name/description to strings (YAML may parse nested mappings)
+        raw_name = metadata["name"]
+        name = raw_name if isinstance(raw_name, str) else str(raw_name)
+        raw_desc = metadata["description"]
+        description = raw_desc if isinstance(raw_desc, str) else str(raw_desc)
+
         # Create manifest
         manifest = SkillManifest(
-            name=metadata["name"],
-            description=metadata["description"],
+            name=name,
+            description=description,
             license=metadata.get("license"),
             compatibility=metadata.get("compatibility"),
             allowed_tools=metadata.get("allowed-tools") or metadata.get("allowed_tools"),

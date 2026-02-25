@@ -276,6 +276,7 @@ class Report:
     low_count: int = 0
     info_count: int = 0
     safe_count: int = 0
+    skills_skipped: list[dict[str, str]] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
 
     def add_scan_result(self, result: ScanResult):
@@ -301,7 +302,7 @@ class Report:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert report to dictionary."""
-        return {
+        result: dict[str, Any] = {
             "summary": {
                 "total_skills_scanned": self.total_skills_scanned,
                 "total_findings": self.total_findings,
@@ -315,5 +316,8 @@ class Report:
                 },
                 "timestamp": self.timestamp.isoformat(),
             },
-            "results": [result.to_dict() for result in self.scan_results],
+            "results": [r.to_dict() for r in self.scan_results],
         }
+        if self.skills_skipped:
+            result["summary"]["skills_skipped"] = self.skills_skipped
+        return result

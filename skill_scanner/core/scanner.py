@@ -144,23 +144,24 @@ class SkillScanner:
         self.loader = SkillLoader()
         self.content_extractor = ContentExtractor()
 
-    def scan_skill(self, skill_directory: str | Path) -> ScanResult:
+    def scan_skill(self, skill_directory: str | Path, *, lenient: bool = False) -> ScanResult:
         """
         Scan a single skill package.
 
         Args:
             skill_directory: Path to skill directory
+            lenient: Tolerate malformed YAML / missing fields in the skill.
 
         Returns:
             ScanResult with findings
 
         Raises:
-            SkillLoadError: If skill cannot be loaded
+            SkillLoadError: If skill cannot be loaded (when not lenient)
         """
         if not isinstance(skill_directory, Path):
             skill_directory = Path(skill_directory)
 
-        skill = self.loader.load_skill(skill_directory)
+        skill = self.loader.load_skill(skill_directory, lenient=lenient)
         return self._scan_single_skill(skill, skill_directory)
 
     # ------------------------------------------------------------------
@@ -642,7 +643,12 @@ class SkillScanner:
             f.metadata.setdefault("scan_policy_fingerprint_sha256", policy_meta["policy_fingerprint_sha256"])
 
     def scan_directory(
-        self, skills_directory: str | Path, recursive: bool = False, check_overlap: bool = False
+        self,
+        skills_directory: str | Path,
+        recursive: bool = False,
+        check_overlap: bool = False,
+        *,
+        lenient: bool = False,
     ) -> Report:
         """
         Scan all skill packages in a directory.
@@ -655,6 +661,7 @@ class SkillScanner:
             skills_directory: Directory containing skill packages
             recursive: If True, search recursively for SKILL.md files
             check_overlap: If True, check for description overlap between skills
+            lenient: Tolerate malformed YAML / missing fields in skills.
 
         Returns:
             Report with results from all skills
@@ -673,7 +680,7 @@ class SkillScanner:
 
         for skill_dir in skill_dirs:
             try:
-                skill = self.loader.load_skill(skill_dir)
+                skill = self.loader.load_skill(skill_dir, lenient=lenient)
                 result = self._scan_single_skill(skill, skill_dir)
                 report.add_scan_result(result)
 
@@ -682,20 +689,22 @@ class SkillScanner:
 
             except SkillLoadError as e:
                 logger.warning("Failed to load %s: %s", skill_dir, e)
+                report.skills_skipped.append({"skill": str(skill_dir), "reason": str(e)})
                 continue
             except Exception as e:
-                # Isolate per-skill failures so one crash doesn't abort the
-                # entire batch / scan-all run.
                 logger.error("Unexpected error scanning %s: %s", skill_dir, e)
+                report.skills_skipped.append({"skill": str(skill_dir), "reason": str(e)})
                 continue
 
         # Perform cross-skill analysis if requested
         if check_overlap and len(loaded_skills) > 1:
-            overlap_findings = self._check_description_overlap(loaded_skills)
-            if overlap_findings and report.scan_results:
-                report.scan_results[0].findings.extend(overlap_findings)
+            try:
+                overlap_findings = self._check_description_overlap(loaded_skills)
+                if overlap_findings and report.scan_results:
+                    report.scan_results[0].findings.extend(overlap_findings)
+            except Exception as e:
+                logger.error("Cross-skill description overlap check failed: %s", e)
 
-            # Full cross-skill attack pattern detection
             try:
                 from .analyzers.cross_skill_scanner import CrossSkillScanner
 
@@ -705,6 +714,8 @@ class SkillScanner:
                     report.scan_results[0].findings.extend(cross_findings)
             except ImportError:
                 pass
+            except Exception as e:
+                logger.error("Cross-skill pattern detection failed: %s", e)
 
         return report
 
@@ -787,8 +798,8 @@ class SkillScanner:
         Returns:
             Similarity score from 0.0 to 1.0
         """
-        tokens_a = set(re.findall(r"\b[a-zA-Z]+\b", text_a.lower()))
-        tokens_b = set(re.findall(r"\b[a-zA-Z]+\b", text_b.lower()))
+        tokens_a = set(re.findall(r"\b[a-zA-Z]+\b", str(text_a).lower()))
+        tokens_b = set(re.findall(r"\b[a-zA-Z]+\b", str(text_b).lower()))
 
         # Remove common stop words (using module-level constant)
         tokens_a = tokens_a - _STOP_WORDS
