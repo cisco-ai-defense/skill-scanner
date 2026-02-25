@@ -164,7 +164,29 @@ skill-scanner scan /path/to/skill --use-behavioral --use-llm --use-virustotal
 
 # Cross-skill overlap analysis
 skill-scanner scan-all /path/to/skills --check-overlap
+
+# Lenient mode (tolerate malformed skills)
+skill-scanner scan-all /path/to/skills --recursive --lenient
 ```
+
+## Pre-commit Hook for External Repos
+
+This project publishes a `.pre-commit-hooks.yaml` so other repos can use Skill Scanner as a [pre-commit](https://pre-commit.com/) hook:
+
+```yaml
+# In the consuming repo's .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/cisco-ai-defense/skill-scanner
+    rev: v1.0.0
+    hooks:
+      - id: skill-scanner
+```
+
+The hook entry point is `skill-scanner-pre-commit` (defined in `pyproject.toml`). It automatically detects staged skill directories via `git diff --cached` and only scans those.
+
+## GitHub Actions Reusable Workflow
+
+The file `.github/workflows/scan-skills.yml` is a reusable workflow that other repos can call via `workflow_call`. See [docs/github-actions.md](github-actions.md) for full usage.
 
 ## Versioning
 

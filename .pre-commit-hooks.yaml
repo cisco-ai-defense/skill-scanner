@@ -1,0 +1,8 @@
+- id: skill-scanner
+  name: Scan Agent Skills
+  description: Scan agent skill packages for security vulnerabilities
+  entry: skill-scanner-pre-commit
+  language: python
+  types: [file]
+  pass_filenames: false
+  stages: [pre-commit]

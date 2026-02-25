@@ -26,6 +26,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -34,7 +35,7 @@ from datetime import datetime
 from pathlib import Path
 
 try:
-    from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+    from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile
     from pydantic import BaseModel, Field
 
     MULTIPART_AVAILABLE = True
@@ -122,23 +123,28 @@ CACHE_TTL_SECONDS = 3600  # 1 hour
 class _BoundedCache(OrderedDict[str, dict]):
     """OrderedDict with max-size eviction and per-entry TTL."""
 
+    def __init__(self):
+        super().__init__()
+        self._lock = threading.Lock()
+
     def set(self, key: str, value: dict) -> None:
-        value["_cached_at"] = time.monotonic()
-        self[key] = value
-        self.move_to_end(key)
-        # Evict oldest entries beyond max size
-        while len(self) > MAX_CACHE_ENTRIES:
-            self.popitem(last=False)
+        with self._lock:
+            value["_cached_at"] = time.monotonic()
+            self[key] = value
+            self.move_to_end(key)
+            while len(self) > MAX_CACHE_ENTRIES:
+                self.popitem(last=False)
 
     def get_valid(self, key: str) -> dict | None:
-        entry = self.get(key)
-        if entry is None:
-            return None
-        if time.monotonic() - entry.get("_cached_at", 0) > CACHE_TTL_SECONDS:
-            del self[key]
-            return None
-        result: dict = entry
-        return result
+        with self._lock:
+            entry = self.get(key)
+            if entry is None:
+                return None
+            if time.monotonic() - entry.get("_cached_at", 0) > CACHE_TTL_SECONDS:
+                del self[key]
+                return None
+            result: dict = entry
+            return result
 
 
 scan_results_cache = _BoundedCache()
@@ -189,10 +195,8 @@ class ScanRequest(BaseModel):
     llm_provider: str | None = Field("anthropic", description="LLM provider (anthropic or openai)")
     use_behavioral: bool = Field(False, description="Enable behavioral analyzer")
     use_virustotal: bool = Field(False, description="Enable VirusTotal binary file scanning")
-    vt_api_key: str | None = Field(None, description="VirusTotal API key")
     vt_upload_files: bool = Field(False, description="Upload unknown files to VirusTotal")
     use_aidefense: bool = Field(False, description="Enable AI Defense analyzer")
-    aidefense_api_key: str | None = Field(None, description="AI Defense API key")
     aidefense_api_url: str | None = Field(None, description="AI Defense API URL")
     use_trigger: bool = Field(False, description="Enable trigger specificity analysis")
     enable_meta: bool = Field(False, description="Enable meta-analysis for false positive filtering")
@@ -235,10 +239,8 @@ class BatchScanRequest(BaseModel):
     llm_provider: str | None = "anthropic"
     use_behavioral: bool = False
     use_virustotal: bool = False
-    vt_api_key: str | None = None
     vt_upload_files: bool = False
     use_aidefense: bool = False
-    aidefense_api_key: str | None = None
     aidefense_api_url: str | None = None
     use_trigger: bool = False
     enable_meta: bool = Field(False, description="Enable meta-analysis")
@@ -312,19 +314,23 @@ def _recompute_report_summary(report) -> None:
     report.info_count = 0
     report.safe_count = sum(1 for r in report.scan_results if r.is_safe)
 
-    for scan_result in report.scan_results:
-        for finding in scan_result.findings:
-            sev = getattr(finding.severity, "value", str(finding.severity)).upper()
-            if sev == "CRITICAL":
-                report.critical_count += 1
-            elif sev == "HIGH":
-                report.high_count += 1
-            elif sev == "MEDIUM":
-                report.medium_count += 1
-            elif sev == "LOW":
-                report.low_count += 1
-            elif sev == "INFO":
-                report.info_count += 1
+    all_findings = [f for r in report.scan_results for f in r.findings]
+    cross = getattr(report, "cross_skill_findings", None) or []
+    report.total_findings += len(cross)
+    all_findings.extend(cross)
+
+    for finding in all_findings:
+        sev = getattr(finding.severity, "value", str(finding.severity)).upper()
+        if sev == "CRITICAL":
+            report.critical_count += 1
+        elif sev == "HIGH":
+            report.high_count += 1
+        elif sev == "MEDIUM":
+            report.medium_count += 1
+        elif sev == "LOW":
+            report.low_count += 1
+        elif sev == "INFO":
+            report.info_count += 1
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +365,11 @@ async def health_check():
 
 
 @router.post("/scan", response_model=ScanResponse)
-async def scan_skill(request: ScanRequest):
+async def scan_skill(
+    request: ScanRequest,
+    vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
+    aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
+):
     """Scan a single skill package."""
     import asyncio
     import concurrent.futures
@@ -395,10 +405,10 @@ async def scan_skill(request: ScanRequest):
             use_llm=request.use_llm,
             llm_provider=request.llm_provider,
             use_virustotal=request.use_virustotal,
-            vt_api_key=request.vt_api_key,
+            vt_api_key=vt_api_key,
             vt_upload_files=request.vt_upload_files,
             use_aidefense=request.use_aidefense,
-            aidefense_api_key=request.aidefense_api_key,
+            aidefense_api_key=aidefense_api_key,
             aidefense_api_url=request.aidefense_api_url,
             use_trigger=request.use_trigger,
             llm_consensus_runs=request.llm_consensus_runs,
@@ -426,19 +436,11 @@ async def scan_skill(request: ScanRequest):
                 loader = SkillLoader()
                 skill = loader.load_skill(skill_dir)
 
-                import asyncio as async_lib
-
-                def run_meta():
-                    return async_lib.run(
-                        meta_analyzer.analyze_with_findings(
-                            skill=skill,
-                            findings=result.findings,
-                            analyzers_used=result.analyzers_used,
-                        )
-                    )
-
-                with concurrent.futures.ThreadPoolExecutor() as meta_executor:
-                    meta_result = await loop.run_in_executor(meta_executor, run_meta)
+                meta_result = await meta_analyzer.analyze_with_findings(
+                    skill=skill,
+                    findings=result.findings,
+                    analyzers_used=result.analyzers_used,
+                )
 
                 filtered_findings = apply_meta_analysis_to_results(
                     original_findings=result.findings,
@@ -464,8 +466,9 @@ async def scan_skill(request: ScanRequest):
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
+    except Exception:
+        logger.exception("Scan failed")
+        raise HTTPException(status_code=500, detail="Internal scan error")
 
 
 @router.post("/scan-upload")
@@ -477,10 +480,10 @@ async def scan_uploaded_skill(
     llm_provider: str = Form("anthropic", description="LLM provider"),
     use_behavioral: bool = Form(False, description="Enable behavioral analyzer"),
     use_virustotal: bool = Form(False, description="Enable VirusTotal scanner"),
-    vt_api_key: str | None = Form(None, description="VirusTotal API key"),
+    vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
     vt_upload_files: bool = Form(False, description="Upload unknown files to VirusTotal"),
     use_aidefense: bool = Form(False, description="Enable AI Defense analyzer"),
-    aidefense_api_key: str | None = Form(None, description="AI Defense API key"),
+    aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
     aidefense_api_url: str | None = Form(None, description="AI Defense API URL"),
     use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
     enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
@@ -572,24 +575,27 @@ async def scan_uploaded_skill(
             llm_provider=llm_provider,
             use_behavioral=use_behavioral,
             use_virustotal=use_virustotal,
-            vt_api_key=vt_api_key,
             vt_upload_files=vt_upload_files,
             use_aidefense=use_aidefense,
-            aidefense_api_key=aidefense_api_key,
             aidefense_api_url=aidefense_api_url,
             use_trigger=use_trigger,
             enable_meta=enable_meta,
             llm_consensus_runs=llm_consensus_runs,
         )
 
-        return await scan_skill(request)
+        return await scan_skill(request, vt_api_key=vt_api_key, aidefense_api_key=aidefense_api_key)
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @router.post("/scan-batch")
-async def scan_batch(request: BatchScanRequest, background_tasks: BackgroundTasks):
+async def scan_batch(
+    request: BatchScanRequest,
+    background_tasks: BackgroundTasks,
+    vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
+    aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
+):
     """Scan multiple skills in a directory (batch scan)."""
     skills_dir = _validate_path(request.skills_directory, label="skills_directory")
 
@@ -602,7 +608,7 @@ async def scan_batch(request: BatchScanRequest, background_tasks: BackgroundTask
     scan_id = str(uuid.uuid4())
     scan_results_cache.set(scan_id, {"status": "processing", "started_at": datetime.now().isoformat(), "result": None})
 
-    background_tasks.add_task(run_batch_scan, scan_id, request)
+    background_tasks.add_task(run_batch_scan, scan_id, request, vt_api_key, aidefense_api_key)
 
     return {
         "scan_id": scan_id,
@@ -632,7 +638,12 @@ async def get_batch_scan_result(scan_id: str):
         return {"scan_id": scan_id, "status": "error", "error": cached.get("error", "Unknown error")}
 
 
-def run_batch_scan(scan_id: str, request: BatchScanRequest):
+def run_batch_scan(
+    scan_id: str,
+    request: BatchScanRequest,
+    vt_api_key: str | None = None,
+    aidefense_api_key: str | None = None,
+):
     """Background task to run batch scan."""
     try:
         policy = _resolve_policy(request.policy)
@@ -648,10 +659,10 @@ def run_batch_scan(scan_id: str, request: BatchScanRequest):
             use_llm=request.use_llm,
             llm_provider=request.llm_provider,
             use_virustotal=request.use_virustotal,
-            vt_api_key=request.vt_api_key,
+            vt_api_key=vt_api_key,
             vt_upload_files=request.vt_upload_files,
             use_aidefense=request.use_aidefense,
-            aidefense_api_key=request.aidefense_api_key,
+            aidefense_api_key=aidefense_api_key,
             aidefense_api_url=request.aidefense_api_url,
             use_trigger=request.use_trigger,
             llm_consensus_runs=request.llm_consensus_runs,
@@ -673,19 +684,17 @@ def run_batch_scan(scan_id: str, request: BatchScanRequest):
         ):
             import asyncio
 
-            try:
-                meta_analyzer = MetaAnalyzer(policy=policy)
-                for result in report.scan_results:
+            async def _run_batch_meta(scanner_ref, report_ref, policy_ref):
+                meta_analyzer = MetaAnalyzer(policy=policy_ref)
+                for result in report_ref.scan_results:
                     if result.findings:
                         try:
                             skill_dir_path = Path(result.skill_directory)
-                            skill = scanner.loader.load_skill(skill_dir_path)
-                            meta_result = asyncio.run(
-                                meta_analyzer.analyze_with_findings(
-                                    skill=skill,
-                                    findings=result.findings,
-                                    analyzers_used=result.analyzers_used,
-                                )
+                            skill = scanner_ref.loader.load_skill(skill_dir_path)
+                            meta_result = await meta_analyzer.analyze_with_findings(
+                                skill=skill,
+                                findings=result.findings,
+                                analyzers_used=result.analyzers_used,
                             )
                             filtered_findings = apply_meta_analysis_to_results(
                                 original_findings=result.findings,
@@ -696,6 +705,9 @@ def run_batch_scan(scan_id: str, request: BatchScanRequest):
                             result.analyzers_used.append("meta_analyzer")
                         except Exception:
                             pass
+
+            try:
+                asyncio.run(_run_batch_meta(scanner, report, policy))
             except Exception:
                 pass
 

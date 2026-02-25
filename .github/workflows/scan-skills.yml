@@ -1,0 +1,201 @@
+# Reusable workflow for scanning Agent Skills with cisco-ai-skill-scanner.
+#
+# Usage – add this to your repo's .github/workflows/ directory:
+#
+#   jobs:
+#     scan:
+#       uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+#       with:
+#         skill_path: .cursor/skills
+#       secrets:
+#         llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
+#
+# The runner checks out YOUR repo, installs skill-scanner from PyPI, and runs
+# the CLI on your code.  Our repo is never cloned – GitHub reads this YAML to
+# know what steps to execute.
+
+name: Scan Agent Skills
+
+on:
+  workflow_call:
+    inputs:
+      skill_path:
+        description: "Path to a single skill directory, or a parent directory for scan-all"
+        required: true
+        type: string
+      format:
+        description: "Output format (summary, json, markdown, table, sarif, html)"
+        required: false
+        type: string
+        default: "sarif"
+      policy:
+        description: "Scan policy preset (strict, balanced, permissive) or path to custom YAML"
+        required: false
+        type: string
+        default: "balanced"
+      fail_on_severity:
+        description: "Exit non-zero if findings at or above this severity exist"
+        required: false
+        type: string
+        default: "high"
+      python_version:
+        description: "Python version to use"
+        required: false
+        type: string
+        default: "3.12"
+      upload_sarif:
+        description: "Upload SARIF results to GitHub Code Scanning"
+        required: false
+        type: boolean
+        default: true
+      use_llm:
+        description: "Enable LLM-based semantic analysis (requires llm_api_key secret)"
+        required: false
+        type: boolean
+        default: false
+      llm_model:
+        description: "LLM model to use (maps to SKILL_SCANNER_LLM_MODEL env var, e.g. gpt-4o, claude-sonnet-4-20250514)"
+        required: false
+        type: string
+        default: ""
+      use_behavioral:
+        description: "Enable behavioral dataflow analysis"
+        required: false
+        type: boolean
+        default: false
+      lenient:
+        description: "Tolerate malformed skills instead of failing"
+        required: false
+        type: boolean
+        default: false
+      scan_mode:
+        description: "scan (single skill) or scan-all (directory of skills)"
+        required: false
+        type: string
+        default: "scan-all"
+      extra_args:
+        description: "Additional CLI arguments passed verbatim"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      llm_api_key:
+        description: "API key for LLM provider (maps to SKILL_SCANNER_LLM_API_KEY)"
+        required: false
+      virustotal_api_key:
+        description: "VirusTotal API key (maps to VIRUSTOTAL_API_KEY)"
+        required: false
+
+jobs:
+  scan:
+    name: Skill Scanner
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install skill-scanner
+        run: pip install cisco-ai-skill-scanner
+
+      - name: Validate inputs
+        env:
+          INPUT_SCAN_MODE: ${{ inputs.scan_mode }}
+          INPUT_FORMAT: ${{ inputs.format }}
+          INPUT_POLICY: ${{ inputs.policy }}
+          INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail_on_severity }}
+        run: |
+          fail=0
+          case "$INPUT_SCAN_MODE" in
+            scan|scan-all) ;;
+            *) echo "::error::Invalid scan_mode: must be 'scan' or 'scan-all'"; fail=1 ;;
+          esac
+          case "$INPUT_FORMAT" in
+            summary|json|markdown|table|sarif|html) ;;
+            *) echo "::error::Invalid format: must be summary, json, markdown, table, sarif, or html"; fail=1 ;;
+          esac
+          case "$INPUT_POLICY" in
+            strict|balanced|permissive) ;;
+            *)
+              if [ ! -f "$INPUT_POLICY" ]; then
+                echo "::error::Invalid policy: must be a preset (strict, balanced, permissive) or a path to an existing YAML file"
+                fail=1
+              fi
+              ;;
+          esac
+          case "$INPUT_FAIL_ON_SEVERITY" in
+            critical|high|medium|low|info) ;;
+            *) echo "::error::Invalid fail_on_severity: must be critical, high, medium, low, or info"; fail=1 ;;
+          esac
+          exit "$fail"
+
+      - name: Run scan
+        env:
+          SKILL_SCANNER_LLM_API_KEY: ${{ secrets.llm_api_key }}
+          SKILL_SCANNER_LLM_MODEL: ${{ inputs.llm_model }}
+          VIRUSTOTAL_API_KEY: ${{ secrets.virustotal_api_key }}
+          INPUT_SCAN_MODE: ${{ inputs.scan_mode }}
+          INPUT_SKILL_PATH: ${{ inputs.skill_path }}
+          INPUT_FORMAT: ${{ inputs.format }}
+          INPUT_POLICY: ${{ inputs.policy }}
+          INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail_on_severity }}
+          INPUT_USE_LLM: ${{ inputs.use_llm }}
+          INPUT_USE_BEHAVIORAL: ${{ inputs.use_behavioral }}
+          INPUT_LENIENT: ${{ inputs.lenient }}
+          INPUT_EXTRA_ARGS: ${{ inputs.extra_args }}
+        run: |
+          set +e
+
+          ARGS="$INPUT_SCAN_MODE $INPUT_SKILL_PATH"
+          ARGS="$ARGS --format $INPUT_FORMAT --policy $INPUT_POLICY"
+
+          if [ "$INPUT_SCAN_MODE" = "scan-all" ]; then
+            ARGS="$ARGS --recursive --check-overlap"
+          fi
+
+          if [ "$INPUT_USE_LLM" = "true" ]; then
+            ARGS="$ARGS --use-llm"
+          fi
+
+          if [ "$INPUT_USE_BEHAVIORAL" = "true" ]; then
+            ARGS="$ARGS --use-behavioral"
+          fi
+
+          if [ "$INPUT_LENIENT" = "true" ]; then
+            ARGS="$ARGS --lenient"
+          fi
+
+          if [ "$INPUT_FORMAT" = "sarif" ]; then
+            ARGS="$ARGS --output results.sarif"
+          fi
+
+          ARGS="$ARGS --fail-on-severity $INPUT_FAIL_ON_SEVERITY $INPUT_EXTRA_ARGS"
+
+          echo "Running: skill-scanner $ARGS"
+          skill-scanner $ARGS
+          SCAN_EXIT=$?
+
+          echo "scan_exit_code=$SCAN_EXIT" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Upload SARIF to Code Scanning
+        if: inputs.upload_sarif && inputs.format == 'sarif' && hashFiles('results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+
+      - name: Check severity threshold
+        env:
+          INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail_on_severity }}
+        run: |
+          if [ "$scan_exit_code" != "0" ]; then
+            echo "::error::Skill Scanner found findings at or above $INPUT_FAIL_ON_SEVERITY severity"
+            exit 1
+          fi

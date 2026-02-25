@@ -230,6 +230,43 @@ def _configure_taxonomy_and_threat_mapping(args: argparse.Namespace, status: Cal
         status(f"Using custom threat mapping profile: {threat_mapping_source}")
 
 
+_SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
+
+
+def _has_findings_at_or_above(findings, threshold: str) -> bool:
+    """Return True if *findings* contains any at or above *threshold*."""
+    idx = _SEVERITY_ORDER.index(threshold.lower())
+    failing_levels = {s.upper() for s in _SEVERITY_ORDER[: idx + 1]}
+    return any(f.severity.value in failing_levels for f in findings)
+
+
+def _report_has_findings_at_or_above(report, threshold: str) -> bool:
+    """Return True if *report* has any finding at or above *threshold*."""
+    idx = _SEVERITY_ORDER.index(threshold.lower())
+    counts = [
+        ("critical", report.critical_count),
+        ("high", report.high_count),
+        ("medium", report.medium_count),
+        ("low", report.low_count),
+        ("info", report.info_count),
+    ]
+    return any(count > 0 for level, count in counts if _SEVERITY_ORDER.index(level) <= idx)
+
+
+def _resolve_fail_severity(args: argparse.Namespace) -> str | None:
+    """Determine the effective severity threshold from CLI flags.
+
+    ``--fail-on-severity LEVEL`` takes precedence.  ``--fail-on-findings``
+    (legacy boolean flag) is treated as ``--fail-on-severity high``.
+    Returns ``None`` when neither flag is set.
+    """
+    if getattr(args, "fail_on_severity", None):
+        return args.fail_on_severity
+    if getattr(args, "fail_on_findings", False):
+        return "high"
+    return None
+
+
 def _write_output(args: argparse.Namespace, output: str) -> None:
     """Write *output* to a file or stdout, and emit any additional formats."""
     formats = _get_formats(args)
@@ -284,15 +321,17 @@ def scan_command(args: argparse.Namespace) -> int:
     meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy)
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
+    lenient = getattr(args, "lenient", False)
 
     try:
-        result = scanner.scan_skill(skill_dir)
+        result = scanner.scan_skill(skill_dir, lenient=lenient)
 
         # Meta-analysis
         if meta_analyzer and result.findings and apply_meta_analysis_to_results is not None:
             status("Running meta-analysis to filter false positives...")
             try:
-                skill = scanner.loader.load_skill(skill_dir)
+                skill = scanner.loader.load_skill(skill_dir, lenient=lenient)
+                original_count = len(result.findings)
                 meta_result = asyncio.run(
                     meta_analyzer.analyze_with_findings(
                         skill=skill, findings=result.findings, analyzers_used=result.analyzers_used
@@ -315,7 +354,6 @@ def scan_command(args: argparse.Namespace) -> int:
                     result.scan_metadata["meta_risk_assessment"] = meta_result.overall_risk_assessment
 
                 fp_count = len(meta_result.false_positives)
-                original_count = len(result.findings)
                 retained = original_count - fp_count
                 new = len(meta_result.missed_threats)
                 corr = len(meta_result.correlations)
@@ -335,7 +373,8 @@ def scan_command(args: argparse.Namespace) -> int:
         args._result_or_report = result
         _write_output(args, _format_output(args, result))
 
-        if not result.is_safe and args.fail_on_findings:
+        fail_severity = _resolve_fail_severity(args)
+        if fail_severity and _has_findings_at_or_above(result.findings, fail_severity):
             return 1
         return 0
 
@@ -367,9 +406,13 @@ def scan_all_command(args: argparse.Namespace) -> int:
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
 
+    lenient = getattr(args, "lenient", False)
+
     try:
         check_overlap = getattr(args, "check_overlap", False)
-        report = scanner.scan_directory(skills_dir, recursive=args.recursive, check_overlap=check_overlap)
+        report = scanner.scan_directory(
+            skills_dir, recursive=args.recursive, check_overlap=check_overlap, lenient=lenient
+        )
 
         if report.total_skills_scanned == 0:
             print("No skills found to scan.", file=sys.stderr)
@@ -383,7 +426,7 @@ def scan_all_command(args: argparse.Namespace) -> int:
                 if not result.findings:
                     continue
                 try:
-                    skill = scanner.loader.load_skill(Path(result.skill_directory))
+                    skill = scanner.loader.load_skill(Path(result.skill_directory), lenient=lenient)
                     original_count = len(result.findings)
                     meta_result = asyncio.run(
                         meta_analyzer.analyze_with_findings(
@@ -421,22 +464,25 @@ def scan_all_command(args: argparse.Namespace) -> int:
         if not getattr(args, "verbose", False):
             for result in report.scan_results:
                 result.findings = [f for f in result.findings if not f.metadata.get("meta_false_positive", False)]
+            report.cross_skill_findings = [
+                f for f in report.cross_skill_findings if not f.metadata.get("meta_false_positive", False)
+            ]
 
         # Recalculate report totals after meta-analysis and FP stripping
-        report.total_findings = sum(len(r.findings) for r in report.scan_results)
-        report.critical_count = sum(
-            1 for r in report.scan_results for f in r.findings if f.severity.value == "CRITICAL"
-        )
-        report.high_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "HIGH")
-        report.medium_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "MEDIUM")
-        report.low_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "LOW")
-        report.info_count = sum(1 for r in report.scan_results for f in r.findings if f.severity.value == "INFO")
+        all_findings = [f for r in report.scan_results for f in r.findings] + report.cross_skill_findings
+        report.total_findings = len(all_findings)
+        report.critical_count = sum(1 for f in all_findings if f.severity.value == "CRITICAL")
+        report.high_count = sum(1 for f in all_findings if f.severity.value == "HIGH")
+        report.medium_count = sum(1 for f in all_findings if f.severity.value == "MEDIUM")
+        report.low_count = sum(1 for f in all_findings if f.severity.value == "LOW")
+        report.info_count = sum(1 for f in all_findings if f.severity.value == "INFO")
         report.safe_count = sum(1 for r in report.scan_results if r.is_safe)
 
         args._result_or_report = report
         _write_output(args, _format_output(args, report))
 
-        if args.fail_on_findings and (report.critical_count > 0 or report.high_count > 0):
+        fail_severity = _resolve_fail_severity(args)
+        if fail_severity and _report_has_findings_at_or_above(report, fail_severity):
             return 1
         return 0
 
@@ -579,6 +625,10 @@ def _generate_multi_skill_summary(report) -> str:
         f"Skills Scanned: {report.total_skills_scanned}",
         f"Safe Skills: {report.safe_count}",
         f"Total Findings: {report.total_findings}",
+    ]
+    if report.skills_skipped:
+        lines.append(f"Skills Skipped: {len(report.skills_skipped)}")
+    lines += [
         "",
         "Findings by Severity:",
         f"  Critical: {report.critical_count}",
@@ -592,6 +642,16 @@ def _generate_multi_skill_summary(report) -> str:
     for r in report.scan_results:
         tag = "[OK]" if r.is_safe else "[FAIL]"
         lines.append(f"  {tag} {r.skill_name} - {len(r.findings)} findings ({r.max_severity.value})")
+    if report.cross_skill_findings:
+        lines.append("")
+        lines.append("Cross-Skill Findings:")
+        for f in report.cross_skill_findings:
+            lines.append(f"  [{f.severity.value}] {f.title}")
+    if report.skills_skipped:
+        lines.append("")
+        lines.append("Skipped Skills:")
+        for entry in report.skills_skipped:
+            lines.append(f"  [SKIP] {entry['skill']} - {entry['reason']}")
     return "\n".join(lines)
 
 
@@ -631,6 +691,13 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         help="Include per-finding policy fingerprints, co-occurrence metadata, and keep meta-analyzer false positives in output",
     )
     parser.add_argument("--fail-on-findings", action="store_true", help="Exit with error if critical/high findings")
+    parser.add_argument(
+        "--fail-on-severity",
+        choices=["critical", "high", "medium", "low", "info"],
+        default=None,
+        metavar="LEVEL",
+        help="Exit with error if findings at or above LEVEL exist (critical, high, medium, low, info)",
+    )
     parser.add_argument("--use-behavioral", action="store_true", help="Enable behavioral dataflow analysis")
     parser.add_argument("--use-llm", action="store_true", help="Enable LLM-based semantic analysis (requires API key)")
     parser.add_argument("--use-virustotal", action="store_true", help="Enable VirusTotal scanning (requires API key)")
@@ -655,6 +722,11 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         help="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
     )
     parser.add_argument(
+        "--lenient",
+        action="store_true",
+        help="Tolerate malformed skills: coerce bad fields, fill defaults, and continue instead of failing",
+    )
+    parser.add_argument(
         "--custom-rules",
         metavar="PATH",
         help="Path to directory containing custom YARA rules (.yara files)",
@@ -676,8 +748,8 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
-    """Main CLI entry point."""
+def build_parser() -> argparse.ArgumentParser:
+    """Build and return the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description="Skill Scanner - Security scanner for agent skills packages",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -726,12 +798,33 @@ Examples:
     cp_p.add_argument("--output", "-o", default="scan_policy.yaml", help="Output file path")
     cp_p.add_argument("--input", "-i", default=None, help="Load existing policy YAML for editing")
 
+    # -- interactive -------------------------------------------------------
+    subparsers.add_parser("interactive", help="Launch the interactive scan wizard")
+
+    return parser
+
+
+def _run_interactive_wizard() -> int:
+    from .wizard import run_wizard
+
+    return run_wizard()
+
+
+def main() -> int:
+    """Main CLI entry point."""
+    parser = build_parser()
+
     # -- dispatch ----------------------------------------------------------
     args = parser.parse_args()
 
     if not args.command:
+        if sys.stdin.isatty():
+            return _run_interactive_wizard()
         parser.print_help()
         return 1
+
+    if args.command == "interactive":
+        return _run_interactive_wizard()
 
     dispatch = {
         "scan": scan_command,

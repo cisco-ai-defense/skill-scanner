@@ -163,7 +163,7 @@ Implemented in `skill_scanner/core/scan_policy.py` with built-ins in `skill_scan
 - Policy: `--policy`, `--custom-rules`
 - LLM: `--llm-provider` (shortcut), `--llm-consensus-runs`
 - VirusTotal/AI Defense keys: `--vt-api-key`, `--aidefense-api-key`, `--aidefense-api-url`
-- Output: `--format`, `--output`, `--detailed`, `--compact`, `--fail-on-findings`
+- Output: `--format`, `--output`, `--detailed`, `--compact`, `--fail-on-findings`, `--fail-on-severity`
 - Multi-skill: `--recursive`, `--check-overlap`
 
 ## API Server Features
