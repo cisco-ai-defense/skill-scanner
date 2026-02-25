@@ -172,7 +172,12 @@ class TableReporter:
             )
 
         if report.cross_skill_findings:
-            max_sev = max((f.severity for f in report.cross_skill_findings), default=Severity.INFO)
+            _SEVERITY_PRIORITY = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
+            max_sev = Severity.INFO
+            for sev in _SEVERITY_PRIORITY:
+                if any(f.severity == sev for f in report.cross_skill_findings):
+                    max_sev = sev
+                    break
             skills_data.append(
                 [
                     "[cross-skill]",
