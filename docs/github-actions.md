@@ -44,7 +44,7 @@ This will:
 | `python_version` | string | `3.12` | Python version for the runner |
 | `upload_sarif` | boolean | `true` | Upload SARIF to Code Scanning |
 | `use_llm` | boolean | `false` | Enable LLM semantic analysis |
-| `llm_model` | string | `""` | LLM model name (e.g. `gpt-4o`) |
+| `llm_model` | string | `""` | LLM model name (maps to `SKILL_SCANNER_LLM_MODEL` env var, e.g. `gpt-4o`) |
 | `use_behavioral` | boolean | `false` | Enable behavioral dataflow analysis |
 | `lenient` | boolean | `false` | Tolerate malformed skills |
 | `extra_args` | string | `""` | Additional CLI flags passed verbatim |

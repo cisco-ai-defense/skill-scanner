@@ -54,7 +54,7 @@ on:
         type: boolean
         default: false
       llm_model:
-        description: "LLM model to use (e.g. gpt-4o, claude-sonnet-4-20250514)"
+        description: "LLM model to use (maps to SKILL_SCANNER_LLM_MODEL env var, e.g. gpt-4o, claude-sonnet-4-20250514)"
         required: false
         type: string
         default: ""
@@ -139,6 +139,7 @@ jobs:
       - name: Run scan
         env:
           SKILL_SCANNER_LLM_API_KEY: ${{ secrets.llm_api_key }}
+          SKILL_SCANNER_LLM_MODEL: ${{ inputs.llm_model }}
           VIRUSTOTAL_API_KEY: ${{ secrets.virustotal_api_key }}
           INPUT_SCAN_MODE: ${{ inputs.scan_mode }}
           INPUT_SKILL_PATH: ${{ inputs.skill_path }}
@@ -146,7 +147,6 @@ jobs:
           INPUT_POLICY: ${{ inputs.policy }}
           INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail_on_severity }}
           INPUT_USE_LLM: ${{ inputs.use_llm }}
-          INPUT_LLM_MODEL: ${{ inputs.llm_model }}
           INPUT_USE_BEHAVIORAL: ${{ inputs.use_behavioral }}
           INPUT_LENIENT: ${{ inputs.lenient }}
           INPUT_EXTRA_ARGS: ${{ inputs.extra_args }}
@@ -162,10 +162,6 @@ jobs:
 
           if [ "$INPUT_USE_LLM" = "true" ]; then
             ARGS="$ARGS --use-llm"
-          fi
-
-          if [ -n "$INPUT_LLM_MODEL" ]; then
-            ARGS="$ARGS --llm-model $INPUT_LLM_MODEL"
           fi
 
           if [ "$INPUT_USE_BEHAVIORAL" = "true" ]; then
