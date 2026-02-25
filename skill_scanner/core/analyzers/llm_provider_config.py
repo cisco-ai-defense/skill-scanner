@@ -22,7 +22,10 @@ Handles detection and configuration of different LLM providers
 """
 
 import importlib.util
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 # Check for Google GenAI availability
 # Wrap in try/except because find_spec can raise ModuleNotFoundError
@@ -37,6 +40,12 @@ try:
     LITELLM_AVAILABLE = importlib.util.find_spec("litellm") is not None
 except (ImportError, ModuleNotFoundError):
     LITELLM_AVAILABLE = False
+
+# Check for Azure Identity availability (optional -- pip install skill-scanner[azure])
+try:
+    AZURE_IDENTITY_AVAILABLE = importlib.util.find_spec("azure.identity") is not None
+except (ImportError, ModuleNotFoundError):
+    AZURE_IDENTITY_AVAILABLE = False
 
 
 class ProviderConfig:
@@ -108,7 +117,8 @@ class ProviderConfig:
             else:
                 self.model = model
 
-        # Resolve API key
+        # Resolve API key (may acquire Entra ID token for Azure)
+        self._using_entra_id = False
         self.api_key = self._resolve_api_key(api_key)
 
         # Note: Google SDK client is created per-request, not configured globally
@@ -121,21 +131,58 @@ class ProviderConfig:
         Special cases:
         - Vertex AI: Uses GOOGLE_APPLICATION_CREDENTIALS (service account)
         - Ollama: No API key needed (local)
+        - Azure: Falls back to Entra ID (``az login``) when no API key is set
         """
         if api_key is not None:
             return api_key
 
         # Special cases with different auth mechanisms
         if self.is_vertex:
-            # Vertex AI uses Google Cloud service account credentials
             return os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         elif self.is_ollama:
-            # Ollama is local and typically doesn't need API key
             return None
 
-        # All providers (including Bedrock, Gemini, OpenAI, Anthropic, Azure):
-        # Use SKILL_SCANNER_LLM_API_KEY
-        return os.getenv("SKILL_SCANNER_LLM_API_KEY")
+        # Check the standard env var first
+        env_key = os.getenv("SKILL_SCANNER_LLM_API_KEY")
+        if env_key:
+            return env_key
+
+        # Azure fallback: acquire a token via Entra ID (DefaultAzureCredential)
+        if self.is_azure:
+            token = self._try_azure_entra_id_token()
+            if token:
+                return token
+
+        return None
+
+    def _try_azure_entra_id_token(self) -> str | None:
+        """Attempt to acquire an Azure OpenAI bearer token via Entra ID.
+
+        Uses ``DefaultAzureCredential`` which chains through:
+        environment variables, managed identity, Azure CLI (``az login``),
+        Azure PowerShell, and interactive browser -- in that order.
+
+        Requires the ``azure`` extra: ``pip install skill-scanner[azure]``
+        """
+        if not AZURE_IDENTITY_AVAILABLE:
+            logger.debug(
+                "Azure model detected but azure-identity is not installed. "
+                "Install with: pip install skill-scanner[azure]"
+            )
+            return None
+
+        try:
+            from azure.identity import DefaultAzureCredential
+
+            credential = DefaultAzureCredential()
+            # The scope for Azure OpenAI / Azure AI Services
+            token = credential.get_token("https://cognitiveservices.azure.com/.default")
+            logger.info("Acquired Azure OpenAI token via Entra ID (DefaultAzureCredential)")
+            self._using_entra_id = True
+            return token.token
+        except Exception as e:
+            logger.debug("Entra ID token acquisition failed: %s", e)
+            return None
 
     def _normalize_gemini_model_name(self, model: str) -> str:
         """
@@ -180,7 +227,13 @@ class ProviderConfig:
 
     def validate(self) -> None:
         """Validate that configuration is complete."""
-        if not self.is_bedrock and not self.api_key:
+        if not self.is_bedrock and not self.is_ollama and not self.api_key:
+            if self.is_azure:
+                raise ValueError(
+                    f"No API key or Entra ID credentials found for Azure model {self.model}. "
+                    "Set SKILL_SCANNER_LLM_API_KEY, run 'az login', or install "
+                    "skill-scanner[azure] for Entra ID support."
+                )
             raise ValueError(f"API key required for model {self.model}")
 
     def get_request_params(self) -> dict:
@@ -192,6 +245,9 @@ class ProviderConfig:
                 # For Google AI Studio, LiteLLM uses GEMINI_API_KEY environment variable
                 if not os.getenv("GEMINI_API_KEY"):
                     os.environ["GEMINI_API_KEY"] = self.api_key
+            elif self.is_azure and self._using_entra_id:
+                # Azure with Entra ID: pass as azure_ad_token (not api_key)
+                params["azure_ad_token"] = self.api_key
             else:
                 # Pass api_key for all providers including Bedrock (bearer token auth)
                 params["api_key"] = self.api_key

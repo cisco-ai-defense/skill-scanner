@@ -236,6 +236,9 @@ class LLMAnalyzer(BaseAnalyzer):
         # Consensus judging: number of runs to perform (1 = no consensus)
         self.consensus_runs: int = 1
 
+        # Tracks the last analysis error (read by the scanner for analyzers_failed)
+        self.last_error: str | None = None
+
     def set_enrichment_context(
         self,
         *,
@@ -425,9 +428,29 @@ The structured output schema will enforce these exact codes."""
 
         except Exception as e:
             logger.error("LLM analysis failed for %s: %s", skill.name, e)
-            # Return budget findings even if LLM call failed
+            self.last_error = str(e)
+            findings.append(
+                Finding(
+                    id=f"llm_analysis_failed_{skill.name}",
+                    rule_id="LLM_ANALYSIS_FAILED",
+                    category=ThreatCategory.POLICY_VIOLATION,
+                    severity=Severity.INFO,
+                    title="LLM analysis failed",
+                    description=(
+                        f"The LLM analyzer encountered an error and could not complete semantic analysis: {e}"
+                    ),
+                    remediation=(
+                        "Check your LLM provider configuration (API key, model name, "
+                        "network connectivity). The scan completed with static analysis "
+                        "only — LLM-based threat detection was not performed."
+                    ),
+                    analyzer="llm_analyzer",
+                    metadata={"error": str(e), "llm_model": self.model},
+                )
+            )
             return findings
 
+        self.last_error = None
         return findings
 
     async def _consensus_analyze(self, messages: list[dict], skill: Skill) -> list[Finding]:
