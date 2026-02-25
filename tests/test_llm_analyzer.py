@@ -579,7 +579,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
     async def test_handles_api_errors_gracefully(self, mock_make_request):
-        """Test that API errors are handled without crashing."""
+        """Test that API errors are handled without crashing and emit a failure finding."""
         analyzer = LLMAnalyzer(api_key="test-key", max_retries=1)
 
         # Mock persistent API error
@@ -594,11 +594,14 @@ class TestErrorHandling:
         skill.get_scripts = MagicMock(return_value=[])
         skill.referenced_files = []
 
-        # Should return empty list, not crash
+        # Should not crash; returns a list with an INFO-level failure finding
         findings = await analyzer.analyze_async(skill)
 
         assert isinstance(findings, list)
-        assert len(findings) == 0
+        failure_findings = [f for f in findings if f.rule_id == "LLM_ANALYSIS_FAILED"]
+        assert len(failure_findings) == 1
+        assert failure_findings[0].severity == Severity.INFO
+        assert "API error" in failure_findings[0].description
 
     def test_sync_wrapper_works(self):
         """Test that sync analyze() wrapper works."""
