@@ -118,16 +118,37 @@ class LLMRequestHandler:
 
     def _sanitize_schema_for_google(self, schema: dict[str, Any]) -> dict[str, Any]:
         """
-        Remove additionalProperties from schema for Google SDK compatibility.
+        Sanitize JSON Schema for Google GenAI SDK structured output compatibility.
 
-        Google SDK doesn't support additionalProperties in structured output schemas.
-        This recursively removes it from the schema.
+        Handles two incompatibilities between standard JSON Schema and what
+        the Google GenAI SDK accepts:
+
+        1. ``additionalProperties`` — not supported; removed recursively.
+        2. Nullable union types like ``["string", "null"]`` — the SDK expects
+           a single type enum value (e.g. ``"STRING"``) plus ``nullable: true``.
+           Scalar type strings are also uppercased to match the SDK's enum.
         """
         sanitized: dict[str, Any] = {}
         for key, value in schema.items():
             if key == "additionalProperties":
                 # Skip additionalProperties - Google SDK doesn't support it
                 continue
+            elif key == "type" and isinstance(value, list):
+                types = list(value)
+                has_null = "null" in types
+                if has_null:
+                    types.remove("null")
+                if len(types) == 0:
+                    raise NotImplementedError(f"Google GenAI SDK does not support null-only types: {value!r}")
+                if len(types) > 1:
+                    raise NotImplementedError(f"Google GenAI SDK does not support multi-type unions: {value!r}")
+                sanitized["type"] = types[0].upper()
+                if has_null:
+                    sanitized["nullable"] = True
+            elif key == "type" and isinstance(value, str):
+                if value == "null":
+                    raise NotImplementedError("Google GenAI SDK does not support null-only types")
+                sanitized["type"] = value.upper()
             elif isinstance(value, dict):
                 sanitized[key] = self._sanitize_schema_for_google(value)
             elif isinstance(value, list):
