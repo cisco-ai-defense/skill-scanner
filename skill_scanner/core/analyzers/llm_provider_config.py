@@ -43,8 +43,11 @@ except (ImportError, ModuleNotFoundError):
 
 # Check for Azure Identity availability (optional -- pip install skill-scanner[azure])
 try:
-    AZURE_IDENTITY_AVAILABLE = importlib.util.find_spec("azure.identity") is not None
+    from azure.identity import DefaultAzureCredential
+
+    AZURE_IDENTITY_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
+    DefaultAzureCredential = None  # type: ignore[misc,assignment]
     AZURE_IDENTITY_AVAILABLE = False
 
 
@@ -164,7 +167,7 @@ class ProviderConfig:
 
         Requires the ``azure`` extra: ``pip install skill-scanner[azure]``
         """
-        if not AZURE_IDENTITY_AVAILABLE:
+        if not AZURE_IDENTITY_AVAILABLE or DefaultAzureCredential is None:
             logger.debug(
                 "Azure model detected but azure-identity is not installed. "
                 "Install with: pip install skill-scanner[azure]"
@@ -172,8 +175,6 @@ class ProviderConfig:
             return None
 
         try:
-            from azure.identity import DefaultAzureCredential
-
             credential = DefaultAzureCredential()
             # The scope for Azure OpenAI / Azure AI Services
             token = credential.get_token("https://cognitiveservices.azure.com/.default")
