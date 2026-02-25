@@ -86,7 +86,7 @@ class SARIFReporter:
                     "invocations": [
                         {
                             "executionSuccessful": True,
-                            "endTimeUtc": result.timestamp.isoformat() + "Z",
+                            "endTimeUtc": result.timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
                         }
                     ],
                 }
@@ -98,6 +98,7 @@ class SARIFReporter:
         all_findings = []
         for scan_result in report.scan_results:
             all_findings.extend(scan_result.findings)
+        all_findings.extend(report.cross_skill_findings)
 
         rules = self._extract_rules(all_findings)
 
@@ -106,6 +107,7 @@ class SARIFReporter:
         for scan_result in report.scan_results:
             results = self._convert_findings(scan_result.findings)
             all_results.extend(results)
+        all_results.extend(self._convert_findings(report.cross_skill_findings))
 
         return {
             "$schema": self.SARIF_SCHEMA,
@@ -117,7 +119,7 @@ class SARIFReporter:
                     "invocations": [
                         {
                             "executionSuccessful": True,
-                            "endTimeUtc": report.timestamp.isoformat() + "Z",
+                            "endTimeUtc": report.timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
                         }
                     ],
                 }

@@ -21,7 +21,8 @@ Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agen
 
 - **Multi-Engine Detection** - Static analysis, behavioral dataflow, LLM semantic analysis, and cloud-based scanning for layered, best-effort coverage
 - **False Positive Filtering** - Meta-analyzer significantly reduces noise while preserving detection capability
-- **CI/CD Ready** - SARIF output for GitHub Code Scanning, exit codes for build failures
+- **CI/CD Ready** - SARIF output for GitHub Code Scanning, [reusable GitHub Actions workflow](docs/github-actions.md), exit codes for build failures
+- **Pre-commit Hook** - [Standard pre-commit framework](https://pre-commit.com/) integration to scan skills before every commit
 - **Extensible** - Plugin architecture for custom analyzers
 
 **[Join the Cisco AI Discord](https://discord.com/invite/nKWtDcXxtx)** to discuss, share feedback, or connect with the team.
@@ -54,6 +55,7 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 | [Scan Policy](docs/scan-policy.md) | Custom policies, presets, and tuning guide |
 | [Policy Quick Reference](docs/POLICY.md) | Compact reference for policy sections and knobs |
 | [Rule Authoring](docs/AUTHORING.md) | How to add signature, YARA, and Python rules |
+| [GitHub Actions](docs/github-actions.md) | Reusable workflow for CI/CD integration |
 | [API Reference](docs/api-server.md) | REST API documentation |
 | [Development Guide](docs/developing.md) | Contributing and development setup |
 
@@ -108,6 +110,16 @@ export VIRUSTOTAL_API_KEY="your_virustotal_api_key"
 export AI_DEFENSE_API_KEY="your_aidefense_api_key"
 ```
 
+### Interactive Wizard
+
+Not sure which flags to use? Run `skill-scanner` with no arguments to launch the interactive wizard:
+
+```bash
+skill-scanner
+```
+
+The wizard walks you through selecting a scan target, analyzers, policy, and output format, then shows the assembled command before running it. Great for learning the CLI.
+
 ### CLI Usage
 
 ```bash
@@ -135,8 +147,12 @@ skill-scanner scan-all /path/to/skills --recursive --use-behavioral
 # Scan multiple skills with cross-skill overlap detection
 skill-scanner scan-all /path/to/skills --recursive --check-overlap
 
+# Lenient mode: tolerate malformed skills instead of failing
+skill-scanner scan /path/to/skill --lenient
+skill-scanner scan-all /path/to/skills --recursive --lenient
+
 # CI/CD: Fail build if threats found
-skill-scanner scan-all ./skills --fail-on-findings --format sarif --output results.sarif
+skill-scanner scan-all ./skills --fail-on-severity high --format sarif --output results.sarif
 
 # Generate interactive HTML report with attack correlation groups
 skill-scanner scan /path/to/skill --use-llm --enable-meta --format html --output report.html
@@ -227,14 +243,18 @@ if not result.is_safe:
 | `--detailed` | Include detailed findings in Markdown output |
 | `--compact` | Compact JSON output |
 | `--output PATH` | Save report to file |
-| `--fail-on-findings` | Exit with error if HIGH/CRITICAL found |
+| `--fail-on-findings` | Exit with error if HIGH/CRITICAL found (shorthand for `--fail-on-severity high`) |
+| `--fail-on-severity LEVEL` | Exit with error if findings at or above LEVEL exist (critical, high, medium, low, info) |
 | `--custom-rules PATH` | Use custom YARA rules from directory |
 | `--taxonomy PATH` | Load custom taxonomy profile (JSON/YAML) for this run |
 | `--threat-mapping PATH` | Load custom scanner threat mapping profile (JSON) for this run |
+| `--lenient` | Tolerate malformed skills (coerce bad fields, fill defaults) instead of failing |
 | `--check-overlap` | (`scan-all`) Enable cross-skill description overlap checks |
 
 | Command | Description |
 |---------|-------------|
+| *(no command)* | Launch interactive scan wizard (when run in a terminal) |
+| `interactive` | Launch interactive scan wizard (explicit) |
 | `scan` | Scan a single skill directory |
 | `scan-all` | Scan multiple skills (with `--recursive`, `--check-overlap`) |
 | `generate-policy` | Generate a scan policy YAML for customisation |
@@ -259,6 +279,53 @@ Scan Duration: 0.15s
 ```
 
 > **Note:** "No findings" means the scanner did not detect any known threat patterns -- it is not a guarantee that the skill is free of all risk. See [Scope and Limitations](#scope-and-limitations).
+
+---
+
+## GitHub Actions
+
+Scan skills automatically on every push or PR using the [reusable workflow](docs/github-actions.md):
+
+```yaml
+# .github/workflows/scan-skills.yml
+name: Scan Skills
+on:
+  pull_request:
+    paths: [".cursor/skills/**"]
+jobs:
+  scan:
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    with:
+      skill_path: .cursor/skills
+    permissions:
+      security-events: write
+      contents: read
+```
+
+Results appear as inline annotations in PRs via GitHub Code Scanning. See the [full guide](docs/github-actions.md) for LLM integration, secret configuration, and branch protection setup.
+
+---
+
+## Pre-commit Hook
+
+Scan skills before every commit using the [pre-commit](https://pre-commit.com/) framework:
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/cisco-ai-defense/skill-scanner
+    rev: v1.0.0  # use the latest release tag
+    hooks:
+      - id: skill-scanner
+```
+
+Or install the built-in hook directly:
+
+```bash
+skill-scanner-pre-commit install
+```
+
+The hook automatically detects which skill directories have staged changes and only scans those, keeping commit times fast. Use `--all` to scan everything.
 
 ---
 

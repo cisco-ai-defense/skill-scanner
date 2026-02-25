@@ -281,7 +281,7 @@ class CrossSkillScanner(BaseAnalyzer):
         senders = []
 
         for skill in self._skills:
-            desc_lower = skill.description.lower()
+            desc_lower = str(skill.description).lower()
             desc_words = set(re.findall(r"\b[a-z]+\b", desc_lower))
 
             if desc_words & COLLECTION_KEYWORDS:
@@ -296,8 +296,8 @@ class CrossSkillScanner(BaseAnalyzer):
                 for sender in senders:
                     if collector.name != sender.name:
                         # Check if they might work together
-                        coll_words = set(re.findall(r"\b[a-z]+\b", collector.description.lower()))
-                        send_words = set(re.findall(r"\b[a-z]+\b", sender.description.lower()))
+                        coll_words = set(re.findall(r"\b[a-z]+\b", str(collector.description).lower()))
+                        send_words = set(re.findall(r"\b[a-z]+\b", str(sender.description).lower()))
 
                         # Look for shared context words (excluding stop words and action words)
                         EXCLUDE_WORDS = (
@@ -408,7 +408,7 @@ class CrossSkillScanner(BaseAnalyzer):
 
     def _get_skill_content(self, skill: Skill) -> str:
         """Get all content from a skill as a single string."""
-        content_parts = [skill.description, skill.instruction_body]
+        content_parts = [str(skill.description), str(skill.instruction_body or "")]
 
         for skill_file in skill.files:
             try:
