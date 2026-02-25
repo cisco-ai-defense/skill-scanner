@@ -418,3 +418,182 @@ class TestCLILenientFlag:
         parser = build_parser()
         args = parser.parse_args(["scan", "/tmp/skill"])
         assert args.lenient is False
+
+
+# ============================================================================
+# --fail-on-severity flag and helpers
+# ============================================================================
+
+
+class TestFailOnSeverity:
+    def test_flag_registered_on_scan(self):
+        from skill_scanner.cli.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["scan", "/tmp/skill", "--fail-on-severity", "medium"])
+        assert args.fail_on_severity == "medium"
+
+    def test_flag_registered_on_scan_all(self):
+        from skill_scanner.cli.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["scan-all", "/tmp/skills", "--fail-on-severity", "critical"])
+        assert args.fail_on_severity == "critical"
+
+    def test_flag_defaults_to_none(self):
+        from skill_scanner.cli.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["scan", "/tmp/skill"])
+        assert args.fail_on_severity is None
+
+    def test_rejects_invalid_severity(self):
+        from skill_scanner.cli.cli import build_parser
+
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["scan", "/tmp/skill", "--fail-on-severity", "bogus"])
+
+
+class TestHasFindingsAtOrAbove:
+    def _make_finding(self, severity_value: str):
+        from types import SimpleNamespace
+
+        sev = SimpleNamespace(value=severity_value)
+        return SimpleNamespace(severity=sev)
+
+    def test_critical_threshold_matches_critical(self):
+        from skill_scanner.cli.cli import _has_findings_at_or_above
+
+        findings = [self._make_finding("CRITICAL")]
+        assert _has_findings_at_or_above(findings, "critical") is True
+
+    def test_critical_threshold_ignores_high(self):
+        from skill_scanner.cli.cli import _has_findings_at_or_above
+
+        findings = [self._make_finding("HIGH")]
+        assert _has_findings_at_or_above(findings, "critical") is False
+
+    def test_high_threshold_matches_critical_and_high(self):
+        from skill_scanner.cli.cli import _has_findings_at_or_above
+
+        assert _has_findings_at_or_above([self._make_finding("CRITICAL")], "high") is True
+        assert _has_findings_at_or_above([self._make_finding("HIGH")], "high") is True
+
+    def test_high_threshold_ignores_medium(self):
+        from skill_scanner.cli.cli import _has_findings_at_or_above
+
+        findings = [self._make_finding("MEDIUM")]
+        assert _has_findings_at_or_above(findings, "high") is False
+
+    def test_info_threshold_matches_everything(self):
+        from skill_scanner.cli.cli import _has_findings_at_or_above
+
+        for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]:
+            assert _has_findings_at_or_above([self._make_finding(sev)], "info") is True
+
+    def test_empty_findings_returns_false(self):
+        from skill_scanner.cli.cli import _has_findings_at_or_above
+
+        assert _has_findings_at_or_above([], "info") is False
+
+
+class TestReportHasFindingsAtOrAbove:
+    def _make_report(self, **kwargs):
+        from types import SimpleNamespace
+
+        defaults = {"critical_count": 0, "high_count": 0, "medium_count": 0, "low_count": 0, "info_count": 0}
+        defaults.update(kwargs)
+        return SimpleNamespace(**defaults)
+
+    def test_high_threshold_with_critical(self):
+        from skill_scanner.cli.cli import _report_has_findings_at_or_above
+
+        report = self._make_report(critical_count=1)
+        assert _report_has_findings_at_or_above(report, "high") is True
+
+    def test_high_threshold_with_only_medium(self):
+        from skill_scanner.cli.cli import _report_has_findings_at_or_above
+
+        report = self._make_report(medium_count=5)
+        assert _report_has_findings_at_or_above(report, "high") is False
+
+    def test_medium_threshold_with_medium(self):
+        from skill_scanner.cli.cli import _report_has_findings_at_or_above
+
+        report = self._make_report(medium_count=3)
+        assert _report_has_findings_at_or_above(report, "medium") is True
+
+    def test_all_zeros_returns_false(self):
+        from skill_scanner.cli.cli import _report_has_findings_at_or_above
+
+        report = self._make_report()
+        assert _report_has_findings_at_or_above(report, "info") is False
+
+
+class TestResolveFailSeverity:
+    def test_fail_on_severity_takes_precedence(self):
+        from types import SimpleNamespace
+
+        from skill_scanner.cli.cli import _resolve_fail_severity
+
+        args = SimpleNamespace(fail_on_severity="medium", fail_on_findings=True)
+        assert _resolve_fail_severity(args) == "medium"
+
+    def test_fail_on_findings_maps_to_high(self):
+        from types import SimpleNamespace
+
+        from skill_scanner.cli.cli import _resolve_fail_severity
+
+        args = SimpleNamespace(fail_on_severity=None, fail_on_findings=True)
+        assert _resolve_fail_severity(args) == "high"
+
+    def test_neither_flag_returns_none(self):
+        from types import SimpleNamespace
+
+        from skill_scanner.cli.cli import _resolve_fail_severity
+
+        args = SimpleNamespace(fail_on_severity=None, fail_on_findings=False)
+        assert _resolve_fail_severity(args) is None
+
+    def test_missing_attributes_returns_none(self):
+        from types import SimpleNamespace
+
+        from skill_scanner.cli.cli import _resolve_fail_severity
+
+        args = SimpleNamespace()
+        assert _resolve_fail_severity(args) is None
+
+
+# ============================================================================
+# Pre-commit: walk-up-to-root infinite loop fix
+# ============================================================================
+
+
+class TestPrecommitWalkUpRoot:
+    def test_absolute_path_without_skill_md_does_not_loop(self, tmp_path):
+        """Staged file with no SKILL.md anywhere in ancestry must not cause an infinite loop."""
+        from skill_scanner.hooks.pre_commit import get_affected_skills
+
+        deep = tmp_path / "a" / "b" / "c"
+        deep.mkdir(parents=True)
+        some_file = deep / "foo.py"
+        some_file.touch()
+
+        result = get_affected_skills([str(some_file)], str(tmp_path / "nonexistent"))
+        assert result == set()
+
+    def test_walk_up_finds_skill_md(self, tmp_path):
+        """Walk-up should find a SKILL.md in a parent directory."""
+        from skill_scanner.hooks.pre_commit import get_affected_skills
+
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("---\nname: test\ndescription: d\n---\nbody")
+        nested = skill_dir / "src" / "utils"
+        nested.mkdir(parents=True)
+        staged_file = nested / "helper.py"
+        staged_file.touch()
+
+        result = get_affected_skills([str(staged_file)], str(tmp_path / "irrelevant"))
+        assert skill_dir in result

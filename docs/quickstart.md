@@ -223,8 +223,8 @@ The hook only scans skill directories with staged changes. Use `--all` to scan e
 
 3. **Integrate with CI/CD:**
    ```bash
-   skill-scanner scan-all ./skills --fail-on-findings
-   # Exit code 1 if critical/high issues found
+   skill-scanner scan-all ./skills --fail-on-severity high
+   # Exit code 1 if findings at or above HIGH severity
    ```
    See [GitHub Actions Integration](github-actions.md) for a ready-made reusable workflow.
 

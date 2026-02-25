@@ -142,7 +142,7 @@ skill-scanner scan /path/to/skill --lenient
 skill-scanner scan-all /path/to/skills --recursive --lenient
 
 # CI/CD: Fail build if threats found
-skill-scanner scan-all ./skills --fail-on-findings --format sarif --output results.sarif
+skill-scanner scan-all ./skills --fail-on-severity high --format sarif --output results.sarif
 
 # Generate interactive HTML report with attack correlation groups
 skill-scanner scan /path/to/skill --use-llm --enable-meta --format html --output report.html
@@ -233,7 +233,8 @@ if not result.is_safe:
 | `--detailed` | Include detailed findings in Markdown output |
 | `--compact` | Compact JSON output |
 | `--output PATH` | Save report to file |
-| `--fail-on-findings` | Exit with error if HIGH/CRITICAL found |
+| `--fail-on-findings` | Exit with error if HIGH/CRITICAL found (shorthand for `--fail-on-severity high`) |
+| `--fail-on-severity LEVEL` | Exit with error if findings at or above LEVEL exist (critical, high, medium, low, info) |
 | `--custom-rules PATH` | Use custom YARA rules from directory |
 | `--taxonomy PATH` | Load custom taxonomy profile (JSON/YAML) for this run |
 | `--threat-mapping PATH` | Load custom scanner threat mapping profile (JSON) for this run |

@@ -214,6 +214,43 @@ def _configure_taxonomy_and_threat_mapping(args: argparse.Namespace, status: Cal
         status(f"Using custom threat mapping profile: {threat_mapping_source}")
 
 
+_SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
+
+
+def _has_findings_at_or_above(findings, threshold: str) -> bool:
+    """Return True if *findings* contains any at or above *threshold*."""
+    idx = _SEVERITY_ORDER.index(threshold.lower())
+    failing_levels = {s.upper() for s in _SEVERITY_ORDER[: idx + 1]}
+    return any(f.severity.value in failing_levels for f in findings)
+
+
+def _report_has_findings_at_or_above(report, threshold: str) -> bool:
+    """Return True if *report* has any finding at or above *threshold*."""
+    idx = _SEVERITY_ORDER.index(threshold.lower())
+    counts = [
+        ("critical", report.critical_count),
+        ("high", report.high_count),
+        ("medium", report.medium_count),
+        ("low", report.low_count),
+        ("info", report.info_count),
+    ]
+    return any(count > 0 for level, count in counts if _SEVERITY_ORDER.index(level) <= idx)
+
+
+def _resolve_fail_severity(args: argparse.Namespace) -> str | None:
+    """Determine the effective severity threshold from CLI flags.
+
+    ``--fail-on-severity LEVEL`` takes precedence.  ``--fail-on-findings``
+    (legacy boolean flag) is treated as ``--fail-on-severity high``.
+    Returns ``None`` when neither flag is set.
+    """
+    if getattr(args, "fail_on_severity", None):
+        return args.fail_on_severity
+    if getattr(args, "fail_on_findings", False):
+        return "high"
+    return None
+
+
 def _write_output(args: argparse.Namespace, output: str) -> None:
     """Write *output* to a file or stdout."""
     if args.output:
@@ -257,7 +294,7 @@ def scan_command(args: argparse.Namespace) -> int:
         if meta_analyzer and result.findings and apply_meta_analysis_to_results is not None:
             status("Running meta-analysis to filter false positives...")
             try:
-                skill = scanner.loader.load_skill(skill_dir)
+                skill = scanner.loader.load_skill(skill_dir, lenient=lenient)
                 meta_result = asyncio.run(
                     meta_analyzer.analyze_with_findings(
                         skill=skill, findings=result.findings, analyzers_used=result.analyzers_used
@@ -299,7 +336,8 @@ def scan_command(args: argparse.Namespace) -> int:
 
         _write_output(args, _format_output(args, result))
 
-        if not result.is_safe and args.fail_on_findings:
+        fail_severity = _resolve_fail_severity(args)
+        if fail_severity and _has_findings_at_or_above(result.findings, fail_severity):
             return 1
         return 0
 
@@ -351,7 +389,7 @@ def scan_all_command(args: argparse.Namespace) -> int:
                 if not result.findings:
                     continue
                 try:
-                    skill = scanner.loader.load_skill(Path(result.skill_directory))
+                    skill = scanner.loader.load_skill(Path(result.skill_directory), lenient=lenient)
                     original_count = len(result.findings)
                     meta_result = asyncio.run(
                         meta_analyzer.analyze_with_findings(
@@ -403,7 +441,8 @@ def scan_all_command(args: argparse.Namespace) -> int:
 
         _write_output(args, _format_output(args, report))
 
-        if args.fail_on_findings and (report.critical_count > 0 or report.high_count > 0):
+        fail_severity = _resolve_fail_severity(args)
+        if fail_severity and _report_has_findings_at_or_above(report, fail_severity):
             return 1
         return 0
 
@@ -593,6 +632,13 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         help="Include per-finding policy fingerprints, co-occurrence metadata, and keep meta-analyzer false positives in output",
     )
     parser.add_argument("--fail-on-findings", action="store_true", help="Exit with error if critical/high findings")
+    parser.add_argument(
+        "--fail-on-severity",
+        choices=["critical", "high", "medium", "low", "info"],
+        default=None,
+        metavar="LEVEL",
+        help="Exit with error if findings at or above LEVEL exist (critical, high, medium, low, info)",
+    )
     parser.add_argument("--use-behavioral", action="store_true", help="Enable behavioral dataflow analysis")
     parser.add_argument("--use-llm", action="store_true", help="Enable LLM-based semantic analysis (requires API key)")
     parser.add_argument("--use-virustotal", action="store_true", help="Enable VirusTotal scanning (requires API key)")

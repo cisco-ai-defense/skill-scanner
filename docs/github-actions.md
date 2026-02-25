@@ -30,7 +30,7 @@ This will:
 1. Install `cisco-ai-skill-scanner` from PyPI on a fresh runner
 2. Run `skill-scanner scan-all .cursor/skills --format sarif --recursive --check-overlap`
 3. Upload SARIF results to GitHub Code Scanning (findings appear as annotations on PRs)
-4. Fail the workflow if any HIGH or CRITICAL findings are detected
+4. Fail the workflow if any findings at or above HIGH severity are detected (configurable via `fail_on_severity`)
 
 ## Reusable Workflow Inputs
 
@@ -154,7 +154,7 @@ jobs:
             --output results.sarif \
             --recursive \
             --check-overlap \
-            --fail-on-findings
+            --fail-on-severity high
 
       - name: Upload SARIF
         if: always()

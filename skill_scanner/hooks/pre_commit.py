@@ -157,7 +157,10 @@ def get_affected_skills(staged_files: list[str], skills_path: str) -> set[Path]:
             if (candidate / "SKILL.md").exists():
                 affected_skills.add(candidate)
                 break
-            candidate = candidate.parent
+            parent = candidate.parent
+            if parent == candidate:
+                break
+            candidate = parent
 
     return affected_skills
 
@@ -195,7 +198,7 @@ def scan_skill(skill_dir: Path, config: dict) -> dict:
         )
 
         scanner = SkillScanner(analyzers=analyzers, policy=policy)
-        result = scanner.scan_skill(skill_dir)
+        result = scanner.scan_skill(skill_dir, lenient=bool(config.get("lenient")))
 
         # Count findings by severity
         counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}

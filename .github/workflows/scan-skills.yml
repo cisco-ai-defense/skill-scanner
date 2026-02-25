@@ -105,41 +105,82 @@ jobs:
       - name: Install skill-scanner
         run: pip install cisco-ai-skill-scanner
 
+      - name: Validate inputs
+        env:
+          INPUT_SCAN_MODE: ${{ inputs.scan_mode }}
+          INPUT_FORMAT: ${{ inputs.format }}
+          INPUT_POLICY: ${{ inputs.policy }}
+          INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail_on_severity }}
+        run: |
+          fail=0
+          case "$INPUT_SCAN_MODE" in
+            scan|scan-all) ;;
+            *) echo "::error::Invalid scan_mode: must be 'scan' or 'scan-all'"; fail=1 ;;
+          esac
+          case "$INPUT_FORMAT" in
+            summary|json|markdown|table|sarif|html) ;;
+            *) echo "::error::Invalid format: must be summary, json, markdown, table, sarif, or html"; fail=1 ;;
+          esac
+          case "$INPUT_POLICY" in
+            strict|balanced|permissive) ;;
+            *)
+              if [ ! -f "$INPUT_POLICY" ]; then
+                echo "::error::Invalid policy: must be a preset (strict, balanced, permissive) or a path to an existing YAML file"
+                fail=1
+              fi
+              ;;
+          esac
+          case "$INPUT_FAIL_ON_SEVERITY" in
+            critical|high|medium|low|info) ;;
+            *) echo "::error::Invalid fail_on_severity: must be critical, high, medium, low, or info"; fail=1 ;;
+          esac
+          exit "$fail"
+
       - name: Run scan
         env:
           SKILL_SCANNER_LLM_API_KEY: ${{ secrets.llm_api_key }}
           VIRUSTOTAL_API_KEY: ${{ secrets.virustotal_api_key }}
+          INPUT_SCAN_MODE: ${{ inputs.scan_mode }}
+          INPUT_SKILL_PATH: ${{ inputs.skill_path }}
+          INPUT_FORMAT: ${{ inputs.format }}
+          INPUT_POLICY: ${{ inputs.policy }}
+          INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail_on_severity }}
+          INPUT_USE_LLM: ${{ inputs.use_llm }}
+          INPUT_LLM_MODEL: ${{ inputs.llm_model }}
+          INPUT_USE_BEHAVIORAL: ${{ inputs.use_behavioral }}
+          INPUT_LENIENT: ${{ inputs.lenient }}
+          INPUT_EXTRA_ARGS: ${{ inputs.extra_args }}
         run: |
           set +e
 
-          ARGS="${{ inputs.scan_mode }} ${{ inputs.skill_path }}"
-          ARGS="$ARGS --format ${{ inputs.format }} --policy ${{ inputs.policy }}"
+          ARGS="$INPUT_SCAN_MODE $INPUT_SKILL_PATH"
+          ARGS="$ARGS --format $INPUT_FORMAT --policy $INPUT_POLICY"
 
-          if [ "${{ inputs.scan_mode }}" = "scan-all" ]; then
+          if [ "$INPUT_SCAN_MODE" = "scan-all" ]; then
             ARGS="$ARGS --recursive --check-overlap"
           fi
 
-          if [ "${{ inputs.use_llm }}" = "true" ]; then
+          if [ "$INPUT_USE_LLM" = "true" ]; then
             ARGS="$ARGS --use-llm"
           fi
 
-          if [ -n "${{ inputs.llm_model }}" ]; then
-            ARGS="$ARGS --llm-model ${{ inputs.llm_model }}"
+          if [ -n "$INPUT_LLM_MODEL" ]; then
+            ARGS="$ARGS --llm-model $INPUT_LLM_MODEL"
           fi
 
-          if [ "${{ inputs.use_behavioral }}" = "true" ]; then
+          if [ "$INPUT_USE_BEHAVIORAL" = "true" ]; then
             ARGS="$ARGS --use-behavioral"
           fi
 
-          if [ "${{ inputs.lenient }}" = "true" ]; then
+          if [ "$INPUT_LENIENT" = "true" ]; then
             ARGS="$ARGS --lenient"
           fi
 
-          if [ "${{ inputs.format }}" = "sarif" ]; then
+          if [ "$INPUT_FORMAT" = "sarif" ]; then
             ARGS="$ARGS --output results.sarif"
           fi
 
-          ARGS="$ARGS --fail-on-findings ${{ inputs.extra_args }}"
+          ARGS="$ARGS --fail-on-severity $INPUT_FAIL_ON_SEVERITY $INPUT_EXTRA_ARGS"
 
           echo "Running: skill-scanner $ARGS"
           skill-scanner $ARGS
@@ -155,8 +196,10 @@ jobs:
           sarif_file: results.sarif
 
       - name: Check severity threshold
+        env:
+          INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail_on_severity }}
         run: |
-          if [ "${{ env.scan_exit_code }}" != "0" ]; then
-            echo "::error::Skill Scanner found findings at or above ${{ inputs.fail_on_severity }} severity"
+          if [ "$scan_exit_code" != "0" ]; then
+            echo "::error::Skill Scanner found findings at or above $INPUT_FAIL_ON_SEVERITY severity"
             exit 1
           fi
