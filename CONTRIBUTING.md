@@ -46,6 +46,20 @@ We expect new pull requests to include tests for any affected behavior, and, as
 we follow semantic versioning, we may reserve breaking changes until the next
 major version release.
 
+### Formatting and Linting
+
+This project uses [pre-commit](https://pre-commit.com/) hooks to enforce consistent
+formatting (via [ruff](https://docs.astral.sh/ruff/)). **Install them locally** so
+issues are caught before you push:
+
+```bash
+uv run pre-commit install        # one-time setup
+uv run pre-commit run --all-files # check everything now
+```
+
+If you forget, [pre-commit.ci](https://pre-commit.ci/) will auto-fix formatting on
+your PR and push a commit. However, running hooks locally avoids the extra round-trip.
+
 ### Pull Request Checklist
 
 - [ ] All pre-commit hooks pass (`uv run pre-commit run --all-files`)

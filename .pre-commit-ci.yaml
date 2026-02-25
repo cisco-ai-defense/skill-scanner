@@ -1,0 +1,22 @@
+# pre-commit.ci configuration
+# https://pre-commit.ci/#configuration
+#
+# pre-commit.ci is free for open-source repos and automatically fixes
+# formatting/lint issues on PRs — including PRs from forks, where
+# GitHub Actions cannot push back to the contributor's branch.
+
+ci:
+  # Auto-fix PRs by committing formatting corrections
+  autofix_prs: true
+
+  # Commit message used by the bot when it pushes fixes
+  autofix_commit_msg: "style: auto-fix pre-commit hooks"
+
+  # Run all hooks on weekly schedule to catch config drift
+  autoupdate_schedule: weekly
+  autoupdate_commit_msg: "chore: pre-commit autoupdate"
+
+  # Hooks that need extra tooling not available in pre-commit.ci
+  skip:
+    - addlicense
+    - check-taxonomy
