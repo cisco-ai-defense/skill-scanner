@@ -39,6 +39,16 @@ export VIRUSTOTAL_API_KEY="your_virustotal_api_key"
 export AI_DEFENSE_API_KEY="your_aidefense_api_key"
 ```
 
+### Interactive Wizard
+
+Not sure which flags to use? Run `skill-scanner` with no arguments to launch the interactive wizard:
+
+```bash
+skill-scanner
+```
+
+It walks you through selecting a scan target, analyzers, policy, and output format step by step.
+
 ### Scan a Single Skill
 
 ```bash

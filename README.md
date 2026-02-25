@@ -110,6 +110,16 @@ export VIRUSTOTAL_API_KEY="your_virustotal_api_key"
 export AI_DEFENSE_API_KEY="your_aidefense_api_key"
 ```
 
+### Interactive Wizard
+
+Not sure which flags to use? Run `skill-scanner` with no arguments to launch the interactive wizard:
+
+```bash
+skill-scanner
+```
+
+The wizard walks you through selecting a scan target, analyzers, policy, and output format, then shows the assembled command before running it. Great for learning the CLI.
+
 ### CLI Usage
 
 ```bash
@@ -243,6 +253,8 @@ if not result.is_safe:
 
 | Command | Description |
 |---------|-------------|
+| *(no command)* | Launch interactive scan wizard (when run in a terminal) |
+| `interactive` | Launch interactive scan wizard (explicit) |
 | `scan` | Scan a single skill directory |
 | `scan-all` | Scan multiple skills (with `--recursive`, `--check-overlap`) |
 | `generate-policy` | Generate a scan policy YAML for customisation |

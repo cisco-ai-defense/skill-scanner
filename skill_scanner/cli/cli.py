@@ -745,7 +745,16 @@ Examples:
     cp_p.add_argument("--output", "-o", default="scan_policy.yaml", help="Output file path")
     cp_p.add_argument("--input", "-i", default=None, help="Load existing policy YAML for editing")
 
+    # -- interactive -------------------------------------------------------
+    subparsers.add_parser("interactive", help="Launch the interactive scan wizard")
+
     return parser
+
+
+def _run_interactive_wizard() -> int:
+    from .wizard import run_wizard
+
+    return run_wizard()
 
 
 def main() -> int:
@@ -756,8 +765,13 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.command:
+        if sys.stdin.isatty():
+            return _run_interactive_wizard()
         parser.print_help()
         return 1
+
+    if args.command == "interactive":
+        return _run_interactive_wizard()
 
     dispatch = {
         "scan": scan_command,
