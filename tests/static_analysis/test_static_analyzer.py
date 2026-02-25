@@ -169,3 +169,34 @@ def test_static_analyzer_findings_to_dict_includes_analyzer(loader, analyzer, ex
         # Verify analyzer field is present in dict output
         assert "analyzer" in finding_dict, "analyzer field missing from to_dict() output"
         assert finding_dict["analyzer"] == "static", f"Expected analyzer='static', got '{finding_dict['analyzer']}'"
+
+
+def test_dict_compatibility_does_not_crash(analyzer, tmp_path):
+    """Regression: dict-valued ``compatibility`` must not crash the analyzer.
+
+    Skills may declare compatibility as a mapping (e.g.
+    ``{python-version: '3.8+', platforms: [linux, macos]}``).
+    ``_manifest_declares_network`` previously called ``.lower()`` on the
+    raw value, raising ``AttributeError`` on non-string types.
+
+    See https://github.com/cisco-ai-defense/skill-scanner/issues/31
+    """
+    skill_md = tmp_path / "SKILL.md"
+    skill_md.write_text(
+        "---\n"
+        "name: compat-dict-test\n"
+        "description: Skill whose compatibility field is a dict\n"
+        "compatibility:\n"
+        "  python-version: '3.8+'\n"
+        "  platforms: [linux, macos, windows]\n"
+        "---\n"
+        "# Instructions\nDo something.\n"
+    )
+
+    from skill_scanner.core.loader import SkillLoader
+
+    skill = SkillLoader().load_skill(tmp_path)
+    assert isinstance(skill.manifest.compatibility, dict)
+
+    findings = analyzer.analyze(skill)
+    assert isinstance(findings, list)

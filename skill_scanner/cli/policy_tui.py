@@ -366,6 +366,12 @@ class PolicyConfigApp(App[str | None]):
             with Horizontal(classes="field-row"):
                 yield Label("Min description length")
                 yield Input(value="20", id="min-desc-len", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Max YARA scan file size (bytes)")
+                yield Input(value="52428800", id="max-yara-scan-size", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Max loader file size (bytes)")
+                yield Input(value="10485760", id="max-loader-file-size", type="integer")
 
             yield Rule()
 
@@ -402,6 +408,9 @@ class PolicyConfigApp(App[str | None]):
             with Horizontal(classes="field-row"):
                 yield Label("Cyrillic/CJK min chars (steg)")
                 yield Input(value="10", id="cyrillic-cjk-min-chars", type="integer")
+            with Horizontal(classes="field-row"):
+                yield Label("Max regex pattern length")
+                yield Input(value="1000", id="max-regex-pattern-length", type="integer")
 
             yield Rule()
 
@@ -534,6 +543,8 @@ class PolicyConfigApp(App[str | None]):
         self.query_one("#max-name-len", Input).value = str(p.file_limits.max_name_length)
         self.query_one("#max-desc-len", Input).value = str(p.file_limits.max_description_length)
         self.query_one("#min-desc-len", Input).value = str(p.file_limits.min_description_length)
+        self.query_one("#max-yara-scan-size", Input).value = str(p.file_limits.max_yara_scan_file_size_bytes)
+        self.query_one("#max-loader-file-size", Input).value = str(p.file_limits.max_loader_file_size_bytes)
 
         # Thresholds
         self.query_one("#zw-decode", Input).value = str(p.analysis_thresholds.zerowidth_threshold_with_decode)
@@ -547,6 +558,7 @@ class PolicyConfigApp(App[str | None]):
         )
         self.query_one("#short-match-max-chars", Input).value = str(p.analysis_thresholds.short_match_max_chars)
         self.query_one("#cyrillic-cjk-min-chars", Input).value = str(p.analysis_thresholds.cyrillic_cjk_min_chars)
+        self.query_one("#max-regex-pattern-length", Input).value = str(p.analysis_thresholds.max_regex_pattern_length)
 
         # Pipeline checkboxes
         self.query_one("#chk-demote-in-docs", Checkbox).value = p.pipeline.demote_in_docs
@@ -600,6 +612,14 @@ class PolicyConfigApp(App[str | None]):
             p.file_limits.min_description_length = int(self.query_one("#min-desc-len", Input).value)
         except ValueError:
             pass
+        try:
+            p.file_limits.max_yara_scan_file_size_bytes = int(self.query_one("#max-yara-scan-size", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.file_limits.max_loader_file_size_bytes = int(self.query_one("#max-loader-file-size", Input).value)
+        except ValueError:
+            pass
 
         # Thresholds
         try:
@@ -638,6 +658,12 @@ class PolicyConfigApp(App[str | None]):
             pass
         try:
             p.analysis_thresholds.cyrillic_cjk_min_chars = int(self.query_one("#cyrillic-cjk-min-chars", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.analysis_thresholds.max_regex_pattern_length = int(
+                self.query_one("#max-regex-pattern-length", Input).value
+            )
         except ValueError:
             pass
 

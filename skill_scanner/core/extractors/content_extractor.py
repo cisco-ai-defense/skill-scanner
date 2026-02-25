@@ -21,6 +21,7 @@ Extracts contents from ZIP, TAR, DOCX, XLSX, etc. with safety limits
 (depth, size, file count, zip bomb detection, path traversal prevention).
 """
 
+import hashlib
 import logging
 import os
 import stat
@@ -31,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ...utils.file_utils import get_file_type
 from ..models import Finding, Severity, SkillFile, ThreatCategory
 
 logger = logging.getLogger(__name__)
@@ -297,7 +299,7 @@ class ContentExtractor:
 
                     # Create virtual SkillFile
                     virtual_relative = f"{source_relative_path}!/{info.filename}"
-                    file_type = self._determine_file_type(extracted_path)
+                    file_type = get_file_type(extracted_path)
                     content = None
                     if file_type != "binary":
                         try:
@@ -415,7 +417,7 @@ class ContentExtractor:
                     result.total_extracted_size += member.size
 
                     virtual_relative = f"{source_relative_path}!/{member.name}"
-                    file_type = self._determine_file_type(extracted_path)
+                    file_type = get_file_type(extracted_path)
                     content = None
                     if file_type != "binary":
                         try:
@@ -472,11 +474,11 @@ class ContentExtractor:
         names = zf.namelist()
 
         # Check for VBA macros (vbaProject.bin)
-        vba_files = [n for n in names if "vbaProject" in n or n.endswith(".bin")]
+        vba_files = [n for n in names if "vbaProject" in n]
         if vba_files:
             result.findings.append(
                 Finding(
-                    id=f"VBA_MACRO_{hash(source_relative_path) & 0xFFFFFFFF:08x}",
+                    id=f"VBA_MACRO_{hashlib.sha256(source_relative_path.encode()).hexdigest()[:8]}",
                     rule_id="OFFICE_VBA_MACRO",
                     category=ThreatCategory.COMMAND_INJECTION,
                     severity=Severity.CRITICAL,
@@ -510,20 +512,6 @@ class ContentExtractor:
                     analyzer="static",
                 )
             )
-
-    def _determine_file_type(self, path: Path) -> str:
-        """Determine file type from extension."""
-        ext = path.suffix.lower()
-        if ext in (".py",):
-            return "python"
-        elif ext in (".sh", ".bash"):
-            return "bash"
-        elif ext in (".md", ".markdown"):
-            return "markdown"
-        elif ext in (".exe", ".so", ".dylib", ".dll", ".bin"):
-            return "binary"
-        else:
-            return "other"
 
     def cleanup(self) -> None:
         """Remove all temporary extraction directories."""

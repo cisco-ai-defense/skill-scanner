@@ -28,6 +28,7 @@ Features:
 """
 
 import asyncio
+import concurrent.futures
 import hashlib
 import logging
 import os
@@ -47,6 +48,16 @@ from ...core.static_analysis.interprocedural.cross_file_analyzer import CrossFil
 from .base import BaseAnalyzer
 
 logger = logging.getLogger(__name__)
+
+
+def _run_coroutine_sync(coro):
+    """Run a coroutine from sync context, handling already-running loops."""
+    try:
+        asyncio.get_running_loop()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+    except RuntimeError:
+        return asyncio.run(coro)
 
 
 class BehavioralAnalyzer(BaseAnalyzer):
@@ -220,8 +231,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
             # Run alignment verification on each function
             for func_context in function_contexts:
                 try:
-                    # Run async alignment check
-                    result = asyncio.get_event_loop().run_until_complete(
+                    result = _run_coroutine_sync(
                         self.alignment_orchestrator.check_alignment(func_context, skill_description)
                     )
 
