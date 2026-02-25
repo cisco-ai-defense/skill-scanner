@@ -211,7 +211,7 @@ class LLMRequestHandler:
                 # Format: response_format={ "type": "json_schema", "json_schema": { "name": "...", "schema": {...}, "strict": true } }
                 # Works for: OpenAI, Anthropic Claude, Gemini (via LiteLLM), Bedrock, Vertex AI, Groq, Ollama, Databricks
                 model_lower = self.provider_config.model.lower()
-                unsupported_json_schema_providers = ["deepseek"]  # 不支持 response_format 的提供商
+                unsupported_json_schema_providers = ["deepseek"]
                 if self.response_schema and not any(p in model_lower for p in unsupported_json_schema_providers):
                     request_params["response_format"] = {
                         "type": "json_schema",
