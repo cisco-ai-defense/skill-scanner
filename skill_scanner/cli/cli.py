@@ -171,17 +171,27 @@ def _build_meta_analyzer(args: argparse.Namespace, analyzer_count: int, status: 
 
 def _make_status_printer(args: argparse.Namespace) -> Callable[[str], None]:
     """Return a printer that sends to stderr when JSON output is active."""
-    is_json = getattr(args, "format", "summary") == "json"
+    formats = _get_formats(args)
+    is_machine = any(f in formats for f in ("json", "sarif"))
 
     def _print(msg: str) -> None:
-        print(msg, file=sys.stderr if is_json else sys.stdout)
+        print(msg, file=sys.stderr if is_machine else sys.stdout)
 
     return _print
 
 
-def _format_output(args: argparse.Namespace, result_or_report) -> str:
-    """Generate the formatted output string for a scan result / report."""
-    fmt = getattr(args, "format", "summary")
+def _get_formats(args: argparse.Namespace) -> list[str]:
+    """Return the list of output formats from ``--format`` flags."""
+    raw = getattr(args, "format", None)
+    if not raw:
+        return ["summary"]
+    if isinstance(raw, list):
+        return raw
+    return [raw]
+
+
+def _format_single(fmt: str, args: argparse.Namespace, result_or_report) -> str:
+    """Generate the formatted output string for one format."""
     if fmt == "json":
         return JSONReporter(pretty=not args.compact).generate_report(result_or_report)
     if fmt == "markdown":
@@ -198,6 +208,12 @@ def _format_output(args: argparse.Namespace, result_or_report) -> str:
     if isinstance(result_or_report, Report):
         return _generate_multi_skill_summary(result_or_report)
     return _generate_summary(result_or_report)
+
+
+def _format_output(args: argparse.Namespace, result_or_report) -> str:
+    """Generate the formatted output string for the primary format."""
+    formats = _get_formats(args)
+    return _format_single(formats[0], args, result_or_report)
 
 
 def _configure_taxonomy_and_threat_mapping(args: argparse.Namespace, status: Callable[[str], None]) -> None:
@@ -252,13 +268,33 @@ def _resolve_fail_severity(args: argparse.Namespace) -> str | None:
 
 
 def _write_output(args: argparse.Namespace, output: str) -> None:
-    """Write *output* to a file or stdout."""
+    """Write *output* to a file or stdout, and emit any additional formats."""
+    formats = _get_formats(args)
+
+    # Primary format: write to --output file or stdout
     if args.output:
         with open(args.output, "w", encoding="utf-8") as fh:
             fh.write(output)
         print(f"Report saved to: {args.output}")
     else:
         print(output)
+
+    # Additional formats beyond the first: each gets its own --output-<fmt> file
+    # or is printed to stdout if no file path is given.
+    if len(formats) > 1:
+        # We already emitted formats[0] above.
+        result_or_report = getattr(args, "_result_or_report", None)
+        if result_or_report is not None:
+            for fmt in formats[1:]:
+                formatted = _format_single(fmt, args, result_or_report)
+                output_key = f"output_{fmt}"
+                file_path = getattr(args, output_key, None)
+                if file_path:
+                    with open(file_path, "w", encoding="utf-8") as fh:
+                        fh.write(formatted)
+                    print(f"{fmt.upper()} report saved to: {file_path}")
+                else:
+                    print(formatted)
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +370,7 @@ def scan_command(args: argparse.Namespace) -> int:
         if not getattr(args, "verbose", False):
             result.findings = [f for f in result.findings if not f.metadata.get("meta_false_positive", False)]
 
+        args._result_or_report = result
         _write_output(args, _format_output(args, result))
 
         fail_severity = _resolve_fail_severity(args)
@@ -441,6 +478,7 @@ def scan_all_command(args: argparse.Namespace) -> int:
         report.info_count = sum(1 for f in all_findings if f.severity.value == "INFO")
         report.safe_count = sum(1 for r in report.scan_results if r.is_safe)
 
+        args._result_or_report = report
         _write_output(args, _format_output(args, report))
 
         fail_severity = _resolve_fail_severity(args)
@@ -622,15 +660,29 @@ def _generate_multi_skill_summary(report) -> str:
 # ---------------------------------------------------------------------------
 
 
+_VALID_FORMATS = ("summary", "json", "markdown", "table", "sarif", "html")
+
+
 def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     """Add flags shared between ``scan`` and ``scan-all``."""
     parser.add_argument(
         "--format",
-        choices=["summary", "json", "markdown", "table", "sarif", "html"],
-        default="summary",
-        help="Output format (default: summary). Use 'sarif' for GitHub Code Scanning, 'html' for interactive report.",
+        action="append",
+        choices=list(_VALID_FORMATS),
+        default=None,
+        dest="format",
+        help=(
+            "Output format (default: summary). May be specified multiple times "
+            "to produce several reports in one run, e.g. --format markdown --format sarif. "
+            "Use 'sarif' for GitHub Code Scanning, 'html' for interactive report."
+        ),
     )
-    parser.add_argument("--output", "-o", help="Output file path")
+    parser.add_argument("--output", "-o", help="Output file path (for the first --format)")
+    parser.add_argument("--output-json", help="Write JSON report to this file (when using multiple --format)")
+    parser.add_argument("--output-sarif", help="Write SARIF report to this file (when using multiple --format)")
+    parser.add_argument("--output-markdown", help="Write Markdown report to this file (when using multiple --format)")
+    parser.add_argument("--output-html", help="Write HTML report to this file (when using multiple --format)")
+    parser.add_argument("--output-table", help="Write Table report to this file (when using multiple --format)")
     parser.add_argument("--detailed", action="store_true", help="Include detailed findings (Markdown output only)")
     parser.add_argument("--compact", action="store_true", help="Compact JSON output")
     parser.add_argument(
@@ -708,6 +760,7 @@ Examples:
   skill-scanner scan /path/to/skill --use-llm --enable-meta --format json
   skill-scanner scan /path/to/skill --format json --verbose
   skill-scanner scan /path/to/skill --policy strict
+  skill-scanner scan /path/to/skill --format markdown --format sarif --output-sarif report.sarif
   skill-scanner scan-all /path/to/skills --recursive
   skill-scanner generate-policy -o my_policy.yaml
   skill-scanner configure-policy

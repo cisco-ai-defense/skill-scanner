@@ -141,6 +141,18 @@ class SkillScanner:
         else:
             self.analyzers = analyzers
 
+        # Warn if MetaAnalyzer is in the analyzers list -- it must be
+        # orchestrated separately via analyze_with_findings().
+        for a in self.analyzers:
+            if a.get_name() == "meta_analyzer":
+                logger.warning(
+                    "MetaAnalyzer was passed in the analyzers list, but it cannot "
+                    "produce findings via the normal analyze() pipeline. It will be "
+                    "skipped during scanning. Use the CLI --enable-meta flag or call "
+                    "MetaAnalyzer.analyze_with_findings() after scanning instead."
+                )
+                break
+
         loader_max_bytes = self.policy.file_limits.max_loader_file_size_bytes
         self.loader = SkillLoader(max_file_size_bytes=loader_max_bytes)
         self.content_extractor = ContentExtractor()
@@ -192,6 +204,7 @@ class SkillScanner:
             # Include any archive extraction findings (zip bombs, path traversal, etc.)
             all_findings.extend(extraction_result.findings)
             analyzer_names: list[str] = []
+            analyzers_failed: list[dict[str, str]] = []
             validated_binary_files: set[str] = set()
             llm_analyzers: list[BaseAnalyzer] = []
             unreferenced_scripts: list[str] = []
@@ -243,6 +256,10 @@ class SkillScanner:
                     findings = analyzer.analyze(skill)
                     all_findings.extend(findings)
                     analyzer_names.append(analyzer.get_name())
+
+                    # Track analyzer failures for machine-readable output
+                    if hasattr(analyzer, "last_error") and analyzer.last_error:
+                        analyzers_failed.append({"analyzer": analyzer.get_name(), "error": analyzer.last_error})
 
                     # Capture skill-level LLM assessment for scan_metadata
                     if hasattr(analyzer, "last_overall_assessment"):
@@ -296,6 +313,7 @@ class SkillScanner:
             findings=all_findings,
             scan_duration_seconds=scan_duration,
             analyzers_used=analyzer_names,
+            analyzers_failed=analyzers_failed,
             analyzability_score=analyzability.score,
             analyzability_details=analyzability.to_dict(),
             scan_metadata=policy_meta,

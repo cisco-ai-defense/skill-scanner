@@ -212,6 +212,7 @@ class ScanResult:
     findings: list[Finding] = field(default_factory=list)
     scan_duration_seconds: float = 0.0
     analyzers_used: list[str] = field(default_factory=list)
+    analyzers_failed: list[dict[str, str]] = field(default_factory=list)
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     analyzability_score: float | None = None
     analyzability_details: dict[str, Any] | None = None
@@ -248,7 +249,7 @@ class ScanResult:
         Output format is compatible with mcp-scanner-plugin's SkillResultParser.
         See: https://github.com/cisco/mcp-scanner-plugin
         """
-        return {
+        result = {
             "skill_name": self.skill_name,
             "skill_path": self.skill_directory,
             "is_safe": self.is_safe,
@@ -261,6 +262,9 @@ class ScanResult:
             "timestamp": self.timestamp.isoformat(),
             "scan_metadata": self.scan_metadata or {},
         }
+        if self.analyzers_failed:
+            result["analyzers_failed"] = self.analyzers_failed
+        return result
 
 
 @dataclass
