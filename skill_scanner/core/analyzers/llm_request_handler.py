@@ -210,7 +210,9 @@ class LLMRequestHandler:
                 # According to LiteLLM docs: https://docs.litellm.ai/docs/completion/json_mode
                 # Format: response_format={ "type": "json_schema", "json_schema": { "name": "...", "schema": {...}, "strict": true } }
                 # Works for: OpenAI, Anthropic Claude, Gemini (via LiteLLM), Bedrock, Vertex AI, Groq, Ollama, Databricks
-                if self.response_schema:
+                model_lower = self.provider_config.model.lower()
+                unsupported_json_schema_providers = ["deepseek"]  # 不支持 response_format 的提供商
+                if self.response_schema and not any(p in model_lower for p in unsupported_json_schema_providers):
                     request_params["response_format"] = {
                         "type": "json_schema",
                         "json_schema": {
@@ -218,6 +220,10 @@ class LLMRequestHandler:
                             "schema": self.response_schema,
                             "strict": True,  # Enforce strict schema compliance - prevents extra fields
                         },
+                    }
+                else:
+                    request_params["response_format"] = {
+                        'type': 'json_object'
                     }
 
                 response = await acompletion(**request_params)
