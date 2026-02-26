@@ -768,9 +768,7 @@ Examples:
   skill-scanner list-analyzers
         """,
     )
-    parser.add_argument(
-        "--version", "-V", action="version", version=f"%(prog)s {__version__}"
-    )
+    parser.add_argument("--version", "-V", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # -- scan --------------------------------------------------------------
