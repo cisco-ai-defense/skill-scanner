@@ -41,6 +41,16 @@ export AI_DEFENSE_API_KEY="your_aidefense_api_key"
 
 See [Configuration Reference](/reference/configuration-reference) for every available environment variable.
 
+### Interactive Wizard
+
+Not sure which flags to use? Run `skill-scanner` with no arguments to launch the interactive wizard:
+
+```bash
+skill-scanner
+```
+
+It walks you through selecting a scan target, analyzers, policy, and output format step by step.
+
 ### Scan a Single Skill
 
 ```bash
@@ -206,11 +216,35 @@ For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, set provider-spe
 skill-scanner scan-all /path/to/skills --check-overlap
 ```
 
-### Pre-commit Hook
+### Lenient Mode
+
+Tolerate malformed skills (missing fields, non-string descriptions) instead of failing:
+
 ```bash
-cp scripts/pre-commit-hook.sh .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit
+skill-scanner scan /path/to/skill --lenient
+skill-scanner scan-all /path/to/skills --recursive --lenient
 ```
+
+### Pre-commit Hook
+
+Using the [pre-commit](https://pre-commit.com/) framework (recommended):
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/cisco-ai-defense/skill-scanner
+    rev: v1.0.0  # use the latest release tag
+    hooks:
+      - id: skill-scanner
+```
+
+Or install the built-in hook directly:
+
+```bash
+skill-scanner-pre-commit install
+```
+
+The hook only scans skill directories with staged changes. Use `--all` to scan everything.
 
 ## Next Steps
 
@@ -228,9 +262,10 @@ chmod +x .git/hooks/pre-commit
 
 3. **Integrate with CI/CD:**
    ```bash
-   skill-scanner scan-all ./skills --fail-on-findings
-   # Exit code 1 if critical/high issues found
+   skill-scanner scan-all ./skills --fail-on-severity high
+   # Exit code 1 if findings at or above HIGH severity
    ```
+   See [GitHub Actions Integration](github-actions.md) for a ready-made reusable workflow.
 
 ## Troubleshooting
 

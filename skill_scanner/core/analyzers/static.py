@@ -185,12 +185,16 @@ class StaticAnalyzer(BaseAnalyzer):
         self.yara_scanner = None
         if use_yara:
             try:
+                max_scan_bytes = self.policy.file_limits.max_yara_scan_file_size_bytes
                 # Use custom rules path if provided
                 if self.custom_yara_rules_path:
-                    self.yara_scanner = YaraScanner(rules_dir=self.custom_yara_rules_path)
+                    self.yara_scanner = YaraScanner(
+                        rules_dir=self.custom_yara_rules_path,
+                        max_scan_file_size=max_scan_bytes,
+                    )
                     logger.info("Using custom YARA rules from: %s", self.custom_yara_rules_path)
                 else:
-                    self.yara_scanner = YaraScanner()
+                    self.yara_scanner = YaraScanner(max_scan_file_size=max_scan_bytes)
             except Exception as e:
                 logger.warning("Could not load YARA scanner: %s", e)
                 self.yara_scanner = None
@@ -218,12 +222,8 @@ class StaticAnalyzer(BaseAnalyzer):
         if rule_name in self.disabled_rules:
             return False
 
-        # Also check without YARA_ prefix for convenience
         base_name = rule_name.replace("YARA_", "") if rule_name.startswith("YARA_") else rule_name
         if base_name in self.disabled_rules:
-            return False
-
-        if rule_name in self.policy.disabled_rules:
             return False
 
         return True
@@ -667,8 +667,8 @@ class StaticAnalyzer(BaseAnalyzer):
                         self._scan_references_recursive(skill, nested_refs, max_depth, current_depth + 1, visited)
                     )
 
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to scan reference %s: %s", full_path, e)
 
         return findings
 
@@ -946,7 +946,7 @@ class StaticAnalyzer(BaseAnalyzer):
     def _manifest_declares_network(self, skill: Skill) -> bool:
         """Check if manifest declares network usage."""
         if skill.manifest.compatibility:
-            compatibility_lower = skill.manifest.compatibility.lower()
+            compatibility_lower = str(skill.manifest.compatibility).lower()
             return "network" in compatibility_lower or "internet" in compatibility_lower
         return False
 
@@ -1408,8 +1408,6 @@ class StaticAnalyzer(BaseAnalyzer):
                 yara_matches = self.yara_scanner.scan_content(content, skill_file.relative_path)
                 for match in yara_matches:
                     rule_name = match.get("rule_name", "")
-                    if rule_name == "capability_inflation_generic":
-                        continue
                     if not self._is_rule_enabled(rule_name):
                         continue
 
@@ -1516,9 +1514,8 @@ class StaticAnalyzer(BaseAnalyzer):
 
         for sf in skill.files:
             # Target PDF files by extension or content family
-            is_pdf = (
-                sf.path.suffix.lower() == ".pdf"
-                or sf.file_type in ("binary", "other")
+            is_pdf = sf.path.suffix.lower() == ".pdf" or (
+                sf.file_type in ("binary", "other")
                 and sf.path.exists()
                 and sf.path.stat().st_size > 4
                 and sf.path.read_bytes()[:5] == b"%PDF-"

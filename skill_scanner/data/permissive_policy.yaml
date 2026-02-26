@@ -438,6 +438,8 @@ file_limits:
   max_name_length: 128
   max_description_length: 4096
   min_description_length: 10    # Very short descriptions OK
+  max_yara_scan_file_size_bytes: 104857600  # 100 MB — relaxed YARA scan limit
+  max_loader_file_size_bytes: 20971520      # 20 MB — relaxed content loading limit
 
 # ---------------------------------------------------------------------------
 # Analysis thresholds – less sensitive detection
@@ -456,6 +458,7 @@ analysis_thresholds:
   homoglyph_math_aliases:
     - "COMMON"
     - "GREEK"
+  max_regex_pattern_length: 2000          # Relaxed regex length limit
 
 # ---------------------------------------------------------------------------
 # Sensitive files – narrower patterns (fewer FPs)

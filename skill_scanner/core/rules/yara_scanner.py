@@ -27,16 +27,21 @@ import yara_x
 logger = logging.getLogger(__name__)
 
 
+_MAX_SCAN_FILE_SIZE = 50 * 1024 * 1024
+
+
 class YaraScanner:
     """Scanner that uses YARA rules to detect malicious patterns."""
 
-    def __init__(self, rules_dir: Path | None = None):
+    def __init__(self, rules_dir: Path | None = None, *, max_scan_file_size: int = 50 * 1024 * 1024):
         """
         Initialize YARA scanner.
 
         Args:
             rules_dir: Path to directory containing .yara files
+            max_scan_file_size: Maximum binary file size in bytes to scan (default 50 MB)
         """
+        self.max_scan_file_size = max_scan_file_size
         if rules_dir is None:
             from ...data import DATA_DIR
 
@@ -195,9 +200,14 @@ class YaraScanner:
         if not self.rules:
             return []
 
+        path = Path(file_path)
+        file_size = path.stat().st_size
+        if file_size > self.max_scan_file_size:
+            logger.warning("Skipping %s: file size %d bytes exceeds scan limit", file_path, file_size)
+            return []
+
         matches = []
         try:
-            # Read raw bytes for matched_data extraction
             with open(file_path, "rb") as f:
                 file_bytes = f.read()
 

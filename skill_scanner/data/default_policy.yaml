@@ -396,6 +396,8 @@ file_limits:
   max_name_length: 64           # Skill name length limit
   max_description_length: 1024  # Max description length
   min_description_length: 20    # Below this → vague description warning
+  max_yara_scan_file_size_bytes: 52428800  # 50 MB — binary files above this skip YARA scan
+  max_loader_file_size_bytes: 10485760    # 10 MB — files above this skip content loading
 
 # ---------------------------------------------------------------------------
 # Analysis thresholds – YARA and analyzability scoring
@@ -414,6 +416,7 @@ analysis_thresholds:
   homoglyph_math_aliases:
     - "COMMON"
     - "GREEK"
+  max_regex_pattern_length: 1000          # Max chars for user-supplied regex (ReDoS protection)
 
 # ---------------------------------------------------------------------------
 # Sensitive files – patterns that upgrade taint in pipelines

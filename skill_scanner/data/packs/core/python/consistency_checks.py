@@ -47,7 +47,7 @@ def skill_uses_network(skill: Skill) -> bool:
 def manifest_declares_network(skill: Skill) -> bool:
     """Check if manifest declares network usage."""
     if skill.manifest.compatibility:
-        compatibility_lower = skill.manifest.compatibility.lower()
+        compatibility_lower = str(skill.manifest.compatibility).lower()
         return "network" in compatibility_lower or "internet" in compatibility_lower
     return False
 

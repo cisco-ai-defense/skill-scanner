@@ -224,11 +224,7 @@ class TestScanEndpoint:
 
     def test_scan_aidefense_without_key_returns_400(self, client, safe_skill_dir):
         """Test that AI Defense without API key returns 400."""
-        request_data = {
-            "skill_directory": str(safe_skill_dir),
-            "use_aidefense": True,
-            "aidefense_api_key": None,  # No key
-        }
+        request_data = {"skill_directory": str(safe_skill_dir), "use_aidefense": True}
 
         response = client.post("/scan", json=request_data)
 
@@ -716,7 +712,6 @@ class TestAnalyzerParity:
         request_data = {
             "skill_directory": str(safe_skill_dir),
             "use_virustotal": False,
-            "vt_api_key": None,
             "vt_upload_files": False,
         }
         response = client.post("/scan", json=request_data)
@@ -788,11 +783,8 @@ class TestAnalyzerParity:
 
     def test_virustotal_without_key_returns_400(self, client, safe_skill_dir):
         """Test that VirusTotal without API key returns 400."""
-        request_data = {
-            "skill_directory": str(safe_skill_dir),
-            "use_virustotal": True,
-            "vt_api_key": None,
-        }
+        request_data = {"skill_directory": str(safe_skill_dir), "use_virustotal": True}
+
         response = client.post("/scan", json=request_data)
         # Should return 400 if no key is set in env either
         assert response.status_code in [200, 400]
@@ -812,8 +804,10 @@ class TestAnalyzerParity:
         schema = response.json()
         scan_schema = schema["components"]["schemas"]["ScanRequest"]
         assert "use_virustotal" in scan_schema["properties"]
-        assert "vt_api_key" in scan_schema["properties"]
         assert "vt_upload_files" in scan_schema["properties"]
+        scan_params = schema["paths"]["/scan"]["post"].get("parameters", [])
+        header_names = [p["name"] for p in scan_params if p.get("in") == "header"]
+        assert "X-VirusTotal-Key" in header_names
 
     def test_openapi_schema_has_trigger_field(self, client):
         """Test that OpenAPI schema includes trigger field."""
