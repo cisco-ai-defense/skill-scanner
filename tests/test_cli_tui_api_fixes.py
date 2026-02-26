@@ -87,6 +87,58 @@ class TestLLMProviderForwarding:
             call_kwargs = mock_build.call_args
             assert call_kwargs.kwargs.get("llm_provider") is None
 
+    def test_llm_max_tokens_passed_to_build_analyzers(self):
+        """_build_analyzers should forward llm_max_tokens to build_analyzers."""
+        from skill_scanner.cli.cli import _build_analyzers
+
+        policy = ScanPolicy.default()
+        args = argparse.Namespace(
+            custom_rules=None,
+            use_behavioral=False,
+            use_llm=False,
+            use_virustotal=False,
+            vt_api_key=None,
+            vt_upload_files=False,
+            use_aidefense=False,
+            aidefense_api_key=None,
+            aidefense_api_url=None,
+            use_trigger=False,
+            llm_provider=None,
+            llm_consensus_runs=1,
+            llm_max_tokens=16384,
+        )
+
+        with patch("skill_scanner.cli.cli.build_analyzers") as mock_build:
+            mock_build.return_value = []
+            _build_analyzers(policy, args, lambda s: None)
+
+            assert mock_build.call_args.kwargs.get("llm_max_tokens") == 16384
+
+    def test_llm_max_tokens_defaults_to_none_when_missing(self):
+        """When --llm-max-tokens is not in args, None should be passed."""
+        from skill_scanner.cli.cli import _build_analyzers
+
+        policy = ScanPolicy.default()
+        args = argparse.Namespace(
+            custom_rules=None,
+            use_behavioral=False,
+            use_llm=False,
+            use_virustotal=False,
+            vt_api_key=None,
+            vt_upload_files=False,
+            use_aidefense=False,
+            aidefense_api_key=None,
+            aidefense_api_url=None,
+            use_trigger=False,
+            llm_consensus_runs=1,
+        )
+
+        with patch("skill_scanner.cli.cli.build_analyzers") as mock_build:
+            mock_build.return_value = []
+            _build_analyzers(policy, args, lambda s: None)
+
+            assert mock_build.call_args.kwargs.get("llm_max_tokens") is None
+
 
 # ===================================================================
 # 11b — TUI _FIELD_MAP entries

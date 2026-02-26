@@ -90,6 +90,7 @@ def build_analyzers(
     aidefense_api_url: str | None = None,
     use_trigger: bool = False,
     llm_consensus_runs: int = 1,
+    llm_max_tokens: int | None = None,
 ) -> list[BaseAnalyzer]:
     """Build the full analyzer list (core + optional).
 
@@ -99,6 +100,11 @@ def build_analyzers(
     This function is designed to be called from the CLI, API, pre-commit
     hook, and eval scripts so that every entry point uses the exact same
     construction logic.
+
+    Args:
+        llm_max_tokens: Override the default ``max_tokens`` for the
+            :class:`LLMAnalyzer`.  When *None* the analyzer's own
+            default (8192) is used.
 
     Returns:
         A list of analyzer instances ready to be passed to
@@ -124,10 +130,15 @@ def build_analyzers(
             key = llm_api_key or os.getenv("SKILL_SCANNER_LLM_API_KEY")
             base_url = llm_base_url or os.getenv("SKILL_SCANNER_LLM_BASE_URL")
             api_version = llm_api_version or os.getenv("SKILL_SCANNER_LLM_API_VERSION")
+            extra_kwargs: dict = {}
+            if llm_max_tokens is not None:
+                extra_kwargs["max_tokens"] = llm_max_tokens
             if llm_provider and not llm_model and not os.getenv("SKILL_SCANNER_LLM_MODEL"):
-                llm = LLMAnalyzer(provider=llm_provider, policy=policy)
+                llm = LLMAnalyzer(provider=llm_provider, policy=policy, **extra_kwargs)
             else:
-                llm = LLMAnalyzer(model=model, api_key=key, base_url=base_url, api_version=api_version, policy=policy)
+                llm = LLMAnalyzer(
+                    model=model, api_key=key, base_url=base_url, api_version=api_version, policy=policy, **extra_kwargs
+                )
             if llm_consensus_runs > 1:
                 llm.consensus_runs = llm_consensus_runs
             analyzers.append(llm)
