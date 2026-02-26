@@ -116,7 +116,7 @@ class LLMAnalyzer(BaseAnalyzer):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        max_tokens: int = 4000,
+        max_tokens: int = 8192,
         temperature: float = 0.0,
         max_retries: int = 3,
         rate_limit_delay: float = 2.0,

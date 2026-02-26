@@ -240,7 +240,7 @@ class MetaAnalyzer(BaseAnalyzer):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        max_tokens: int = 8000,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         max_retries: int = 3,
         timeout: int = 180,
