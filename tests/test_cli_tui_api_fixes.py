@@ -140,6 +140,38 @@ class TestLLMProviderForwarding:
             assert mock_build.call_args.kwargs.get("llm_max_tokens") is None
 
 
+class TestMaxOutputTokensPolicy:
+    """Verify max_output_tokens in scan policy and YAML round-trip."""
+
+    def test_default_policy_has_max_output_tokens(self):
+        """Default policy should set max_output_tokens to 8192."""
+        policy = ScanPolicy.default()
+        assert policy.llm_analysis.max_output_tokens == 8192
+
+    def test_max_output_tokens_roundtrip_yaml(self, tmp_path):
+        """max_output_tokens should survive YAML serialization round-trip."""
+        policy = ScanPolicy.default()
+        policy.llm_analysis.max_output_tokens = 32768
+
+        yaml_path = tmp_path / "test_policy.yaml"
+        policy.to_yaml(yaml_path)
+
+        loaded = ScanPolicy.from_yaml(str(yaml_path))
+        assert loaded.llm_analysis.max_output_tokens == 32768
+
+    def test_max_output_tokens_in_to_dict(self):
+        """_to_dict should include max_output_tokens."""
+        policy = ScanPolicy.default()
+        d = policy._to_dict()
+        assert d["llm_analysis"]["max_output_tokens"] == 8192
+
+    def test_presets_have_max_output_tokens(self):
+        """All presets should have max_output_tokens set."""
+        for preset in ("strict", "balanced", "permissive"):
+            policy = ScanPolicy.from_preset(preset)
+            assert policy.llm_analysis.max_output_tokens == 8192, f"{preset} preset missing max_output_tokens"
+
+
 # ===================================================================
 # 11b — TUI _FIELD_MAP entries
 # ===================================================================

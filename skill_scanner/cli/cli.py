@@ -171,7 +171,9 @@ def _build_meta_analyzer(
             api_version=meta_api_version,
             policy=policy,
         )
-        effective_max_tokens = max_tokens or (policy.llm_analysis.max_output_tokens if policy else None)
+        effective_max_tokens = (
+            max_tokens if max_tokens is not None else (policy.llm_analysis.max_output_tokens if policy else None)
+        )
         if effective_max_tokens is not None:
             kwargs["max_tokens"] = effective_max_tokens
         meta = MetaAnalyzer(**kwargs)
