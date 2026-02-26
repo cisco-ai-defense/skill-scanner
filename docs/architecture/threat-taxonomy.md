@@ -60,6 +60,7 @@ Skill Scanner currently uses a subset of those codes for agent-skill risk catego
 | Scanner Threat | AITech | AISubtech | Notes |
 |---|---|---|---|
 | Prompt Injection | `AITech-1.1` | `AISubtech-1.1.1` | Direct instruction override in prompts/instructions |
+| Jailbreak | `AITech-2.1` | `AISubtech-2.1.1` | DAN, persona manipulation, logic traps, anti-safety rhetoric |
 | Transitive Trust Abuse | `AITech-1.2` | `AISubtech-1.2.1` | Indirect prompt injection from external content |
 | Skill Discovery Abuse | `AITech-4.3` | `AISubtech-4.3.5` | Capability inflation / protocol manipulation |
 | Data Exfiltration | `AITech-8.2` | `AISubtech-8.2.3` | Exfiltration via agent tooling |
