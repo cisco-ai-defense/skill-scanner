@@ -59,7 +59,7 @@ import os
 from skill_scanner.core.analyzers import LLMAnalyzer
 
 scanner.add_analyzer(LLMAnalyzer(
-    model="claude-3-5-sonnet-20241022",
+    model="anthropic/claude-sonnet-4-20250514",
     api_key=os.environ["SKILL_SCANNER_LLM_API_KEY"],
 ))
 ```

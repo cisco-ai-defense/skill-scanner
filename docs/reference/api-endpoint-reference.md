@@ -36,7 +36,7 @@ curl http://localhost:8000/health
 ```json
 {
   "status": "healthy",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "analyzers_available": ["static_analyzer", "bytecode_analyzer", "pipeline_analyzer"]
 }
 ```
@@ -86,11 +86,8 @@ curl -X POST http://localhost:8000/scan-upload \
 | `llm_provider` | `str | None` |
 | `use_behavioral` | `bool` |
 | `use_virustotal` | `bool` |
-| `vt_api_key` | `str | None` |
 | `vt_upload_files` | `bool` |
 | `use_aidefense` | `bool` |
-| `aidefense_api_key` | `str | None` |
-| `aidefense_api_url` | `str | None` |
 | `use_trigger` | `bool` |
 | `enable_meta` | `bool` |
 | `llm_consensus_runs` | `int` |
@@ -129,11 +126,8 @@ curl -X POST http://localhost:8000/scan-upload \
 | `llm_provider` | `str | None` |
 | `use_behavioral` | `bool` |
 | `use_virustotal` | `bool` |
-| `vt_api_key` | `str | None` |
 | `vt_upload_files` | `bool` |
 | `use_aidefense` | `bool` |
-| `aidefense_api_key` | `str | None` |
-| `aidefense_api_url` | `str | None` |
 | `use_trigger` | `bool` |
 | `enable_meta` | `bool` |
 | `llm_consensus_runs` | `int` |
@@ -141,5 +135,6 @@ curl -X POST http://localhost:8000/scan-upload \
 ## Notes
 
 - API behavior is policy-aware and mirrors CLI analyzer selection flags.
+- API keys for VirusTotal and AI Defense are passed via request headers (`X-VirusTotal-Key`, `X-AIDefense-Key`), not in the JSON body.
 - Set `SKILL_SCANNER_ALLOWED_ROOTS` to restrict which directories the API can scan.
 - All `POST` endpoints accept JSON bodies. File upload uses `multipart/form-data`.

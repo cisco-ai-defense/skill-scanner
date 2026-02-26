@@ -86,7 +86,7 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 |----------|--------------|-------|
 | Anthropic | `anthropic/claude-sonnet-4-20250514` | Default provider |
 | OpenAI | `openai/gpt-4o` | |
-| AWS Bedrock | `bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0` | Requires `[bedrock]` extra or API key |
+| AWS Bedrock | `bedrock/anthropic.claude-sonnet-4-20250514-v1:0` | Requires `[bedrock]` extra or API key |
 | Google Vertex AI | `vertex_ai/gemini-2.5-pro` | Requires `[vertex]` extra |
 | Google AI Studio | `gemini/gemini-2.5-flash` | Via LiteLLM |
 | Azure OpenAI | `azure/my-deployment-name` | Requires `[azure]` extra |

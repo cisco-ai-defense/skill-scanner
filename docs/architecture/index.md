@@ -9,10 +9,10 @@ Skill Scanner is a modular security scanner for agent skill packages. It combine
 
 ## Explore by Topic
 
-- **[Scanning Pipeline](./scanning-pipeline)** -- How scans execute end-to-end: two-phase analysis, post-processing, and output.
-- **[Analyzers](./analyzers/)** -- The 10 detection engines — capability matrix, deep dives, and selection guide.
-- **[Threat Model](./threat-taxonomy)** -- Cisco AI Security Framework taxonomy, binary handling, and risk classification.
-- **[Extending](./analyzers/writing-custom-rules)** -- Write custom YAML signatures, YARA rules, and Python checks. Add new analyzers.
+- **[Scanning Pipeline](./scanning-pipeline.md)** -- How scans execute end-to-end: two-phase analysis, post-processing, and output.
+- **[Analyzers](./analyzers/index.md)** -- The 10 detection engines — capability matrix, deep dives, and selection guide.
+- **[Threat Model](./threat-taxonomy.md)** -- Cisco AI Security Framework taxonomy, binary handling, and risk classification.
+- **[Extending](./analyzers/writing-custom-rules.md)** -- Write custom YAML signatures, YARA rules, and Python checks. Add new analyzers.
 
 ## High-Level Layout
 

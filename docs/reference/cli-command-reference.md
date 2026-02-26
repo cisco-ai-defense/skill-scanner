@@ -12,9 +12,10 @@ This page is generated from live `argparse` output and should match runtime beha
 | `skill-scanner scan` | Scan a single skill package | `skill-scanner scan ./my-skill` |
 | `skill-scanner scan-all` | Scan multiple skill packages | `skill-scanner scan-all ./skills/ -r` |
 | `skill-scanner list-analyzers` | Show available analyzers | `skill-scanner list-analyzers` |
-| `skill-scanner validate-rules` | Validate YARA rule signatures | `skill-scanner validate-rules` |
+| `skill-scanner validate-rules` | Validate YAML rule signatures | `skill-scanner validate-rules` |
 | `skill-scanner generate-policy` | Generate a policy YAML file | `skill-scanner generate-policy --preset strict` |
 | `skill-scanner configure-policy` | Interactive TUI policy editor | `skill-scanner configure-policy` |
+| `skill-scanner interactive` | Interactive setup wizard | `skill-scanner interactive` |
 | `skill-scanner-api` | Start the REST API server | `skill-scanner-api --port 8080` |
 | `skill-scanner-pre-commit` | Git pre-commit hook | `skill-scanner-pre-commit install` |
 
@@ -33,6 +34,8 @@ Flags shared by `scan` and `scan-all`:
 | `--use-aidefense` | off | Enable Cisco AI Defense analyzer |
 | `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |
 | `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |
+| `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |
+| `--lenient` | off | Tolerate malformed skills: coerce bad fields, fill defaults, and continue instead of failing |
 | `--detailed` | off | Include full evidence in output |
 | `--compact` | off | Minimize output (JSON: no pretty-print) |
 | `--verbose` | off | Verbose logging |
@@ -52,7 +55,7 @@ usage: cli.py [-h]
 Skill Scanner - Security scanner for agent skills packages
 
 positional arguments:
-  {scan,scan-all,list-analyzers,validate-rules,generate-policy,configure-policy}
+  {scan,scan-all,list-analyzers,validate-rules,generate-policy,configure-policy,interactive}
                         Command to execute
     scan                Scan a single skill package
     scan-all            Scan multiple skill packages
@@ -60,6 +63,7 @@ positional arguments:
     validate-rules      Validate rule signatures
     generate-policy     Generate a default scan policy YAML
     configure-policy    Interactive TUI to build a custom scan policy
+    interactive         Interactive setup wizard
 
 options:
   -h, --help            show this help message and exit
@@ -325,7 +329,7 @@ Command: `python -m skill_scanner.hooks.pre_commit --help`
 
 ```text
 usage: pre_commit.py [-h] [--severity {critical,high,medium,low}]
-                     [--skills-path SKILLS_PATH] [--all]
+                     [--skills-path SKILLS_PATH] [--all] [--lenient]
                      [install]
 
 Pre-commit hook for scanning agent skills
@@ -340,6 +344,7 @@ options:
   --skills-path SKILLS_PATH
                         Override skills path from config
   --all                 Scan all skills, not just staged ones
+  --lenient             Tolerate malformed skills instead of failing
 ```
 
 </details>

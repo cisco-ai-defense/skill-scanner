@@ -60,7 +60,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
 ```
@@ -73,7 +73,7 @@ For deeper semantic analysis, add API keys as repository secrets:
 - name: Run scan with LLM
   env:
     SKILL_SCANNER_LLM_API_KEY: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
-    SKILL_SCANNER_LLM_MODEL: claude-3-5-sonnet-20241022
+    SKILL_SCANNER_LLM_MODEL: anthropic/claude-sonnet-4-20250514
   run: |
     skill-scanner scan-all ./skills \
       --recursive \
@@ -96,7 +96,7 @@ Add to your [`.pre-commit-config.yaml`](https://github.com/cisco-ai-defense/skil
 ```yaml
 repos:
   - repo: https://github.com/cisco-ai-defense/skill-scanner
-    rev: v0.1.0  # use latest version
+    rev: v1.0.0  # use latest version
     hooks:
       - id: skill-scanner
         args: ["--fail-on-findings"]

@@ -3,7 +3,7 @@
 > [!TIP]
 > **TL;DR**
 >
-> The static analyzer runs 13 detection passes per skill covering YAML signatures, YARA rules, Python checks, binary inspection, document analysis, and homoglyph detection. It is always-on (core analyzer) and requires no external services.
+> The static analyzer runs 14 detection passes per skill covering YAML signatures, YARA rules, Python checks, binary inspection, document analysis, homoglyph detection, and allowed-tools enforcement. It is always-on (core analyzer) and requires no external services.
 
 The static analyzer is the primary deterministic detection engine. It combines YAML signature matching, YARA-X rule scanning, Python-based checks, and file inventory analysis to detect security threats without requiring external services.
 
@@ -27,9 +27,10 @@ flowchart TD
     J --> K["Homoglyph attack detection"]
     K --> L["YARA rule scanning"]
     L --> M["Asset file scanning"]
-    M --> N["Filter disabled rules"]
-    N --> O["Filter test credentials"]
-    O --> P["Deduplicate findings"]
+    M --> N["Allowed tools enforcement"]
+    N --> O["Filter disabled rules"]
+    O --> P["Filter test credentials"]
+    P --> Q["Deduplicate findings"]
 ```
 
 Each pass targets a different aspect of the skill package:

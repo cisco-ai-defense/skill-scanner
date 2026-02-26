@@ -86,7 +86,7 @@ The scanner uses `SKILL_SCANNER_*` environment variables exclusively (no provide
 **Scanner-wide settings** (apply to both LLM and Meta analyzers):
 ```bash
 export SKILL_SCANNER_LLM_API_KEY="your-api-key"
-export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
 export SKILL_SCANNER_LLM_BASE_URL="https://..."  # For Azure/custom endpoints
 export SKILL_SCANNER_LLM_API_VERSION="2025-01-01-preview"  # For Azure
 ```
@@ -120,7 +120,7 @@ export SKILL_SCANNER_META_LLM_API_VERSION="..."
 ```bash
 # Standard setup (one key for everything)
 export SKILL_SCANNER_LLM_API_KEY="sk-ant-..."
-export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
 
 # Azure OpenAI setup
 export SKILL_SCANNER_LLM_API_KEY="your-azure-key"
@@ -139,7 +139,7 @@ export SKILL_SCANNER_META_LLM_MODEL="gpt-4o"
 **Anthropic Claude:**
 ```bash
 export SKILL_SCANNER_LLM_API_KEY="sk-ant-..."
-export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
 ```
 
 **OpenAI:**
@@ -164,7 +164,7 @@ export SKILL_SCANNER_LLM_MODEL="gemini/gemini-1.5-pro"
 
 **AWS Bedrock:**
 ```bash
-export SKILL_SCANNER_LLM_MODEL="bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"
+export SKILL_SCANNER_LLM_MODEL="bedrock/anthropic.claude-sonnet-4-20250514-v1:0"
 # Optional if using bearer auth:
 export SKILL_SCANNER_LLM_API_KEY="bedrock-api-key-..."
 # Or use AWS credentials/profile/role:

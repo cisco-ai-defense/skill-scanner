@@ -44,7 +44,7 @@ The LLM Analyzer uses large language models as security judges to perform semant
 ```bash
 # Basic LLM scan
 export SKILL_SCANNER_LLM_API_KEY=your_key
-export SKILL_SCANNER_LLM_MODEL=claude-3-5-sonnet-20241022
+export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 skill-scanner scan /path/to/skill --use-llm
 
 # Use OpenAI
@@ -52,7 +52,7 @@ skill-scanner scan /path/to/skill --use-llm --llm-provider openai
 
 # AWS Bedrock (enterprise compliance) via model prefix
 export AWS_REGION=us-east-1
-export SKILL_SCANNER_LLM_MODEL=bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0
+export SKILL_SCANNER_LLM_MODEL=bedrock/anthropic.claude-sonnet-4-20250514-v1:0
 skill-scanner scan /path/to/skill --use-llm
 ```
 
@@ -66,7 +66,7 @@ from skill_scanner.core.loader import SkillLoader
 
 # Initialize analyzer
 analyzer = LLMAnalyzer(
-    model="claude-3-5-sonnet-20241022",
+    model="anthropic/claude-sonnet-4-20250514",
     api_key="your_key"
 )
 
@@ -82,8 +82,8 @@ findings = await analyzer.analyze_async(skill)
 
 ### Anthropic Claude
 ```python
-analyzer = LLMAnalyzer(model="claude-3-5-sonnet-20241022", api_key=key)
-analyzer = LLMAnalyzer(model="claude-3-opus-20240229", api_key=key)
+analyzer = LLMAnalyzer(model="anthropic/claude-sonnet-4-20250514", api_key=key)
+analyzer = LLMAnalyzer(model="anthropic/claude-opus-4-20250514", api_key=key)
 ```
 
 ### OpenAI GPT
@@ -95,7 +95,7 @@ analyzer = LLMAnalyzer(model="gpt-4-turbo", api_key=key)
 ### AWS Bedrock
 ```python
 analyzer = LLMAnalyzer(
-    model="bedrock/anthropic.claude-v2",
+    model="bedrock/anthropic.claude-sonnet-4-20250514-v1:0",
     aws_region="us-east-1",
     aws_profile="production"  # Or use IAM role
 )
@@ -231,7 +231,7 @@ export SKILL_SCANNER_LLM_API_KEY=your_key
 
 # Scanner-wide defaults
 export SKILL_SCANNER_LLM_API_KEY=your_key
-export SKILL_SCANNER_LLM_MODEL=claude-3-5-sonnet-20241022
+export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 
 # For Azure OpenAI
 export SKILL_SCANNER_LLM_BASE_URL=https://your-resource.openai.azure.com/
@@ -239,13 +239,13 @@ export SKILL_SCANNER_LLM_API_VERSION=2025-01-01-preview
 
 # For AWS Bedrock bearer-token mode
 export SKILL_SCANNER_LLM_API_KEY="bedrock-api-key-..."
-export SKILL_SCANNER_LLM_MODEL="bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"
+export SKILL_SCANNER_LLM_MODEL="bedrock/anthropic.claude-sonnet-4-20250514-v1:0"
 ```
 
 ### Model Selection
 
 ```bash
-export SKILL_SCANNER_LLM_MODEL=claude-3-5-sonnet-20241022
+export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 ```
 
 ### AWS Bedrock
@@ -255,7 +255,7 @@ For Bedrock, use the `bedrock/` model prefix:
 ```bash
 # Bearer token authentication
 export SKILL_SCANNER_LLM_API_KEY='bedrock-api-key-...'
-export SKILL_SCANNER_LLM_MODEL='bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0'
+export SKILL_SCANNER_LLM_MODEL='bedrock/anthropic.claude-sonnet-4-20250514-v1:0'
 ```
 
 For IAM-based authentication (no API key needed):
@@ -265,7 +265,7 @@ For IAM-based authentication (no API key needed):
 export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
 export AWS_REGION=us-east-1
-export SKILL_SCANNER_LLM_MODEL='bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0'
+export SKILL_SCANNER_LLM_MODEL='bedrock/anthropic.claude-sonnet-4-20250514-v1:0'
 
 # Or named profile
 export AWS_PROFILE=production
@@ -325,7 +325,7 @@ result = scanner.scan_skill("/path/to/skill")
 ### "API key not provided"
 ```bash
 export SKILL_SCANNER_LLM_API_KEY=your_key
-export SKILL_SCANNER_LLM_MODEL=claude-3-5-sonnet-20241022
+export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 ```
 
 For Bedrock IAM auth, use a `bedrock/...` model and configure AWS credentials/profile instead of API key.
