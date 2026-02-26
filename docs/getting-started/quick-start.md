@@ -30,7 +30,7 @@ pip install cisco-ai-skill-scanner[all]
 ```bash
 # For LLM analyzer and Meta-analyzer
 export SKILL_SCANNER_LLM_API_KEY="your_api_key"
-export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
 
 # For VirusTotal binary scanning
 export VIRUSTOTAL_API_KEY="your_virustotal_api_key"

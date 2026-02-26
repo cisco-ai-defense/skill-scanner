@@ -377,8 +377,7 @@ The analyzer tries multiple strategies. Check logs for details. This is usually 
 
 - [LiteLLM Documentation](https://docs.litellm.ai/)
 - [OpenAI Codex Skills](https://developers.openai.com/codex/skills/)
-- [Agent Skills Specification](https://developers.openai.com/codex/skills/)
-- [AITech Threat Taxonomy](https://owasp.org/)
+- [AITech Threat Taxonomy](../threat-taxonomy.md)
 
 ## Related Pages
 

@@ -32,7 +32,7 @@ Flags shared by `scan` and `scan-all`:
 | `--use-virustotal` | off | Enable VirusTotal hash lookups |
 | `--use-aidefense` | off | Enable Cisco AI Defense analyzer |
 | `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |
-| `--fail-on-findings` | off | Exit non-zero if any findings are reported (CI gate) |
+| `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |
 | `--detailed` | off | Include full evidence in output |
 | `--compact` | off | Minimize output (JSON: no pretty-print) |
 | `--verbose` | off | Verbose logging |

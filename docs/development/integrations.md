@@ -193,7 +193,7 @@ For service-style scanning, use the `/scan-upload` or `/scan-batch` endpoints fr
   run: |
     curl -s -X POST http://localhost:8000/scan \
       -H "Content-Type: application/json" \
-      -d '{"skill_path": "./skills/my-skill"}' \
+      -d '{"skill_directory": "./skills/my-skill"}' \
       -o result.json
     # Fail if any critical/high findings
     python -c "

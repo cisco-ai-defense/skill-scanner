@@ -21,7 +21,7 @@ uv run skill-scanner scan evals/skills/safe-skills/simple-math  # smoke test
 | `tests/` | pytest test suites (unit, integration, analyzer-specific) |
 | `evals/` | Evaluation skills (safe and malicious) for benchmarking |
 | `examples/` | Runnable Python scripts demonstrating SDK and API usage |
-| `docs/` | Documentation (plain markdown, renders on GitHub) |
+| `docs/` | Documentation |
 | `scripts/` | Helper scripts (doc generation, pre-commit hooks) |
 
 ## Core Topics

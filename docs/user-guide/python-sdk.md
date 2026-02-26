@@ -169,7 +169,7 @@ from skill_scanner.core.scan_policy import ScanPolicy
 policy = ScanPolicy.from_preset("strict")
 
 # Or load a custom YAML file
-policy = ScanPolicy.from_file("my_policy.yaml")
+policy = ScanPolicy.from_yaml("my_policy.yaml")
 
 scanner = SkillScanner(policy=policy)
 result = scanner.scan_skill("/path/to/skill")

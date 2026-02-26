@@ -14,7 +14,7 @@ print(f"Safe: {result.is_safe}")
 print(f"Findings: {len(result.findings)}")
 
 for f in result.findings:
-    print(f"  [{f.severity}] {f.rule_id}: {f.message}")
+    print(f"  [{f.severity}] {f.rule_id}: {f.title}")
 ```
 
 For full SDK coverage (custom analyzers, policy objects, batch scanning), see the [Python SDK guide](../user-guide/python-sdk.md).

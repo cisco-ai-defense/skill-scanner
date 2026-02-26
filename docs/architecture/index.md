@@ -202,6 +202,7 @@ Commands:
 - `validate-rules`
 - `generate-policy`
 - `configure-policy`
+- `interactive`
 
 Output formats: `summary`, `json`, `markdown`, `table`, `sarif`, `html`.
 

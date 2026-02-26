@@ -296,10 +296,10 @@ Configure via `.skill_scannerrc`, `.skill_scannerrc.json`, or `skill_scanner.jso
 The LLM and Meta analyzers work with multiple LLM providers. Select a provider via `--llm-provider` or install optional extras for managed cloud services.
 
 ```bash
-pip install skill-scanner[bedrock]   # AWS Bedrock (IAM credentials)
-pip install skill-scanner[vertex]    # Google Vertex AI
-pip install skill-scanner[azure]     # Azure OpenAI (managed identity)
-pip install skill-scanner[all]       # All cloud providers
+pip install cisco-ai-skill-scanner[bedrock]   # AWS Bedrock (IAM credentials)
+pip install cisco-ai-skill-scanner[vertex]    # Google Vertex AI
+pip install cisco-ai-skill-scanner[azure]     # Azure OpenAI (managed identity)
+pip install cisco-ai-skill-scanner[all]       # All cloud providers
 ```
 
 > [!TIP]

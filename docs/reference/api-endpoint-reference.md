@@ -37,7 +37,7 @@ curl http://localhost:8000/health
 {
   "status": "healthy",
   "version": "0.5.0",
-  "analyzers_available": ["static", "pipeline", "bytecode"]
+  "analyzers_available": ["static_analyzer", "bytecode_analyzer", "pipeline_analyzer"]
 }
 ```
 

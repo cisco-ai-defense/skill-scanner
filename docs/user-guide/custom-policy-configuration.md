@@ -364,6 +364,8 @@ file_classification:
     - ".sh"
     - ".js"
 
+  skip_inert_extensions: true   # Skip binary/shebang checks on files with inert extensions
+
   # Shebang compatibility controls
   allow_script_shebang_text_extensions: true
   script_shebang_extensions:

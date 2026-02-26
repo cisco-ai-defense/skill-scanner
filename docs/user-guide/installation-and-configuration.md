@@ -106,7 +106,7 @@ You only need to set these if you're using the corresponding features. Click a s
 <details>
 <summary>Analyzer toggles</summary>
 
-These environment variables override the default enabled/disabled state of analyzers:
+These environment variables override the default enabled/disabled state of analyzers when using the programmatic `Config` object. The CLI and API server use their own flags (`--use-llm`, `--use-behavioral`, etc.) and do not read these variables.
 
 - `ENABLE_STATIC_ANALYZER` — set to `false` to disable the static analyzer
 - `ENABLE_LLM_ANALYZER` — set to `true` to enable the LLM analyzer

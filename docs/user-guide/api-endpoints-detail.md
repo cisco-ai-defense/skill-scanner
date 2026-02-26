@@ -71,18 +71,23 @@ Content-Type: application/json
   "use_llm": false,
   "llm_provider": "anthropic",
   "use_virustotal": false,
-  "vt_api_key": null,
   "vt_upload_files": false,
   "use_trigger": false,
   "enable_meta": false,
   "llm_consensus_runs": 1,
   "use_aidefense": false,
-  "aidefense_api_key": null,
   "aidefense_api_url": null
 }
 ```
 
-**Request Parameters:**
+**Request Headers:**
+
+| Header | Description |
+| --- | --- |
+| `X-VirusTotal-Key` | VirusTotal API key (alternative to `VIRUSTOTAL_API_KEY` env var) |
+| `X-AIDefense-Key` | AI Defense API key (alternative to `AI_DEFENSE_API_KEY` env var) |
+
+**Request Body Parameters:**
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -94,10 +99,8 @@ Content-Type: application/json
 | `llm_provider` | string | `"anthropic"` | LLM provider shortcut (`anthropic` or `openai`) |
 | `llm_consensus_runs` | integer | `1` | Number of LLM passes for majority voting |
 | `use_virustotal` | boolean | false | Enable VirusTotal binary analyzer |
-| `vt_api_key` | string | null | VirusTotal API key (or set `VIRUSTOTAL_API_KEY`) |
 | `vt_upload_files` | boolean | false | Upload unknown binaries to VirusTotal |
 | `use_aidefense` | boolean | false | Enable Cisco AI Defense analyzer |
-| `aidefense_api_key` | string | null | AI Defense API key (or set `AI_DEFENSE_API_KEY`) |
 | `aidefense_api_url` | string | null | Optional AI Defense API URL override |
 | `use_trigger` | boolean | false | Enable trigger specificity analyzer |
 | `enable_meta` | boolean | false | Enable meta-analyzer false-positive filtering |
@@ -142,7 +145,9 @@ Uploads a ZIP file containing a skill package and scans it. The ZIP file is extr
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `file` | file (`.zip`) | yes | ZIP archive containing a skill |
-| `policy`, `custom_rules`, `use_behavioral`, `use_llm`, `llm_provider`, `llm_consensus_runs`, `use_virustotal`, `vt_api_key`, `vt_upload_files`, `use_aidefense`, `aidefense_api_key`, `aidefense_api_url`, `use_trigger`, `enable_meta` | mixed | no | Same semantics as `/scan` |
+| `policy`, `custom_rules`, `use_behavioral`, `use_llm`, `llm_provider`, `llm_consensus_runs`, `use_virustotal`, `vt_upload_files`, `use_aidefense`, `aidefense_api_url`, `use_trigger`, `enable_meta` | mixed | no | Same semantics as `/scan` |
+
+API keys (`X-VirusTotal-Key`, `X-AIDefense-Key`) are passed as request headers, same as `/scan`.
 
 **Response:** Same as `/scan`
 
@@ -162,18 +167,16 @@ Content-Type: application/json
   "use_llm": false,
   "llm_provider": "anthropic",
   "use_virustotal": false,
-  "vt_api_key": null,
   "vt_upload_files": false,
   "use_trigger": false,
   "enable_meta": false,
   "llm_consensus_runs": 1,
   "use_aidefense": false,
-  "aidefense_api_key": null,
   "aidefense_api_url": null
 }
 ```
 
-`/scan-batch` supports the same optional analyzer fields as `/scan`, plus:
+`/scan-batch` supports the same optional analyzer fields and request headers (`X-VirusTotal-Key`, `X-AIDefense-Key`) as `/scan`, plus:
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
