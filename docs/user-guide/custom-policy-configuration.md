@@ -1,12 +1,12 @@
 # Scan Policy Guide
 
-::: tip Quick Answer
-Just want to scan with a preset? No YAML needed:
-```bash
-skill-scanner scan --policy strict ./skill
-```
-Read on only if you need to customise thresholds, allowlists, or rule behavior.
-:::
+> [!TIP]
+> **Quick Answer**
+> Just want to scan with a preset? No YAML needed:
+> ```bash
+> skill-scanner scan --policy strict ./skill
+> ```
+> Read on only if you need to customise thresholds, allowlists, or rule behavior.
 
 Every organisation has a different security bar. A **scan policy** captures what counts as benign, which rules fire on which file types, which installer URLs are trusted, numeric thresholds, and more — all in a single YAML file.
 
@@ -195,7 +195,9 @@ Then edit the generated file to add your trusted domains, extra benign dotfiles,
 
 Click any section to expand its configuration keys and YAML examples.
 
-::: details Metadata
+<details>
+<summary>Metadata</summary>
+
 ```yaml
 policy_name: my-org              # Display name for reports
 policy_version: "1.0"            # Semantic version for tracking changes
@@ -203,9 +205,12 @@ preset_base: strict              # Which preset this derives from (strict / bala
 ```
 
 `preset_base` controls which YARA post-filtering behaviour is used (credential placeholder filtering, generic HTTP verb suppression, etc.). It is set automatically by built-in presets and preserved when you rename `policy_name`. If your custom policy was generated from a preset, the correct `preset_base` is already embedded — you only need to change it if you want different YARA filtering than the preset you started from.
-:::
 
-::: details hidden_files
+</details>
+
+<details>
+<summary>hidden_files</summary>
+
 Controls which dotfiles and dot-directories are treated as benign (not flagged as hidden data).
 
 ```yaml
@@ -220,9 +225,12 @@ hidden_files:
 ```
 
 **Impact:** Files/dirs not in these lists trigger `HIDDEN_DATA_FILE` or `HIDDEN_DATA_DIR` findings.
-:::
 
-::: details pipeline
+</details>
+
+<details>
+<summary>pipeline</summary>
+
 Controls the pipeline taint analysis engine.
 
 ```yaml
@@ -254,9 +262,12 @@ pipeline:
 - `doc_path_indicators`: Findings in doc paths get reduced severity.
 - `dedupe_equivalent_pipelines`: De-dupes equivalent pipeline chains found by multiple extraction paths.
 - `compound_fetch_*` knobs: Tune fetch-and-execute detection strictness and false-positive suppression.
-:::
 
-::: details rule_scoping
+</details>
+
+<details>
+<summary>rule_scoping</summary>
+
 Controls which rule sets (YARA and other analyzers) fire on which file categories.
 
 ```yaml
@@ -284,9 +295,12 @@ rule_scoping:
 ```
 
 **Impact:** Controls which rules fire on which files, reducing false positives from educational or documentation content. `dedupe_duplicate_findings` is a top-level `rule_scoping` knob and applies broadly (not per-rule).
-:::
 
-::: details credentials
+</details>
+
+<details>
+<summary>credentials</summary>
+
 Controls which well-known test credentials are automatically suppressed.
 
 ```yaml
@@ -303,9 +317,12 @@ credentials:
 **Impact:**
 - `known_test_values`: Findings whose snippet contains any of these exact strings are suppressed.
 - `placeholder_markers`: Placeholder-like marker substrings are suppressed in credential-harvesting post-filters.
-:::
 
-::: details system_cleanup
+</details>
+
+<details>
+<summary>system_cleanup</summary>
+
 Controls which cleanup targets are considered safe when `rm -r`/`rm -rf` patterns are detected.
 
 ```yaml
@@ -318,9 +335,12 @@ system_cleanup:
 ```
 
 **Impact:** Reduces false positives for common build-artifact cleanup while still flagging destructive deletion outside approved targets.
-:::
 
-::: details file_classification
+</details>
+
+<details>
+<summary>file_classification</summary>
+
 Controls how file extensions are routed for analysis.
 
 ```yaml
@@ -358,9 +378,12 @@ file_classification:
 - `archive_extensions`: Files trigger `ARCHIVE_FILE_DETECTED` at MEDIUM severity (unless overridden).
 - `code_extensions`: Hidden files with these extensions trigger `HIDDEN_CODE_FILE` (higher severity) instead of `HIDDEN_DATA_FILE`.
 - `allow_script_shebang_text_extensions` + `script_shebang_extensions`: Prevent false positives for valid shebang script files.
-:::
 
-::: details file_limits
+</details>
+
+<details>
+<summary>file_limits</summary>
+
 Numeric thresholds for file inventory checks.
 
 ```yaml
@@ -378,9 +401,12 @@ file_limits:
 **Impact:** Controls when inventory-related rules fire. Larger orgs or monorepo skills may need higher limits.
 - `max_yara_scan_file_size_bytes`: Binary files above this size are skipped during YARA scanning (default 50 MB). Prevents OOM on very large files.
 - `max_loader_file_size_bytes`: Files above this size are not loaded for content analysis (default 10 MB). Configures the content loader limit separately from the OVERSIZED_FILE threshold.
-:::
 
-::: details analysis_thresholds
+</details>
+
+<details>
+<summary>analysis_thresholds</summary>
+
 Numeric thresholds for YARA and analyzability scoring.
 
 ```yaml
@@ -404,9 +430,12 @@ analysis_thresholds:
 - `analyzability_*`: Controls the risk-level classification based on how much of the skill can be statically analyzed. Higher values are harder to achieve (stricter).
 - `homoglyph_*`: Reduces false positives in formulas and scientific notation while keeping suspicious confusable text detections.
 - `max_regex_pattern_length`: Maximum length for user-supplied regex patterns in policy (ReDoS protection). Patterns longer than this limit are silently skipped.
-:::
 
-::: details sensitive_files
+</details>
+
+<details>
+<summary>sensitive_files</summary>
+
 Regex patterns for file paths that upgrade taint in pipeline analysis.
 
 ```yaml
@@ -420,9 +449,12 @@ sensitive_files:
 ```
 
 **Impact:** When a pipeline command references a file matching these patterns, the taint is upgraded to `SENSITIVE_DATA`, which elevates the finding severity.
-:::
 
-::: details command_safety
+</details>
+
+<details>
+<summary>command_safety</summary>
+
 Controls which commands belong to each safety tier. The scanner uses a tiered evaluation to decide whether a `code_execution_generic` YARA finding should be suppressed (safe/caution) or kept (risky/dangerous).
 
 ```yaml
@@ -454,9 +486,12 @@ command_safety:
 ```
 
 **Impact:** An org that uses `docker` and `kubectl` routinely can move them to `caution_commands` to suppress YARA code-execution findings for those commands. Empty lists fall back to the built-in defaults.
-:::
 
-::: details analyzers
+</details>
+
+<details>
+<summary>analyzers</summary>
+
 Enable or disable entire analysis passes.
 
 ```yaml
@@ -467,9 +502,12 @@ analyzers:
 ```
 
 **Impact:** Set `pipeline: false` to skip pipeline analysis entirely (useful if your skills never contain shell scripts). Disabling an analyzer removes all its findings from the scan results.
-:::
 
-::: details llm_analysis
+</details>
+
+<details>
+<summary>llm_analysis</summary>
+
 Controls prompt budget limits for the LLM analyzer and meta-analyzer. The meta-analyzer multiplies the base limits by `meta_budget_multiplier` so it always has more headroom for cross-correlation.
 
 ```yaml
@@ -485,9 +523,12 @@ llm_analysis:
 - Files or instruction bodies exceeding these limits are skipped entirely (no truncation) and a budget-skip metadata entry is attached to the scan result.
 - The meta-analyzer applies `meta_budget_multiplier` on top of the base limits. With the defaults, the meta-analyzer gets 60K instruction, 45K per file, and 300K total.
 - Increase these values for skills with large codebases or extensive instructions. Decrease them to reduce LLM API costs.
-:::
 
-::: details finding_output
+</details>
+
+<details>
+<summary>finding_output</summary>
+
 Controls final finding dedupe behavior and metadata stamping.
 
 ```yaml
@@ -519,9 +560,12 @@ Field behavior:
 - `attach_policy_fingerprint`: Adds `scan_policy_*` metadata fields for auditability and reproducibility.
 
 **Impact:** Keeps output concise while preserving richer LLM/meta context, adds traceability (policy fingerprint), and captures co-occurrence signals for future deterministic tuning.
-:::
 
-::: details severity_overrides
+</details>
+
+<details>
+<summary>severity_overrides</summary>
+
 Per-rule severity overrides — raise or lower any rule's severity without disabling it.
 
 ```yaml
@@ -538,9 +582,12 @@ severity_overrides:
 **Valid severities:** `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`
 
 **Impact:** Changes the reported severity for matching rules. Useful for tuning signal-to-noise ratio without losing visibility.
-:::
 
-::: details disabled_rules
+</details>
+
+<details>
+<summary>disabled_rules</summary>
+
 Completely suppress specific rule IDs — they produce zero findings.
 
 ```yaml
@@ -553,7 +600,8 @@ disabled_rules:
 **Impact:** Disabled rules are never evaluated. Use sparingly — prefer `severity_overrides` to demote rather than silence.
 
 **Important:** Do not list a rule in both `disabled_rules` and `rule_scoping`. If a rule is disabled, scoping entries for that rule are ignored.
-:::
+
+</details>
 
 ---
 

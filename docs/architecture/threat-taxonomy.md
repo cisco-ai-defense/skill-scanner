@@ -1,8 +1,9 @@
 # Agent Skills Threat Taxonomy
 
-::: tip TL;DR
-All findings map to Cisco's AI Security Framework (`AITech` / `AISubtech` codes). Custom taxonomies and cross-framework mappings (OWASP, MITRE ATLAS, NIST AML) are supported via JSON/YAML files or CLI flags.
-:::
+> [!TIP]
+> **TL;DR**
+>
+> All findings map to Cisco's AI Security Framework (`AITech` / `AISubtech` codes). Custom taxonomies and cross-framework mappings (OWASP, MITRE ATLAS, NIST AML) are supported via JSON/YAML files or CLI flags.
 
 ## Overview
 
@@ -170,6 +171,6 @@ When Cisco updates the framework:
 
 ## Related Pages
 
-- [Writing Custom Rules](/architecture/analyzers/writing-custom-rules) -- Author rules that use threat categories
-- [Scanning Pipeline](/architecture/scanning-pipeline) -- How findings flow through the system
-- [Custom Policy Configuration](/user-guide/custom-policy-configuration) -- Override severity and disable rules by threat type
+- [Writing Custom Rules](analyzers/writing-custom-rules.md) -- Author rules that use threat categories
+- [Scanning Pipeline](scanning-pipeline.md) -- How findings flow through the system
+- [Custom Policy Configuration](../user-guide/custom-policy-configuration.md) -- Override severity and disable rules by threat type

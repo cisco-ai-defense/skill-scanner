@@ -300,6 +300,6 @@ skill_scanner/data/packs/core/
 
 ## Related Pages
 
-- [Static Analyzer](/architecture/analyzers/static-analyzer) -- How custom rules are loaded and matched
-- [Threat Taxonomy](/architecture/threat-taxonomy) -- Threat categories and severity levels for rule authoring
-- [Custom Policy Configuration](/user-guide/custom-policy-configuration) -- Policy knobs that affect rule behavior
+- [Static Analyzer](static-analyzer.md) -- How custom rules are loaded and matched
+- [Threat Taxonomy](../threat-taxonomy.md) -- Threat categories and severity levels for rule authoring
+- [Custom Policy Configuration](../../user-guide/custom-policy-configuration.md) -- Policy knobs that affect rule behavior

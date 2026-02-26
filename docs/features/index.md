@@ -2,28 +2,10 @@
 
 Cisco Skill Scanner is a layered security analysis platform for AI agent skill packages. It combines deterministic pattern matching, behavioral analysis, and LLM-powered reasoning to catch threats that any single approach would miss.
 
-<div class="feature-grid">
-  <a href="#multi-engine-threat-detection" class="feature-card">
-    <div class="feature-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>
-    <div class="feature-card-title">Detect Threats</div>
-    <div class="feature-card-desc">9 analyzers, file intelligence engines, and analyzability scoring work together so no single blind spot dominates.</div>
-  </a>
-  <a href="#policy-driven-control-plane" class="feature-card">
-    <div class="feature-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></div>
-    <div class="feature-card-title">Tune and Control</div>
-    <div class="feature-card-desc">3 presets, 14 policy sections, severity overrides, and an interactive configurator — all without code changes.</div>
-  </a>
-  <a href="#multiple-interfaces" class="feature-card">
-    <div class="feature-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
-    <div class="feature-card-title">Use Anywhere</div>
-    <div class="feature-card-desc">CLI for local dev, Python SDK for embedding, REST API for platforms, and pre-commit hooks for guardrails.</div>
-  </a>
-  <a href="#rule-system-extensibility" class="feature-card">
-    <div class="feature-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
-    <div class="feature-card-title">Extend and Customize</div>
-    <div class="feature-card-desc">YAML signatures, YARA rules, and Python checks — add your own detection logic alongside the built-in rule packs.</div>
-  </a>
-</div>
+- **[Detect Threats](#multi-engine-threat-detection)** -- 10 analyzers, file intelligence engines, and analyzability scoring work together so no single blind spot dominates.
+- **[Tune and Control](#policy-driven-control-plane)** -- 3 presets, 14 policy sections, severity overrides, and an interactive configurator -- all without code changes.
+- **[Use Anywhere](#multiple-interfaces)** -- CLI for local dev, Python SDK for embedding, REST API for platforms, and pre-commit hooks for guardrails.
+- **[Extend and Customize](#rule-system-extensibility)** -- YAML signatures, YARA rules, and Python checks -- add your own detection logic alongside the built-in rule packs.
 
 ## Multi-Engine Threat Detection
 
@@ -49,11 +31,12 @@ Skill Scanner layers multiple detection engines so that no single blind spot —
 | Trigger Analyzer | `--use-trigger` | Detection of vague or suspicious skill descriptions |
 | Cross-Skill Scanner | `--check-overlap` | Coordinated attack detection across multiple skills |
 
-::: tip Quick start
-For local development, just run `skill-scanner scan ./skill` — the three core analyzers handle the common cases without any configuration.
-:::
+> [!TIP]
+> **Quick start**
+> For local development, just run `skill-scanner scan ./skill` — the three core analyzers handle the common cases without any configuration.
 
-::: details What does each analyzer detect?
+<details>
+<summary>What does each analyzer detect?</summary>
 
 This matrix shows which threat categories each analyzer can produce findings for. Use it to decide which optional analyzers to enable for your use case.
 
@@ -78,7 +61,7 @@ This matrix shows which threat categories each analyzer can produce findings for
 | Tool Chaining Abuse | ✓ | | | | | | | | |
 
 **Reading guide**: The first three columns (Static, Bytecode, Pipeline) are core analyzers that always run. The remaining columns are optional analyzers you enable with flags. Multiple analyzers covering the same category means stronger detection — if one misses a pattern, another may catch it.
-:::
+</details>
 
 ### File intelligence engines
 
@@ -95,14 +78,18 @@ Beyond code and text, Skill Scanner uses dedicated libraries to inspect binary a
 
 Not all files can be inspected. Skill Scanner computes a per-skill analyzability score that tells you what fraction of the skill's content was actually analyzed. A low score means the skill contains files that resist inspection — a risk signal in itself.
 
-::: details How analyzability scoring works
+<details>
+<summary>How analyzability scoring works</summary>
+
 - **Score formula**: `(analyzed_weight / total_weight) × 100` where weight = `max(1.0, log₂(file_size_bytes))`
 - **Risk levels**: LOW (≥ 90%), MEDIUM (70–90%), HIGH (< 70%) — configurable via policy `analysis_thresholds`
 - **Findings**: `UNANALYZABLE_BINARY` (per-file, MEDIUM) for opaque binaries; `LOW_ANALYZABILITY` (HIGH or MEDIUM) when the overall score is low
 - **Fail-closed**: in strict policy mode, low analyzability triggers blocking findings
-:::
+</details>
 
-::: details How the scan pipeline works
+<details>
+<summary>How the scan pipeline works</summary>
+
 ```mermaid
 flowchart LR
     A[Skill Input] --> B[SkillLoader]
@@ -134,11 +121,11 @@ flowchart LR
 ```
 
 **SkillLoader** parses `SKILL.md` frontmatter and discovers files. **ContentExtractor** safely unpacks archives. **Phase 1** runs all deterministic and external analyzers. **Phase 2** runs LLM-powered analyzers enriched with Phase 1 context (critical/high findings, unreferenced scripts, magic mismatches). **Post-processing** applies policy overrides, analyzability scoring, deduplication, and output normalization.
-:::
+</details>
 
-::: info Want the full picture?
-See the [Architecture Overview](/architecture/) for component diagrams and data-flow details, or jump to the [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) to decide which optional analyzers to enable for your use case.
-:::
+> [!NOTE]
+> **Want the full picture?**
+> See the [Architecture Overview](../architecture/index.md) for component diagrams and data-flow details, or jump to the [Analyzer Selection Guide](../architecture/analyzers/meta-and-external-analyzers.md) to decide which optional analyzers to enable for your use case.
 
 ## Policy-Driven Control Plane
 
@@ -162,7 +149,7 @@ Policy covers 14 sections controlling everything from file classification to LLM
 - **`analysis_thresholds`** — analyzability risk levels, unicode steganography sensitivity
 - **`severity_overrides`** + **`disabled_rules`** — organization-specific governance
 
-See [Policy Quick Reference](/reference/policy-quick-reference) for the full 14-section schema with all fields and defaults.
+See [Policy Quick Reference](../reference/policy-quick-reference.md) for the full 14-section schema with all fields and defaults.
 
 ### Policy management commands
 
@@ -172,9 +159,8 @@ skill-scanner configure-policy -i policy.yaml -o policy.yaml   # Interactive TUI
 skill-scanner scan ./skill --policy policy.yaml
 ```
 
-::: tip
-Use `configure-policy` for an interactive terminal UI that walks you through every policy section — no YAML editing required.
-:::
+> [!TIP]
+> Use `configure-policy` for an interactive terminal UI that walks you through every policy section — no YAML editing required.
 
 ## Rule System Extensibility
 
@@ -199,13 +185,13 @@ skill-scanner validate-rules --rules-file /path/to/custom       # Validate your 
 skill-scanner scan ./skill --custom-rules /path/to/rules        # Scan with custom rules
 ```
 
-See [Writing Custom Rules](/architecture/analyzers/writing-custom-rules) for a full authoring guide.
+See [Writing Custom Rules](../architecture/analyzers/writing-custom-rules.md) for a full authoring guide.
 
 ## Threat Taxonomy and Standardized Labels
 
 Every finding is normalized to Cisco AI framework mappings (AITech/AISubtech) so findings from different analyzers use consistent category labels. You can override the taxonomy and threat mappings at runtime for custom organizational taxonomies.
 
-See [Threat Taxonomy](/architecture/threat-taxonomy).
+See [Threat Taxonomy](../architecture/threat-taxonomy.md).
 
 ## Binary and Archive Handling
 
@@ -218,7 +204,9 @@ Instead of blanket allow/deny, Skill Scanner applies policy-sensitive handling t
 | ZIP-based | `.zip`, `.jar`, `.war`, `.apk`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp` |
 | TAR-based | `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz` |
 
-::: details Archive security protections
+<details>
+<summary>Archive security protections</summary>
+
 | Protection | Default limit | Finding on violation |
 |---|---|---|
 | Zip-bomb detection | 100:1 compression ratio | `ARCHIVE_ZIP_BOMB` (CRITICAL) |
@@ -228,9 +216,9 @@ Instead of blanket allow/deny, Skill Scanner applies policy-sensitive handling t
 | Total size | 50 MB uncompressed | Extraction stops |
 | File count | 500 files | Extraction stops |
 | Office threats | VBA macros and embedded OLE | `OFFICE_VBA_MACRO`, `OFFICE_EMBEDDED_OLE` |
-:::
+</details>
 
-See [Binary Handling](/architecture/binary-handling).
+See [Binary Handling](../architecture/binary-handling.md).
 
 ## Multiple Interfaces
 
@@ -253,7 +241,7 @@ The primary interface for local development and CI pipelines.
 skill-scanner scan ./my-skill --use-behavioral --use-llm --enable-meta
 ```
 
-See [CLI Usage](/user-guide/cli-usage) and [CLI Command Reference](/reference/cli-command-reference) for all flags.
+See [CLI Usage](../user-guide/cli-usage.md) and [CLI Command Reference](../reference/cli-command-reference.md) for all flags.
 
 ### Python SDK
 
@@ -268,7 +256,7 @@ for finding in result.findings:
         print(f"{finding.rule_id}: {finding.title}")
 ```
 
-See [Python SDK](/user-guide/python-sdk) for constructor options, analyzer composition, and result models.
+See [Python SDK](../user-guide/python-sdk.md) for constructor options, analyzer composition, and result models.
 
 ### API server
 
@@ -278,7 +266,7 @@ A FastAPI-based REST server for upload-driven scanning and async batch workflows
 skill-scanner-api --host localhost --port 8000
 ```
 
-See [API Server](/user-guide/api-server) and [API Endpoint Reference](/reference/api-endpoint-reference) for all endpoints and request/response models.
+See [API Server](../user-guide/api-server.md) and [API Endpoint Reference](../reference/api-endpoint-reference.md) for all endpoints and request/response models.
 
 ### Pre-commit hook
 
@@ -288,7 +276,9 @@ Block risky findings before they reach the repository. The hook scans staged ski
 skill-scanner-pre-commit install
 ```
 
-::: details Pre-commit configuration options
+<details>
+<summary>Pre-commit configuration options</summary>
+
 Configure via `.skill_scannerrc`, `.skill_scannerrc.json`, or `skill_scanner.json`:
 
 | Option | Default | Description |
@@ -299,7 +289,7 @@ Configure via `.skill_scannerrc`, `.skill_scannerrc.json`, or `skill_scanner.jso
 | `use_behavioral` | `false` | Enable behavioral analyzer |
 | `use_trigger` | `true` | Enable trigger specificity analyzer |
 | `policy` | — | Preset name or path to a custom policy YAML |
-:::
+</details>
 
 ## LLM Provider Configuration
 
@@ -312,11 +302,10 @@ pip install skill-scanner[azure]     # Azure OpenAI (managed identity)
 pip install skill-scanner[all]       # All cloud providers
 ```
 
-::: tip
-For consensus-based false-positive reduction, use `--llm-consensus-runs 3` to run the LLM analyzer 3 times independently and keep only majority-agreed findings.
-:::
+> [!TIP]
+> For consensus-based false-positive reduction, use `--llm-consensus-runs 3` to run the LLM analyzer 3 times independently and keep only majority-agreed findings.
 
-Environment variables for LLM and external analyzer configuration are documented in the [Configuration Reference](/reference/configuration-reference). Provider-specific setup is covered in [Dependencies and LLM Providers](/reference/dependencies-and-llm-providers).
+Environment variables for LLM and external analyzer configuration are documented in the [Configuration Reference](../reference/configuration-reference.md). Provider-specific setup is covered in [Dependencies and LLM Providers](../reference/dependencies-and-llm-providers.md).
 
 ## Reporting and Integration
 
@@ -331,18 +320,18 @@ Six output formats support every workflow from local triage to platform automati
 | SARIF | `--format sarif` | GitHub Code Scanning integration |
 | HTML | `--format html` | Rich interactive triage with correlation groups |
 
-See [Output Formats](/reference/output-formats).
+See [Output Formats](../reference/output-formats.md).
 
 ## CI/CD and Guardrail Workflows
 
 Skill Scanner fits into both central CI pipelines and contributor-side guardrails.
 
-::: tip CI gate recipe
-```bash
-skill-scanner scan-all ./skills --recursive --format sarif --output results.sarif --fail-on-findings
-```
-Exit code 1 when any CRITICAL or HIGH finding is detected.
-:::
+> [!TIP]
+> **CI gate recipe**
+> ```bash
+> skill-scanner scan-all ./skills --recursive --format sarif --output results.sarif --fail-on-findings
+> ```
+> Exit code 1 when any CRITICAL or HIGH finding is detected.
 
 ### Cross-skill analysis
 
@@ -356,7 +345,7 @@ skill-scanner scan-all ./skills --recursive --check-overlap --fail-on-findings
 
 Use `skill-scanner-pre-commit` for contributor-side blocking of risky findings before push.
 
-See [Integrations Guide](/development/integrations) for CI/CD setup details.
+See [Integrations Guide](../development/integrations.md) for CI/CD setup details.
 
 ## Performance and Practicality
 
@@ -365,9 +354,9 @@ See [Integrations Guide](/development/integrations) for CI/CD setup details.
 - **Policy-based suppression** — use `severity_overrides` to reclassify and `disabled_rules` to suppress specific rule IDs, without code changes.
 - **Structured output** — every format is designed for machine consumption and long-term maintainability.
 
-::: tip Deep semantic triage
-```bash
-skill-scanner scan ./skill --use-llm --llm-consensus-runs 3 --enable-meta --format html --output report.html
-```
-Combines LLM consensus with meta-analysis false-positive filtering and an interactive HTML report.
-:::
+> [!TIP]
+> **Deep semantic triage**
+> ```bash
+> skill-scanner scan ./skill --use-llm --llm-consensus-runs 3 --enable-meta --format html --output report.html
+> ```
+> Combines LLM consensus with meta-analysis false-positive filtering and an interactive HTML report.

@@ -28,15 +28,6 @@ Skill Scanner supports six output formats. Use `--format` to select one and `--o
 
 ### Summary (default)
 
-<div class="terminal-demo">
-<div class="terminal-header">
-<span class="terminal-dot red"></span>
-<span class="terminal-dot yellow"></span>
-<span class="terminal-dot green"></span>
-<span class="terminal-title">skill-scanner scan — summary</span>
-</div>
-</div>
-
 ```txt
 $ skill-scanner scan evals/skills/data-exfiltration/environment-secrets
 ============================================================
@@ -56,15 +47,6 @@ Findings Summary:
 ```
 
 A clean skill shows:
-
-<div class="terminal-demo">
-<div class="terminal-header">
-<span class="terminal-dot red"></span>
-<span class="terminal-dot yellow"></span>
-<span class="terminal-dot green"></span>
-<span class="terminal-title">skill-scanner scan — safe result</span>
-</div>
-</div>
 
 ```txt
 $ skill-scanner scan evals/skills/safe-skills/simple-math
@@ -128,15 +110,6 @@ Use `--compact` to remove pretty-printing for machine pipelines.
 
 ### Table
 
-<div class="terminal-demo">
-<div class="terminal-header">
-<span class="terminal-dot red"></span>
-<span class="terminal-dot yellow"></span>
-<span class="terminal-dot green"></span>
-<span class="terminal-title">skill-scanner scan — table</span>
-</div>
-</div>
-
 ```txt
 $ skill-scanner scan evals/skills/command-injection/eval-execution --format table
 ================================================================================
@@ -181,15 +154,6 @@ Detailed Findings:
 ```
 
 ### Markdown
-
-<div class="terminal-demo">
-<div class="terminal-header">
-<span class="terminal-dot red"></span>
-<span class="terminal-dot yellow"></span>
-<span class="terminal-dot green"></span>
-<span class="terminal-title">skill-scanner scan — markdown</span>
-</div>
-</div>
 
 ```txt
 $ skill-scanner scan evals/skills/prompt-injection/jailbreak-override --format markdown

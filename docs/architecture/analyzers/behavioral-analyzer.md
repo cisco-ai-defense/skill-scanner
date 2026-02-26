@@ -312,6 +312,6 @@ def process(user_input):
 
 ## Related Pages
 
-- [Static Analyzer](/architecture/analyzers/static-analyzer) -- Pattern-based detection (comparison with behavioral approach)
-- [LLM Analyzer](/architecture/analyzers/llm-analyzer) -- Semantic analysis that complements dataflow findings
-- [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) -- When to enable `--use-behavioral`
+- [Static Analyzer](static-analyzer.md) -- Pattern-based detection (comparison with behavioral approach)
+- [LLM Analyzer](llm-analyzer.md) -- Semantic analysis that complements dataflow findings
+- [Analyzer Selection Guide](meta-and-external-analyzers.md) -- When to enable `--use-behavioral`

@@ -236,5 +236,5 @@ pip install httpx
 
 ## Related Pages
 
-- [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) -- When to enable `--use-aidefense`
-- [Scanning Pipeline](/architecture/scanning-pipeline) -- How AI Defense fits into Phase 1 analysis
+- [Analyzer Selection Guide](meta-and-external-analyzers.md) -- When to enable `--use-aidefense`
+- [Scanning Pipeline](../scanning-pipeline.md) -- How AI Defense fits into Phase 1 analysis

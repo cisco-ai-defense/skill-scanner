@@ -17,7 +17,7 @@ for f in result.findings:
     print(f"  [{f.severity}] {f.rule_id}: {f.message}")
 ```
 
-For full SDK coverage (custom analyzers, policy objects, batch scanning), see the [Python SDK guide](/user-guide/python-sdk).
+For full SDK coverage (custom analyzers, policy objects, batch scanning), see the [Python SDK guide](../user-guide/python-sdk.md).
 
 ## How-To: Scan via the REST API
 
@@ -46,7 +46,7 @@ curl -X POST http://localhost:8000/scan \
 }
 ```
 
-For server setup, upload scanning, and batch operations, see the [API Server guide](/user-guide/api-server).
+For server setup, upload scanning, and batch operations, see the [API Server guide](../user-guide/api-server.md).
 
 ## Example Catalog
 
@@ -79,4 +79,4 @@ From repository root:
 uv run python examples/basic_scan.py
 ```
 
-Some examples require API keys or optional analyzers -- see [Configuration Reference](/reference/configuration-reference) for the relevant environment variables.
+Some examples require API keys or optional analyzers -- see [Configuration Reference](../reference/configuration-reference.md) for the relevant environment variables.

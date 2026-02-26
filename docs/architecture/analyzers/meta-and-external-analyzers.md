@@ -1,8 +1,9 @@
 # Analyzer Selection Guide
 
-::: tip TL;DR
-Use this guide to choose which optional analyzers to enable. Quick CI gates need no extras; thorough reviews benefit from `--use-llm --use-behavioral --enable-meta`. See the [Recommended Combinations](#recommended-combinations) table for common scenarios.
-:::
+> [!TIP]
+> **TL;DR**
+>
+> Use this guide to choose which optional analyzers to enable. Quick CI gates need no extras; thorough reviews benefit from `--use-llm --use-behavioral --enable-meta`. See the [Recommended Combinations](#recommended-combinations) table for common scenarios.
 
 This page helps you choose which optional analyzers to enable for your use case. Core analyzers (static, bytecode, pipeline) always run when enabled in policy. The analyzers below are opt-in via CLI flags or API parameters.
 
@@ -29,7 +30,7 @@ skill-scanner scan ./my-skill --use-llm
 
 Skip when: you only need fast deterministic scans, have no LLM provider configured, or are scanning many skills in batch where latency matters.
 
-See [LLM Analyzer deep dive](/architecture/analyzers/llm-analyzer) for configuration and supported models.
+See [LLM Analyzer deep dive](llm-analyzer.md) for configuration and supported models.
 
 ### Meta Analyzer
 
@@ -39,13 +40,14 @@ Best for: reducing noise in scan results by having an LLM review findings from a
 skill-scanner scan ./my-skill --use-llm --enable-meta
 ```
 
-::: info Prerequisite
-Meta analyzer requires `--use-llm` because it uses an LLM to perform its second-pass analysis. It always runs after all other analyzers.
-:::
+> [!NOTE]
+> **Prerequisite**
+>
+> Meta analyzer requires `--use-llm` because it uses an LLM to perform its second-pass analysis. It always runs after all other analyzers.
 
 Skip when: you want raw unfiltered findings, or false positive rates are already acceptable.
 
-See [Meta Analyzer deep dive](/architecture/analyzers/meta-analyzer) for authority hierarchy and output format.
+See [Meta Analyzer deep dive](meta-analyzer.md) for authority hierarchy and output format.
 
 ### VirusTotal Analyzer
 
@@ -73,7 +75,7 @@ skill-scanner scan ./my-skill --use-aidefense
 
 Skip when: you don't have Cisco AI Defense API access, or you want fully offline scanning.
 
-See [AI Defense Analyzer deep dive](/architecture/analyzers/aidefense-analyzer) for configuration.
+See [AI Defense Analyzer deep dive](aidefense-analyzer.md) for configuration.
 
 ### Trigger Analyzer
 
@@ -95,7 +97,7 @@ skill-scanner scan ./my-skill --use-behavioral
 
 Skip when: the skill contains no Python source, or you need the fastest possible scan time.
 
-See [Behavioral Analyzer deep dive](/architecture/analyzers/behavioral-analyzer) for detection patterns.
+See [Behavioral Analyzer deep dive](behavioral-analyzer.md) for detection patterns.
 
 ## Recommended Combinations
 
@@ -121,9 +123,9 @@ skill-scanner scan-all ./skills-dir --check-overlap
 
 ## Canonical Deep Dives
 
-- [Static Analyzer](/architecture/analyzers/static-analyzer)
-- [Behavioral Analyzer](/architecture/analyzers/behavioral-analyzer)
-- [LLM Analyzer](/architecture/analyzers/llm-analyzer)
-- [Meta Analyzer](/architecture/analyzers/meta-analyzer)
-- [AI Defense Analyzer](/architecture/analyzers/aidefense-analyzer)
-- [Binary Handling](/architecture/binary-handling)
+- [Static Analyzer](static-analyzer.md)
+- [Behavioral Analyzer](behavioral-analyzer.md)
+- [LLM Analyzer](llm-analyzer.md)
+- [Meta Analyzer](meta-analyzer.md)
+- [AI Defense Analyzer](aidefense-analyzer.md)
+- [Binary Handling](../binary-handling.md)

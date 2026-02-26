@@ -2,9 +2,9 @@
 
 The Skill Scanner API Server provides a REST interface for uploading and scanning Agent Skills packages, enabling integration with web applications, CI/CD pipelines, and other services.
 
-::: warning Development Use Only
-This server is unauthenticated by default. Do not expose it on any interface except localhost -- the APIs can be used for denial-of-wallet attacks on your API keys or denial-of-service via uploaded zipbombs. See [API Operations](/user-guide/api-operations#security) for authentication and hardening guidance.
-:::
+> [!WARNING]
+> **Development Use Only**
+> This server is unauthenticated by default. Do not expose it on any interface except localhost -- the APIs can be used for denial-of-wallet attacks on your API keys or denial-of-service via uploaded zipbombs. See [API Operations](api-operations.md#security) for authentication and hardening guidance.
 
 **Technology**: FastAPI with async support &bull; **Endpoints**: 7 REST endpoints &bull; **Docs**: auto-generated Swagger/ReDoc
 
@@ -37,7 +37,7 @@ run_server(host="127.0.0.1", port=8000, reload=False)
 | `/scan-batch/{scan_id}` | GET | Poll batch scan status/results |
 | `/analyzers` | GET | List all available analyzers |
 
-For full request schemas, parameters, and response formats, see **[API Endpoints Detail](/user-guide/api-endpoints-detail)**.
+For full request schemas, parameters, and response formats, see **[API Endpoints Detail](api-endpoints-detail.md)**.
 
 Upload guardrails: max upload `50 MB`, max ZIP entries `500`, max uncompressed size `200 MB`.
 
@@ -60,7 +60,7 @@ curl -X POST http://localhost:8000/scan \
   -d '{"skill_directory": "/path/to/skill"}'
 ```
 
-For complete request/response examples in curl, Python, and JavaScript, see **[API Endpoints Detail](/user-guide/api-endpoints-detail)**. For a quick-lookup table of all endpoints and Pydantic models, see **[API Endpoint Reference](/reference/api-endpoint-reference)**.
+For complete request/response examples in curl, Python, and JavaScript, see **[API Endpoints Detail](api-endpoints-detail.md)**. For a quick-lookup table of all endpoints and Pydantic models, see **[API Endpoint Reference](../reference/api-endpoint-reference.md)**.
 
 ## Configuration
 
@@ -74,7 +74,7 @@ export SKILL_SCANNER_LLM_MODEL=claude-3-5-sonnet-20241022
 export AI_DEFENSE_API_KEY=your_key
 ```
 
-Server bind settings are controlled by CLI flags (`--host`, `--port`) when launching `skill-scanner-api`. See **[Configuration Reference](/reference/configuration-reference)** for the full list of environment variables.
+Server bind settings are controlled by CLI flags (`--host`, `--port`) when launching `skill-scanner-api`. See **[Configuration Reference](../reference/configuration-reference.md)** for the full list of environment variables.
 
 ### CORS (for web apps)
 
@@ -104,6 +104,6 @@ app.include_router(router)
 
 ## Next Steps
 
-- **[API Endpoints Detail](/user-guide/api-endpoints-detail)** — full request/response schemas for every endpoint
-- **[API Operations](/user-guide/api-operations)** — CI/CD, Docker, security, monitoring, and troubleshooting
-- **[API Rationale](/user-guide/api-rationale)** — when to use the API vs CLI/SDK
+- **[API Endpoints Detail](api-endpoints-detail.md)** — full request/response schemas for every endpoint
+- **[API Operations](api-operations.md)** — CI/CD, Docker, security, monitoring, and troubleshooting
+- **[API Rationale](api-rationale.md)** — when to use the API vs CLI/SDK

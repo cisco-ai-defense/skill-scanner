@@ -2,12 +2,12 @@
 
 This guide explains practical CLI usage patterns for local scans, CI gates, and policy-driven operation.
 
-::: tip Most Common Command
-```bash
-skill-scanner scan ./my-skill
-```
-Runs the default static analyzers and prints a findings summary. Add `--use-behavioral`, `--use-llm`, or `--policy strict` to deepen the analysis.
-:::
+> [!TIP]
+> **Most Common Command**
+> ```bash
+> skill-scanner scan ./my-skill
+> ```
+> Runs the default static analyzers and prints a findings summary. Add `--use-behavioral`, `--use-llm`, or `--policy strict` to deepen the analysis.
 
 ## Core Commands
 
@@ -83,10 +83,10 @@ When `--fail-on-findings` is active:
 
 For exhaustive argument tables and full `--help` snapshots, see:
 
-- [CLI Command Reference](/reference/cli-command-reference)
+- [CLI Command Reference](../reference/cli-command-reference.md)
 
 ## See Also
 
-- [Configuration Reference](/reference/configuration-reference) — environment variables for LLM providers, analyzers, and feature toggles
-- [Python SDK](/user-guide/python-sdk) — embed scanning directly in Python applications
-- [API Server](/user-guide/api-server) — REST API for upload-driven and CI/CD workflows
+- [Configuration Reference](../reference/configuration-reference.md) — environment variables for LLM providers, analyzers, and feature toggles
+- [Python SDK](python-sdk.md) — embed scanning directly in Python applications
+- [API Server](api-server.md) — REST API for upload-driven and CI/CD workflows

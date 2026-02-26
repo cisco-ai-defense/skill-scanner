@@ -5,17 +5,17 @@
 
 This page is generated from `.env.example` and runtime source references.
 
-::: tip Quick Start
-Most users only need to set one or two variables. Create a `.env` file in your project root:
-
-```bash
-# Minimal .env for Anthropic
-SKILL_SCANNER_LLM_API_KEY="sk-ant-..."
-SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
-```
-
-See [Installation and Configuration](/user-guide/installation-and-configuration) for provider-specific setup.
-:::
+> [!TIP]
+> **Quick Start**
+> Most users only need to set one or two variables. Create a `.env` file in your project root:
+>
+> ```bash
+> # Minimal .env for Anthropic
+> SKILL_SCANNER_LLM_API_KEY="sk-ant-..."
+> SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
+> ```
+>
+> See [Installation and Configuration](../user-guide/installation-and-configuration.md) for provider-specific setup.
 
 ## LLM Configuration
 
@@ -131,6 +131,6 @@ Paths, allowlists, and other advanced settings.
 
 ## Related
 
-- CLI flags: [CLI Command Reference](/reference/cli-command-reference)
-- Policy YAML: [Custom Policy Configuration](/user-guide/custom-policy-configuration)
-- Presets: [Scan Policies Overview](/user-guide/scan-policies-overview)
+- CLI flags: [CLI Command Reference](cli-command-reference.md)
+- Policy YAML: [Custom Policy Configuration](../user-guide/custom-policy-configuration.md)
+- Presets: [Scan Policies Overview](../user-guide/scan-policies-overview.md)

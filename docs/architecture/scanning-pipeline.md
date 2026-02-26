@@ -1,8 +1,9 @@
 # Scanning Pipeline
 
-::: tip TL;DR
-Scans run in two phases: deterministic analyzers first (static, bytecode, pipeline, behavioral, VirusTotal, AI Defense, trigger), then LLM analyzers enriched with Phase 1 context. Post-processing applies policy overrides, analyzability scoring, and deduplication before producing the final report.
-:::
+> [!TIP]
+> **TL;DR**
+>
+> Scans run in two phases: deterministic analyzers first (static, bytecode, pipeline, behavioral, VirusTotal, AI Defense, trigger), then LLM analyzers enriched with Phase 1 context. Post-processing applies policy overrides, analyzability scoring, and deduplication before producing the final report.
 
 This page describes the execution pipeline inside `SkillScanner`.
 
@@ -151,7 +152,7 @@ These are controlled by the `--check-overlap` flag in `scan-all`.
 
 ## Related Pages
 
-- [Architecture Overview](/architecture/) -- High-level system layout and component reference
-- [Analyzers Overview](/architecture/analyzers/) -- Capability matrix and deep dives for each analyzer
-- [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) -- Choose which optional analyzers to enable
-- [Features](/features/) -- Feature catalog with pipeline diagram
+- [Architecture Overview](index.md) -- High-level system layout and component reference
+- [Analyzers Overview](analyzers/index.md) -- Capability matrix and deep dives for each analyzer
+- [Analyzer Selection Guide](analyzers/meta-and-external-analyzers.md) -- Choose which optional analyzers to enable
+- [Features](../features/index.md) -- Feature catalog with pipeline diagram

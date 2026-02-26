@@ -4,7 +4,7 @@
 
 Scan policies control all tuning knobs, detection thresholds, and rule enablement in Skill Scanner. Every setting has a sensible default; custom policies merge on top so you only specify what you want to change.
 
-This page is a compact reference. For full walkthroughs, see [Custom Policy Configuration](/user-guide/custom-policy-configuration).
+This page is a compact reference. For full walkthroughs, see [Custom Policy Configuration](../user-guide/custom-policy-configuration.md).
 
 ## Presets
 

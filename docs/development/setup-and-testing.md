@@ -186,7 +186,7 @@ The hook entry point is `skill-scanner-pre-commit` (defined in `pyproject.toml`)
 
 ## GitHub Actions Reusable Workflow
 
-The file `.github/workflows/scan-skills.yml` is a reusable workflow that other repos can call via `workflow_call`. See [docs/github-actions.md](github-actions.md) for full usage.
+The file `.github/workflows/scan-skills.yml` is a reusable workflow that other repos can call via `workflow_call`. See [docs/github-actions.md](../github-actions.md) for full usage.
 
 ## Versioning
 

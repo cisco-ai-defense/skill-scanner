@@ -9,7 +9,6 @@ Repository workflows under [`.github/workflows/`](https://github.com/cisco-ai-de
 - [python-tests.yml](https://github.com/cisco-ai-defense/skill-scanner/blob/main/.github/workflows/python-tests.yml) -- lint, test matrix, coverage, security checks
 - [integration-tests.yml](https://github.com/cisco-ai-defense/skill-scanner/blob/main/.github/workflows/integration-tests.yml) -- external API-backed integration suites
 - [release.yml](https://github.com/cisco-ai-defense/skill-scanner/blob/main/.github/workflows/release.yml) -- PyPI publish flow
-- [deploy-docs.yml](https://github.com/cisco-ai-defense/skill-scanner/blob/main/.github/workflows/deploy-docs.yml) -- VitePress build and GitHub Pages deployment
 
 ## GitHub Actions
 
@@ -134,7 +133,7 @@ Exit codes:
 
 ## Output Formats
 
-Choose the right format for your integration. See [Output Formats Reference](/reference/output-formats) for sample outputs and a format decision guide.
+Choose the right format for your integration. See [Output Formats Reference](../reference/output-formats.md) for sample outputs and a format decision guide.
 
 | Format | Use Case | Flag |
 |--------|----------|------|
@@ -183,7 +182,7 @@ Skill Scanner also provides a FastAPI-based REST API for service-to-service inte
 skill-scanner-api --host 0.0.0.0 --port 8000
 ```
 
-See the [REST API documentation](/user-guide/api-server) for endpoints and usage.
+See the [REST API documentation](../user-guide/api-server.md) for endpoints and usage.
 
 ### API-First CI
 

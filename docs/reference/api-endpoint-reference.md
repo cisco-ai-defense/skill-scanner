@@ -5,13 +5,13 @@
 
 This page is generated from `skill_scanner/api/router.py`.
 
-::: tip Interactive Docs
-Start the API server with `skill-scanner-api` and open `/docs` (Swagger UI) or `/redoc` for interactive exploration.
-:::
+> [!TIP]
+> **Interactive Docs**
+> Start the API server with `skill-scanner-api` and open `/docs` (Swagger UI) or `/redoc` for interactive exploration.
 
-::: info Full details
-For complete request/response schemas, parameter descriptions, and edge-case guidance, see the hand-written [API Endpoints Detail](/user-guide/api-endpoints-detail).
-:::
+> [!NOTE]
+> **Full details**
+> For complete request/response schemas, parameter descriptions, and edge-case guidance, see the hand-written [API Endpoints Detail](../user-guide/api-endpoints-detail.md).
 
 ## Endpoints
 

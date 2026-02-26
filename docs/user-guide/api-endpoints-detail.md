@@ -1,10 +1,10 @@
 # API Endpoints Detail
 
-Full request/response documentation for every Skill Scanner API endpoint. For a high-level overview, see the [API Server](/user-guide/api-server) page.
+Full request/response documentation for every Skill Scanner API endpoint. For a high-level overview, see the [API Server](api-server.md) page.
 
-::: tip Quick reference
-For a compact table of all endpoints and Pydantic models, see the auto-generated [API Endpoint Reference](/reference/api-endpoint-reference).
-:::
+> [!TIP]
+> **Quick reference**
+> For a compact table of all endpoints and Pydantic models, see the auto-generated [API Endpoint Reference](../reference/api-endpoint-reference.md).
 
 ## Root
 
@@ -51,9 +51,9 @@ Returns server status and available analyzers.
 }
 ```
 
-::: info Analyzer naming
-The `/health` and `/analyzers` endpoints use suffixed names (`bytecode_analyzer`, `pipeline_analyzer`) from a static list in the API router. The core analyzers report shorter names (`bytecode`, `pipeline`) in `analyzers_used` within scan results. Both refer to the same analyzers.
-:::
+> [!NOTE]
+> **Analyzer naming**
+> The `/health` and `/analyzers` endpoints use suffixed names (`bytecode_analyzer`, `pipeline_analyzer`) from a static list in the API router. The core analyzers report shorter names (`bytecode`, `pipeline`) in `analyzers_used` within scan results. Both refer to the same analyzers.
 
 For LLM/meta auth, Bedrock models can use AWS credentials/IAM when configured with a `bedrock/...` model.
 

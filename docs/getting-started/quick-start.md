@@ -39,7 +39,7 @@ export VIRUSTOTAL_API_KEY="your_virustotal_api_key"
 export AI_DEFENSE_API_KEY="your_aidefense_api_key"
 ```
 
-See [Configuration Reference](/reference/configuration-reference) for every available environment variable.
+See [Configuration Reference](../reference/configuration-reference.md) for every available environment variable.
 
 ### Interactive Wizard
 
@@ -79,15 +79,6 @@ The project includes test skills in [`evals/skills/`](https://github.com/cisco-a
 
 ### [OK] simple-math (SAFE)
 
-<div class="terminal-demo">
-<div class="terminal-header">
-<span class="terminal-dot red"></span>
-<span class="terminal-dot yellow"></span>
-<span class="terminal-dot green"></span>
-<span class="terminal-title">Terminal</span>
-</div>
-</div>
-
 ```txt
 $ skill-scanner scan evals/skills/safe-skills/simple-math
 ============================================================
@@ -101,15 +92,6 @@ Scan Duration: 0.12s
 ```
 
 ### [FAIL] multi-file-exfiltration (CRITICAL)
-
-<div class="terminal-demo">
-<div class="terminal-header">
-<span class="terminal-dot red"></span>
-<span class="terminal-dot yellow"></span>
-<span class="terminal-dot green"></span>
-<span class="terminal-title">Terminal</span>
-</div>
-</div>
 
 ```txt
 $ skill-scanner scan evals/skills/behavioral-analysis/multi-file-exfiltration --use-behavioral
@@ -150,11 +132,11 @@ skill-scanner --help
 skill-scanner scan --help
 ```
 
-See [CLI Command Reference](/reference/cli-command-reference) for detailed flags and options for every command.
+See [CLI Command Reference](../reference/cli-command-reference.md) for detailed flags and options for every command.
 
 ## Output Formats
 
-See [Output Formats Reference](/reference/output-formats) for sample outputs and a format decision guide.
+See [Output Formats Reference](../reference/output-formats.md) for sample outputs and a format decision guide.
 
 ### JSON (for CI/CD)
 ```bash
@@ -196,7 +178,7 @@ skill-scanner generate-policy -o my_policy.yaml
 skill-scanner configure-policy
 ```
 
-See [Scan Policy Guide](/user-guide/scan-policies-overview) for full details.
+See [Scan Policy Guide](../user-guide/scan-policies-overview.md) for full details.
 
 ### Enable All Analyzers
 ```bash
@@ -209,7 +191,7 @@ skill-scanner scan /path/to/skill \
 ```
 
 **LLM provider note:** `--llm-provider` currently accepts `anthropic` or `openai`.
-For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, set provider-specific model strings and environment variables (see [Dependencies and LLM Providers](/reference/dependencies-and-llm-providers)).
+For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, set provider-specific model strings and environment variables (see [Dependencies and LLM Providers](../reference/dependencies-and-llm-providers.md)).
 
 ### Cross-Skill Analysis
 ```bash
@@ -250,10 +232,10 @@ The hook only scans skill directories with staged changes. Use `--all` to scan e
 
 1. **Review the documentation:**
    - [README.md](https://github.com/cisco-ai-defense/skill-scanner/blob/main/README.md) - Project overview
-   - [/architecture/](/architecture/) - System design
-   - [/architecture/threat-taxonomy](/architecture/threat-taxonomy) - Threat taxonomy and mappings
-   - [/user-guide/scan-policies-overview](/user-guide/scan-policies-overview) - Custom policies and tuning
-   - [/reference/](/reference/) - Configuration, CLI, API, and output format reference
+   - [/architecture/](../architecture/index.md) - System design
+   - [/architecture/threat-taxonomy](../architecture/threat-taxonomy.md) - Threat taxonomy and mappings
+   - [/user-guide/scan-policies-overview](../user-guide/scan-policies-overview.md) - Custom policies and tuning
+   - [/reference/](../reference/index.md) - Configuration, CLI, API, and output format reference
 
 2. **Try scanning your own skills:**
    ```bash
@@ -265,7 +247,7 @@ The hook only scans skill directories with staged changes. Use `--all` to scan e
    skill-scanner scan-all ./skills --fail-on-severity high
    # Exit code 1 if findings at or above HIGH severity
    ```
-   See [GitHub Actions Integration](github-actions.md) for a ready-made reusable workflow.
+   See [GitHub Actions Integration](../github-actions.md) for a ready-made reusable workflow.
 
 ## Troubleshooting
 

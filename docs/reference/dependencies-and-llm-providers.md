@@ -107,6 +107,6 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 
 ## Related
 
-- [Installation and Configuration](/user-guide/installation-and-configuration)
-- [LLM Analyzer](/architecture/analyzers/llm-analyzer)
-- [Configuration Reference](/reference/configuration-reference)
+- [Installation and Configuration](../user-guide/installation-and-configuration.md)
+- [LLM Analyzer](../architecture/analyzers/llm-analyzer.md)
+- [Configuration Reference](configuration-reference.md)

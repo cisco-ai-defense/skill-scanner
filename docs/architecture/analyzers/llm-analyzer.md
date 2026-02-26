@@ -382,7 +382,7 @@ The analyzer tries multiple strategies. Check logs for details. This is usually 
 
 ## Related Pages
 
-- [Meta-Analyzer](/architecture/analyzers/meta-analyzer) -- Second-pass FP filtering that runs after LLM analysis
-- [Behavioral Analyzer](/architecture/analyzers/behavioral-analyzer) -- Deterministic dataflow analysis that complements LLM findings
-- [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) -- When to enable `--use-llm`
-- [Threat Taxonomy](/architecture/threat-taxonomy) -- How LLM findings map to Cisco framework codes
+- [Meta-Analyzer](meta-analyzer.md) -- Second-pass FP filtering that runs after LLM analysis
+- [Behavioral Analyzer](behavioral-analyzer.md) -- Deterministic dataflow analysis that complements LLM findings
+- [Analyzer Selection Guide](meta-and-external-analyzers.md) -- When to enable `--use-llm`
+- [Threat Taxonomy](../threat-taxonomy.md) -- How LLM findings map to Cisco framework codes

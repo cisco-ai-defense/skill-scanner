@@ -21,14 +21,14 @@ uv run skill-scanner scan evals/skills/safe-skills/simple-math  # smoke test
 | `tests/` | pytest test suites (unit, integration, analyzer-specific) |
 | `evals/` | Evaluation skills (safe and malicious) for benchmarking |
 | `examples/` | Runnable Python scripts demonstrating SDK and API usage |
-| `docs/` | VitePress documentation site |
+| `docs/` | Documentation (plain markdown, renders on GitHub) |
 | `scripts/` | Helper scripts (doc generation, pre-commit hooks) |
 
 ## Core Topics
 
-- [Local setup and tests](/development/setup-and-testing) -- detailed environment configuration, test commands, coverage
-- [CI/CD & Integrations](/development/integrations) -- GitHub Actions, pre-commit hooks, SARIF upload, build gates
-- [Example usage patterns](/guides/examples-and-how-to) -- runnable examples and how-to walkthroughs
+- [Local setup and tests](setup-and-testing.md) -- detailed environment configuration, test commands, coverage
+- [CI/CD & Integrations](integrations.md) -- GitHub Actions, pre-commit hooks, SARIF upload, build gates
+- [Example usage patterns](../guides/examples-and-how-to.md) -- runnable examples and how-to walkthroughs
 
 ## Contribution Path
 

@@ -1,35 +1,18 @@
 # Skill Scanner Architecture
 
-::: tip What you'll find here
-This section covers the internals of Skill Scanner: how scans execute, what each analyzer detects, how findings map to threat frameworks, and how to extend the system. If you're looking to **use** the scanner, start with the [User Guide](/user-guide/) instead.
-:::
+> [!TIP]
+> **What you'll find here**
+>
+> This section covers the internals of Skill Scanner: how scans execute, what each analyzer detects, how findings map to threat frameworks, and how to extend the system. If you're looking to **use** the scanner, start with the [User Guide](../user-guide/index.md) instead.
 
 Skill Scanner is a modular security scanner for agent skill packages. It combines deterministic scanning with optional LLM-assisted analysis through a central orchestrator and pluggable analyzers.
 
 ## Explore by Topic
 
-<div class="arch-grid">
-  <a class="arch-card" href="./scanning-pipeline">
-    <div class="arch-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
-    <div class="arch-card-title">Scanning Pipeline</div>
-    <div class="arch-card-desc">How scans execute end-to-end: two-phase analysis, post-processing, and output.</div>
-  </a>
-  <a class="arch-card" href="./analyzers/">
-    <div class="arch-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
-    <div class="arch-card-title">Analyzers</div>
-    <div class="arch-card-desc">The 10 detection engines -- capability matrix, deep dives, and selection guide.</div>
-  </a>
-  <a class="arch-card" href="./threat-taxonomy">
-    <div class="arch-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
-    <div class="arch-card-title">Threat Model</div>
-    <div class="arch-card-desc">Cisco AI Security Framework taxonomy, binary handling, and risk classification.</div>
-  </a>
-  <a class="arch-card" href="./analyzers/writing-custom-rules">
-    <div class="arch-card-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5h7"/><path d="M17.5 14v7"/></svg></div>
-    <div class="arch-card-title">Extending</div>
-    <div class="arch-card-desc">Write custom YAML signatures, YARA rules, and Python checks. Add new analyzers.</div>
-  </a>
-</div>
+- **[Scanning Pipeline](./scanning-pipeline)** -- How scans execute end-to-end: two-phase analysis, post-processing, and output.
+- **[Analyzers](./analyzers/)** -- The 10 detection engines — capability matrix, deep dives, and selection guide.
+- **[Threat Model](./threat-taxonomy)** -- Cisco AI Security Framework taxonomy, binary handling, and risk classification.
+- **[Extending](./analyzers/writing-custom-rules)** -- Write custom YAML signatures, YARA rules, and Python checks. Add new analyzers.
 
 ## High-Level Layout
 
@@ -149,7 +132,7 @@ For directory scans, `scan_directory(...)` iterates skill packages and optionall
 - description overlap findings (`TRIGGER_OVERLAP_*`)
 - cross-skill findings via `CrossSkillScanner`
 
-See [Scanning Pipeline](/architecture/scanning-pipeline) for the full stage-by-stage breakdown.
+See [Scanning Pipeline](scanning-pipeline.md) for the full stage-by-stage breakdown.
 
 ### Analyzability Scoring
 

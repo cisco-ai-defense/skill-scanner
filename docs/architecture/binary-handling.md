@@ -1,8 +1,9 @@
 # Binary File Handling
 
-::: tip TL;DR
-Binaries are classified by extension and magic bytes, then tiered as inert, archive, structured, or unknown. Opaque binaries lower the analyzability score -- a fail-closed posture where what cannot be inspected is flagged rather than trusted. VirusTotal integration provides reputation-based validation.
-:::
+> [!TIP]
+> **TL;DR**
+>
+> Binaries are classified by extension and magic bytes, then tiered as inert, archive, structured, or unknown. Opaque binaries lower the analyzability score -- a fail-closed posture where what cannot be inspected is flagged rather than trusted. VirusTotal integration provides reputation-based validation.
 
 ## Overview
 
@@ -103,6 +104,6 @@ skill-scanner scan /path/to/skill --policy strict
 
 ## Related Pages
 
-- [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) -- When to enable VirusTotal and other optional analyzers
-- [Static Analyzer](/architecture/analyzers/static-analyzer) -- How binary checks fit into the static analysis flow
-- [Custom Policy Configuration](/user-guide/custom-policy-configuration) -- Tune binary handling via policy sections
+- [Analyzer Selection Guide](analyzers/meta-and-external-analyzers.md) -- When to enable VirusTotal and other optional analyzers
+- [Static Analyzer](analyzers/static-analyzer.md) -- How binary checks fit into the static analysis flow
+- [Custom Policy Configuration](../user-guide/custom-policy-configuration.md) -- Tune binary handling via policy sections

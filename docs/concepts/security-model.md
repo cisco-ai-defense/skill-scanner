@@ -58,7 +58,7 @@ Skill Scanner is a **best-effort detection tool**, not a formal proof of safety.
 
 Skill Scanner is built for **local skill packages** (directory paths or uploaded ZIPs extracted locally). It is not a remote protocol scanner for MCP server endpoints.
 
-For details on this distinction, see [Remote Skills Analysis](/concepts/remote-skills-analysis).
+For details on this distinction, see [Remote Skills Analysis](remote-skills-analysis.md).
 
 ## Recommended Operating Profiles
 
@@ -70,8 +70,8 @@ For details on this distinction, see [Remote Skills Analysis](/concepts/remote-s
 
 ## Deep Dives
 
-- [Architecture](/architecture/)
-- [Scanning Pipeline](/architecture/scanning-pipeline)
-- [Analyzer Internals](/architecture/analyzers/)
-- [Threat Taxonomy](/architecture/threat-taxonomy)
-- [Policy System](/user-guide/scan-policies-overview)
+- [Architecture](../architecture/index.md)
+- [Scanning Pipeline](../architecture/scanning-pipeline.md)
+- [Analyzer Internals](../architecture/analyzers/index.md)
+- [Threat Taxonomy](../architecture/threat-taxonomy.md)
+- [Policy System](../user-guide/scan-policies-overview.md)

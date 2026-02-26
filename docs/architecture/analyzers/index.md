@@ -1,8 +1,9 @@
 # Analyzers
 
-::: info Looking to choose which analyzers to enable?
-See the [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) for a decision matrix and recommended flag combinations. This page covers the technical details of all analyzers.
-:::
+> [!NOTE]
+> **Looking to choose which analyzers to enable?**
+>
+> See the [Analyzer Selection Guide](meta-and-external-analyzers.md) for a decision matrix and recommended flag combinations. This page covers the technical details of all analyzers.
 
 Analyzers implement independent detection strategies and return normalized `Finding` objects.
 
@@ -21,9 +22,10 @@ Analyzers implement independent detection strategies and return normalized `Find
 | Meta | Semantic post-pass | Usually (not required for Bedrock IAM mode) | 2 | FP filtering and prioritization |
 | Cross-Skill | Correlation | No | Post-scan | Cross-skill data relay and pattern sharing |
 
-::: info Cross-Skill Scanner
-`CrossSkillScanner` has a different interface from other analyzers. Instead of `analyze(skill)`, it uses `analyze_skill_set(skills)` and runs only during `scan_directory()` with `--check-overlap` enabled.
-:::
+> [!NOTE]
+> **Cross-Skill Scanner**
+>
+> `CrossSkillScanner` has a different interface from other analyzers. Instead of `analyze(skill)`, it uses `analyze_skill_set(skills)` and runs only during `scan_directory()` with `--check-overlap` enabled.
 
 ## Analyzer Lifecycle
 
@@ -33,14 +35,14 @@ Analyzers implement independent detection strategies and return normalized `Find
 4. All analyzers return findings in the common `Finding` schema.
 5. Scanner merges, post-processes, and reports.
 
-See [Scanning Pipeline](/architecture/scanning-pipeline) for the full execution flow.
+See [Scanning Pipeline](../scanning-pipeline.md) for the full execution flow.
 
 ## Deep Dives
 
-- [Static Analyzer](/architecture/analyzers/static-analyzer)
-- [Behavioral Analyzer](/architecture/analyzers/behavioral-analyzer)
-- [LLM Analyzer](/architecture/analyzers/llm-analyzer)
-- [Meta-Analyzer](/architecture/analyzers/meta-analyzer)
-- [AI Defense Analyzer](/architecture/analyzers/aidefense-analyzer)
-- [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers)
-- [Writing Custom Rules](/architecture/analyzers/writing-custom-rules)
+- [Static Analyzer](static-analyzer.md)
+- [Behavioral Analyzer](behavioral-analyzer.md)
+- [LLM Analyzer](llm-analyzer.md)
+- [Meta-Analyzer](meta-analyzer.md)
+- [AI Defense Analyzer](aidefense-analyzer.md)
+- [Analyzer Selection Guide](meta-and-external-analyzers.md)
+- [Writing Custom Rules](writing-custom-rules.md)

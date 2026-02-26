@@ -1,6 +1,6 @@
 # API Operations
 
-Production deployment, CI/CD integration, security hardening, monitoring, and troubleshooting for the Skill Scanner API server. For endpoint documentation, see [API Endpoints Detail](/user-guide/api-endpoints-detail).
+Production deployment, CI/CD integration, security hardening, monitoring, and troubleshooting for the Skill Scanner API server. For endpoint documentation, see [API Endpoints Detail](api-endpoints-detail.md).
 
 ## CI/CD Integration
 

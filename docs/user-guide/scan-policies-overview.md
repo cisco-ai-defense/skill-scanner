@@ -49,4 +49,4 @@ Custom policy files merge over defaults.
 
 ## Next Step
 
-For exhaustive knob-by-knob documentation, see [Custom Policy Configuration](/user-guide/custom-policy-configuration).
+For exhaustive knob-by-knob documentation, see [Custom Policy Configuration](custom-policy-configuration.md).

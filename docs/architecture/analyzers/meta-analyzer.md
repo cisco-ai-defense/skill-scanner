@@ -321,6 +321,6 @@ The comparison command prints per-run metrics (`true positives`, `false positive
 
 ## Related Pages
 
-- [LLM Analyzer](/architecture/analyzers/llm-analyzer) -- Primary semantic analysis (runs before meta)
-- [Analyzer Selection Guide](/architecture/analyzers/meta-and-external-analyzers) -- When to enable `--enable-meta`
-- [Scanning Pipeline](/architecture/scanning-pipeline) -- How meta-analysis fits into the two-phase pipeline
+- [LLM Analyzer](llm-analyzer.md) -- Primary semantic analysis (runs before meta)
+- [Analyzer Selection Guide](meta-and-external-analyzers.md) -- When to enable `--enable-meta`
+- [Scanning Pipeline](../scanning-pipeline.md) -- How meta-analysis fits into the two-phase pipeline

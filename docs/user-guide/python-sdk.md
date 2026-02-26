@@ -64,9 +64,8 @@ scanner.add_analyzer(LLMAnalyzer(
 ))
 ```
 
-::: warning
-Never hardcode API keys in source code. Use environment variables or a secrets manager. The LLM analyzer also reads `SKILL_SCANNER_LLM_API_KEY` from the environment automatically when no `api_key` is passed.
-:::
+> [!WARNING]
+> Never hardcode API keys in source code. Use environment variables or a secrets manager. The LLM analyzer also reads `SKILL_SCANNER_LLM_API_KEY` from the environment automatically when no `api_key` is passed.
 
 ### `list_analyzers() → list[str]`
 
@@ -92,7 +91,8 @@ Both functions accept an optional `analyzers` list and `policy` parameter.
 
 ## Working With Results
 
-::: details ScanResult attributes (single skill)
+<details>
+<summary>ScanResult attributes (single skill)</summary>
 
 | Attribute | Type | Description |
 |---|---|---|
@@ -110,9 +110,11 @@ result.get_findings_by_severity(Severity.HIGH)
 result.get_findings_by_category(ThreatCategory.DATA_EXFILTRATION)
 result.to_dict()  # Serialize to JSON-compatible dict
 ```
-:::
 
-::: details Report attributes (multi-skill)
+</details>
+
+<details>
+<summary>Report attributes (multi-skill)</summary>
 
 | Attribute | Type | Description |
 |---|---|---|
@@ -125,9 +127,11 @@ result.to_dict()  # Serialize to JSON-compatible dict
 | `low_count` | `int` | Total LOW findings |
 | `info_count` | `int` | Total INFO findings |
 | `safe_count` | `int` | Skills with `is_safe == True` |
-:::
 
-::: details Finding attributes
+</details>
+
+<details>
+<summary>Finding attributes</summary>
 
 | Attribute | Type | Description |
 |---|---|---|
@@ -148,7 +152,8 @@ result.to_dict()  # Serialize to JSON-compatible dict
 for finding in result.findings:
     print(finding.rule_id, finding.severity.value, finding.file_path)
 ```
-:::
+
+</details>
 
 ### `Severity` Enum
 
@@ -183,6 +188,6 @@ Typical analyzers are configured through `build_analyzers` in [`skill_scanner/co
 
 ## See Also
 
-- [CLI Usage](/user-guide/cli-usage) — command-line interface for the same scanning engine
-- [API Server](/user-guide/api-server) — REST API for upload-driven workflows
-- [Configuration Reference](/reference/configuration-reference) — all configuration options
+- [CLI Usage](cli-usage.md) — command-line interface for the same scanning engine
+- [API Server](api-server.md) — REST API for upload-driven workflows
+- [Configuration Reference](../reference/configuration-reference.md) — all configuration options
