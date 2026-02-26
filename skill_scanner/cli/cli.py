@@ -23,9 +23,9 @@ import asyncio
 import logging
 import os
 import sys
+import traceback
 from collections.abc import Callable
 from pathlib import Path
-import traceback
 
 from ..core.analyzer_factory import build_analyzers
 from ..core.loader import SkillLoadError
