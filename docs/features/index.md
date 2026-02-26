@@ -1,6 +1,6 @@
 # Features
 
-Cisco Skill Scanner is a layered security analysis platform for AI agent skill packages. It combines deterministic pattern matching, behavioral analysis, and LLM-powered reasoning to catch threats that any single approach would miss.
+Cisco Skill Scanner is a layered security analysis tool for AI agent skill packages. It combines deterministic pattern matching, behavioral analysis, and LLM-powered reasoning to catch threats that any single approach would miss.
 
 - **[Detect Threats](#multi-engine-threat-detection)** -- 10 analyzers, file intelligence engines, and analyzability scoring work together so no single blind spot dominates.
 - **[Tune and Control](#policy-driven-control-plane)** -- 3 presets, 14 policy sections, severity overrides, and an interactive configurator -- all without code changes.
