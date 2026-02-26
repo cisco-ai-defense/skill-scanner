@@ -211,14 +211,19 @@ class LLMRequestHandler:
                 # Format: response_format={ "type": "json_schema", "json_schema": { "name": "...", "schema": {...}, "strict": true } }
                 # Works for: OpenAI, Anthropic Claude, Gemini (via LiteLLM), Bedrock, Vertex AI, Groq, Ollama, Databricks
                 if self.response_schema:
-                    request_params["response_format"] = {
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "security_analysis_response",
-                            "schema": self.response_schema,
-                            "strict": True,  # Enforce strict schema compliance - prevents extra fields
-                        },
-                    }
+                    model_lower = self.provider_config.model.lower()
+                    unsupported_json_schema_providers = ["deepseek"]
+                    if any(p in model_lower for p in unsupported_json_schema_providers):
+                        request_params["response_format"] = {"type": "json_object"}
+                    else:
+                        request_params["response_format"] = {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "security_analysis_response",
+                                "schema": self.response_schema,
+                                "strict": True,
+                            },
+                        }
 
                 response = await acompletion(**request_params)
                 content: str = response.choices[0].message.content or ""
