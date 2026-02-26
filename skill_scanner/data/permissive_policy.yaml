@@ -535,6 +535,7 @@ llm_analysis:
   max_code_file_chars: 30000
   max_referenced_file_chars: 20000
   max_total_prompt_chars: 200000
+  max_output_tokens: 8192
   meta_budget_multiplier: 3.0
 
 # ---------------------------------------------------------------------------
