@@ -50,6 +50,20 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+_MAX_PATTERN_LENGTH = 1000
+
+
+def _safe_compile(pattern: str, flags: int = 0, *, max_length: int = _MAX_PATTERN_LENGTH) -> re.Pattern | None:
+    if len(pattern) > max_length:
+        logger.warning("Regex pattern too long (%d chars), skipping: %.60s...", len(pattern), pattern)
+        return None
+    try:
+        return re.compile(pattern, flags)
+    except re.error as e:
+        logger.warning("Invalid regex pattern %r: %s", pattern, e)
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Where the built-in default policy lives (ships with the package)
 # ---------------------------------------------------------------------------
@@ -186,6 +200,10 @@ class FileLimitsPolicy:
     max_description_length: int = 1024
     # Min description length (below → SOCIAL_ENG_MISLEADING_DESC)
     min_description_length: int = 20
+    # Maximum binary file size (bytes) for YARA scanning
+    max_yara_scan_file_size_bytes: int = 52_428_800  # 50 MB
+    # Maximum file size (bytes) for content loading
+    max_loader_file_size_bytes: int = 10_485_760  # 10 MB
 
 
 @dataclass
@@ -212,6 +230,8 @@ class AnalysisThresholdsPolicy:
     homoglyph_filter_math_context: bool = True
     # Confusable aliases considered low-risk in formula/math context.
     homoglyph_math_aliases: list[str] = field(default_factory=lambda: ["COMMON", "GREEK"])
+    # Maximum regex pattern length for user-supplied patterns (ReDoS protection)
+    max_regex_pattern_length: int = 1000
 
 
 @dataclass
@@ -392,18 +412,25 @@ class ScanPolicy:
         if not hasattr(self, "_doc_fn_re_cache"):
             patterns = self.rule_scoping.doc_filename_patterns
             if patterns:
-                combined = "|".join(f"(?:{p})" for p in patterns)
-                object.__setattr__(self, "_doc_fn_re_cache", re.compile(combined, re.IGNORECASE))
+                max_pat_len = self.analysis_thresholds.max_regex_pattern_length
+                compiled_patterns = [_safe_compile(p, re.IGNORECASE, max_length=max_pat_len) for p in patterns]
+                valid = [c for c in compiled_patterns if c is not None]
+                if valid:
+                    combined = "|".join(f"(?:{c.pattern})" for c in valid)
+                    combined_limit = max_pat_len * max(len(valid), 1) + len(valid) * 4
+                    self._doc_fn_re_cache = _safe_compile(combined, re.IGNORECASE, max_length=combined_limit)
+                else:
+                    self._doc_fn_re_cache = None
             else:
-                object.__setattr__(self, "_doc_fn_re_cache", None)
+                self._doc_fn_re_cache = None
         return self._doc_fn_re_cache  # type: ignore[attr-defined, no-any-return]
 
     @property
     def _compiled_benign_pipes(self) -> list[re.Pattern]:
         """Lazy-compiled regexes from ``pipeline.benign_pipe_targets``."""
         if not hasattr(self, "_benign_pipe_cache"):
-            compiled = [re.compile(p) for p in self.pipeline.benign_pipe_targets]
-            object.__setattr__(self, "_benign_pipe_cache", compiled)
+            compiled = [c for p in self.pipeline.benign_pipe_targets if (c := _safe_compile(p)) is not None]
+            self._benign_pipe_cache = compiled
         return self._benign_pipe_cache  # type: ignore[attr-defined, no-any-return]
 
     # -----------------------------------------------------------------------
@@ -573,6 +600,8 @@ class ScanPolicy:
                 max_name_length=fl.get("max_name_length", 64),
                 max_description_length=fl.get("max_description_length", 1024),
                 min_description_length=fl.get("min_description_length", 20),
+                max_yara_scan_file_size_bytes=fl.get("max_yara_scan_file_size_bytes", 52_428_800),
+                max_loader_file_size_bytes=fl.get("max_loader_file_size_bytes", 10_485_760),
             ),
             analysis_thresholds=AnalysisThresholdsPolicy(
                 zerowidth_threshold_with_decode=at.get("zerowidth_threshold_with_decode", 50),
@@ -586,6 +615,7 @@ class ScanPolicy:
                 cyrillic_cjk_min_chars=at.get("cyrillic_cjk_min_chars", 10),
                 homoglyph_filter_math_context=at.get("homoglyph_filter_math_context", True),
                 homoglyph_math_aliases=at.get("homoglyph_math_aliases", ["COMMON", "GREEK"]),
+                max_regex_pattern_length=at.get("max_regex_pattern_length", 1000),
             ),
             sensitive_files=SensitiveFilesPolicy(
                 patterns=sf.get("patterns", []),
@@ -692,6 +722,8 @@ class ScanPolicy:
                 "max_name_length": self.file_limits.max_name_length,
                 "max_description_length": self.file_limits.max_description_length,
                 "min_description_length": self.file_limits.min_description_length,
+                "max_yara_scan_file_size_bytes": self.file_limits.max_yara_scan_file_size_bytes,
+                "max_loader_file_size_bytes": self.file_limits.max_loader_file_size_bytes,
             },
             "analysis_thresholds": {
                 "zerowidth_threshold_with_decode": self.analysis_thresholds.zerowidth_threshold_with_decode,
@@ -705,6 +737,7 @@ class ScanPolicy:
                 "cyrillic_cjk_min_chars": self.analysis_thresholds.cyrillic_cjk_min_chars,
                 "homoglyph_filter_math_context": self.analysis_thresholds.homoglyph_filter_math_context,
                 "homoglyph_math_aliases": self.analysis_thresholds.homoglyph_math_aliases,
+                "max_regex_pattern_length": self.analysis_thresholds.max_regex_pattern_length,
             },
             "sensitive_files": {
                 "patterns": self.sensitive_files.patterns,

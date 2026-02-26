@@ -18,13 +18,18 @@
 Skill package loader and SKILL.md parser.
 """
 
+import logging
 import re
+import sys
 from pathlib import Path
 
 import frontmatter
 
+from ..utils.file_utils import get_file_type
 from .exceptions import SkillLoadError
 from .models import Skill, SkillFile, SkillManifest
+
+logger = logging.getLogger(__name__)
 
 
 class SkillLoader:
@@ -38,35 +43,33 @@ class SkillLoader:
     - assets/ (optional): Templates, images, and other resources
     """
 
-    # File type mappings
-    PYTHON_EXTENSIONS = {".py"}
-    BASH_EXTENSIONS = {".sh", ".bash"}
-    JAVASCRIPT_EXTENSIONS = {".js", ".mjs", ".cjs"}
-    TYPESCRIPT_EXTENSIONS = {".ts", ".tsx"}
-    MARKDOWN_EXTENSIONS = {".md", ".markdown"}
-    BINARY_EXTENSIONS = {".exe", ".so", ".dylib", ".dll", ".bin"}
-
-    def __init__(self, max_file_size_mb: int = 10):
+    def __init__(self, max_file_size_mb: int = 10, *, max_file_size_bytes: int | None = None):
         """
         Initialize skill loader.
 
         Args:
-            max_file_size_mb: Maximum file size to read in MB
+            max_file_size_mb: Maximum file size to read in MB (used if max_file_size_bytes not set)
+            max_file_size_bytes: Maximum file size in bytes (takes precedence over max_file_size_mb)
         """
-        self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
+        if max_file_size_bytes is not None:
+            self.max_file_size_bytes = max_file_size_bytes
+        else:
+            self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
 
-    def load_skill(self, skill_directory: str | Path) -> Skill:
+    def load_skill(self, skill_directory: str | Path, *, lenient: bool = False) -> Skill:
         """
         Load a skill package from a directory.
 
         Args:
             skill_directory: Path to the skill directory
+            lenient: When True, tolerate missing/malformed fields and return
+                a best-effort Skill instead of raising ``SkillLoadError``.
 
         Returns:
             Parsed Skill object
 
         Raises:
-            SkillLoadError: If skill cannot be loaded
+            SkillLoadError: If skill cannot be loaded (strict mode only)
         """
         if not isinstance(skill_directory, Path):
             skill_directory = Path(skill_directory)
@@ -83,7 +86,7 @@ class SkillLoader:
             raise SkillLoadError(f"SKILL.md not found in {skill_directory}")
 
         # Parse SKILL.md
-        manifest, instruction_body = self._parse_skill_md(skill_md_path)
+        manifest, instruction_body = self._parse_skill_md(skill_md_path, lenient=lenient)
 
         # Discover all files in the skill package
         files = self._discover_files(skill_directory)
@@ -100,18 +103,20 @@ class SkillLoader:
             referenced_files=referenced_files,
         )
 
-    def _parse_skill_md(self, skill_md_path: Path) -> tuple[SkillManifest, str]:
+    def _parse_skill_md(self, skill_md_path: Path, *, lenient: bool = False) -> tuple[SkillManifest, str]:
         """
         Parse SKILL.md file with YAML frontmatter.
 
         Args:
             skill_md_path: Path to SKILL.md
+            lenient: When True, fill missing fields with defaults instead of
+                raising ``SkillLoadError``.
 
         Returns:
             Tuple of (SkillManifest, instruction_body)
 
         Raises:
-            SkillLoadError: If parsing fails
+            SkillLoadError: If parsing fails (strict mode only)
         """
         try:
             with open(skill_md_path, encoding="utf-8") as f:
@@ -125,13 +130,26 @@ class SkillLoader:
             metadata = post.metadata
             body = post.content
         except Exception as e:
-            raise SkillLoadError(f"Failed to parse YAML frontmatter: {e}")
+            if lenient:
+                logger.warning("Failed to parse YAML frontmatter in %s: %s – using raw body", skill_md_path, e)
+                metadata = {}
+                body = content
+            else:
+                raise SkillLoadError(f"Failed to parse YAML frontmatter: {e}")
 
-        # Validate required fields
+        # Validate required fields (lenient: fill defaults)
         if "name" not in metadata:
-            raise SkillLoadError("SKILL.md missing required field: name")
+            if lenient:
+                metadata["name"] = skill_md_path.parent.name
+                logger.warning("SKILL.md missing 'name'; using directory name: %s", metadata["name"])
+            else:
+                raise SkillLoadError("SKILL.md missing required field: name")
         if "description" not in metadata:
-            raise SkillLoadError("SKILL.md missing required field: description")
+            if lenient:
+                metadata["description"] = "(no description)"
+                logger.warning("SKILL.md missing 'description'; using placeholder")
+            else:
+                raise SkillLoadError("SKILL.md missing required field: description")
 
         # Extract metadata field - if YAML has a 'metadata' key, use it directly
         # Otherwise, collect remaining fields as metadata
@@ -165,10 +183,16 @@ class SkillLoader:
         if disable_model_invocation is None:
             disable_model_invocation = metadata.get("disable_model_invocation", False)
 
+        # Coerce name/description to strings (YAML may parse nested mappings)
+        raw_name = metadata["name"]
+        name = raw_name if isinstance(raw_name, str) else str(raw_name)
+        raw_desc = metadata["description"]
+        description = raw_desc if isinstance(raw_desc, str) else str(raw_desc)
+
         # Create manifest
         manifest = SkillManifest(
-            name=metadata["name"],
-            description=metadata["description"],
+            name=name,
+            description=description,
             license=metadata.get("license"),
             compatibility=metadata.get("compatibility"),
             allowed_tools=metadata.get("allowed-tools") or metadata.get("allowed_tools"),
@@ -189,9 +213,18 @@ class SkillLoader:
             List of SkillFile objects
         """
         files = []
+        skill_root = skill_directory.resolve()
 
         for path in skill_directory.rglob("*"):
             if not path.is_file():
+                continue
+            if path.is_symlink():
+                continue
+            try:
+                resolved = path.resolve()
+                if not resolved.is_relative_to(skill_root):
+                    continue
+            except (OSError, ValueError):
                 continue
 
             # Skip .git/ directory only (version control metadata, not an attack vector).
@@ -205,7 +238,7 @@ class SkillLoader:
                 continue
 
             relative_path = str(path.relative_to(skill_directory))
-            file_type = self._determine_file_type(path)
+            file_type = get_file_type(path)
             size_bytes = path.stat().st_size
 
             # Read content if not too large and not binary
@@ -228,33 +261,6 @@ class SkillLoader:
             files.append(skill_file)
 
         return files
-
-    def _determine_file_type(self, path: Path) -> str:
-        """
-        Determine the type of a file based on extension.
-
-        Args:
-            path: File path
-
-        Returns:
-            File type string
-        """
-        suffix = path.suffix.lower()
-
-        if suffix in self.PYTHON_EXTENSIONS:
-            return "python"
-        elif suffix in self.BASH_EXTENSIONS:
-            return "bash"
-        elif suffix in self.JAVASCRIPT_EXTENSIONS:
-            return "javascript"
-        elif suffix in self.TYPESCRIPT_EXTENSIONS:
-            return "typescript"
-        elif suffix in self.MARKDOWN_EXTENSIONS:
-            return "markdown"
-        elif suffix in self.BINARY_EXTENSIONS:
-            return "binary"
-        else:
-            return "other"
 
     def _extract_referenced_files(self, instruction_body: str) -> list[str]:
         """
@@ -307,9 +313,31 @@ class SkillLoader:
 
         # Match file paths in code blocks that look like references
         code_file_refs = re.findall(r"(?:from|import)\s+([A-Za-z0-9_]+)\s", instruction_body)
-        # Only add if it looks like a local module (not standard lib)
+        stdlib_names = getattr(sys, "stdlib_module_names", set())
+        KNOWN_THIRD_PARTY = {
+            "requests",
+            "numpy",
+            "pandas",
+            "flask",
+            "django",
+            "fastapi",
+            "pydantic",
+            "boto3",
+            "httpx",
+            "aiohttp",
+            "celery",
+            "sqlalchemy",
+            "pytest",
+            "click",
+            "rich",
+            "typer",
+            "litellm",
+            "openai",
+            "anthropic",
+        }
+        skip_modules = stdlib_names | KNOWN_THIRD_PARTY
         for ref in code_file_refs:
-            if not ref.startswith(("os", "sys", "re", "json", "yaml", "typing")):
+            if ref.lower() not in skip_modules:
                 references.append(f"{ref}.py")
 
         # Match references/* or assets/* patterns
@@ -345,11 +373,33 @@ class SkillLoader:
             import_patterns = re.findall(r"^from\s+([A-Za-z0-9_.]+)\s+import", content, re.MULTILINE)
             relative_imports = re.findall(r"^from\s+\.([A-Za-z0-9_.]*)\s+import", content, re.MULTILINE)
 
+            stdlib_names = getattr(sys, "stdlib_module_names", set())
+            _known_3p = {
+                "requests",
+                "numpy",
+                "pandas",
+                "flask",
+                "django",
+                "fastapi",
+                "pydantic",
+                "boto3",
+                "httpx",
+                "aiohttp",
+                "celery",
+                "sqlalchemy",
+                "pytest",
+                "click",
+                "rich",
+                "typer",
+                "litellm",
+                "openai",
+                "anthropic",
+            }
+            skip_modules = stdlib_names | _known_3p
             for imp in import_patterns:
-                # Only include if it looks like a local module
-                if not imp.startswith(("os", "sys", "re", "json", "pathlib", "typing", "collections")):
-                    parts = imp.split(".")
-                    references.append(f"{parts[0]}.py")
+                top_module = imp.split(".")[0]
+                if top_module.lower() not in skip_modules:
+                    references.append(f"{top_module}.py")
 
             for imp in relative_imports:
                 if imp:
@@ -363,16 +413,19 @@ class SkillLoader:
         return list(set(references))
 
 
-def load_skill(skill_directory: str | Path, max_file_size_mb: int = 10) -> Skill:
+def load_skill(
+    skill_directory: str | Path, max_file_size_mb: int = 10, *, max_file_size_bytes: int | None = None
+) -> Skill:
     """
     Convenience function to load a skill package.
 
     Args:
         skill_directory: Path to skill directory
-        max_file_size_mb: Maximum file size to read
+        max_file_size_mb: Maximum file size to read in MB (used if max_file_size_bytes not set)
+        max_file_size_bytes: Maximum file size in bytes (takes precedence over max_file_size_mb)
 
     Returns:
         Loaded Skill object
     """
-    loader = SkillLoader(max_file_size_mb=max_file_size_mb)
+    loader = SkillLoader(max_file_size_mb=max_file_size_mb, max_file_size_bytes=max_file_size_bytes)
     return loader.load_skill(skill_directory)

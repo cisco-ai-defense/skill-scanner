@@ -346,7 +346,7 @@ class TestFileClassification:
 
     def test_custom_inert_extension_suppresses_binary_finding(self, make_skill):
         """.bin added to inert_extensions → no BINARY_FILE_DETECTED."""
-        # .bin is in loader's BINARY_EXTENSIONS so file_type becomes "binary"
+        # .bin maps to "binary" in get_file_type so file_type becomes "binary"
         files = {
             "SKILL.md": "---\nname: binfile\ndescription: A skill with a binary data module\n---\n\n# Binary\nContains a bin module.\n",
             "module.bin": b"\xff\xfe\x00\x01" * 20,

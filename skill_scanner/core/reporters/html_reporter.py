@@ -108,6 +108,9 @@ class HTMLReporter:
         for res in report.scan_results:
             parts.append(f"<h2>{_esc(res.skill_name)}</h2>")
             parts.append(self._findings_table(res.findings))
+        if report.cross_skill_findings:
+            parts.append("<h2>Cross-Skill Findings</h2>")
+            parts.append(self._findings_table(report.cross_skill_findings))
         parts.append("</div>")
         parts.append(self._scripts())
         parts.append("</body>\n</html>")

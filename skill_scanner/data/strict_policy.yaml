@@ -161,6 +161,8 @@ file_limits:
   max_name_length: 48           # Shorter names expected
   max_description_length: 512   # Shorter descriptions expected
   min_description_length: 30    # Require more descriptive text
+  max_yara_scan_file_size_bytes: 20971520  # 20 MB — tighter YARA scan limit
+  max_loader_file_size_bytes: 5242880      # 5 MB — tighter content loading limit
 
 # ---------------------------------------------------------------------------
 # Analysis thresholds – more sensitive detection
@@ -179,6 +181,7 @@ analysis_thresholds:
   homoglyph_math_aliases:
     - "COMMON"
     - "GREEK"
+  max_regex_pattern_length: 500            # Stricter regex length limit
 
 # ---------------------------------------------------------------------------
 # Sensitive files – expanded patterns

@@ -378,6 +378,12 @@ Respond with JSON containing your analysis following the required schema."""
         Returns:
             Empty list (meta-analyzer needs existing findings)
         """
+        logger.warning(
+            "MetaAnalyzer.analyze() was called directly for '%s', but meta-analysis "
+            "requires findings from other analyzers. Use analyze_with_findings() instead, "
+            "or pass --enable-meta via the CLI. No meta-analysis was performed.",
+            skill.name,
+        )
         return []
 
     async def analyze_with_findings(
