@@ -131,8 +131,9 @@ def build_analyzers(
             base_url = llm_base_url or os.getenv("SKILL_SCANNER_LLM_BASE_URL")
             api_version = llm_api_version or os.getenv("SKILL_SCANNER_LLM_API_VERSION")
             extra_kwargs: dict = {}
-            if llm_max_tokens is not None:
-                extra_kwargs["max_tokens"] = llm_max_tokens
+            effective_max_tokens = llm_max_tokens or policy.llm_analysis.max_output_tokens
+            if effective_max_tokens is not None:
+                extra_kwargs["max_tokens"] = effective_max_tokens
             if llm_provider and not llm_model and not os.getenv("SKILL_SCANNER_LLM_MODEL"):
                 llm = LLMAnalyzer(provider=llm_provider, policy=policy, **extra_kwargs)
             else:

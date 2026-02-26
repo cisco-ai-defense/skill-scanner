@@ -518,12 +518,14 @@ llm_analysis:
   max_code_file_chars: 15000           # Max chars per individual code file
   max_referenced_file_chars: 10000     # Max chars per referenced file
   max_total_prompt_chars: 100000       # Total prompt budget across all files
+  max_output_tokens: 8192              # Max tokens for LLM responses
   meta_budget_multiplier: 3.0          # Meta-analyzer multiplies above limits by this factor
 ```
 
 **Impact:**
 - Files or instruction bodies exceeding these limits are skipped entirely (no truncation) and a budget-skip metadata entry is attached to the scan result.
-- The meta-analyzer applies `meta_budget_multiplier` on top of the base limits. With the defaults, the meta-analyzer gets 60K instruction, 45K per file, and 300K total.
+- `max_output_tokens` controls the output token budget for both the LLM analyzer and meta-analyzer. Raise this if scans produce truncated JSON (`LLM_ANALYSIS_FAILED` findings). The CLI flag `--llm-max-tokens` overrides this value.
+- The meta-analyzer applies `meta_budget_multiplier` on top of the base input limits. With the defaults, the meta-analyzer gets 60K instruction, 45K per file, and 300K total.
 - Increase these values for skills with large codebases or extensive instructions. Decrease them to reduce LLM API costs.
 
 </details>

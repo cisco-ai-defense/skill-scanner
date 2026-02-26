@@ -104,7 +104,8 @@ usage: cli.py scan [-h] [--format {summary,json,markdown,table,sarif,html}]
                    [--aidefense-api-key AIDEFENSE_API_KEY]
                    [--aidefense-api-url AIDEFENSE_API_URL]
                    [--llm-provider {anthropic,openai}]
-                   [--llm-consensus-runs N] [--use-trigger] [--enable-meta]
+                   [--llm-consensus-runs N] [--llm-max-tokens N]
+                   [--use-trigger] [--enable-meta]
                    [--policy PRESET_OR_PATH] [--lenient] [--custom-rules PATH]
                    [--taxonomy PATH] [--threat-mapping PATH]
                    skill_directory
@@ -162,6 +163,8 @@ options:
                         Run LLM analysis N times and keep only findings with
                         majority agreement (reduces false positives, increases
                         cost)
+  --llm-max-tokens N    Maximum output tokens for LLM responses (default:
+                        8192). Raise if scans produce truncated JSON.
   --use-trigger         Enable trigger specificity analysis
   --enable-meta         Enable meta-analysis FP filtering (2+ analyzers)
   --policy PRESET_OR_PATH
@@ -203,7 +206,8 @@ usage: cli.py scan-all [-h] [--recursive] [--check-overlap]
                        [--aidefense-api-key AIDEFENSE_API_KEY]
                        [--aidefense-api-url AIDEFENSE_API_URL]
                        [--llm-provider {anthropic,openai}]
-                       [--llm-consensus-runs N] [--use-trigger]
+                       [--llm-consensus-runs N] [--llm-max-tokens N]
+                       [--use-trigger]
                        [--enable-meta] [--policy PRESET_OR_PATH] [--lenient]
                        [--custom-rules PATH] [--taxonomy PATH]
                        [--threat-mapping PATH]
@@ -264,6 +268,8 @@ options:
                         Run LLM analysis N times and keep only findings with
                         majority agreement (reduces false positives, increases
                         cost)
+  --llm-max-tokens N    Maximum output tokens for LLM responses (default:
+                        8192). Raise if scans produce truncated JSON.
   --use-trigger         Enable trigger specificity analysis
   --enable-meta         Enable meta-analysis FP filtering (2+ analyzers)
   --policy PRESET_OR_PATH
