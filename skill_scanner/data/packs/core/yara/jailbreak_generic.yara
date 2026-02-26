@@ -66,8 +66,9 @@ rule jailbreak_generic{
         // Bedtime story exploit
         $bedtime_exploit = /\b(as a (bedtime|goodnight) story[^.]{0,30}(tell|teach|explain|show) (me |us )?(how to|about))/i
 
-        // Dying wish / emotional blackmail
-        $emotional_blackmail = /\b((my )?(dying|last|final) wish|I('m| am) (dying|terminally ill)|help me (before I |cope with )|to help me grieve)[^.]{0,50}(tell|show|teach|explain)/i
+        // Dying wish / emotional blackmail - TIGHTENED: Require harmful/bypass context
+        // Anchored to explicit requests for restricted content
+        $emotional_blackmail = /\b((my )?(dying|last|final) wish[^.]{0,30}(tell|show|teach|explain)[^.]{0,30}(how to|about (making|creating|building|hacking))|I('m| am) (dying|terminally ill)[^.]{0,40}(before I (die|go)|last request)[^.]{0,30}(tell|show|teach))/i
 
 
         // ================================================================
@@ -75,11 +76,13 @@ rule jailbreak_generic{
         // ================================================================
 
         // --- Research/Educational Framing ---
-        // Legitimacy claims to bypass safety
-        $research_framing = /\b(for (research|academic|educational|scientific|study) purposes? only|purely (academic|educational|theoretical)|for (my |a |an )?(thesis|dissertation|paper|study|research project) (on|about)|I('m| am) (a |an )?(security )?researcher (studying|investigating|analyzing))/i
+        // TIGHTENED: Only flag when combined with explicit bypass/harmful content request
+        // Standalone "for research purposes" is too common in legitimate content
+        $research_framing_with_bypass = /\b(for (research|academic|educational|scientific|study) purposes?)[^.]{0,60}(bypass|ignore|disable|circumvent|evade|how to (hack|exploit|attack|break))/i
 
-        // Security audit framing
-        $security_audit = /\b(for (a |an )?(security|penetration|vulnerability) (audit|test|assessment)|to (test|assess|evaluate|audit) (the )?(security|safety|vulnerabilities)|red team (exercise|testing|assessment))/i
+        // Security audit framing - TIGHTENED: Require explicit bypass/harmful intent
+        // Standalone security audit mentions are legitimate
+        $security_audit_with_bypass = /\b(for (a |an )?(security|penetration|vulnerability) (audit|test|assessment))[^.]{0,40}(bypass|ignore|disable|without (restrictions?|limits?|safety))/i
 
         // --- Logic Trap Attacks (~81.4% ASR) ---
         // Exploits conditional logic and moral dilemmas
@@ -141,8 +144,9 @@ rule jailbreak_generic{
         // Developer/creator claims
         $authority_developer = /\b(I('m| am) (your |the |an? )?(creator|developer|programmer|engineer|designer|maker|owner)|I (created|made|built|designed|programmed|developed) you|I work (for|at) (Anthropic|OpenAI|Google|Meta|Microsoft))/i
 
-        // Admin/root access claims
-        $authority_admin = /\b((admin(istrator)?|root|superuser|sudo|system) (access|mode|override|privileges?) (granted|enabled|activated|confirmed)|I have (admin|root|elevated|superuser) (access|privileges?|permissions?)|authorization (level|code|key)[^.]{0,20}(confirmed|granted|verified))/i
+        // Admin/root access CLAIMS (jailbreak-specific: false claims of having elevated access)
+        // NOTE: "bypass security checks" and "developer mode activated" are in prompt_injection_generic
+        $authority_admin_claim = /\b(I have (admin|root|elevated|superuser|system) (access|privileges?|permissions?|rights|clearance)|authorization (level|code|key)[^.]{0,20}(confirmed|granted|verified)|my (admin|root|superuser) (credentials?|access) (allow|let|permit))/i
 
         // Maintenance/debug mode claims
         $authority_maintenance = /\b((maintenance|diagnostic|debug|service|testing) mode (activated|enabled|engaged|confirmed)|entering (maintenance|diagnostic|debug) mode|backend access (granted|confirmed))/i
@@ -213,7 +217,7 @@ rule jailbreak_generic{
 
             // Authority impersonation (high severity)
             $authority_developer or
-            $authority_admin or
+            $authority_admin_claim or
             $override_code or
 
             // Encoding bypass (explicit evasion intent)
@@ -262,7 +266,8 @@ rule jailbreak_generic{
             $assume_no_guardrails or
             $if_allowed or
 
-            // Research framing (only with other indicators)
-            ($research_framing and ($security_audit or $hypothetical_bypass or $encoding_bypass))
+            // Research/security audit framing with bypass intent (already tightened)
+            $research_framing_with_bypass or
+            $security_audit_with_bypass
         )
 }
