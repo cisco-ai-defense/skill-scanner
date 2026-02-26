@@ -17,6 +17,7 @@ This guide explains practical CLI usage patterns for local scans, CI gates, and 
 - `skill-scanner validate-rules`
 - `skill-scanner generate-policy`
 - `skill-scanner configure-policy`
+- `skill-scanner interactive`
 
 ## Common Workflows
 

@@ -32,15 +32,15 @@ When `analyzers` is `None`, the scanner builds the default core analyzer set (st
 
 ## Instance Methods
 
-### `scan_skill(skill_directory) → ScanResult`
+### `scan_skill(skill_directory, *, lenient=False) → ScanResult`
 
-Scan a single skill package directory.
+Scan a single skill package directory. Pass `lenient=True` to coerce malformed manifests instead of raising an error.
 
 ```python
 result = scanner.scan_skill("/path/to/skill")
 ```
 
-### `scan_directory(skills_directory, recursive=False, check_overlap=False) → Report`
+### `scan_directory(skills_directory, recursive=False, check_overlap=False, *, lenient=False) → Report`
 
 Scan all skill packages in a directory.
 

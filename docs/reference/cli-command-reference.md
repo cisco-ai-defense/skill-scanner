@@ -48,8 +48,8 @@ Command: `python -m skill_scanner.cli.cli --help`
 <summary>Full <code>top-level cli</code> help output</summary>
 
 ```text
-usage: cli.py [-h]
-              {scan,scan-all,list-analyzers,validate-rules,generate-policy,configure-policy}
+usage: cli.py [-h] [--version]
+              {scan,scan-all,list-analyzers,validate-rules,generate-policy,configure-policy,interactive}
               ...
 
 Skill Scanner - Security scanner for agent skills packages
@@ -63,10 +63,11 @@ positional arguments:
     validate-rules      Validate rule signatures
     generate-policy     Generate a default scan policy YAML
     configure-policy    Interactive TUI to build a custom scan policy
-    interactive         Interactive setup wizard
+    interactive         Launch the interactive scan wizard
 
 options:
   -h, --help            show this help message and exit
+  --version, -V         show program's version number and exit
 
 Examples:
   skill-scanner scan /path/to/skill
@@ -74,6 +75,7 @@ Examples:
   skill-scanner scan /path/to/skill --use-llm --enable-meta --format json
   skill-scanner scan /path/to/skill --format json --verbose
   skill-scanner scan /path/to/skill --policy strict
+  skill-scanner scan /path/to/skill --format markdown --format sarif --output-sarif report.sarif
   skill-scanner scan-all /path/to/skills --recursive
   skill-scanner generate-policy -o my_policy.yaml
   skill-scanner configure-policy
@@ -91,15 +93,19 @@ Command: `python -m skill_scanner.cli.cli scan --help`
 
 ```text
 usage: cli.py scan [-h] [--format {summary,json,markdown,table,sarif,html}]
-                   [--output OUTPUT] [--detailed] [--compact] [--verbose]
-                   [--fail-on-findings] [--use-behavioral] [--use-llm]
+                   [--output OUTPUT] [--output-json OUTPUT_JSON]
+                   [--output-sarif OUTPUT_SARIF]
+                   [--output-markdown OUTPUT_MARKDOWN]
+                   [--output-html OUTPUT_HTML] [--output-table OUTPUT_TABLE]
+                   [--detailed] [--compact] [--verbose] [--fail-on-findings]
+                   [--fail-on-severity LEVEL] [--use-behavioral] [--use-llm]
                    [--use-virustotal] [--vt-api-key VT_API_KEY]
                    [--vt-upload-files] [--use-aidefense]
                    [--aidefense-api-key AIDEFENSE_API_KEY]
                    [--aidefense-api-url AIDEFENSE_API_URL]
                    [--llm-provider {anthropic,openai}]
                    [--llm-consensus-runs N] [--use-trigger] [--enable-meta]
-                   [--policy PRESET_OR_PATH] [--custom-rules PATH]
+                   [--policy PRESET_OR_PATH] [--lenient] [--custom-rules PATH]
                    [--taxonomy PATH] [--threat-mapping PATH]
                    skill_directory
 
@@ -109,16 +115,36 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --format {summary,json,markdown,table,sarif,html}
-                        Output format (default: summary). Use 'sarif' for
+                        Output format (default: summary). May be specified
+                        multiple times to produce several reports in one run,
+                        e.g. --format markdown --format sarif. Use 'sarif' for
                         GitHub Code Scanning, 'html' for interactive report.
   --output OUTPUT, -o OUTPUT
-                        Output file path
+                        Output file path (for the first --format)
+  --output-json OUTPUT_JSON
+                        Write JSON report to this file (when using multiple
+                        --format)
+  --output-sarif OUTPUT_SARIF
+                        Write SARIF report to this file (when using multiple
+                        --format)
+  --output-markdown OUTPUT_MARKDOWN
+                        Write Markdown report to this file (when using
+                        multiple --format)
+  --output-html OUTPUT_HTML
+                        Write HTML report to this file (when using multiple
+                        --format)
+  --output-table OUTPUT_TABLE
+                        Write Table report to this file (when using multiple
+                        --format)
   --detailed            Include detailed findings (Markdown output only)
   --compact             Compact JSON output
   --verbose             Include per-finding policy fingerprints, co-occurrence
                         metadata, and keep meta-analyzer false positives in
                         output
   --fail-on-findings    Exit with error if critical/high findings
+  --fail-on-severity LEVEL
+                        Exit with error if findings at or above LEVEL exist
+                        (critical, high, medium, low, info)
   --use-behavioral      Enable behavioral dataflow analysis
   --use-llm             Enable LLM-based semantic analysis (requires API key)
   --use-virustotal      Enable VirusTotal scanning (requires API key)
@@ -141,6 +167,8 @@ options:
   --policy PRESET_OR_PATH
                         Scan policy: preset name (strict, balanced,
                         permissive) or path to custom YAML
+  --lenient             Tolerate malformed skills: coerce bad fields, fill
+                        defaults, and continue instead of failing
   --custom-rules PATH   Path to directory containing custom YARA rules (.yara
                         files)
   --taxonomy PATH       Path to custom taxonomy JSON/YAML (overrides
@@ -162,15 +190,21 @@ Command: `python -m skill_scanner.cli.cli scan-all --help`
 ```text
 usage: cli.py scan-all [-h] [--recursive] [--check-overlap]
                        [--format {summary,json,markdown,table,sarif,html}]
-                       [--output OUTPUT] [--detailed] [--compact] [--verbose]
-                       [--fail-on-findings] [--use-behavioral] [--use-llm]
-                       [--use-virustotal] [--vt-api-key VT_API_KEY]
-                       [--vt-upload-files] [--use-aidefense]
+                       [--output OUTPUT] [--output-json OUTPUT_JSON]
+                       [--output-sarif OUTPUT_SARIF]
+                       [--output-markdown OUTPUT_MARKDOWN]
+                       [--output-html OUTPUT_HTML]
+                       [--output-table OUTPUT_TABLE] [--detailed] [--compact]
+                       [--verbose] [--fail-on-findings]
+                       [--fail-on-severity LEVEL] [--use-behavioral]
+                       [--use-llm] [--use-virustotal]
+                       [--vt-api-key VT_API_KEY] [--vt-upload-files]
+                       [--use-aidefense]
                        [--aidefense-api-key AIDEFENSE_API_KEY]
                        [--aidefense-api-url AIDEFENSE_API_URL]
                        [--llm-provider {anthropic,openai}]
                        [--llm-consensus-runs N] [--use-trigger]
-                       [--enable-meta] [--policy PRESET_OR_PATH]
+                       [--enable-meta] [--policy PRESET_OR_PATH] [--lenient]
                        [--custom-rules PATH] [--taxonomy PATH]
                        [--threat-mapping PATH]
                        skills_directory
@@ -183,16 +217,36 @@ options:
   --recursive, -r       Recursively search for skills
   --check-overlap       Enable cross-skill description overlap
   --format {summary,json,markdown,table,sarif,html}
-                        Output format (default: summary). Use 'sarif' for
+                        Output format (default: summary). May be specified
+                        multiple times to produce several reports in one run,
+                        e.g. --format markdown --format sarif. Use 'sarif' for
                         GitHub Code Scanning, 'html' for interactive report.
   --output OUTPUT, -o OUTPUT
-                        Output file path
+                        Output file path (for the first --format)
+  --output-json OUTPUT_JSON
+                        Write JSON report to this file (when using multiple
+                        --format)
+  --output-sarif OUTPUT_SARIF
+                        Write SARIF report to this file (when using multiple
+                        --format)
+  --output-markdown OUTPUT_MARKDOWN
+                        Write Markdown report to this file (when using
+                        multiple --format)
+  --output-html OUTPUT_HTML
+                        Write HTML report to this file (when using multiple
+                        --format)
+  --output-table OUTPUT_TABLE
+                        Write Table report to this file (when using multiple
+                        --format)
   --detailed            Include detailed findings (Markdown output only)
   --compact             Compact JSON output
   --verbose             Include per-finding policy fingerprints, co-occurrence
                         metadata, and keep meta-analyzer false positives in
                         output
   --fail-on-findings    Exit with error if critical/high findings
+  --fail-on-severity LEVEL
+                        Exit with error if findings at or above LEVEL exist
+                        (critical, high, medium, low, info)
   --use-behavioral      Enable behavioral dataflow analysis
   --use-llm             Enable LLM-based semantic analysis (requires API key)
   --use-virustotal      Enable VirusTotal scanning (requires API key)
@@ -215,6 +269,8 @@ options:
   --policy PRESET_OR_PATH
                         Scan policy: preset name (strict, balanced,
                         permissive) or path to custom YAML
+  --lenient             Tolerate malformed skills: coerce bad fields, fill
+                        defaults, and continue instead of failing
   --custom-rules PATH   Path to directory containing custom YARA rules (.yara
                         files)
   --taxonomy PATH       Path to custom taxonomy JSON/YAML (overrides

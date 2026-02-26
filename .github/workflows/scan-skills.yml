@@ -187,7 +187,7 @@ jobs:
 
       - name: Upload SARIF to Code Scanning
         if: inputs.upload_sarif && inputs.format == 'sarif' && hashFiles('results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
 

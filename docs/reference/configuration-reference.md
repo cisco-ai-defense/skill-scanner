@@ -74,7 +74,7 @@ Enable the Cisco AI Defense cloud analyzer.
 | Variable | Description | Example |
 |---|---|---|
 | `AI_DEFENSE_API_KEY` | Cisco AI Defense analyzer API key. | `(your AI Defense key)` |
-| `AI_DEFENSE_API_URL` | Cisco AI Defense endpoint override. | `https://api.aidefense.cisco.com` |
+| `AI_DEFENSE_API_URL` | Cisco AI Defense endpoint override. | `https://us.api.inspect.aidefense.security.cisco.com/api/v1` |
 
 ## Feature Toggles
 
