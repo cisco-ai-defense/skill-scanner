@@ -87,6 +87,159 @@ class TestLLMProviderForwarding:
             call_kwargs = mock_build.call_args
             assert call_kwargs.kwargs.get("llm_provider") is None
 
+    def test_llm_max_tokens_passed_to_build_analyzers(self):
+        """_build_analyzers should forward llm_max_tokens to build_analyzers."""
+        from skill_scanner.cli.cli import _build_analyzers
+
+        policy = ScanPolicy.default()
+        args = argparse.Namespace(
+            custom_rules=None,
+            use_behavioral=False,
+            use_llm=False,
+            use_virustotal=False,
+            vt_api_key=None,
+            vt_upload_files=False,
+            use_aidefense=False,
+            aidefense_api_key=None,
+            aidefense_api_url=None,
+            use_trigger=False,
+            llm_provider=None,
+            llm_consensus_runs=1,
+            llm_max_tokens=16384,
+        )
+
+        with patch("skill_scanner.cli.cli.build_analyzers") as mock_build:
+            mock_build.return_value = []
+            _build_analyzers(policy, args, lambda s: None)
+
+            assert mock_build.call_args.kwargs.get("llm_max_tokens") == 16384
+
+    def test_llm_max_tokens_defaults_to_none_when_missing(self):
+        """When --llm-max-tokens is not in args, None should be passed."""
+        from skill_scanner.cli.cli import _build_analyzers
+
+        policy = ScanPolicy.default()
+        args = argparse.Namespace(
+            custom_rules=None,
+            use_behavioral=False,
+            use_llm=False,
+            use_virustotal=False,
+            vt_api_key=None,
+            vt_upload_files=False,
+            use_aidefense=False,
+            aidefense_api_key=None,
+            aidefense_api_url=None,
+            use_trigger=False,
+            llm_consensus_runs=1,
+        )
+
+        with patch("skill_scanner.cli.cli.build_analyzers") as mock_build:
+            mock_build.return_value = []
+            _build_analyzers(policy, args, lambda s: None)
+
+            assert mock_build.call_args.kwargs.get("llm_max_tokens") is None
+
+
+class TestMaxOutputTokensPolicy:
+    """Verify max_output_tokens in scan policy and YAML round-trip."""
+
+    def test_default_policy_has_max_output_tokens(self):
+        """Default policy should set max_output_tokens to 8192."""
+        policy = ScanPolicy.default()
+        assert policy.llm_analysis.max_output_tokens == 8192
+
+    def test_max_output_tokens_roundtrip_yaml(self, tmp_path):
+        """max_output_tokens should survive YAML serialization round-trip."""
+        policy = ScanPolicy.default()
+        policy.llm_analysis.max_output_tokens = 32768
+
+        yaml_path = tmp_path / "test_policy.yaml"
+        policy.to_yaml(yaml_path)
+
+        loaded = ScanPolicy.from_yaml(str(yaml_path))
+        assert loaded.llm_analysis.max_output_tokens == 32768
+
+    def test_max_output_tokens_in_to_dict(self):
+        """_to_dict should include max_output_tokens."""
+        policy = ScanPolicy.default()
+        d = policy._to_dict()
+        assert d["llm_analysis"]["max_output_tokens"] == 8192
+
+    def test_presets_have_max_output_tokens(self):
+        """All presets should have max_output_tokens set."""
+        for preset in ("strict", "balanced", "permissive"):
+            policy = ScanPolicy.from_preset(preset)
+            assert policy.llm_analysis.max_output_tokens == 8192, f"{preset} preset missing max_output_tokens"
+
+    def test_custom_yaml_overrides_max_output_tokens(self, tmp_path):
+        """A user YAML with a custom max_output_tokens should override the default."""
+        yaml_path = tmp_path / "custom.yaml"
+        yaml_path.write_text("llm_analysis:\n  max_output_tokens: 16384\n")
+
+        loaded = ScanPolicy.from_yaml(str(yaml_path))
+        assert loaded.llm_analysis.max_output_tokens == 16384
+
+    def test_cli_override_beats_policy_in_build_analyzers(self):
+        """CLI llm_max_tokens should override the policy max_output_tokens."""
+        from skill_scanner.core.analyzer_factory import build_analyzers
+
+        policy = ScanPolicy.default()
+        policy.llm_analysis.max_output_tokens = 4096
+
+        with patch("skill_scanner.core.analyzers.llm_analyzer.LLMAnalyzer") as MockLLM:
+            MockLLM.return_value = MagicMock()
+            build_analyzers(
+                policy=policy,
+                use_llm=True,
+                llm_max_tokens=32768,
+            )
+            call_kwargs = MockLLM.call_args.kwargs
+            assert call_kwargs["max_tokens"] == 32768
+
+    def test_policy_used_when_cli_is_none_in_build_analyzers(self):
+        """When CLI llm_max_tokens is None, policy max_output_tokens should be used."""
+        from skill_scanner.core.analyzer_factory import build_analyzers
+
+        policy = ScanPolicy.default()
+        policy.llm_analysis.max_output_tokens = 4096
+
+        with patch("skill_scanner.core.analyzers.llm_analyzer.LLMAnalyzer") as MockLLM:
+            MockLLM.return_value = MagicMock()
+            build_analyzers(
+                policy=policy,
+                use_llm=True,
+                llm_max_tokens=None,
+            )
+            call_kwargs = MockLLM.call_args.kwargs
+            assert call_kwargs["max_tokens"] == 4096
+
+    def test_meta_analyzer_receives_max_tokens_from_cli(self):
+        """_build_meta_analyzer should forward max_tokens to MetaAnalyzer."""
+        from skill_scanner.cli.cli import _build_meta_analyzer
+
+        policy = ScanPolicy.default()
+        args = argparse.Namespace(enable_meta=True)
+
+        with patch("skill_scanner.cli.cli.MetaAnalyzer") as MockMeta:
+            MockMeta.return_value = MagicMock()
+            _build_meta_analyzer(args, 2, lambda s: None, policy=policy, max_tokens=16384)
+            call_kwargs = MockMeta.call_args.kwargs
+            assert call_kwargs["max_tokens"] == 16384
+
+    def test_meta_analyzer_uses_policy_when_no_cli_override(self):
+        """_build_meta_analyzer should use policy max_output_tokens when max_tokens is None."""
+        from skill_scanner.cli.cli import _build_meta_analyzer
+
+        policy = ScanPolicy.default()
+        policy.llm_analysis.max_output_tokens = 4096
+        args = argparse.Namespace(enable_meta=True)
+
+        with patch("skill_scanner.cli.cli.MetaAnalyzer") as MockMeta:
+            MockMeta.return_value = MagicMock()
+            _build_meta_analyzer(args, 2, lambda s: None, policy=policy, max_tokens=None)
+            call_kwargs = MockMeta.call_args.kwargs
+            assert call_kwargs["max_tokens"] == 4096
+
 
 # ===================================================================
 # 11b — TUI _FIELD_MAP entries

@@ -253,7 +253,8 @@ Controls LLM context budget thresholds for LLM and meta analyzers. Content withi
 | max_code_file_chars | int | 15000 | Maximum character length for a single code file sent to the LLM |
 | max_referenced_file_chars | int | 10000 | Maximum character length for a single referenced file sent to the LLM |
 | max_total_prompt_chars | int | 100000 | Maximum total characters across the entire LLM prompt |
-| meta_budget_multiplier | float | 3.0 | Multiplier applied to all limits above for the meta analyzer (e.g. 3x = 60K instruction, 45K/file, 300K total) |
+| max_output_tokens | int | 8192 | Maximum output tokens for LLM responses (both LLM analyzer and meta-analyzer) |
+| meta_budget_multiplier | float | 3.0 | Multiplier applied to all input limits above for the meta analyzer (e.g. 3x = 60K instruction, 45K/file, 300K total) |
 
 </details>
 

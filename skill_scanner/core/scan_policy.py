@@ -295,6 +295,9 @@ class LLMAnalysisPolicy:
     max_referenced_file_chars: int = 10_000
     max_total_prompt_chars: int = 100_000
 
+    # -- Output token limit --
+    max_output_tokens: int = 8192
+
     # -- Meta analyzer multiplier --
     # Meta analyzer multiplies the above limits by this factor.
     # e.g. 3× means meta gets 60 K instruction, 45 K/file, 300 K total.
@@ -637,6 +640,7 @@ class ScanPolicy:
                 max_code_file_chars=la.get("max_code_file_chars", 15_000),
                 max_referenced_file_chars=la.get("max_referenced_file_chars", 10_000),
                 max_total_prompt_chars=la.get("max_total_prompt_chars", 100_000),
+                max_output_tokens=la.get("max_output_tokens", 8192),
                 meta_budget_multiplier=la.get("meta_budget_multiplier", 3.0),
             ),
             finding_output=FindingOutputPolicy(
@@ -759,6 +763,7 @@ class ScanPolicy:
                 "max_code_file_chars": self.llm_analysis.max_code_file_chars,
                 "max_referenced_file_chars": self.llm_analysis.max_referenced_file_chars,
                 "max_total_prompt_chars": self.llm_analysis.max_total_prompt_chars,
+                "max_output_tokens": self.llm_analysis.max_output_tokens,
                 "meta_budget_multiplier": self.llm_analysis.meta_budget_multiplier,
             },
             "finding_output": {

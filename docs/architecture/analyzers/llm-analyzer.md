@@ -281,6 +281,7 @@ export AWS_REGION=us-east-1
 - Retries transient failures (`429`/timeouts/network issues) with exponential backoff
 - Supports async execution (`analyze_async`) and optional consensus passes
 - Applies prompt budget gates from policy (`llm_analysis.*`) and emits `LLM_CONTEXT_BUDGET_EXCEEDED` when content is skipped
+- Output token limit is controlled by `llm_analysis.max_output_tokens` in scan policy (default 8192), overridable via `--llm-max-tokens` CLI flag
 
 ## Error Handling
 

@@ -38,7 +38,7 @@ class Config:
     llm_model: str = "claude-3-5-sonnet-20241022"
     llm_base_url: str | None = None
     llm_api_version: str | None = None
-    llm_max_tokens: int = 4000
+    llm_max_tokens: int = 8192
     llm_temperature: float = 0.0
     llm_rate_limit_delay: float = 2.0
     llm_max_retries: int = 3

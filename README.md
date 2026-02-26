@@ -231,6 +231,7 @@ if not result.is_safe:
 | `--use-llm` | Enable LLM analyzer (requires API key) |
 | `--llm-provider` | LLM provider for CLI routing: `anthropic` or `openai` |
 | `--llm-consensus-runs N` | Run LLM analysis `N` times and keep majority-agreed findings |
+| `--llm-max-tokens N` | Maximum output tokens for LLM responses (default: 8192) |
 | `--use-virustotal` | Enable VirusTotal binary scanner |
 | `--vt-api-key KEY` | Provide VirusTotal API key directly (optional) |
 | `--vt-upload-files` | Upload unknown binaries to VirusTotal (optional) |

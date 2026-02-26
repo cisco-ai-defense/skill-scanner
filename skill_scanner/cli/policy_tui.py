@@ -482,6 +482,9 @@ class PolicyConfigApp(App[str | None]):
                 yield Label("Max total prompt (chars)")
                 yield Input(value="100000", id="llm-max-total-prompt", type="integer")
             with Horizontal(classes="field-row"):
+                yield Label("Max output tokens")
+                yield Input(value="8192", id="llm-max-output-tokens", type="integer")
+            with Horizontal(classes="field-row"):
                 yield Label("Meta budget multiplier")
                 yield Input(value="3.0", id="llm-meta-multiplier")
 
@@ -578,6 +581,7 @@ class PolicyConfigApp(App[str | None]):
         self.query_one("#llm-max-code-file", Input).value = str(p.llm_analysis.max_code_file_chars)
         self.query_one("#llm-max-ref-file", Input).value = str(p.llm_analysis.max_referenced_file_chars)
         self.query_one("#llm-max-total-prompt", Input).value = str(p.llm_analysis.max_total_prompt_chars)
+        self.query_one("#llm-max-output-tokens", Input).value = str(p.llm_analysis.max_output_tokens)
         self.query_one("#llm-meta-multiplier", Input).value = str(p.llm_analysis.meta_budget_multiplier)
 
     def _sync_policy_from_form(self) -> None:
@@ -695,6 +699,10 @@ class PolicyConfigApp(App[str | None]):
             pass
         try:
             p.llm_analysis.max_total_prompt_chars = int(self.query_one("#llm-max-total-prompt", Input).value)
+        except ValueError:
+            pass
+        try:
+            p.llm_analysis.max_output_tokens = int(self.query_one("#llm-max-output-tokens", Input).value)
         except ValueError:
             pass
         try:

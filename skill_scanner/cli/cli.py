@@ -118,6 +118,7 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
         use_trigger=getattr(args, "use_trigger", False),
         llm_provider=getattr(args, "llm_provider", None),
         llm_consensus_runs=getattr(args, "llm_consensus_runs", 1),
+        llm_max_tokens=getattr(args, "llm_max_tokens", None),
     )
 
     # Emit status messages for the optional analyzers that were activated.
@@ -138,7 +139,13 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
     return analyzers
 
 
-def _build_meta_analyzer(args: argparse.Namespace, analyzer_count: int, status: Callable[[str], None], policy=None):
+def _build_meta_analyzer(
+    args: argparse.Namespace,
+    analyzer_count: int,
+    status: Callable[[str], None],
+    policy=None,
+    max_tokens: int | None = None,
+):
     """Optionally build a MetaAnalyzer if ``--enable-meta`` is set."""
     if not getattr(args, "enable_meta", False):
         return None
@@ -157,13 +164,19 @@ def _build_meta_analyzer(args: argparse.Namespace, analyzer_count: int, status: 
         meta_model = os.getenv("SKILL_SCANNER_META_LLM_MODEL") or os.getenv("SKILL_SCANNER_LLM_MODEL")
         meta_base_url = os.getenv("SKILL_SCANNER_META_LLM_BASE_URL") or os.getenv("SKILL_SCANNER_LLM_BASE_URL")
         meta_api_version = os.getenv("SKILL_SCANNER_META_LLM_API_VERSION") or os.getenv("SKILL_SCANNER_LLM_API_VERSION")
-        meta = MetaAnalyzer(
+        kwargs: dict = dict(
             model=meta_model,
             api_key=meta_api_key,
             base_url=meta_base_url,
             api_version=meta_api_version,
             policy=policy,
         )
+        effective_max_tokens = (
+            max_tokens if max_tokens is not None else (policy.llm_analysis.max_output_tokens if policy else None)
+        )
+        if effective_max_tokens is not None:
+            kwargs["max_tokens"] = effective_max_tokens
+        meta = MetaAnalyzer(**kwargs)
         status("Using Meta-Analyzer for false positive filtering and finding prioritization")
         return meta
     except Exception as e:
@@ -320,7 +333,8 @@ def scan_command(args: argparse.Namespace) -> int:
 
     policy = _load_policy(args)
     analyzers = _build_analyzers(policy, args, status)
-    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy)
+    llm_max_tokens = getattr(args, "llm_max_tokens", None)
+    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
     lenient = getattr(args, "lenient", False)
@@ -405,7 +419,8 @@ def scan_all_command(args: argparse.Namespace) -> int:
 
     policy = _load_policy(args)
     analyzers = _build_analyzers(policy, args, status)
-    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy)
+    llm_max_tokens = getattr(args, "llm_max_tokens", None)
+    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
 
@@ -717,6 +732,13 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         default=1,
         metavar="N",
         help="Run LLM analysis N times and keep only findings with majority agreement (reduces false positives, increases cost)",
+    )
+    parser.add_argument(
+        "--llm-max-tokens",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Maximum output tokens for LLM responses (default: 8192). Raise if scans produce truncated JSON.",
     )
     parser.add_argument("--use-trigger", action="store_true", help="Enable trigger specificity analysis")
     parser.add_argument("--enable-meta", action="store_true", help="Enable meta-analysis FP filtering (2+ analyzers)")
