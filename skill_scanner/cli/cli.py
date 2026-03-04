@@ -27,6 +27,9 @@ import traceback
 from collections.abc import Callable
 from pathlib import Path
 
+from rich.console import Console
+from rich.markdown import Markdown
+
 from .. import __version__
 from ..core.analyzer_factory import build_analyzers
 from ..core.loader import SkillLoadError
@@ -285,6 +288,10 @@ def _resolve_fail_severity(args: argparse.Namespace) -> str | None:
 def _write_output(args: argparse.Namespace, output: str) -> None:
     """Write *output* to a file or stdout, and emit any additional formats."""
     formats = _get_formats(args)
+    primary_fmt = formats[0] if formats else "summary"
+    render_md = (
+        sys.stdout.isatty() and not getattr(args, "no_render_markdown", False)
+    )
 
     # Primary format: write to --output file or stdout
     if args.output:
@@ -292,14 +299,17 @@ def _write_output(args: argparse.Namespace, output: str) -> None:
             fh.write(output)
         print(f"Report saved to: {args.output}")
     else:
-        print(output)
+        if primary_fmt == "markdown" and render_md:
+            Console().print(Markdown(output))
+        else:
+            print(output)
 
     # Additional formats beyond the first: each gets its own --output-<fmt> file
     # or is printed to stdout if no file path is given.
     if len(formats) > 1:
-        # We already emitted formats[0] above.
         result_or_report = getattr(args, "_result_or_report", None)
         if result_or_report is not None:
+            console = Console()
             for fmt in formats[1:]:
                 formatted = _format_single(fmt, args, result_or_report)
                 output_key = f"output_{fmt}"
@@ -309,7 +319,10 @@ def _write_output(args: argparse.Namespace, output: str) -> None:
                         fh.write(formatted)
                     print(f"{fmt.upper()} report saved to: {file_path}")
                 else:
-                    print(formatted)
+                    if fmt == "markdown" and render_md:
+                        console.print(Markdown(formatted))
+                    else:
+                        print(formatted)
 
 
 # ---------------------------------------------------------------------------
@@ -703,6 +716,11 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-html", help="Write HTML report to this file (when using multiple --format)")
     parser.add_argument("--output-table", help="Write Table report to this file (when using multiple --format)")
     parser.add_argument("--detailed", action="store_true", help="Include detailed findings (Markdown output only)")
+    parser.add_argument(
+        "--no-render-markdown",
+        action="store_true",
+        help="With --format markdown to terminal: print raw markdown instead of rendering (for pipe/copy).",
+    )
     parser.add_argument("--compact", action="store_true", help="Compact JSON output")
     parser.add_argument(
         "--verbose",
