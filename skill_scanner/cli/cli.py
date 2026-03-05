@@ -289,9 +289,7 @@ def _write_output(args: argparse.Namespace, output: str) -> None:
     """Write *output* to a file or stdout, and emit any additional formats."""
     formats = _get_formats(args)
     primary_fmt = formats[0] if formats else "summary"
-    render_md = (
-        sys.stdout.isatty() and not getattr(args, "no_render_markdown", False)
-    )
+    render_md = sys.stdout.isatty() and not getattr(args, "no_render_markdown", False)
 
     # Primary format: write to --output file or stdout
     if args.output:
