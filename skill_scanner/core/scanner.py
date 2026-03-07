@@ -737,6 +737,10 @@ class SkillScanner:
         if overlap_findings or cross_findings:
             all_cross_findings = list(overlap_findings or []) + list(cross_findings or [])
             if all_cross_findings:
+                # Apply policy filters to cross-skill findings (mirrors _scan_single_skill lines 279-283)
+                if self.policy.disabled_rules:
+                    all_cross_findings = [f for f in all_cross_findings if f.rule_id not in self.policy.disabled_rules]
+                self._apply_severity_overrides(all_cross_findings)
                 report.add_cross_skill_findings(all_cross_findings)
 
         return report
