@@ -846,7 +846,7 @@ Respond with a JSON object following the schema in the system prompt."""
         last_exception = None
         for attempt in range(self.max_retries):
             try:
-                response = await acompletion(**api_params)
+                response = await acompletion(**api_params, drop_params=True)
                 content: str = response.choices[0].message.content or ""
                 return content
 

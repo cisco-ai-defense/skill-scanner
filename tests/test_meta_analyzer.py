@@ -581,3 +581,37 @@ class TestMetaAnalyzerBudgetGating:
         context, skipped = analyzer._build_skill_context(skill)
         assert code_content in context
         assert skipped == []
+
+
+class TestMetaDropParams:
+    """Regression: MetaAnalyzer._make_llm_request must pass drop_params=True."""
+
+    @pytest.mark.asyncio
+    async def test_acompletion_called_with_drop_params(self, tmp_path):
+        """MetaAnalyzer must pass drop_params=True to acompletion."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        analyzer = MetaAnalyzer(
+            model="gpt-5.4-2026-03-05",
+            api_key="test-key",
+        )
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = (
+            '{"validated_findings": [], "false_positives": [], "missed_threats": [], '
+            '"correlations": [], "recommendations": [], "overall_risk_level": "NONE", '
+            '"priority_findings": []}'
+        )
+
+        with patch(
+            "skill_scanner.core.analyzers.meta_analyzer.acompletion",
+            new_callable=AsyncMock,
+        ) as mock_acompletion:
+            mock_acompletion.return_value = mock_response
+            await analyzer._make_llm_request("system prompt", "user prompt")
+
+        assert mock_acompletion.called, "acompletion should have been called"
+        call_kwargs = mock_acompletion.call_args
+        kwargs = call_kwargs.kwargs if call_kwargs.kwargs else call_kwargs[1]
+        assert kwargs.get("drop_params") is True, f"acompletion must be called with drop_params=True, got: {kwargs}"

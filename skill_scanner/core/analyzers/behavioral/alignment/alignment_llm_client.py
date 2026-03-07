@@ -223,7 +223,7 @@ class AlignmentLLMClient:
                 request_params["api_version"] = self._api_version
 
             self.logger.debug(f"Sending alignment verification request to {self._model}")
-            response = await acompletion(**request_params)
+            response = await acompletion(**request_params, drop_params=True)
 
             # Extract content from response
             content = response.choices[0].message.content
