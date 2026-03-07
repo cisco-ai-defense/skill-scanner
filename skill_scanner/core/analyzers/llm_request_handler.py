@@ -225,7 +225,7 @@ class LLMRequestHandler:
                             },
                         }
 
-                response = await acompletion(**request_params)
+                response = await acompletion(**request_params, drop_params=True)
                 content: str = response.choices[0].message.content or ""
                 return content
 

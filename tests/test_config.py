@@ -222,3 +222,29 @@ ENABLE_LLM_ANALYZER=true
         # Should create config with defaults (or from existing env vars)
         assert config is not None
         assert config.llm_model is not None  # Will use default or env var
+
+
+def test_gpt5_provider_detection():
+    """ProviderConfig.is_gpt5 must be True for all gpt-5 model strings."""
+    from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+
+    gpt5_models = [
+        "gpt-5",
+        "gpt-5-codex",
+        "gpt-5.1",
+        "gpt-5.2",
+        "gpt-5.4-2026-03-05",
+    ]
+    for model in gpt5_models:
+        config = ProviderConfig(model=model, api_key="test")
+        assert config.is_gpt5 is True, f"Expected is_gpt5=True for model '{model}'"
+
+    non_gpt5_models = [
+        "gpt-4o",
+        "gpt-4-turbo",
+        "claude-3-5-sonnet-20241022",
+        "gemini/gemini-2.0-flash",
+    ]
+    for model in non_gpt5_models:
+        config = ProviderConfig(model=model, api_key="test")
+        assert config.is_gpt5 is False, f"Expected is_gpt5=False for model '{model}'"

@@ -131,3 +131,44 @@ class TestSanitizeSchemaForGoogle:
 
         assert "additionalProperties" not in result
         assert "additionalProperties" not in result["properties"]["findings"]["items"]
+
+
+class TestDropParams:
+    """Regression: acompletion must be called with drop_params=True for model compatibility."""
+
+    @pytest.mark.asyncio
+    async def test_acompletion_called_with_drop_params(self):
+        """LLMRequestHandler._make_litellm_request must pass drop_params=True."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+        from skill_scanner.core.analyzers.llm_request_handler import LLMRequestHandler
+
+        provider_config = MagicMock(spec=ProviderConfig)
+        provider_config.model = "gpt-5.4-2026-03-05"
+        provider_config.use_google_sdk = False
+        provider_config.get_request_params.return_value = {"api_key": "test-key"}
+
+        handler = LLMRequestHandler(
+            provider_config=provider_config,
+            temperature=0.0,
+        )
+        handler.response_schema = None  # disable structured output for simplicity
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[
+            0
+        ].message.content = '{"findings": [], "overall_assessment": "safe", "primary_threats": []}'
+
+        with patch(
+            "skill_scanner.core.analyzers.llm_request_handler.acompletion",
+            new_callable=AsyncMock,
+        ) as mock_acompletion:
+            mock_acompletion.return_value = mock_response
+            await handler.make_request([{"role": "user", "content": "test"}])
+
+        assert mock_acompletion.called, "acompletion should have been called"
+        call_kwargs = mock_acompletion.call_args
+        kwargs = call_kwargs.kwargs if call_kwargs.kwargs else call_kwargs[1]
+        assert kwargs.get("drop_params") is True, f"acompletion must be called with drop_params=True, got: {kwargs}"

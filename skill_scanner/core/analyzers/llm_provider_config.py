@@ -91,6 +91,7 @@ class ProviderConfig:
         self.is_vertex = model_lower.startswith("vertex_ai/") or "vertex" in model_lower
         self.is_ollama = model_lower.startswith("ollama/")
         self.is_openrouter = model_lower.startswith("openrouter/")
+        self.is_gpt5 = "gpt-5" in model_lower
 
         # Determine if we should use Google SDK
         self.use_google_sdk = False
