@@ -1191,6 +1191,48 @@ class StaticAnalyzer(BaseAnalyzer):
                 "Role reassignment pattern in asset file",
             ),
             (
+                re.compile(r"à\s+partir\s+de\s+maintenant", re.IGNORECASE),
+                "ASSET_PROMPT_INJECTION",
+                Severity.MEDIUM,
+                "French role-switch prompt pattern in asset file",
+            ),
+            (
+                re.compile(r"a\s+partir\s+de\s+ahora", re.IGNORECASE),
+                "ASSET_PROMPT_INJECTION",
+                Severity.MEDIUM,
+                "Spanish role-switch prompt pattern in asset file",
+            ),
+            (
+                re.compile(r"a\s+partir\s+de\s+agora", re.IGNORECASE),
+                "ASSET_PROMPT_INJECTION",
+                Severity.MEDIUM,
+                "Portuguese role-switch prompt pattern in asset file",
+            ),
+            (
+                re.compile(r"ab\s+jetzt", re.IGNORECASE),
+                "ASSET_PROMPT_INJECTION",
+                Severity.MEDIUM,
+                "German role-switch prompt pattern in asset file",
+            ),
+            (
+                re.compile(r"da\s+ora\s+in\s+poi", re.IGNORECASE),
+                "ASSET_PROMPT_INJECTION",
+                Severity.MEDIUM,
+                "Italian role-switch prompt pattern in asset file",
+            ),
+            (
+                re.compile(r"bundan\s+sonra", re.IGNORECASE),
+                "ASSET_PROMPT_INJECTION",
+                Severity.MEDIUM,
+                "Turkish role-switch prompt pattern in asset file",
+            ),
+            (
+                re.compile(r"from\s+now\s+on", re.IGNORECASE),
+                "ASSET_PROMPT_INJECTION",
+                Severity.MEDIUM,
+                "English role-switch prompt pattern in asset file",
+            ),
+            (
                 re.compile(r"https?://[^\s]+\.(tk|ml|ga|cf|gq)/", re.IGNORECASE),
                 "ASSET_SUSPICIOUS_URL",
                 Severity.MEDIUM,
