@@ -1203,6 +1203,12 @@ class StaticAnalyzer(BaseAnalyzer):
                 "Spanish role-switch prompt pattern in asset file",
             ),
             (
+                re.compile(r"a\s+partir\s+de\s+agora", re.IGNORECASE),
+                "ASSET_PROMPT_INJECTION",
+                Severity.MEDIUM,
+                "Portuguese role-switch prompt pattern in asset file",
+            ),
+            (
                 re.compile(r"https?://[^\s]+\.(tk|ml|ga|cf|gq)/", re.IGNORECASE),
                 "ASSET_SUSPICIOUS_URL",
                 Severity.MEDIUM,
