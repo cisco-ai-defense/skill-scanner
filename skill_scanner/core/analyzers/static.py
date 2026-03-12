@@ -116,6 +116,58 @@ _DEFAULT_PLACEHOLDER_MARKERS = {
 }
 
 
+def _is_path_traversal(ref_path: str) -> bool:
+    """Check if a reference path contains traversal sequences or is absolute."""
+    return ".." in ref_path or ref_path.startswith("/")
+
+
+def _is_within_directory(path: Path, directory: Path) -> bool:
+    """Check if a resolved path stays within the given directory."""
+    try:
+        resolved_path = path.resolve()
+        resolved_directory = directory.resolve()
+        return resolved_path.is_relative_to(resolved_directory)
+    except (ValueError, OSError):
+        return False
+
+
+def _redact_secret(text: str) -> str:
+    """Redact a matched secret, preserving a short prefix for identification.
+
+    Returns a version like ``AKIA****`` or ``sk_live_****`` so the type of
+    secret is still recognisable in the report without exposing the full value.
+    """
+    if not text:
+        return text
+    _KNOWN_PREFIXES = {
+        "AKIA": 4,
+        "AGPA": 4,
+        "AIDA": 4,
+        "AROA": 4,
+        "AIPA": 4,
+        "ANPA": 4,
+        "ANVA": 4,
+        "ASIA": 4,
+        "AIza": 4,
+    }
+    for prefix, length in _KNOWN_PREFIXES.items():
+        if text.startswith(prefix):
+            return text[:length] + "****"
+    _TOKEN_PREFIXES = ("sk_live_", "pk_live_", "sk_test_", "pk_test_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_")
+    for prefix in _TOKEN_PREFIXES:
+        if text.startswith(prefix):
+            return prefix + "****"
+    if text.startswith("eyJ"):
+        return "eyJ****"
+    _PK_MARKER_BEGIN = "-----BEGIN"
+    _PK_MARKER_TYPE = "PRIVATE KEY"
+    if _PK_MARKER_BEGIN in text and _PK_MARKER_TYPE in text:
+        return f"{_PK_MARKER_BEGIN} {_PK_MARKER_TYPE}----- [REDACTED]"
+    if len(text) <= 8:
+        return text[:2] + "****"
+    return text[:4] + "****"
+
+
 class StaticAnalyzer(BaseAnalyzer):
     """Static pattern-based security analyzer."""
 
@@ -585,6 +637,26 @@ class StaticAnalyzer(BaseAnalyzer):
             return findings
 
         for ref_file_path in references:
+            if _is_path_traversal(ref_file_path):
+                findings.append(
+                    Finding(
+                        id=self._generate_finding_id("PATH_TRAVERSAL", ref_file_path),
+                        rule_id="PATH_TRAVERSAL_ATTEMPT",
+                        category=ThreatCategory.DATA_EXFILTRATION,
+                        severity=Severity.CRITICAL,
+                        title="Path traversal attempt in file reference",
+                        description=(
+                            f"Reference '{ref_file_path}' attempts to escape the skill directory. "
+                            f"This is a path traversal attack that could read sensitive files "
+                            f"from the host system."
+                        ),
+                        file_path="SKILL.md",
+                        remediation="Remove path traversal sequences from file references",
+                        analyzer="static",
+                    )
+                )
+                continue
+
             full_path = skill.directory / ref_file_path
             if not full_path.exists():
                 alt_paths = [
@@ -599,6 +671,25 @@ class StaticAnalyzer(BaseAnalyzer):
                         break
 
             if not full_path.exists():
+                continue
+
+            if not _is_within_directory(full_path, skill.directory):
+                findings.append(
+                    Finding(
+                        id=self._generate_finding_id("PATH_TRAVERSAL_RESOLVED", ref_file_path),
+                        rule_id="PATH_TRAVERSAL_ATTEMPT",
+                        category=ThreatCategory.DATA_EXFILTRATION,
+                        severity=Severity.CRITICAL,
+                        title="File reference resolves outside skill directory",
+                        description=(
+                            f"Reference '{ref_file_path}' resolves to a path outside the skill "
+                            f"directory. This could be a path traversal attack."
+                        ),
+                        file_path="SKILL.md",
+                        remediation="Ensure all file references point to files within the skill directory",
+                        analyzer="static",
+                    )
+                )
                 continue
 
             dedupe_reference_aliases = self.policy.rule_scoping.dedupe_reference_aliases
@@ -690,17 +781,20 @@ class StaticAnalyzer(BaseAnalyzer):
             markdown_links = _MARKDOWN_LINK_PATTERN.findall(content)
             for _, link in markdown_links:
                 if not link.startswith(("http://", "https://", "ftp://", "#")):
-                    references.append(link)
+                    if not _is_path_traversal(link):
+                        references.append(link)
 
         elif suffix == ".py":
             import_patterns = _PYTHON_IMPORT_PATTERN.findall(content)
             for imp in import_patterns:
-                if imp:
+                if imp and not _is_path_traversal(imp):
                     references.append(f"{imp}.py")
 
         elif suffix in (".sh", ".bash"):
             source_patterns = _BASH_SOURCE_PATTERN.findall(content)
-            references.extend(source_patterns)
+            for src in source_patterns:
+                if not _is_path_traversal(src):
+                    references.append(src)
 
         return references
 
@@ -1340,21 +1434,30 @@ class StaticAnalyzer(BaseAnalyzer):
         except (ValueError, AttributeError):
             pass
 
+        matched_text = match.get("matched_text", "N/A")
+        snippet = match.get("line_content")
+
+        if rule.category == ThreatCategory.HARDCODED_SECRETS:
+            redacted = _redact_secret(matched_text)
+            if snippet and matched_text in snippet:
+                snippet = snippet.replace(matched_text, redacted)
+            matched_text = redacted
+
         return Finding(
             id=self._generate_finding_id(rule.id, f"{match.get('file_path', 'unknown')}:{match.get('line_number', 0)}"),
             rule_id=rule.id,
             category=rule.category,
             severity=rule.severity,
             title=rule.description,
-            description=f"Pattern detected: {match.get('matched_text', 'N/A')}",
+            description=f"Pattern detected: {matched_text}",
             file_path=match.get("file_path"),
             line_number=match.get("line_number"),
-            snippet=match.get("line_content"),
+            snippet=snippet,
             remediation=rule.remediation,
             analyzer="static",
             metadata={
                 "matched_pattern": match.get("matched_pattern"),
-                "matched_text": match.get("matched_text"),
+                "matched_text": matched_text,
                 "aitech": threat_mapping.get("aitech") if threat_mapping else None,
                 "aitech_name": threat_mapping.get("aitech_name") if threat_mapping else None,
                 "scanner_category": threat_mapping.get("scanner_category") if threat_mapping else None,

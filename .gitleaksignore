@@ -16,3 +16,15 @@ tests/test_policy_knobs.py:stripe-access-token:355
 tests/test_policy_knobs.py:stripe-access-token:362
 tests/test_policy_knobs.py:stripe-access-token:377
 tests/test_policy_knobs.py:stripe-access-token:388
+
+# Fake/synthetic test credentials used in path-traversal and redaction tests.
+# These are not real secrets — they exist to verify the redaction logic works.
+tests/test_path_traversal_and_redaction.py:stripe-access-token:117
+tests/test_path_traversal_and_redaction.py:stripe-access-token:121
+tests/test_path_traversal_and_redaction.py:stripe-access-token:316
+tests/test_path_traversal_and_redaction.py:stripe-access-token:460
+tests/test_path_traversal_and_redaction.py:aws-access-token:111
+tests/test_path_traversal_and_redaction.py:aws-access-token:251
+tests/test_path_traversal_and_redaction.py:aws-access-token:291
+tests/test_path_traversal_and_redaction.py:aws-access-token:440
+tests/test_path_traversal_and_redaction.py:aws-access-token:501

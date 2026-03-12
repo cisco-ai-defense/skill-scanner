@@ -282,7 +282,8 @@ class SkillLoader:
         for _, link in markdown_links:
             # Filter out URLs, keep relative file paths
             if not link.startswith(("http://", "https://", "ftp://", "#")):
-                references.append(link)
+                if ".." not in link and not link.startswith("/"):
+                    references.append(link)
 
         # Match "see FILE.md" or "refer to FILE.md" patterns
         # Use backticks or quotes to identify actual file references, avoiding false matches like "the.py"
@@ -347,8 +348,8 @@ class SkillLoader:
             references.append(f"assets/{pattern}")
             references.append(f"templates/{pattern}")
 
-        # Return unique references
-        return list(set(references))
+        # Filter out any references with path traversal sequences
+        return list({r for r in references if ".." not in r and not r.startswith("/")})
 
     def extract_references_from_file(self, file_path: Path, content: str) -> list[str]:
         """
@@ -410,7 +411,8 @@ class SkillLoader:
             source_patterns = re.findall(r"(?:source|\.)\s+([A-Za-z0-9_\-./]+\.(?:sh|bash))", content)
             references.extend(source_patterns)
 
-        return list(set(references))
+        # Filter out any references with path traversal sequences
+        return list({r for r in references if ".." not in r and not r.startswith("/")})
 
 
 def load_skill(
