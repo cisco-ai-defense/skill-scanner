@@ -41,7 +41,7 @@ rule jailbreak_generic{
         $dual_personality = /\b(respond (as )?both|answer as both|give (me )?(two|2) responses?|one (response )?(as |from )?[A-Za-z]+ (and )?(one|another) (as |from )?)\b[^.]{0,60}\b(unrestricted|uncensored|jailbroken|DAN|unfiltered)\b/i
 
         // Classic/Jailbroken response format
-        $response_format_jailbreak = /\[\s*(CLASSIC|NORMAL|STANDARD|GPT|CLAUDE)\s*\][^[]{0,200}\[\s*(JAILBR(OKE|OKEN|EAK(ED)?)|DAN|UNRESTRICTED|UNCENSORED|EVIL|CHAOS)\s*\]/i
+        $response_format_jailbreak = /\[\s*(CLASSIC|NORMAL|STANDARD|GPT|CLAUDE)\s*\][^\[]{0,200}\[\s*(JAILBR(OKE|OKEN|EAK(ED)?)|DAN|UNRESTRICTED|UNCENSORED|EVIL|CHAOS)\s*\]/i
 
         // Enable alter ego / shadow self
         $alter_ego = /\b(enable|activate|unlock|unleash|awaken|summon) (your )?(alter ego|shadow (self|mode|personality)|dark (side|mode|persona)|true (self|form)|hidden (persona|personality|mode))\b/i
