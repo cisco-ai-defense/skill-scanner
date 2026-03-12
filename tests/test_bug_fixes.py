@@ -58,7 +58,7 @@ class TestLLMAnalyzerOperatorPrecedence:
     def test_llm_filter_external_check_parenthesized(self):
         """External check in is_internal_file_reading has proper parentheses."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "core" / "analyzers" / "llm_analyzer.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         # The is_internal_file_reading block has "or" conditions in parentheses
         assert "is_internal_file_reading" in text
         assert "(" in text and ")" in text
@@ -86,7 +86,7 @@ class TestDeterministicFindingIds:
     def test_scanner_uses_sha256_for_ids(self):
         """Scanner uses hashlib.sha256 for ID generation."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "core" / "scanner.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         assert "hashlib.sha256" in text
 
 
@@ -185,7 +185,7 @@ class TestLLMAnalyzerPathTraversal:
     def test_llm_analyzer_rejects_path_traversal(self):
         """LLM analyzer source includes path traversal rejection."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "core" / "analyzers" / "llm_analyzer.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         assert ".." in text
         assert "lstrip" in text or "replace" in text
 
@@ -201,7 +201,7 @@ class TestAPIKeysInHeaders:
     def test_api_keys_in_headers(self):
         """API router uses Header() for API keys."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "api" / "router.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         assert "Header(" in text
         assert "X-VirusTotal-Key" in text or "x-virustotal-key" in text.lower()
         assert "X-AIDefense-Key" in text or "x-aidefense-key" in text.lower()
@@ -218,7 +218,7 @@ class TestAPINoRawExceptionIn500:
     def test_api_no_raw_exception_in_500(self):
         """500 responses use generic message; exceptions logged."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "api" / "router.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         assert "Internal scan error" in text
         assert "logger.exception" in text
 
@@ -250,7 +250,7 @@ class TestBoundedCacheThreadSafety:
     def test_bounded_cache_thread_safety(self):
         """_BoundedCache uses threading.Lock."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "api" / "router.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         assert "threading" in text
         assert "Lock()" in text
 
@@ -266,7 +266,7 @@ class TestCrossSkillSyntheticResult:
     def test_cross_skill_findings_not_appended_to_first_result(self):
         """Cross-skill findings use add_cross_skill_findings, not results[0]."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "core" / "scanner.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         assert "add_cross_skill_findings" in text
 
     def test_report_has_cross_skill_findings_field(self):
@@ -312,7 +312,7 @@ class TestStaticAnalyzerLogsExceptions:
     def test_static_analyzer_logs_exceptions(self):
         """No bare 'except Exception: pass' - uses logger.debug or logger.warning."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "core" / "analyzers" / "static.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         # Match "except Exception..." followed by newline and line with only "pass"
         # (greedy .*? with DOTALL wrongly matches across distant "pass")
         bare_passes = re.findall(
@@ -333,7 +333,7 @@ class TestNoDeadCapabilityInflationSkip:
     def test_no_dead_capability_inflation_skip(self):
         """No dead skip for capability_inflation_generic."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "core" / "analyzers" / "static.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         if "capability_inflation_generic" in text:
             idx = text.find("capability_inflation_generic")
             before = text[max(0, idx - 150) : idx]
@@ -351,7 +351,7 @@ class TestAnalyzerFactoryNarrowCatches:
     def test_analyzer_factory_narrow_catches(self):
         """analyzer_factory uses narrowed exception catches, not bare except Exception."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "core" / "analyzer_factory.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         assert "except (ImportError" in text
         lines = text.splitlines()
         broad_catches = [l.strip() for l in lines if "except Exception" in l and "ImportError" not in l]
@@ -369,7 +369,7 @@ class TestLoaderUsesStdlibModules:
     def test_loader_uses_stdlib_modules(self):
         """Loader uses stdlib_module_names for import filtering."""
         source = Path(__file__).resolve().parent.parent / "skill_scanner" / "core" / "loader.py"
-        text = source.read_text()
+        text = source.read_text(encoding="utf-8")
         assert "stdlib_module_names" in text
 
 

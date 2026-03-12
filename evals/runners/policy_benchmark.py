@@ -119,7 +119,7 @@ def run_eval_benchmark(scanner: SkillScanner, eval_dir: Path) -> dict:
         if not (skill_dir / "SKILL.md").exists():
             continue
 
-        with open(expected_file) as f:
+        with open(expected_file, encoding="utf-8") as f:
             expected = json.load(f)
 
         skill_name = expected.get("skill_name", skill_dir.name)

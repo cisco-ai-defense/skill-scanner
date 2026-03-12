@@ -51,7 +51,7 @@ _YARA_RULE_NAME_RE = re.compile(r"^rule\s+(\w+)", re.MULTILINE)
 
 def _load_pack_rule_ids() -> set[str]:
     """Load all rule IDs declared in the core pack.yaml."""
-    with open(_CORE_PACK_YAML) as fh:
+    with open(_CORE_PACK_YAML, encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
     return set((data.get("rules") or {}).keys())
 
@@ -60,7 +60,7 @@ def _load_signature_rule_ids() -> set[str]:
     """Parse all YAML files in signatures/ and return all rule IDs."""
     ids: set[str] = set()
     for yaml_file in sorted(_CORE_SIGNATURES_DIR.glob("*.yaml")):
-        with open(yaml_file) as fh:
+        with open(yaml_file, encoding="utf-8") as fh:
             rules = yaml.safe_load(fh) or []
         ids.update(r["id"] for r in rules)
     return ids
@@ -70,7 +70,7 @@ def _load_yara_rule_names() -> set[str]:
     """Parse .yara files and return all YARA_ prefixed rule IDs."""
     names: set[str] = set()
     for yara_file in _CORE_YARA_DIR.glob("*.yara"):
-        text = yara_file.read_text()
+        text = yara_file.read_text(encoding="utf-8")
         for m in _YARA_RULE_NAME_RE.finditer(text):
             names.add(f"YARA_{m.group(1)}")
     return names
@@ -290,7 +290,7 @@ class TestPackCoverageAudit:
 
     def test_pack_entries_have_enabled_knob(self):
         """Every rule in pack.yaml must have at least an 'enabled' knob."""
-        with open(_CORE_PACK_YAML) as fh:
+        with open(_CORE_PACK_YAML, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         rules = data.get("rules") or {}
         for rule_id, rule_data in rules.items():
@@ -300,7 +300,7 @@ class TestPackCoverageAudit:
     def test_no_orphan_pack_entries_for_signatures(self):
         """pack.yaml signature entries should correspond to actual rules."""
         sig_ids = _load_signature_rule_ids()
-        with open(_CORE_PACK_YAML) as fh:
+        with open(_CORE_PACK_YAML, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         pack_sigs = {
             rid
@@ -315,7 +315,7 @@ class TestPackCoverageAudit:
     def test_no_orphan_pack_entries_for_yara(self):
         """pack.yaml YARA entries should correspond to actual .yara rules."""
         yara_ids = _load_yara_rule_names()
-        with open(_CORE_PACK_YAML) as fh:
+        with open(_CORE_PACK_YAML, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         pack_yara = {
             rid for rid, rd in (data.get("rules") or {}).items() if isinstance(rd, dict) and rd.get("source") == "yara"

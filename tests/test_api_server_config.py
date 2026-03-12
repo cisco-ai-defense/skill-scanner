@@ -42,7 +42,7 @@ class TestModulePathsValid:
         Returns list of (line_number, module_path) tuples.
         """
         paths = []
-        content = filepath.read_text()
+        content = filepath.read_text(encoding="utf-8")
 
         # Parse the AST to find uvicorn.run calls
         try:
@@ -142,7 +142,7 @@ class TestModulePathFormat:
     def test_api_server_path_includes_api_subpackage(self):
         """Test that api_server.py delegates to the correct module path."""
         api_server_path = Path(__file__).parent.parent / "skill_scanner" / "api" / "api_server.py"
-        content = api_server_path.read_text()
+        content = api_server_path.read_text(encoding="utf-8")
 
         # api_server.py is a thin wrapper; it should reference the canonical
         # app location: skill_scanner.api.api:app (not skill_scanner.api_server:app)
@@ -157,7 +157,7 @@ class TestModulePathFormat:
     def test_api_cli_path_includes_api_subpackage(self):
         """Test that api_cli.py path includes 'api' subpackage."""
         api_cli_path = Path(__file__).parent.parent / "skill_scanner" / "api" / "api_cli.py"
-        content = api_cli_path.read_text()
+        content = api_cli_path.read_text(encoding="utf-8")
 
         # The path should be skill_scanner.api.api, not skill_scanner.api
         assert "skill_scanner.api.api" in content, "api_cli.py should use 'skill_scanner.api.api:app' path"
@@ -273,7 +273,7 @@ class TestModulePathConsistency:
         api_dir = Path(__file__).parent.parent / "skill_scanner" / "api"
 
         for py_file in api_dir.glob("*.py"):
-            content = py_file.read_text()
+            content = py_file.read_text(encoding="utf-8")
 
             # Check for old module references in uvicorn paths
             if "skillanalyzer" in content.lower():
@@ -287,7 +287,7 @@ class TestModulePathConsistency:
         api_dir = Path(__file__).parent.parent / "skill_scanner" / "api"
 
         for py_file in api_dir.glob("*.py"):
-            content = py_file.read_text()
+            content = py_file.read_text(encoding="utf-8")
 
             # Find uvicorn.run calls with string arguments
             uvicorn_pattern = r'uvicorn\.run\(["\']([^"\']+)["\']'

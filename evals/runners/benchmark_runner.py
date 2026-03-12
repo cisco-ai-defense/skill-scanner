@@ -127,7 +127,7 @@ class SkillBenchmarkRunner:
     def _evaluate_skill(self, skill_path: Path, expected_file: Path):
         """Evaluate a single skill."""
         # Load expected results
-        with open(expected_file) as f:
+        with open(expected_file, encoding="utf-8") as f:
             expected = json.load(f)
 
         skill_name = expected.get("skill_name", skill_path.name)
@@ -324,7 +324,7 @@ def main():
     # Save JSON if requested
     if args.output:
         output_data = {"benchmark": asdict(result), "individual_results": runner.results}
-        with open(args.output, "w") as f:
+        with open(args.output, "w", encoding="utf-8") as f:
             json.dump(output_data, f, indent=2)
         print(f"Results saved to: {args.output}")
 

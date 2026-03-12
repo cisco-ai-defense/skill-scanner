@@ -470,7 +470,7 @@ class ScanPolicy:
         if not path.exists():
             raise FileNotFoundError(f"Policy file not found: {path}")
 
-        with open(path) as fh:
+        with open(path, encoding="utf-8") as fh:
             raw: dict[str, Any] = yaml.safe_load(fh) or {}
 
         # If this IS the default file, just parse directly
@@ -488,7 +488,7 @@ class ScanPolicy:
     def to_yaml(self, path: str | Path) -> None:
         """Dump the full policy to a YAML file for editing."""
         data = self._to_dict()
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             fh.write("# Skill Scanner – Scan Policy\n")
             fh.write("# Customise this file to match your organisation's security bar.\n")
             fh.write("# Only include sections you want to override; omitted sections\n")
@@ -502,7 +502,7 @@ class ScanPolicy:
     @classmethod
     def _load_default_raw(cls) -> dict[str, Any]:
         if _DEFAULT_POLICY_PATH.exists():
-            with open(_DEFAULT_POLICY_PATH) as fh:
+            with open(_DEFAULT_POLICY_PATH, encoding="utf-8") as fh:
                 return yaml.safe_load(fh) or {}
         return {}
 

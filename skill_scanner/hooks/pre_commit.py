@@ -92,7 +92,7 @@ def load_config(repo_root: Path) -> dict:
     for config_path in config_paths:
         if config_path.exists():
             try:
-                with open(config_path) as f:
+                with open(config_path, encoding="utf-8") as f:
                     user_config = json.load(f)
                     config.update(user_config)
                     break

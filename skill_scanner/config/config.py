@@ -142,7 +142,7 @@ class Config:
         """
         # Load .env file
         if config_file.exists():
-            with open(config_file) as f:
+            with open(config_file, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:

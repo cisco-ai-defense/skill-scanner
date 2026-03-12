@@ -58,7 +58,7 @@ def load_expected(skill_dir: Path):
     if not expected_file.exists():
         return None
 
-    with open(expected_file) as f:
+    with open(expected_file, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -182,7 +182,7 @@ def main():
                     )
 
                 # Save updated file
-                with open(expected_file, "w") as f:
+                with open(expected_file, "w", encoding="utf-8") as f:
                     json.dump(existing, f, indent=2)
                 print(f"  [OK] Updated {expected_file}")
                 updates_needed.append(skill_name)

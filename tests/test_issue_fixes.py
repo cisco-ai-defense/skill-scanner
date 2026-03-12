@@ -302,7 +302,7 @@ class TestMultipleFormats:
         _write_output(args, primary_output)
 
         assert Path(sarif_path).exists()
-        sarif_content = json.loads(Path(sarif_path).read_text())
+        sarif_content = json.loads(Path(sarif_path).read_text(encoding="utf-8"))
         assert sarif_content.get("$schema") or sarif_content.get("version")
 
     def test_cli_accepts_multiple_format_flags(self):

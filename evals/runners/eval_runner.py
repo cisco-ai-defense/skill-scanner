@@ -521,7 +521,7 @@ def main():
                     k: v for k, v in comparison_results["with_meta"].items() if k != "eval_results_with_scan"
                 },
             }
-            with open(args.output, "w") as f:
+            with open(args.output, "w", encoding="utf-8") as f:
                 json.dump(output_data, f, indent=2)
             print(f"\nResults saved to: {args.output}")
 
@@ -576,7 +576,7 @@ def main():
     if args.output:
         # Remove non-serializable data
         output_results = {k: v for k, v in results.items() if k != "eval_results_with_scan"}
-        with open(args.output, "w") as f:
+        with open(args.output, "w", encoding="utf-8") as f:
             json.dump(output_results, f, indent=2)
         print(f"\nResults saved to: {args.output}")
 
