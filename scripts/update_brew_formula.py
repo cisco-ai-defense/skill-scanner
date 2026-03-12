@@ -241,7 +241,7 @@ def render_formula(
 
 def read_local_version() -> str:
     """Read __version__ from skill_scanner/_version.py."""
-    text = VERSION_PATH.read_text()
+    text = VERSION_PATH.read_text(encoding="utf-8")
     match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', text)
     if not match:
         print(f"Could not parse version from {VERSION_PATH}", file=sys.stderr)

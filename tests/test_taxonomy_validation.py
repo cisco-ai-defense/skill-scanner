@@ -278,7 +278,7 @@ class TestLLMAnalyzerTaxonomy:
             return []
 
         results = []
-        content = filepath.read_text()
+        content = filepath.read_text(encoding="utf-8")
 
         for line_num, line in enumerate(content.splitlines(), start=1):
             # Find AITech codes
@@ -330,7 +330,7 @@ class TestLLMAnalyzerTaxonomy:
         if not schema_path.exists():
             pytest.skip("LLM response schema not found")
 
-        schema = json.loads(schema_path.read_text())
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
         invalid_codes = []
 
         # Navigate to aitech enum in schema

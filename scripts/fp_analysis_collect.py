@@ -122,7 +122,7 @@ def main():
 
     out_path = Path(__file__).parent.parent / ".local_benchmark" / "fp_analysis_collect.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
 
     print(f"Wrote {out_path}")

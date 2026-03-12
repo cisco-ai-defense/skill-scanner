@@ -416,7 +416,7 @@ class TestAITechTaxonomy:
         if not prompt_path.exists():
             pytest.skip("Prompt file not found")
 
-        prompt_content = prompt_path.read_text()
+        prompt_content = prompt_path.read_text(encoding="utf-8")
 
         # Check that key AITech codes are mentioned
         expected_codes = [

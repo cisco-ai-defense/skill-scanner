@@ -318,7 +318,7 @@ class TestPolicySectionAnalyzerIntegration:
                 path=skillmd,
                 relative_path="SKILL.md",
                 file_type="markdown",
-                content=skillmd.read_text(),
+                content=skillmd.read_text(encoding="utf-8"),
                 size_bytes=skillmd.stat().st_size,
             ),
         ]
