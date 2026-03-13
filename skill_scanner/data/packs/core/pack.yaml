@@ -514,6 +514,12 @@ rules:
       enabled: true
     description: "Autonomy abuse patterns"
 
+  YARA_jailbreak_generic:
+    source: yara
+    knobs:
+      enabled: true
+    description: "Jailbreak attempt patterns"
+
 
   # ===========================================================================
   # PYTHON RULES – Static Analyzer
