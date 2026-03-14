@@ -104,3 +104,7 @@ evals/results/
 
 # User-generated scan policy (default TUI output)
 scan_policy.yaml
+
+# Playwright browsers and UI screenshots (scripts/ui_screenshot.py)
+.playwright-browsers/
+ui_screenshots/

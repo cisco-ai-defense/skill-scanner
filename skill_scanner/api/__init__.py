@@ -17,9 +17,14 @@
 """
 REST API server for Skill Scanner.
 
-Matches MCP Scanner's API structure.
+Requires the ``web`` extras group::
+
+    pip install cisco-ai-skill-scanner[web]
 """
 
-from .api import app
+try:
+    from .api import app
+except ImportError:
+    app = None  # type: ignore[assignment]
 
 __all__ = ["app"]

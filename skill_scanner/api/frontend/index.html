@@ -4,20 +4,76 @@
   <meta charset="UTF-8" />
   <title>Skill Scanner GUI</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none';" />
+  <meta name="referrer" content="no-referrer" />
   <style>
     :root {
       --bg: #020617;
-      --surface: #020617;
-      --surface2: #020617;
+      --surface: rgba(15, 23, 42, 0.9);
+      --surface-solid: #0f172a;
       --accent: #22c55e;
+      --accent-hover: #4ade80;
       --accent-soft: rgba(34, 197, 94, 0.16);
-      --border: #1f2933;
+      --border: rgba(148, 163, 184, 0.22);
+      --border-strong: rgba(148, 163, 184, 0.35);
+      --border-dashed: rgba(148, 163, 184, 0.6);
       --text: #e5e7eb;
       --muted: #6b7280;
       --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.12);
+      --link: #38bdf8;
+      --input-bg: rgba(15, 23, 42, 0.85);
+      --card-shadow: 0 18px 45px rgba(15, 23, 42, 0.9), 0 0 0 1px rgba(15, 23, 42, 1);
+      --card-header-border: rgba(15, 23, 42, 0.9);
+      --btn-primary-text: #020617;
+      --progress-bg: rgba(15, 23, 42, 0.95);
+      --ok-border: rgba(34, 197, 94, 0.7);
+      --ok-text: #bbf7d0;
+      --ok-bg: rgba(22, 163, 74, 0.12);
+      --warn-border: rgba(234, 179, 8, 0.7);
+      --warn-text: #facc15;
+      --warn-bg: rgba(234, 179, 8, 0.12);
+      --err-border: rgba(239, 68, 68, 0.7);
+      --err-text: #fecaca;
+      --err-bg: rgba(239, 68, 68, 0.12);
+    }
+    [data-theme="light"] {
+      --bg: #f8fafc;
+      --surface: rgba(255, 255, 255, 0.92);
+      --surface-solid: #ffffff;
+      --accent: #16a34a;
+      --accent-hover: #22c55e;
+      --accent-soft: rgba(34, 197, 94, 0.1);
+      --border: rgba(148, 163, 184, 0.25);
+      --border-strong: rgba(148, 163, 184, 0.45);
+      --border-dashed: rgba(148, 163, 184, 0.5);
+      --text: #1e293b;
+      --muted: #64748b;
+      --danger: #dc2626;
+      --danger-bg: rgba(239, 68, 68, 0.06);
+      --link: #0284c7;
+      --input-bg: #f1f5f9;
+      --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      --card-header-border: #e2e8f0;
+      --btn-primary-text: #ffffff;
+      --progress-bg: #e2e8f0;
+      --ok-border: rgba(22, 163, 74, 0.6);
+      --ok-text: #166534;
+      --ok-bg: rgba(22, 163, 74, 0.08);
+      --warn-border: rgba(202, 138, 4, 0.6);
+      --warn-text: #854d0e;
+      --warn-bg: rgba(234, 179, 8, 0.08);
+      --err-border: rgba(220, 38, 38, 0.6);
+      --err-text: #991b1b;
+      --err-bg: rgba(239, 68, 68, 0.06);
     }
     *, *::before, *::after {
       box-sizing: border-box;
+    }
+    *:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }
     body {
       margin: 0;
@@ -27,10 +83,16 @@
       background:
         radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.09), transparent 55%),
         radial-gradient(circle at 100% 100%, rgba(34, 197, 94, 0.12), transparent 55%),
-        #020617;
+        var(--bg);
       color: var(--text);
       display: flex;
       flex-direction: column;
+    }
+    [data-theme="light"] body {
+      background:
+        radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.06), transparent 55%),
+        radial-gradient(circle at 100% 100%, rgba(34, 197, 94, 0.06), transparent 55%),
+        var(--bg);
     }
     .page {
       width: 100%;
@@ -59,7 +121,7 @@
       font-size: 11px;
       padding: 2px 8px;
       border-radius: 999px;
-      border: 1px solid rgba(148, 163, 184, 0.4);
+      border: 1px solid var(--border-strong);
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.08em;
@@ -80,16 +142,19 @@
     .pill {
       padding: 2px 8px;
       border-radius: 999px;
-      border: 1px solid rgba(148, 163, 184, 0.25);
+      border: 1px solid var(--border);
       backdrop-filter: blur(16px);
       background: radial-gradient(circle at 0 0, rgba(34,197,94,0.15), transparent 60%);
+    }
+    [data-theme="light"] .pill {
+      background: rgba(34, 197, 94, 0.06);
     }
     .status-dot {
       width: 7px;
       height: 7px;
       border-radius: 999px;
-      background: #22c55e;
-      box-shadow: 0 0 0 4px rgba(34,197,94,0.15);
+      background: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-soft);
       margin-right: 5px;
     }
     .controls {
@@ -99,6 +164,28 @@
       flex-wrap: wrap;
       justify-content: flex-end;
     }
+    .theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      border: 1px solid var(--border-strong);
+      background: var(--input-bg);
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color 0.12s ease, color 0.12s ease;
+      padding: 0;
+    }
+    .theme-toggle:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .icon-sun { display: inline-flex; }
+    .icon-moon { display: none; }
+    [data-theme="light"] .icon-sun { display: none; }
+    [data-theme="light"] .icon-moon { display: inline-flex; }
     .select,
     .checkbox,
     .text-input {
@@ -120,7 +207,7 @@
       display: none !important;
     }
     select {
-      background: rgba(15, 23, 42, 0.85);
+      background: var(--input-bg);
       border-radius: 999px;
       border: 1px solid var(--border);
       padding: 4px 10px;
@@ -133,7 +220,7 @@
     }
     input[type="text"],
     input[type="password"] {
-      background: rgba(15, 23, 42, 0.85);
+      background: var(--input-bg);
       border-radius: 999px;
       border: 1px solid var(--border);
       padding: 4px 10px;
@@ -158,18 +245,19 @@
     .card {
       background: radial-gradient(circle at 0 0, rgba(15,23,42,0.8), rgba(15,23,42,0.95));
       border-radius: 16px;
-      border: 1px solid rgba(148, 163, 184, 0.22);
-      box-shadow:
-        0 18px 45px rgba(15, 23, 42, 0.9),
-        0 0 0 1px rgba(15, 23, 42, 1);
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
       overflow: hidden;
       display: flex;
       flex-direction: column;
       min-height: 0;
     }
+    [data-theme="light"] .card {
+      background: var(--surface-solid);
+    }
     .card-header {
       padding: 14px 16px 10px;
-      border-bottom: 1px solid rgba(15, 23, 42, 0.9);
+      border-bottom: 1px solid var(--card-header-border);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -204,8 +292,8 @@
     }
     .ghost-button {
       border-radius: 999px;
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid var(--border-strong);
+      background: var(--input-bg);
       color: var(--muted);
       font-size: 11px;
       padding: 4px 10px;
@@ -218,7 +306,7 @@
     .ghost-button:hover {
       border-color: var(--accent);
       color: var(--text);
-      background: rgba(15, 23, 42, 0.95);
+      background: var(--surface);
     }
     .ghost-button:disabled {
       opacity: 0.5;
@@ -235,15 +323,18 @@
 
     .dropzone {
       border-radius: 14px;
-      border: 1px dashed rgba(148, 163, 184, 0.6);
+      border: 1px dashed var(--border-dashed);
       background:
         radial-gradient(circle at 0 0, rgba(34,197,94,0.06), transparent 55%),
-        rgba(15, 23, 42, 0.9);
+        var(--surface);
       padding: 24px 18px;
       text-align: center;
       cursor: pointer;
       position: relative;
       transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease, transform 0.1s ease;
+    }
+    [data-theme="light"] .dropzone {
+      background: var(--bg);
     }
     .dropzone:hover {
       border-color: var(--accent);
@@ -258,7 +349,10 @@
       transform: translateY(-1px);
       background:
         radial-gradient(circle at 0 0, rgba(34,197,94,0.12), transparent 65%),
-        rgba(15, 23, 42, 0.95);
+        var(--surface);
+    }
+    [data-theme="light"] .dropzone.dragover {
+      background: rgba(34, 197, 94, 0.04);
     }
     .drop-icon {
       width: 40px;
@@ -268,14 +362,19 @@
       background:
         radial-gradient(circle at 30% 0%, rgba(56,189,248,0.45), transparent 58%),
         radial-gradient(circle at 100% 100%, rgba(34,197,94,0.35), transparent 60%),
-        rgba(15, 23, 42, 0.9);
-      border: 1px solid rgba(148, 163, 184, 0.35);
+        var(--surface);
+      border: 1px solid var(--border-strong);
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow:
-        0 20px 40px rgba(15,23,42,0.95),
-        0 0 0 1px rgba(15,23,42,0.8);
+      box-shadow: var(--card-shadow);
+    }
+    [data-theme="light"] .drop-icon {
+      background:
+        radial-gradient(circle at 30% 0%, rgba(56,189,248,0.2), transparent 58%),
+        radial-gradient(circle at 100% 100%, rgba(34,197,94,0.15), transparent 60%),
+        var(--input-bg);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
     }
     .drop-icon span {
       font-size: 20px;
@@ -299,7 +398,7 @@
       flex-wrap: wrap;
     }
     .hint-strong {
-      color: #e5e7eb;
+      color: var(--text);
     }
     .file-label {
       display: inline-flex;
@@ -307,8 +406,8 @@
       gap: 6px;
       padding: 4px 8px;
       border-radius: 999px;
-      background: rgba(15,23,42,0.9);
-      border: 1px solid rgba(148,163,184,0.35);
+      background: var(--input-bg);
+      border: 1px solid var(--border-strong);
       font-size: 11px;
       cursor: pointer;
     }
@@ -334,8 +433,15 @@
       flex-wrap: wrap;
     }
     .status-text-strong {
-      color: #e5e7eb;
+      color: var(--text);
       font-weight: 500;
+    }
+    .elapsed {
+      font-variant-numeric: tabular-nums;
+      font-size: 11px;
+      color: var(--muted);
+      min-width: 3.5em;
+      text-align: right;
     }
     .status-badges {
       display: flex;
@@ -346,43 +452,43 @@
       padding: 1px 7px;
       border-radius: 999px;
       font-size: 11px;
-      border: 1px solid rgba(148, 163, 184, 0.4);
+      border: 1px solid var(--border-strong);
     }
     .status-badge.ok {
-      border-color: rgba(34, 197, 94, 0.7);
-      color: #bbf7d0;
-      background: rgba(22, 163, 74, 0.12);
+      border-color: var(--ok-border);
+      color: var(--ok-text);
+      background: var(--ok-bg);
     }
     .status-badge.warn {
-      border-color: rgba(234, 179, 8, 0.7);
-      color: #facc15;
-      background: rgba(234, 179, 8, 0.12);
+      border-color: var(--warn-border);
+      color: var(--warn-text);
+      background: var(--warn-bg);
     }
     .status-badge.err {
-      border-color: rgba(239, 68, 68, 0.7);
-      color: #fecaca;
-      background: rgba(239, 68, 68, 0.12);
+      border-color: var(--err-border);
+      color: var(--err-text);
+      background: var(--err-bg);
     }
     .status-badge.step-active {
-      border-color: rgba(34, 197, 94, 0.9);
-      color: #bbf7d0;
+      border-color: var(--ok-border);
+      color: var(--ok-text);
       background: radial-gradient(circle at 0 0, rgba(34,197,94,0.18), transparent 70%);
     }
     .status-badge.step-pending {
-      border-color: rgba(148, 163, 184, 0.5);
+      border-color: var(--border-dashed);
       color: var(--muted);
-      background: rgba(15, 23, 42, 0.9);
+      background: var(--input-bg);
     }
     .status-badge.step-done {
       border-color: rgba(34, 197, 94, 0.5);
-      color: #86efac;
-      background: rgba(22, 163, 74, 0.08);
+      color: var(--ok-text);
+      background: var(--ok-bg);
     }
     .progress-bar {
       position: relative;
       height: 3px;
       border-radius: 999px;
-      background: rgba(15, 23, 42, 0.95);
+      background: var(--progress-bg);
       overflow: hidden;
     }
     .progress-inner {
@@ -400,6 +506,33 @@
       0%   { transform: translateX(-40%) scaleX(0.45); opacity: 0.6; }
       50%  { transform: translateX(0%)   scaleX(0.85); opacity: 1; }
       100% { transform: translateX(55%)  scaleX(0.4); opacity: 0.6; }
+    }
+
+    .error-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: var(--err-bg);
+      border: 1px solid var(--err-border);
+      color: var(--err-text);
+      font-size: 12px;
+    }
+    .error-banner-icon {
+      flex-shrink: 0;
+      font-size: 16px;
+      line-height: 1;
+    }
+    .error-banner-message {
+      flex: 1;
+      min-width: 0;
+      word-break: break-word;
+    }
+    .error-banner-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
     }
 
     .actions-row {
@@ -422,12 +555,15 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      color: #020617;
+      color: var(--btn-primary-text);
       background: linear-gradient(135deg, #22c55e, #4ade80);
       box-shadow:
         0 12px 30px rgba(22, 163, 74, 0.35),
         0 0 0 1px rgba(22, 163, 74, 0.6);
       transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.08s ease;
+    }
+    [data-theme="light"] button.primary {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
     }
     button.primary:hover {
       transform: translateY(-0.5px);
@@ -448,13 +584,135 @@
       box-shadow: none;
     }
 
+    .history-section {
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+    }
+    .history-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      padding: 4px 0;
+    }
+    .history-toggle:hover {
+      color: var(--text);
+    }
+    .history-chevron {
+      transition: transform 0.15s ease;
+      font-size: 9px;
+    }
+    .history-toggle[aria-expanded="true"] .history-chevron {
+      transform: rotate(90deg);
+    }
+    .history-count {
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 10px;
+    }
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      border-radius: 8px;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .history-item-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+    .history-item-time {
+      flex-shrink: 0;
+      font-size: 10px;
+    }
+    .history-item-pill {
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 500;
+      border: 1px solid var(--border-strong);
+      flex-shrink: 0;
+    }
+    .history-item-view {
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--border-strong);
+      background: none;
+      color: var(--accent);
+      font-size: 10px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .history-item-view:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .summary-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 6px 0;
+    }
+    .summary-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      background: var(--input-bg);
+    }
+    .summary-pill-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    .summary-pill.verdict {
+      color: #fff;
+      border: none;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+    }
+
     .report-placeholder {
       flex: 1;
       border-radius: 12px;
-      border: 1px dashed rgba(148, 163, 184, 0.6);
+      border: 1px dashed var(--border-dashed);
       background:
         radial-gradient(circle at 0 0, rgba(34,197,94,0.08), transparent 70%),
-        rgba(15, 23, 42, 0.9);
+        var(--surface);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -463,8 +721,11 @@
       font-size: 12px;
       color: var(--muted);
     }
+    [data-theme="light"] .report-placeholder {
+      background: var(--bg);
+    }
     .report-placeholder strong {
-      color: #e5e7eb;
+      color: var(--text);
       display: block;
       margin-bottom: 4px;
       font-size: 13px;
@@ -472,7 +733,7 @@
     iframe#report-frame {
       border: none;
       border-radius: 12px;
-      background: #020617;
+      background: var(--bg);
       width: 100%;
       min-height: 320px;
       flex: 1;
@@ -490,17 +751,17 @@
       flex-shrink: 0;
     }
     a {
-      color: #38bdf8;
+      color: var(--link);
       text-decoration: none;
     }
   </style>
 </head>
 <body>
   <div class="page">
-    <header>
+    <header role="banner">
       <div class="title-block">
         <h1>
-          <span class="status-dot"></span>
+          <span class="status-dot" aria-hidden="true"></span>
           Skill Scanner
           <span class="title-badge">Local Skill Security Review</span>
         </h1>
@@ -512,9 +773,17 @@
         </div>
       </div>
       <div class="controls">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light mode">
+          <span class="icon-sun" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          </span>
+          <span class="icon-moon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </span>
+        </button>
         <label class="select">
           Policy
-          <select id="policy">
+          <select id="policy" aria-label="Scan policy">
             <option value="">Default (balanced)</option>
             <option value="strict">strict</option>
             <option value="balanced">balanced</option>
@@ -532,21 +801,21 @@
         <div id="llm-advanced" class="llm-advanced-row hidden">
           <label class="text-input">
             Model
-            <input type="text" id="llm-model" placeholder="Leave empty to use default model" />
+            <input type="text" id="llm-model" placeholder="Leave empty to use default model" aria-label="LLM model name" />
           </label>
           <label class="text-input">
             Base URL
-            <input type="text" id="llm-base-url" placeholder="Optional custom gateway URL" />
+            <input type="text" id="llm-base-url" placeholder="Optional custom gateway URL" aria-label="LLM base URL" />
           </label>
           <label class="text-input">
             API Key
-            <input type="password" id="llm-api-key" placeholder="Used only for this session" autocomplete="off" />
+            <input type="password" id="llm-api-key" placeholder="Used only for this session" autocomplete="off" aria-label="LLM API key" />
           </label>
         </div>
       </div>
     </header>
 
-    <main>
+    <main role="main">
       <section class="card">
         <div class="card-header">
           <div class="card-header-main">
@@ -555,44 +824,63 @@
           </div>
         </div>
         <div class="card-body">
-          <div id="dropzone" class="dropzone">
-            <div class="drop-icon"><span>⬇︎</span></div>
+          <div id="dropzone" class="dropzone" aria-label="Upload skill package" tabindex="0">
+            <div class="drop-icon" aria-hidden="true"><span>&#x2B07;&#xFE0E;</span></div>
             <h3>Drop a ZIP or folder here, or click to choose</h3>
             <p>Recommended: select the whole skill folder (with <code>SKILL.md</code> and all source files).</p>
             <div class="hint-row">
               <span class="hint-strong">Up to 50 MB, max 500 files.</span>
               <label class="file-label">
-                <span>Choose ZIP…</span>
+                <span>Choose ZIP&#x2026;</span>
                 <input type="file" id="file-input" accept=".zip" />
               </label>
               <label class="file-label">
-                <span>Choose folder…</span>
+                <span>Choose folder&#x2026;</span>
                 <input type="file" id="folder-input" webkitdirectory directory />
               </label>
             </div>
           </div>
 
-          <div class="status">
+          <div class="status" aria-live="polite">
             <div class="status-line">
               <span id="status-text">Waiting for ZIP file.</span>
+              <span id="elapsed" class="elapsed" aria-hidden="true"></span>
               <div class="status-badges" id="status-badges">
                 <span class="status-badge">Local-only scan</span>
               </div>
             </div>
-            <div class="progress-bar">
+            <div class="progress-bar" role="progressbar" aria-label="Scan progress">
               <div id="progress-inner" class="progress-inner"></div>
             </div>
           </div>
 
+          <div id="error-banner" class="error-banner hidden" role="alert">
+            <span class="error-banner-icon" aria-hidden="true">&#x26A0;&#xFE0E;</span>
+            <span id="error-message" class="error-banner-message"></span>
+            <div class="error-banner-actions">
+              <button id="error-retry" class="ghost-button" type="button">Retry</button>
+              <button id="error-dismiss" class="ghost-button" type="button" aria-label="Dismiss error">&#x2715;</button>
+            </div>
+          </div>
+
           <div class="actions-row">
-            <button id="scan-button" class="primary" disabled>
+            <button id="scan-button" class="primary" disabled aria-busy="false">
               <span id="scan-button-label">Select ZIP to start scan</span>
             </button>
+          </div>
+
+          <div id="history-section" class="history-section hidden">
+            <button id="history-toggle" class="history-toggle" type="button" aria-expanded="false">
+              <span class="history-chevron" aria-hidden="true">&#x25B6;</span>
+              Recent scans
+              <span id="history-count" class="history-count">0</span>
+            </button>
+            <div id="history-list" class="history-list hidden"></div>
           </div>
         </div>
       </section>
 
-      <section class="card">
+      <section class="card" id="report-card" aria-busy="false">
         <div class="card-header">
           <div class="card-header-main">
             <h2>Scan report</h2>
@@ -605,6 +893,7 @@
           </div>
         </div>
         <div class="card-body">
+          <div id="summary-row" class="summary-row hidden"></div>
           <div id="report-placeholder" class="report-placeholder">
             <div>
               <strong>No report yet.</strong>
@@ -612,51 +901,126 @@
               Includes severity distribution, correlated attack chains, detailed code snippets, and more.
             </div>
           </div>
-          <iframe id="report-frame" style="display:none;"></iframe>
+          <iframe id="report-frame" style="display:none;" sandbox="allow-scripts"></iframe>
         </div>
       </section>
     </main>
   </div>
 
-  <footer>
-    <span>Endpoint: <code>POST /scan-upload-html</code> · Scans execute locally; no extra upload to external services.</span>
+  <footer role="contentinfo">
+    <span>Endpoint: <code>POST /scan-upload-html</code> &middot; Scans execute locally; no extra upload to external services.</span>
     <span>For advanced usage, continue to use the <code>skill-scanner</code> CLI.</span>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="jszip.min.js"></script>
   <script>
     (function () {
-      const dropzone = document.getElementById('dropzone');
-      const fileInput = document.getElementById('file-input');
-      const folderInput = document.getElementById('folder-input');
-      const scanButton = document.getElementById('scan-button');
-      const scanButtonLabel = document.getElementById('scan-button-label');
-      const statusText = document.getElementById('status-text');
-      const statusBadges = document.getElementById('status-badges');
-      const progressInner = document.getElementById('progress-inner');
-      const policySelect = document.getElementById('policy');
-      const useBehavioral = document.getElementById('use-behavioral');
-      const useLlm = document.getElementById('use-llm');
-      const llmAdvanced = document.getElementById('llm-advanced');
-      const llmModel = document.getElementById('llm-model');
-      const llmBaseUrl = document.getElementById('llm-base-url');
-      const llmApiKey = document.getElementById('llm-api-key');
-      const reportFrame = document.getElementById('report-frame');
-      const reportPlaceholder = document.getElementById('report-placeholder');
-      const reportMeta = document.getElementById('report-meta');
-      const openReportButton = document.getElementById('open-report-button');
-      const downloadReportButton = document.getElementById('download-report-button');
-      const downloadMarkdownButton = document.getElementById('download-md-button');
+      'use strict';
 
-      let selectedFile = null;
-      let uploading = false;
-      let lastReportHtml = null;
+      var dropzone = document.getElementById('dropzone');
+      var fileInput = document.getElementById('file-input');
+      var folderInput = document.getElementById('folder-input');
+      var scanButton = document.getElementById('scan-button');
+      var scanButtonLabel = document.getElementById('scan-button-label');
+      var statusText = document.getElementById('status-text');
+      var statusBadges = document.getElementById('status-badges');
+      var elapsedEl = document.getElementById('elapsed');
+      var progressInner = document.getElementById('progress-inner');
+      var policySelect = document.getElementById('policy');
+      var useBehavioral = document.getElementById('use-behavioral');
+      var useLlm = document.getElementById('use-llm');
+      var llmAdvanced = document.getElementById('llm-advanced');
+      var llmModel = document.getElementById('llm-model');
+      var llmBaseUrl = document.getElementById('llm-base-url');
+      var llmApiKey = document.getElementById('llm-api-key');
+      var reportFrame = document.getElementById('report-frame');
+      var reportPlaceholder = document.getElementById('report-placeholder');
+      var reportMeta = document.getElementById('report-meta');
+      var reportCard = document.getElementById('report-card');
+      var openReportButton = document.getElementById('open-report-button');
+      var downloadReportButton = document.getElementById('download-report-button');
+      var downloadMarkdownButton = document.getElementById('download-md-button');
+      var errorBanner = document.getElementById('error-banner');
+      var errorMessage = document.getElementById('error-message');
+      var errorRetry = document.getElementById('error-retry');
+      var errorDismiss = document.getElementById('error-dismiss');
+      var summaryRow = document.getElementById('summary-row');
+      var historySection = document.getElementById('history-section');
+      var historyToggleBtn = document.getElementById('history-toggle');
+      var historyList = document.getElementById('history-list');
+      var historyCountEl = document.getElementById('history-count');
+      var themeToggle = document.getElementById('theme-toggle');
+
+      var selectedFile = null;
+      var uploading = false;
+      var lastReportHtml = null;
+      var scanHistory = [];
+      var timerStart = null;
+      var timerRaf = null;
+
+      var SEV_COLORS = {
+        CRITICAL: '#dc2626',
+        HIGH: '#ea580c',
+        MEDIUM: '#ca8a04',
+        LOW: '#2563eb',
+        INFO: '#6b7280'
+      };
+      var VERDICT_COLORS = {
+        MALICIOUS: '#dc2626',
+        SUSPICIOUS: '#ea580c',
+        SAFE: '#16a34a',
+        UNKNOWN: '#6b7280'
+      };
+
+      /* ---- Theme ---- */
+
+      function getPreferredTheme() {
+        var stored = null;
+        try { stored = localStorage.getItem('skill-scanner-theme'); } catch (_e) { /* noop */ }
+        if (stored === 'light' || stored === 'dark') return stored;
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
+        return 'dark';
+      }
+
+      function applyTheme(theme) {
+        if (theme === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+          themeToggle.setAttribute('aria-label', 'Switch to dark mode');
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+          themeToggle.setAttribute('aria-label', 'Switch to light mode');
+        }
+        try { localStorage.setItem('skill-scanner-theme', theme); } catch (_e) { /* noop */ }
+      }
+
+      themeToggle.addEventListener('click', function () {
+        var current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+        applyTheme(current === 'light' ? 'dark' : 'light');
+      });
+
+      /* ---- Utilities ---- */
 
       function setStatus(text, badges) {
-        statusText.innerHTML = text;
-        statusBadges.innerHTML = '';
-        (badges || []).forEach(b => {
-          const span = document.createElement('span');
+        statusText.textContent = '';
+
+        var parts = text.split(/(\{strong\}.*?\{\/strong\})/);
+        parts.forEach(function (part) {
+          var match = part.match(/^\{strong\}(.*)\{\/strong\}$/);
+          if (match) {
+            var strong = document.createElement('span');
+            strong.className = 'status-text-strong';
+            strong.textContent = match[1];
+            statusText.appendChild(strong);
+          } else if (part) {
+            statusText.appendChild(document.createTextNode(part));
+          }
+        });
+
+        while (statusBadges.firstChild) {
+          statusBadges.removeChild(statusBadges.firstChild);
+        }
+        (badges || []).forEach(function (b) {
+          var span = document.createElement('span');
           span.className = 'status-badge ' + (b.kind || '');
           span.textContent = b.text;
           statusBadges.appendChild(span);
@@ -676,7 +1040,7 @@
       function updateButton() {
         if (uploading) {
           scanButton.disabled = true;
-          scanButtonLabel.textContent = 'Scanning…';
+          scanButtonLabel.textContent = 'Scanning\u2026';
         } else if (selectedFile) {
           scanButton.disabled = false;
           scanButtonLabel.textContent = 'Start scan';
@@ -684,7 +1048,7 @@
           scanButton.disabled = true;
           scanButtonLabel.textContent = 'Select ZIP to start scan';
         }
-        const enableReportActions = !!lastReportHtml;
+        var enableReportActions = !!lastReportHtml;
         openReportButton.disabled = !enableReportActions;
         downloadReportButton.disabled = !enableReportActions;
         downloadMarkdownButton.disabled = !enableReportActions || !selectedFile;
@@ -698,6 +1062,213 @@
         }
       }
 
+      /* ---- Timer ---- */
+
+      function startTimer() {
+        timerStart = performance.now();
+        elapsedEl.textContent = '0.0s';
+        elapsedEl.style.display = '';
+        tickTimer();
+      }
+
+      function tickTimer() {
+        if (timerStart === null) return;
+        var elapsed = (performance.now() - timerStart) / 1000;
+        elapsedEl.textContent = elapsed.toFixed(1) + 's';
+        timerRaf = requestAnimationFrame(tickTimer);
+      }
+
+      function stopTimer() {
+        if (timerRaf !== null) {
+          cancelAnimationFrame(timerRaf);
+          timerRaf = null;
+        }
+        var finalTime = null;
+        if (timerStart !== null) {
+          finalTime = ((performance.now() - timerStart) / 1000).toFixed(1);
+          elapsedEl.textContent = finalTime + 's';
+        }
+        timerStart = null;
+        return finalTime;
+      }
+
+      /* ---- Summary Cards ---- */
+
+      function parseSummary(html) {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(html, 'text/html');
+        var summary = { findings: 0, critical: 0, high: 0, medium: 0, low: 0, info: 0, verdict: 'UNKNOWN' };
+
+        var badges = doc.querySelectorAll('.badge');
+        if (badges.length > 0) {
+          summary.verdict = badges[0].textContent.trim().toUpperCase();
+        }
+
+        var legendSpans = doc.querySelectorAll('.sev-legend span');
+        legendSpans.forEach(function (span) {
+          var text = span.textContent.trim();
+          var m = text.match(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO):\s*(\d+)$/i);
+          if (m) {
+            var key = m[1].toLowerCase();
+            summary[key] = parseInt(m[2], 10);
+          }
+        });
+
+        summary.findings = summary.critical + summary.high + summary.medium + summary.low + summary.info;
+        return summary;
+      }
+
+      function renderSummary(data) {
+        while (summaryRow.firstChild) summaryRow.removeChild(summaryRow.firstChild);
+
+        var items = [
+          { label: 'Findings', value: data.findings, color: null },
+          { label: 'Critical', value: data.critical, color: SEV_COLORS.CRITICAL },
+          { label: 'High', value: data.high, color: SEV_COLORS.HIGH },
+          { label: 'Medium', value: data.medium, color: SEV_COLORS.MEDIUM },
+          { label: 'Low', value: data.low, color: SEV_COLORS.LOW },
+          { label: 'Info', value: data.info, color: SEV_COLORS.INFO }
+        ];
+
+        items.forEach(function (item) {
+          var pill = document.createElement('span');
+          pill.className = 'summary-pill';
+          if (item.color) {
+            var dot = document.createElement('span');
+            dot.className = 'summary-pill-dot';
+            dot.style.background = item.color;
+            pill.appendChild(dot);
+          }
+          pill.appendChild(document.createTextNode(item.label + ': ' + item.value));
+          summaryRow.appendChild(pill);
+        });
+
+        var verdictPill = document.createElement('span');
+        verdictPill.className = 'summary-pill verdict';
+        verdictPill.style.background = VERDICT_COLORS[data.verdict] || VERDICT_COLORS.UNKNOWN;
+        verdictPill.textContent = data.verdict;
+        summaryRow.appendChild(verdictPill);
+
+        summaryRow.classList.remove('hidden');
+      }
+
+      function hideSummary() {
+        summaryRow.classList.add('hidden');
+        while (summaryRow.firstChild) summaryRow.removeChild(summaryRow.firstChild);
+      }
+
+      /* ---- Scan History ---- */
+
+      function addToHistory(name, html, summaryData) {
+        scanHistory.unshift({
+          name: name,
+          timestamp: new Date().toLocaleTimeString(),
+          html: html,
+          summary: summaryData
+        });
+        if (scanHistory.length > 10) scanHistory.pop();
+        renderHistory();
+      }
+
+      function renderHistory() {
+        if (scanHistory.length === 0) {
+          historySection.classList.add('hidden');
+          return;
+        }
+        historySection.classList.remove('hidden');
+        historyCountEl.textContent = String(scanHistory.length);
+
+        while (historyList.firstChild) historyList.removeChild(historyList.firstChild);
+
+        scanHistory.forEach(function (entry, idx) {
+          var row = document.createElement('div');
+          row.className = 'history-item';
+
+          var nameSpan = document.createElement('span');
+          nameSpan.className = 'history-item-name';
+          nameSpan.textContent = entry.name;
+          nameSpan.title = entry.name;
+          row.appendChild(nameSpan);
+
+          var timeSpan = document.createElement('span');
+          timeSpan.className = 'history-item-time';
+          timeSpan.textContent = entry.timestamp;
+          row.appendChild(timeSpan);
+
+          var countPill = document.createElement('span');
+          countPill.className = 'history-item-pill';
+          var verdictColor = VERDICT_COLORS[entry.summary.verdict] || VERDICT_COLORS.UNKNOWN;
+          countPill.style.borderColor = verdictColor;
+          countPill.style.color = verdictColor;
+          countPill.textContent = entry.summary.findings + ' findings';
+          row.appendChild(countPill);
+
+          var viewBtn = document.createElement('button');
+          viewBtn.className = 'history-item-view';
+          viewBtn.type = 'button';
+          viewBtn.textContent = 'View';
+          viewBtn.setAttribute('data-index', String(idx));
+          viewBtn.addEventListener('click', function () {
+            viewHistoryItem(idx);
+          });
+          row.appendChild(viewBtn);
+
+          historyList.appendChild(row);
+        });
+      }
+
+      function viewHistoryItem(index) {
+        var entry = scanHistory[index];
+        if (!entry) return;
+        lastReportHtml = entry.html;
+        reportFrame.style.display = 'block';
+        reportPlaceholder.style.display = 'none';
+        reportFrame.srcdoc = entry.html;
+        renderSummary(entry.summary);
+        reportMeta.textContent = 'Viewing scan from ' + entry.timestamp + ' \u00b7 ' + entry.name;
+        updateButton();
+      }
+
+      historyToggleBtn.addEventListener('click', function () {
+        var expanded = historyToggleBtn.getAttribute('aria-expanded') === 'true';
+        historyToggleBtn.setAttribute('aria-expanded', String(!expanded));
+        if (expanded) {
+          historyList.classList.add('hidden');
+        } else {
+          historyList.classList.remove('hidden');
+        }
+      });
+
+      /* ---- Error Banner ---- */
+
+      function showError(msg) {
+        errorMessage.textContent = msg;
+        errorBanner.classList.remove('hidden');
+      }
+
+      function hideError() {
+        errorBanner.classList.add('hidden');
+        errorMessage.textContent = '';
+      }
+
+      errorRetry.addEventListener('click', function () {
+        hideError();
+        runScan();
+      });
+
+      errorDismiss.addEventListener('click', function () {
+        hideError();
+      });
+
+      /* ---- ARIA busy helpers ---- */
+
+      function setScanBusy(busy) {
+        scanButton.setAttribute('aria-busy', String(busy));
+        reportCard.setAttribute('aria-busy', String(busy));
+      }
+
+      /* ---- File handling ---- */
+
       function handleFile(file) {
         if (!file) return;
         if (!file.name.endsWith('.zip')) {
@@ -707,69 +1278,74 @@
           return;
         }
         selectedFile = file;
+        hideError();
         setStatus(
-          '<span class="status-text-strong">Ready to scan:</span> ' + file.name,
-          [
-            { text: 'Ready', kind: 'ok' },
-          ],
+          '{strong}Ready to scan:{/strong} ' + file.name,
+          [{ text: 'Ready', kind: 'ok' }]
         );
         resetProgress();
         updateButton();
       }
 
-      // Only open the file picker when clicking on the dropzone *background*,
-      // not when clicking on inner controls like the "Choose ZIP…" label.
-      dropzone.addEventListener('click', (e) => {
+      dropzone.addEventListener('click', function (e) {
         if (uploading) return;
-        if (e.target !== dropzone) return;
+        if (e.target !== dropzone && e.target.closest('.file-label')) return;
+        if (e.target.tagName === 'INPUT') return;
         fileInput.click();
       });
 
-      fileInput.addEventListener('change', (e) => {
-        const file = e.target.files && e.target.files[0];
+      dropzone.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (!uploading) fileInput.click();
+        }
+      });
+
+      fileInput.addEventListener('change', function (e) {
+        var file = e.target.files && e.target.files[0];
         handleFile(file);
       });
 
-      folderInput.addEventListener('change', async (e) => {
-        const files = e.target.files;
+      folderInput.addEventListener('change', async function (e) {
+        var files = e.target.files;
         if (!files || files.length === 0) {
           return;
         }
         try {
           setStatus(
-            '<span class="status-text-strong">Step 0/2:</span> Preparing folder for upload…',
+            '{strong}Step 0/2:{/strong} Preparing folder for upload\u2026',
             [
               { text: 'Pack folder', kind: 'step-active' },
               { text: 'Upload / unpack', kind: 'step-pending' },
-            ],
+            ]
           );
-          const jszip = new JSZip();
-          let root = '';
-          Array.from(files).forEach((file) => {
-            const relPath = file.webkitRelativePath || file.name;
+          var jszip = new JSZip();
+          var root = '';
+          Array.from(files).forEach(function (file) {
+            var relPath = file.webkitRelativePath || file.name;
             if (!root && file.webkitRelativePath) {
-              const parts = file.webkitRelativePath.split('/');
-              if (parts.length > 1) {
-                root = parts[0];
+              var fileParts = file.webkitRelativePath.split('/');
+              if (fileParts.length > 1) {
+                root = fileParts[0];
               }
             }
             jszip.file(relPath, file);
           });
-          const blob = await jszip.generateAsync({ type: 'blob' });
-          const zipName = (root || 'skill') + '.zip';
-          const zipFile = new File([blob], zipName, { type: 'application/zip' });
+          var blob = await jszip.generateAsync({ type: 'blob' });
+          var zipName = (root || 'skill') + '.zip';
+          var zipFile = new File([blob], zipName, { type: 'application/zip' });
           fileInput.value = '';
           handleFile(zipFile);
         } catch (err) {
           console.error(err);
-          setStatus('Failed to prepare folder ZIP: ' + (err.message || err), [
+          setStatus('Failed to prepare folder ZIP: ' + (err.message || String(err)), [
             { text: 'Failed', kind: 'err' },
           ]);
         }
       });
 
-      ['dragenter', 'dragover'].forEach(eventName => {
-        dropzone.addEventListener(eventName, (e) => {
+      ['dragenter', 'dragover'].forEach(function (eventName) {
+        dropzone.addEventListener(eventName, function (e) {
           e.preventDefault();
           e.stopPropagation();
           if (uploading) return;
@@ -777,212 +1353,224 @@
         });
       });
 
-      ['dragleave', 'drop'].forEach(eventName => {
-        dropzone.addEventListener(eventName, (e) => {
+      ['dragleave', 'drop'].forEach(function (eventName) {
+        dropzone.addEventListener(eventName, function (e) {
           e.preventDefault();
           e.stopPropagation();
           dropzone.classList.remove('dragover');
         });
       });
 
-      dropzone.addEventListener('drop', (e) => {
+      dropzone.addEventListener('drop', function (e) {
         if (uploading) return;
-        const dt = e.dataTransfer;
-        const file = dt && dt.files && dt.files[0];
+        var dt = e.dataTransfer;
+        var file = dt && dt.files && dt.files[0];
         handleFile(file);
       });
+
+      /* ---- Form helpers ---- */
+
+      function buildFormData() {
+        var form = new FormData();
+        form.append('file', selectedFile);
+        var policy = policySelect.value.trim();
+        if (policy) {
+          form.append('policy', policy);
+        }
+        form.append('use_behavioral', useBehavioral.checked ? 'true' : 'false');
+        form.append('use_llm', useLlm.checked ? 'true' : 'false');
+        var model = llmModel.value.trim();
+        var baseUrl = llmBaseUrl.value.trim();
+        if (model) {
+          form.append('llm_model', model);
+        }
+        if (baseUrl) {
+          form.append('llm_base_url', baseUrl);
+        }
+        return form;
+      }
+
+      function buildHeaders() {
+        var headers = {};
+        var apiKey = llmApiKey.value.trim();
+        if (apiKey) {
+          headers['X-LLM-Key'] = apiKey;
+        }
+        return headers;
+      }
+
+      /* ---- Scan ---- */
 
       async function runScan() {
         if (!selectedFile || uploading) return;
         uploading = true;
+        hideError();
+        hideSummary();
         updateButton();
+        setScanBusy(true);
         resetProgress();
         startProgress();
+        startTimer();
         setStatus(
-          '<span class="status-text-strong">Step 1/2:</span> Uploading and unpacking…',
+          '{strong}Step 1/2:{/strong} Uploading and unpacking\u2026',
           [
             { text: 'Upload / unpack', kind: 'step-active' },
             { text: 'Run analyzers', kind: 'step-pending' },
-          ],
+          ]
         );
 
         try {
-          const form = new FormData();
-          form.append('file', selectedFile);
-          const policy = policySelect.value.trim();
-          if (policy) {
-            form.append('policy', policy);
-          }
-          form.append('use_behavioral', useBehavioral.checked ? 'true' : 'false');
-          form.append('use_llm', useLlm.checked ? 'true' : 'false');
-          const model = llmModel.value.trim();
-          const baseUrl = llmBaseUrl.value.trim();
-          const apiKey = llmApiKey.value.trim();
-          if (model) {
-            form.append('llm_model', model);
-          }
-          if (baseUrl) {
-            form.append('llm_base_url', baseUrl);
-          }
-          if (apiKey) {
-            form.append('llm_api_key', apiKey);
-          }
+          var form = buildFormData();
+          var headers = buildHeaders();
 
-          const res = await fetch('/scan-upload-html', {
+          var res = await fetch('/scan-upload-html', {
             method: 'POST',
             body: form,
+            headers: headers,
           });
 
           if (!res.ok) {
-            let msg = 'Scan failed (HTTP ' + res.status + ').';
+            var msg = 'Scan failed (HTTP ' + res.status + ').';
             try {
-              const data = await res.json();
+              var data = await res.json();
               if (data && data.detail) {
                 msg = Array.isArray(data.detail)
-                  ? data.detail.map(d => d.msg || d).join('; ')
+                  ? data.detail.map(function (d) { return d.msg || d; }).join('; ')
                   : data.detail;
               }
-            } catch (_) {
-              // ignore
+            } catch (_ignore) {
+              // response was not JSON
             }
             throw new Error(msg);
           }
 
           setStatus(
-            '<span class="status-text-strong">Step 2/2:</span> Running analyzers and building report…',
+            '{strong}Step 2/2:{/strong} Running analyzers and building report\u2026',
             [
               { text: 'Upload / unpack', kind: 'step-done' },
               { text: 'Run analyzers', kind: 'step-active' },
-            ],
+            ]
           );
 
-          const html = await res.text();
+          var html = await res.text();
+          var finalTime = stopTimer();
           lastReportHtml = html;
           reportFrame.style.display = 'block';
           reportPlaceholder.style.display = 'none';
           reportFrame.srcdoc = html;
 
-          const ts = new Date().toLocaleTimeString();
-          reportMeta.textContent = 'Last scan finished at ' + ts + ' · from ZIP: ' + selectedFile.name;
+          var summaryData = parseSummary(html);
+          renderSummary(summaryData);
+          addToHistory(selectedFile.name, html, summaryData);
 
+          var ts = new Date().toLocaleTimeString();
+          reportMeta.textContent = 'Last scan finished at ' + ts + ' \u00b7 from ZIP: ' + selectedFile.name;
+
+          var completedText = '{strong}All steps completed';
+          if (finalTime) completedText += ' in ' + finalTime + 's';
+          completedText += '.{/strong}';
           setStatus(
-            '<span class="status-text-strong">All steps completed.</span>',
+            completedText,
             [
               { text: 'Upload / unpack', kind: 'step-done' },
               { text: 'Run analyzers', kind: 'step-done' },
-            ],
+            ]
           );
         } catch (err) {
           console.error(err);
-          setStatus(String(err.message || err), [
-            { text: 'Failed', kind: 'err' },
-          ]);
+          stopTimer();
+          var errMsg = err.message || String(err);
+          setStatus(errMsg, [{ text: 'Failed', kind: 'err' }]);
+          showError(errMsg);
         } finally {
           uploading = false;
           resetProgress();
+          setScanBusy(false);
           updateButton();
         }
       }
 
-      scanButton.addEventListener('click', (e) => {
+      scanButton.addEventListener('click', function (e) {
         e.preventDefault();
         runScan();
       });
 
+      /* ---- Report actions ---- */
 
-      openReportButton.addEventListener('click', () => {
+      openReportButton.addEventListener('click', function () {
         if (!lastReportHtml) return;
-        const blob = new Blob([lastReportHtml], { type: 'text/html;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
+        var blob = new Blob([lastReportHtml], { type: 'text/html;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
         window.open(url, '_blank', 'noopener,noreferrer');
       });
 
-      downloadReportButton.addEventListener('click', () => {
+      downloadReportButton.addEventListener('click', function () {
         if (!lastReportHtml) return;
-        const blob = new Blob([lastReportHtml], { type: 'text/html;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        var blob = new Blob([lastReportHtml], { type: 'text/html;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
         a.href = url;
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        a.download = `skill-scan-report-${ts}.html`;
+        var ts = new Date().toISOString().replace(/[:.]/g, '-');
+        a.download = 'skill-scan-report-' + ts + '.html';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       });
 
-      downloadMarkdownButton.addEventListener('click', async () => {
+      downloadMarkdownButton.addEventListener('click', async function () {
         if (!lastReportHtml || !selectedFile || uploading) return;
         try {
-          const form = new FormData();
-          form.append('file', selectedFile);
-          const policy = policySelect.value.trim();
-          if (policy) {
-            form.append('policy', policy);
-          }
-          form.append('use_behavioral', useBehavioral.checked ? 'true' : 'false');
-          form.append('use_llm', useLlm.checked ? 'true' : 'false');
-          const model = llmModel.value.trim();
-          const baseUrl = llmBaseUrl.value.trim();
-          const apiKey = llmApiKey.value.trim();
-          if (model) {
-            form.append('llm_model', model);
-          }
-          if (baseUrl) {
-            form.append('llm_base_url', baseUrl);
-          }
-          if (apiKey) {
-            form.append('llm_api_key', apiKey);
-          }
+          var form = buildFormData();
+          var headers = buildHeaders();
 
-          const res = await fetch('/scan-upload-markdown', {
+          var res = await fetch('/scan-upload-markdown', {
             method: 'POST',
             body: form,
+            headers: headers,
           });
 
           if (!res.ok) {
-            let msg = 'Markdown export failed (HTTP ' + res.status + ').';
+            var msg = 'Markdown export failed (HTTP ' + res.status + ').';
             try {
-              const data = await res.json();
+              var data = await res.json();
               if (data && data.detail) {
                 msg = Array.isArray(data.detail)
-                  ? data.detail.map(d => d.msg || d).join('; ')
+                  ? data.detail.map(function (d) { return d.msg || d; }).join('; ')
                   : data.detail;
               }
-            } catch (_) {
-              // ignore
+            } catch (_ignore) {
+              // response was not JSON
             }
             throw new Error(msg);
           }
 
-          const md = await res.text();
-          const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          const ts = new Date().toISOString().replace(/[:.]/g, '-');
-          const baseName = selectedFile.name.replace(/\.zip$/i, '') || 'skill-scan-report';
-          a.href = url;
-          a.download = `${baseName}-${ts}.md`;
+          var md = await res.text();
+          var mdBlob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+          var mdUrl = URL.createObjectURL(mdBlob);
+          var a = document.createElement('a');
+          var ts = new Date().toISOString().replace(/[:.]/g, '-');
+          var baseName = selectedFile.name.replace(/\.zip$/i, '') || 'skill-scan-report';
+          a.href = mdUrl;
+          a.download = baseName + '-' + ts + '.md';
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
-          URL.revokeObjectURL(url);
+          URL.revokeObjectURL(mdUrl);
         } catch (err) {
           console.error(err);
-          setStatus(String(err.message || err), [
-            { text: 'Failed', kind: 'err' },
-          ]);
+          showError('Markdown download failed: ' + (err.message || String(err)));
         }
       });
 
-      useLlm.addEventListener('change', () => {
+      useLlm.addEventListener('change', function () {
         updateLlmVisibility();
       });
 
-      // Initialize LLM controls visibility on load
+      /* ---- Init ---- */
+      applyTheme(getPreferredTheme());
       updateLlmVisibility();
     })();
   </script>
 </body>
 </html>
-
