@@ -17,9 +17,15 @@
 """API module for Skill Scanner.
 
 This module provides a FastAPI application for scanning agent skills packages.
+
+It also mounts a lightweight web GUI under ``/ui`` for drag-and-drop scanning
+and interactive report viewing, built on top of the same HTTP API.
 """
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from .. import __version__ as PACKAGE_VERSION
 from .router import router as api_router
@@ -33,3 +39,9 @@ app = FastAPI(
 )
 
 app.include_router(api_router)
+
+# Mount the bundled web UI (if present) at /ui.
+_frontend_dir = Path(__file__).with_suffix("").parent / "frontend"
+if _frontend_dir.exists():
+    app.mount("/ui", StaticFiles(directory=str(_frontend_dir), html=True), name="ui")
+

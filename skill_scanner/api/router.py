@@ -36,6 +36,7 @@ from pathlib import Path
 
 try:
     from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile
+    from fastapi.responses import HTMLResponse, PlainTextResponse
     from pydantic import BaseModel, Field
 
     MULTIPART_AVAILABLE = True
@@ -44,6 +45,8 @@ except ImportError:
 
 from .. import __version__ as PACKAGE_VERSION
 from ..core.analyzer_factory import build_analyzers
+from ..core.reporters.html_reporter import HTMLReporter
+from ..core.reporters.markdown_reporter import MarkdownReporter
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
 
@@ -193,6 +196,9 @@ class ScanRequest(BaseModel):
     custom_rules: str | None = Field(None, description="Path to custom YARA rules directory")
     use_llm: bool = Field(False, description="Enable LLM analyzer")
     llm_provider: str | None = Field("anthropic", description="LLM provider (anthropic or openai)")
+    llm_model: str | None = Field(None, description="Override LLM model name")
+    llm_api_key: str | None = Field(None, description="Override LLM API key")
+    llm_base_url: str | None = Field(None, description="Override LLM base URL")
     use_behavioral: bool = Field(False, description="Enable behavioral analyzer")
     use_virustotal: bool = Field(False, description="Enable VirusTotal binary file scanning")
     vt_upload_files: bool = Field(False, description="Upload unknown files to VirusTotal")
@@ -276,6 +282,9 @@ def _build_analyzers(
     use_behavioral: bool = False,
     use_llm: bool = False,
     llm_provider: str | None = "anthropic",
+    llm_model: str | None = None,
+    llm_api_key: str | None = None,
+    llm_base_url: str | None = None,
     use_virustotal: bool = False,
     vt_api_key: str | None = None,
     vt_upload_files: bool = False,
@@ -291,6 +300,9 @@ def _build_analyzers(
         custom_yara_rules_path=custom_rules,
         use_behavioral=use_behavioral,
         use_llm=use_llm,
+        llm_model=llm_model,
+        llm_api_key=llm_api_key,
+        llm_base_url=llm_base_url,
         llm_provider=llm_provider,
         use_virustotal=use_virustotal,
         vt_api_key=vt_api_key,
@@ -404,6 +416,9 @@ async def scan_skill(
             use_behavioral=request.use_behavioral,
             use_llm=request.use_llm,
             llm_provider=request.llm_provider,
+            llm_model=request.llm_model,
+            llm_api_key=request.llm_api_key,
+            llm_base_url=request.llm_base_url,
             use_virustotal=request.use_virustotal,
             vt_api_key=vt_api_key,
             vt_upload_files=request.vt_upload_files,
@@ -463,6 +478,111 @@ async def scan_skill(
             timestamp=result.timestamp.isoformat(),
             findings=[f.to_dict() for f in result.findings],
         )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Scan failed")
+        raise HTTPException(status_code=500, detail="Internal scan error")
+
+
+@router.post("/scan-html", response_class=HTMLResponse)
+async def scan_skill_html(
+    request: ScanRequest,
+    vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
+    aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
+):
+    """Scan a single skill directory and return a full HTML report.
+
+    This mirrors the behaviour of ``/scan`` but renders results using the
+    built-in :class:`HTMLReporter` so that a GUI can embed the report.
+    """
+    import asyncio
+    import concurrent.futures
+
+    skill_dir = _validate_path(request.skill_directory, label="skill_directory")
+
+    if not skill_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Skill directory not found: {skill_dir}")
+
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=400, detail="skill_directory must be a directory")
+
+    if not (skill_dir / "SKILL.md").exists():
+        raise HTTPException(status_code=400, detail="SKILL.md not found in directory")
+
+    custom_rules_path: str | None = None
+    if request.custom_rules:
+        validated_rules = _validate_path(request.custom_rules, label="custom_rules")
+        if not validated_rules.is_dir():
+            raise HTTPException(status_code=400, detail="custom_rules must be a directory")
+        custom_rules_path = str(validated_rules)
+
+    try:
+        policy = _resolve_policy(request.policy)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    def run_scan():
+        analyzers = _build_analyzers(
+            policy,
+            custom_rules=custom_rules_path,
+            use_behavioral=request.use_behavioral,
+            use_llm=request.use_llm,
+            llm_provider=request.llm_provider,
+            llm_model=request.llm_model,
+            llm_api_key=request.llm_api_key,
+            llm_base_url=request.llm_base_url,
+            use_virustotal=request.use_virustotal,
+            vt_api_key=vt_api_key,
+            vt_upload_files=request.vt_upload_files,
+            use_aidefense=request.use_aidefense,
+            aidefense_api_key=aidefense_api_key,
+            aidefense_api_url=request.aidefense_api_url,
+            use_trigger=request.use_trigger,
+            llm_consensus_runs=request.llm_consensus_runs,
+        )
+        scanner = SkillScanner(analyzers=analyzers, policy=policy)
+        return scanner.scan_skill(skill_dir)
+
+    try:
+        loop = asyncio.get_running_loop()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            result = await loop.run_in_executor(executor, run_scan)
+
+        # Meta-analysis
+        if (
+            request.enable_meta
+            and META_AVAILABLE
+            and MetaAnalyzer is not None
+            and apply_meta_analysis_to_results is not None
+            and len(result.findings) > 0
+        ):
+            try:
+                from ..core.loader import SkillLoader
+
+                meta_analyzer = MetaAnalyzer(policy=policy)
+                loader = SkillLoader()
+                skill = loader.load_skill(skill_dir)
+
+                meta_result = await meta_analyzer.analyze_with_findings(
+                    skill=skill,
+                    findings=result.findings,
+                    analyzers_used=result.analyzers_used,
+                )
+
+                filtered_findings = apply_meta_analysis_to_results(
+                    original_findings=result.findings,
+                    meta_result=meta_result,
+                    skill=skill,
+                )
+                result.findings = filtered_findings
+                result.analyzers_used.append("meta_analyzer")
+            except Exception as meta_error:
+                logger.warning("Meta-analysis failed: %s", meta_error)
+
+        html_report = HTMLReporter().generate_report(result)
+        return HTMLResponse(content=html_report, media_type="text/html; charset=utf-8")
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -584,6 +704,377 @@ async def scan_uploaded_skill(
         )
 
         return await scan_skill(request, vt_api_key=vt_api_key, aidefense_api_key=aidefense_api_key)
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@router.post("/scan-upload-html", response_class=HTMLResponse)
+async def scan_uploaded_skill_html(
+    file: UploadFile = File(..., description="ZIP file containing skill package"),
+    policy: str | None = Form(None, description="Scan policy: preset name or path to YAML"),
+    custom_rules: str | None = Form(None, description="Path to custom YARA rules directory"),
+    use_llm: bool = Form(False, description="Enable LLM analyzer"),
+    llm_provider: str = Form("anthropic", description="LLM provider"),
+    use_behavioral: bool = Form(False, description="Enable behavioral analyzer"),
+    use_virustotal: bool = Form(False, description="Enable VirusTotal scanner"),
+    vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
+    vt_upload_files: bool = Form(False, description="Upload unknown files to VirusTotal"),
+    use_aidefense: bool = Form(False, description="Enable AI Defense analyzer"),
+    aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
+    aidefense_api_url: str | None = Form(None, description="AI Defense API URL"),
+    use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
+    enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
+    llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
+    llm_model: str | None = Form(None, description="Override LLM model name"),
+    llm_base_url: str | None = Form(None, description="Override LLM base URL"),
+    llm_api_key: str | None = Form(None, description="Override LLM API key"),
+):
+    """Scan an uploaded ZIP and return a full interactive HTML report.
+
+    This mirrors the behaviour of ``/scan-upload`` but renders results using
+    the built-in :class:`HTMLReporter` so that a GUI can embed the report
+    without re-implementing rendering logic.
+    """
+    if not file.filename or not file.filename.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="File must be a ZIP archive")
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="skill_scanner_"))
+
+    try:
+        # Stream upload with size limit to avoid memory exhaustion
+        zip_path = temp_dir / file.filename
+        total_read = 0
+        chunk_size = 1024 * 1024  # 1 MB chunks
+        with open(zip_path, "wb") as f:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                total_read += len(chunk)
+                if total_read > MAX_UPLOAD_SIZE_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Upload exceeds maximum size of {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB",
+                    )
+                f.write(chunk)
+
+        import stat
+        import zipfile
+
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                # Enforce entry count and uncompressed size limits
+                entries = [info for info in zip_ref.infolist() if not info.is_dir()]
+                if len(entries) > MAX_ZIP_ENTRIES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"ZIP contains {len(entries)} files, exceeding limit of {MAX_ZIP_ENTRIES}",
+                    )
+                total_uncompressed = sum(info.file_size for info in entries)
+                if total_uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"ZIP uncompressed size ({total_uncompressed // (1024 * 1024)} MB) "
+                            f"exceeds limit of {MAX_ZIP_UNCOMPRESSED_BYTES // (1024 * 1024)} MB"
+                        ),
+                    )
+                # Check for path traversal and symlinks using resolved extraction targets.
+                extract_root = (temp_dir / "extracted").resolve()
+                for info in zip_ref.infolist():
+                    # Reject symlink entries — they can escape the extraction directory
+                    unix_mode = (info.external_attr >> 16) & 0xFFFF
+                    if unix_mode != 0 and stat.S_ISLNK(unix_mode):
+                        raise HTTPException(status_code=400, detail="ZIP contains symbolic link entries")
+                    dest_path = (extract_root / info.filename).resolve()
+                    if not dest_path.is_relative_to(extract_root):
+                        raise HTTPException(status_code=400, detail="ZIP contains path traversal entries")
+
+                # Extract member-by-member, verifying no symlink appears on disk
+                extract_root.mkdir(parents=True, exist_ok=True)
+                for info in zip_ref.infolist():
+                    zip_ref.extract(info, extract_root)
+                    dest_path = (extract_root / info.filename).resolve()
+                    if dest_path.is_symlink():
+                        dest_path.unlink()
+                        raise HTTPException(
+                            status_code=400,
+                            detail="ZIP extraction produced a symbolic link — rejected",
+                        )
+        except zipfile.BadZipFile as e:
+            raise HTTPException(status_code=400, detail="Invalid ZIP archive") from e
+
+        extracted_dir = temp_dir / "extracted"
+        skill_dirs = list(extracted_dir.rglob("SKILL.md"))
+
+        if not skill_dirs:
+            raise HTTPException(status_code=400, detail="No SKILL.md found in uploaded archive")
+
+        skill_dir = skill_dirs[0].parent
+
+        try:
+            policy_obj = _resolve_policy(policy)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        custom_rules_path: str | None = None
+        if custom_rules:
+            validated_rules = _validate_path(custom_rules, label="custom_rules")
+            if not validated_rules.is_dir():
+                raise HTTPException(status_code=400, detail="custom_rules must be a directory")
+            custom_rules_path = str(validated_rules)
+
+        analyzers = _build_analyzers(
+            policy_obj,
+            custom_rules=custom_rules_path,
+            use_behavioral=use_behavioral,
+            use_llm=use_llm,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_api_key=llm_api_key,
+            llm_base_url=llm_base_url,
+            use_virustotal=use_virustotal,
+            vt_api_key=vt_api_key,
+            vt_upload_files=vt_upload_files,
+            use_aidefense=use_aidefense,
+            aidefense_api_key=aidefense_api_key,
+            aidefense_api_url=aidefense_api_url,
+            use_trigger=use_trigger,
+            llm_consensus_runs=llm_consensus_runs,
+        )
+
+        scanner = SkillScanner(analyzers=analyzers, policy=policy_obj)
+        result = scanner.scan_skill(skill_dir)
+
+        # Optional meta-analysis, mirroring /scan behaviour.
+        if (
+            enable_meta
+            and META_AVAILABLE
+            and MetaAnalyzer is not None
+            and apply_meta_analysis_to_results is not None
+            and len(result.findings) > 0
+        ):
+            try:
+                from ..core.loader import SkillLoader
+
+                meta_analyzer = MetaAnalyzer(policy=policy_obj)
+                loader = SkillLoader()
+                skill = loader.load_skill(skill_dir)
+
+                import asyncio
+                import concurrent.futures
+
+                async def _run_meta():
+                    loop = asyncio.get_running_loop()
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        return await loop.run_in_executor(
+                            executor,
+                            lambda: asyncio.run(
+                                meta_analyzer.analyze_with_findings(
+                                    skill=skill,
+                                    findings=result.findings,
+                                    analyzers_used=result.analyzers_used,
+                                )
+                            ),
+                        )
+
+                meta_result = await _run_meta()
+                filtered_findings = apply_meta_analysis_to_results(
+                    original_findings=result.findings,
+                    meta_result=meta_result,
+                    skill=skill,
+                )
+                result.findings = filtered_findings
+                result.analyzers_used.append("meta_analyzer")
+            except Exception as meta_error:
+                logger.warning("Meta-analysis failed: %s", meta_error)
+
+        html_report = HTMLReporter().generate_report(result)
+        return HTMLResponse(content=html_report, media_type="text/html; charset=utf-8")
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@router.post("/scan-upload-markdown", response_class=PlainTextResponse)
+async def scan_uploaded_skill_markdown(
+    file: UploadFile = File(..., description="ZIP file containing skill package"),
+    policy: str | None = Form(None, description="Scan policy: preset name or path to YAML"),
+    custom_rules: str | None = Form(None, description="Path to custom YARA rules directory"),
+    use_llm: bool = Form(False, description="Enable LLM analyzer"),
+    llm_provider: str = Form("anthropic", description="LLM provider"),
+    use_behavioral: bool = Form(False, description="Enable behavioral analyzer"),
+    use_virustotal: bool = Form(False, description="Enable VirusTotal scanner"),
+    vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
+    vt_upload_files: bool = Form(False, description="Upload unknown files to VirusTotal"),
+    use_aidefense: bool = Form(False, description="Enable AI Defense analyzer"),
+    aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
+    aidefense_api_url: str | None = Form(None, description="AI Defense API URL"),
+    use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
+    enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
+    llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
+    llm_model: str | None = Form(None, description="Override LLM model name"),
+    llm_base_url: str | None = Form(None, description="Override LLM base URL"),
+    llm_api_key: str | None = Form(None, description="Override LLM API key"),
+):
+    """Scan an uploaded skill package (ZIP file) and return a Markdown report."""
+    if not file.filename or not file.filename.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="File must be a ZIP archive")
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="skill_scanner_"))
+
+    try:
+        # Stream upload with size limit to avoid memory exhaustion
+        zip_path = temp_dir / file.filename
+        total_read = 0
+        chunk_size = 1024 * 1024  # 1 MB chunks
+        with open(zip_path, "wb") as f:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                total_read += len(chunk)
+                if total_read > MAX_UPLOAD_SIZE_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Upload exceeds maximum size of {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB",
+                    )
+                f.write(chunk)
+
+        import stat
+        import zipfile
+
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                # Enforce entry count and uncompressed size limits
+                entries = [info for info in zip_ref.infolist() if not info.is_dir()]
+                if len(entries) > MAX_ZIP_ENTRIES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"ZIP contains {len(entries)} files, exceeding limit of {MAX_ZIP_ENTRIES}",
+                    )
+                total_uncompressed = sum(info.file_size for info in entries)
+                if total_uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"ZIP uncompressed size ({total_uncompressed // (1024 * 1024)} MB) "
+                            f"exceeds limit of {MAX_ZIP_UNCOMPRESSED_BYTES // (1024 * 1024)} MB"
+                        ),
+                    )
+                # Check for path traversal and symlinks using resolved extraction targets.
+                extract_root = (temp_dir / "extracted").resolve()
+                for info in zip_ref.infolist():
+                    # Reject symlink entries — they can escape the extraction directory
+                    unix_mode = (info.external_attr >> 16) & 0xFFFF
+                    if unix_mode != 0 and stat.S_ISLNK(unix_mode):
+                        raise HTTPException(status_code=400, detail="ZIP contains symbolic link entries")
+                    dest_path = (extract_root / info.filename).resolve()
+                    if not dest_path.is_relative_to(extract_root):
+                        raise HTTPException(status_code=400, detail="ZIP contains path traversal entries")
+
+                # Extract member-by-member, verifying no symlink appears on disk
+                extract_root.mkdir(parents=True, exist_ok=True)
+                for info in zip_ref.infolist():
+                    zip_ref.extract(info, extract_root)
+                    dest_path = (extract_root / info.filename).resolve()
+                    if dest_path.is_symlink():
+                        dest_path.unlink()
+                        raise HTTPException(
+                            status_code=400,
+                            detail="ZIP extraction produced a symbolic link — rejected",
+                        )
+        except zipfile.BadZipFile as e:
+            raise HTTPException(status_code=400, detail="Invalid ZIP archive") from e
+
+        extracted_dir = temp_dir / "extracted"
+        skill_dirs = list(extracted_dir.rglob("SKILL.md"))
+
+        if not skill_dirs:
+            raise HTTPException(status_code=400, detail="No SKILL.md found in uploaded archive")
+
+        skill_dir = skill_dirs[0].parent
+
+        try:
+            policy_obj = _resolve_policy(policy)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        custom_rules_path: str | None = None
+        if custom_rules:
+            validated_rules = _validate_path(custom_rules, label="custom_rules")
+            if not validated_rules.is_dir():
+                raise HTTPException(status_code=400, detail="custom_rules must be a directory")
+            custom_rules_path = str(validated_rules)
+
+        analyzers = _build_analyzers(
+            policy_obj,
+            custom_rules=custom_rules_path,
+            use_behavioral=use_behavioral,
+            use_llm=use_llm,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_api_key=llm_api_key,
+            llm_base_url=llm_base_url,
+            use_virustotal=use_virustotal,
+            vt_api_key=vt_api_key,
+            vt_upload_files=vt_upload_files,
+            use_aidefense=use_aidefense,
+            aidefense_api_key=aidefense_api_key,
+            aidefense_api_url=aidefense_api_url,
+            use_trigger=use_trigger,
+            llm_consensus_runs=llm_consensus_runs,
+        )
+
+        scanner = SkillScanner(analyzers=analyzers, policy=policy_obj)
+        result = scanner.scan_skill(skill_dir)
+
+        # Optional meta-analysis, mirroring /scan behaviour.
+        if (
+            enable_meta
+            and META_AVAILABLE
+            and MetaAnalyzer is not None
+            and apply_meta_analysis_to_results is not None
+            and len(result.findings) > 0
+        ):
+            try:
+                from ..core.loader import SkillLoader
+
+                meta_analyzer = MetaAnalyzer(policy=policy_obj)
+                loader = SkillLoader()
+                skill = loader.load_skill(skill_dir)
+
+                import asyncio
+                import concurrent.futures
+
+                async def _run_meta():
+                    loop = asyncio.get_running_loop()
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        return await loop.run_in_executor(
+                            executor,
+                            lambda: asyncio.run(
+                                meta_analyzer.analyze_with_findings(
+                                    skill=skill,
+                                    findings=result.findings,
+                                    analyzers_used=result.analyzers_used,
+                                )
+                            ),
+                        )
+
+                meta_result = await _run_meta()
+                filtered_findings = apply_meta_analysis_to_results(
+                    original_findings=result.findings,
+                    meta_result=meta_result,
+                    skill=skill,
+                )
+                result.findings = filtered_findings
+                result.analyzers_used.append("meta_analyzer")
+            except Exception as meta_error:
+                logger.warning("Meta-analysis failed: %s", meta_error)
+
+        markdown_report = MarkdownReporter().generate_report(result)
+        return PlainTextResponse(content=markdown_report, media_type="text/markdown; charset=utf-8")
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)

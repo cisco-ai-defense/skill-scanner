@@ -177,11 +177,11 @@ a {{ color: var(--accent); text-decoration: none; }}
 .card-count {{ font-size: .8rem; color: var(--muted); }}
 
 /* Tables */
-table {{ width: 100%; border-collapse: collapse; font-size: .85rem; }}
-th, td {{ padding: .5rem .75rem; text-align: left; border-bottom: 1px solid var(--border); }}
+table {{ width: 100%; border-collapse: collapse; font-size: .85rem; table-layout: fixed; }}
+th, td {{ padding: .5rem .75rem; text-align: left; border-bottom: 1px solid var(--border); word-break: break-word; overflow-wrap: anywhere; }}
 th {{ background: var(--surface2); color: var(--muted); font-weight: 600; position: sticky; top: 0; cursor: pointer; white-space: nowrap; }}
 th:hover {{ color: var(--text); }}
-td {{ color: var(--text); }}
+td {{ color: var(--text); white-space: normal; }}
 tr:hover td {{ background: rgba(56, 189, 248, .04); }}
 .sev-pill {{ padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: 600; color: #fff; }}
 

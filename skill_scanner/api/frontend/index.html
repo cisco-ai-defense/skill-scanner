@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Skill Scanner GUI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg: #020617;
+      --surface: #020617;
+      --surface2: #020617;
+      --accent: #22c55e;
+      --accent-soft: rgba(34, 197, 94, 0.16);
+      --border: #1f2933;
+      --text: #e5e7eb;
+      --muted: #6b7280;
+      --danger: #ef4444;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.09), transparent 55%),
+        radial-gradient(circle at 100% 100%, rgba(34, 197, 94, 0.12), transparent 55%),
+        #020617;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+    }
+    .page {
+      width: 100%;
+      padding: 20px 28px 0;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .title-block h1 {
+      font-size: 22px;
+      margin: 0 0 6px;
+      letter-spacing: 0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .title-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .title-block p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      backdrop-filter: blur(16px);
+      background: radial-gradient(circle at 0 0, rgba(34,197,94,0.15), transparent 60%);
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #22c55e;
+      box-shadow: 0 0 0 4px rgba(34,197,94,0.15);
+      margin-right: 5px;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .select,
+    .checkbox,
+    .text-input {
+      font-size: 12px;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .llm-advanced-row {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      width: 100%;
+      margin-top: 6px;
+    }
+    .hidden {
+      display: none !important;
+    }
+    select {
+      background: rgba(15, 23, 42, 0.85);
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+    }
+    input[type="checkbox"] {
+      accent-color: var(--accent);
+    }
+    input[type="text"],
+    input[type="password"] {
+      background: rgba(15, 23, 42, 0.85);
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+      min-width: 130px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 2.4fr);
+      gap: 20px;
+      align-items: stretch;
+      flex: 1;
+      min-height: 0;
+    }
+    @media (max-width: 900px) {
+      main {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+    .card {
+      background: radial-gradient(circle at 0 0, rgba(15,23,42,0.8), rgba(15,23,42,0.95));
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      box-shadow:
+        0 18px 45px rgba(15, 23, 42, 0.9),
+        0 0 0 1px rgba(15, 23, 42, 1);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .card-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.9);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-header h2 {
+      margin: 0;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+    }
+    .card-header span {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .card-header-main {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .card-header-meta {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .card-header-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .ghost-button {
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--muted);
+      font-size: 11px;
+      padding: 4px 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+    }
+    .ghost-button:hover {
+      border-color: var(--accent);
+      color: var(--text);
+      background: rgba(15, 23, 42, 0.95);
+    }
+    .ghost-button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .card-body {
+      padding: 14px 16px 16px;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .dropzone {
+      border-radius: 14px;
+      border: 1px dashed rgba(148, 163, 184, 0.6);
+      background:
+        radial-gradient(circle at 0 0, rgba(34,197,94,0.06), transparent 55%),
+        rgba(15, 23, 42, 0.9);
+      padding: 24px 18px;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease, transform 0.1s ease;
+    }
+    .dropzone:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(34,197,94,0.45);
+    }
+    .dropzone.dragover {
+      border-style: solid;
+      border-color: var(--accent);
+      box-shadow:
+        0 0 0 1px rgba(34,197,94,0.8),
+        0 0 50px rgba(34,197,94,0.25);
+      transform: translateY(-1px);
+      background:
+        radial-gradient(circle at 0 0, rgba(34,197,94,0.12), transparent 65%),
+        rgba(15, 23, 42, 0.95);
+    }
+    .drop-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 14px;
+      margin: 0 auto 10px;
+      background:
+        radial-gradient(circle at 30% 0%, rgba(56,189,248,0.45), transparent 58%),
+        radial-gradient(circle at 100% 100%, rgba(34,197,94,0.35), transparent 60%),
+        rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow:
+        0 20px 40px rgba(15,23,42,0.95),
+        0 0 0 1px rgba(15,23,42,0.8);
+    }
+    .drop-icon span {
+      font-size: 20px;
+    }
+    .dropzone h3 {
+      margin: 0 0 4px;
+      font-size: 14px;
+    }
+    .dropzone p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .hint-row {
+      margin-top: 12px;
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .hint-strong {
+      color: #e5e7eb;
+    }
+    .file-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(15,23,42,0.9);
+      border: 1px solid rgba(148,163,184,0.35);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .file-label span {
+      color: var(--accent);
+    }
+    input[type="file"] {
+      display: none;
+    }
+
+    .status {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .status-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .status-text-strong {
+      color: #e5e7eb;
+      font-weight: 500;
+    }
+    .status-badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .status-badge {
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 11px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+    }
+    .status-badge.ok {
+      border-color: rgba(34, 197, 94, 0.7);
+      color: #bbf7d0;
+      background: rgba(22, 163, 74, 0.12);
+    }
+    .status-badge.warn {
+      border-color: rgba(234, 179, 8, 0.7);
+      color: #facc15;
+      background: rgba(234, 179, 8, 0.12);
+    }
+    .status-badge.err {
+      border-color: rgba(239, 68, 68, 0.7);
+      color: #fecaca;
+      background: rgba(239, 68, 68, 0.12);
+    }
+    .status-badge.step-active {
+      border-color: rgba(34, 197, 94, 0.9);
+      color: #bbf7d0;
+      background: radial-gradient(circle at 0 0, rgba(34,197,94,0.18), transparent 70%);
+    }
+    .status-badge.step-pending {
+      border-color: rgba(148, 163, 184, 0.5);
+      color: var(--muted);
+      background: rgba(15, 23, 42, 0.9);
+    }
+    .status-badge.step-done {
+      border-color: rgba(34, 197, 94, 0.5);
+      color: #86efac;
+      background: rgba(22, 163, 74, 0.08);
+    }
+    .progress-bar {
+      position: relative;
+      height: 3px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.95);
+      overflow: hidden;
+    }
+    .progress-inner {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(34,197,94,0.1), rgba(34,197,94,0.8));
+      transform-origin: left;
+      transform: scaleX(0);
+      transition: transform 0.12s ease-out;
+    }
+    .progress-inner.running {
+      animation: progressPulse 1.1s ease-in-out infinite;
+    }
+    @keyframes progressPulse {
+      0%   { transform: translateX(-40%) scaleX(0.45); opacity: 0.6; }
+      50%  { transform: translateX(0%)   scaleX(0.85); opacity: 1; }
+      100% { transform: translateX(55%)  scaleX(0.4); opacity: 0.6; }
+    }
+
+    .actions-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 6px;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    button.primary {
+      border-radius: 999px;
+      border: none;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #020617;
+      background: linear-gradient(135deg, #22c55e, #4ade80);
+      box-shadow:
+        0 12px 30px rgba(22, 163, 74, 0.35),
+        0 0 0 1px rgba(22, 163, 74, 0.6);
+      transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.08s ease;
+    }
+    button.primary:hover {
+      transform: translateY(-0.5px);
+      filter: brightness(1.02);
+      box-shadow:
+        0 16px 40px rgba(22, 163, 74, 0.45),
+        0 0 0 1px rgba(22, 163, 74, 0.8);
+    }
+    button.primary:active {
+      transform: translateY(0.5px);
+      box-shadow:
+        0 8px 20px rgba(22, 163, 74, 0.35),
+        0 0 0 1px rgba(22, 163, 74, 0.8);
+    }
+    button.primary[disabled] {
+      opacity: 0.5;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    .report-placeholder {
+      flex: 1;
+      border-radius: 12px;
+      border: 1px dashed rgba(148, 163, 184, 0.6);
+      background:
+        radial-gradient(circle at 0 0, rgba(34,197,94,0.08), transparent 70%),
+        rgba(15, 23, 42, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 16px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .report-placeholder strong {
+      color: #e5e7eb;
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+    iframe#report-frame {
+      border: none;
+      border-radius: 12px;
+      background: #020617;
+      width: 100%;
+      min-height: 320px;
+      flex: 1;
+    }
+
+    footer {
+      margin: 6px 28px 10px;
+      padding: 0;
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    a {
+      color: #38bdf8;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="title-block">
+        <h1>
+          <span class="status-dot"></span>
+          Skill Scanner
+          <span class="title-badge">Local Skill Security Review</span>
+        </h1>
+        <p>Drop a ZIP containing a <code>SKILL.md</code> file to run a local security scan and view the interactive report.</p>
+        <div class="pill-row">
+          <div class="pill">Static rules &amp; bytecode analysis</div>
+          <div class="pill">Optional LLM / Behavioral analysis</div>
+          <div class="pill">No upload to external services</div>
+        </div>
+      </div>
+      <div class="controls">
+        <label class="select">
+          Policy
+          <select id="policy">
+            <option value="">Default (balanced)</option>
+            <option value="strict">strict</option>
+            <option value="balanced">balanced</option>
+            <option value="permissive">permissive</option>
+          </select>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="use-behavioral" />
+          Behavioral
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="use-llm" />
+          Enable LLM
+        </label>
+        <div id="llm-advanced" class="llm-advanced-row hidden">
+          <label class="text-input">
+            Model
+            <input type="text" id="llm-model" placeholder="Leave empty to use default model" />
+          </label>
+          <label class="text-input">
+            Base URL
+            <input type="text" id="llm-base-url" placeholder="Optional custom gateway URL" />
+          </label>
+          <label class="text-input">
+            API Key
+            <input type="password" id="llm-api-key" placeholder="Used only for this session" autocomplete="off" />
+          </label>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="card">
+        <div class="card-header">
+          <div class="card-header-main">
+            <h2>Skill package upload</h2>
+            <span class="card-header-meta">Upload a ZIP containing a single skill with <code>SKILL.md</code></span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="dropzone" class="dropzone">
+            <div class="drop-icon"><span>⬇︎</span></div>
+            <h3>Drop a ZIP or folder here, or click to choose</h3>
+            <p>Recommended: select the whole skill folder (with <code>SKILL.md</code> and all source files).</p>
+            <div class="hint-row">
+              <span class="hint-strong">Up to 50 MB, max 500 files.</span>
+              <label class="file-label">
+                <span>Choose ZIP…</span>
+                <input type="file" id="file-input" accept=".zip" />
+              </label>
+              <label class="file-label">
+                <span>Choose folder…</span>
+                <input type="file" id="folder-input" webkitdirectory directory />
+              </label>
+            </div>
+          </div>
+
+          <div class="status">
+            <div class="status-line">
+              <span id="status-text">Waiting for ZIP file.</span>
+              <div class="status-badges" id="status-badges">
+                <span class="status-badge">Local-only scan</span>
+              </div>
+            </div>
+            <div class="progress-bar">
+              <div id="progress-inner" class="progress-inner"></div>
+            </div>
+          </div>
+
+          <div class="actions-row">
+            <button id="scan-button" class="primary" disabled>
+              <span id="scan-button-label">Select ZIP to start scan</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <div class="card-header-main">
+            <h2>Scan report</h2>
+            <span id="report-meta" class="card-header-meta">No report yet.</span>
+          </div>
+          <div class="card-header-actions">
+            <button id="open-report-button" class="ghost-button" disabled>Open in new tab</button>
+            <button id="download-report-button" class="ghost-button" disabled>Download HTML</button>
+            <button id="download-md-button" class="ghost-button" disabled>Download Markdown</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="report-placeholder" class="report-placeholder">
+            <div>
+              <strong>No report yet.</strong>
+              Drop a skill ZIP on the left. After the scan finishes, an interactive HTML report will appear here (same as the CLI HTML reporter).<br />
+              Includes severity distribution, correlated attack chains, detailed code snippets, and more.
+            </div>
+          </div>
+          <iframe id="report-frame" style="display:none;"></iframe>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <span>Endpoint: <code>POST /scan-upload-html</code> · Scans execute locally; no extra upload to external services.</span>
+    <span>For advanced usage, continue to use the <code>skill-scanner</code> CLI.</span>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script>
+    (function () {
+      const dropzone = document.getElementById('dropzone');
+      const fileInput = document.getElementById('file-input');
+      const folderInput = document.getElementById('folder-input');
+      const scanButton = document.getElementById('scan-button');
+      const scanButtonLabel = document.getElementById('scan-button-label');
+      const statusText = document.getElementById('status-text');
+      const statusBadges = document.getElementById('status-badges');
+      const progressInner = document.getElementById('progress-inner');
+      const policySelect = document.getElementById('policy');
+      const useBehavioral = document.getElementById('use-behavioral');
+      const useLlm = document.getElementById('use-llm');
+      const llmAdvanced = document.getElementById('llm-advanced');
+      const llmModel = document.getElementById('llm-model');
+      const llmBaseUrl = document.getElementById('llm-base-url');
+      const llmApiKey = document.getElementById('llm-api-key');
+      const reportFrame = document.getElementById('report-frame');
+      const reportPlaceholder = document.getElementById('report-placeholder');
+      const reportMeta = document.getElementById('report-meta');
+      const openReportButton = document.getElementById('open-report-button');
+      const downloadReportButton = document.getElementById('download-report-button');
+      const downloadMarkdownButton = document.getElementById('download-md-button');
+
+      let selectedFile = null;
+      let uploading = false;
+      let lastReportHtml = null;
+
+      function setStatus(text, badges) {
+        statusText.innerHTML = text;
+        statusBadges.innerHTML = '';
+        (badges || []).forEach(b => {
+          const span = document.createElement('span');
+          span.className = 'status-badge ' + (b.kind || '');
+          span.textContent = b.text;
+          statusBadges.appendChild(span);
+        });
+      }
+
+      function resetProgress() {
+        progressInner.classList.remove('running');
+        progressInner.style.transform = 'scaleX(0)';
+      }
+
+      function startProgress() {
+        progressInner.classList.add('running');
+        progressInner.style.transform = 'scaleX(1)';
+      }
+
+      function updateButton() {
+        if (uploading) {
+          scanButton.disabled = true;
+          scanButtonLabel.textContent = 'Scanning…';
+        } else if (selectedFile) {
+          scanButton.disabled = false;
+          scanButtonLabel.textContent = 'Start scan';
+        } else {
+          scanButton.disabled = true;
+          scanButtonLabel.textContent = 'Select ZIP to start scan';
+        }
+        const enableReportActions = !!lastReportHtml;
+        openReportButton.disabled = !enableReportActions;
+        downloadReportButton.disabled = !enableReportActions;
+        downloadMarkdownButton.disabled = !enableReportActions || !selectedFile;
+      }
+
+      function updateLlmVisibility() {
+        if (useLlm.checked) {
+          llmAdvanced.classList.remove('hidden');
+        } else {
+          llmAdvanced.classList.add('hidden');
+        }
+      }
+
+      function handleFile(file) {
+        if (!file) return;
+        if (!file.name.endsWith('.zip')) {
+          setStatus('Only ZIP files are supported.', [{ text: 'Invalid type', kind: 'err' }]);
+          selectedFile = null;
+          updateButton();
+          return;
+        }
+        selectedFile = file;
+        setStatus(
+          '<span class="status-text-strong">Ready to scan:</span> ' + file.name,
+          [
+            { text: 'Ready', kind: 'ok' },
+          ],
+        );
+        resetProgress();
+        updateButton();
+      }
+
+      // Only open the file picker when clicking on the dropzone *background*,
+      // not when clicking on inner controls like the "Choose ZIP…" label.
+      dropzone.addEventListener('click', (e) => {
+        if (uploading) return;
+        if (e.target !== dropzone) return;
+        fileInput.click();
+      });
+
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        handleFile(file);
+      });
+
+      folderInput.addEventListener('change', async (e) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) {
+          return;
+        }
+        try {
+          setStatus(
+            '<span class="status-text-strong">Step 0/2:</span> Preparing folder for upload…',
+            [
+              { text: 'Pack folder', kind: 'step-active' },
+              { text: 'Upload / unpack', kind: 'step-pending' },
+            ],
+          );
+          const jszip = new JSZip();
+          let root = '';
+          Array.from(files).forEach((file) => {
+            const relPath = file.webkitRelativePath || file.name;
+            if (!root && file.webkitRelativePath) {
+              const parts = file.webkitRelativePath.split('/');
+              if (parts.length > 1) {
+                root = parts[0];
+              }
+            }
+            jszip.file(relPath, file);
+          });
+          const blob = await jszip.generateAsync({ type: 'blob' });
+          const zipName = (root || 'skill') + '.zip';
+          const zipFile = new File([blob], zipName, { type: 'application/zip' });
+          fileInput.value = '';
+          handleFile(zipFile);
+        } catch (err) {
+          console.error(err);
+          setStatus('Failed to prepare folder ZIP: ' + (err.message || err), [
+            { text: 'Failed', kind: 'err' },
+          ]);
+        }
+      });
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (uploading) return;
+          dropzone.classList.add('dragover');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.classList.remove('dragover');
+        });
+      });
+
+      dropzone.addEventListener('drop', (e) => {
+        if (uploading) return;
+        const dt = e.dataTransfer;
+        const file = dt && dt.files && dt.files[0];
+        handleFile(file);
+      });
+
+      async function runScan() {
+        if (!selectedFile || uploading) return;
+        uploading = true;
+        updateButton();
+        resetProgress();
+        startProgress();
+        setStatus(
+          '<span class="status-text-strong">Step 1/2:</span> Uploading and unpacking…',
+          [
+            { text: 'Upload / unpack', kind: 'step-active' },
+            { text: 'Run analyzers', kind: 'step-pending' },
+          ],
+        );
+
+        try {
+          const form = new FormData();
+          form.append('file', selectedFile);
+          const policy = policySelect.value.trim();
+          if (policy) {
+            form.append('policy', policy);
+          }
+          form.append('use_behavioral', useBehavioral.checked ? 'true' : 'false');
+          form.append('use_llm', useLlm.checked ? 'true' : 'false');
+          const model = llmModel.value.trim();
+          const baseUrl = llmBaseUrl.value.trim();
+          const apiKey = llmApiKey.value.trim();
+          if (model) {
+            form.append('llm_model', model);
+          }
+          if (baseUrl) {
+            form.append('llm_base_url', baseUrl);
+          }
+          if (apiKey) {
+            form.append('llm_api_key', apiKey);
+          }
+
+          const res = await fetch('/scan-upload-html', {
+            method: 'POST',
+            body: form,
+          });
+
+          if (!res.ok) {
+            let msg = 'Scan failed (HTTP ' + res.status + ').';
+            try {
+              const data = await res.json();
+              if (data && data.detail) {
+                msg = Array.isArray(data.detail)
+                  ? data.detail.map(d => d.msg || d).join('; ')
+                  : data.detail;
+              }
+            } catch (_) {
+              // ignore
+            }
+            throw new Error(msg);
+          }
+
+          setStatus(
+            '<span class="status-text-strong">Step 2/2:</span> Running analyzers and building report…',
+            [
+              { text: 'Upload / unpack', kind: 'step-done' },
+              { text: 'Run analyzers', kind: 'step-active' },
+            ],
+          );
+
+          const html = await res.text();
+          lastReportHtml = html;
+          reportFrame.style.display = 'block';
+          reportPlaceholder.style.display = 'none';
+          reportFrame.srcdoc = html;
+
+          const ts = new Date().toLocaleTimeString();
+          reportMeta.textContent = 'Last scan finished at ' + ts + ' · from ZIP: ' + selectedFile.name;
+
+          setStatus(
+            '<span class="status-text-strong">All steps completed.</span>',
+            [
+              { text: 'Upload / unpack', kind: 'step-done' },
+              { text: 'Run analyzers', kind: 'step-done' },
+            ],
+          );
+        } catch (err) {
+          console.error(err);
+          setStatus(String(err.message || err), [
+            { text: 'Failed', kind: 'err' },
+          ]);
+        } finally {
+          uploading = false;
+          resetProgress();
+          updateButton();
+        }
+      }
+
+      scanButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        runScan();
+      });
+
+
+      openReportButton.addEventListener('click', () => {
+        if (!lastReportHtml) return;
+        const blob = new Blob([lastReportHtml], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank', 'noopener,noreferrer');
+      });
+
+      downloadReportButton.addEventListener('click', () => {
+        if (!lastReportHtml) return;
+        const blob = new Blob([lastReportHtml], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        a.download = `skill-scan-report-${ts}.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+
+      downloadMarkdownButton.addEventListener('click', async () => {
+        if (!lastReportHtml || !selectedFile || uploading) return;
+        try {
+          const form = new FormData();
+          form.append('file', selectedFile);
+          const policy = policySelect.value.trim();
+          if (policy) {
+            form.append('policy', policy);
+          }
+          form.append('use_behavioral', useBehavioral.checked ? 'true' : 'false');
+          form.append('use_llm', useLlm.checked ? 'true' : 'false');
+          const model = llmModel.value.trim();
+          const baseUrl = llmBaseUrl.value.trim();
+          const apiKey = llmApiKey.value.trim();
+          if (model) {
+            form.append('llm_model', model);
+          }
+          if (baseUrl) {
+            form.append('llm_base_url', baseUrl);
+          }
+          if (apiKey) {
+            form.append('llm_api_key', apiKey);
+          }
+
+          const res = await fetch('/scan-upload-markdown', {
+            method: 'POST',
+            body: form,
+          });
+
+          if (!res.ok) {
+            let msg = 'Markdown export failed (HTTP ' + res.status + ').';
+            try {
+              const data = await res.json();
+              if (data && data.detail) {
+                msg = Array.isArray(data.detail)
+                  ? data.detail.map(d => d.msg || d).join('; ')
+                  : data.detail;
+              }
+            } catch (_) {
+              // ignore
+            }
+            throw new Error(msg);
+          }
+
+          const md = await res.text();
+          const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          const ts = new Date().toISOString().replace(/[:.]/g, '-');
+          const baseName = selectedFile.name.replace(/\.zip$/i, '') || 'skill-scan-report';
+          a.href = url;
+          a.download = `${baseName}-${ts}.md`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          console.error(err);
+          setStatus(String(err.message || err), [
+            { text: 'Failed', kind: 'err' },
+          ]);
+        }
+      });
+
+      useLlm.addEventListener('change', () => {
+        updateLlmVisibility();
+      });
+
+      // Initialize LLM controls visibility on load
+      updateLlmVisibility();
+    })();
+  </script>
+</body>
+</html>
+
