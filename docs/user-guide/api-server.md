@@ -6,7 +6,7 @@ The Skill Scanner API Server provides a REST interface for uploading and scannin
 > **Development Use Only**
 > This server is unauthenticated by default. Do not expose it on any interface except localhost -- the APIs can be used for denial-of-wallet attacks on your API keys or denial-of-service via uploaded zipbombs. See [API Operations](api-operations.md#security) for authentication and hardening guidance.
 
-**Technology**: FastAPI with async support &bull; **Endpoints**: 7 REST endpoints &bull; **Docs**: auto-generated Swagger/ReDoc
+**Technology**: FastAPI with async support &bull; **Endpoints**: 7 REST endpoints (+ 3 UI helpers) &bull; **Docs**: auto-generated Swagger/ReDoc &bull; **Optional UI**: local web GUI at `/ui`
 
 ## Starting the Server
 
@@ -32,7 +32,10 @@ run_server(host="127.0.0.1", port=8000, reload=False)
 | `/` | GET | Service metadata and links |
 | `/health` | GET | Server status and available analyzers |
 | `/scan` | POST | Scan a skill by local directory path |
-| `/scan-upload` | POST | Upload a skill ZIP and scan it |
+| `/scan-html` | POST | Scan a skill by local directory path and return an HTML report |
+| `/scan-upload` | POST | Upload a skill ZIP and scan it (JSON summary) |
+| `/scan-upload-html` | POST | Upload a skill ZIP and return an HTML report |
+| `/scan-upload-markdown` | POST | Upload a skill ZIP and return a Markdown report |
 | `/scan-batch` | POST | Start an async batch scan |
 | `/scan-batch/{scan_id}` | GET | Poll batch scan status/results |
 | `/analyzers` | GET | List all available analyzers |
@@ -40,6 +43,21 @@ run_server(host="127.0.0.1", port=8000, reload=False)
 For full request schemas, parameters, and response formats, see **[API Endpoints Detail](api-endpoints-detail.md)**.
 
 Upload guardrails: max upload `50 MB`, max ZIP entries `500`, max uncompressed size `200 MB`.
+
+## Built-in Web UI
+
+When the API server is running, a lightweight local web UI is available at:
+
+- `http://localhost:8000/ui`
+
+The UI is served from the same FastAPI application and uses the `/scan-html` and `/scan-upload-*` endpoints to:
+
+- Drag-and-drop a skill ZIP or choose a local skill folder (containing `SKILL.md`)
+- Run scans with the same analyzers/policies as the CLI
+- View the interactive HTML report inline
+- Download both HTML and Markdown versions of the report
+
+> The UI is intended for **local** use only (e.g., localhost in a browser). It does not add authentication or change any security properties of the API server — the warnings in the section above still apply.
 
 ## Interactive Documentation
 

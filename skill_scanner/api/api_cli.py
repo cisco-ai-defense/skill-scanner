@@ -54,8 +54,8 @@ Examples:
     try:
         import uvicorn
     except ImportError:
-        print("Error: API server dependencies not installed.", file=sys.stderr)
-        print("Install with: pip install fastapi uvicorn python-multipart", file=sys.stderr)
+        print("Error: Web UI / API server dependencies not installed.", file=sys.stderr)
+        print("Install with: pip install cisco-ai-skill-scanner[web]", file=sys.stderr)
         return 1
 
     print("Starting Skill Scanner API Server...")

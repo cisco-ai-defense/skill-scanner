@@ -17,12 +17,36 @@
 """API module for Skill Scanner.
 
 This module provides a FastAPI application for scanning agent skills packages.
+
+It also mounts a lightweight web GUI under ``/ui`` for drag-and-drop scanning
+and interactive report viewing, built on top of the same HTTP API.
 """
 
-from fastapi import FastAPI
+from pathlib import Path
+
+from fastapi import FastAPI, Request, Response
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .. import __version__ as PACKAGE_VERSION
 from .router import router as api_router
+
+
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Inject defence-in-depth HTTP headers on every response."""
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        response: Response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), usb=()",
+        )
+        response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
 
 app = FastAPI(
     title="Skill Scanner API",
@@ -32,4 +56,10 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+app.add_middleware(_SecurityHeadersMiddleware)
 app.include_router(api_router)
+
+# Mount the bundled web UI (if present) at /ui.
+_frontend_dir = Path(__file__).parent / "frontend"
+if _frontend_dir.exists():
+    app.mount("/ui", StaticFiles(directory=str(_frontend_dir), html=True), name="ui")

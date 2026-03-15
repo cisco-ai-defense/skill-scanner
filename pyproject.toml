@@ -53,9 +53,6 @@ dependencies = [
     "textual>=1.0.0",
     "tabulate>=0.9.0",
     "pydantic>=2.6.0",
-    "fastapi>=0.125.0",
-    "uvicorn[standard]>=0.29.0",
-    "python-multipart>=0.0.6",
     "yara-x>=1.12.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.28.1",
@@ -76,6 +73,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Web UI and REST API server (skill-scanner-api command)
+web = [
+    "fastapi>=0.125.0",
+    "uvicorn[standard]>=0.29.0",
+    "python-multipart>=0.0.6",
+]
 # AWS Bedrock support (requires boto3 for IAM credentials)
 bedrock = [
     "boto3>=1.28.57",
@@ -94,6 +97,7 @@ azure = [
 # supply-chain = ["guarddog>=2.0.0"]
 # All optional provider extras
 all = [
+    "cisco-ai-skill-scanner[web]",
     "boto3>=1.28.57",
     "google-cloud-aiplatform>=1.38.0",
     "azure-identity>=1.15.0",

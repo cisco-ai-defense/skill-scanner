@@ -1,0 +1,1576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Skill Scanner GUI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none';" />
+  <meta name="referrer" content="no-referrer" />
+  <style>
+    :root {
+      --bg: #020617;
+      --surface: rgba(15, 23, 42, 0.9);
+      --surface-solid: #0f172a;
+      --accent: #22c55e;
+      --accent-hover: #4ade80;
+      --accent-soft: rgba(34, 197, 94, 0.16);
+      --border: rgba(148, 163, 184, 0.22);
+      --border-strong: rgba(148, 163, 184, 0.35);
+      --border-dashed: rgba(148, 163, 184, 0.6);
+      --text: #e5e7eb;
+      --muted: #6b7280;
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.12);
+      --link: #38bdf8;
+      --input-bg: rgba(15, 23, 42, 0.85);
+      --card-shadow: 0 18px 45px rgba(15, 23, 42, 0.9), 0 0 0 1px rgba(15, 23, 42, 1);
+      --card-header-border: rgba(15, 23, 42, 0.9);
+      --btn-primary-text: #020617;
+      --progress-bg: rgba(15, 23, 42, 0.95);
+      --ok-border: rgba(34, 197, 94, 0.7);
+      --ok-text: #bbf7d0;
+      --ok-bg: rgba(22, 163, 74, 0.12);
+      --warn-border: rgba(234, 179, 8, 0.7);
+      --warn-text: #facc15;
+      --warn-bg: rgba(234, 179, 8, 0.12);
+      --err-border: rgba(239, 68, 68, 0.7);
+      --err-text: #fecaca;
+      --err-bg: rgba(239, 68, 68, 0.12);
+    }
+    [data-theme="light"] {
+      --bg: #f8fafc;
+      --surface: rgba(255, 255, 255, 0.92);
+      --surface-solid: #ffffff;
+      --accent: #16a34a;
+      --accent-hover: #22c55e;
+      --accent-soft: rgba(34, 197, 94, 0.1);
+      --border: rgba(148, 163, 184, 0.25);
+      --border-strong: rgba(148, 163, 184, 0.45);
+      --border-dashed: rgba(148, 163, 184, 0.5);
+      --text: #1e293b;
+      --muted: #64748b;
+      --danger: #dc2626;
+      --danger-bg: rgba(239, 68, 68, 0.06);
+      --link: #0284c7;
+      --input-bg: #f1f5f9;
+      --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      --card-header-border: #e2e8f0;
+      --btn-primary-text: #ffffff;
+      --progress-bg: #e2e8f0;
+      --ok-border: rgba(22, 163, 74, 0.6);
+      --ok-text: #166534;
+      --ok-bg: rgba(22, 163, 74, 0.08);
+      --warn-border: rgba(202, 138, 4, 0.6);
+      --warn-text: #854d0e;
+      --warn-bg: rgba(234, 179, 8, 0.08);
+      --err-border: rgba(220, 38, 38, 0.6);
+      --err-text: #991b1b;
+      --err-bg: rgba(239, 68, 68, 0.06);
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    *:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.09), transparent 55%),
+        radial-gradient(circle at 100% 100%, rgba(34, 197, 94, 0.12), transparent 55%),
+        var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+    }
+    [data-theme="light"] body {
+      background:
+        radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.06), transparent 55%),
+        radial-gradient(circle at 100% 100%, rgba(34, 197, 94, 0.06), transparent 55%),
+        var(--bg);
+    }
+    .page {
+      width: 100%;
+      padding: 20px 28px 0;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .title-block h1 {
+      font-size: 22px;
+      margin: 0 0 6px;
+      letter-spacing: 0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .title-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border-strong);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .title-block p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      backdrop-filter: blur(16px);
+      background: radial-gradient(circle at 0 0, rgba(34,197,94,0.15), transparent 60%);
+    }
+    [data-theme="light"] .pill {
+      background: rgba(34, 197, 94, 0.06);
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+      margin-right: 5px;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      border: 1px solid var(--border-strong);
+      background: var(--input-bg);
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color 0.12s ease, color 0.12s ease;
+      padding: 0;
+    }
+    .theme-toggle:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .icon-sun { display: inline-flex; }
+    .icon-moon { display: none; }
+    [data-theme="light"] .icon-sun { display: none; }
+    [data-theme="light"] .icon-moon { display: inline-flex; }
+    .select,
+    .checkbox,
+    .text-input {
+      font-size: 12px;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .llm-advanced-row {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      width: 100%;
+      margin-top: 6px;
+    }
+    .hidden {
+      display: none !important;
+    }
+    select {
+      background: var(--input-bg);
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+    }
+    input[type="checkbox"] {
+      accent-color: var(--accent);
+    }
+    input[type="text"],
+    input[type="password"] {
+      background: var(--input-bg);
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+      min-width: 130px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 2.4fr);
+      gap: 20px;
+      align-items: stretch;
+      flex: 1;
+      min-height: 0;
+    }
+    @media (max-width: 900px) {
+      main {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+    .card {
+      background: radial-gradient(circle at 0 0, rgba(15,23,42,0.8), rgba(15,23,42,0.95));
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    [data-theme="light"] .card {
+      background: var(--surface-solid);
+    }
+    .card-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--card-header-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-header h2 {
+      margin: 0;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+    }
+    .card-header span {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .card-header-main {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .card-header-meta {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .card-header-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .ghost-button {
+      border-radius: 999px;
+      border: 1px solid var(--border-strong);
+      background: var(--input-bg);
+      color: var(--muted);
+      font-size: 11px;
+      padding: 4px 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+    }
+    .ghost-button:hover {
+      border-color: var(--accent);
+      color: var(--text);
+      background: var(--surface);
+    }
+    .ghost-button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .card-body {
+      padding: 14px 16px 16px;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .dropzone {
+      border-radius: 14px;
+      border: 1px dashed var(--border-dashed);
+      background:
+        radial-gradient(circle at 0 0, rgba(34,197,94,0.06), transparent 55%),
+        var(--surface);
+      padding: 24px 18px;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease, transform 0.1s ease;
+    }
+    [data-theme="light"] .dropzone {
+      background: var(--bg);
+    }
+    .dropzone:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(34,197,94,0.45);
+    }
+    .dropzone.dragover {
+      border-style: solid;
+      border-color: var(--accent);
+      box-shadow:
+        0 0 0 1px rgba(34,197,94,0.8),
+        0 0 50px rgba(34,197,94,0.25);
+      transform: translateY(-1px);
+      background:
+        radial-gradient(circle at 0 0, rgba(34,197,94,0.12), transparent 65%),
+        var(--surface);
+    }
+    [data-theme="light"] .dropzone.dragover {
+      background: rgba(34, 197, 94, 0.04);
+    }
+    .drop-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 14px;
+      margin: 0 auto 10px;
+      background:
+        radial-gradient(circle at 30% 0%, rgba(56,189,248,0.45), transparent 58%),
+        radial-gradient(circle at 100% 100%, rgba(34,197,94,0.35), transparent 60%),
+        var(--surface);
+      border: 1px solid var(--border-strong);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--card-shadow);
+    }
+    [data-theme="light"] .drop-icon {
+      background:
+        radial-gradient(circle at 30% 0%, rgba(56,189,248,0.2), transparent 58%),
+        radial-gradient(circle at 100% 100%, rgba(34,197,94,0.15), transparent 60%),
+        var(--input-bg);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    }
+    .drop-icon span {
+      font-size: 20px;
+    }
+    .dropzone h3 {
+      margin: 0 0 4px;
+      font-size: 14px;
+    }
+    .dropzone p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .hint-row {
+      margin-top: 12px;
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .hint-strong {
+      color: var(--text);
+    }
+    .file-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--input-bg);
+      border: 1px solid var(--border-strong);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .file-label span {
+      color: var(--accent);
+    }
+    input[type="file"] {
+      display: none;
+    }
+
+    .status {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .status-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .status-text-strong {
+      color: var(--text);
+      font-weight: 500;
+    }
+    .elapsed {
+      font-variant-numeric: tabular-nums;
+      font-size: 11px;
+      color: var(--muted);
+      min-width: 3.5em;
+      text-align: right;
+    }
+    .status-badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .status-badge {
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 11px;
+      border: 1px solid var(--border-strong);
+    }
+    .status-badge.ok {
+      border-color: var(--ok-border);
+      color: var(--ok-text);
+      background: var(--ok-bg);
+    }
+    .status-badge.warn {
+      border-color: var(--warn-border);
+      color: var(--warn-text);
+      background: var(--warn-bg);
+    }
+    .status-badge.err {
+      border-color: var(--err-border);
+      color: var(--err-text);
+      background: var(--err-bg);
+    }
+    .status-badge.step-active {
+      border-color: var(--ok-border);
+      color: var(--ok-text);
+      background: radial-gradient(circle at 0 0, rgba(34,197,94,0.18), transparent 70%);
+    }
+    .status-badge.step-pending {
+      border-color: var(--border-dashed);
+      color: var(--muted);
+      background: var(--input-bg);
+    }
+    .status-badge.step-done {
+      border-color: rgba(34, 197, 94, 0.5);
+      color: var(--ok-text);
+      background: var(--ok-bg);
+    }
+    .progress-bar {
+      position: relative;
+      height: 3px;
+      border-radius: 999px;
+      background: var(--progress-bg);
+      overflow: hidden;
+    }
+    .progress-inner {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(34,197,94,0.1), rgba(34,197,94,0.8));
+      transform-origin: left;
+      transform: scaleX(0);
+      transition: transform 0.12s ease-out;
+    }
+    .progress-inner.running {
+      animation: progressPulse 1.1s ease-in-out infinite;
+    }
+    @keyframes progressPulse {
+      0%   { transform: translateX(-40%) scaleX(0.45); opacity: 0.6; }
+      50%  { transform: translateX(0%)   scaleX(0.85); opacity: 1; }
+      100% { transform: translateX(55%)  scaleX(0.4); opacity: 0.6; }
+    }
+
+    .error-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: var(--err-bg);
+      border: 1px solid var(--err-border);
+      color: var(--err-text);
+      font-size: 12px;
+    }
+    .error-banner-icon {
+      flex-shrink: 0;
+      font-size: 16px;
+      line-height: 1;
+    }
+    .error-banner-message {
+      flex: 1;
+      min-width: 0;
+      word-break: break-word;
+    }
+    .error-banner-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .actions-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 6px;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    button.primary {
+      border-radius: 999px;
+      border: none;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--btn-primary-text);
+      background: linear-gradient(135deg, #22c55e, #4ade80);
+      box-shadow:
+        0 12px 30px rgba(22, 163, 74, 0.35),
+        0 0 0 1px rgba(22, 163, 74, 0.6);
+      transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.08s ease;
+    }
+    [data-theme="light"] button.primary {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+    }
+    button.primary:hover {
+      transform: translateY(-0.5px);
+      filter: brightness(1.02);
+      box-shadow:
+        0 16px 40px rgba(22, 163, 74, 0.45),
+        0 0 0 1px rgba(22, 163, 74, 0.8);
+    }
+    button.primary:active {
+      transform: translateY(0.5px);
+      box-shadow:
+        0 8px 20px rgba(22, 163, 74, 0.35),
+        0 0 0 1px rgba(22, 163, 74, 0.8);
+    }
+    button.primary[disabled] {
+      opacity: 0.5;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    .history-section {
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+    }
+    .history-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      padding: 4px 0;
+    }
+    .history-toggle:hover {
+      color: var(--text);
+    }
+    .history-chevron {
+      transition: transform 0.15s ease;
+      font-size: 9px;
+    }
+    .history-toggle[aria-expanded="true"] .history-chevron {
+      transform: rotate(90deg);
+    }
+    .history-count {
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 10px;
+    }
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      border-radius: 8px;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .history-item-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+    .history-item-time {
+      flex-shrink: 0;
+      font-size: 10px;
+    }
+    .history-item-pill {
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 500;
+      border: 1px solid var(--border-strong);
+      flex-shrink: 0;
+    }
+    .history-item-view {
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--border-strong);
+      background: none;
+      color: var(--accent);
+      font-size: 10px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .history-item-view:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .summary-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 6px 0;
+    }
+    .summary-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      background: var(--input-bg);
+    }
+    .summary-pill-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    .summary-pill.verdict {
+      color: #fff;
+      border: none;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+    }
+
+    .report-placeholder {
+      flex: 1;
+      border-radius: 12px;
+      border: 1px dashed var(--border-dashed);
+      background:
+        radial-gradient(circle at 0 0, rgba(34,197,94,0.08), transparent 70%),
+        var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 16px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    [data-theme="light"] .report-placeholder {
+      background: var(--bg);
+    }
+    .report-placeholder strong {
+      color: var(--text);
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+    iframe#report-frame {
+      border: none;
+      border-radius: 12px;
+      background: var(--bg);
+      width: 100%;
+      min-height: 320px;
+      flex: 1;
+    }
+
+    footer {
+      margin: 6px 28px 10px;
+      padding: 0;
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    a {
+      color: var(--link);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header role="banner">
+      <div class="title-block">
+        <h1>
+          <span class="status-dot" aria-hidden="true"></span>
+          Skill Scanner
+          <span class="title-badge">Local Skill Security Review</span>
+        </h1>
+        <p>Drop a ZIP containing a <code>SKILL.md</code> file to run a local security scan and view the interactive report.</p>
+        <div class="pill-row">
+          <div class="pill">Static rules &amp; bytecode analysis</div>
+          <div class="pill">Optional LLM / Behavioral analysis</div>
+          <div class="pill">No upload to external services</div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light mode">
+          <span class="icon-sun" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          </span>
+          <span class="icon-moon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </span>
+        </button>
+        <label class="select">
+          Policy
+          <select id="policy" aria-label="Scan policy">
+            <option value="">Default (balanced)</option>
+            <option value="strict">strict</option>
+            <option value="balanced">balanced</option>
+            <option value="permissive">permissive</option>
+          </select>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="use-behavioral" />
+          Behavioral
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="use-llm" />
+          Enable LLM
+        </label>
+        <div id="llm-advanced" class="llm-advanced-row hidden">
+          <label class="text-input">
+            Model
+            <input type="text" id="llm-model" placeholder="Leave empty to use default model" aria-label="LLM model name" />
+          </label>
+          <label class="text-input">
+            Base URL
+            <input type="text" id="llm-base-url" placeholder="Optional custom gateway URL" aria-label="LLM base URL" />
+          </label>
+          <label class="text-input">
+            API Key
+            <input type="password" id="llm-api-key" placeholder="Used only for this session" autocomplete="off" aria-label="LLM API key" />
+          </label>
+        </div>
+      </div>
+    </header>
+
+    <main role="main">
+      <section class="card">
+        <div class="card-header">
+          <div class="card-header-main">
+            <h2>Skill package upload</h2>
+            <span class="card-header-meta">Upload a ZIP containing a single skill with <code>SKILL.md</code></span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="dropzone" class="dropzone" aria-label="Upload skill package" tabindex="0">
+            <div class="drop-icon" aria-hidden="true"><span>&#x2B07;&#xFE0E;</span></div>
+            <h3>Drop a ZIP or folder here, or click to choose</h3>
+            <p>Recommended: select the whole skill folder (with <code>SKILL.md</code> and all source files).</p>
+            <div class="hint-row">
+              <span class="hint-strong">Up to 50 MB, max 500 files.</span>
+              <label class="file-label">
+                <span>Choose ZIP&#x2026;</span>
+                <input type="file" id="file-input" accept=".zip" />
+              </label>
+              <label class="file-label">
+                <span>Choose folder&#x2026;</span>
+                <input type="file" id="folder-input" webkitdirectory directory />
+              </label>
+            </div>
+          </div>
+
+          <div class="status" aria-live="polite">
+            <div class="status-line">
+              <span id="status-text">Waiting for ZIP file.</span>
+              <span id="elapsed" class="elapsed" aria-hidden="true"></span>
+              <div class="status-badges" id="status-badges">
+                <span class="status-badge">Local-only scan</span>
+              </div>
+            </div>
+            <div class="progress-bar" role="progressbar" aria-label="Scan progress">
+              <div id="progress-inner" class="progress-inner"></div>
+            </div>
+          </div>
+
+          <div id="error-banner" class="error-banner hidden" role="alert">
+            <span class="error-banner-icon" aria-hidden="true">&#x26A0;&#xFE0E;</span>
+            <span id="error-message" class="error-banner-message"></span>
+            <div class="error-banner-actions">
+              <button id="error-retry" class="ghost-button" type="button">Retry</button>
+              <button id="error-dismiss" class="ghost-button" type="button" aria-label="Dismiss error">&#x2715;</button>
+            </div>
+          </div>
+
+          <div class="actions-row">
+            <button id="scan-button" class="primary" disabled aria-busy="false">
+              <span id="scan-button-label">Select ZIP to start scan</span>
+            </button>
+          </div>
+
+          <div id="history-section" class="history-section hidden">
+            <button id="history-toggle" class="history-toggle" type="button" aria-expanded="false">
+              <span class="history-chevron" aria-hidden="true">&#x25B6;</span>
+              Recent scans
+              <span id="history-count" class="history-count">0</span>
+            </button>
+            <div id="history-list" class="history-list hidden"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="report-card" aria-busy="false">
+        <div class="card-header">
+          <div class="card-header-main">
+            <h2>Scan report</h2>
+            <span id="report-meta" class="card-header-meta">No report yet.</span>
+          </div>
+          <div class="card-header-actions">
+            <button id="open-report-button" class="ghost-button" disabled>Open in new tab</button>
+            <button id="download-report-button" class="ghost-button" disabled>Download HTML</button>
+            <button id="download-md-button" class="ghost-button" disabled>Download Markdown</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="summary-row" class="summary-row hidden"></div>
+          <div id="report-placeholder" class="report-placeholder">
+            <div>
+              <strong>No report yet.</strong>
+              Drop a skill ZIP on the left. After the scan finishes, an interactive HTML report will appear here (same as the CLI HTML reporter).<br />
+              Includes severity distribution, correlated attack chains, detailed code snippets, and more.
+            </div>
+          </div>
+          <iframe id="report-frame" style="display:none;" sandbox="allow-scripts"></iframe>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer role="contentinfo">
+    <span>Endpoint: <code>POST /scan-upload-html</code> &middot; Scans execute locally; no extra upload to external services.</span>
+    <span>For advanced usage, continue to use the <code>skill-scanner</code> CLI.</span>
+  </footer>
+
+  <script src="js/jszip.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      var dropzone = document.getElementById('dropzone');
+      var fileInput = document.getElementById('file-input');
+      var folderInput = document.getElementById('folder-input');
+      var scanButton = document.getElementById('scan-button');
+      var scanButtonLabel = document.getElementById('scan-button-label');
+      var statusText = document.getElementById('status-text');
+      var statusBadges = document.getElementById('status-badges');
+      var elapsedEl = document.getElementById('elapsed');
+      var progressInner = document.getElementById('progress-inner');
+      var policySelect = document.getElementById('policy');
+      var useBehavioral = document.getElementById('use-behavioral');
+      var useLlm = document.getElementById('use-llm');
+      var llmAdvanced = document.getElementById('llm-advanced');
+      var llmModel = document.getElementById('llm-model');
+      var llmBaseUrl = document.getElementById('llm-base-url');
+      var llmApiKey = document.getElementById('llm-api-key');
+      var reportFrame = document.getElementById('report-frame');
+      var reportPlaceholder = document.getElementById('report-placeholder');
+      var reportMeta = document.getElementById('report-meta');
+      var reportCard = document.getElementById('report-card');
+      var openReportButton = document.getElementById('open-report-button');
+      var downloadReportButton = document.getElementById('download-report-button');
+      var downloadMarkdownButton = document.getElementById('download-md-button');
+      var errorBanner = document.getElementById('error-banner');
+      var errorMessage = document.getElementById('error-message');
+      var errorRetry = document.getElementById('error-retry');
+      var errorDismiss = document.getElementById('error-dismiss');
+      var summaryRow = document.getElementById('summary-row');
+      var historySection = document.getElementById('history-section');
+      var historyToggleBtn = document.getElementById('history-toggle');
+      var historyList = document.getElementById('history-list');
+      var historyCountEl = document.getElementById('history-count');
+      var themeToggle = document.getElementById('theme-toggle');
+
+      var selectedFile = null;
+      var uploading = false;
+      var lastReportHtml = null;
+      var scanHistory = [];
+      var timerStart = null;
+      var timerRaf = null;
+
+      var SEV_COLORS = {
+        CRITICAL: '#dc2626',
+        HIGH: '#ea580c',
+        MEDIUM: '#ca8a04',
+        LOW: '#2563eb',
+        INFO: '#6b7280'
+      };
+      var VERDICT_COLORS = {
+        MALICIOUS: '#dc2626',
+        SUSPICIOUS: '#ea580c',
+        SAFE: '#16a34a',
+        UNKNOWN: '#6b7280'
+      };
+
+      /* ---- Theme ---- */
+
+      function getPreferredTheme() {
+        var stored = null;
+        try { stored = localStorage.getItem('skill-scanner-theme'); } catch (_e) { /* noop */ }
+        if (stored === 'light' || stored === 'dark') return stored;
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
+        return 'dark';
+      }
+
+      function applyTheme(theme) {
+        if (theme === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+          themeToggle.setAttribute('aria-label', 'Switch to dark mode');
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+          themeToggle.setAttribute('aria-label', 'Switch to light mode');
+        }
+        try { localStorage.setItem('skill-scanner-theme', theme); } catch (_e) { /* noop */ }
+      }
+
+      themeToggle.addEventListener('click', function () {
+        var current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+        applyTheme(current === 'light' ? 'dark' : 'light');
+      });
+
+      /* ---- Utilities ---- */
+
+      function setStatus(text, badges) {
+        statusText.textContent = '';
+
+        var parts = text.split(/(\{strong\}.*?\{\/strong\})/);
+        parts.forEach(function (part) {
+          var match = part.match(/^\{strong\}(.*)\{\/strong\}$/);
+          if (match) {
+            var strong = document.createElement('span');
+            strong.className = 'status-text-strong';
+            strong.textContent = match[1];
+            statusText.appendChild(strong);
+          } else if (part) {
+            statusText.appendChild(document.createTextNode(part));
+          }
+        });
+
+        while (statusBadges.firstChild) {
+          statusBadges.removeChild(statusBadges.firstChild);
+        }
+        (badges || []).forEach(function (b) {
+          var span = document.createElement('span');
+          span.className = 'status-badge ' + (b.kind || '');
+          span.textContent = b.text;
+          statusBadges.appendChild(span);
+        });
+      }
+
+      function resetProgress() {
+        progressInner.classList.remove('running');
+        progressInner.style.transform = 'scaleX(0)';
+      }
+
+      function startProgress() {
+        progressInner.classList.add('running');
+        progressInner.style.transform = 'scaleX(1)';
+      }
+
+      function updateButton() {
+        if (uploading) {
+          scanButton.disabled = true;
+          scanButtonLabel.textContent = 'Scanning\u2026';
+        } else if (selectedFile) {
+          scanButton.disabled = false;
+          scanButtonLabel.textContent = 'Start scan';
+        } else {
+          scanButton.disabled = true;
+          scanButtonLabel.textContent = 'Select ZIP to start scan';
+        }
+        var enableReportActions = !!lastReportHtml;
+        openReportButton.disabled = !enableReportActions;
+        downloadReportButton.disabled = !enableReportActions;
+        downloadMarkdownButton.disabled = !enableReportActions || !selectedFile;
+      }
+
+      function updateLlmVisibility() {
+        if (useLlm.checked) {
+          llmAdvanced.classList.remove('hidden');
+        } else {
+          llmAdvanced.classList.add('hidden');
+        }
+      }
+
+      /* ---- Timer ---- */
+
+      function startTimer() {
+        timerStart = performance.now();
+        elapsedEl.textContent = '0.0s';
+        elapsedEl.style.display = '';
+        tickTimer();
+      }
+
+      function tickTimer() {
+        if (timerStart === null) return;
+        var elapsed = (performance.now() - timerStart) / 1000;
+        elapsedEl.textContent = elapsed.toFixed(1) + 's';
+        timerRaf = requestAnimationFrame(tickTimer);
+      }
+
+      function stopTimer() {
+        if (timerRaf !== null) {
+          cancelAnimationFrame(timerRaf);
+          timerRaf = null;
+        }
+        var finalTime = null;
+        if (timerStart !== null) {
+          finalTime = ((performance.now() - timerStart) / 1000).toFixed(1);
+          elapsedEl.textContent = finalTime + 's';
+        }
+        timerStart = null;
+        return finalTime;
+      }
+
+      /* ---- Summary Cards ---- */
+
+      function parseSummary(html) {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(html, 'text/html');
+        var summary = { findings: 0, critical: 0, high: 0, medium: 0, low: 0, info: 0, verdict: 'UNKNOWN' };
+
+        var badges = doc.querySelectorAll('.badge');
+        if (badges.length > 0) {
+          summary.verdict = badges[0].textContent.trim().toUpperCase();
+        }
+
+        var legendSpans = doc.querySelectorAll('.sev-legend span');
+        legendSpans.forEach(function (span) {
+          var text = span.textContent.trim();
+          var m = text.match(/^(CRITICAL|HIGH|MEDIUM|LOW|INFO):\s*(\d+)$/i);
+          if (m) {
+            var key = m[1].toLowerCase();
+            summary[key] = parseInt(m[2], 10);
+          }
+        });
+
+        summary.findings = summary.critical + summary.high + summary.medium + summary.low + summary.info;
+        return summary;
+      }
+
+      function renderSummary(data) {
+        while (summaryRow.firstChild) summaryRow.removeChild(summaryRow.firstChild);
+
+        var items = [
+          { label: 'Findings', value: data.findings, color: null },
+          { label: 'Critical', value: data.critical, color: SEV_COLORS.CRITICAL },
+          { label: 'High', value: data.high, color: SEV_COLORS.HIGH },
+          { label: 'Medium', value: data.medium, color: SEV_COLORS.MEDIUM },
+          { label: 'Low', value: data.low, color: SEV_COLORS.LOW },
+          { label: 'Info', value: data.info, color: SEV_COLORS.INFO }
+        ];
+
+        items.forEach(function (item) {
+          var pill = document.createElement('span');
+          pill.className = 'summary-pill';
+          if (item.color) {
+            var dot = document.createElement('span');
+            dot.className = 'summary-pill-dot';
+            dot.style.background = item.color;
+            pill.appendChild(dot);
+          }
+          pill.appendChild(document.createTextNode(item.label + ': ' + item.value));
+          summaryRow.appendChild(pill);
+        });
+
+        var verdictPill = document.createElement('span');
+        verdictPill.className = 'summary-pill verdict';
+        verdictPill.style.background = VERDICT_COLORS[data.verdict] || VERDICT_COLORS.UNKNOWN;
+        verdictPill.textContent = data.verdict;
+        summaryRow.appendChild(verdictPill);
+
+        summaryRow.classList.remove('hidden');
+      }
+
+      function hideSummary() {
+        summaryRow.classList.add('hidden');
+        while (summaryRow.firstChild) summaryRow.removeChild(summaryRow.firstChild);
+      }
+
+      /* ---- Scan History ---- */
+
+      function addToHistory(name, html, summaryData) {
+        scanHistory.unshift({
+          name: name,
+          timestamp: new Date().toLocaleTimeString(),
+          html: html,
+          summary: summaryData
+        });
+        if (scanHistory.length > 10) scanHistory.pop();
+        renderHistory();
+      }
+
+      function renderHistory() {
+        if (scanHistory.length === 0) {
+          historySection.classList.add('hidden');
+          return;
+        }
+        historySection.classList.remove('hidden');
+        historyCountEl.textContent = String(scanHistory.length);
+
+        while (historyList.firstChild) historyList.removeChild(historyList.firstChild);
+
+        scanHistory.forEach(function (entry, idx) {
+          var row = document.createElement('div');
+          row.className = 'history-item';
+
+          var nameSpan = document.createElement('span');
+          nameSpan.className = 'history-item-name';
+          nameSpan.textContent = entry.name;
+          nameSpan.title = entry.name;
+          row.appendChild(nameSpan);
+
+          var timeSpan = document.createElement('span');
+          timeSpan.className = 'history-item-time';
+          timeSpan.textContent = entry.timestamp;
+          row.appendChild(timeSpan);
+
+          var countPill = document.createElement('span');
+          countPill.className = 'history-item-pill';
+          var verdictColor = VERDICT_COLORS[entry.summary.verdict] || VERDICT_COLORS.UNKNOWN;
+          countPill.style.borderColor = verdictColor;
+          countPill.style.color = verdictColor;
+          countPill.textContent = entry.summary.findings + ' findings';
+          row.appendChild(countPill);
+
+          var viewBtn = document.createElement('button');
+          viewBtn.className = 'history-item-view';
+          viewBtn.type = 'button';
+          viewBtn.textContent = 'View';
+          viewBtn.setAttribute('data-index', String(idx));
+          viewBtn.addEventListener('click', function () {
+            viewHistoryItem(idx);
+          });
+          row.appendChild(viewBtn);
+
+          historyList.appendChild(row);
+        });
+      }
+
+      function viewHistoryItem(index) {
+        var entry = scanHistory[index];
+        if (!entry) return;
+        lastReportHtml = entry.html;
+        reportFrame.style.display = 'block';
+        reportPlaceholder.style.display = 'none';
+        reportFrame.srcdoc = entry.html;
+        renderSummary(entry.summary);
+        reportMeta.textContent = 'Viewing scan from ' + entry.timestamp + ' \u00b7 ' + entry.name;
+        updateButton();
+      }
+
+      historyToggleBtn.addEventListener('click', function () {
+        var expanded = historyToggleBtn.getAttribute('aria-expanded') === 'true';
+        historyToggleBtn.setAttribute('aria-expanded', String(!expanded));
+        if (expanded) {
+          historyList.classList.add('hidden');
+        } else {
+          historyList.classList.remove('hidden');
+        }
+      });
+
+      /* ---- Error Banner ---- */
+
+      function showError(msg) {
+        errorMessage.textContent = msg;
+        errorBanner.classList.remove('hidden');
+      }
+
+      function hideError() {
+        errorBanner.classList.add('hidden');
+        errorMessage.textContent = '';
+      }
+
+      errorRetry.addEventListener('click', function () {
+        hideError();
+        runScan();
+      });
+
+      errorDismiss.addEventListener('click', function () {
+        hideError();
+      });
+
+      /* ---- ARIA busy helpers ---- */
+
+      function setScanBusy(busy) {
+        scanButton.setAttribute('aria-busy', String(busy));
+        reportCard.setAttribute('aria-busy', String(busy));
+      }
+
+      /* ---- File handling ---- */
+
+      function handleFile(file) {
+        if (!file) return;
+        if (!file.name.endsWith('.zip')) {
+          setStatus('Only ZIP files are supported.', [{ text: 'Invalid type', kind: 'err' }]);
+          selectedFile = null;
+          updateButton();
+          return;
+        }
+        selectedFile = file;
+        hideError();
+        setStatus(
+          '{strong}Ready to scan:{/strong} ' + file.name,
+          [{ text: 'Ready', kind: 'ok' }]
+        );
+        resetProgress();
+        updateButton();
+      }
+
+      dropzone.addEventListener('click', function (e) {
+        if (uploading) return;
+        if (e.target !== dropzone && e.target.closest('.file-label')) return;
+        if (e.target.tagName === 'INPUT') return;
+        fileInput.click();
+      });
+
+      dropzone.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (!uploading) fileInput.click();
+        }
+      });
+
+      fileInput.addEventListener('change', function (e) {
+        var file = e.target.files && e.target.files[0];
+        handleFile(file);
+      });
+
+      folderInput.addEventListener('change', async function (e) {
+        var files = e.target.files;
+        if (!files || files.length === 0) {
+          return;
+        }
+        try {
+          setStatus(
+            '{strong}Step 0/2:{/strong} Preparing folder for upload\u2026',
+            [
+              { text: 'Pack folder', kind: 'step-active' },
+              { text: 'Upload / unpack', kind: 'step-pending' },
+            ]
+          );
+          var jszip = new JSZip();
+          var root = '';
+          Array.from(files).forEach(function (file) {
+            var relPath = file.webkitRelativePath || file.name;
+            if (!root && file.webkitRelativePath) {
+              var fileParts = file.webkitRelativePath.split('/');
+              if (fileParts.length > 1) {
+                root = fileParts[0];
+              }
+            }
+            jszip.file(relPath, file);
+          });
+          var blob = await jszip.generateAsync({ type: 'blob' });
+          var zipName = (root || 'skill') + '.zip';
+          var zipFile = new File([blob], zipName, { type: 'application/zip' });
+          fileInput.value = '';
+          handleFile(zipFile);
+        } catch (err) {
+          console.error(err);
+          setStatus('Failed to prepare folder ZIP: ' + (err.message || String(err)), [
+            { text: 'Failed', kind: 'err' },
+          ]);
+        }
+      });
+
+      ['dragenter', 'dragover'].forEach(function (eventName) {
+        dropzone.addEventListener(eventName, function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (uploading) return;
+          dropzone.classList.add('dragover');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach(function (eventName) {
+        dropzone.addEventListener(eventName, function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.classList.remove('dragover');
+        });
+      });
+
+      dropzone.addEventListener('drop', function (e) {
+        if (uploading) return;
+        var dt = e.dataTransfer;
+        var file = dt && dt.files && dt.files[0];
+        handleFile(file);
+      });
+
+      /* ---- Form helpers ---- */
+
+      function buildFormData() {
+        var form = new FormData();
+        form.append('file', selectedFile);
+        var policy = policySelect.value.trim();
+        if (policy) {
+          form.append('policy', policy);
+        }
+        form.append('use_behavioral', useBehavioral.checked ? 'true' : 'false');
+        form.append('use_llm', useLlm.checked ? 'true' : 'false');
+        var model = llmModel.value.trim();
+        var baseUrl = llmBaseUrl.value.trim();
+        if (model) {
+          form.append('llm_model', model);
+        }
+        if (baseUrl) {
+          form.append('llm_base_url', baseUrl);
+        }
+        return form;
+      }
+
+      function buildHeaders() {
+        var headers = {};
+        var apiKey = llmApiKey.value.trim();
+        if (apiKey) {
+          headers['X-LLM-API-Key'] = apiKey;
+        }
+        return headers;
+      }
+
+      /* ---- Scan ---- */
+
+      async function runScan() {
+        if (!selectedFile || uploading) return;
+        uploading = true;
+        hideError();
+        hideSummary();
+        updateButton();
+        setScanBusy(true);
+        resetProgress();
+        startProgress();
+        startTimer();
+        setStatus(
+          '{strong}Step 1/2:{/strong} Uploading and unpacking\u2026',
+          [
+            { text: 'Upload / unpack', kind: 'step-active' },
+            { text: 'Run analyzers', kind: 'step-pending' },
+          ]
+        );
+
+        try {
+          var form = buildFormData();
+          var headers = buildHeaders();
+
+          var res = await fetch('/scan-upload-html', {
+            method: 'POST',
+            headers: headers,
+            body: form,
+          });
+
+          if (!res.ok) {
+            var msg = 'Scan failed (HTTP ' + res.status + ').';
+            try {
+              var data = await res.json();
+              if (data && data.detail) {
+                msg = Array.isArray(data.detail)
+                  ? data.detail.map(function (d) { return d.msg || d; }).join('; ')
+                  : data.detail;
+              }
+            } catch (_ignore) {
+              // response was not JSON
+            }
+            throw new Error(msg);
+          }
+
+          setStatus(
+            '{strong}Step 2/2:{/strong} Running analyzers and building report\u2026',
+            [
+              { text: 'Upload / unpack', kind: 'step-done' },
+              { text: 'Run analyzers', kind: 'step-active' },
+            ]
+          );
+
+          var html = await res.text();
+          var finalTime = stopTimer();
+          lastReportHtml = html;
+          reportFrame.style.display = 'block';
+          reportPlaceholder.style.display = 'none';
+          reportFrame.srcdoc = html;
+
+          var summaryData = parseSummary(html);
+          renderSummary(summaryData);
+          addToHistory(selectedFile.name, html, summaryData);
+
+          var ts = new Date().toLocaleTimeString();
+          reportMeta.textContent = 'Last scan finished at ' + ts + ' \u00b7 from ZIP: ' + selectedFile.name;
+
+          var completedText = '{strong}All steps completed';
+          if (finalTime) completedText += ' in ' + finalTime + 's';
+          completedText += '.{/strong}';
+          setStatus(
+            completedText,
+            [
+              { text: 'Upload / unpack', kind: 'step-done' },
+              { text: 'Run analyzers', kind: 'step-done' },
+            ]
+          );
+        } catch (err) {
+          console.error(err);
+          stopTimer();
+          var errMsg = err.message || String(err);
+          setStatus(errMsg, [{ text: 'Failed', kind: 'err' }]);
+          showError(errMsg);
+        } finally {
+          uploading = false;
+          resetProgress();
+          setScanBusy(false);
+          updateButton();
+        }
+      }
+
+      scanButton.addEventListener('click', function (e) {
+        e.preventDefault();
+        runScan();
+      });
+
+      /* ---- Report actions ---- */
+
+      openReportButton.addEventListener('click', function () {
+        if (!lastReportHtml) return;
+        var blob = new Blob([lastReportHtml], { type: 'text/html;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        window.open(url, '_blank', 'noopener,noreferrer');
+      });
+
+      downloadReportButton.addEventListener('click', function () {
+        if (!lastReportHtml) return;
+        var blob = new Blob([lastReportHtml], { type: 'text/html;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        var ts = new Date().toISOString().replace(/[:.]/g, '-');
+        a.download = 'skill-scan-report-' + ts + '.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+
+      downloadMarkdownButton.addEventListener('click', async function () {
+        if (!lastReportHtml || !selectedFile || uploading) return;
+        try {
+          var form = buildFormData();
+          var headers = buildHeaders();
+
+          var res = await fetch('/scan-upload-markdown', {
+            method: 'POST',
+            headers: headers,
+            body: form,
+          });
+
+          if (!res.ok) {
+            var msg = 'Markdown export failed (HTTP ' + res.status + ').';
+            try {
+              var data = await res.json();
+              if (data && data.detail) {
+                msg = Array.isArray(data.detail)
+                  ? data.detail.map(function (d) { return d.msg || d; }).join('; ')
+                  : data.detail;
+              }
+            } catch (_ignore) {
+              // response was not JSON
+            }
+            throw new Error(msg);
+          }
+
+          var md = await res.text();
+          var mdBlob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+          var mdUrl = URL.createObjectURL(mdBlob);
+          var a = document.createElement('a');
+          var ts = new Date().toISOString().replace(/[:.]/g, '-');
+          var baseName = selectedFile.name.replace(/\.zip$/i, '') || 'skill-scan-report';
+          a.href = mdUrl;
+          a.download = baseName + '-' + ts + '.md';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(mdUrl);
+        } catch (err) {
+          console.error(err);
+          showError('Markdown download failed: ' + (err.message || String(err)));
+        }
+      });
+
+      useLlm.addEventListener('change', function () {
+        updateLlmVisibility();
+      });
+
+      /* ---- Init ---- */
+      applyTheme(getPreferredTheme());
+      updateLlmVisibility();
+    })();
+  </script>
+</body>
+</html>

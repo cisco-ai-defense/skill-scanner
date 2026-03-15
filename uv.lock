@@ -514,7 +514,6 @@ dependencies = [
     { name = "anthropic" },
     { name = "click" },
     { name = "confusable-homoglyphs" },
-    { name = "fastapi" },
     { name = "google-genai" },
     { name = "google-generativeai" },
     { name = "httpx" },
@@ -526,12 +525,10 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "python-frontmatter" },
-    { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "tabulate" },
     { name = "textual" },
-    { name = "uvicorn", extra = ["standard"] },
     { name = "yara-x" },
 ]
 
@@ -539,7 +536,10 @@ dependencies = [
 all = [
     { name = "azure-identity" },
     { name = "boto3" },
+    { name = "fastapi" },
     { name = "google-cloud-aiplatform" },
+    { name = "python-multipart" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 azure = [
     { name = "azure-identity" },
@@ -549,6 +549,11 @@ bedrock = [
 ]
 vertex = [
     { name = "google-cloud-aiplatform" },
+]
+web = [
+    { name = "fastapi" },
+    { name = "python-multipart" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.dev-dependencies]
@@ -572,7 +577,8 @@ requires-dist = [
     { name = "boto3", marker = "extra == 'bedrock'", specifier = ">=1.28.57" },
     { name = "click", specifier = ">=8.1.0" },
     { name = "confusable-homoglyphs", specifier = ">=3.3.0" },
-    { name = "fastapi", specifier = ">=0.125.0" },
+    { name = "fastapi", marker = "extra == 'all'", specifier = ">=0.125.0" },
+    { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.125.0" },
     { name = "google-cloud-aiplatform", marker = "extra == 'all'", specifier = ">=1.38.0" },
     { name = "google-cloud-aiplatform", marker = "extra == 'vertex'", specifier = ">=1.38.0" },
     { name = "google-genai", specifier = ">=0.2.0" },
@@ -586,15 +592,17 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.6.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "python-frontmatter", specifier = ">=1.0.0" },
-    { name = "python-multipart", specifier = ">=0.0.6" },
+    { name = "python-multipart", marker = "extra == 'all'", specifier = ">=0.0.6" },
+    { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.6" },
     { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "textual", specifier = ">=1.0.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.29.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'all'", specifier = ">=0.29.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'", specifier = ">=0.29.0" },
     { name = "yara-x", specifier = ">=1.12.0" },
 ]
-provides-extras = ["all", "azure", "bedrock", "vertex"]
+provides-extras = ["all", "azure", "bedrock", "vertex", "web"]
 
 [package.metadata.requires-dev]
 dev = [
