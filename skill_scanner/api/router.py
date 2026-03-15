@@ -49,6 +49,7 @@ except ImportError:
 
 from .. import __version__ as PACKAGE_VERSION
 from ..core.analyzer_factory import build_analyzers
+from ..core.models import ScanResult
 from ..core.reporters.html_reporter import HTMLReporter
 from ..core.reporters.markdown_reporter import MarkdownReporter
 from ..core.scan_policy import ScanPolicy
@@ -316,6 +317,161 @@ def _build_analyzers(
         use_trigger=use_trigger,
         llm_consensus_runs=llm_consensus_runs,
     )
+
+
+async def _extract_uploaded_zip(file: UploadFile) -> tuple[Path, Path]:
+    """Stream upload a ZIP, validate, extract, and return (temp_dir, skill_dir).
+
+    Caller must call shutil.rmtree(temp_dir, ignore_errors=True) in a finally block.
+    """
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="File must be a ZIP archive")
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="skill_scanner_"))
+    zip_path = temp_dir / (file.filename or "upload.zip")
+    total_read = 0
+    chunk_size = 1024 * 1024  # 1 MB
+    with open(zip_path, "wb") as f:
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total_read += len(chunk)
+            if total_read > MAX_UPLOAD_SIZE_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Upload exceeds maximum size of {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB",
+                )
+            f.write(chunk)
+
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            entries = [info for info in zip_ref.infolist() if not info.is_dir()]
+            if len(entries) > MAX_ZIP_ENTRIES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"ZIP contains {len(entries)} files, exceeding limit of {MAX_ZIP_ENTRIES}",
+                )
+            total_uncompressed = sum(info.file_size for info in entries)
+            if total_uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"ZIP uncompressed size ({total_uncompressed // (1024 * 1024)} MB) "
+                        f"exceeds limit of {MAX_ZIP_UNCOMPRESSED_BYTES // (1024 * 1024)} MB"
+                    ),
+                )
+            extract_root = (temp_dir / "extracted").resolve()
+            for info in zip_ref.infolist():
+                unix_mode = (info.external_attr >> 16) & 0xFFFF
+                if unix_mode != 0 and stat.S_ISLNK(unix_mode):
+                    raise HTTPException(status_code=400, detail="ZIP contains symbolic link entries")
+                dest_path = (extract_root / info.filename).resolve()
+                if not dest_path.is_relative_to(extract_root):
+                    raise HTTPException(status_code=400, detail="ZIP contains path traversal entries")
+
+            extract_root.mkdir(parents=True, exist_ok=True)
+            for info in zip_ref.infolist():
+                zip_ref.extract(info, extract_root)
+                dest_path = (extract_root / info.filename).resolve()
+                if dest_path.is_symlink():
+                    dest_path.unlink()
+                    raise HTTPException(
+                        status_code=400,
+                        detail="ZIP extraction produced a symbolic link — rejected",
+                    )
+    except zipfile.BadZipFile as e:
+        raise HTTPException(status_code=400, detail="Invalid ZIP archive") from e
+
+    extracted_dir = temp_dir / "extracted"
+    skill_dirs = list(extracted_dir.rglob("SKILL.md"))
+    if not skill_dirs:
+        raise HTTPException(status_code=400, detail="No SKILL.md found in uploaded archive")
+
+    return (temp_dir, skill_dirs[0].parent)
+
+
+async def _run_scan_with_meta(
+    skill_dir: Path,
+    *,
+    policy_str: str | None,
+    custom_rules_path: str | None,
+    enable_meta: bool,
+    use_behavioral: bool,
+    use_llm: bool,
+    llm_provider: str,
+    llm_model: str | None,
+    llm_base_url: str | None,
+    use_virustotal: bool,
+    vt_upload_files: bool,
+    use_aidefense: bool,
+    aidefense_api_url: str | None,
+    use_trigger: bool,
+    llm_consensus_runs: int,
+    vt_api_key: str | None,
+    aidefense_api_key: str | None,
+    llm_api_key: str | None,
+) -> ScanResult:
+    """Run scan in executor, optionally run meta-analysis, return ScanResult."""
+    try:
+        policy = _resolve_policy(policy_str)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    def run_scan() -> ScanResult:
+        analyzers = _build_analyzers(
+            policy,
+            custom_rules=custom_rules_path,
+            use_behavioral=use_behavioral,
+            use_llm=use_llm,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_api_key=llm_api_key,
+            llm_base_url=llm_base_url,
+            use_virustotal=use_virustotal,
+            vt_api_key=vt_api_key,
+            vt_upload_files=vt_upload_files,
+            use_aidefense=use_aidefense,
+            aidefense_api_key=aidefense_api_key,
+            aidefense_api_url=aidefense_api_url,
+            use_trigger=use_trigger,
+            llm_consensus_runs=llm_consensus_runs,
+        )
+        scanner = SkillScanner(analyzers=analyzers, policy=policy)
+        return scanner.scan_skill(skill_dir)
+
+    loop = asyncio.get_running_loop()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        result = await loop.run_in_executor(executor, run_scan)
+
+    if (
+        enable_meta
+        and META_AVAILABLE
+        and MetaAnalyzer is not None
+        and apply_meta_analysis_to_results is not None
+        and len(result.findings) > 0
+    ):
+        try:
+            from ..core.loader import SkillLoader
+
+            meta_analyzer = MetaAnalyzer(policy=policy)
+            loader = SkillLoader()
+            skill = loader.load_skill(skill_dir)
+            meta_result = await meta_analyzer.analyze_with_findings(
+                skill=skill,
+                findings=result.findings,
+                analyzers_used=result.analyzers_used,
+            )
+            result.findings = apply_meta_analysis_to_results(
+                original_findings=result.findings,
+                meta_result=meta_result,
+                skill=skill,
+            )
+            result.analyzers_used.append("meta_analyzer")
+        except Exception as meta_error:
+            logger.warning("Meta-analysis failed: %s", meta_error)
+
+    return result
 
 
 def _recompute_report_summary(report) -> None:
@@ -637,7 +793,7 @@ async def scan_skill(
     request: ScanRequest,
     vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
     aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
-    llm_api_key: str | None = Header(None, alias="X-LLM-Key"),
+    llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
 ):
     """Scan a single skill package."""
     skill_dir, custom_rules_path = _validate_scan_request_directory(request)
@@ -654,38 +810,33 @@ async def scan_skill(
             custom_rules_path=custom_rules_path,
             use_behavioral=request.use_behavioral,
             use_llm=request.use_llm,
-            llm_provider=request.llm_provider,
+            llm_provider=request.llm_provider or "anthropic",
             llm_model=request.llm_model,
             llm_api_key=llm_api_key,
             llm_base_url=request.llm_base_url,
             use_virustotal=request.use_virustotal,
-            vt_api_key=vt_api_key,
             vt_upload_files=request.vt_upload_files,
             use_aidefense=request.use_aidefense,
-            aidefense_api_key=aidefense_api_key,
             aidefense_api_url=request.aidefense_api_url,
             use_trigger=request.use_trigger,
             enable_meta=request.enable_meta,
             llm_consensus_runs=request.llm_consensus_runs,
+            vt_api_key=vt_api_key,
+            aidefense_api_key=aidefense_api_key,
+            llm_api_key=llm_api_key,
         )
 
         scan_id = str(uuid.uuid4())
         return ScanResponse(
-            scan_id=scan_id,
-            skill_name=result.skill_name,
-            is_safe=result.is_safe,
-            max_severity=result.max_severity.value,
-            findings_count=len(result.findings),
-            scan_duration_seconds=result.scan_duration_seconds,
-            timestamp=result.timestamp.isoformat(),
-            findings=[f.to_dict() for f in result.findings],
-        )
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        logger.exception("Scan failed")
-        raise HTTPException(status_code=500, detail="Internal scan error")
+        scan_id=scan_id,
+        skill_name=result.skill_name,
+        is_safe=result.is_safe,
+        max_severity=result.max_severity.value,
+        findings_count=len(result.findings),
+        scan_duration_seconds=result.scan_duration_seconds,
+        timestamp=result.timestamp.isoformat(),
+        findings=[f.to_dict() for f in result.findings],
+    )
 
 
 @router.post("/scan-html", response_class=HTMLResponse)
@@ -693,7 +844,7 @@ async def scan_skill_html(
     request: ScanRequest,
     vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
     aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
-    llm_api_key: str | None = Header(None, alias="X-LLM-Key"),
+    llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
 ):
     """Scan a single skill directory and return a full HTML report.
 
@@ -714,21 +865,21 @@ async def scan_skill_html(
             custom_rules_path=custom_rules_path,
             use_behavioral=request.use_behavioral,
             use_llm=request.use_llm,
-            llm_provider=request.llm_provider,
+            llm_provider=request.llm_provider or "anthropic",
             llm_model=request.llm_model,
             llm_api_key=llm_api_key,
             llm_base_url=request.llm_base_url,
             use_virustotal=request.use_virustotal,
-            vt_api_key=vt_api_key,
             vt_upload_files=request.vt_upload_files,
             use_aidefense=request.use_aidefense,
-            aidefense_api_key=aidefense_api_key,
             aidefense_api_url=request.aidefense_api_url,
             use_trigger=request.use_trigger,
             enable_meta=request.enable_meta,
             llm_consensus_runs=request.llm_consensus_runs,
+            vt_api_key=vt_api_key,
+            aidefense_api_key=aidefense_api_key,
+            llm_api_key=llm_api_key,
         )
-
         html_report = HTMLReporter().generate_report(result)
         return HTMLResponse(content=html_report, media_type="text/html; charset=utf-8")
 
@@ -758,7 +909,7 @@ async def scan_uploaded_skill(
     use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
     enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
     llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
-    llm_api_key: str | None = Header(None, alias="X-LLM-Key"),
+    llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
 ):
     """Scan an uploaded skill package (ZIP file)."""
     result = await _handle_upload_and_scan(
@@ -814,7 +965,7 @@ async def scan_uploaded_skill_html(
     use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
     enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
     llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
-    llm_api_key: str | None = Header(None, alias="X-LLM-Key"),
+    llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
 ):
     """Scan an uploaded ZIP and return a full interactive HTML report."""
     result = await _handle_upload_and_scan(
@@ -861,7 +1012,7 @@ async def scan_uploaded_skill_markdown(
     use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
     enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
     llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
-    llm_api_key: str | None = Header(None, alias="X-LLM-Key"),
+    llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
 ):
     """Scan an uploaded skill package (ZIP file) and return a Markdown report."""
     result = await _handle_upload_and_scan(

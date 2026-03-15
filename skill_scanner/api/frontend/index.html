@@ -912,7 +912,7 @@
     <span>For advanced usage, continue to use the <code>skill-scanner</code> CLI.</span>
   </footer>
 
-  <script src="jszip.min.js"></script>
+  <script src="js/jszip.min.js"></script>
   <script>
     (function () {
       'use strict';
@@ -1394,7 +1394,7 @@
         var headers = {};
         var apiKey = llmApiKey.value.trim();
         if (apiKey) {
-          headers['X-LLM-Key'] = apiKey;
+          headers['X-LLM-API-Key'] = apiKey;
         }
         return headers;
       }
@@ -1425,8 +1425,8 @@
 
           var res = await fetch('/scan-upload-html', {
             method: 'POST',
-            body: form,
             headers: headers,
+            body: form,
           });
 
           if (!res.ok) {
@@ -1526,8 +1526,8 @@
 
           var res = await fetch('/scan-upload-markdown', {
             method: 'POST',
-            body: form,
             headers: headers,
+            body: form,
           });
 
           if (!res.ok) {
