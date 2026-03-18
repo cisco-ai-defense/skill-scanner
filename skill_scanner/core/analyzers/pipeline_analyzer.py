@@ -249,10 +249,51 @@ class PipelineAnalyzer(BaseAnalyzer):
 
         return pipelines
 
+    @staticmethod
+    def _split_pipeline(raw: str) -> list[str]:
+        """Split a pipeline string by ``|`` while respecting quotes.
+
+        Pipes inside single- or double-quoted strings (e.g. inside ``jq``
+        expressions) are **not** treated as shell pipe operators.
+        """
+        parts: list[str] = []
+        current: list[str] = []
+        in_single = False
+        in_double = False
+        i = 0
+        length = len(raw)
+        while i < length:
+            ch = raw[i]
+            if ch == "'" and not in_double:
+                in_single = not in_single
+                current.append(ch)
+            elif ch == '"' and not in_single:
+                in_double = not in_double
+                current.append(ch)
+            elif ch == "\\" and i + 1 < length:
+                current.append(ch)
+                current.append(raw[i + 1])
+                i += 1
+            elif ch == "|" and not in_single and not in_double:
+                # Ignore || (logical OR)
+                if i + 1 < length and raw[i + 1] == "|":
+                    current.append("||")
+                    i += 1
+                else:
+                    parts.append("".join(current).strip())
+                    current = []
+            else:
+                current.append(ch)
+            i += 1
+        remainder = "".join(current).strip()
+        if remainder:
+            parts.append(remainder)
+        return parts
+
     def _parse_pipeline(self, raw: str, source_file: str, line_number: int) -> PipelineChain | None:
         """Parse a pipeline string into a chain of CommandNodes."""
-        # Split by pipe, but not by ||
-        parts = re.split(r"\s*\|\s*(?!\|)", raw)
+        # Split by pipe, respecting quotes (fixes jq expression false positives)
+        parts = self._split_pipeline(raw)
         if len(parts) < 2:
             return None
 

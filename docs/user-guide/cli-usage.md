@@ -59,6 +59,21 @@ skill-scanner scan ./my-skill --policy strict
 skill-scanner scan ./my-skill --policy ./my-org-policy.yaml
 ```
 
+### Scanning non-standard skill formats
+
+Use `--lenient` to scan skills that don't follow the Codex/Cursor `SKILL.md` convention (e.g. Claude Code `.claude/commands/*.md`):
+
+```bash
+# Scan a directory with .md files but no SKILL.md
+skill-scanner scan .claude/commands/deploy --lenient
+
+# Discover all .md-containing directories under a path
+skill-scanner scan-all .claude/commands --recursive --lenient
+
+# Use a custom metadata file instead of SKILL.md
+skill-scanner scan ./my-skill --skill-file README.md
+```
+
 ## Choosing Analyzers
 
 Not sure which flags to use? Pick the row that matches your situation:

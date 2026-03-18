@@ -349,9 +349,10 @@ def scan_command(args: argparse.Namespace) -> int:
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
     lenient = getattr(args, "lenient", False)
+    skill_file = getattr(args, "skill_file", None)
 
     try:
-        result = scanner.scan_skill(skill_dir, lenient=lenient)
+        result = scanner.scan_skill(skill_dir, lenient=lenient, skill_file=skill_file)
 
         # Meta-analysis
         if meta_analyzer and result.findings and apply_meta_analysis_to_results is not None:
@@ -436,11 +437,16 @@ def scan_all_command(args: argparse.Namespace) -> int:
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
 
     lenient = getattr(args, "lenient", False)
+    skill_file = getattr(args, "skill_file", None)
 
     try:
         check_overlap = getattr(args, "check_overlap", False)
         report = scanner.scan_directory(
-            skills_dir, recursive=args.recursive, check_overlap=check_overlap, lenient=lenient
+            skills_dir,
+            recursive=args.recursive,
+            check_overlap=check_overlap,
+            lenient=lenient,
+            skill_file=skill_file,
         )
 
         if report.total_skills_scanned == 0:
@@ -766,7 +772,16 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--lenient",
         action="store_true",
-        help="Tolerate malformed skills: coerce bad fields, fill defaults, and continue instead of failing",
+        help=(
+            "Tolerate malformed skills: coerce bad fields, fill defaults, and continue instead of failing. "
+            "When SKILL.md is absent, falls back to scanning .md files in the directory as instruction bodies "
+            "(supports non-Codex/Cursor formats such as Claude Code commands)."
+        ),
+    )
+    parser.add_argument(
+        "--skill-file",
+        metavar="FILENAME",
+        help="Custom metadata filename to use instead of SKILL.md (e.g. README.md)",
     )
     parser.add_argument(
         "--custom-rules",
