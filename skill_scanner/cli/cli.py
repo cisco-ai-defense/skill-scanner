@@ -291,11 +291,12 @@ def _write_output(args: argparse.Namespace, output: str) -> None:
     primary_fmt = formats[0] if formats else "summary"
     render_md = sys.stdout.isatty() and not getattr(args, "no_render_markdown", False)
 
-    # Primary format: write to --output file or stdout
-    if args.output:
-        with open(args.output, "w", encoding="utf-8") as fh:
+    # Primary format: --output-<fmt> (explicit) > --output (generic) > stdout
+    primary_file = getattr(args, f"output_{primary_fmt}", None) or args.output
+    if primary_file:
+        with open(primary_file, "w", encoding="utf-8") as fh:
             fh.write(output)
-        print(f"Report saved to: {args.output}")
+        print(f"Report saved to: {primary_file}")
     else:
         if primary_fmt == "markdown" and render_md:
             Console().print(Markdown(output))
@@ -707,12 +708,14 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
             "Use 'sarif' for GitHub Code Scanning, 'html' for interactive report."
         ),
     )
-    parser.add_argument("--output", "-o", help="Output file path (for the first --format)")
-    parser.add_argument("--output-json", help="Write JSON report to this file (when using multiple --format)")
-    parser.add_argument("--output-sarif", help="Write SARIF report to this file (when using multiple --format)")
-    parser.add_argument("--output-markdown", help="Write Markdown report to this file (when using multiple --format)")
-    parser.add_argument("--output-html", help="Write HTML report to this file (when using multiple --format)")
-    parser.add_argument("--output-table", help="Write Table report to this file (when using multiple --format)")
+    parser.add_argument(
+        "--output", "-o", help="Default output file path (overridden by --output-<fmt> for a specific format)"
+    )
+    parser.add_argument("--output-json", help="Write JSON report to this file")
+    parser.add_argument("--output-sarif", help="Write SARIF report to this file")
+    parser.add_argument("--output-markdown", help="Write Markdown report to this file")
+    parser.add_argument("--output-html", help="Write HTML report to this file")
+    parser.add_argument("--output-table", help="Write Table report to this file")
     parser.add_argument("--detailed", action="store_true", help="Include detailed findings (Markdown output only)")
     parser.add_argument(
         "--no-render-markdown",
