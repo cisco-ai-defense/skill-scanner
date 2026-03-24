@@ -103,7 +103,14 @@ jobs:
           python-version: ${{ inputs.python_version }}
 
       - name: Install skill-scanner
-        run: pip install cisco-ai-skill-scanner
+        env:
+          INPUT_USE_LLM: ${{ inputs.use_llm }}
+        run: |
+          EXTRAS=""
+          if [ "$INPUT_USE_LLM" = "true" ]; then
+            EXTRAS="[llm]"
+          fi
+          pip install "cisco-ai-skill-scanner${EXTRAS}"
 
       - name: Validate inputs
         env:

@@ -67,15 +67,18 @@ dependencies = [
     "oletools>=0.60.1",
     # Unicode homoglyph attack detection (confusables.txt backed)
     "confusable-homoglyphs>=3.3.0",
-    # LLM support (required)
+    # LLM direct clients (lightweight, used for provider detection)
     "anthropic>=0.40.0",
     "openai>=1.0.0",
+]
+
+[project.optional-dependencies]
+# LLM proxy + Google providers (required only when use_llm=true)
+llm = [
     "litellm>=1.77.0",
     "google-genai>=0.2.0",
     "google-generativeai>=0.8.0",
 ]
-
-[project.optional-dependencies]
 # AWS Bedrock support (requires boto3 for IAM credentials)
 bedrock = [
     "boto3>=1.28.57",
@@ -94,6 +97,9 @@ azure = [
 # supply-chain = ["guarddog>=2.0.0"]
 # All optional provider extras
 all = [
+    "litellm>=1.77.0",
+    "google-genai>=0.2.0",
+    "google-generativeai>=0.8.0",
     "boto3>=1.28.57",
     "google-cloud-aiplatform>=1.38.0",
     "azure-identity>=1.15.0",
