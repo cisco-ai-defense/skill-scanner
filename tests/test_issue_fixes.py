@@ -305,6 +305,76 @@ class TestMultipleFormats:
         sarif_content = json.loads(Path(sarif_path).read_text(encoding="utf-8"))
         assert sarif_content.get("$schema") or sarif_content.get("version")
 
+    def test_write_output_primary_format_uses_output_fmt_fallback(self, tmp_path):
+        """Primary format falls back to --output-<fmt> when --output is not set."""
+        from skill_scanner.cli.cli import _format_single, _write_output
+
+        result = ScanResult(
+            skill_name="s",
+            skill_directory="/tmp/s",
+            findings=[_mk_finding("1")],
+        )
+
+        md_path = str(tmp_path / "report.md")
+        json_path = str(tmp_path / "report.json")
+        args = argparse.Namespace(
+            format=["markdown", "json"],
+            output=None,
+            output_json=json_path,
+            output_sarif=None,
+            output_markdown=md_path,
+            output_html=None,
+            output_table=None,
+            compact=False,
+            detailed=False,
+            _result_or_report=result,
+        )
+
+        primary_output = _format_single("markdown", args, result)
+        _write_output(args, primary_output)
+
+        # Primary (markdown) should go to --output-markdown file, not stdout
+        assert Path(md_path).exists()
+        assert len(Path(md_path).read_text(encoding="utf-8")) > 0
+        # Secondary (json) should also go to its file
+        assert Path(json_path).exists()
+        json_content = json.loads(Path(json_path).read_text(encoding="utf-8"))
+        assert isinstance(json_content, (dict, list))
+
+    def test_write_output_output_fmt_takes_precedence_over_output(self, tmp_path):
+        """--output-<fmt> takes precedence over --output for the primary format."""
+        from skill_scanner.cli.cli import _format_single, _write_output
+
+        result = ScanResult(
+            skill_name="s",
+            skill_directory="/tmp/s",
+            findings=[_mk_finding("1")],
+        )
+
+        generic_path = str(tmp_path / "generic.txt")
+        md_path = str(tmp_path / "report.md")
+        args = argparse.Namespace(
+            format=["markdown"],
+            output=generic_path,
+            output_json=None,
+            output_sarif=None,
+            output_markdown=md_path,
+            output_html=None,
+            output_table=None,
+            compact=False,
+            detailed=False,
+            _result_or_report=result,
+        )
+
+        primary_output = _format_single("markdown", args, result)
+        _write_output(args, primary_output)
+
+        # --output-markdown should win over --output
+        assert Path(md_path).exists()
+        assert len(Path(md_path).read_text(encoding="utf-8")) > 0
+        # --output should NOT be written when --output-<fmt> is present
+        assert not Path(generic_path).exists()
+
     def test_cli_accepts_multiple_format_flags(self):
         """Argparse accepts --format json --format sarif without error."""
         from skill_scanner.cli.cli import main

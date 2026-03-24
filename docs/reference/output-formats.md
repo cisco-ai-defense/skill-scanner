@@ -250,4 +250,4 @@ The `summary` format is the default and is implemented directly in the CLI (`ski
 - Use `--compact` with JSON for machine pipelines.
 - Use `--detailed` with Markdown for deep triage output.
 - Use `--fail-on-findings` with SARIF or JSON in CI gates.
-- Use `--output`/`-o` to write to a file; omit to print to stdout.
+- Use `--output-<fmt>` (e.g. `--output-json`) to write a specific format to a file; `--output`/`-o` serves as the default when no format-specific flag is given. Omit both to print to stdout.
