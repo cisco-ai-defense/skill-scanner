@@ -70,8 +70,8 @@ dependencies = [
     # LLM support (required)
     "anthropic>=0.40.0",
     "openai>=1.0.0",
-    # Pin via wheel URL: PyPI simple index may omit litellm; also avoids compromised releases (BerriAI/litellm#24512).
-    "litellm @ https://files.pythonhosted.org/packages/53/4d/73fdb12223bdb01889134eb75525fcc768b1724255f2b87072dd6743c6e1/litellm-1.80.16-py3-none-any.whl",
+    # Pin below known-bad PyPI release 1.82.8 (BerriAI/litellm#24512); IOC spot-check on wheel, see PR body.
+    "litellm==1.80.16",
     "google-genai>=0.2.0",
     "google-generativeai>=0.8.0",
 ]
@@ -123,9 +123,6 @@ Changelog = "https://github.com/cisco-ai-defense/skill-scanner/releases"
 skill-scanner = "skill_scanner.cli.cli:main"
 skill-scanner-api = "skill_scanner.api.api_cli:main"
 skill-scanner-pre-commit = "skill_scanner.hooks.pre_commit:main"
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.version]
 source = "vcs"
