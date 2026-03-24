@@ -70,7 +70,8 @@ dependencies = [
     # LLM support (required)
     "anthropic>=0.40.0",
     "openai>=1.0.0",
-    "litellm>=1.77.0",
+    # Pin below known-bad PyPI release 1.82.8 (BerriAI/litellm#24512); IOC spot-check on wheel, see PR body.
+    "litellm==1.80.16",
     "google-genai>=0.2.0",
     "google-generativeai>=0.8.0",
 ]
