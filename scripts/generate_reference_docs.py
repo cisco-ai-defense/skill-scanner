@@ -91,7 +91,7 @@ def _render_cli_reference() -> str:
         "| Flag | Default | Description |",
         "|---|---|---|",
         "| `--format FORMAT` | `summary` | Output format: `summary`, `json`, `markdown`, `table`, `sarif`, `html` |",
-        "| `--output FILE` | stdout | Write output to a file instead of stdout |",
+        "| `--output FILE` | stdout | Default output file path (overridden by `--output-<fmt>`) |",
         "| `--policy POLICY` | `balanced` | Policy preset name or path to a custom YAML |",
         "| `--use-llm` | off | Enable the LLM semantic analyzer |",
         "| `--use-behavioral` | off | Enable the behavioral analyzer |",
