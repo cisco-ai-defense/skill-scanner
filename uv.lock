@@ -515,8 +515,6 @@ dependencies = [
     { name = "click" },
     { name = "confusable-homoglyphs" },
     { name = "fastapi" },
-    { name = "google-genai" },
-    { name = "google-generativeai" },
     { name = "httpx" },
     { name = "litellm" },
     { name = "magika" },
@@ -540,12 +538,18 @@ all = [
     { name = "azure-identity" },
     { name = "boto3" },
     { name = "google-cloud-aiplatform" },
+    { name = "google-genai" },
+    { name = "google-generativeai" },
 ]
 azure = [
     { name = "azure-identity" },
 ]
 bedrock = [
     { name = "boto3" },
+]
+google = [
+    { name = "google-genai" },
+    { name = "google-generativeai" },
 ]
 vertex = [
     { name = "google-cloud-aiplatform" },
@@ -575,8 +579,10 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.125.0" },
     { name = "google-cloud-aiplatform", marker = "extra == 'all'", specifier = ">=1.38.0" },
     { name = "google-cloud-aiplatform", marker = "extra == 'vertex'", specifier = ">=1.38.0" },
-    { name = "google-genai", specifier = ">=0.2.0" },
-    { name = "google-generativeai", specifier = ">=0.8.0" },
+    { name = "google-genai", marker = "extra == 'all'", specifier = ">=0.2.0" },
+    { name = "google-genai", marker = "extra == 'google'", specifier = ">=0.2.0" },
+    { name = "google-generativeai", marker = "extra == 'all'", specifier = ">=0.8.0" },
+    { name = "google-generativeai", marker = "extra == 'google'", specifier = ">=0.8.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "litellm", specifier = "==1.80.16" },
     { name = "magika", specifier = ">=0.6.0" },
@@ -594,7 +600,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29.0" },
     { name = "yara-x", specifier = ">=1.12.0" },
 ]
-provides-extras = ["all", "azure", "bedrock", "vertex"]
+provides-extras = ["all", "azure", "bedrock", "google", "vertex"]
 
 [package.metadata.requires-dev]
 dev = [

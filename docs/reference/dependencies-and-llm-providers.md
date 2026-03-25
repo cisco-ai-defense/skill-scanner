@@ -48,8 +48,8 @@ All versions from [`pyproject.toml`](https://github.com/cisco-ai-defense/skill-s
 | `anthropic` | >= 0.40.0 | Anthropic Claude SDK |
 | `openai` | >= 1.0.0 | OpenAI SDK |
 | `litellm` | >= 1.77.0 | Multi-provider LLM routing |
-| `google-genai` | >= 0.2.0 | Google AI SDK |
-| `google-generativeai` | >= 0.8.0 | Google Generative AI SDK |
+| `google-genai` | optional via `[google]` | Google AI Studio / Gemini SDK |
+| `google-generativeai` | optional via `[google]` | Legacy Google Generative AI SDK compatibility |
 
 ## Optional Provider Extras
 
@@ -58,6 +58,9 @@ Install only what you need:
 ```bash
 # AWS Bedrock
 pip install "cisco-ai-skill-scanner[bedrock]"
+
+# Google AI Studio / Gemini
+pip install "cisco-ai-skill-scanner[google]"
 
 # Google Vertex AI
 pip install "cisco-ai-skill-scanner[vertex]"
@@ -71,6 +74,7 @@ pip install "cisco-ai-skill-scanner[all]"
 
 | Extra | Package | Version | Purpose |
 |-------|---------|---------|---------|
+| `google` | `google-genai`, `google-generativeai` | varies | Google AI Studio / Gemini SDK support |
 | `bedrock` | `boto3` | >= 1.28.57 | AWS Bedrock IAM credential support |
 | `vertex` | `google-cloud-aiplatform` | >= 1.38.0 | Google Vertex AI support |
 | `azure` | `azure-identity` | >= 1.15.0 | Azure managed identity auth |
@@ -88,7 +92,7 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 | OpenAI | `openai/gpt-4o` | |
 | AWS Bedrock | `bedrock/anthropic.claude-sonnet-4-20250514-v1:0` | Requires `[bedrock]` extra or API key |
 | Google Vertex AI | `vertex_ai/gemini-2.5-pro` | Requires `[vertex]` extra |
-| Google AI Studio | `gemini/gemini-2.5-flash` | Via LiteLLM |
+| Google AI Studio | `gemini/gemini-2.5-flash` | Requires `[google]` extra |
 | Azure OpenAI | `azure/my-deployment-name` | Requires `[azure]` extra |
 | Ollama (local) | `ollama/llama3` | No API key needed |
 

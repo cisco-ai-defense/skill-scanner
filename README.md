@@ -80,6 +80,9 @@ pip install cisco-ai-skill-scanner
 # AWS Bedrock support
 pip install cisco-ai-skill-scanner[bedrock]
 
+# Google AI Studio / Gemini support
+pip install cisco-ai-skill-scanner[google]
+
 # Google Vertex AI support
 pip install cisco-ai-skill-scanner[vertex]
 
