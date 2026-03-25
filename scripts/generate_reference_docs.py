@@ -393,6 +393,7 @@ def _describe_env_var(var: str) -> str:
         "SKILL_SCANNER_LLM_MODEL": "Primary model identifier for semantic analysis.",
         "SKILL_SCANNER_LLM_BASE_URL": "Optional custom endpoint base URL for provider routing.",
         "SKILL_SCANNER_LLM_API_VERSION": "Optional API version for providers that require one.",
+        "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT": "Skip json_schema and start in plain JSON mode for incompatible proxies.",
         "SKILL_SCANNER_META_LLM_API_KEY": "Meta-analyzer API key override.",
         "SKILL_SCANNER_META_LLM_MODEL": "Meta-analyzer model override.",
         "SKILL_SCANNER_META_LLM_BASE_URL": "Meta-analyzer base URL override.",
@@ -426,6 +427,7 @@ _ENV_VAR_GROUPS: list[tuple[str, str, list[str]]] = [
             "SKILL_SCANNER_LLM_MODEL",
             "SKILL_SCANNER_LLM_BASE_URL",
             "SKILL_SCANNER_LLM_API_VERSION",
+            "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT",
         ],
     ),
     (
@@ -484,6 +486,7 @@ _ENV_VAR_EXAMPLES: dict[str, str] = {
     "SKILL_SCANNER_LLM_MODEL": "anthropic/claude-sonnet-4-20250514",
     "SKILL_SCANNER_LLM_BASE_URL": "https://api.openai.com/v1",
     "SKILL_SCANNER_LLM_API_VERSION": "2024-02-15-preview",
+    "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT": "true",
     "SKILL_SCANNER_META_LLM_API_KEY": "(falls back to LLM_API_KEY)",
     "SKILL_SCANNER_META_LLM_MODEL": "(falls back to LLM_MODEL)",
     "SKILL_SCANNER_META_LLM_BASE_URL": "(falls back to LLM_BASE_URL)",

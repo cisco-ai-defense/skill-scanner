@@ -21,8 +21,9 @@ that are incompatible with the Google GenAI SDK's structured output format.
 """
 
 import json
+import os
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -172,3 +173,60 @@ class TestDropParams:
         call_kwargs = mock_acompletion.call_args
         kwargs = call_kwargs.kwargs if call_kwargs.kwargs else call_kwargs[1]
         assert kwargs.get("drop_params") is True, f"acompletion must be called with drop_params=True, got: {kwargs}"
+
+
+class TestLiteLLMRequestFallback:
+    """Tests for switching from json_schema to plain JSON output."""
+
+    @pytest.fixture
+    def litellm_handler(self) -> LLMRequestHandler:
+        provider_config = MagicMock()
+        provider_config.model = "gpt-4o"
+        provider_config.use_google_sdk = False
+        provider_config.get_request_params.return_value = {}
+        return LLMRequestHandler(provider_config=provider_config, max_retries=0)
+
+    @staticmethod
+    def _mock_litellm_response(content: str) -> MagicMock:
+        response = MagicMock()
+        response.choices = [MagicMock(message=MagicMock(content=content))]
+        return response
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_json_object_when_backend_rejects_schema(self, litellm_handler: LLMRequestHandler):
+        error = RuntimeError("Azure error: Missing required parameter: 'response_format.json_schema'.")
+        plain_json_response = TestLiteLLMRequestFallback._mock_litellm_response(
+            '{"overall_assessment":"unsafe","findings":[]}'
+        )
+
+        with patch(
+            "skill_scanner.core.analyzers.llm_request_handler.acompletion",
+            AsyncMock(side_effect=[error, plain_json_response]),
+        ) as mocked_acompletion:
+            result = await litellm_handler.make_request([{"role": "user", "content": "Scan this"}], context="demo")
+
+        assert result == '{"overall_assessment":"unsafe","findings":[]}'
+        assert mocked_acompletion.await_count == 2
+        assert mocked_acompletion.await_args_list[0].kwargs["response_format"]["type"] == "json_schema"
+        assert mocked_acompletion.await_args_list[1].kwargs["response_format"]["type"] == "json_object"
+        assert litellm_handler._use_plain_json_output is True
+
+    @pytest.mark.asyncio
+    async def test_force_json_object_env_skips_schema_attempt(self, litellm_handler: LLMRequestHandler):
+        plain_json_response = TestLiteLLMRequestFallback._mock_litellm_response(
+            '{"overall_assessment":"unsafe","findings":[]}'
+        )
+
+        with (
+            patch.dict(os.environ, {"SKILL_SCANNER_LLM_FORCE_JSON_OBJECT": "1"}, clear=False),
+            patch(
+                "skill_scanner.core.analyzers.llm_request_handler.acompletion",
+                AsyncMock(return_value=plain_json_response),
+            ) as mocked_acompletion,
+        ):
+            forced_handler = LLMRequestHandler(provider_config=litellm_handler.provider_config, max_retries=0)
+            result = await forced_handler.make_request([{"role": "user", "content": "Scan this"}], context="demo")
+
+        assert result == '{"overall_assessment":"unsafe","findings":[]}'
+        assert mocked_acompletion.await_count == 1
+        assert mocked_acompletion.await_args_list[0].kwargs["response_format"]["type"] == "json_object"
