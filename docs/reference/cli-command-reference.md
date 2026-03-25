@@ -96,11 +96,12 @@ usage: cli.py scan [-h] [--format {summary,json,markdown,table,sarif,html}]
                    [--output-sarif OUTPUT_SARIF]
                    [--output-markdown OUTPUT_MARKDOWN]
                    [--output-html OUTPUT_HTML] [--output-table OUTPUT_TABLE]
-                   [--detailed] [--no-render-markdown] [--compact] [--verbose]
-                   [--fail-on-findings] [--fail-on-severity LEVEL]
-                   [--use-behavioral] [--use-llm] [--use-virustotal]
-                   [--vt-api-key VT_API_KEY] [--vt-upload-files]
-                   [--use-aidefense] [--aidefense-api-key AIDEFENSE_API_KEY]
+                   [--detailed] [--render-markdown | --no-render-markdown]
+                   [--compact] [--verbose] [--fail-on-findings]
+                   [--fail-on-severity LEVEL] [--use-behavioral] [--use-llm]
+                   [--use-virustotal] [--vt-api-key VT_API_KEY]
+                   [--vt-upload-files] [--use-aidefense]
+                   [--aidefense-api-key AIDEFENSE_API_KEY]
                    [--aidefense-api-url AIDEFENSE_API_URL]
                    [--llm-provider {anthropic,openai}]
                    [--llm-consensus-runs N] [--llm-max-tokens N]
@@ -132,6 +133,8 @@ options:
   --output-table OUTPUT_TABLE
                         Write Table report to this file
   --detailed            Include detailed findings (Markdown output only)
+  --render-markdown     With --format markdown: render markdown even when
+                        stdout is not detected as a TTY.
   --no-render-markdown  With --format markdown to terminal: print raw markdown
                         instead of rendering (for pipe/copy).
   --compact             Compact JSON output
@@ -194,9 +197,10 @@ usage: cli.py scan-all [-h] [--recursive] [--check-overlap]
                        [--output-markdown OUTPUT_MARKDOWN]
                        [--output-html OUTPUT_HTML]
                        [--output-table OUTPUT_TABLE] [--detailed]
-                       [--no-render-markdown] [--compact] [--verbose]
-                       [--fail-on-findings] [--fail-on-severity LEVEL]
-                       [--use-behavioral] [--use-llm] [--use-virustotal]
+                       [--render-markdown | --no-render-markdown] [--compact]
+                       [--verbose] [--fail-on-findings]
+                       [--fail-on-severity LEVEL] [--use-behavioral]
+                       [--use-llm] [--use-virustotal]
                        [--vt-api-key VT_API_KEY] [--vt-upload-files]
                        [--use-aidefense]
                        [--aidefense-api-key AIDEFENSE_API_KEY]
@@ -234,6 +238,8 @@ options:
   --output-table OUTPUT_TABLE
                         Write Table report to this file
   --detailed            Include detailed findings (Markdown output only)
+  --render-markdown     With --format markdown: render markdown even when
+                        stdout is not detected as a TTY.
   --no-render-markdown  With --format markdown to terminal: print raw markdown
                         instead of rendering (for pipe/copy).
   --compact             Compact JSON output
