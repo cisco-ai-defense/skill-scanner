@@ -75,6 +75,7 @@ Post-processing includes:
 ### 3. Pipeline Analyzer
 
 - Parses shell command pipelines and classifies risk
+- Quote-aware pipe splitting (avoids false positives on `jq` expressions and other quoted `|` characters)
 - Detects fetch-and-execute and sensitive source-to-sink chains
 - Uses `command_safety`, `pipeline`, and `sensitive_files` policy knobs
 
@@ -165,6 +166,7 @@ Implemented in `skill_scanner/core/scan_policy.py` with built-ins in `skill_scan
 - VirusTotal/AI Defense keys: `--vt-api-key`, `--aidefense-api-key`, `--aidefense-api-url`
 - Output: `--format`, `--output`, `--detailed`, `--compact`, `--fail-on-findings`, `--fail-on-severity`
 - Multi-skill: `--recursive`, `--check-overlap`
+- Flexibility: `--lenient` (scan without `SKILL.md`), `--skill-file` (custom metadata filename)
 
 ## API Server Features
 

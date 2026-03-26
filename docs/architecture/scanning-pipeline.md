@@ -58,7 +58,8 @@ flowchart TD
 ## Stage 1: Load and Pre-process
 
 1. **Load skill package** via `SkillLoader`:
-   - Validate skill directory and `SKILL.md`
+   - Validate skill directory and locate metadata file (`SKILL.md` by default, or `--skill-file`)
+   - When `--lenient` is set and no `SKILL.md` exists, fall back to scanning `.md` files in the directory as instruction bodies (supports non-Codex/Cursor formats such as Claude Code commands)
    - Parse frontmatter (name, description, metadata)
    - Discover files recursively (excluding `.git` internals)
    - Classify file types (python, bash, markdown, binary, other)
