@@ -124,14 +124,16 @@ class PythonParser:
         },
     }
 
-    def __init__(self, source_code: str):
+    def __init__(self, source_code: str, source_file: str = "<unknown>"):
         """
         Initialize parser with source code.
 
         Args:
             source_code: Python source code to parse
+            source_file: Optional filename for better error messages
         """
         self.source_code = source_code
+        self.source_file = source_file
         self.tree: ast.Module | None = None
         self.functions: list[FunctionInfo] = []
         self.imports: list[str] = []
@@ -147,14 +149,20 @@ class PythonParser:
             True if parsing succeeded, False otherwise
         """
         try:
-            self.tree = ast.parse(self.source_code)
+            self.tree = ast.parse(self.source_code, filename=self.source_file)
             self._extract_imports()
             self._extract_module_level_strings()
             self._extract_functions()
             self._extract_global_code()
             return True
         except SyntaxError as e:
-            logger.warning("Syntax error in source: %s", e)
+            logger.warning(
+                "Syntax error in %s (line %s): %s\n  %s",
+                e.filename or self.source_file,
+                e.lineno,
+                e.msg,
+                (e.text or "").rstrip(),
+            )
             return False
 
     def _extract_module_level_strings(self) -> None:
