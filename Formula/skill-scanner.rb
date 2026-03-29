@@ -227,8 +227,8 @@ class SkillScanner < Formula
   end
 
   resource "litellm" do
-    url "https://files.pythonhosted.org/packages/ff/8f/2a08f3d86fd008b4b02254649883032068378a8551baed93e8d9dcbbdb5d/litellm-1.81.9.tar.gz"
-    sha256 "a2cd9bc53a88696c21309ef37c55556f03c501392ed59d7f4250f9932917c13c"
+    url "https://files.pythonhosted.org/packages/ac/cc/03bf7849c62587db0fb7c46f427d6a49290750752d3189a0bd95d4b78587/litellm-1.80.16.tar.gz"
+    sha256 "f96233649f99ab097f7d8a3ff9898680207b9eea7d2e23f438074a3dbcf50cca"
   end
 
   resource "markdown-it-py" do

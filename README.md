@@ -250,7 +250,7 @@ if not result.is_safe:
 | `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif`, `html`. The `html` format produces a self-contained interactive report with collapsible correlation groups, expandable code snippets, and pipeline taint flow diagrams |
 | `--detailed` | Include detailed findings in Markdown output |
 | `--compact` | Compact JSON output |
-| `--output PATH` | Save report to file |
+| `--output PATH` | Default output file path (overridden by `--output-<fmt>`) |
 | `--fail-on-findings` | Exit with error if HIGH/CRITICAL found (shorthand for `--fail-on-severity high`) |
 | `--fail-on-severity LEVEL` | Exit with error if findings at or above LEVEL exist (critical, high, medium, low, info) |
 | `--custom-rules PATH` | Use custom YARA rules from directory |
