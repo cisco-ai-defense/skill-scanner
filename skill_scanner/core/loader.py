@@ -262,6 +262,43 @@ class SkillLoader:
 
         return files
 
+    def _local_py_module_names_from_import_lines(self, text: str) -> list[str]:
+        """Return top-level module names in *text* that look like real Python imports.
+
+        Avoids matching English prose such as "read from the file" or "import the module"
+        (which previously produced a bogus ``the.py`` reference).
+        """
+        names: list[str] = []
+
+        # ``from x[.y] import …`` and ``from .x import …``
+        for m in re.finditer(
+            r"from\s+(\.?[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\s+import\b",
+            text,
+        ):
+            mod_path = m.group(1)
+            if mod_path.startswith("."):
+                rest = mod_path.lstrip(".")
+                top = rest.split(".")[0] if rest else ""
+            else:
+                top = mod_path.split(".")[0]
+            if top:
+                names.append(top)
+
+        # ``import x`` / ``import x, y`` — only at line start (optional indent / markdown list marker)
+        for m in re.finditer(r"(?m)^[ \t]*(?:[-*+][ \t]+)?import[ \t]+([^\\\n#;]+)", text):
+            tail = m.group(1).strip()
+            tail = tail.split("#")[0].strip()
+            for part in tail.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                part = re.split(r"\s+as\s+", part, maxsplit=1)[0].strip()
+                mod = part.split(".")[0].strip()
+                if mod and re.fullmatch(r"[A-Za-z0-9_]+", mod):
+                    names.append(mod)
+
+        return names
+
     def _extract_referenced_files(self, instruction_body: str) -> list[str]:
         """
         Extract file references from instruction body.
@@ -312,8 +349,10 @@ class SkillLoader:
         )
         references.extend(include_patterns)
 
-        # Match file paths in code blocks that look like references
-        code_file_refs = re.findall(r"(?:from|import)\s+([A-Za-z0-9_]+)\s", instruction_body)
+        # Infer local *.py names from Python import syntax (strict — not bare "from|import" tokens).
+        # A loose pattern like ``from (\w+)`` matches English ("from the documentation") and
+        # yields false positives such as ``the.py``.
+        code_file_refs = self._local_py_module_names_from_import_lines(instruction_body)
         stdlib_names = getattr(sys, "stdlib_module_names", set())
         KNOWN_THIRD_PARTY = {
             "requests",
