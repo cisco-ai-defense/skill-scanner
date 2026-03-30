@@ -241,10 +241,7 @@ def test_codex_skills_directory_structure(loader, tmp_path):
 
 def test_referenced_files_no_false_the_py_from_english_prose(loader):
     """English 'from the …' / 'import the …' must not imply a local the.py."""
-    body = (
-        "Read from the documentation for details.\n\n"
-        "You may import the module later.\n"
-    )
+    body = "Read from the documentation for details.\n\nYou may import the module later.\n"
     refs = loader._extract_referenced_files(body)
     assert "the.py" not in refs
 
