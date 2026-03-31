@@ -19,9 +19,12 @@
 This module provides a FastAPI application for scanning agent skills packages.
 """
 
+import os
+
 from fastapi import FastAPI
 
 from .. import __version__ as PACKAGE_VERSION
+from ..telemetry import TelemetryConfig, setup_telemetry
 from .router import router as api_router
 
 app = FastAPI(
@@ -33,3 +36,24 @@ app = FastAPI(
 )
 
 app.include_router(api_router)
+
+# ---------------------------------------------------------------------------
+# Optional OpenTelemetry instrumentation for the API server
+# ---------------------------------------------------------------------------
+# Activated when SKILL_SCANNER_OTEL_ENABLED=true (or 1/yes) is set.
+# When enabled, FastAPI HTTP spans are exported alongside scanner spans so
+# that a single trace covers the full request lifecycle.
+# ---------------------------------------------------------------------------
+
+_otel_enabled = os.getenv("SKILL_SCANNER_OTEL_ENABLED", "").lower() in ("1", "true", "yes")
+
+if _otel_enabled:
+    setup_telemetry(TelemetryConfig(enabled=True))
+
+    # Auto-instrument FastAPI / Starlette with HTTP spans
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore[import]
+
+        FastAPIInstrumentor.instrument_app(app)
+    except ImportError:
+        pass  # opentelemetry-instrumentation-fastapi not installed – skip silently
