@@ -31,7 +31,6 @@ import pytest
 from skill_scanner.core.loader import SkillLoader, SkillLoadError
 from skill_scanner.core.scanner import SkillScanner
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -310,9 +309,7 @@ class TestPipelineSplitQuotes:
         """Complex expressions with mixed quotes and real pipes."""
         from skill_scanner.core.analyzers.pipeline_analyzer import PipelineAnalyzer
 
-        parts = PipelineAnalyzer._split_pipeline(
-            "curl -s url | jq '.data[] | {name, value}' | head -5"
-        )
+        parts = PipelineAnalyzer._split_pipeline("curl -s url | jq '.data[] | {name, value}' | head -5")
         assert len(parts) == 3
         assert "curl" in parts[0]
         assert "jq" in parts[1]
