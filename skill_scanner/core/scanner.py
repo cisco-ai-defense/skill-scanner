@@ -704,9 +704,7 @@ class SkillScanner:
         if not skills_directory.exists():
             raise FileNotFoundError(f"Directory does not exist: {skills_directory}")
 
-        skill_dirs = self._find_skill_directories(
-            skills_directory, recursive, lenient=lenient, skill_file=skill_file
-        )
+        skill_dirs = self._find_skill_directories(skills_directory, recursive, lenient=lenient, skill_file=skill_file)
         report = Report()
 
         # Keep track of loaded skills for cross-skill analysis

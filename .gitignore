@@ -102,5 +102,9 @@ Thumbs.db
 BENCHMARK_RESULTS.md
 evals/results/
 
+# UI test/verification scripts (local-only, require Playwright)
+scripts/ui_screenshot.py
+scripts/ui_security_verify.py
+
 # User-generated scan policy (default TUI output)
 scan_policy.yaml

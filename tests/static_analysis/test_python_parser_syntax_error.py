@@ -30,7 +30,6 @@ import pytest
 
 from skill_scanner.core.static_analysis.parser.python_parser import PythonParser
 
-
 INVALID_PYTHON = """\
 def good():
     pass
@@ -62,8 +61,7 @@ class TestSyntaxErrorReporting:
             parser.parse()
 
         assert any("skills/my_tool/tool.py" in record.message for record in caplog.records), (
-            "Expected file_path in warning message; got: "
-            + str([r.message for r in caplog.records])
+            "Expected file_path in warning message; got: " + str([r.message for r in caplog.records])
         )
 
     def test_warning_includes_line_number(self, caplog):
@@ -73,8 +71,7 @@ class TestSyntaxErrorReporting:
             parser.parse()
 
         assert any(
-            "line" in record.message.lower() or any(c.isdigit() for c in record.message)
-            for record in caplog.records
+            "line" in record.message.lower() or any(c.isdigit() for c in record.message) for record in caplog.records
         ), "Expected a line number in warning message"
 
     def test_warning_includes_offending_text(self, caplog):

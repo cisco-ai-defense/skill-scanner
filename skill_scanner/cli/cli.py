@@ -359,7 +359,7 @@ def scan_command(args: argparse.Namespace) -> int:
         if meta_analyzer and result.findings and apply_meta_analysis_to_results is not None:
             status("Running meta-analysis to filter false positives...")
             try:
-                skill = scanner.loader.load_skill(skill_dir, lenient=lenient)
+                skill = scanner.loader.load_skill(skill_dir, lenient=lenient, skill_file=skill_file)
                 original_count = len(result.findings)
                 meta_result = asyncio.run(
                     meta_analyzer.analyze_with_findings(
@@ -462,7 +462,9 @@ def scan_all_command(args: argparse.Namespace) -> int:
                 if not result.findings:
                     continue
                 try:
-                    skill = scanner.loader.load_skill(Path(result.skill_directory), lenient=lenient)
+                    skill = scanner.loader.load_skill(
+                        Path(result.skill_directory), lenient=lenient, skill_file=skill_file
+                    )
                     original_count = len(result.findings)
                     meta_result = asyncio.run(
                         meta_analyzer.analyze_with_findings(

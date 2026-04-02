@@ -105,9 +105,7 @@ class SkillLoader:
             manifest, instruction_body = self._parse_skill_md(skill_md_path, lenient=lenient)
         elif lenient:
             # Lenient fallback: no SKILL.md, synthesize from .md files in the directory
-            skill_md_path, manifest, instruction_body = self._synthesize_from_md_files(
-                skill_directory
-            )
+            skill_md_path, manifest, instruction_body = self._synthesize_from_md_files(skill_directory)
         else:
             raise SkillLoadError(f"SKILL.md not found in {skill_directory}")
 

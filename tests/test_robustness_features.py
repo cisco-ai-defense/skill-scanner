@@ -181,11 +181,11 @@ class TestLenientLoader:
         assert isinstance(skill.name, str)
 
     def test_no_skill_md_still_raises_in_lenient(self, tmp_path):
-        """Even in lenient mode, a missing SKILL.md is fatal."""
+        """Even in lenient mode, a completely empty dir (no .md files) is fatal."""
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
         loader = SkillLoader()
-        with pytest.raises(SkillLoadError, match="SKILL.md not found"):
+        with pytest.raises(SkillLoadError, match="No SKILL.md and no .md files found"):
             loader.load_skill(empty_dir, lenient=True)
 
 
