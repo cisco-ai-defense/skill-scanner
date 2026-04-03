@@ -56,7 +56,13 @@ class SkillLoader:
         else:
             self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
 
-    def load_skill(self, skill_directory: str | Path, *, lenient: bool = False) -> Skill:
+    def load_skill(
+        self,
+        skill_directory: str | Path,
+        *,
+        lenient: bool = False,
+        skill_file: str | None = None,
+    ) -> Skill:
         """
         Load a skill package from a directory.
 
@@ -64,6 +70,12 @@ class SkillLoader:
             skill_directory: Path to the skill directory
             lenient: When True, tolerate missing/malformed fields and return
                 a best-effort Skill instead of raising ``SkillLoadError``.
+                When ``SKILL.md`` is absent and *lenient* is True, the loader
+                falls back to scanning ``.md`` files in the directory as
+                instruction bodies (supports non-Codex/Cursor formats such as
+                Claude Code ``.claude/commands/*.md``).
+            skill_file: Optional custom metadata filename to use instead of
+                ``SKILL.md`` (e.g. ``"README.md"``).
 
         Returns:
             Parsed Skill object
@@ -80,13 +92,22 @@ class SkillLoader:
         if not skill_directory.is_dir():
             raise SkillLoadError(f"Path is not a directory: {skill_directory}")
 
-        # Find SKILL.md
-        skill_md_path = skill_directory / "SKILL.md"
-        if not skill_md_path.exists():
-            raise SkillLoadError(f"SKILL.md not found in {skill_directory}")
+        # Find the skill metadata file
+        if skill_file:
+            skill_md_path = skill_directory / skill_file
+            if not skill_md_path.exists():
+                raise SkillLoadError(f"{skill_file} not found in {skill_directory}")
+        else:
+            skill_md_path = skill_directory / "SKILL.md"
 
-        # Parse SKILL.md
-        manifest, instruction_body = self._parse_skill_md(skill_md_path, lenient=lenient)
+        if skill_md_path.exists():
+            # Standard path: parse the metadata file
+            manifest, instruction_body = self._parse_skill_md(skill_md_path, lenient=lenient)
+        elif lenient:
+            # Lenient fallback: no SKILL.md, synthesize from .md files in the directory
+            skill_md_path, manifest, instruction_body = self._synthesize_from_md_files(skill_directory)
+        else:
+            raise SkillLoadError(f"SKILL.md not found in {skill_directory}")
 
         # Discover all files in the skill package
         files = self._discover_files(skill_directory)
@@ -102,6 +123,60 @@ class SkillLoader:
             files=files,
             referenced_files=referenced_files,
         )
+
+    def _synthesize_from_md_files(self, skill_directory: Path) -> tuple[Path, SkillManifest, str]:
+        """Synthesize a Skill from ``.md`` files when ``SKILL.md`` is absent.
+
+        Scans the directory for markdown files, concatenates their content as the
+        instruction body, and builds a best-effort manifest from the directory name.
+
+        Returns:
+            Tuple of (primary_md_path, SkillManifest, instruction_body)
+
+        Raises:
+            SkillLoadError: If no ``.md`` files are found in the directory.
+        """
+        md_files = sorted(skill_directory.glob("*.md"))
+        if not md_files:
+            raise SkillLoadError(
+                f"No SKILL.md and no .md files found in {skill_directory} "
+                f"(lenient mode requires at least one markdown file)"
+            )
+
+        logger.warning(
+            "SKILL.md not found in %s; falling back to %d .md file(s) (lenient mode)",
+            skill_directory,
+            len(md_files),
+        )
+
+        # Use the first .md file as the primary path
+        primary_md = md_files[0]
+
+        # Try to parse frontmatter from the primary file
+        try:
+            manifest, body = self._parse_skill_md(primary_md, lenient=True)
+        except SkillLoadError:
+            # If even lenient parsing fails, use raw content
+            try:
+                body = primary_md.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                body = ""
+            manifest = SkillManifest(
+                name=skill_directory.name,
+                description="(no description)",
+            )
+
+        # Append content from remaining .md files
+        extra_bodies: list[str] = []
+        for md_file in md_files[1:]:
+            try:
+                extra_bodies.append(md_file.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                continue
+        if extra_bodies:
+            body = body + "\n\n" + "\n\n".join(extra_bodies)
+
+        return primary_md, manifest, body
 
     def _parse_skill_md(self, skill_md_path: Path, *, lenient: bool = False) -> tuple[SkillManifest, str]:
         """
@@ -262,6 +337,43 @@ class SkillLoader:
 
         return files
 
+    def _local_py_module_names_from_import_lines(self, text: str) -> list[str]:
+        """Return top-level module names in *text* that look like real Python imports.
+
+        Avoids matching English prose such as "read from the file" or "import the module"
+        (which previously produced a bogus ``the.py`` reference).
+        """
+        names: list[str] = []
+
+        # ``from x[.y] import …`` and ``from .x import …``
+        for m in re.finditer(
+            r"from\s+(\.?[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\s+import\b",
+            text,
+        ):
+            mod_path = m.group(1)
+            if mod_path.startswith("."):
+                rest = mod_path.lstrip(".")
+                top = rest.split(".")[0] if rest else ""
+            else:
+                top = mod_path.split(".")[0]
+            if top:
+                names.append(top)
+
+        # ``import x`` / ``import x, y`` — only at line start (optional indent / markdown list marker)
+        for m in re.finditer(r"(?m)^[ \t]*(?:[-*+][ \t]+)?import[ \t]+([^\\\n#;]+)", text):
+            tail = m.group(1).strip()
+            tail = tail.split("#")[0].strip()
+            for part in tail.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                part = re.split(r"\s+as\s+", part, maxsplit=1)[0].strip()
+                mod = part.split(".")[0].strip()
+                if mod and re.fullmatch(r"[A-Za-z0-9_]+", mod):
+                    names.append(mod)
+
+        return names
+
     def _extract_referenced_files(self, instruction_body: str) -> list[str]:
         """
         Extract file references from instruction body.
@@ -312,8 +424,10 @@ class SkillLoader:
         )
         references.extend(include_patterns)
 
-        # Match file paths in code blocks that look like references
-        code_file_refs = re.findall(r"(?:from|import)\s+([A-Za-z0-9_]+)\s", instruction_body)
+        # Infer local *.py names from Python import syntax (strict — not bare "from|import" tokens).
+        # A loose pattern like ``from (\w+)`` matches English ("from the documentation") and
+        # yields false positives such as ``the.py``.
+        code_file_refs = self._local_py_module_names_from_import_lines(instruction_body)
         stdlib_names = getattr(sys, "stdlib_module_names", set())
         KNOWN_THIRD_PARTY = {
             "requests",

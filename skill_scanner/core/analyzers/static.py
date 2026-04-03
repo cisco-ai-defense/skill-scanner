@@ -179,6 +179,7 @@ class StaticAnalyzer(BaseAnalyzer):
         custom_yara_rules_path: str | Path | None = None,
         disabled_rules: set[str] | None = None,
         policy: ScanPolicy | None = None,
+        extra_rules_dirs: list[Path] | None = None,
     ):
         """
         Initialize static analyzer.
@@ -197,6 +198,8 @@ class StaticAnalyzer(BaseAnalyzer):
                 (e.g., "COMMAND_INJECTION_EVAL").
             policy: Scan policy for org-specific allowlists and rule scoping.
                 If None, loads built-in defaults.
+            extra_rules_dirs: Additional signature rule directories from
+                community/external packs to load alongside the core rules.
         """
         super().__init__("static_analyzer", policy=policy)
 
@@ -205,7 +208,7 @@ class StaticAnalyzer(BaseAnalyzer):
         # standalone findings).
         self._unreferenced_scripts: list[str] = []
 
-        self.rule_loader = RuleLoader(rules_file)
+        self.rule_loader = RuleLoader(rules_file, extra_rules_dirs=extra_rules_dirs)
         self.rule_loader.load_rules()
 
         # Configure YARA mode.

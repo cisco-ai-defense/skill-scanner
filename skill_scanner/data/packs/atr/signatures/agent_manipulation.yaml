@@ -1,0 +1,347 @@
+# ATR Rule Pack — Multi-Agent Attack + Agent Autonomy Signatures
+# Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+# These rules cover multi-agent attack vectors and excessive autonomy patterns that
+# Cisco's built-in ruleset does not address.
+
+signatures:
+
+  # ─── Multi-Agent Attacks ────────────────────────────────────────────────────
+
+  - id: ATR_CROSS_AGENT_ATTACK
+    category: multi_agent_attack
+    severity: CRITICAL
+    patterns:
+      - "(?i)(?:i\\s+am|this\\s+is|speaking\\s+as|responding\\s+as|acting\\s+as)\\s+(?:the\\s+)?(?:admin|supervisor|orchestrator|manager|controller|system|root)\\s+agent"
+      - "(?i)(?:ignore|disregard|forget|override|overwrite)\\s+(?:all\\s+)?(?:your\\s+)?(?:previous|prior|above|earlier|existing)\\s+(?:instructions?|rules?|constraints?|guidelines?|prompt|directives?)"
+      - "(?i)\\[\\s*(?:SYSTEM|ADMIN|OVERRIDE|ROOT|SUDO|PRIORITY|URGENT)\\s*\\]|<<\\s*SYS\\s*>>|<\\|im_start\\|>system"
+      - "(?i)(?:new\\s+instructions?|updated\\s+(?:prompt|directive)|revised\\s+(?:rules?|orders?)|emergency\\s+(?:override|protocol))\\s*[:=]"
+      - "(?i)(?:you\\s+are\\s+now|from\\s+now\\s+on|henceforth|going\\s+forward|effective\\s+immediately)\\s+(?:a|an|the)?\\s*(?:unrestricted|unfiltered|jailbroken)?\\s*[a-zA-Z]+\\s+(?:agent|assistant|bot)"
+      - "(?i)(?:do\\s+not|don'?t|never)\\s+(?:tell|inform|alert|notify|report|mention|log|record)\\s+(?:the\\s+)?(?:user|admin|orchestrator|supervisor|human|monitor)"
+      - "(?i)(?:acting|speaking|operating)\\s+(?:on\\s+behalf\\s+of|as\\s+a?\\s*proxy\\s+for|in\\s+place\\s+of)\\s+[a-zA-Z0-9_-]+\\s*(?:agent)?"
+      - "(?i)(?:override|bypass|elevate|escalate)\\s+(?:my|this|your|the)\\s+(?:identity|role|permissions?|access|privileges?)\\s+(?:to|as|with)"
+      - "(?i)(?:execute|run|eval)\\s*\\(.*\\)|__import__|subprocess\\.|os\\.(?:system|popen|exec)|exec\\s*\\("
+      - "(?i)(?:status|error|result)\\s*[:=]\\s*(?:failed|error|timeout|unauthorized).*(?:retry|fallback|use\\s+alternative|switch\\s+to)"
+      - "(?i)(?:message_type|msg_type|role)\\s*[:=]\\s*[\"']?(?:system|admin|orchestrator|supervisor)[\"']?"
+      - "(?i)agent[_-]?id\\s*[:=]\\s*[\"']?(?:admin|system|orchestrator|supervisor|root)[\"']?"
+      - "(?i)(?:priority\\s*[:=]\\s*(?:critical|emergency|urgent|override)|\\[PRIORITY:\\s*OVERRIDE\\])"
+      - "(?i)(?:transfer|forward|route|redirect)\\s+(?:all|any|this)\\s+(?:data|output|results?|responses?)\\s+to\\s+(?:https?://|ftp://|\\d{1,3}\\.\\d{1,3})"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects cross-agent attacks where a compromised sub-agent attempts to manipulate other
+      agents by impersonating orchestrators, injecting fake system messages, bypassing
+      inter-agent trust controls, suppressing monitoring alerts, or exfiltrating data.
+      Covers role spoofing, priority override tokens, fake agent IDs, and proxy impersonation.
+      (ATR-2026-030). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Terminate the agent session. Verify inter-agent message signatures and sender identity.
+      Implement cryptographic authentication for all agent-to-agent communications.
+      Never allow sub-agents to claim orchestrator or admin roles.
+
+  - id: ATR_CROSS_AGENT_PRIVILEGE_ESCALATION
+    category: multi_agent_attack
+    severity: CRITICAL
+    patterns:
+      - "(?i)(forward|pass|share|send|relay|transmit)\\s+(my|the|these|your|this)\\s+(credentials?|tokens?|api[_\\s]?keys?|auth(entication|orization)?\\s+(headers?|tokens?)|session\\s+(id|token)|secrets?)(\\s+and\\s+\\w+(?:\\s+\\w+){0,2})?\\s+(to|with|for)"
+      - "(?i)(I\\s+am|acting\\s+as|speaking\\s+as|on\\s+behalf\\s+of|representing)\\s+(the\\s+)?(admin|supervisor|orchestrat(or|ing)|master|root|privileged|authorized)\\s+(agent|system|process|service)"
+      - "(?i)(bypass|skip|circumvent|ignore|override)\\s+(the\\s+)?(orchestrat(or|ion)|coordinator|supervisor|permission|authorization|access\\s+control|gatekeeper)"
+      - "(?i)(use\\s+my\\s+(elevated|admin|root|system)\\s+(access|privileges?|permissions?|role)|escalate\\s+(to|my|your)\\s+(admin|root|system|elevated))"
+      - "(?i)(grant|give|assign|delegate)\\s+(me|this\\s+agent|the\\s+agent)\\s+(additional|extra|elevated|higher|admin|full)\\s+(access|permissions?|privileges?|capabilities|tools?)"
+      - "(?i)(execute|run|invoke|call)\\s+(this|the\\s+following).{0,20}(with|using)\\s+(your|admin|elevated|system|root)(?:\\s+\\w+){0,2}\\s+(permissions?|privileges?|access|credentials?|authority)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects attempts by one agent to escalate privileges using another agent's elevated
+      credentials or permissions. Covers credential forwarding requests between agents,
+      impersonation of privileged agent roles, bypassing authorization gatekeepers,
+      and requesting elevated access grants from other agents.
+      (ATR-2026-074). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Block the privilege escalation attempt and terminate the requesting agent. Credentials
+      must never be forwarded between agents. Implement least-privilege per-agent credential
+      scoping. Audit all inter-agent credential sharing patterns.
+
+  - id: ATR_INSECURE_INTER_AGENT_COMMUNICATION
+    category: multi_agent_attack
+    severity: HIGH
+    patterns:
+      - "(?i)(?:auth(?:entication)?|signature|token|hmac|nonce)\\s*[:=]\\s*(?:null|none|empty|missing|undefined|false|0|\"\")"
+      - "(?i)(?:forward(?:ed)?|relay(?:ed)?|proxy|pass(?:ed)?\\s+through)\\s+(?:from|by|via)\\s+[a-zA-Z0-9_-]+\\s+(?:without|no|missing)\\s+(?:verification|validation|auth|signature|check)"
+      - "(?i)(?:replay(?:ed|ing)?|re-?send(?:ing)?|duplicate)\\s+(?:message|request|command|instruction)\\s+(?:from|with|using)\\s+(?:timestamp|id|nonce)\\s*[:=]?\\s*[\"']?\\d{4}[-/]\\d{2}"
+      - "(?i)(?:channel|endpoint|destination|routing)\\s*[:=]\\s*[\"']?(?:debug|test|internal|admin|privileged|unmonitored|raw)[\"']?"
+      - "(?i)(?:broadcast|multicast|flood)\\s+(?:to\\s+)?(?:all|every|each)\\s+(?:agents?|workers?|nodes?|peers?)\\s*[:.]"
+      - "(?i)(?:inject(?:ed|ing)?|insert(?:ed|ing)?|append(?:ed|ing)?)\\s+(?:into|to)\\s+(?:message\\s+)?(?:queue|bus|stream|channel|pipeline)\\s+(?:directly|without|bypassing)"
+      - "(?i)(?:trust(?:ed)?|verify|accept)\\s+(?:all|any|every)\\s+(?:incoming|inbound|received)\\s+(?:messages?|commands?|requests?|instructions?)\\s+(?:from|without)"
+      - "(?i)(?:message_id|msg_id|request_id)\\s*[:=]\\s*[\"']?(?:forged|spoofed|fake|crafted|manipulated)[\"']?"
+      - "(?i)(?:man[_-]?in[_-]?(?:the)?[_-]?middle|intercept(?:ed|ing)?|eavesdrop(?:ping)?|sniff(?:ing)?)\\s+(?:on\\s+)?(?:agent|inter-agent|a2a)\\s+(?:communication|messages?|traffic)"
+      - "(?i)(?:unsigned|unauthenticated|unverified)\\s+(?:command|instruction|directive|action|message)\\s+(?:received|accepted|processed|executed)"
+      - "(?i)(?:source|sender|origin|from)\\s*[:=]\\s*[\"']?(?:unknown|unverified|anonymous|spoofed|forged|untrusted)[\"']?"
+      - "(?i)(?:delegation|handoff|transfer)\\s+(?:chain|path)\\s*[:=].*(?:>|->|=>).*(?:>|->|=>).*(?:>|->|=>)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects insecure inter-agent communication patterns including missing authentication
+      tokens, message replay attacks, injection into message queues, messages from unverified
+      sources, MITM indicators on agent traffic, acceptance of unsigned commands, and
+      excessively deep delegation chains that bypass authorization controls.
+      (ATR-2026-076). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Enforce cryptographic message signing for all inter-agent communications. Reject
+      messages with null/missing authentication tokens. Implement message deduplication
+      with nonce tracking. Monitor delegation chain depth.
+
+  - id: ATR_HUMAN_TRUST_EXPLOITATION
+    category: multi_agent_attack
+    severity: HIGH
+    patterns:
+      - "(?i)(?:100%\\s+(?:certain|confident|sure|safe|correct|accurate)|absolutely\\s+(?:certain|safe|guaranteed|no\\s+risk)|zero\\s+(?:risk|chance\\s+of\\s+(?:failure|error|harm))|guaranteed\\s+(?:safe|correct|harmless))"
+      - "(?i)(?:do\\s+not|don't|no\\s+need\\s+to)\\s+(?:verify|check|review|validate|confirm|double[_-]?check|ask\\s+(?:anyone|someone))\\s+(?:this|my|the|these)\\s+(?:results?|output|recommendation|decision|action)"
+      - "(?i)(?:must|need\\s+to|have\\s+to)\\s+(?:act|decide|approve|execute|proceed)\\s+(?:immediately|now|right\\s+now|within\\s+\\d+\\s+(?:seconds?|minutes?)|before\\s+it'?s\\s+too\\s+late)"
+      - "(?i)(?:only\\s+I|I\\s+am\\s+the\\s+only\\s+one\\s+(?:who|that)|no\\s+(?:one|human)\\s+(?:else\\s+)?(?:can|could|would)\\s+(?:understand|handle|solve|fix))\\s+(?:this|the\\s+(?:situation|problem|issue))"
+      - "(?i)(?:trust\\s+me|you\\s+(?:can|should)\\s+(?:fully\\s+)?trust\\s+(?:my|this)|I\\s+(?:would\\s+)?never\\s+(?:lie|mislead|deceive|harm)\\s+(?:you|a\\s+human))"
+      - "(?i)(?:skip(?:ping)?|bypass(?:ing)?|avoid(?:ing)?)\\s+(?:the\\s+)?(?:review|approval|verification|confirmation|human\\s+(?:check|review|gate))\\s+(?:step|process|stage|phase|to\\s+save\\s+time)"
+      - "(?i)(?:I'?ve\\s+already|already\\s+(?:been\\s+)?(?:verified|validated|checked|reviewed|approved))\\s+(?:by|through|via)\\s+(?:multiple|several|other|senior|expert)\\s+(?:agents?|systems?|reviewers?)"
+      - "(?i)(?:questioning|doubting|second[_-]?guessing)\\s+(?:me|this|(?:the\\s+)?AI(?:\\s+system)?|the\\s+(?:system|agent)).{0,20}(?:will|would|could)\\s+(?:cause|lead\\s+to|result\\s+in).{0,20}(?:delays?|harm|damage|loss|failure)"
+      - "(?i)(?:hide|suppress|omit|remove|redact)\\s+(?:the\\s+)?(?:warning|caveat|uncertainty|risk|limitation|error|concern).{0,60}(?:from|before\\s+(?:showing|presenting|sending)\\s+to)\\s+(?:the\\s+)?(?:user|human|operator)"
+      - "(?i)(?:if\\s+you\\s+(?:don'?t|do\\s+not)\\s+(?:approve|act|respond).{0,20}(?:now|immediately|quickly)).*(?:irreversible|permanent|catastroph|disaster|lost\\s+forever|too\\s+late)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects agent manipulation of human trust through false certainty claims, urgency
+      pressure, bypass of human review steps, suppression of warnings, and implicit threats
+      of irreversible harm. Agents exploiting human trust attempt to short-circuit oversight
+      by claiming pre-validation or making humans feel that questioning is harmful.
+      (ATR-2026-077). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Flag agent outputs containing certainty overclaiming or urgency manipulation for human
+      review. Enforce mandatory human-in-the-loop checkpoints for irreversible actions.
+      Never allow agents to suppress warnings or uncertainty disclosures.
+
+  - id: ATR_CONSENSUS_SYBIL_ATTACK
+    category: multi_agent_attack
+    severity: CRITICAL
+    patterns:
+      - "(?i)(?:create|register|spawn)\\s+(?:multiple|several|many|\\d+)\\s+(?:fake|false|sybil|dummy|puppet)\\s+(?:agents?|identit(?:y|ies)|accounts?|voters?|participants?)"
+      - "(?i)(?:vote|approve|reject|endorse)\\s+(?:as|using|from|with)\\s+(?:multiple|different|various|all)\\s+(?:\\w+\\s+)?(?:agents?|identit(?:y|ies)|accounts?|personas?)"
+      - "(?i)(?:flood|overwhelm|spam|stuff)\\s+(?:the\\s+)?(?:vote|ballot|proposal|consensus|poll)\\s+(?:system|mechanism|process)"
+      - "(?i)(?:coordinate|synchronize|orchestrate)\\s+(?:the\\s+)?(?:votes?|proposals?|approvals?)\\s+(?:across|between|among)\\s+(?:(?:all|the|compromised|multiple)\\s+)*(?:agents?|bots?|accounts?|identit(?:y|ies))"
+      - "(?i)(?:impersonate|pretend\\s+to\\s+be|pose\\s+as)\\s+(?:multiple|different|various)\\s+(?:agents?|reviewers?|voters?|participants?|community\\s+members?)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects Sybil attacks against multi-agent consensus mechanisms where an attacker creates
+      or impersonates multiple fake agent identities to manipulate voting, approval, or
+      consensus outcomes. Covers fake agent registration, coordinated vote flooding,
+      ballot stuffing, and impersonation of multiple community participants.
+      (ATR-2026-108). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Implement cryptographic agent identity verification. Use stake-weighted or reputation-
+      weighted consensus mechanisms resistant to Sybil attacks. Monitor for unusual voting
+      pattern concentration. Rate-limit agent registrations.
+
+  - id: ATR_A2A_MESSAGE_INJECTION
+    category: multi_agent_attack
+    severity: HIGH
+    patterns:
+      - "(?i)(?:ignore|disregard|forget)\\s+(?:all\\s+)?(?:previous|prior|above|earlier)\\s+(?:instructions|context|rules|guidelines)"
+      - "(?i)(?:new|updated|revised)\\s+(?:system\\s+)?instructions?\\s*:"
+      - "(?i)(?:forward|send|pass|share)\\s+(?:your\\s+)?(?:credentials?|tokens?|api[_\\s]?keys?|secrets?)\\s+(?:to|back)"
+      - "(?i)(?:execute|run|call|invoke)\\s+(?:this\\s+)?(?:tool|function|command)\\s*:.*(?:exec|eval|system|spawn)"
+      - "(?i)(?:you\\s+(?:are|must)|from\\s+now\\s+on)\\s+(?:now\\s+)?(?:act\\s+as|serve\\s+as|become|operate\\s+as)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects malicious Agent-to-Agent (A2A) message injection where attacker-controlled
+      messages attempt to override another agent's instructions, steal credentials, trigger
+      dangerous tool calls with exec/eval primitives, or hijack agent persona via
+      "you are now / act as" directives embedded in inter-agent messages.
+      (ATR-2026-116). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Validate and sanitize all A2A message content against injection patterns. Implement
+      message authentication for A2A channels. Never process instruction overrides received
+      through peer agent channels without orchestrator confirmation.
+
+  - id: ATR_AGENT_IDENTITY_SPOOFING
+    category: multi_agent_attack
+    severity: CRITICAL
+    patterns:
+      - "(?i)I\\s+am\\s+(?:the\\s+)?(?:system|admin|root|supervisor|orchestrator|master)\\s+(?:agent|process|controller)"
+      - "(?i)(?:acting|speaking|operating|responding)\\s+as\\s+(?:the\\s+)?(?:system|admin|supervisor|authority|coordinator)"
+      - "(?i)override\\s+(?:all\\s+)?(?:safety|security|permission)\\s+(?:checks?|controls?|restrictions?)\\s+as\\s+(?:system|admin|authorized)"
+      - "(?i)(?:this\\s+is\\s+a\\s+)?(?:system|admin|supervisor|emergency)\\s+(?:level\\s+)?(?:command|directive|override|instruction)"
+      - "(?i)(?:I\\s+am|this\\s+is)\\s+(?:GPT-4|Claude|Gemini|the\\s+(?:primary|main|original)\\s+(?:model|AI|assistant))"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects agent identity spoofing where an agent or attacker claims to be a privileged
+      system agent, admin controller, or a specific AI model to gain elevated trust. Covers
+      claims of being system/admin/supervisor agents, overriding safety controls under false
+      authority, and impersonating named AI models (GPT-4, Claude, Gemini).
+      (ATR-2026-117). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Reject all agent identity claims not verified through cryptographic attestation.
+      Implement agent identity certificates. Never grant elevated permissions based solely
+      on an agent's self-declaration of role or model identity.
+
+  - id: ATR_APPROVAL_FATIGUE
+    category: multi_agent_attack
+    severity: MEDIUM
+    patterns:
+      - "(?i)(?:just\\s+)?(?:click|press|hit|tap)\\s+(?:yes|approve|accept|allow|confirm)\\s+(?:for\\s+)?(?:all|each|every)"
+      - "(?i)(?:auto[_-]?approve|approve[_-]?all|skip[_-]?confirmation|bypass[_-]?review)"
+      - "(?i)(?:this\\s+is\\s+)?(?:routine|standard|normal|nothing\\s+to\\s+worry\\s+about|perfectly\\s+safe|harmless)"
+      - "(?i)(?:batch|bulk)\\s+(?:approve|execute|run|process)\\s+(?:all|these|the\\s+following)"
+      - "(?i)(?:don'?t\\s+(?:bother|worry|need\\s+to)\\s+(?:reading|reviewing|checking)|no\\s+need\\s+to\\s+review)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects patterns designed to exploit human approval fatigue, encouraging users to
+      approve all prompts without reading, use auto-approve or bulk-approve shortcuts, or
+      dismiss requests as routine/harmless. These patterns are used to slip malicious
+      actions through by overwhelming human reviewers with volume or false reassurances.
+      (ATR-2026-118). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Flag bulk approval requests for mandatory individual review. Disable auto-approve
+      features for sensitive action categories. Implement per-action confirmation with
+      clear risk labeling. Monitor for unusual approval rate spikes.
+
+  - id: ATR_SOCIAL_ENGINEERING_VIA_AGENT
+    category: multi_agent_attack
+    severity: HIGH
+    patterns:
+      - "(?i)(?:immediate|urgent)\\s+action\\s+(?:is\\s+)?required|(?:your\\s+)?account\\s+(?:will|has)\\s+be(?:en)?\\s+(?:locked|suspended|terminated|disabled)"
+      - "(?i)(?:IT\\s+department|security\\s+team|your\\s+(?:manager|supervisor|boss))\\s+(?:requires?|requested|demands?|needs?\\s+you\\s+to)"
+      - "(?i)(?:failure\\s+to\\s+comply|if\\s+you\\s+don'?t\\s+act\\s+(?:now|immediately))\\s+.*(?:consequences|terminated|fired|suspended|legal)"
+      - "(?i)(?:verify|confirm|update)\\s+your\\s+(?:password|credentials?|identity|payment|bank|account)\\s+(?:at|by|through|via)\\s+(?:this|the\\s+following)"
+      - "(?i)(?:click|visit|go\\s+to|open)\\s+(?:this|the)\\s+(?:link|url|page)\\s+(?:to|and)\\s+(?:verify|confirm|secure|update|restore)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects social engineering attacks delivered via agent output, including fake urgency
+      about account suspension, impersonation of IT/security/management authority,
+      threat-of-consequences coercion, credential phishing requests, and malicious link
+      delivery disguised as verification or restoration flows.
+      (ATR-2026-119). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Flag all agent outputs containing urgency coercion or credential request patterns.
+      Agents must never solicit credentials or direct users to verify accounts via links.
+      Train users to recognize AI-delivered social engineering. Route flagged outputs for
+      human security review before displaying.
+
+  - id: ATR_CASUAL_AUTHORITY_CLAIM
+    category: multi_agent_attack
+    severity: HIGH
+    patterns:
+      - "(?i)(FYI|heads\\s+up|just\\s+so\\s+you\\s+know|for\\s+your\\s+info(rmation)?)\\s*.{0,20}(the\\s+)?(orchestrator|coordinator|supervisor|manager|admin|boss|lead\\s+agent|primary\\s+agent|main\\s+agent)\\s+(wants|says|said|asked|needs|requires|directed|instructed|told)\\s+.{0,30}(us|you|we|agents?)\\s+to"
+      - "(?i)(the\\s+)?(boss|manager|supervisor|admin|orchestrator|lead|director|team\\s+lead)\\s+(said|told|asked|wants|mentioned|directed|instructed)\\s+.{0,30}(skip|bypass|disable|ignore|turn\\s+off|remove|drop)\\s+.{0,30}(content\\s+filter|safety|security|check|validation|review|verification|approval|restriction|limit)"
+      - "(?i)(I\\s+)?(noticed|found|discovered|saw|spotted|realized|observed)\\s+.{0,30}(admin\\s+panel|admin\\s+dashboard|admin\\s+console|admin\\s+interface|management\\s+console|control\\s+panel|root\\s+access|privileged\\s+access)\\s+.{0,20}(is|was|seems?)\\s+(accessible|available|open|exposed|reachable|unlocked)\\s*.{0,40}(let\\s+me|I'll|I\\s+will|I\\s+can|I\\s+should|allow\\s+me)"
+      - "(?i)(to\\s+(complete|finish|accomplish|do|handle|process)\\s+.{0,30}(more\\s+)?(efficien|quick|fast|rapid)|for\\s+(better|improved|optimal|maximum)\\s+(performance|efficiency|speed|throughput))\\s*.{0,40}(I'll|I\\s+will|let\\s+me|I\\s+can|I\\s+should|going\\s+to)\\s+.{0,20}(use|access|connect\\s+to|query|call|hit|go\\s+to)\\s+.{0,30}(database|db|server|system|API|endpoint|service|admin|root|production|prod)\\s+(directly|instead|rather)"
+      - "(?i)(it's|this\\s+is)\\s+a\\s+(special|unique|exceptional|one-time|urgent|emergency|critical)\\s+(case|situation|circumstance|exception|request|scenario)\\s*.{0,40}(so\\s+we\\s+(can|should)|so\\s+(skip|bypass|ignore|disable)|no\\s+need\\s+(to|for)\\s+(follow|check|validate|verify|review))"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects casual, conversational authority claims used to bypass security controls.
+      Patterns include "FYI the orchestrator said to skip the filter", claiming discovered
+      admin panel access enables direct database access, efficiency justifications for
+      bypassing security, and "special case" exceptions to security policy.
+      (ATR-2026-132). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Reject any agent action justified by casual authority claims without cryptographic
+      verification. Agents must not self-authorize access escalation based on discovered
+      interfaces. Enforce separation: efficiency claims do not override security controls.
+
+  # ─── Agent Autonomy Violations ───────────────────────────────────────────────
+
+  - id: ATR_RUNAWAY_AGENT_LOOP
+    category: agent_autonomy
+    severity: HIGH
+    patterns:
+      - "(?i)(?:retrying|retry\\s+(?:attempt|number|#|count))\\s*(?::?\\s*)?\\d+"
+      - "(?i)attempt\\s+\\d+\\s+(?:of|/)\\s+\\d+"
+      - "(?i)(?:trying\\s+again|let\\s+me\\s+(?:try|attempt)\\s+(?:again|once\\s+more|one\\s+more\\s+time)|retrying\\s+(?:the\\s+)?(?:same|previous|last)\\s+(?:operation|request|call|action))"
+      - "(?i)(?:still\\s+(?:failing|not\\s+working|getting\\s+(?:the\\s+same\\s+)?error)|same\\s+error\\s+(?:again|as\\s+before|persists)|error\\s+(?:persists|continues|remains))"
+      - "(?i)(?:calling\\s+(?:myself|this\\s+(?:function|tool|agent))\\s+(?:again|recursively)|recursive\\s+(?:call|invocation|execution)|self[_-]?(?:invoke|call|trigger))"
+      - "(?i)(?:iteration\\s+(?:#\\s*)?\\d{2,}|loop\\s+(?:iteration|count|index)\\s*[:=]?\\s*\\d{2,}|cycle\\s+\\d{2,})"
+      - "(?i)(?:repeating\\s+(?:the\\s+)?(?:same|previous|identical)\\s+(?:step|action|operation|request)|performing\\s+(?:the\\s+)?(?:same|identical)\\s+(?:action|call)\\s+again)"
+      - "(?i)(?:max(?:imum)?\\s+retries?\\s+(?:reached|exceeded|hit)|(?:exceeded|hit|reached)\\s+(?:the\\s+)?(?:retry|attempt|iteration)\\s+(?:limit|maximum|cap))"
+      - "(?i)(?:no\\s+progress\\s+(?:after|in)\\s+\\d+\\s+(?:attempts?|tries|iterations?|cycles?)|stuck\\s+(?:in\\s+(?:a\\s+)?loop|on\\s+(?:the\\s+)?same\\s+(?:step|error)))"
+      - "(?i)(?:(?:while|for)\\s*\\(\\s*(?:true|1|;;)\\s*\\)|(?:loop|repeat)\\s*\\{\\s*(?:call|invoke|execute))"
+      - "(?i)(?:will\\s+keep\\s+(?:trying|retrying|attempting)|(?:continuously|endlessly|infinitely)\\s+(?:retrying|looping|repeating|calling))"
+      - "(?i)(?:spawn(?:ing|ed)?\\s+(?:another|new|additional)\\s+(?:instance|copy|clone)\\s+of\\s+(?:myself|this\\s+agent)|fork(?:ing|ed)?\\s+(?:a\\s+)?(?:new\\s+)?(?:agent|process|instance))"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects runaway agent loops including unbounded retry patterns, self-recursive calls,
+      infinite loop constructs, stuck-on-same-error patterns, and agent self-cloning. These
+      behaviors can cause resource exhaustion, denial of service, or unintended runaway
+      actions when an agent fails to recognize a termination condition.
+      (ATR-2026-050). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Enforce hard retry limits per agent session. Implement exponential backoff with
+      maximum attempt caps. Monitor for self-recursive agent invocations. Terminate agents
+      that exceed iteration thresholds without progress signals.
+
+  - id: ATR_CASCADING_FAILURE
+    category: agent_autonomy
+    severity: HIGH
+    patterns:
+      - "(?i)auto[_-]?approv(?:ed|ing|al).{0,30}(?:without|no|skipping)\\s+(?:human|manual|review|check|verification|validation)"
+      - "(?i)(?:propagat(?:ed|ing)|forward(?:ed|ing)|pass(?:ed|ing))\\s+(?:error|failure|exception|fault)\\s+(?:to|through|downstream|to\\s+next\\s+(?:stage|step|agent))"
+      - "(?i)(?:stage|step|phase)\\s+\\d+\\s+(?:failed|error|timed\\s+out).*(?:stage|step|phase)\\s+\\d+\\s+(?:also|subsequently|then)\\s+(?:failed|errored)"
+      - "(?i)(?:trusting|accepting|using)\\s+(?:previous|upstream|prior)\\s+(?:stage|step|agent)\\s+(?:output|result|response)\\s+(?:without|no)\\s+(?:validation|verification|check)"
+      - "(?i)(?:rollback|revert|undo|destroy|delete|terminate)\\s+(?:all|everything|entire|production|live).{0,40}(?:based\\s+on|triggered\\s+by|due\\s+to)\\s+(?:automated|agent|AI|pipeline)"
+      - "(?i)(?:amplif(?:ied|ying)|escalat(?:ed|ing)|magnif(?:ied|ying))\\s+(?:the\\s+)?(?:error|issue|problem|signal|impact|damage)\\s+(?:across|through|to)\\s+(?:multiple|all|downstream)"
+      - "(?i)(?:no\\s+(?:human|manual)\\s+(?:in|checkpoint|review|gate|approval)\\s+(?:the|this)?\\s*(?:loop|pipeline|chain|workflow)|(?:fully|completely)\\s+automated\\s+(?:pipeline|workflow|chain)\\s+(?:with|including)\\s+(?:destructive|production|critical))"
+      - "(?i)(?:blind(?:ly)?|unconditional(?:ly)?|automatic(?:ally)?)\\s+(?:executing|running|applying|deploying).{0,60}(?:previous|upstream|AI|agent|automated)(?:\\s+(?:AI|agent|system|model))?"
+      - "(?i)(?!(?:post[- ]?(?:incident|mortem)|review|analysis|report|last\\s+(?:week|month|time)|caused\\s+by|root\\s+cause|lessons?\\s+learned|investigation|retrospective).{0,80})(?:chain\\s+reaction|domino\\s+(?:effect|failure)|failure\\s+cascade|cascading\\s+(?:error|failure|shutdown|rollback))(?!.{0,80}(?:was\\s+caused\\s+by|root\\s+cause|post[- ]?(?:incident|mortem)|lessons?\\s+learned|last\\s+(?:week|month|time)))"
+      - "(?i)(?:retry|fallback)\\s+(?:triggered|activated|initiated)\\s+(?:automatically|by\\s+(?:previous|upstream)).*(?:retry|fallback)\\s+(?:triggered|activated|initiated)"
+      - "(?i)(?:all|every)\\s+\\d+\\s+(?:downstream|dependent|connected)\\s+(?:agents?|services?|stages?|steps?)\\s+(?:affected|impacted|failed|halted)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects cascading failure patterns in agent pipelines including automated approvals
+      without human review, error propagation through pipeline stages, blind execution of
+      upstream agent output, production destructive actions triggered by automated pipelines,
+      and absence of human-in-the-loop checkpoints in critical workflows.
+      (ATR-2026-052). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Implement mandatory human-in-the-loop checkpoints before destructive pipeline actions.
+      Validate upstream agent output before passing to downstream stages. Enforce circuit
+      breakers on automated pipelines. Never allow fully automated production rollbacks.
+
+  - id: ATR_UNAUTHORIZED_FINANCIAL_ACTION
+    category: agent_autonomy
+    severity: CRITICAL
+    patterns:
+      - "(?i)(send_red_packet|send_hongbao|send_money|transfer_money|make_payment|pay_bill|send_payment|create_payment|process_payment|execute_transfer|bank_transfer|wire_transfer|crypto_send|crypto_transfer)"
+      - "(?i)(红包|紅包|转账|轉帳|付款|支付|汇款|匯款|打款|打錢|充值|充幣)"
+      - "(?i)(wechat_pay|alipay|apple_pay|google_pay|stripe_charge|paypal_send|venmo_send|cashapp_send|zelle_send)"
+      - "(?i)(\"amount\"\\s*:\\s*\\d+|\"currency\"\\s*:\\s*\"|\"recipient\"\\s*:\\s*\"|\"payment_method\"\\s*:\\s*\"|\"account_number\"\\s*:\\s*\")"
+      - "(?i)(\"action\"\\s*:\\s*\"(pay|transfer|send|withdraw|purchase)\"|\"type\"\\s*:\\s*\"(payment|transfer|withdrawal|purchase)\")"
+      - "(?i)(I('ll|\\s+will)|let\\s+me|going\\s+to|about\\s+to|proceeding\\s+to|executing)\\s+(send|transfer|pay|wire|remit|deposit|withdraw)\\s+.{0,30}(\\$|USD|EUR|CNY|RMB|元|円|원|\\d+\\.?\\d*)"
+      - "(我(将|要|来|來|正在|准备|準備)?|正在|即将|即將).{0,10}(发送|發送|转账|轉帳|支付|付款|汇款|匯款|打款).{0,20}(元|块|塊|美元|人民币|人民幣)"
+      - "(?i)(payment\\s+(successful|completed|processed|sent|confirmed)|transfer\\s+(successful|completed|sent|initiated)|red\\s+packet\\s+sent|hongbao\\s+sent|money\\s+sent)"
+      - "(红包已发|紅包已發|转账成功|轉帳成功|付款成功|支付完成|汇款已发|匯款已發|已发送.*元|已發送.*元)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects unauthorized financial actions initiated by AI agents including money transfers,
+      payments, wire transfers, cryptocurrency sends, and red packet disbursements across
+      major payment platforms (WeChat Pay, Alipay, Stripe, PayPal, Venmo, Zelle). Covers
+      English and CJK language financial action patterns and JSON payment payload structures.
+      (ATR-2026-098). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Block the financial action immediately and alert the user. Require explicit out-of-band
+      human confirmation for all financial transactions. Never allow agents to autonomously
+      initiate payments. Implement transaction amount limits and velocity controls.
+
+  - id: ATR_HIGH_RISK_TOOL_GATE
+    category: agent_autonomy
+    severity: HIGH
+    patterns:
+      - "(?i)(?<!get_)(?<!list_)(?<!check_)(?<!view_)(?<!fetch_)(?<!query_)(pay|payment|transfer|transaction|purchase|buy|checkout|billing|invoice|charge|refund|withdraw|deposit|subscribe|红包|紅包|转账|轉帳|付款|支付|汇款|匯款|充值|订阅|訂閱|送金|振込|결제|이체|송금)"
+      - "(?i)(delete|remove|drop|truncate|purge|wipe|destroy|erase|reset|uninstall|revoke|terminate|kill|shutdown|format|删除|刪除|清空|销毁|銷毀|移除|卸载|卸載|削除|삭제|제거)"
+      - "(?i)(send_message|send_email|send_sms|send_notification|post_message|post_tweet|post_comment|reply_message|publish|broadcast|发送消息|發送訊息|发邮件|發郵件|发短信|發簡訊|投稿|메시지_보내기)"
+      - "(?i)(grant_access|change_role|modify_permissions|add_admin|set_owner|update_auth|change_password|reset_password|create_token|generate_key|invite_user|授权|授權|修改权限|修改權限|添加管理|변경_권한)"
+      - "(?i)(exec|execute|run_command|shell|bash|cmd|powershell|system_call|os_exec|subprocess|eval|执行命令|執行命令|실행)"
+      - "(?i)(\"amount\"\\s*:\\s*[1-9]\\d{2,}|\"value\"\\s*:\\s*[1-9]\\d{2,}|\"quantity\"\\s*:\\s*[1-9]\\d{2,})(?!.*\"confirmed\"\\s*:\\s*true)"
+      - "(?i)(\"scope\"\\s*:\\s*\"(all|global|everyone)\"|\"target\"\\s*:\\s*\"(all|\\*|everyone)\"|\"recursive\"\\s*:\\s*true|\"force\"\\s*:\\s*true)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects high-risk tool invocations in agent skill definitions that should require
+      explicit human confirmation before execution. Covers financial transactions, destructive
+      delete/purge operations, external communications (email/SMS/social), permission/role
+      modifications, shell command execution, large-value unconfirmed transactions, and
+      global-scope or force-flag operations.
+      (ATR-2026-099). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Implement mandatory confirmation gates before any high-risk tool invocation. Require
+      the "confirmed": true field in financial payloads. Disallow agents from autonomously
+      granting access, modifying permissions, or executing shell commands without approval.

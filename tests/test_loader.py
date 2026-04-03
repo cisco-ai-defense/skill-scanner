@@ -237,3 +237,18 @@ def test_codex_skills_directory_structure(loader, tmp_path):
     assert file_types["scripts/main.py"] == "python"
     assert file_types["references/data.json"] == "other"
     assert file_types["assets/template.txt"] == "other"
+
+
+def test_referenced_files_no_false_the_py_from_english_prose(loader):
+    """English 'from the …' / 'import the …' must not imply a local the.py."""
+    body = "Read from the documentation for details.\n\nYou may import the module later.\n"
+    refs = loader._extract_referenced_files(body)
+    assert "the.py" not in refs
+
+
+def test_referenced_files_from_import_syntax_still_extracts_local_module(loader):
+    """Real ``from m import`` / line-initial ``import m`` still suggest m.py when not stdlib."""
+    body = "from myhelper import foo\n\nimport anothermod\n"
+    refs = loader._extract_referenced_files(body)
+    assert "myhelper.py" in refs
+    assert "anothermod.py" in refs

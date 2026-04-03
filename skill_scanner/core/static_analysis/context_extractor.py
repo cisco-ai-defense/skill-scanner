@@ -262,7 +262,7 @@ class ContextExtractor:
             SkillScriptContext with extracted information
         """
         # Parse with AST parser
-        parser = PythonParser(source_code)
+        parser = PythonParser(source_code, file_path=str(file_path))
         if not parser.parse():
             # Return empty context if parsing fails
             return SkillScriptContext(file_path=str(file_path), functions=[], imports=[], dataflows=[])
@@ -394,7 +394,7 @@ class ContextExtractor:
             return contexts
 
         # Parse with AST parser
-        parser = PythonParser(source_code)
+        parser = PythonParser(source_code, file_path=str(file_path))
         if not parser.parse():
             return contexts
 

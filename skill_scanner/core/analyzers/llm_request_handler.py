@@ -25,6 +25,7 @@ Uses structured outputs (JSON schema) when available.
 import asyncio
 import json
 import logging
+import os
 import warnings
 from pathlib import Path
 from typing import Any
@@ -95,6 +96,12 @@ class LLMRequestHandler:
 
         # Load JSON schema for structured outputs
         self.response_schema = self._load_response_schema()
+        self._use_plain_json_output = self._env_flag_enabled("SKILL_SCANNER_LLM_FORCE_JSON_OBJECT")
+
+    def _env_flag_enabled(self, env_name: str) -> bool:
+        """Treat common truthy env values as enabled."""
+        raw_value = os.getenv(env_name, "")
+        return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
     def _load_response_schema(self) -> dict[str, Any] | None:
         """Load JSON schema for structured outputs."""
@@ -160,6 +167,55 @@ class LLMRequestHandler:
 
         return sanitized
 
+    def _should_use_json_object(self) -> bool:
+        """Pick the safest response format for the current backend."""
+        if self._use_plain_json_output:
+            return True
+
+        model_lower = self.provider_config.model.lower()
+        unsupported_json_schema_providers = ["deepseek"]
+        return any(name in model_lower for name in unsupported_json_schema_providers)
+
+    def _build_response_format(self) -> dict[str, Any] | None:
+        """Build the response format for LiteLLM requests."""
+        if not self.response_schema:
+            return None
+
+        if self._should_use_json_object():
+            return {"type": "json_object"}
+
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "security_analysis_response",
+                "schema": self.response_schema,
+                "strict": True,
+            },
+        }
+
+    def _should_fallback_to_json_object(self, error: Exception, response_format: dict[str, Any] | None) -> bool:
+        """Detect backends that reject structured output and need plain JSON mode."""
+        if not response_format or response_format.get("type") != "json_schema":
+            return False
+
+        error_msg = str(error).lower()
+        if "response_format.json_schema" in error_msg:
+            return True
+
+        if "json_schema" in error_msg and any(
+            phrase in error_msg
+            for phrase in [
+                "missing required parameter",
+                "unsupported",
+                "not supported",
+                "invalid",
+                "unknown parameter",
+            ]
+        ):
+            return True
+
+        return False
+
     async def make_request(self, messages: list[dict[str, str]], context: str = "") -> str:
         """
         Make LLM request with retry logic and exponential backoff.
@@ -206,30 +262,28 @@ class LLMRequestHandler:
                     **self.provider_config.get_request_params(),
                 }
 
-                # Add structured output support using LiteLLM's unified format
-                # According to LiteLLM docs: https://docs.litellm.ai/docs/completion/json_mode
-                # Format: response_format={ "type": "json_schema", "json_schema": { "name": "...", "schema": {...}, "strict": true } }
-                # Works for: OpenAI, Anthropic Claude, Gemini (via LiteLLM), Bedrock, Vertex AI, Groq, Ollama, Databricks
-                if self.response_schema:
-                    model_lower = self.provider_config.model.lower()
-                    unsupported_json_schema_providers = ["deepseek"]
-                    if any(p in model_lower for p in unsupported_json_schema_providers):
-                        request_params["response_format"] = {"type": "json_object"}
-                    else:
-                        request_params["response_format"] = {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": "security_analysis_response",
-                                "schema": self.response_schema,
-                                "strict": True,
-                            },
-                        }
+                response_format = self._build_response_format()
+                if response_format:
+                    request_params["response_format"] = response_format
 
                 response = await acompletion(**request_params, drop_params=True)
                 content: str = response.choices[0].message.content or ""
                 return content
 
             except Exception as e:
+                response_format = request_params.get("response_format")
+                if self._should_fallback_to_json_object(e, response_format):
+                    logger.warning(
+                        "Structured output rejected for %s, retrying with plain JSON output",
+                        context,
+                    )
+                    self._use_plain_json_output = True
+                    retry_params = dict(request_params)
+                    retry_params["response_format"] = {"type": "json_object"}
+                    response = await acompletion(**retry_params, drop_params=True)
+                    content: str = response.choices[0].message.content or ""
+                    return content
+
                 last_exception = e
                 error_msg = str(e).lower()
 

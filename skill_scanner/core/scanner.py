@@ -157,13 +157,22 @@ class SkillScanner:
         self.loader = SkillLoader(max_file_size_bytes=loader_max_bytes)
         self.content_extractor = ContentExtractor()
 
-    def scan_skill(self, skill_directory: str | Path, *, lenient: bool = False) -> ScanResult:
+    def scan_skill(
+        self,
+        skill_directory: str | Path,
+        *,
+        lenient: bool = False,
+        skill_file: str | None = None,
+    ) -> ScanResult:
         """
         Scan a single skill package.
 
         Args:
             skill_directory: Path to skill directory
             lenient: Tolerate malformed YAML / missing fields in the skill.
+                When True and ``SKILL.md`` is absent, the loader falls back to
+                scanning ``.md`` files in the directory (non-Codex/Cursor formats).
+            skill_file: Optional custom metadata filename (e.g. ``"README.md"``).
 
         Returns:
             ScanResult with findings
@@ -174,7 +183,7 @@ class SkillScanner:
         if not isinstance(skill_directory, Path):
             skill_directory = Path(skill_directory)
 
-        skill = self.loader.load_skill(skill_directory, lenient=lenient)
+        skill = self.loader.load_skill(skill_directory, lenient=lenient, skill_file=skill_file)
         return self._scan_single_skill(skill, skill_directory)
 
     # ------------------------------------------------------------------
@@ -668,6 +677,7 @@ class SkillScanner:
         check_overlap: bool = False,
         *,
         lenient: bool = False,
+        skill_file: str | None = None,
     ) -> Report:
         """
         Scan all skill packages in a directory.
@@ -681,6 +691,9 @@ class SkillScanner:
             recursive: If True, search recursively for SKILL.md files
             check_overlap: If True, check for description overlap between skills
             lenient: Tolerate malformed YAML / missing fields in skills.
+                When True, directories containing ``.md`` files (but no
+                ``SKILL.md``) are also discovered as candidate skills.
+            skill_file: Optional custom metadata filename (e.g. ``"README.md"``).
 
         Returns:
             Report with results from all skills
@@ -691,7 +704,7 @@ class SkillScanner:
         if not skills_directory.exists():
             raise FileNotFoundError(f"Directory does not exist: {skills_directory}")
 
-        skill_dirs = self._find_skill_directories(skills_directory, recursive)
+        skill_dirs = self._find_skill_directories(skills_directory, recursive, lenient=lenient, skill_file=skill_file)
         report = Report()
 
         # Keep track of loaded skills for cross-skill analysis
@@ -699,7 +712,7 @@ class SkillScanner:
 
         for skill_dir in skill_dirs:
             try:
-                skill = self.loader.load_skill(skill_dir, lenient=lenient)
+                skill = self.loader.load_skill(skill_dir, lenient=lenient, skill_file=skill_file)
                 result = self._scan_single_skill(skill, skill_dir)
                 report.add_scan_result(result)
 
@@ -841,28 +854,69 @@ class SkillScanner:
 
         return intersection / union if union > 0 else 0.0
 
-    def _find_skill_directories(self, directory: Path, recursive: bool) -> list[Path]:
+    def _find_skill_directories(
+        self,
+        directory: Path,
+        recursive: bool,
+        *,
+        lenient: bool = False,
+        skill_file: str | None = None,
+    ) -> list[Path]:
         """
-        Find all directories containing SKILL.md files.
+        Find all directories containing skill metadata files.
+
+        When *lenient* is True and no ``SKILL.md`` (or *skill_file*) is found,
+        directories containing at least one ``.md`` file are also treated as
+        candidate skills.  This enables scanning non-Codex/Cursor formats such
+        as Claude Code ``.claude/commands/*.md`` or flat markdown skill repos.
 
         Args:
             directory: Directory to search
             recursive: Search recursively
+            lenient: Also discover directories with ``.md`` files (no ``SKILL.md``)
+            skill_file: Custom metadata filename to look for instead of ``SKILL.md``
 
         Returns:
             List of skill directory paths
         """
-        skill_dirs = []
+        target_filename = skill_file or "SKILL.md"
+        skill_dirs: list[Path] = []
+        seen: set[Path] = set()
 
+        # Phase 1: find directories with the target metadata file
         if recursive:
-            for skill_md in directory.rglob("SKILL.md"):
-                skill_dirs.append(skill_md.parent)
+            for md in directory.rglob(target_filename):
+                resolved = md.parent.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    skill_dirs.append(md.parent)
         else:
             for item in directory.iterdir():
                 if item.is_dir():
-                    skill_md = item / "SKILL.md"
-                    if skill_md.exists():
-                        skill_dirs.append(item)
+                    md = item / target_filename
+                    if md.exists():
+                        resolved = item.resolve()
+                        if resolved not in seen:
+                            seen.add(resolved)
+                            skill_dirs.append(item)
+
+        # Phase 2 (lenient only): discover directories with .md files
+        if lenient:
+            if recursive:
+                for md in directory.rglob("*.md"):
+                    candidate = md.parent.resolve()
+                    if candidate not in seen:
+                        seen.add(candidate)
+                        skill_dirs.append(md.parent)
+            else:
+                for item in directory.iterdir():
+                    if item.is_dir():
+                        resolved = item.resolve()
+                        if resolved in seen:
+                            continue
+                        if any(item.glob("*.md")):
+                            seen.add(resolved)
+                            skill_dirs.append(item)
 
         return skill_dirs
 
