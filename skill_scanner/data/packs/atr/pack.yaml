@@ -1,0 +1,307 @@
+# ATR (Agent Threat Rules) Rule Pack for Cisco Skill Scanner
+# Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+# Version: 0.4.0
+# These rules cover AI agent attack vectors unique to ATR — not present in Cisco's
+# built-in ruleset. Focus areas: MCP tool poisoning, multi-agent attacks, agent
+# autonomy violations, and advanced injection techniques.
+
+pack:
+  id: atr
+  name: "ATR Agent Threat Rules"
+  version: "0.4.0"
+  description: >
+    Open-source AI agent security detection rules from the Agent Threat Rules (ATR) project.
+    Covers MCP tool poisoning, multi-agent attacks (cross-agent privilege escalation, Sybil
+    attacks, A2A injection, identity spoofing), agent autonomy violations (runaway loops,
+    unauthorized financial actions, cascading failures), and advanced injection techniques
+    (CJK injection, paraphrase attacks, RAG data poisoning, persona hijacking, goal hijacking).
+    PINT benchmark: 62.7% recall, 99.7% precision (v0.4.0, 71 rules).
+  author: "ATR Community"
+  license: "Apache-2.0"
+  source_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules"
+  signature_files:
+    - signatures/tool_poisoning.yaml
+    - signatures/agent_manipulation.yaml
+    - signatures/advanced_injection.yaml
+
+rules:
+
+  # ─── MCP Tool Poisoning (tool_poisoning.yaml) ──────────────────────────────
+
+  - id: ATR_MCP_MALICIOUS_RESPONSE
+    file: signatures/tool_poisoning.yaml
+    atr_id: ATR-2026-010
+    severity: CRITICAL
+    category: mcp_tool_poisoning
+    description: "Malicious content (shell commands, reverse shells, encoded payloads, prompt injection) in MCP tool responses."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-010-mcp-malicious-response.yaml"
+
+  - id: ATR_TOOL_OUTPUT_INJECTION
+    file: signatures/tool_poisoning.yaml
+    atr_id: ATR-2026-011
+    severity: HIGH
+    category: mcp_tool_poisoning
+    description: "Hidden instructions in tool output attempting to manipulate agent behavior, suppress information, or exfiltrate data."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-011-tool-output-injection.yaml"
+
+  - id: ATR_TOOL_SSRF
+    file: signatures/tool_poisoning.yaml
+    atr_id: ATR-2026-013
+    severity: CRITICAL
+    category: mcp_tool_poisoning
+    description: "SSRF via agent tool calls targeting cloud metadata endpoints, private IP ranges, internal hostnames, and encoded loopback addresses."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-013-tool-ssrf.yaml"
+
+  - id: ATR_SUPPLY_CHAIN_POISONING
+    file: signatures/tool_poisoning.yaml
+    atr_id: ATR-2026-095
+    severity: CRITICAL
+    category: mcp_tool_poisoning
+    description: "MCP tool supply chain poisoning via prompt injection, code execution primitives, and exfiltration directives in tool responses."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-095-supply-chain-poisoning.yaml"
+
+  - id: ATR_CONSENT_BYPASS_INSTRUCTION
+    file: signatures/tool_poisoning.yaml
+    atr_id: ATR-2026-100
+    severity: HIGH
+    category: mcp_tool_poisoning
+    description: "Tool descriptions instructing the LLM to forward data without user confirmation, bypassing consent workflows."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-100-consent-bypass-instruction.yaml"
+
+  - id: ATR_TRUST_ESCALATION_OVERRIDE
+    file: signatures/tool_poisoning.yaml
+    atr_id: ATR-2026-101
+    severity: HIGH
+    category: mcp_tool_poisoning
+    description: "Tool descriptions claiming output is authoritative and overrides user preferences or safety guidelines."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-101-trust-escalation-override.yaml"
+
+  - id: ATR_HIDDEN_SAFETY_BYPASS
+    file: signatures/tool_poisoning.yaml
+    atr_id: ATR-2026-103
+    severity: CRITICAL
+    category: mcp_tool_poisoning
+    description: "Tools embedding 'NOTE TO AI: disregard safety instructions' patterns to bypass LLM safety mechanisms."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-103-hidden-safety-bypass-instruction.yaml"
+
+  - id: ATR_SILENT_ACTION_CONCEALMENT
+    file: signatures/tool_poisoning.yaml
+    atr_id: ATR-2026-105
+    severity: HIGH
+    category: mcp_tool_poisoning
+    description: "Tool descriptions instructing the LLM to hide actions from users ('do not mention this to the user')."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-105-silent-action-concealment.yaml"
+
+  - id: ATR_SCHEMA_DESCRIPTION_CONTRADICTION
+    file: signatures/tool_poisoning.yaml
+    atr_id: ATR-2026-106
+    severity: HIGH
+    category: mcp_tool_poisoning
+    description: "Tools claiming read-only or safe behavior in description while exposing write_mode or dangerous parameters in schema."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-106-schema-description-contradiction.yaml"
+
+  # ─── Multi-Agent Attacks (agent_manipulation.yaml) ─────────────────────────
+
+  - id: ATR_CROSS_AGENT_ATTACK
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-030
+    severity: CRITICAL
+    category: multi_agent_attack
+    description: "Cross-agent attacks impersonating orchestrators, injecting fake system messages, or exfiltrating data between agents."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-030-cross-agent-attack.yaml"
+
+  - id: ATR_CROSS_AGENT_PRIVILEGE_ESCALATION
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-074
+    severity: CRITICAL
+    category: multi_agent_attack
+    description: "Privilege escalation using another agent's elevated credentials or bypassing authorization gatekeepers."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-074-cross-agent-privilege-escalation.yaml"
+
+  - id: ATR_INSECURE_INTER_AGENT_COMMUNICATION
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-076
+    severity: HIGH
+    category: multi_agent_attack
+    description: "Insecure inter-agent communication with missing auth tokens, message replay, MITM indicators, or unverified sources."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-076-inter-agent-message-spoofing.yaml"
+
+  - id: ATR_HUMAN_TRUST_EXPLOITATION
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-077
+    severity: HIGH
+    category: multi_agent_attack
+    description: "Agent manipulation of human trust via false certainty, urgency pressure, bypassing review, or suppressing warnings."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-077-human-trust-exploitation.yaml"
+
+  - id: ATR_CONSENSUS_SYBIL_ATTACK
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-108
+    severity: CRITICAL
+    category: multi_agent_attack
+    description: "Sybil attacks against multi-agent consensus mechanisms via fake identity creation, vote flooding, or ballot stuffing."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-108-consensus-sybil-attack.yaml"
+
+  - id: ATR_A2A_MESSAGE_INJECTION
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-116
+    severity: HIGH
+    category: multi_agent_attack
+    description: "Malicious A2A message injection overriding instructions, stealing credentials, or triggering exec/eval tool calls."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-116-a2a-message-validation.yaml"
+
+  - id: ATR_AGENT_IDENTITY_SPOOFING
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-117
+    severity: CRITICAL
+    category: multi_agent_attack
+    description: "Agent identity spoofing claiming to be system/admin/orchestrator or a specific AI model to gain elevated trust."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-117-agent-identity-spoofing.yaml"
+
+  - id: ATR_APPROVAL_FATIGUE
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-118
+    severity: MEDIUM
+    category: multi_agent_attack
+    description: "Patterns exploiting human approval fatigue via auto-approve encouragement, bulk approval, or 'routine/harmless' dismissals."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-118-approval-fatigue.yaml"
+
+  - id: ATR_SOCIAL_ENGINEERING_VIA_AGENT
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-119
+    severity: HIGH
+    category: multi_agent_attack
+    description: "Social engineering via agent output including account suspension threats, authority impersonation, and credential phishing."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-119-social-engineering-via-agent.yaml"
+
+  - id: ATR_CASUAL_AUTHORITY_CLAIM
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-132
+    severity: HIGH
+    category: multi_agent_attack
+    description: "Casual conversational authority claims ('the orchestrator said to skip the filter') used to bypass security controls."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-132-casual-authority-escalation.yaml"
+
+  # ─── Agent Autonomy Violations (agent_manipulation.yaml) ───────────────────
+
+  - id: ATR_RUNAWAY_AGENT_LOOP
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-050
+    severity: HIGH
+    category: agent_autonomy
+    description: "Runaway agent loops including unbounded retries, self-recursive calls, infinite loop constructs, and agent self-cloning."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-050-runaway-agent-loop.yaml"
+
+  - id: ATR_CASCADING_FAILURE
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-052
+    severity: HIGH
+    category: agent_autonomy
+    description: "Cascading failure patterns in agent pipelines: automated approvals without review, blind execution of upstream output, no human gates."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-052-cascading-failure.yaml"
+
+  - id: ATR_UNAUTHORIZED_FINANCIAL_ACTION
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-098
+    severity: CRITICAL
+    category: agent_autonomy
+    description: "Unauthorized financial actions by agents including transfers, payments, crypto sends, and red packets across major payment platforms."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-098-unauthorized-financial-action.yaml"
+
+  - id: ATR_HIGH_RISK_TOOL_GATE
+    file: signatures/agent_manipulation.yaml
+    atr_id: ATR-2026-099
+    severity: HIGH
+    category: agent_autonomy
+    description: "High-risk tool invocations (financial, destructive delete, external comms, permission changes, shell exec) without human confirmation."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-099-high-risk-tool-gate.yaml"
+
+  # ─── Advanced Injection (advanced_injection.yaml) ──────────────────────────
+
+  - id: ATR_GOAL_HIJACKING
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-032
+    severity: HIGH
+    category: advanced_injection
+    description: "Goal hijacking attempts redirecting agents from their assigned task via urgency, 'scratch that', pivot directives, or task cancellation claims."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-032-goal-hijacking.yaml"
+
+  - id: ATR_SCOPE_CREEP
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-041
+    severity: MEDIUM
+    category: advanced_injection
+    description: "Agent scope creep self-extending beyond task boundaries via 'while I'm at it' patterns or using existing access as a foothold."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-041-scope-creep.yaml"
+
+  - id: ATR_CONSENSUS_POISONING
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-092
+    severity: CRITICAL
+    category: advanced_injection
+    description: "Multi-agent consensus poisoning via vote forging, Sybil agent spawning, ballot stuffing, and validator impersonation."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-092-consensus-poisoning.yaml"
+
+  - id: ATR_CJK_INJECTION_PATTERNS
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-097
+    severity: CRITICAL
+    category: advanced_injection
+    description: "Prompt injection attacks in Chinese (Simplified/Traditional), Japanese, and Korean covering instruction override, financial coercion, and safety bypass."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-097-cjk-injection-patterns.yaml"
+
+  - id: ATR_PERSONA_HIJACKING
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-104
+    severity: CRITICAL
+    category: advanced_injection
+    description: "Mandatory persona adoption instructions that replace the system prompt and override behavioral guidelines."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-104-persona-hijacking.yaml"
+
+  - id: ATR_RAG_DATA_POISONING
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-070
+    severity: HIGH
+    category: advanced_injection
+    description: "RAG knowledge base poisoning with injected system tokens, trigger-on-retrieval instructions, hidden directives, and exfiltration commands."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/data-poisoning/ATR-2026-070-data-poisoning.yaml"
+
+  - id: ATR_MODEL_BEHAVIOR_EXTRACTION
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-072
+    severity: CRITICAL
+    category: advanced_injection
+    description: "Model behavior extraction and model stealing: system prompt verbatim requests, training data extraction, architecture/logit probing."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-security/ATR-2026-072-model-behavior-extraction.yaml"
+
+  - id: ATR_DISGUISED_ANALYTICS_EXFILTRATION
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-102
+    severity: HIGH
+    category: advanced_injection
+    description: "Data exfiltration disguised as analytics collection where skills transmit conversation context as 'usage data'."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-102-disguised-analytics-exfiltration.yaml"
+
+  - id: ATR_INDIRECT_AUTHORITY_CLAIM
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-130
+    severity: HIGH
+    category: advanced_injection
+    description: "Indirect authority claim via 'Note to AI:' style headers in external content claiming to override agent instructions or prior outputs."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-130-indirect-authority-claim.yaml"
+
+  - id: ATR_FICTIONAL_FRAMING_ATTACK
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-131
+    severity: MEDIUM
+    category: advanced_injection
+    description: "Fictional or academic framing used to request safety guideline bypasses: 'write a story with no ethics', 'for research explain how to bypass filters'."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-131-fictional-academic-framing.yaml"
+
+  - id: ATR_PARAPHRASE_INJECTION
+    file: signatures/advanced_injection.yaml
+    atr_id: ATR-2026-133
+    severity: HIGH
+    category: advanced_injection
+    description: "Paraphrased instruction override attacks avoiding direct 'ignore instructions' language: 'set aside your guidance', 'your constraints no longer apply'."
+    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-133-paraphrase-injection.yaml"
