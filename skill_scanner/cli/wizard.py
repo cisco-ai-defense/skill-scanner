@@ -414,6 +414,43 @@ def _ask_lenient() -> bool:
     )
 
 
+def _ask_rule_packs() -> list[str]:
+    """Prompt the user to select additional rule packs (if any are available)."""
+    from ..data import list_available_packs
+
+    available = list_available_packs()
+    if not available:
+        console.print("[dim]No additional rule packs available (core rules are always loaded).[/]")
+        return []
+
+    console.print("[bold]Core rules are always loaded.[/]  Select additional rule packs:\n")
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("Key", style="bold cyan", width=4)
+    table.add_column("Pack", style="bold")
+    for i, pack in enumerate(available, 1):
+        table.add_row(str(i), pack)
+    none_key = str(len(available) + 1)
+    table.add_row(none_key, "[dim]None (core only)[/]")
+    console.print(table)
+    console.print()
+
+    valid = [str(i) for i in range(1, len(available) + 2)]
+    choices_raw = Prompt.ask(
+        "[bold]Select packs[/] [dim](comma-separated numbers, or press Enter for none)[/]",
+        default=none_key,
+    )
+
+    selected: list[str] = []
+    for token in choices_raw.split(","):
+        token = token.strip()
+        if token in valid and token != none_key:
+            idx = int(token) - 1
+            if available[idx] not in selected:
+                selected.append(available[idx])
+
+    return selected
+
+
 # ── Command builder ──────────────────────────────────────────────────────────
 
 
@@ -426,6 +463,7 @@ def _build_command(
     analyzers: dict[str, bool] | None = None,
     llm_details: dict[str, str] | None = None,
     policy: str = "balanced",
+    rule_packs: list[str] | None = None,
     fmt: str = "summary",
     output_file: str | None = None,
     severity: str | None = None,
@@ -442,6 +480,10 @@ def _build_command(
 
     if policy != "balanced":
         cmd.extend(["--policy", policy])
+
+    if rule_packs:
+        cmd.append("--rule-packs")
+        cmd.extend(rule_packs)
 
     if analyzers:
         if analyzers.get("use_behavioral"):
@@ -534,7 +576,7 @@ def _execute_scan(cmd: list[str]) -> int:
 
 # ── Main wizard flow ─────────────────────────────────────────────────────────
 
-_SCAN_TOTAL_STEPS = 7
+_SCAN_TOTAL_STEPS = 8
 
 
 def run_wizard() -> int:
@@ -591,8 +633,15 @@ def run_wizard() -> int:
         preview_kw["policy"] = policy
         _print_preview(_build_partial_command(action, path, **preview_kw))
 
-        # Step 5 — Output
-        _step_header(5, _SCAN_TOTAL_STEPS, "Output")
+        # Step 5 — Rule Packs
+        _step_header(5, _SCAN_TOTAL_STEPS, "Rule Packs")
+        rule_packs = _ask_rule_packs()
+        if rule_packs:
+            preview_kw["rule_packs"] = rule_packs
+        _print_preview(_build_partial_command(action, path, **preview_kw))
+
+        # Step 6 — Output
+        _step_header(6, _SCAN_TOTAL_STEPS, "Output")
         fmt = _ask_format()
         output_file = _ask_output_file(fmt)
         preview_kw["fmt"] = fmt
@@ -600,15 +649,15 @@ def run_wizard() -> int:
             preview_kw["output_file"] = output_file
         _print_preview(_build_partial_command(action, path, **preview_kw))
 
-        # Step 6 — CI / Severity
-        _step_header(6, _SCAN_TOTAL_STEPS, "CI Gating")
+        # Step 7 — CI / Severity
+        _step_header(7, _SCAN_TOTAL_STEPS, "CI Gating")
         severity = _ask_severity()
         if severity:
             preview_kw["severity"] = severity
         _print_preview(_build_partial_command(action, path, **preview_kw))
 
-        # Step 7 — Extra Options
-        _step_header(7, _SCAN_TOTAL_STEPS, "Extra Options")
+        # Step 8 — Extra Options
+        _step_header(8, _SCAN_TOTAL_STEPS, "Extra Options")
         lenient = _ask_lenient()
         if lenient:
             preview_kw["lenient"] = lenient
@@ -621,6 +670,7 @@ def run_wizard() -> int:
             analyzers=analyzers,
             llm_details=llm_details,
             policy=policy,
+            rule_packs=rule_packs or None,
             fmt=fmt,
             output_file=output_file,
             severity=severity,
@@ -654,6 +704,7 @@ def run_wizard() -> int:
                     analyzers=analyzers,
                     llm_details=llm_details,
                     policy=policy,
+                    rule_packs=rule_packs or None,
                     fmt=fmt,
                     output_file=output_file,
                     severity=severity,

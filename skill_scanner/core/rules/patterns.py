@@ -40,7 +40,15 @@ class SecurityRule:
 
     def __init__(self, rule_data: dict[str, Any]):
         self.id = rule_data["id"]
-        self.category = ThreatCategory(rule_data["category"])
+        try:
+            self.category = ThreatCategory(rule_data["category"])
+        except ValueError:
+            logger.warning(
+                "Rule %s uses unknown category '%s'; falling back to POLICY_VIOLATION",
+                self.id,
+                rule_data["category"],
+            )
+            self.category = ThreatCategory.POLICY_VIOLATION
         self.severity = Severity(rule_data["severity"])
         self.patterns = rule_data["patterns"]
         self.exclude_patterns = rule_data.get("exclude_patterns", [])
@@ -143,7 +151,11 @@ class SecurityRule:
 class RuleLoader:
     """Loads security rules from YAML files."""
 
-    def __init__(self, rules_file: Path | None = None):
+    def __init__(
+        self,
+        rules_file: Path | None = None,
+        extra_rules_dirs: list[Path] | None = None,
+    ):
         """
         Initialize rule loader.
 
@@ -151,6 +163,9 @@ class RuleLoader:
             rules_file: Path to a single YAML file **or** a directory
                 containing multiple ``*.yaml`` category files.  If *None*,
                 defaults to the core pack's ``signatures/`` directory.
+            extra_rules_dirs: Additional directories of ``*.yaml`` signature
+                files to load (e.g. from community rule packs).  Rules are
+                appended after the primary ``rules_file`` rules.
         """
         if rules_file is None:
             from ...data import DATA_DIR
@@ -159,20 +174,33 @@ class RuleLoader:
             rules_file = sigs_dir
 
         self.rules_file = rules_file
+        self.extra_rules_dirs = extra_rules_dirs or []
         self.rules: list[SecurityRule] = []
         self.rules_by_id: dict[str, SecurityRule] = {}
         self.rules_by_category: dict[ThreatCategory, list[SecurityRule]] = {}
 
-    def load_rules(self) -> list[SecurityRule]:
-        """
-        Load rules from a YAML file or a directory of YAML files.
+    @staticmethod
+    def _extract_rules_list(data: Any, source_path: Path) -> list[dict]:
+        """Extract a list of rule dicts from parsed YAML data.
 
-        Returns:
-            List of SecurityRule objects
+        Handles both flat-list format (core) and dict-with-``signatures``
+        key format (community packs like ATR).
         """
-        rules_path = Path(self.rules_file)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and "signatures" in data:
+            sigs = data["signatures"]
+            if isinstance(sigs, list):
+                return sigs
+        raise RuntimeError(
+            f"Failed to load rules from {source_path}: expected a YAML list "
+            "of rule objects or a dict with a 'signatures' key"
+        )
+
+    def _load_from_path(self, rules_path: Path) -> list[dict]:
+        """Load raw rule dicts from a file or directory of YAML files."""
+        rules_data: list[dict] = []
         if rules_path.is_dir():
-            rules_data: list[dict] = []
             yaml_files = sorted(rules_path.glob("*.yaml"))
             if not yaml_files:
                 raise RuntimeError(f"No .yaml rule files found in {rules_path}")
@@ -183,19 +211,32 @@ class RuleLoader:
                         data = yaml.safe_load(f)
                 except Exception as e:
                     raise RuntimeError(f"Failed to load rules from {yaml_file}: {e}") from e
-
-                if not isinstance(data, list):
-                    raise RuntimeError(f"Failed to load rules from {yaml_file}: expected a YAML list of rule objects")
-                rules_data.extend(data)
+                rules_data.extend(self._extract_rules_list(data, yaml_file))
         else:
             try:
                 with open(rules_path, encoding="utf-8") as f:
-                    rules_data = yaml.safe_load(f)
+                    data = yaml.safe_load(f)
             except Exception as e:
                 raise RuntimeError(f"Failed to load rules from {rules_path}: {e}")
+            rules_data.extend(self._extract_rules_list(data, rules_path))
+        return rules_data
 
-            if not isinstance(rules_data, list):
-                raise RuntimeError(f"Failed to load rules from {rules_path}: expected a YAML list of rule objects")
+    def load_rules(self) -> list[SecurityRule]:
+        """
+        Load rules from the primary source and any extra pack directories.
+
+        Returns:
+            List of SecurityRule objects
+        """
+        rules_data = self._load_from_path(Path(self.rules_file))
+
+        for extra_dir in self.extra_rules_dirs:
+            extra_path = Path(extra_dir)
+            if extra_path.is_dir():
+                try:
+                    rules_data.extend(self._load_from_path(extra_path))
+                except Exception as e:
+                    logger.warning("Failed to load extra rule pack from %s: %s", extra_path, e)
 
         self.rules = []
         self.rules_by_id = {}
@@ -207,7 +248,6 @@ class RuleLoader:
                 self.rules.append(rule)
                 self.rules_by_id[rule.id] = rule
 
-                # Group by category
                 if rule.category not in self.rules_by_category:
                     self.rules_by_category[rule.category] = []
                 self.rules_by_category[rule.category].append(rule)

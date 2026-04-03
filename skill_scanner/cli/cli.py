@@ -107,9 +107,18 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
     Delegates to the centralized :func:`build_analyzers` factory so that
     core analyzer construction is defined in exactly one place.
     """
+    from ..data import resolve_rule_packs
+
+    extra_rules_dirs = None
+    pack_names: list[str] | None = getattr(args, "rule_packs", None)
+    if pack_names:
+        extra_rules_dirs = resolve_rule_packs(pack_names)
+        status(f"Loading additional rule packs: {', '.join(pack_names)}")
+
     analyzers = build_analyzers(
         policy,
         custom_yara_rules_path=getattr(args, "custom_rules", None),
+        extra_rules_dirs=extra_rules_dirs,
         use_behavioral=getattr(args, "use_behavioral", False),
         use_llm=getattr(args, "use_llm", False),
         use_virustotal=getattr(args, "use_virustotal", False),
@@ -329,8 +338,28 @@ def _write_output(args: argparse.Namespace, output: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _handle_rule_packs_list(args: argparse.Namespace) -> bool:
+    """If ``--rule-packs list`` was passed, print available packs and return True."""
+    pack_names: list[str] | None = getattr(args, "rule_packs", None)
+    if pack_names and pack_names == ["list"]:
+        from ..data import list_available_packs
+
+        packs = list_available_packs()
+        if packs:
+            print("Available rule packs:")
+            for p in packs:
+                print(f"  - {p}")
+        else:
+            print("No additional rule packs available.")
+        return True
+    return False
+
+
 def scan_command(args: argparse.Namespace) -> int:
     """Handle the ``scan`` command for a single skill."""
+    if _handle_rule_packs_list(args):
+        return 0
+
     skill_dir = Path(args.skill_directory)
     if not skill_dir.exists():
         print(f"Error: Directory does not exist: {skill_dir}", file=sys.stderr)
@@ -418,6 +447,9 @@ def scan_command(args: argparse.Namespace) -> int:
 
 def scan_all_command(args: argparse.Namespace) -> int:
     """Handle the ``scan-all`` command for multiple skills."""
+    if _handle_rule_packs_list(args):
+        return 0
+
     skills_dir = Path(args.skills_directory)
     if not skills_dir.exists():
         print(f"Error: Directory does not exist: {skills_dir}", file=sys.stderr)
@@ -792,6 +824,12 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         "--custom-rules",
         metavar="PATH",
         help="Path to directory containing custom YARA rules (.yara files)",
+    )
+    parser.add_argument(
+        "--rule-packs",
+        nargs="+",
+        metavar="PACK",
+        help="Additional signature rule packs to enable (e.g. 'atr'). Use '--rule-packs list' to show available packs.",
     )
     parser.add_argument(
         "--taxonomy",
