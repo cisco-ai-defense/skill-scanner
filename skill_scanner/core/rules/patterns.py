@@ -49,7 +49,15 @@ class SecurityRule:
                 rule_data["category"],
             )
             self.category = ThreatCategory.POLICY_VIOLATION
-        self.severity = Severity(rule_data["severity"])
+        try:
+            self.severity = Severity(rule_data["severity"])
+        except ValueError:
+            logger.warning(
+                "Rule %s uses unknown severity '%s'; falling back to HIGH",
+                self.id,
+                rule_data["severity"],
+            )
+            self.severity = Severity.HIGH
         self.patterns = rule_data["patterns"]
         self.exclude_patterns = rule_data.get("exclude_patterns", [])
         self.file_types = rule_data.get("file_types", [])
@@ -186,6 +194,8 @@ class RuleLoader:
         Handles both flat-list format (core) and dict-with-``signatures``
         key format (community packs like ATR).
         """
+        if data is None:
+            raise RuntimeError(f"Failed to load rules from {source_path}: file is empty")
         if isinstance(data, list):
             return data
         if isinstance(data, dict) and "signatures" in data:

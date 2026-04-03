@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from skill_scanner.core.models import ThreatCategory
+from skill_scanner.core.models import Severity, ThreatCategory
 from skill_scanner.core.rules.patterns import RuleLoader, SecurityRule
 from skill_scanner.core.scan_policy import ScanPolicy
 from skill_scanner.data import list_available_packs, resolve_rule_packs
@@ -91,6 +91,17 @@ class TestExtractRulesList:
     def test_non_list_non_dict_raises(self):
         with pytest.raises(RuntimeError):
             RuleLoader._extract_rules_list("not valid", Path("test.yaml"))
+
+    def test_none_data_raises_with_empty_message(self):
+        with pytest.raises(RuntimeError, match="file is empty"):
+            RuleLoader._extract_rules_list(None, Path("empty.yaml"))
+
+    def test_empty_yaml_file_raises(self, tmp_path):
+        empty = tmp_path / "empty.yaml"
+        empty.write_text("", encoding="utf-8")
+        loader = RuleLoader(rules_file=empty)
+        with pytest.raises(RuntimeError, match="file is empty"):
+            loader.load_rules()
 
 
 # ===========================================================================
@@ -218,6 +229,36 @@ class TestUnknownCategoryFallback:
             }
         )
         assert rule.category == ThreatCategory.OBFUSCATION
+
+    def test_unknown_severity_falls_back_to_high(self, tmp_path):
+        _write_yaml(
+            tmp_path,
+            "weird_sev.yaml",
+            textwrap.dedent("""\
+                - id: WEIRD_SEV_RULE
+                  category: obfuscation
+                  severity: SUSPICIOUS
+                  patterns: ["something"]
+                  description: "Rule with non-standard severity"
+            """),
+        )
+        loader = RuleLoader(rules_file=tmp_path)
+        rules = loader.load_rules()
+        assert len(rules) == 1
+        assert rules[0].id == "WEIRD_SEV_RULE"
+        assert rules[0].severity == Severity.HIGH
+
+    def test_known_severity_not_affected(self):
+        rule = SecurityRule(
+            {
+                "id": "TEST",
+                "category": "obfuscation",
+                "severity": "MEDIUM",
+                "patterns": ["x"],
+                "description": "test",
+            }
+        )
+        assert rule.severity == Severity.MEDIUM
 
 
 # ===========================================================================
