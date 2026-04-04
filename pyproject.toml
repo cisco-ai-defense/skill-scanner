@@ -70,7 +70,7 @@ dependencies = [
     # LLM support (required)
     "anthropic==0.76.0",
     "openai==2.15.0",
-    "litellm==1.82.3",
+    "litellm==1.83.0",
 ]
 
 [project.optional-dependencies]
