@@ -682,6 +682,48 @@ class TestSecretsRuleQuality:
         key_findings = [f for f in findings if f.rule_id == "SECRET_PRIVATE_KEY"]
         assert len(key_findings) >= 1
 
+    def test_bare_anthropic_key_detected_end_to_end(self, tmp_path):
+        """Bare documented Anthropic keys should trigger the YARA credential rule."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "tool.py": 'key = "sk-ant-api03-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n',
+            },
+        )
+        analyzer = StaticAnalyzer()
+        findings = analyzer.analyze(skill)
+
+        key_findings = [f for f in findings if f.rule_id == "YARA_credential_harvesting_generic"]
+        assert len(key_findings) >= 1
+
+    def test_bare_openai_project_key_detected_end_to_end(self, tmp_path):
+        """Bare documented OpenAI project keys should trigger the YARA credential rule."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "tool.py": 'key = "sk-proj-8Dvo0_nGTvHe6fffWX8xb5HhX5s5MHBLPlfEbc22uxKkdLs8A"\n',
+            },
+        )
+        analyzer = StaticAnalyzer()
+        findings = analyzer.analyze(skill)
+
+        key_findings = [f for f in findings if f.rule_id == "YARA_credential_harvesting_generic"]
+        assert len(key_findings) >= 1
+
+    def test_long_hyphenated_slug_not_flagged_end_to_end(self, tmp_path):
+        """Long hyphenated slugs should not become YARA credential-harvesting findings."""
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "tool.py": 'note = "sk-reference-slug-for-documentation-and-indexing-aaaaaaaaaaaaaaaaaa"\n',
+            },
+        )
+        analyzer = StaticAnalyzer()
+        findings = analyzer.analyze(skill)
+
+        key_findings = [f for f in findings if f.rule_id == "YARA_credential_harvesting_generic"]
+        assert len(key_findings) == 0
+
 
 class TestCommandInjectionEvalRuleQuality:
     """Regression tests for COMMAND_INJECTION_EVAL precision."""
