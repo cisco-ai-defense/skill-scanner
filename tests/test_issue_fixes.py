@@ -341,6 +341,45 @@ class TestMultipleFormats:
         json_content = json.loads(Path(json_path).read_text(encoding="utf-8"))
         assert isinstance(json_content, (dict, list))
 
+    def test_should_render_markdown_can_be_forced(self):
+        """--render-markdown should override a non-TTY stdout check."""
+        from skill_scanner.cli.cli import _should_render_markdown
+
+        args = argparse.Namespace(render_markdown=True, no_render_markdown=False)
+        with patch("skill_scanner.cli.cli.sys.stdout.isatty", return_value=False):
+            assert _should_render_markdown(args) is True
+
+    def test_write_output_renders_markdown_when_forced(self):
+        """Forced markdown rendering should use Rich instead of raw print."""
+        from skill_scanner.cli.cli import _write_output
+
+        args = argparse.Namespace(
+            format=["markdown"],
+            output=None,
+            output_json=None,
+            output_sarif=None,
+            output_markdown=None,
+            output_html=None,
+            output_table=None,
+            compact=False,
+            detailed=False,
+            render_markdown=True,
+            no_render_markdown=False,
+            _result_or_report=None,
+        )
+
+        with (
+            patch("skill_scanner.cli.cli.sys.stdout.isatty", return_value=False),
+            patch("skill_scanner.cli.cli.Console") as mock_console,
+            patch("builtins.print") as mock_print,
+        ):
+            _write_output(args, "# heading")
+
+        mock_console.return_value.print.assert_called_once()
+        rendered = mock_console.return_value.print.call_args.args[0]
+        assert rendered.__class__.__name__ == "Markdown"
+        mock_print.assert_not_called()
+
     def test_write_output_output_fmt_takes_precedence_over_output(self, tmp_path):
         """--output-<fmt> takes precedence over --output for the primary format."""
         from skill_scanner.cli.cli import _format_single, _write_output
