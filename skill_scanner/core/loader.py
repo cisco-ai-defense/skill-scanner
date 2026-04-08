@@ -152,11 +152,17 @@ class SkillLoader:
         # Use the first .md file as the primary path
         primary_md = md_files[0]
 
-        # Try to parse frontmatter from the primary file
+        # Try to parse frontmatter from the primary file.
+        # _parse_skill_md validates UTF-8 and rejects binary content;
+        # let those errors propagate — a binary .md file should never
+        # silently become an empty skill, even in lenient mode.
         try:
             manifest, body = self._parse_skill_md(primary_md, lenient=True)
-        except SkillLoadError:
-            # If even lenient parsing fails, use raw content
+        except SkillLoadError as e:
+            err_msg = str(e)
+            if "null bytes" in err_msg or "not valid UTF-8" in err_msg:
+                raise
+            # Frontmatter parsing failed but content is valid text — use raw
             try:
                 body = primary_md.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
@@ -194,10 +200,23 @@ class SkillLoader:
             SkillLoadError: If parsing fails (strict mode only)
         """
         try:
-            with open(skill_md_path, encoding="utf-8") as f:
-                content = f.read()
-        except (OSError, UnicodeDecodeError) as e:
-            raise SkillLoadError(f"Failed to read SKILL.md: {e}")
+            raw = skill_md_path.read_bytes()
+        except OSError as e:
+            raise SkillLoadError(f"Failed to read {skill_md_path.name}: {e}")
+
+        if b"\x00" in raw:
+            raise SkillLoadError(
+                f"{skill_md_path.name} contains null bytes (binary content); "
+                f"skill metadata files must be valid UTF-8 text"
+            )
+
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise SkillLoadError(
+                f"{skill_md_path.name} is not valid UTF-8: {e}; "
+                f"skill metadata files must be valid UTF-8 text"
+            )
 
         # Parse with python-frontmatter
         try:
