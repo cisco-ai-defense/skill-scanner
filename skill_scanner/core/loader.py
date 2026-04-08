@@ -214,8 +214,7 @@ class SkillLoader:
             content = raw.decode("utf-8")
         except UnicodeDecodeError as e:
             raise SkillLoadError(
-                f"{skill_md_path.name} is not valid UTF-8: {e}; "
-                f"skill metadata files must be valid UTF-8 text"
+                f"{skill_md_path.name} is not valid UTF-8: {e}; skill metadata files must be valid UTF-8 text"
             )
 
         # Parse with python-frontmatter
