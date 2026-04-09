@@ -188,6 +188,35 @@ class TestLenientLoader:
         with pytest.raises(SkillLoadError, match="No SKILL.md and no .md files found"):
             loader.load_skill(empty_dir, lenient=True)
 
+    def test_invalid_utf8_skill_md_strict_raises(self, tmp_path):
+        skill_dir = tmp_path / "bad-enc"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(b"\xff\xfe\xfd")
+
+        loader = SkillLoader()
+        with pytest.raises(SkillLoadError, match="not valid UTF-8"):
+            loader.load_skill(skill_dir)
+
+    def test_invalid_utf8_skill_md_lenient_raises(self, tmp_path):
+        skill_dir = tmp_path / "bad-enc"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(b"\xff\xfe\xfd")
+
+        loader = SkillLoader()
+        with pytest.raises(SkillLoadError, match="not valid UTF-8"):
+            loader.load_skill(skill_dir, lenient=True)
+
+    def test_null_byte_in_skill_md_raises(self, tmp_path):
+        skill_dir = tmp_path / "nul-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(
+            b"---\nname: x\ndescription: y\n---\nbody\x00tail",
+        )
+
+        loader = SkillLoader()
+        with pytest.raises(SkillLoadError, match="null bytes"):
+            loader.load_skill(skill_dir, lenient=True)
+
 
 # ============================================================================
 # Report.skills_skipped tests

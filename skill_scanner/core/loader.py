@@ -25,7 +25,7 @@ from pathlib import Path
 
 import frontmatter
 
-from ..utils.file_utils import get_file_type
+from ..utils.file_utils import FileValidationError, get_file_type, read_text_strict
 from .exceptions import SkillLoadError
 from .models import Skill, SkillFile, SkillManifest
 
@@ -68,11 +68,12 @@ class SkillLoader:
 
         Args:
             skill_directory: Path to the skill directory
-            lenient: When True, tolerate missing/malformed fields and return
-                a best-effort Skill instead of raising ``SkillLoadError``.
-                When ``SKILL.md`` is absent and *lenient* is True, the loader
-                falls back to scanning ``.md`` files in the directory as
-                instruction bodies (supports non-Codex/Cursor formats such as
+            lenient: When True, tolerate missing/malformed YAML frontmatter and
+                fill default manifest fields instead of raising ``SkillLoadError``.
+                Files must still be valid UTF-8 text without NUL bytes; binary
+                or invalid encoding always fails. When ``SKILL.md`` is absent and
+                *lenient* is True, the loader falls back to scanning ``.md`` files
+                in the directory (supports non-Codex/Cursor formats such as
                 Claude Code ``.claude/commands/*.md``).
             skill_file: Optional custom metadata filename to use instead of
                 ``SKILL.md`` (e.g. ``"README.md"``).
@@ -152,37 +153,27 @@ class SkillLoader:
         # Use the first .md file as the primary path
         primary_md = md_files[0]
 
-        # Try to parse frontmatter from the primary file.
-        # _parse_skill_md validates UTF-8 and rejects binary content;
-        # let those errors propagate — a binary .md file should never
-        # silently become an empty skill, even in lenient mode.
-        try:
-            manifest, body = self._parse_skill_md(primary_md, lenient=True)
-        except SkillLoadError as e:
-            err_msg = str(e)
-            if "null bytes" in err_msg or "not valid UTF-8" in err_msg:
-                raise
-            # Frontmatter parsing failed but content is valid text — use raw
-            try:
-                body = primary_md.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                body = ""
-            manifest = SkillManifest(
-                name=skill_directory.name,
-                description="(no description)",
-            )
+        manifest, body = self._parse_skill_md(primary_md, lenient=True)
 
         # Append content from remaining .md files
         extra_bodies: list[str] = []
         for md_file in md_files[1:]:
-            try:
-                extra_bodies.append(md_file.read_text(encoding="utf-8"))
-            except (OSError, UnicodeDecodeError):
-                continue
+            extra_bodies.append(self._read_skill_text_file(md_file))
         if extra_bodies:
             body = body + "\n\n" + "\n\n".join(extra_bodies)
 
         return primary_md, manifest, body
+
+    def _read_skill_text_file(self, path: Path) -> str:
+        """Read a skill metadata or markdown file as strict UTF-8 text.
+
+        Delegates to :func:`~skill_scanner.utils.file_utils.read_text_strict`
+        and converts failures to :class:`SkillLoadError`.
+        """
+        try:
+            return read_text_strict(path, max_size_bytes=self.max_file_size_bytes)
+        except FileValidationError as e:
+            raise SkillLoadError(str(e)) from e
 
     def _parse_skill_md(self, skill_md_path: Path, *, lenient: bool = False) -> tuple[SkillManifest, str]:
         """
@@ -199,23 +190,7 @@ class SkillLoader:
         Raises:
             SkillLoadError: If parsing fails (strict mode only)
         """
-        try:
-            raw = skill_md_path.read_bytes()
-        except OSError as e:
-            raise SkillLoadError(f"Failed to read {skill_md_path.name}: {e}")
-
-        if b"\x00" in raw:
-            raise SkillLoadError(
-                f"{skill_md_path.name} contains null bytes (binary content); "
-                f"skill metadata files must be valid UTF-8 text"
-            )
-
-        try:
-            content = raw.decode("utf-8")
-        except UnicodeDecodeError as e:
-            raise SkillLoadError(
-                f"{skill_md_path.name} is not valid UTF-8: {e}; skill metadata files must be valid UTF-8 text"
-            )
+        content = self._read_skill_text_file(skill_md_path)
 
         # Parse with python-frontmatter
         try:

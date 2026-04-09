@@ -29,6 +29,7 @@ from typing import Any
 
 import frontmatter
 
+from ..utils.file_utils import FileValidationError, read_text_strict
 from .exceptions import SkillValidationError
 
 
@@ -252,13 +253,14 @@ class SkillValidator:
     def _validate_frontmatter(self, skill_md_path: Path, root: Path, result: ValidationResult) -> None:
         """Parse SKILL.md frontmatter and validate fields."""
         try:
-            content = skill_md_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            content = read_text_strict(skill_md_path)
+        except FileValidationError as exc:
             result.errors.append(
                 ValidationError(
                     code=ValidationErrorCode.FRONTMATTER_PARSE_ERROR,
                     message="Failed to read SKILL.md",
                     file_path="SKILL.md",
+                    detail=str(exc),
                 )
             )
             return
