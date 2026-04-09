@@ -188,6 +188,33 @@ class TestLenientLoader:
         with pytest.raises(SkillLoadError, match="No SKILL.md and no .md files found"):
             loader.load_skill(empty_dir, lenient=True)
 
+    def test_binary_skill_md_raises_even_in_lenient(self, tmp_path):
+        skill_dir = tmp_path / "binary-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(b"---\nname: ok\ndescription: ok\n---\n" + b"\x00PNG\r\n")
+
+        loader = SkillLoader()
+        with pytest.raises(SkillLoadError, match="binary content"):
+            loader.load_skill(skill_dir, lenient=True)
+
+    def test_non_utf8_skill_md_raises_even_in_lenient(self, tmp_path):
+        skill_dir = tmp_path / "latin1-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes("---\nname: café\ndescription: desc\n---\nbody\n".encode("latin-1"))
+
+        loader = SkillLoader()
+        with pytest.raises(SkillLoadError, match="invalid UTF-8"):
+            loader.load_skill(skill_dir, lenient=True)
+
+    def test_lenient_fallback_does_not_swallow_binary_primary_md(self, tmp_path):
+        skill_dir = tmp_path / "fallback-binary"
+        skill_dir.mkdir()
+        (skill_dir / "README.md").write_bytes(b"\x00not-text")
+
+        loader = SkillLoader()
+        with pytest.raises(SkillLoadError, match="binary content"):
+            loader.load_skill(skill_dir, lenient=True)
+
 
 # ============================================================================
 # Report.skills_skipped tests
