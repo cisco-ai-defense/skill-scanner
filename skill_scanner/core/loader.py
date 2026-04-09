@@ -155,12 +155,20 @@ class SkillLoader:
         # Try to parse frontmatter from the primary file
         try:
             manifest, body = self._parse_skill_md(primary_md, lenient=True)
-        except SkillLoadError:
+        except SkillLoadError as exc:
+            message = str(exc).lower()
+            if "binary" in message or "utf-8" in message or "decode" in message or "encoding" in message:
+                raise
             # If even lenient parsing fails, use raw content
             try:
-                body = primary_md.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                body = ""
+                raw_bytes = primary_md.read_bytes()
+                if b"\x00" in raw_bytes:
+                    raise SkillLoadError(f"Failed to read SKILL.md: binary content detected in {primary_md}")
+                body = raw_bytes.decode("utf-8")
+            except (OSError, UnicodeDecodeError) as read_exc:
+                raise SkillLoadError(
+                    f"Failed to read SKILL.md: invalid UTF-8 in {primary_md}: {read_exc}"
+                ) from read_exc
             manifest = SkillManifest(
                 name=skill_directory.name,
                 description="(no description)",
@@ -194,10 +202,17 @@ class SkillLoader:
             SkillLoadError: If parsing fails (strict mode only)
         """
         try:
-            with open(skill_md_path, encoding="utf-8") as f:
-                content = f.read()
-        except (OSError, UnicodeDecodeError) as e:
-            raise SkillLoadError(f"Failed to read SKILL.md: {e}")
+            raw_bytes = skill_md_path.read_bytes()
+        except OSError as e:
+            raise SkillLoadError(f"Failed to read SKILL.md: {e}") from e
+
+        if b"\x00" in raw_bytes:
+            raise SkillLoadError(f"Failed to read SKILL.md: binary content detected in {skill_md_path}")
+
+        try:
+            content = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise SkillLoadError(f"Failed to read SKILL.md: invalid UTF-8 in {skill_md_path}: {e}") from e
 
         # Parse with python-frontmatter
         try:
