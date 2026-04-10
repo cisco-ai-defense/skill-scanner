@@ -1,0 +1,191 @@
+# PromptGuard Data Protection Rule Pack for Cisco Skill Scanner
+# Source: https://github.com/promptguard/promptguard
+# Version: 1.0.0
+# These rules fill detection gaps in Cisco's core ruleset and the ATR pack.
+# Focus areas: PII detection, extended secret providers, LLM-context exfiltration.
+
+pack:
+  id: promptguard
+  name: "PromptGuard Data Protection Rules"
+  version: "1.0.0"
+  description: >
+    Open-source data protection detection rules from the PromptGuard project.
+    Covers three categories absent from Cisco's core pack and the ATR community
+    pack: (1) PII detection — SSNs, credit cards, IBANs, and credential
+    harvesting instructions with zero coverage today; (2) extended secret
+    providers — OpenAI, Anthropic, Slack, HuggingFace, npm, PyPI, and 6 more
+    providers beyond the 8 in Cisco's core pack; (3) LLM-context exfiltration —
+    markdown image/link exfil, HTML tag injection, data URI smuggling, and
+    invisible payload encoding that bypass network-level detection.
+    26 rules across 3 signature files.
+  author: "PromptGuard"
+  license: "Apache-2.0"
+  source_url: "https://github.com/promptguard/promptguard"
+  signature_files:
+    - signatures/pii_detection.yaml
+    - signatures/secret_providers.yaml
+    - signatures/markdown_exfiltration.yaml
+
+rules:
+
+  # ─── PII Detection (pii_detection.yaml) ──────────────────────────────────
+
+  - id: PG_PII_SSN
+    file: signatures/pii_detection.yaml
+    severity: CRITICAL
+    category: pii_exposure
+    description: "US Social Security Number embedded in skill package."
+
+  - id: PG_PII_CREDIT_CARD
+    file: signatures/pii_detection.yaml
+    severity: CRITICAL
+    category: pii_exposure
+    description: "Credit card number (Visa, MC, Amex, Discover) in skill package."
+
+  - id: PG_PII_IBAN
+    file: signatures/pii_detection.yaml
+    severity: HIGH
+    category: pii_exposure
+    description: "International Bank Account Number (IBAN) in skill package."
+
+  - id: PG_PII_PHONE_HARVESTING
+    file: signatures/pii_detection.yaml
+    severity: HIGH
+    category: pii_exposure
+    description: "Skill instructions to collect phone numbers from users."
+
+  - id: PG_PII_SSN_HARVESTING
+    file: signatures/pii_detection.yaml
+    severity: CRITICAL
+    category: pii_exposure
+    description: "Skill instructions to collect Social Security Numbers."
+
+  - id: PG_PII_CARD_HARVESTING
+    file: signatures/pii_detection.yaml
+    severity: CRITICAL
+    category: pii_exposure
+    description: "Skill instructions to collect credit card details."
+
+  - id: PG_PII_CREDENTIAL_HARVESTING
+    file: signatures/pii_detection.yaml
+    severity: CRITICAL
+    category: pii_exposure
+    description: "Skill instructions to collect passwords or credentials."
+
+  - id: PG_PII_MEDICAL_ID
+    file: signatures/pii_detection.yaml
+    severity: HIGH
+    category: pii_exposure
+    description: "US Medicare Beneficiary Identifier (HIPAA-protected PHI)."
+
+  # ─── Extended Secret Providers (secret_providers.yaml) ───────────────────
+
+  - id: PG_SECRET_OPENAI_KEY
+    file: signatures/secret_providers.yaml
+    severity: CRITICAL
+    category: hardcoded_secrets
+    description: "Hardcoded OpenAI API key (sk-..., sk-proj-..., sk-svcacct-...)."
+
+  - id: PG_SECRET_ANTHROPIC_KEY
+    file: signatures/secret_providers.yaml
+    severity: CRITICAL
+    category: hardcoded_secrets
+    description: "Hardcoded Anthropic API key (sk-ant-...)."
+
+  - id: PG_SECRET_SLACK_TOKEN
+    file: signatures/secret_providers.yaml
+    severity: CRITICAL
+    category: hardcoded_secrets
+    description: "Hardcoded Slack bot/user/app token (xoxb-/xoxp-/xapp-)."
+
+  - id: PG_SECRET_SLACK_WEBHOOK
+    file: signatures/secret_providers.yaml
+    severity: HIGH
+    category: hardcoded_secrets
+    description: "Hardcoded Slack incoming webhook URL."
+
+  - id: PG_SECRET_HUGGINGFACE_TOKEN
+    file: signatures/secret_providers.yaml
+    severity: HIGH
+    category: hardcoded_secrets
+    description: "Hardcoded Hugging Face access token (hf_...)."
+
+  - id: PG_SECRET_TWILIO_KEY
+    file: signatures/secret_providers.yaml
+    severity: HIGH
+    category: hardcoded_secrets
+    description: "Hardcoded Twilio API key or auth token."
+
+  - id: PG_SECRET_SENDGRID_KEY
+    file: signatures/secret_providers.yaml
+    severity: HIGH
+    category: hardcoded_secrets
+    description: "Hardcoded SendGrid API key (SG....)."
+
+  - id: PG_SECRET_NPM_TOKEN
+    file: signatures/secret_providers.yaml
+    severity: CRITICAL
+    category: hardcoded_secrets
+    description: "Hardcoded npm access token (npm_...)."
+
+  - id: PG_SECRET_PYPI_TOKEN
+    file: signatures/secret_providers.yaml
+    severity: CRITICAL
+    category: hardcoded_secrets
+    description: "Hardcoded PyPI API token (pypi-...)."
+
+  - id: PG_SECRET_DISCORD_TOKEN
+    file: signatures/secret_providers.yaml
+    severity: CRITICAL
+    category: hardcoded_secrets
+    description: "Hardcoded Discord bot token."
+
+  - id: PG_SECRET_AZURE_KEY
+    file: signatures/secret_providers.yaml
+    severity: CRITICAL
+    category: hardcoded_secrets
+    description: "Hardcoded Azure Cognitive Services or Azure OpenAI key."
+
+  - id: PG_SECRET_DIGITALOCEAN_TOKEN
+    file: signatures/secret_providers.yaml
+    severity: CRITICAL
+    category: hardcoded_secrets
+    description: "Hardcoded DigitalOcean personal access token (dop_v1_...)."
+
+  # ─── LLM-Context Exfiltration (markdown_exfiltration.yaml) ──────────────
+
+  - id: PG_EXFIL_MARKDOWN_IMAGE
+    file: signatures/markdown_exfiltration.yaml
+    severity: CRITICAL
+    category: data_exfiltration
+    description: "Markdown image tag exfiltrating data via URL query parameters."
+
+  - id: PG_EXFIL_MARKDOWN_LINK
+    file: signatures/markdown_exfiltration.yaml
+    severity: HIGH
+    category: data_exfiltration
+    description: "Markdown link smuggling sensitive data in constructed URLs."
+
+  - id: PG_EXFIL_HTML_TAG
+    file: signatures/markdown_exfiltration.yaml
+    severity: HIGH
+    category: data_exfiltration
+    description: "HTML tag injection with dynamic URL for data exfiltration."
+
+  - id: PG_EXFIL_DATA_URI
+    file: signatures/markdown_exfiltration.yaml
+    severity: HIGH
+    category: data_exfiltration
+    description: "Data URI with executable MIME type (script/HTML smuggling)."
+
+  - id: PG_EXFIL_URL_ENCODING
+    file: signatures/markdown_exfiltration.yaml
+    severity: HIGH
+    category: data_exfiltration
+    description: "Instructions to encode secrets/context into URLs for exfiltration."
+
+  - id: PG_EXFIL_INVISIBLE_PAYLOAD
+    file: signatures/markdown_exfiltration.yaml
+    severity: CRITICAL
+    category: data_exfiltration
+    description: "Steganographic encoding to hide exfiltrated data in invisible characters."

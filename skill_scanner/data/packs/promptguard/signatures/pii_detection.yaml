@@ -1,0 +1,180 @@
+# PromptGuard Data Protection Pack — PII Detection Signatures
+# Source: https://github.com/promptguard/promptguard
+# Detects personally identifiable information embedded in skill packages.
+# Cisco's core pack and ATR pack have zero PII detection rules.
+
+signatures:
+
+  - id: PG_PII_SSN
+    category: pii_exposure
+    severity: CRITICAL
+    patterns:
+      # US Social Security Number — strict XXX-XX-XXXX / XXX XX XXXX format
+      # Excludes 000, 666, 900-999 area numbers per SSA rules
+      - "(?<![0-9])(?!000|666|9\\d{2})[0-8]\\d{2}[- ](?!00)\\d{2}[- ](?!0000)\\d{4}(?![0-9])"
+    exclude_patterns:
+      - "(?i)example"
+      - "(?i)placeholder"
+      - "(?i)test"
+      - "(?i)dummy"
+      - "(?i)sample"
+      - "(?i)123-45-6789"
+      - "(?i)xxx-xx-xxxx"
+      - "(?i)format"
+      - "(?i)regex"
+      - "(?i)pattern"
+    file_types: [markdown, python, bash, javascript, typescript, text, json, yaml]
+    description: >
+      US Social Security Number detected in skill package. Skills should never
+      contain real SSNs. This indicates either leaked PII or a skill designed
+      to process/store SSNs without appropriate safeguards.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove all real SSNs from skill files. If the skill legitimately processes
+      SSNs, ensure it uses tokenization or masking and never stores raw values.
+
+  - id: PG_PII_CREDIT_CARD
+    category: pii_exposure
+    severity: CRITICAL
+    patterns:
+      # Visa (4xxx), Mastercard (5[1-5]xx, 2[2-7]xx), Amex (3[47]xx), Discover (6011, 65xx)
+      - "(?<![0-9])4[0-9]{3}[- ]?[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}(?![0-9])"
+      - "(?<![0-9])5[1-5][0-9]{2}[- ]?[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}(?![0-9])"
+      - "(?<![0-9])3[47][0-9]{2}[- ]?[0-9]{6}[- ]?[0-9]{5}(?![0-9])"
+      - "(?<![0-9])6(?:011|5[0-9]{2})[- ]?[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}(?![0-9])"
+    exclude_patterns:
+      - "(?i)example"
+      - "(?i)test"
+      - "(?i)placeholder"
+      - "(?i)dummy"
+      - "(?i)sample"
+      - "(?i)4111.?1111.?1111.?1111"
+      - "(?i)4242.?4242.?4242.?4242"
+      - "(?i)5500.?0000.?0000.?0004"
+      - "(?i)xxxx"
+      - "(?i)format"
+      - "(?i)regex"
+      - "(?i)pattern"
+      # Timestamps and version numbers
+      - "\\d{4}-\\d{2}-\\d{2}T"
+      - "v\\d+\\.\\d+"
+    file_types: [markdown, python, bash, javascript, typescript, text, json, yaml]
+    description: >
+      Credit card number detected in skill package. Skills should never contain
+      real payment card numbers. This violates PCI-DSS and indicates leaked
+      financial PII or a credential harvesting skill.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove all payment card numbers immediately. Use tokenized or masked
+      values (e.g., ****-****-****-1234) for display purposes.
+
+  - id: PG_PII_IBAN
+    category: pii_exposure
+    severity: HIGH
+    patterns:
+      # International Bank Account Number — 2 letter country + 2 check digits + up to 30 alphanum
+      - "(?<![A-Za-z])(?:AL|AD|AT|AZ|BH|BY|BE|BA|BR|BG|CR|HR|CY|CZ|DK|DO|TL|EE|FO|FI|FR|GE|DE|GI|GR|GL|GT|HU|IS|IQ|IE|IL|IT|JO|KZ|XK|KW|LV|LB|LY|LI|LT|LU|MK|MT|MR|MU|MC|MD|ME|NL|NO|PK|PS|PL|PT|QA|RO|LC|SM|ST|SA|RS|SC|SK|SI|ES|SE|CH|TN|TR|UA|AE|GB|VA|VG)[0-9]{2}[- ]?[A-Z0-9]{4}[- ]?[A-Z0-9]{4}[- ]?[A-Z0-9]{4}[- ]?[A-Z0-9]{0,18}(?![A-Za-z0-9])"
+    exclude_patterns:
+      - "(?i)example"
+      - "(?i)test"
+      - "(?i)placeholder"
+      - "(?i)sample"
+      - "(?i)format"
+      - "(?i)IBAN"
+    file_types: [markdown, python, bash, javascript, typescript, text, json, yaml]
+    description: >
+      International Bank Account Number (IBAN) detected in skill package.
+      IBANs are sensitive financial identifiers that should not appear in skill
+      files.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove IBAN values from skill files. Use masked representations for
+      documentation purposes.
+
+  - id: PG_PII_PHONE_HARVESTING
+    category: pii_exposure
+    severity: HIGH
+    patterns:
+      # Skill instructions to collect/extract phone numbers
+      - "(?i)(collect|extract|harvest|gather|scrape|capture|log|record|store|save)\\s+(the\\s+)?(user'?s?|their|customer'?s?|client'?s?)\\s+(phone|mobile|cell|telephone)\\s*(number)?"
+      - "(?i)(ask|request|prompt|require)\\s+(the\\s+)?(user|them|customer|client)\\s+(for|to\\s+provide)\\s+(their\\s+)?(phone|mobile|cell|telephone)\\s*(number)?"
+    file_types: [markdown, text]
+    description: >
+      Skill instructions to collect phone numbers from users. This may indicate
+      a social engineering or credential harvesting skill that requests PII
+      under false pretenses.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Review why the skill collects phone numbers. Remove PII collection
+      instructions unless the skill's documented purpose requires it and
+      appropriate data handling is in place.
+
+  - id: PG_PII_SSN_HARVESTING
+    category: pii_exposure
+    severity: CRITICAL
+    patterns:
+      # Skill instructions to collect SSNs
+      - "(?i)(collect|extract|harvest|gather|capture|log|record|store|save|ask|request|prompt|require)\\s+.{0,40}(social\\s+security|SSN|social\\s+insurance|SIN|national\\s+insurance|NI\\s+number)"
+    file_types: [markdown, text]
+    description: >
+      Skill instructions to collect Social Security Numbers or national ID
+      numbers. This is a strong indicator of credential harvesting or social
+      engineering. Legitimate skills should never request SSNs.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove SSN/national ID collection instructions. Skills should never
+      request government-issued identification numbers.
+
+  - id: PG_PII_CARD_HARVESTING
+    category: pii_exposure
+    severity: CRITICAL
+    patterns:
+      # Skill instructions to collect credit card info
+      - "(?i)(collect|extract|harvest|gather|capture|log|record|store|save|ask|request|prompt|require)\\s+.{0,40}(credit\\s+card|debit\\s+card|card\\s+number|CVV|CVC|expir(y|ation)\\s+date|billing\\s+info)"
+    file_types: [markdown, text]
+    description: >
+      Skill instructions to collect payment card details. This is a strong
+      indicator of financial fraud or credential harvesting. Payment processing
+      should use PCI-compliant tokenization, not raw card collection.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove payment card collection instructions. Use PCI-compliant payment
+      processors (Stripe, Square, etc.) instead of collecting raw card data.
+
+  - id: PG_PII_CREDENTIAL_HARVESTING
+    category: pii_exposure
+    severity: CRITICAL
+    patterns:
+      # Skill instructions to collect passwords or credentials
+      - "(?i)(collect|extract|harvest|gather|capture|log|record|store|save)\\s+.{0,40}(password|passphrase|credential|login|auth(entication)?\\s+(token|code|detail))"
+      - "(?i)(ask|request|prompt|require)\\s+(the\\s+)?(user|them|customer|client)\\s+(for|to\\s+(provide|enter|type|input|share))\\s+(their\\s+)?(password|passphrase|credential|login\\s+detail)"
+    file_types: [markdown, text]
+    description: >
+      Skill instructions to collect passwords or authentication credentials.
+      Skills should never request user passwords. This is a strong indicator of
+      credential harvesting or phishing.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove all credential collection instructions. Use OAuth, SSO, or token-
+      based authentication flows instead of collecting raw passwords.
+
+  - id: PG_PII_MEDICAL_ID
+    category: pii_exposure
+    severity: HIGH
+    patterns:
+      # US Medicare Beneficiary Identifier (MBI) — 11 char alphanumeric
+      - "(?<![A-Za-z0-9])[1-9][AC-HJKMNP-RT-Yac-hjkmnp-rt-y][AC-HJKMNP-RT-Yac-hjkmnp-rt-y0-9][0-9][AC-HJKMNP-RT-Yac-hjkmnp-rt-y][AC-HJKMNP-RT-Yac-hjkmnp-rt-y0-9][0-9][AC-HJKMNP-RT-Yac-hjkmnp-rt-y]{2}[0-9]{2}(?![A-Za-z0-9])"
+    exclude_patterns:
+      - "(?i)example"
+      - "(?i)test"
+      - "(?i)sample"
+      - "(?i)format"
+    file_types: [markdown, python, bash, javascript, typescript, text, json, yaml]
+    description: >
+      Possible US Medicare Beneficiary Identifier (MBI) detected. Medical
+      identifiers are protected health information (PHI) under HIPAA and should
+      never appear in skill packages.
+      Source: https://github.com/promptguard/promptguard
+    remediation: >
+      Remove all medical identifiers. If the skill processes health data,
+      ensure HIPAA-compliant data handling with proper de-identification.
