@@ -98,6 +98,9 @@ def build_analyzers(
     use_aidefense: bool = False,
     aidefense_api_key: str | None = None,
     aidefense_api_url: str | None = None,
+    use_promptguard: bool = False,
+    promptguard_api_key: str | None = None,
+    promptguard_api_url: str | None = None,
     use_trigger: bool = False,
     llm_consensus_runs: int = 1,
     llm_max_tokens: int | None = None,
@@ -188,6 +191,21 @@ def build_analyzers(
                 analyzers.append(AIDefenseAnalyzer(api_key=key, api_url=url))
         except (ImportError, ValueError, TypeError) as exc:
             logger.warning("Could not load AI Defense analyzer: %s", exc)
+
+    if use_promptguard:
+        try:
+            from .analyzers.promptguard_analyzer import PromptGuardAnalyzer
+
+            key = promptguard_api_key or os.getenv("PROMPTGUARD_API_KEY")
+            url = promptguard_api_url or os.getenv("PROMPTGUARD_API_URL")
+            if not key:
+                logger.warning(
+                    "PromptGuard requested but no API key.  Set PROMPTGUARD_API_KEY or pass promptguard_api_key"
+                )
+            else:
+                analyzers.append(PromptGuardAnalyzer(api_key=key, api_url=url))
+        except (ImportError, ValueError, TypeError) as exc:
+            logger.warning("Could not load PromptGuard analyzer: %s", exc)
 
     if use_trigger:
         try:

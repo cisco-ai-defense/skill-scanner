@@ -198,6 +198,8 @@ class ScanRequest(BaseModel):
     vt_upload_files: bool = Field(False, description="Upload unknown files to VirusTotal")
     use_aidefense: bool = Field(False, description="Enable AI Defense analyzer")
     aidefense_api_url: str | None = Field(None, description="AI Defense API URL")
+    use_promptguard: bool = Field(False, description="Enable PromptGuard analyzer")
+    promptguard_api_url: str | None = Field(None, description="PromptGuard API URL")
     use_trigger: bool = Field(False, description="Enable trigger specificity analysis")
     enable_meta: bool = Field(False, description="Enable meta-analysis for false positive filtering")
     llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
@@ -242,6 +244,8 @@ class BatchScanRequest(BaseModel):
     vt_upload_files: bool = False
     use_aidefense: bool = False
     aidefense_api_url: str | None = None
+    use_promptguard: bool = False
+    promptguard_api_url: str | None = None
     use_trigger: bool = False
     enable_meta: bool = Field(False, description="Enable meta-analysis")
     llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
@@ -282,6 +286,9 @@ def _build_analyzers(
     use_aidefense: bool = False,
     aidefense_api_key: str | None = None,
     aidefense_api_url: str | None = None,
+    use_promptguard: bool = False,
+    promptguard_api_key: str | None = None,
+    promptguard_api_url: str | None = None,
     use_trigger: bool = False,
     llm_consensus_runs: int = 1,
 ):
@@ -298,6 +305,9 @@ def _build_analyzers(
         use_aidefense=use_aidefense,
         aidefense_api_key=aidefense_api_key,
         aidefense_api_url=aidefense_api_url,
+        use_promptguard=use_promptguard,
+        promptguard_api_key=promptguard_api_key,
+        promptguard_api_url=promptguard_api_url,
         use_trigger=use_trigger,
         llm_consensus_runs=llm_consensus_runs,
     )
@@ -369,6 +379,7 @@ async def scan_skill(
     request: ScanRequest,
     vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
     aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
+    promptguard_api_key: str | None = Header(None, alias="X-PromptGuard-Key"),
 ):
     """Scan a single skill package."""
     import asyncio
@@ -410,6 +421,9 @@ async def scan_skill(
             use_aidefense=request.use_aidefense,
             aidefense_api_key=aidefense_api_key,
             aidefense_api_url=request.aidefense_api_url,
+            use_promptguard=request.use_promptguard,
+            promptguard_api_key=promptguard_api_key,
+            promptguard_api_url=request.promptguard_api_url,
             use_trigger=request.use_trigger,
             llm_consensus_runs=request.llm_consensus_runs,
         )
@@ -485,6 +499,9 @@ async def scan_uploaded_skill(
     use_aidefense: bool = Form(False, description="Enable AI Defense analyzer"),
     aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
     aidefense_api_url: str | None = Form(None, description="AI Defense API URL"),
+    use_promptguard: bool = Form(False, description="Enable PromptGuard analyzer"),
+    promptguard_api_key: str | None = Header(None, alias="X-PromptGuard-Key"),
+    promptguard_api_url: str | None = Form(None, description="PromptGuard API URL"),
     use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
     enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
     llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
@@ -578,12 +595,19 @@ async def scan_uploaded_skill(
             vt_upload_files=vt_upload_files,
             use_aidefense=use_aidefense,
             aidefense_api_url=aidefense_api_url,
+            use_promptguard=use_promptguard,
+            promptguard_api_url=promptguard_api_url,
             use_trigger=use_trigger,
             enable_meta=enable_meta,
             llm_consensus_runs=llm_consensus_runs,
         )
 
-        return await scan_skill(request, vt_api_key=vt_api_key, aidefense_api_key=aidefense_api_key)
+        return await scan_skill(
+            request,
+            vt_api_key=vt_api_key,
+            aidefense_api_key=aidefense_api_key,
+            promptguard_api_key=promptguard_api_key,
+        )
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -595,6 +619,7 @@ async def scan_batch(
     background_tasks: BackgroundTasks,
     vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
     aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
+    promptguard_api_key: str | None = Header(None, alias="X-PromptGuard-Key"),
 ):
     """Scan multiple skills in a directory (batch scan)."""
     skills_dir = _validate_path(request.skills_directory, label="skills_directory")
@@ -608,7 +633,7 @@ async def scan_batch(
     scan_id = str(uuid.uuid4())
     scan_results_cache.set(scan_id, {"status": "processing", "started_at": datetime.now().isoformat(), "result": None})
 
-    background_tasks.add_task(run_batch_scan, scan_id, request, vt_api_key, aidefense_api_key)
+    background_tasks.add_task(run_batch_scan, scan_id, request, vt_api_key, aidefense_api_key, promptguard_api_key)
 
     return {
         "scan_id": scan_id,
@@ -643,6 +668,7 @@ def run_batch_scan(
     request: BatchScanRequest,
     vt_api_key: str | None = None,
     aidefense_api_key: str | None = None,
+    promptguard_api_key: str | None = None,
 ):
     """Background task to run batch scan."""
     try:
@@ -664,6 +690,9 @@ def run_batch_scan(
             use_aidefense=request.use_aidefense,
             aidefense_api_key=aidefense_api_key,
             aidefense_api_url=request.aidefense_api_url,
+            use_promptguard=request.use_promptguard,
+            promptguard_api_key=promptguard_api_key,
+            promptguard_api_url=request.promptguard_api_url,
             use_trigger=request.use_trigger,
             llm_consensus_runs=request.llm_consensus_runs,
         )

@@ -127,6 +127,9 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
         use_aidefense=getattr(args, "use_aidefense", False),
         aidefense_api_key=getattr(args, "aidefense_api_key", None),
         aidefense_api_url=getattr(args, "aidefense_api_url", None),
+        use_promptguard=getattr(args, "use_promptguard", False),
+        promptguard_api_key=getattr(args, "promptguard_api_key", None),
+        promptguard_api_url=getattr(args, "promptguard_api_url", None),
         use_trigger=getattr(args, "use_trigger", False),
         llm_provider=getattr(args, "llm_provider", None),
         llm_consensus_runs=getattr(args, "llm_consensus_runs", 1),
@@ -590,6 +593,13 @@ def list_analyzers_command(_args: argparse.Namespace) -> int:
             "--use-aidefense --aidefense-api-key KEY",
         ),
         (
+            "promptguard_analyzer",
+            True,
+            "Available (optional)",
+            "PromptGuard cloud-based injection & threat detection",
+            "--use-promptguard --promptguard-api-key KEY",
+        ),
+        (
             "llm_analyzer",
             LLM_AVAILABLE,
             "Available" if LLM_AVAILABLE else "Not installed",
@@ -784,6 +794,9 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--use-aidefense", action="store_true", help="Enable AI Defense analyzer (requires API key)")
     parser.add_argument("--aidefense-api-key", help="AI Defense API key (or set AI_DEFENSE_API_KEY)")
     parser.add_argument("--aidefense-api-url", help="AI Defense API URL (optional, defaults to US region)")
+    parser.add_argument("--use-promptguard", action="store_true", help="Enable PromptGuard analyzer (requires API key)")
+    parser.add_argument("--promptguard-api-key", help="PromptGuard API key (or set PROMPTGUARD_API_KEY)")
+    parser.add_argument("--promptguard-api-url", help="PromptGuard API URL (optional)")
     parser.add_argument("--llm-provider", choices=["anthropic", "openai"], default="anthropic", help="LLM provider")
     parser.add_argument(
         "--llm-consensus-runs",

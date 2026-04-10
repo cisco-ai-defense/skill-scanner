@@ -61,6 +61,13 @@ except (ImportError, ModuleNotFoundError):
     pass
 
 try:
+    from .promptguard_analyzer import PromptGuardAnalyzer  # noqa: F401
+
+    __all__.append("PromptGuardAnalyzer")
+except (ImportError, ModuleNotFoundError):
+    pass
+
+try:
     from .cross_skill_scanner import CrossSkillScanner  # noqa: F401
 
     __all__.append("CrossSkillScanner")

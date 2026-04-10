@@ -325,6 +325,13 @@ def _ask_analyzers(env: dict) -> dict[str, bool]:
         default=aid_set,
     )
 
+    pg_set = env["keys"].get("PROMPTGUARD_API_KEY", False)
+    pg_tag = "[green]\u2714 key set[/]" if pg_set else "[dim]\u2718 key not set[/]"
+    analyzers["use_promptguard"] = Confirm.ask(
+        f"  PromptGuard  {pg_tag}",
+        default=pg_set,
+    )
+
     active = sum(1 for k, v in analyzers.items() if v and k != "enable_meta")
     console.print()
     console.print("[bold]Post-processing:[/]")
@@ -494,6 +501,8 @@ def _build_command(
             cmd.append("--use-virustotal")
         if analyzers.get("use_aidefense"):
             cmd.append("--use-aidefense")
+        if analyzers.get("use_promptguard"):
+            cmd.append("--use-promptguard")
         if analyzers.get("enable_meta"):
             cmd.append("--enable-meta")
 
