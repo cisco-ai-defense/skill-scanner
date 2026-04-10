@@ -21,6 +21,35 @@ File utility functions.
 from pathlib import Path
 
 
+class FileValidationError(Exception):
+    """Raised by :func:`read_text_strict` when a file is not valid UTF-8 text."""
+
+
+def read_text_strict(
+    path: Path,
+    *,
+    max_size_bytes: int | None = None,
+) -> str:
+    """Read *path* as strict UTF-8 text, rejecting binary content.
+
+    Raises :class:`FileValidationError` when the file is too large, contains
+    NUL bytes, or is not valid UTF-8.  The ``utf-8-sig`` codec is used so that
+    a leading BOM is silently stripped.
+    """
+    try:
+        raw = path.read_bytes()
+    except OSError as e:
+        raise FileValidationError(f"Failed to read {path.name}: {e}") from e
+    if max_size_bytes is not None and len(raw) > max_size_bytes:
+        raise FileValidationError(f"{path.name} exceeds maximum size ({max_size_bytes} bytes): {path}")
+    if b"\x00" in raw:
+        raise FileValidationError(f"{path.name} contains null bytes (binary content is not allowed): {path}")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError as e:
+        raise FileValidationError(f"{path.name} is not valid UTF-8: {path} ({e})") from e
+
+
 def read_file_safe(file_path: Path, max_size_mb: int = 10) -> str | None:
     """
     Safely read a file with size limit.

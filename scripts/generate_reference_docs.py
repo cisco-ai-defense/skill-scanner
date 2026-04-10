@@ -100,7 +100,7 @@ def _render_cli_reference() -> str:
         "| `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |",
         "| `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |",
         "| `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |",
-        "| `--lenient` | off | Tolerate malformed skills: coerce bad fields, fill defaults, and continue instead of failing |",
+        "| `--lenient` | off | Tolerate malformed YAML / missing fields: coerce bad fields, fill defaults, and continue instead of failing. Binary and non-UTF-8 files always fail. |",
         "| `--detailed` | off | Include full evidence in output |",
         "| `--compact` | off | Minimize output (JSON: no pretty-print) |",
         "| `--verbose` | off | Verbose logging |",
