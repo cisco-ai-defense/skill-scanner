@@ -562,6 +562,133 @@ def scan_all_command(args: argparse.Namespace) -> int:
         return 1
 
 
+def scan_repo_command(args: argparse.Namespace) -> int:
+    """Handle the ``scan-repo`` command -- clone a GitHub repo and scan it."""
+    from ..core.repo_fetcher import clone_repo, resolve_repo_url
+    from ..core.exceptions import RepoFetchError
+
+    status = _make_status_printer(args)
+
+    try:
+        url = resolve_repo_url(args.repo)
+    except RepoFetchError as e:
+        print(f"Error resolving repo URL: {e}", file=sys.stderr)
+        return 1
+
+    status(f"Cloning {url} ...")
+
+    try:
+        with clone_repo(url) as tmp_path:
+            status("Cloned. Scanning skills...")
+
+            try:
+                _configure_taxonomy_and_threat_mapping(args, status)
+            except Exception as e:
+                print(f"Error loading taxonomy configuration: {e}", file=sys.stderr)
+                return 1
+
+            policy = _load_policy(args)
+            analyzers = _build_analyzers(policy, args, status)
+            llm_max_tokens = getattr(args, "llm_max_tokens", None)
+            meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
+
+            scanner = SkillScanner(analyzers=analyzers, policy=policy)
+
+            try:
+                report = scanner.scan_directory(
+                    tmp_path,
+                    recursive=args.recursive,
+                    check_overlap=getattr(args, "check_overlap", False),
+                    lenient=getattr(args, "lenient", False),
+                    skill_file=getattr(args, "skill_file", None),
+                )
+
+                if report.total_skills_scanned == 0:
+                    print("No skills found to scan.", file=sys.stderr)
+                    return 1
+
+                # Per-skill meta-analysis
+                if meta_analyzer and apply_meta_analysis_to_results is not None:
+                    status("Running meta-analysis on scan results...")
+                    total_original, total_fp, total_new = 0, 0, 0
+                    for result in report.scan_results:
+                        if not result.findings:
+                            continue
+                        try:
+                            skill = scanner.loader.load_skill(
+                                Path(result.skill_directory),
+                                lenient=getattr(args, "lenient", False),
+                                skill_file=getattr(args, "skill_file", None),
+                            )
+                            original_count = len(result.findings)
+                            meta_result = asyncio.run(
+                                meta_analyzer.analyze_with_findings(
+                                    skill=skill, findings=result.findings, analyzers_used=result.analyzers_used
+                                )
+                            )
+                            filtered = apply_meta_analysis_to_results(
+                                original_findings=result.findings, meta_result=meta_result, skill=skill
+                            )
+                            total_original += original_count
+                            total_fp += len(meta_result.false_positives)
+                            total_new += len(meta_result.missed_threats)
+                            result.findings = filtered
+                            result.analyzers_used.append("meta_analyzer")
+
+                            # Surface meta-analysis insights
+                            if result.scan_metadata is None:
+                                result.scan_metadata = {}
+                            if meta_result.correlations:
+                                result.scan_metadata["meta_correlations"] = meta_result.correlations
+                            if meta_result.recommendations:
+                                result.scan_metadata["meta_recommendations"] = meta_result.recommendations
+                            if meta_result.overall_risk_assessment:
+                                result.scan_metadata["meta_risk_assessment"] = meta_result.overall_risk_assessment
+                        except Exception as e:
+                            logger.warning("Meta-analysis failed for %s: %s", result.skill_name, e)
+
+                    retained = total_original - total_fp
+                    parts = [f"{total_fp} false positives removed", f"{retained} findings retained"]
+                    if total_new:
+                        parts.append(f"{total_new} new threats detected")
+                    status(f"Meta-analysis complete: {', '.join(parts)}")
+
+                # Strip false positives from output unless --verbose
+                if not getattr(args, "verbose", False):
+                    for result in report.scan_results:
+                        result.findings = [f for f in result.findings if not f.metadata.get("meta_false_positive", False)]
+                    report.cross_skill_findings = [
+                        f for f in report.cross_skill_findings if not f.metadata.get("meta_false_positive", False)
+                    ]
+
+                # Recalculate report totals after meta-analysis and FP stripping
+                all_findings = [f for r in report.scan_results for f in r.findings] + report.cross_skill_findings
+                report.total_findings = len(all_findings)
+                report.critical_count = sum(1 for f in all_findings if f.severity.value == "CRITICAL")
+                report.high_count = sum(1 for f in all_findings if f.severity.value == "HIGH")
+                report.medium_count = sum(1 for f in all_findings if f.severity.value == "MEDIUM")
+                report.low_count = sum(1 for f in all_findings if f.severity.value == "LOW")
+                report.info_count = sum(1 for f in all_findings if f.severity.value == "INFO")
+                report.safe_count = sum(1 for r in report.scan_results if r.is_safe)
+
+                args._result_or_report = report
+                _write_output(args, _format_output(args, report))
+
+                fail_severity = _resolve_fail_severity(args)
+                if fail_severity and _report_has_findings_at_or_above(report, fail_severity):
+                    return 1
+                return 0
+
+            except Exception as e:
+                print(f"Unexpected error: {e}", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
+                return 1
+
+    except RepoFetchError as e:
+        print(f"Error cloning repository: {e}", file=sys.stderr)
+        return 1
+
+
 def list_analyzers_command(_args: argparse.Namespace) -> int:
     """Handle the ``list-analyzers`` command."""
     entries = [
@@ -882,6 +1009,13 @@ Examples:
     scan_all_p.add_argument("--check-overlap", action="store_true", help="Enable cross-skill description overlap")
     _add_common_scan_flags(scan_all_p)
 
+    # -- scan-repo ---------------------------------------------------------
+    scan_repo_p = subparsers.add_parser("scan-repo", help="Clone and scan a GitHub repository for skills")
+    scan_repo_p.add_argument("repo", help="GitHub repo URL (https://github.com/owner/repo) or shorthand (owner/repo)")
+    scan_repo_p.add_argument("--recursive", "-r", action="store_true", default=True, help="Recursively search for skills (default: True)")
+    scan_repo_p.add_argument("--check-overlap", action="store_true", help="Enable cross-skill description overlap check")
+    _add_common_scan_flags(scan_repo_p)
+
     # -- list-analyzers ----------------------------------------------------
     subparsers.add_parser("list-analyzers", help="List available analyzers")
 
@@ -930,6 +1064,7 @@ def main() -> int:
     dispatch = {
         "scan": scan_command,
         "scan-all": scan_all_command,
+        "scan-repo": scan_repo_command,
         "list-analyzers": list_analyzers_command,
         "validate-rules": validate_rules_command,
         "generate-policy": generate_policy_command,
