@@ -75,3 +75,15 @@ class SkillValidationError(SkillScannerError):
     """
 
     pass
+
+
+class RepoFetchError(SkillScannerError):
+    """Raised when unable to fetch a repository.
+
+    This can indicate:
+    - Invalid repository URL or shorthand format
+    - git clone failure (bad URL, network error, private repo)
+    - git command not found on PATH
+    """
+
+    pass

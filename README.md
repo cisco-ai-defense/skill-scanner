@@ -150,6 +150,10 @@ skill-scanner scan-all /path/to/skills --recursive --use-behavioral
 # Scan multiple skills with cross-skill overlap detection
 skill-scanner scan-all /path/to/skills --recursive --check-overlap
 
+# Scan a GitHub repository (owner/repo shorthand or full URL)
+skill-scanner scan-repo owner/repo
+skill-scanner scan-repo https://github.com/owner/repo --use-llm
+
 # Lenient mode: tolerate malformed skills instead of failing
 skill-scanner scan /path/to/skill --lenient
 skill-scanner scan-all /path/to/skills --recursive --lenient
