@@ -36,6 +36,8 @@ from skill_scanner.telemetry import (
     get_meter,
     get_tracer,
     is_enabled,
+    record_analyzer_duration,
+    record_scan_error,
     record_scan_metrics,
     scan_span,
     setup_telemetry,
@@ -47,8 +49,18 @@ from skill_scanner.telemetry import (
 # ---------------------------------------------------------------------------
 
 
+def _sdk_available() -> bool:
+    """Return True when the opentelemetry-sdk package can be imported."""
+    try:
+        import opentelemetry.sdk.trace  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
 def _reset_telemetry():
-    """Reset global telemetry state between tests."""
+    """Reset global telemetry state between tests, including SDK global providers."""
     _tel_mod._ENABLED = False
     _tel_mod._TRACER = None
     _tel_mod._METER = None
@@ -56,6 +68,19 @@ def _reset_telemetry():
     _tel_mod._FINDINGS_COUNTER = None
     _tel_mod._ANALYZER_DURATION_HISTOGRAM = None
     _tel_mod._SCANS_TOTAL_COUNTER = None
+    _tel_mod._SCAN_ERRORS_COUNTER = None
+
+    # Reset the SDK's global trace/meter providers so state doesn't leak across
+    # tests when the opentelemetry-sdk is installed.
+    try:
+        from opentelemetry import metrics, trace
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.trace import TracerProvider
+
+        trace.set_tracer_provider(TracerProvider())
+        metrics.set_meter_provider(MeterProvider())
+    except Exception:
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -105,6 +130,13 @@ class TestNoOpBehaviorWhenDisabled:
             span.set_attribute("findings.total", 0)
             span.set_attribute("scan.is_safe", True)
 
+    def test_noop_span_add_event_keyword_args(self):
+        """_NoOpSpan.add_event must accept the full OTel signature without raising."""
+        with scan_span("test.span") as span:
+            # Must not raise even with optional keyword args matching the real OTel signature.
+            span.add_event("my_event", attributes={"key": "val"})
+            span.add_event("other_event", attributes=None, timestamp=12345)
+
     def test_record_scan_metrics_noop(self):
         """record_scan_metrics must silently do nothing when OTel is off."""
         record_scan_metrics(
@@ -114,6 +146,23 @@ class TestNoOpBehaviorWhenDisabled:
             findings_by_severity={"HIGH": 0, "MEDIUM": 0},
             analyzers_used=["static"],
             is_safe=True,
+        )
+
+    def test_record_analyzer_duration_noop(self):
+        """record_analyzer_duration must silently do nothing when OTel is off."""
+        record_analyzer_duration(
+            analyzer_name="static",
+            duration_seconds=0.1,
+            findings_count=2,
+            skill_name="my-skill",
+        )
+
+    def test_record_scan_error_noop(self):
+        """record_scan_error must silently do nothing when OTel is off."""
+        record_scan_error(
+            skill_directory="/some/skill",
+            error_type="load_error",
+            reason="SKILL.md not found",
         )
 
     def test_shutdown_telemetry_noop(self):
@@ -178,6 +227,19 @@ class TestHeaderParsing:
     def test_value_with_equals(self):
         result = _tel_mod._parse_headers("x-key=abc=def")
         assert result["x-key"] == "abc=def"
+
+    def test_base64_value_with_comma_not_split(self):
+        """Base64 values that contain commas must not be split into separate pairs."""
+        raw = "Authorization=Bearer abc,def==,x-tenant=my-org"
+        result = _tel_mod._parse_headers(raw)
+        assert result["Authorization"] == "Bearer abc,def=="
+        assert result["x-tenant"] == "my-org"
+
+    def test_single_base64_value(self):
+        """A standalone base64 header value with an embedded comma is preserved."""
+        raw = "X-Token=dGVzdA==,dGVzdA=="
+        result = _tel_mod._parse_headers(raw)
+        assert result["X-Token"] == "dGVzdA==,dGVzdA=="
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +311,98 @@ class TestSetupWithSDK:
         result = setup_telemetry(TelemetryConfig(enabled=True))
         assert result is False
         assert is_enabled() is False
+
+
+# ---------------------------------------------------------------------------
+# shutdown_telemetry resets globals
+# ---------------------------------------------------------------------------
+
+
+class TestShutdownTelemetry:
+    def test_shutdown_resets_enabled_flag(self):
+        """After shutdown, is_enabled() must return False."""
+        _tel_mod._ENABLED = True
+        shutdown_telemetry()
+        assert is_enabled() is False
+
+    def test_shutdown_resets_tracer_and_meter(self):
+        """After shutdown, _TRACER and _METER must be None so re-init can succeed."""
+        _tel_mod._ENABLED = True
+        _tel_mod._TRACER = MagicMock()
+        _tel_mod._METER = MagicMock()
+        shutdown_telemetry()
+        assert _tel_mod._TRACER is None
+        assert _tel_mod._METER is None
+
+    def test_shutdown_resets_metric_instruments(self):
+        """All metric instrument globals must be cleared on shutdown."""
+        _tel_mod._ENABLED = True
+        _tel_mod._SCAN_DURATION_HISTOGRAM = MagicMock()
+        _tel_mod._FINDINGS_COUNTER = MagicMock()
+        _tel_mod._ANALYZER_DURATION_HISTOGRAM = MagicMock()
+        _tel_mod._SCANS_TOTAL_COUNTER = MagicMock()
+        _tel_mod._SCAN_ERRORS_COUNTER = MagicMock()
+        shutdown_telemetry()
+        assert _tel_mod._SCAN_DURATION_HISTOGRAM is None
+        assert _tel_mod._FINDINGS_COUNTER is None
+        assert _tel_mod._ANALYZER_DURATION_HISTOGRAM is None
+        assert _tel_mod._SCANS_TOTAL_COUNTER is None
+        assert _tel_mod._SCAN_ERRORS_COUNTER is None
+
+    @pytest.mark.skipif(not _sdk_available(), reason="opentelemetry-sdk not installed")
+    def test_shutdown_calls_provider_force_flush_and_shutdown(self):
+        """shutdown_telemetry must flush then shut down the SDK providers."""
+        from opentelemetry import metrics, trace
+
+        mock_tp = MagicMock()
+        mock_mp = MagicMock()
+
+        _tel_mod._ENABLED = True
+
+        # Patch the already-imported trace/metrics modules directly so the
+        # get_tracer_provider / get_meter_provider calls inside the
+        # contextlib.suppress block see our mock objects.
+        with (
+            patch.object(trace, "get_tracer_provider", return_value=mock_tp),
+            patch.object(metrics, "get_meter_provider", return_value=mock_mp),
+        ):
+            shutdown_telemetry()
+
+        # force_flush before shutdown ensures buffered data is exported.
+        mock_tp.force_flush.assert_called_once()
+        mock_tp.shutdown.assert_called_once()
+        mock_mp.force_flush.assert_called_once()
+        mock_mp.shutdown.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# record_analyzer_duration
+# ---------------------------------------------------------------------------
+
+
+class TestRecordAnalyzerDuration:
+    def test_noop_when_disabled(self):
+        """record_analyzer_duration must be silent when telemetry is off."""
+        record_analyzer_duration("static", 0.5, 3, "my-skill")
+
+    def test_records_when_instrument_available(self):
+        """When the histogram instrument is set, record() must be called."""
+        mock_hist = MagicMock()
+        _tel_mod._ENABLED = True
+        _tel_mod._ANALYZER_DURATION_HISTOGRAM = mock_hist
+
+        record_analyzer_duration("llm", 2.3, 5, "skill-x")
+
+        mock_hist.record.assert_called_once_with(
+            2.3,
+            attributes={
+                "analyzer.name": "llm",
+                "skill.name": "skill-x",
+                "findings.count": 5,
+            },
+        )
+        _tel_mod._ENABLED = False
+        _tel_mod._ANALYZER_DURATION_HISTOGRAM = None
 
 
 # ---------------------------------------------------------------------------
@@ -347,3 +501,74 @@ class TestScannerIntegration:
         scanner = SkillScanner()
         report = scanner.scan_directory(skills_root, recursive=False)
         assert report.total_skills_scanned == 2
+
+
+# ---------------------------------------------------------------------------
+# SDK-available: verify real spans are created and exported
+# ---------------------------------------------------------------------------
+
+
+class TestSpanCreationWithSDK:
+    """Verify that scan_span actually produces exportable spans when the SDK is installed."""
+
+    @pytest.mark.skipif(
+        not _sdk_available(),
+        reason="opentelemetry-sdk not installed",
+    )
+    def test_scan_span_creates_span_with_sdk(self, tmp_path):
+        """scan_span must emit a real span with the correct name and attributes."""
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        trace.set_tracer_provider(provider)
+
+        _tel_mod._TRACER = provider.get_tracer(_tel_mod._INSTRUMENTATION_SCOPE)
+        _tel_mod._ENABLED = True
+
+        with scan_span("skill_scanner.scan_skill", {"skill.name": "sdk-test-skill"}) as span:
+            span.set_attribute("findings.total", 0)
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert spans[0].name == "skill_scanner.scan_skill"
+        attrs = dict(spans[0].attributes or {})
+        assert attrs.get("skill.name") == "sdk-test-skill"
+
+        _tel_mod._ENABLED = False
+        _tel_mod._TRACER = None
+
+    @pytest.mark.skipif(
+        not _sdk_available(),
+        reason="opentelemetry-sdk not installed",
+    )
+    def test_scan_span_records_exception_status(self, tmp_path):
+        """When an exception is raised inside scan_span, the span status must be ERROR."""
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.trace import StatusCode
+
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        trace.set_tracer_provider(provider)
+
+        _tel_mod._TRACER = provider.get_tracer(_tel_mod._INSTRUMENTATION_SCOPE)
+        _tel_mod._ENABLED = True
+
+        with pytest.raises(ValueError):
+            with scan_span("skill_scanner.test_error"):
+                raise ValueError("test failure")
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert spans[0].status.status_code == StatusCode.ERROR
+
+        _tel_mod._ENABLED = False
+        _tel_mod._TRACER = None

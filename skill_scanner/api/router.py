@@ -46,6 +46,7 @@ from .. import __version__ as PACKAGE_VERSION
 from ..core.analyzer_factory import build_analyzers
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
+from ..telemetry import is_enabled
 
 logger = logging.getLogger("skill_scanner.api")
 
@@ -397,24 +398,52 @@ async def scan_skill(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Capture the current OTel context so scanner spans in the thread are
+    # children of the HTTP request span rather than disconnected root spans.
+    _otel_ctx = None
+    if is_enabled():
+        try:
+            from opentelemetry import context as _otel_context
+
+            _otel_ctx = _otel_context.get_current()
+        except Exception:
+            pass
+
     def run_scan():
-        analyzers = _build_analyzers(
-            policy,
-            custom_rules=custom_rules_path,
-            use_behavioral=request.use_behavioral,
-            use_llm=request.use_llm,
-            llm_provider=request.llm_provider,
-            use_virustotal=request.use_virustotal,
-            vt_api_key=vt_api_key,
-            vt_upload_files=request.vt_upload_files,
-            use_aidefense=request.use_aidefense,
-            aidefense_api_key=aidefense_api_key,
-            aidefense_api_url=request.aidefense_api_url,
-            use_trigger=request.use_trigger,
-            llm_consensus_runs=request.llm_consensus_runs,
-        )
-        scanner = SkillScanner(analyzers=analyzers, policy=policy)
-        return scanner.scan_skill(skill_dir)
+        _token = None
+        if _otel_ctx is not None:
+            try:
+                from opentelemetry import context as _otel_context
+
+                _token = _otel_context.attach(_otel_ctx)
+            except Exception:
+                pass
+        try:
+            analyzers = _build_analyzers(
+                policy,
+                custom_rules=custom_rules_path,
+                use_behavioral=request.use_behavioral,
+                use_llm=request.use_llm,
+                llm_provider=request.llm_provider,
+                use_virustotal=request.use_virustotal,
+                vt_api_key=vt_api_key,
+                vt_upload_files=request.vt_upload_files,
+                use_aidefense=request.use_aidefense,
+                aidefense_api_key=aidefense_api_key,
+                aidefense_api_url=request.aidefense_api_url,
+                use_trigger=request.use_trigger,
+                llm_consensus_runs=request.llm_consensus_runs,
+            )
+            scanner = SkillScanner(analyzers=analyzers, policy=policy)
+            return scanner.scan_skill(skill_dir)
+        finally:
+            if _token is not None:
+                try:
+                    from opentelemetry import context as _otel_context
+
+                    _otel_context.detach(_token)
+                except Exception:
+                    pass
 
     try:
         loop = asyncio.get_running_loop()
@@ -608,7 +637,18 @@ async def scan_batch(
     scan_id = str(uuid.uuid4())
     scan_results_cache.set(scan_id, {"status": "processing", "started_at": datetime.now().isoformat(), "result": None})
 
-    background_tasks.add_task(run_batch_scan, scan_id, request, vt_api_key, aidefense_api_key)
+    # Capture the current OTel context so batch-scan spans are children of
+    # the HTTP request span even though they run in a BackgroundTask thread.
+    _batch_otel_ctx = None
+    if is_enabled():
+        try:
+            from opentelemetry import context as _otel_context
+
+            _batch_otel_ctx = _otel_context.get_current()
+        except Exception:
+            pass
+
+    background_tasks.add_task(run_batch_scan, scan_id, request, vt_api_key, aidefense_api_key, _batch_otel_ctx)
 
     return {
         "scan_id": scan_id,
@@ -643,8 +683,17 @@ def run_batch_scan(
     request: BatchScanRequest,
     vt_api_key: str | None = None,
     aidefense_api_key: str | None = None,
+    otel_ctx: object = None,
 ):
     """Background task to run batch scan."""
+    _token = None
+    if otel_ctx is not None:
+        try:
+            from opentelemetry import context as _otel_context
+
+            _token = _otel_context.attach(otel_ctx)
+        except Exception:
+            pass
     try:
         policy = _resolve_policy(request.policy)
 
@@ -736,6 +785,14 @@ def run_batch_scan(
                 "error": str(e),
             },
         )
+    finally:
+        if _token is not None:
+            try:
+                from opentelemetry import context as _otel_context
+
+                _otel_context.detach(_token)
+            except Exception:
+                pass
 
 
 @router.get("/analyzers")

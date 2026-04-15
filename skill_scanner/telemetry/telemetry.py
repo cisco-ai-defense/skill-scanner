@@ -34,6 +34,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import re
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -57,9 +58,18 @@ _SCAN_DURATION_HISTOGRAM: Any = None
 _FINDINGS_COUNTER: Any = None
 _ANALYZER_DURATION_HISTOGRAM: Any = None
 _SCANS_TOTAL_COUNTER: Any = None
+_SCAN_ERRORS_COUNTER: Any = None
 
 _INSTRUMENTATION_SCOPE = "skill_scanner"
-_INSTRUMENTATION_VERSION = "1.0.0"
+
+# Populated lazily during setup_telemetry to match the service.version resource.
+_INSTRUMENTATION_VERSION: str | None = None
+
+# Regex: split on commas (and optional whitespace) that are followed by an OTLP header key.
+# A key must start with a letter, contain only word chars or hyphens, and its '=' separator
+# must NOT be immediately followed by another '=' (which would indicate base64 padding rather
+# than a key=value separator).  This correctly preserves values like "Bearer abc,def==".
+_HEADER_SPLIT_RE = re.compile(r",\s*(?=[a-zA-Z][\w-]*=(?!=))")
 
 # ---------------------------------------------------------------------------
 # Public configuration dataclass
@@ -121,9 +131,9 @@ def setup_telemetry(config: TelemetryConfig | None = None) -> bool:
         ``True`` if telemetry was successfully initialised, ``False`` otherwise
         (SDK not installed, disabled by env var, or initialisation error).
     """
-    global _ENABLED, _TRACER, _METER  # noqa: PLW0603
+    global _ENABLED, _TRACER, _METER, _INSTRUMENTATION_VERSION  # noqa: PLW0603
     global _SCAN_DURATION_HISTOGRAM, _FINDINGS_COUNTER  # noqa: PLW0603
-    global _ANALYZER_DURATION_HISTOGRAM, _SCANS_TOTAL_COUNTER  # noqa: PLW0603
+    global _ANALYZER_DURATION_HISTOGRAM, _SCANS_TOTAL_COUNTER, _SCAN_ERRORS_COUNTER  # noqa: PLW0603
 
     if _ENABLED:
         return True
@@ -154,10 +164,14 @@ def setup_telemetry(config: TelemetryConfig | None = None) -> bool:
         return False
 
     try:
+        # Resolve version once so the tracer/meter scope matches the resource.
+        if _INSTRUMENTATION_VERSION is None:
+            _INSTRUMENTATION_VERSION = _get_package_version()
+
         # ---- Resource --------------------------------------------------------
         resource_attrs: dict[str, str] = {
             "service.name": config.service_name,
-            "service.version": _get_package_version(),
+            "service.version": _INSTRUMENTATION_VERSION,
         }
         resource_attrs.update(config.resource_attributes)
         resource = Resource.create(resource_attrs)
@@ -210,7 +224,9 @@ def shutdown_telemetry() -> None:
     Safe to call even when telemetry is disabled or the SDK is not installed.
     Typically called at process exit or at the end of a CLI command.
     """
-    global _ENABLED  # noqa: PLW0603
+    global _ENABLED, _TRACER, _METER  # noqa: PLW0603
+    global _SCAN_DURATION_HISTOGRAM, _FINDINGS_COUNTER  # noqa: PLW0603
+    global _ANALYZER_DURATION_HISTOGRAM, _SCANS_TOTAL_COUNTER, _SCAN_ERRORS_COUNTER  # noqa: PLW0603
 
     if not _ENABLED:
         return
@@ -219,14 +235,28 @@ def shutdown_telemetry() -> None:
         from opentelemetry import metrics, trace
 
         tp = trace.get_tracer_provider()
+        # Flush buffered spans before shutdown to avoid data loss in short-lived CLI processes.
+        if hasattr(tp, "force_flush"):
+            tp.force_flush()
         if hasattr(tp, "shutdown"):
             tp.shutdown()
 
         mp = metrics.get_meter_provider()
+        # Flush buffered metric records before shutdown.
+        if hasattr(mp, "force_flush"):
+            mp.force_flush()
         if hasattr(mp, "shutdown"):
             mp.shutdown()
 
+    # Reset all globals so a subsequent setup_telemetry() can re-initialise cleanly.
     _ENABLED = False
+    _TRACER = None
+    _METER = None
+    _SCAN_DURATION_HISTOGRAM = None
+    _FINDINGS_COUNTER = None
+    _ANALYZER_DURATION_HISTOGRAM = None
+    _SCANS_TOTAL_COUNTER = None
+    _SCAN_ERRORS_COUNTER = None
     logger.debug("OpenTelemetry shutdown complete")
 
 
@@ -379,6 +409,32 @@ def record_analyzer_duration(
     )
 
 
+def record_scan_error(
+    *,
+    skill_directory: str,
+    error_type: str = "unknown",
+    reason: str = "",
+) -> None:
+    """Increment the scan-error counter for a skipped or failed skill.
+
+    Args:
+        skill_directory: Path to the skill that was skipped / errored.
+        error_type: Short label for the error category (e.g. ``"load_error"``).
+        reason: Human-readable reason string for diagnostic context.
+    """
+    if not _ENABLED or _SCAN_ERRORS_COUNTER is None:
+        return
+
+    _SCAN_ERRORS_COUNTER.add(
+        1,
+        attributes={
+            "skill.directory": skill_directory,
+            "error.type": error_type,
+            "error.reason": reason[:256],
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
@@ -483,11 +539,6 @@ def _setup_log_bridge(config: TelemetryConfig, resource: Any) -> None:
         set_logger_provider(log_provider)
 
         # Attach OTel handler to the skill_scanner logger hierarchy
-        from opentelemetry._logs.severity import std_to_otel  # noqa: F401, PLC0415
-        from opentelemetry.sdk._logs.export import (  # noqa: PLC0415
-            BatchLogRecordProcessor,
-        )
-
         try:
             from opentelemetry.sdk._logs import LoggingHandler  # SDK ≥ 1.25
 
@@ -523,11 +574,16 @@ def _build_log_exporter(config: TelemetryConfig) -> Any:
 
 
 def _parse_headers(raw: str | None) -> dict[str, str]:
-    """Parse ``key=value,key2=value2`` header string into a dict."""
+    """Parse ``key=value,key2=value2`` header string into a dict.
+
+    Splits only on commas that are immediately followed by a header key
+    (word chars or hyphens before ``=``), so base64 values that contain
+    commas (e.g. ``Authorization=Bearer abc,def==``) are preserved intact.
+    """
     if not raw:
         return {}
     headers: dict[str, str] = {}
-    for pair in raw.split(","):
+    for pair in _HEADER_SPLIT_RE.split(raw):
         pair = pair.strip()
         if "=" in pair:
             k, _, v = pair.partition("=")
@@ -538,15 +594,20 @@ def _parse_headers(raw: str | None) -> dict[str, str]:
 def _create_metric_instruments() -> None:
     """Create all metric instruments on the global meter."""
     global _SCAN_DURATION_HISTOGRAM, _FINDINGS_COUNTER  # noqa: PLW0603
-    global _ANALYZER_DURATION_HISTOGRAM, _SCANS_TOTAL_COUNTER  # noqa: PLW0603
+    global _ANALYZER_DURATION_HISTOGRAM, _SCANS_TOTAL_COUNTER, _SCAN_ERRORS_COUNTER  # noqa: PLW0603
 
     if _METER is None:
         return
+
+    # Explicit bucket boundaries produce more useful percentiles for scan workloads.
+    _scan_duration_boundaries = [0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]
+    _analyzer_duration_boundaries = [0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60]
 
     _SCAN_DURATION_HISTOGRAM = _METER.create_histogram(
         name="skill_scanner.scan.duration",
         unit="s",
         description="Wall-clock time taken to scan a single skill, in seconds.",
+        explicit_bucket_boundaries=_scan_duration_boundaries,
     )
     _SCANS_TOTAL_COUNTER = _METER.create_counter(
         name="skill_scanner.scans.total",
@@ -562,6 +623,12 @@ def _create_metric_instruments() -> None:
         name="skill_scanner.analyzer.duration",
         unit="s",
         description="Wall-clock time taken by each individual analyzer per skill.",
+        explicit_bucket_boundaries=_analyzer_duration_boundaries,
+    )
+    _SCAN_ERRORS_COUNTER = _METER.create_counter(
+        name="skill_scanner.scan.errors",
+        unit="{error}",
+        description="Total number of skill scan errors or skipped skills.",
     )
 
 
@@ -588,7 +655,7 @@ class _NoOpSpan:
     def set_status(self, *_args: Any, **_kwargs: Any) -> None:  # noqa: D102
         pass
 
-    def add_event(self, _name: str, _attrs: dict | None = None) -> None:  # noqa: D102
+    def add_event(self, _name: str, attributes: dict | None = None, **_kwargs: Any) -> None:  # noqa: D102
         pass
 
     def record_exception(self, _exc: Exception) -> None:  # noqa: D102

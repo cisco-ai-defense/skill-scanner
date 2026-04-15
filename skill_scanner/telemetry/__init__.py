@@ -45,6 +45,7 @@ from .telemetry import (
     get_tracer,
     is_enabled,
     record_analyzer_duration,
+    record_scan_error,
     record_scan_metrics,
     scan_span,
     setup_telemetry,
@@ -62,4 +63,5 @@ __all__ = [
     "scan_span",
     "record_scan_metrics",
     "record_analyzer_duration",
+    "record_scan_error",
 ]

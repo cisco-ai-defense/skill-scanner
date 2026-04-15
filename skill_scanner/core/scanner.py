@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ..telemetry import is_enabled, record_analyzer_duration, record_scan_metrics, scan_span
+from ..telemetry import is_enabled, record_analyzer_duration, record_scan_error, record_scan_metrics, scan_span
 from .analyzability import AnalyzabilityReport, compute_analyzability
 from .analyzer_factory import build_core_analyzers
 from .analyzers.base import BaseAnalyzer
@@ -175,7 +175,14 @@ class SkillScanner:
         if not isinstance(skill_directory, Path):
             skill_directory = Path(skill_directory)
 
-        skill = self.loader.load_skill(skill_directory, lenient=lenient)
+        with scan_span(
+            "skill_scanner.load_skill",
+            {"skill.directory": str(skill_directory), "skill.lenient": lenient},
+        ) as load_span:
+            skill = self.loader.load_skill(skill_directory, lenient=lenient)
+            load_span.set_attribute("skill.name", skill.name)
+            load_span.set_attribute("skill.file_count", len(skill.files))
+
         return self._scan_single_skill(skill, skill_directory)
 
     # ------------------------------------------------------------------
@@ -201,7 +208,13 @@ class SkillScanner:
             },
         ) as root_span:
             # Pre-processing: Extract archives and add extracted files to skill
-            extraction_result = self.content_extractor.extract_skill_archives(skill.files)
+            with scan_span(
+                "skill_scanner.extract_archives",
+                {"skill.name": skill.name, "skill.archive_input_count": len(skill.files)},
+            ) as ext_span:
+                extraction_result = self.content_extractor.extract_skill_archives(skill.files)
+                ext_span.set_attribute("skill.extracted_file_count", len(extraction_result.extracted_files))
+                ext_span.set_attribute("skill.extraction_findings_count", len(extraction_result.findings))
             if extraction_result.extracted_files:
                 skill.files.extend(extraction_result.extracted_files)
 
@@ -351,6 +364,19 @@ class SkillScanner:
             root_span.set_attribute("findings.is_safe", result.is_safe)
             root_span.set_attribute("scan.duration_seconds", scan_duration)
             root_span.set_attribute("analyzers.used", ",".join(analyzer_names))
+
+            if is_enabled():
+                # Embed trace/span IDs in the result so CI pipelines and API consumers
+                # can correlate scan output directly with traces in the backend.
+                try:
+                    from opentelemetry import trace as _otel_trace
+
+                    span_ctx = _otel_trace.get_current_span().get_span_context()
+                    if span_ctx.is_valid:
+                        result.scan_metadata["trace_id"] = format(span_ctx.trace_id, "032x")
+                        result.scan_metadata["span_id"] = format(span_ctx.span_id, "016x")
+                except Exception:
+                    pass
 
             if is_enabled():
                 findings_by_severity = {
@@ -767,10 +793,28 @@ class SkillScanner:
                 except SkillLoadError as e:
                     logger.warning("Failed to load %s: %s", skill_dir, e)
                     report.skills_skipped.append({"skill": str(skill_dir), "reason": str(e)})
+                    dir_span.add_event(
+                        "skill_load_failed",
+                        {"skill.directory": str(skill_dir), "error": str(e)},
+                    )
+                    record_scan_error(
+                        skill_directory=str(skill_dir),
+                        error_type="load_error",
+                        reason=str(e),
+                    )
                     continue
                 except Exception as e:
                     logger.error("Unexpected error scanning %s: %s", skill_dir, e, exc_info=True)
                     report.skills_skipped.append({"skill": str(skill_dir), "reason": str(e)})
+                    dir_span.add_event(
+                        "skill_scan_failed",
+                        {"skill.directory": str(skill_dir), "error": str(e)},
+                    )
+                    record_scan_error(
+                        skill_directory=str(skill_dir),
+                        error_type="scan_error",
+                        reason=str(e),
+                    )
                     continue
 
             # Perform cross-skill analysis if requested
@@ -781,6 +825,10 @@ class SkillScanner:
                     overlap_findings = self._check_description_overlap(loaded_skills)
                 except Exception as e:
                     logger.error("Cross-skill description overlap check failed: %s", e)
+                    dir_span.add_event(
+                        "cross_skill_overlap_check_failed",
+                        {"error": str(e)},
+                    )
 
                 try:
                     from .analyzers.cross_skill_scanner import CrossSkillScanner
@@ -791,6 +839,10 @@ class SkillScanner:
                     pass
                 except Exception as e:
                     logger.error("Cross-skill pattern detection failed: %s", e)
+                    dir_span.add_event(
+                        "cross_skill_scan_failed",
+                        {"error": str(e)},
+                    )
 
             if overlap_findings or cross_findings:
                 all_cross_findings = list(overlap_findings or []) + list(cross_findings or [])
