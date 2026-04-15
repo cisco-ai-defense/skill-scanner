@@ -200,11 +200,17 @@ skill-scanner scan-all /path/to/skills --check-overlap
 
 ### Lenient Mode
 
-Tolerate malformed skills (missing fields, non-string descriptions) instead of failing:
+Tolerate malformed skills (missing fields, non-string descriptions) instead of failing. When `SKILL.md` is absent, lenient mode falls back to scanning `.md` files in the directory as instruction bodies — enabling support for non-Codex/Cursor formats such as Claude Code `.claude/commands/*.md`:
 
 ```bash
 skill-scanner scan /path/to/skill --lenient
 skill-scanner scan-all /path/to/skills --recursive --lenient
+
+# Scan a Claude Code commands directory (no SKILL.md)
+skill-scanner scan .claude/commands/deploy --lenient
+
+# Use a custom metadata filename instead of SKILL.md
+skill-scanner scan /path/to/skill --skill-file README.md
 ```
 
 ### Pre-commit Hook

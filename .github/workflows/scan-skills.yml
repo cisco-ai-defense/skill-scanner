@@ -103,7 +103,19 @@ jobs:
           python-version: ${{ inputs.python_version }}
 
       - name: Install skill-scanner
-        run: pip install cisco-ai-skill-scanner
+        env:
+          INPUT_LLM_MODEL: ${{ inputs.llm_model }}
+        run: |
+          EXTRAS=""
+          case "$INPUT_LLM_MODEL" in
+            gemini/*|*gemini*)
+              EXTRAS="[google]"
+              ;;
+            vertex_ai/*|vertex/*|*vertex*)
+              EXTRAS="[vertex]"
+              ;;
+          esac
+          pip install "cisco-ai-skill-scanner${EXTRAS}"
 
       - name: Validate inputs
         env:

@@ -30,4 +30,56 @@ _CORE_PACK = DATA_DIR / "packs" / "core"
 YARA_RULES_DIR = _CORE_PACK / "yara"
 SIGNATURES_DIR = _CORE_PACK / "signatures"
 
-__all__ = ["DATA_DIR", "PROMPTS_DIR", "YARA_RULES_DIR", "SIGNATURES_DIR"]
+_PACKS_DIR = DATA_DIR / "packs"
+
+
+def list_available_packs() -> list[str]:
+    """Return names of available rule packs (excluding ``core``).
+
+    Only directories that contain a ``signatures/`` sub-directory or a
+    ``pack.yaml`` manifest are considered valid packs.
+    """
+    if not _PACKS_DIR.is_dir():
+        return []
+    packs: list[str] = []
+    for entry in sorted(_PACKS_DIR.iterdir()):
+        if not entry.is_dir() or entry.name == "core":
+            continue
+        if (entry / "signatures").is_dir() or (entry / "pack.yaml").is_file():
+            packs.append(entry.name)
+    return packs
+
+
+def resolve_rule_packs(names: list[str]) -> list[Path]:
+    """Map pack names to their ``signatures/`` directories.
+
+    Args:
+        names: Pack names (e.g. ``["atr"]``).
+
+    Returns:
+        List of resolved ``signatures/`` directory paths.
+
+    Raises:
+        ValueError: If a requested pack does not exist or has no
+            ``signatures/`` directory.
+    """
+    available = list_available_packs()
+    dirs: list[Path] = []
+    for name in names:
+        if name not in available:
+            raise ValueError(f"Unknown rule pack '{name}'. Available packs: {', '.join(available) or '(none)'}")
+        sigs_dir = _PACKS_DIR / name / "signatures"
+        if not sigs_dir.is_dir():
+            raise ValueError(f"Rule pack '{name}' has no signatures/ directory")
+        dirs.append(sigs_dir)
+    return dirs
+
+
+__all__ = [
+    "DATA_DIR",
+    "PROMPTS_DIR",
+    "YARA_RULES_DIR",
+    "SIGNATURES_DIR",
+    "list_available_packs",
+    "resolve_rule_packs",
+]

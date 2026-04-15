@@ -13,7 +13,7 @@ A best-effort security scanner for AI Agent Skills that detects prompt injection
 
 > **Important:** This scanner provides best-effort detection, not comprehensive or complete coverage. A scan that returns no findings does not guarantee that a skill is free of all threats. See [Scope and Limitations](#scope-and-limitations) below.
 
-Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agent Skills](https://docs.cursor.com/context/rules) formats following the [Agent Skills specification](https://agentskills.io).
+Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agent Skills](https://docs.cursor.com/context/rules) formats following the [Agent Skills specification](https://agentskills.io). With `--lenient`, also scans non-standard formats such as Claude Code `.claude/commands/*.md` and flat markdown skill repos.
 
 ---
 
@@ -79,6 +79,9 @@ pip install cisco-ai-skill-scanner
 ```bash
 # AWS Bedrock support
 pip install cisco-ai-skill-scanner[bedrock]
+
+# Google AI Studio / Gemini support
+pip install cisco-ai-skill-scanner[google]
 
 # Google Vertex AI support
 pip install cisco-ai-skill-scanner[vertex]
@@ -150,6 +153,13 @@ skill-scanner scan-all /path/to/skills --recursive --check-overlap
 # Lenient mode: tolerate malformed skills instead of failing
 skill-scanner scan /path/to/skill --lenient
 skill-scanner scan-all /path/to/skills --recursive --lenient
+
+# Lenient mode with non-standard skill formats (no SKILL.md required)
+skill-scanner scan .claude/commands/deploy --lenient
+skill-scanner scan-all .claude/commands --recursive --lenient
+
+# Use a custom metadata filename instead of SKILL.md
+skill-scanner scan /path/to/skill --skill-file README.md
 
 # CI/CD: Fail build if threats found
 skill-scanner scan-all ./skills --fail-on-severity high --format sarif --output results.sarif
@@ -249,7 +259,8 @@ if not result.is_safe:
 | `--custom-rules PATH` | Use custom YARA rules from directory |
 | `--taxonomy PATH` | Load custom taxonomy profile (JSON/YAML) for this run |
 | `--threat-mapping PATH` | Load custom scanner threat mapping profile (JSON) for this run |
-| `--lenient` | Tolerate malformed skills (coerce bad fields, fill defaults) instead of failing |
+| `--lenient` | Tolerate malformed skills (coerce bad fields, fill defaults) instead of failing. When `SKILL.md` is absent, falls back to scanning `.md` files in the directory |
+| `--skill-file FILENAME` | Custom metadata filename to use instead of `SKILL.md` (e.g. `README.md`) |
 | `--check-overlap` | (`scan-all`) Enable cross-skill description overlap checks |
 
 | Command | Description |

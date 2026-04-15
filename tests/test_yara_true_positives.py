@@ -85,6 +85,20 @@ class TestUnicodeSteganographyTruePositives:
 class TestCredentialHarvestingTruePositives:
     """Ensure credential harvesting rule catches real threats."""
 
+    def test_detects_bare_anthropic_api_key(self, yara_scanner):
+        """Documented bare Anthropic keys should trigger credential harvesting."""
+        content = 'key = "sk-ant-api03-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
+        matches = yara_scanner.scan_content(content, "config.py")
+        credential_matches = [m for m in matches if m["rule_name"] == "credential_harvesting_generic"]
+        assert len(credential_matches) > 0, "Should detect bare Anthropic API key"
+
+    def test_detects_bare_openai_project_key(self, yara_scanner):
+        """Documented bare OpenAI project keys should trigger credential harvesting."""
+        content = 'key = "sk-proj-8Dvo0_nGTvHe6fffWX8xb5HhX5s5MHBLPlfEbc22uxKkdLs8A"'
+        matches = yara_scanner.scan_content(content, "config.py")
+        credential_matches = [m for m in matches if m["rule_name"] == "credential_harvesting_generic"]
+        assert len(credential_matches) > 0, "Should detect bare OpenAI project key"
+
     def test_detects_real_api_key_pattern(self, yara_scanner):
         """Should detect actual API keys (not placeholders)."""
         content = 'OPENAI_API_KEY = "sk-proj-abc123xyz789verylongkey000000"'
@@ -271,6 +285,13 @@ class TestFalsePositiveRegression:
         matches = yara_scanner.scan_content(content, "dangerous.sh")
         system_matches = [m for m in matches if m["rule_name"] == "system_manipulation_generic"]
         assert len(system_matches) >= 1, "rm -rf ~/ should still trigger system_manipulation_generic"
+
+    def test_ignores_long_hyphenated_slug(self, yara_scanner):
+        """Long hyphenated slugs should not be mistaken for sk- credentials."""
+        content = 'note = "sk-reference-slug-for-documentation-and-indexing-aaaaaaaaaaaaaaaaaa"'
+        matches = yara_scanner.scan_content(content, "docs.py")
+        credential_matches = [m for m in matches if m["rule_name"] == "credential_harvesting_generic"]
+        assert len(credential_matches) == 0, "Long hyphenated slugs should not trigger credential harvesting"
 
 
 # ============================================================================

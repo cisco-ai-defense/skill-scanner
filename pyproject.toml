@@ -70,12 +70,16 @@ dependencies = [
     # LLM support (required)
     "anthropic==0.76.0",
     "openai==2.15.0",
-    "litellm==1.82.3",
-    "google-genai==1.60.0",
-    "google-generativeai==0.8.6",
+    # Pin to 1.83.0+ (avoid compromised PyPI lines in 1.80.16 / 1.82.3 / 1.82.8 — BerriAI/litellm#24512).
+    "litellm==1.83.0",
 ]
 
 [project.optional-dependencies]
+# Google AI Studio / Gemini SDKs
+google = [
+    "google-genai==1.60.0",
+    "google-generativeai==0.8.6",
+]
 # AWS Bedrock support (requires boto3 for IAM credentials)
 bedrock = [
     "boto3==1.42.37",
@@ -104,13 +108,15 @@ otel = [
 ]
 # All optional provider + observability extras
 all = [
- "boto3==1.42.37",
- "google-cloud-aiplatform==1.135.0",
- "azure-identity==1.25.1",
- "opentelemetry-sdk>=1.26.0",
- "opentelemetry-exporter-otlp-proto-grpc>=1.26.0",
- "opentelemetry-exporter-otlp-proto-http>=1.26.0",
- "opentelemetry-instrumentation-fastapi>=0.47b0",
+    "google-genai==1.60.0",
+    "google-generativeai==0.8.6",
+    "boto3==1.42.37",
+    "google-cloud-aiplatform==1.135.0",
+    "azure-identity==1.25.1",
+    "opentelemetry-sdk>=1.26.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.26.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.26.0",
+    "opentelemetry-instrumentation-fastapi>=0.47b0",
 ]
 
 [dependency-groups]

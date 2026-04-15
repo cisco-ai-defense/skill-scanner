@@ -44,6 +44,7 @@ def build_core_analyzers(
     policy: ScanPolicy,
     *,
     custom_yara_rules_path: str | Path | None = None,
+    extra_rules_dirs: list[Path] | None = None,
 ) -> list[BaseAnalyzer]:
     """Build the three core analyzers, respecting ``policy.analyzers`` toggles.
 
@@ -55,6 +56,8 @@ def build_core_analyzers(
         policy: The active scan policy.
         custom_yara_rules_path: Optional path to a directory of custom YARA
             rule files (``.yara``).  Forwarded to :class:`StaticAnalyzer`.
+        extra_rules_dirs: Additional signature rule directories from
+            community/external packs (e.g. ATR).
 
     Returns:
         A list of core analyzer instances with *policy* attached.
@@ -62,7 +65,13 @@ def build_core_analyzers(
     analyzers: list[BaseAnalyzer] = []
 
     if policy.analyzers.static:
-        analyzers.append(StaticAnalyzer(custom_yara_rules_path=custom_yara_rules_path, policy=policy))
+        analyzers.append(
+            StaticAnalyzer(
+                custom_yara_rules_path=custom_yara_rules_path,
+                policy=policy,
+                extra_rules_dirs=extra_rules_dirs,
+            )
+        )
     if policy.analyzers.bytecode:
         analyzers.append(BytecodeAnalyzer(policy=policy))
     if policy.analyzers.pipeline:
@@ -75,6 +84,7 @@ def build_analyzers(
     policy: ScanPolicy,
     *,
     custom_yara_rules_path: str | Path | None = None,
+    extra_rules_dirs: list[Path] | None = None,
     use_behavioral: bool = False,
     use_llm: bool = False,
     llm_model: str | None = None,
@@ -102,6 +112,8 @@ def build_analyzers(
     construction logic.
 
     Args:
+        extra_rules_dirs: Additional signature rule directories from
+            community/external packs (e.g. ATR).
         llm_max_tokens: Override the default ``max_tokens`` for the
             :class:`LLMAnalyzer`.  When *None* the analyzer's own
             default (8192) is used.
@@ -110,7 +122,11 @@ def build_analyzers(
         A list of analyzer instances ready to be passed to
         :class:`SkillScanner`.
     """
-    analyzers = build_core_analyzers(policy, custom_yara_rules_path=custom_yara_rules_path)
+    analyzers = build_core_analyzers(
+        policy,
+        custom_yara_rules_path=custom_yara_rules_path,
+        extra_rules_dirs=extra_rules_dirs,
+    )
 
     # -- Optional analyzers (flag-driven) -----------------------------------
 

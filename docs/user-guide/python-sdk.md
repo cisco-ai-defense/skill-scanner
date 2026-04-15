@@ -32,22 +32,31 @@ When `analyzers` is `None`, the scanner builds the default core analyzer set (st
 
 ## Instance Methods
 
-### `scan_skill(skill_directory, *, lenient=False) → ScanResult`
+### `scan_skill(skill_directory, *, lenient=False, skill_file=None) → ScanResult`
 
-Scan a single skill package directory. Pass `lenient=True` to coerce malformed manifests instead of raising an error.
+Scan a single skill package directory. Pass `lenient=True` to coerce malformed manifests instead of raising an error. When `lenient=True` and no `SKILL.md` exists, the loader falls back to scanning `.md` files in the directory. Pass `skill_file` to use a custom metadata filename (e.g. `"README.md"`).
 
 ```python
 result = scanner.scan_skill("/path/to/skill")
+
+# Scan a directory without SKILL.md (e.g. Claude Code commands)
+result = scanner.scan_skill(".claude/commands/deploy", lenient=True)
+
+# Use a custom metadata file
+result = scanner.scan_skill("/path/to/skill", skill_file="README.md")
 ```
 
-### `scan_directory(skills_directory, recursive=False, check_overlap=False, *, lenient=False) → Report`
+### `scan_directory(skills_directory, recursive=False, check_overlap=False, *, lenient=False, skill_file=None) → Report`
 
-Scan all skill packages in a directory.
+Scan all skill packages in a directory. When `lenient=True`, directories containing `.md` files (but no `SKILL.md`) are also discovered as candidate skills.
 
 ```python
 report = scanner.scan_directory("/path/to/skills", recursive=True)
 print(report.total_skills_scanned)
 print(report.total_findings)
+
+# Discover and scan non-standard skill formats
+report = scanner.scan_directory(".claude/commands", recursive=True, lenient=True)
 ```
 
 ### `add_analyzer(analyzer)`

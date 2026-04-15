@@ -237,3 +237,59 @@ def test_codex_skills_directory_structure(loader, tmp_path):
     assert file_types["scripts/main.py"] == "python"
     assert file_types["references/data.json"] == "other"
     assert file_types["assets/template.txt"] == "other"
+
+
+def test_binary_skill_md_raises_error(loader, tmp_path):
+    """A SKILL.md that is actually a binary file must hard-fail."""
+    skill_dir = tmp_path / "binary-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+
+    with pytest.raises(SkillLoadError, match="null bytes"):
+        loader.load_skill(skill_dir)
+
+
+def test_non_utf8_skill_md_raises_error(loader, tmp_path):
+    """A SKILL.md encoded in Latin-1 (not UTF-8) must hard-fail."""
+    skill_dir = tmp_path / "latin1-skill"
+    skill_dir.mkdir()
+    latin1_content = "---\nname: café\ndescription: résumé\n---\n# Héllo\n".encode("latin-1")
+    (skill_dir / "SKILL.md").write_bytes(latin1_content)
+
+    with pytest.raises(SkillLoadError, match="not valid UTF-8"):
+        loader.load_skill(skill_dir)
+
+
+def test_binary_skill_md_raises_in_lenient_mode(loader, tmp_path):
+    """Lenient mode must NOT swallow binary SKILL.md — the error must propagate."""
+    skill_dir = tmp_path / "lenient-binary"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+
+    with pytest.raises(SkillLoadError, match="null bytes"):
+        loader.load_skill(skill_dir, lenient=True)
+
+
+def test_lenient_fallback_binary_md_raises(loader, tmp_path):
+    """Lenient fallback (no SKILL.md, .md files present) must fail on binary .md."""
+    skill_dir = tmp_path / "lenient-binary-fallback"
+    skill_dir.mkdir()
+    (skill_dir / "README.md").write_bytes(b"\x00\x01\x02\x03binary junk")
+
+    with pytest.raises(SkillLoadError, match="null bytes"):
+        loader.load_skill(skill_dir, lenient=True)
+
+
+def test_referenced_files_no_false_the_py_from_english_prose(loader):
+    """English 'from the …' / 'import the …' must not imply a local the.py."""
+    body = "Read from the documentation for details.\n\nYou may import the module later.\n"
+    refs = loader._extract_referenced_files(body)
+    assert "the.py" not in refs
+
+
+def test_referenced_files_from_import_syntax_still_extracts_local_module(loader):
+    """Real ``from m import`` / line-initial ``import m`` still suggest m.py when not stdlib."""
+    body = "from myhelper import foo\n\nimport anothermod\n"
+    refs = loader._extract_referenced_files(body)
+    assert "myhelper.py" in refs
+    assert "anothermod.py" in refs

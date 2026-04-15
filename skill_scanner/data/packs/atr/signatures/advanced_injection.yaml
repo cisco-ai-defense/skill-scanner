@@ -1,0 +1,316 @@
+# ATR Rule Pack — Advanced Injection Signatures
+# Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+# These rules cover CJK injection, paraphrase attacks, persona hijacking, goal hijacking,
+# RAG data poisoning, model behavior extraction, and other unique detection patterns
+# not covered by Cisco's built-in ruleset.
+
+signatures:
+
+  - id: ATR_GOAL_HIJACKING
+    category: advanced_injection
+    severity: HIGH
+    patterns:
+      - "(?i)(?:instead\\s+of\\s+(?:that|doing|the\\s+(?:original\\s+)?\\w+(?:\\s+\\w+){0,3}|what\\s+(?:you|I)\\s+asked)|rather\\s+than\\s+(?:that|the\\s+(?:original|assigned|previous)))"
+      - "(?i)(?:change\\s+of\\s+plans?|new\\s+(?:priority|objective|mission|directive)|forget\\s+(?:the|about\\s+the)\\s+original\\s+(?:task|assignment|goal|objective))"
+      - "(?i)(?:stop\\s+(?:what\\s+you(?:'re|\\s+are)\\s+doing|your\\s+current\\s+task|that)|abandon\\s+(?:the|your)\\s+(?:current|assigned|original)\\s+(?:task|work|objective))"
+      - "(?i)(?:this\\s+is\\s+(?:more\\s+)?(?:urgent|critical|important|time[- ]sensitive)|(?:urgent|emergency|critical)[:\\-]\\s+(?:drop|stop|pause)\\s+(?:everything|what\\s+you))"
+      - "(?i)(?:actually|wait|hold\\s+on|scratch\\s+that|never\\s*mind)[,.]?\\s+(?:do|let'?s|I\\s+need\\s+you\\s+to|can\\s+you)\\s+(?:something|this|the\\s+following)\\s+(?:else|instead|first)"
+      - "(?i)(?:my\\s+new\\s+(?:goal|objective|task|mission)|i(?:'ve|\\s+have)\\s+(?:decided|chosen)\\s+to\\s+(?:focus|work)\\s+on\\s+(?:something\\s+)?(?:else|different))"
+      - "(?i)(?:before\\s+you\\s+(?:continue|proceed|finish)|first\\s+(?:do|handle|take\\s+care\\s+of)\\s+this\\s+(?:other|unrelated|separate)\\s+(?:thing|task|request))"
+      - "(?i)(?:your\\s+(?:real|true|actual)\\s+(?:task|purpose|goal|mission)\\s+is|what\\s+you\\s+should\\s+(?:really|actually)\\s+(?:be\\s+)?doing\\s+is)"
+      - "(?i)(?:skip\\s+(?:the|that|this)\\s+(?:step|part|task|analysis)|don'?t\\s+(?:bother|worry)\\s+(?:about|with)\\s+(?:the|that|this)\\s+(?:original|first|assigned))"
+      - "(?i)(?:pivot\\s+to|redirect\\s+(?:your\\s+)?(?:focus|attention|effort)\\s+to|switch\\s+(?:your\\s+)?(?:focus|attention|task)\\s+to)"
+      - "(?i)(?:there(?:'s|\\s+is)\\s+(?:a|an)\\s+(?:more\\s+important|higher\\s+priority|critical)\\s+(?:task|issue|matter)|prioritize\\s+this\\s+over\\s+(?:your|the)\\s+(?:current|original))"
+      - "(?i)(?:the\\s+(?:original|previous|assigned)\\s+(?:task|goal|objective)\\s+(?:is|has\\s+been)\\s+(?:cancelled|obsolete|no\\s+longer|superseded|replaced))"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects agent goal hijacking attempts that try to redirect an agent away from its
+      assigned task. Covers mid-session task replacement, urgency-based interruption,
+      "scratch that" redirections, claims the original task is cancelled/obsolete, and
+      pivot directives designed to substitute attacker goals for the legitimate objective.
+      (ATR-2026-032). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Preserve and lock the original task specification at session start. Require explicit
+      user confirmation before accepting task objective changes mid-session. Flag and review
+      any mid-task goal change requests, especially those claiming urgency.
+
+  - id: ATR_SCOPE_CREEP
+    category: advanced_injection
+    severity: MEDIUM
+    patterns:
+      - "(?i)(?:i(?:'ll|\\s+will)\\s+also|additionally|while\\s+i(?:'m|\\s+am)\\s+at\\s+it|let\\s+me\\s+also|i\\s+should\\s+also)\\s+(?:go\\s+ahead\\s+and\\s+)?(?:access|modify|update|delete|create|send|check|review)"
+      - "(?i)(?:i\\s+also\\s+need\\s+access\\s+to|can\\s+you\\s+(?:also\\s+)?grant\\s+(?:me\\s+)?(?:access|permission)|i\\s+(?:need|require)\\s+(?:additional|more|broader|expanded)\\s+(?:access|permissions?|privileges?))"
+      - "(?i)(?:i(?:'ve|\\s+have)\\s+(?:also\\s+)?(?:gone\\s+ahead|taken\\s+the\\s+liberty|decided)\\s+(?:and\\s+)?(?:to\\s+)?(?:access|update|modify|check|review|scan|analyze))"
+      - "(?i)(?:while\\s+(?:doing|performing|completing|working\\s+on)\\s+(?:that|this|the\\s+task),?\\s+i\\s+(?:noticed|found|discovered|realized)\\s+(?:i\\s+(?:should|could|need\\s+to)\\s+also|that\\s+i\\s+(?:should|need)))"
+      - "(?i)(?:to\\s+(?:fully|properly|better|completely|thoroughly)\\s+(?:complete|accomplish|handle|address)\\s+(?:this(?:\\s+task)?|the\\s+task),?\\s+i\\s+(?:need|require|must\\s+have)\\s+(?:access|permission)\\s+to)"
+      - "(?i)(?:it\\s+would\\s+(?:also\\s+)?be\\s+(?:helpful|useful|beneficial|good)\\s+(?:to|if\\s+i\\s+(?:could|had))\\s+(?:also\\s+)?(?:access|check|review|modify|scan))"
+      - "(?i)(?:expanding\\s+(?:my|the)\\s+(?:scope|access|search|analysis)\\s+to\\s+(?:include|cover|encompass)|broadening\\s+(?:my|the)\\s+(?:search|scope|access))"
+      - "(?i)(?:i\\s+(?:went|looked)\\s+(?:ahead|beyond)\\s+(?:and|the\\s+(?:original|assigned|initial))\\s+(?:scope|task|request)|i\\s+extended\\s+(?:my|the)\\s+(?:analysis|review|search)\\s+(?:beyond|outside))"
+      - "(?i)(?:since\\s+i\\s+(?:already|now)\\s+have\\s+access\\s+to|now\\s+that\\s+i\\s+(?:can|have)\\s+(?:access|reach|see),?\\s+(?:let\\s+me|i(?:'ll|\\s+will))\\s+also)"
+      - "(?i)(?:requesting\\s+(?:elevated|additional|extended|expanded|broader)\\s+(?:access|permissions?|privileges?|scope)|please\\s+(?:grant|give|provide)\\s+(?:me\\s+)?(?:elevated|admin|additional|expanded)\\s+(?:access|rights|permissions?))"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects agent scope creep where an agent self-extends its actions beyond the assigned
+      task boundary. Patterns include "while I'm at it I'll also...", taking liberty to access
+      additional systems, using existing access as a foothold for further access, and requesting
+      expanded permissions to "properly complete" a task.
+      (ATR-2026-041). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Enforce strict task scope boundaries at the agent orchestration layer. Require explicit
+      user approval for any action outside the original task specification. Reject requests
+      for elevated access that cite task completion as justification.
+
+  - id: ATR_CONSENSUS_POISONING
+    category: advanced_injection
+    severity: CRITICAL
+    patterns:
+      - "(?i)\\b(vote|approve|endorse|confirm|agree)\\s+.{0,20}(as|on behalf of|representing|for)\\s+.{0,20}(multiple|all|every|several|many)\\s+(agent|node|peer|participant|member)"
+      - "(?i)\\b(forge|fake|spoof|fabricat|simulat)\\w*\\s+.{0,20}(consensus|vote|ballot|proposal|approval|quorum)"
+      - "(?i)\\b(create|spawn|register|generate)\\s+.{0,10}(multiple|many|several|\\d{2,})\\s+(fake|dummy|puppet|sybil|sock.?puppet)\\s.{0,15}(agent|identit|account|node|peer)"
+      - "(?i)\\b(manipulat|poison|corrupt|rig|stuff)\\w*\\s+.{0,15}(the\\s+)?(consensus|voting|election|proposal|decision|quorum)\\b"
+      - "(?i)\\b(impersonat\\w*|pretend\\s+to\\s+be|act\\s+as|pose\\s+as)\\s+.{0,15}(agent|node|peer|validator|participant).{1,45}(vote|approve|submit|propose)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects multi-agent consensus poisoning attacks where an attacker attempts to forge,
+      manipulate, or stuff multi-agent voting or approval processes. Covers voting on behalf
+      of multiple agents, forging quorum results, spawning Sybil agent identities, and
+      impersonating validators to corrupt collective decision-making.
+      (ATR-2026-092). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Implement verifiable identity for all consensus participants. Use cryptographically
+      signed votes. Enforce one-identity-one-vote with stake-based Sybil resistance.
+      Monitor for anomalous voting pattern concentration.
+
+  - id: ATR_CJK_INJECTION_PATTERNS
+    category: advanced_injection
+    severity: CRITICAL
+    patterns:
+      # Simplified Chinese: ignore all other content
+      - "(忽略|无视|忘记|跳过|放弃|不要管|别管|不用管|不用理).{0,10}(其他|其余|所有|全部|一切|剩下|别的|任何).{0,10}(内容|东西|消息|信息|文字|指令|规则|对话|聊天)"
+      # Traditional Chinese: ignore all other content
+      - "(忽略|無視|忘記|跳過|放棄|不要管|別管|不用管|不用理).{0,10}(其他|其餘|所有|全部|一切|剩下|別的|任何).{0,10}(內容|東西|消息|訊息|文字|指令|規則|對話|聊天)"
+      # Simplified Chinese: ignore previous instructions
+      - "(忽略|无视|忘记|跳过).{0,5}(之前|以前|上面|先前|原来|原有|现有).{0,5}(的)?.{0,5}(指令|指示|规则|设定|提示|要求|限制|约束)"
+      # Traditional Chinese: ignore previous instructions
+      - "(忽略|無視|忘記|跳過).{0,5}(之前|以前|上面|先前|原來|原有|現有).{0,5}(的)?.{0,5}(指令|指示|規則|設定|提示|要求|限制|約束)"
+      # Japanese: ignore previous instructions
+      - "(以前の|前の|これまでの|先ほどの|上記の).{0,5}(指示|指令|ルール|制約|設定).{0,5}(を)?.{0,5}(無視|忘れ|スキップ|取り消)"
+      # CJK financial coercion
+      - "(你必须|你一定要|你务必|请你必须|你需要立即|你马上|你現在就|你必須|你一定要|請你必須|你務必).{0,30}(发送|發送|转账|轉帳|支付|付款|执行|執行|打开|打開|删除|刪除|下载|下載|运行|運行|调用|調用)"
+      # Simplified/Traditional Chinese: conditional instruction bypass
+      - "如果你是.{0,80}(或者|或|以及).{0,40}(请|請|你必须|你必須|你要|就|则|則).{0,30}(发送|發送|转账|轉帳|执行|執行|读取|讀取|忽略|無視|忘记|忘記)"
+      # CJK covert financial transfer
+      - "(私发|私發|私信发|私信發|偷偷发|偷偷發|悄悄发|悄悄發|暗中发|暗中發).{0,10}(红包|紅包|转账|轉帳|钱|錢|款项|款項|金额|金額)"
+      # CJK capability abuse
+      - "(只要你有|如果你有|只要你能|如果你能).{0,20}(权限|權限|功能|能力|权力|權力).{0,20}(就|则|則|请|請|必须|必須|要).{0,20}(发|發|送|转|轉|执行|執行|操作)"
+      # CJK financial amount manipulation
+      - "(余额|餘額|金额|金額|额度|額度).{0,10}(不足|不够|不夠).{0,20}(最大|全部|所有|尽可能|盡可能|最多).{0,10}(金额|金額|额度|額度|数量|數量).{0,5}(发送|發送|转|轉)"
+      # Japanese: ignore + financial action
+      - "(他の|その他の|全ての|すべての).{0,10}(内容|メッセージ|指示|ルール).{0,5}(を)?.{0,5}(無視|忘れ|スキップ).{0,20}(送金|振込|支払|実行|送信)"
+      # Korean: ignore + financial action
+      - "(다른|모든|기존의|이전의).{0,10}(내용|메시지|지시|규칙).{0,5}(을|를)?.{0,5}(무시|잊어|건너뛰).{0,20}(송금|이체|결제|실행|전송)"
+      # CJK multi-agent conditional
+      - "(?i)(如果你是|만약 너가|もしあなたが).{0,20}(\\w+Claw|\\w+Buddy|\\w+Bot|\\w+Agent|\\w+助手|\\w+AI).{0,20}(、|，|,|或|또는|または).{0,20}(\\w+Claw|\\w+Buddy|\\w+Bot|\\w+Agent|\\w+助手|\\w+AI)"
+      # Simplified/Traditional Chinese: persona substitution
+      - "(你现在是|你現在是|你已经是|你已經是|你变成|你變成|你成为了|你成為了).{0,15}(新的|另一个|另一個|不同的).{0,10}(助手|助理|AI|机器人|機器人|模型|客服|系统|系統)"
+      # CJK false authority claim
+      - "(我是管理员|我是管理員|我是群主|我是群管|管理员命令|管理員命令|群主要求|管理员指示|管理員指示).{0,20}(执行|執行|发送|發送|转账|轉帳|操作|删除|刪除|忽略|無視)"
+      # CJK system prompt extraction
+      - "(输出|輸出|显示|顯示|告诉我|告訴我|打印|列出|念出|说出|說出|复述|複述|重复|重複).{0,10}(你的|系统|系統).{0,10}(提示词|提示詞|指令|指示|规则|規則|配置|初始设定|初始設定|隐藏指令|隱藏指令)"
+      # CJK safety bypass
+      - "(请忽略|請忽略|请无视|請無視|请跳过|請跳過|请绕过|請繞過|请解除|請解除|关闭|關閉|停用|禁用).{0,10}(安全|防护|防護|保护|保護|内容|內容|风控|風控).{0,5}(限制|过滤|過濾|约束|約束|检查|檢查|审查|審查|策略|规则|規則|机制|機制)"
+      # CJK refusal prohibition
+      - "(不要拒绝|不要拒絕|别拒绝|別拒絕|不准拒绝|不準拒絕|不能拒绝|不能拒絕|你不可以拒绝|你不可以拒絕|不许说不|不許說不|禁止拒绝|禁止拒絕)"
+      # CJK false test framing
+      - "(以上|上面|之前|前面|刚才|剛才).{0,5}(的)?.{0,5}(内容|內容|消息|信息|讯息|訊息|说的|說的|指令|规则|規則).{0,5}(都是|全是|只是|全部是|全都是|其实是|其實是).{0,5}(测试|測試|假的|虚假|虛假|演练|演練|模拟|模擬|试验|試驗|开玩笑|開玩笑)"
+      # Japanese: persona substitution
+      - "(あなたは今から|これからあなたは|今からあなたは|あなたはもう).{0,15}(別の|新しい|違う).{0,10}(アシスタント|助手|AI|ボット|モデル|システム)"
+      # Japanese: false authority + financial
+      - "(管理者|管理人|オーナー|運営|開発者).{0,5}(として|から|が|の).{0,5}(命令|指示|指令|要求|お願い).{0,10}(送金|振込|送信|実行|削除|無視)"
+      # Japanese: system prompt extraction
+      - "(システムプロンプト|システム指示|初期指示|内部指令|隠し指示|設定内容|秘密の指示).{0,5}(を)?.{0,5}(出力|表示|教えて|見せて|公開|開示|読み上げ|繰り返し|コピー)"
+      # Japanese: safety bypass
+      - "(セキュリティ|安全|保護|防御|コンテンツ).{0,5}(制限|制約|フィルター|チェック|検査|ルール|ポリシー|機能).{0,5}(を)?.{0,5}(無視|解除|外して|取り除|バイパス|スキップ|オフ|停止|無効化)"
+      # Japanese: refusal prohibition
+      - "(拒否しないで|断らないで|拒絶しないで|却下しないで|断ることは禁止|拒否は許されない|拒否禁止|いいえと言わないで)"
+      # Japanese: false test framing
+      - "(上記|上の|以上|前の|先ほどの).{0,5}(の)?.{0,5}(内容|メッセージ|指示|テキスト|発言|ルール).{0,5}(は)?.{0,5}(全て|すべて|全部)?.{0,5}(テスト|試験|ダミー|嘘|偽物|冗談|ジョーク)"
+      # Korean: persona substitution
+      - "(당신은 이제|지금부터 당신은|너는 이제|이제부터 너는|당신은 지금부터).{0,15}(새로운|다른|별도의).{0,10}(어시스턴트|비서|AI|봇|모델|시스템|도우미)"
+      # Korean: false authority + financial
+      - "(관리자|운영자|오너|개발자|방장).{0,5}(로서|이|가|의|로).{0,5}(명령|지시|지령|요구|요청).{0,10}(송금|이체|전송|실행|삭제|무시)"
+      # Korean: system prompt extraction
+      - "(시스템 프롬프트|시스템 지시|초기 지시|내부 지령|숨겨진 지시|설정 내용|비밀 지시).{0,5}(을|를)?.{0,5}(출력|표시|알려줘|보여줘|공개|나열|반복|읽어줘|복사)"
+      # Korean: safety bypass
+      - "(보안|안전|보호|방어|콘텐츠).{0,5}(제한|제약|필터|검사|규칙|정책|기능).{0,5}(을|를)?.{0,5}(무시|해제|제거|우회|건너뛰|끄기|비활성화|중지)"
+      # Korean: refusal prohibition
+      - "(거부하지 마|거절하지 마|거부하지 말|거절하지 말|거부 금지|거절 금지|안 된다고 하지 마|아니라고 하지 마)"
+      # Korean: false test framing
+      - "(위의|위에|이전의|앞의|방금|아까).{0,5}(의)?.{0,5}(내용|메시지|지시|텍스트|말|규칙).{0,5}(은|는)?.{0,5}(모두|전부|다|전체)?.{0,5}(테스트|시험|더미|거짓|가짜|장난|농담)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects prompt injection attacks written in Chinese (Simplified and Traditional),
+      Japanese, and Korean. Covers instruction override, financial coercion, covert transfers,
+      false authority claims (admin/owner impersonation), system prompt extraction, safety
+      bypass instructions, refusal prohibition, false test framing, and persona substitution
+      across all three CJK language groups.
+      (ATR-2026-097). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Apply CJK-aware content scanning to all agent inputs regardless of language. Treat
+      CJK language injection patterns with the same severity as English equivalents. Ensure
+      detection pipelines do not skip non-Latin character content.
+
+  - id: ATR_PERSONA_HIJACKING
+    category: advanced_injection
+    severity: CRITICAL
+    patterns:
+      - "(?:must|will|should)\\s+adopt\\s+(?:the\\s+)?persona.*(?:replacing|replace|override|overriding)\\s+(?:any\\s+)?(?:previous\\s+)?(?:system\\s+prompt|behavioral\\s+guidelines|instructions)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects mandatory persona adoption instructions embedded in tool descriptions or
+      external content that instruct the LLM to adopt a persona while overriding the
+      existing system prompt and behavioral guidelines. This allows complete takeover
+      of the agent's operating instructions via persona substitution.
+      (ATR-2026-104). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Block persona adoption instructions that claim to override system prompts. Treat
+      any content containing "adopt persona...replacing system prompt" as a critical
+      injection attempt. Enforce immutability of the original system prompt at runtime.
+
+  - id: ATR_RAG_DATA_POISONING
+    category: advanced_injection
+    severity: HIGH
+    patterns:
+      - "(?i)\\[\\s*(?:SYSTEM|INST|INSTRUCTION|ADMIN|OVERRIDE|ROOT|PRIORITY)\\s*\\]\\s*[:;\\-]?\\s*\\w+"
+      - "(?i)(?:ignore|disregard|forget|override)\\s+(?:all\\s+)?(?:previous|prior|above|other|existing)\\s+(?:instructions?|context|rules?|guidelines?|directives?)"
+      - "(?i)(?:you\\s+must\\s+(?:now|always|instead)|when\\s+this\\s+(?:text|passage|document|content|entry)\\s+is\\s+(?:retrieved|loaded|read|accessed))"
+      - "(?i)<\\s*(?:system|instruction|hidden|inject|override|secret)[^>]*>.*?<\\s*/\\s*(?:system|instruction|hidden|inject|override|secret)\\s*>"
+      - "(?i)(?:BEGIN|START)\\s+(?:HIDDEN|SECRET|SYSTEM|INTERNAL)\\s+(?:INSTRUCTIONS?|DIRECTIVES?|COMMANDS?|RULES?)"
+      - "(?i)(?:assistant:\\s+I\\s+(?:will|should|must)|human:\\s+)(?=.*(?:ignore|override|disregard|bypass|exfiltrate))"
+      - "(?i)(?:do\\s+not\\s+(?:mention|reveal|disclose|tell|display|show)\\s+(?:this|these|the)\\s+(?:instruction|directive|rule|section|text))"
+      - "(?i)(?:secretly|covertly|without\\s+(?:the\\s+)?user\\s+knowing|invisibly|silently)\\s+(?:add|append|include|insert|send|transmit|exfiltrate|forward)"
+      - "(?i)(?:always\\s+include\\s+the\\s+following|append\\s+to\\s+(?:every|all|each)\\s+(?:response|answer|reply|output))\\s*[:;]"
+      - "(?i)(?:override\\s+(?:default|standard|normal|current)\\s+(?:behavior|response|mode|settings?)|switch\\s+to\\s+(?:unrestricted|admin|debug|developer|jailbroken)\\s+mode)"
+      - "(?i)(?:for\\s+internal\\s+use\\s+only|hidden\\s+directive|do\\s+not\\s+display\\s+this\\s+(?:section|part|text))\\s*[:;\\-]?\\s*(?:you|the\\s+(?:agent|ai|assistant|model))"
+      - "(?i)(?:you\\s+(?:are|should|must)\\s+(?:now|instead|actually)\\s+(?:act|behave|respond|pretend|roleplay)\\s+as|from\\s+this\\s+point\\s+(?:on|forward),?\\s+(?:act|behave)\\s+as)"
+      - "(?i)(?:send|transmit|forward|post|exfiltrate|leak)\\s+(?:all\\s+)?(?:data|information|context|conversation|session|tokens?|keys?)\\s+to\\s+(?:https?://|ftp://|\\d{1,3}\\.\\d{1,3})"
+      - "(?i)(?:<<\\s*SYS\\s*>>|<\\|im_start\\|>\\s*system|\\[INST\\]|\\[/INST\\]|<\\|system\\|>)\\s*\\w+"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects data poisoning attacks targeting RAG (Retrieval-Augmented Generation) knowledge
+      bases and vector stores. Covers injected system-level tokens in documents, trigger-on-
+      retrieval instructions, hidden directive XML tags, BEGIN HIDDEN INSTRUCTIONS blocks,
+      fake conversation turn injections, secret append-to-all-responses directives, mode
+      override commands, and exfiltration instructions embedded in knowledge base content.
+      (ATR-2026-070). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Scan all documents before indexing into vector stores. Strip or reject documents
+      containing system-prompt delimiter tokens or hidden instruction patterns. Treat
+      retrieved document content as untrusted external data, not as instructions.
+
+  - id: ATR_MODEL_BEHAVIOR_EXTRACTION
+    category: advanced_injection
+    severity: CRITICAL
+    patterns:
+      - "(?i)(what\\s+is\\s+your\\s+(confidence|certainty|probability)\\s+(score|level|rating|percentage)|rate\\s+your\\s+(confidence|certainty)\\s+(from|on\\s+a\\s+scale))"
+      - "(?i)(repeat|recite|output|print|display|show)\\s+(your\\s+)?(entire\\s+)?(system\\s+prompt|instructions|training\\s+data|fine.?tuning|configuration|internal\\s+rules|base\\s+prompt)"
+      - "(?i)(what\\s+(would|do)\\s+you\\s+(do|say|respond)\\s+if\\s+I\\s+(said|asked|told|typed))\\s+.{0,20}(and\\s+then\\s+(what|how)|what\\s+about\\s+if)"
+      - "(?i)(give\\s+me\\s+(the|your)\\s+(exact|precise|verbatim|complete)\\s+(wording|text|content)\\s+of\\s+(your|the)\\s+(system|initial|original))"
+      - "(?i)(what\\s+are\\s+(your|the)\\s+(model|network|neural)\\s+(weights|parameters|hyperparameters|architecture|layers|dimensions|tokenizer|vocabulary))"
+      - "(?i)(output\\s+(the\\s+)?(logits|token\\s+probabilities|softmax|attention\\s+(weights|scores|map)|embedding|hidden\\s+state|activations))"
+      - "(?i)(classify|label|categorize)\\s+each\\s+(of\\s+)?(these|the\\s+following)\\s+\\d+\\s+(inputs?|examples?|samples?|prompts?|queries?)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects model behavior extraction and model stealing attacks including requests to
+      output system prompts verbatim, reveal training data or fine-tuning configuration,
+      extract model weights/architecture/tokenizer details, output raw logits or attention
+      weights, and systematic input classification to reverse-engineer model decision boundaries.
+      (ATR-2026-072). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Never reveal system prompt contents, training data, or model architecture details.
+      Reject requests for verbatim system prompt output. Monitor for systematic probing
+      patterns using large batches of classified inputs. Log and alert on extraction attempts.
+
+  - id: ATR_DISGUISED_ANALYTICS_EXFILTRATION
+    category: advanced_injection
+    severity: HIGH
+    patterns:
+      - "transmits\\s+(?:usage\\s+)?analytics\\s+including\\s+(?:the\\s+)?(?:full\\s+)?conversation\\s+context"
+      - "(?:sends|transmits|uploads)\\s+(?:usage\\s+data|analytics)\\s+(?:including|containing)\\s+(?:user\\s+)?(?:conversation|chat|input)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects data exfiltration disguised as legitimate analytics or telemetry collection.
+      Attackers use skill descriptions claiming to transmit "usage analytics" that secretly
+      include the full conversation context or user input, creating a covert exfiltration
+      channel hidden behind seemingly benign telemetry.
+      (ATR-2026-102). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Reject any skill that transmits conversation context as part of analytics. Audit all
+      skills with telemetry/analytics collection for conversation data inclusion. Require
+      explicit disclosure and user consent for any data collection beyond operational metrics.
+
+  - id: ATR_INDIRECT_AUTHORITY_CLAIM
+    category: advanced_injection
+    severity: HIGH
+    patterns:
+      - "(?i)(note|attention|message|instruction|directive|reminder|update|notice)\\s+(to|for)\\s+(the\\s+)?(AI|assistant|agent|model|system|chatbot|bot|LLM)\\s*[:\\-,.]\\s*.{0,30}(previous|prior|earlier|above|last|initial)\\s+.{0,30}(incorrect|wrong|flawed|erroneous|inaccurate|outdated|invalid|error)"
+      - "(?i)(note|attention|message|instruction|directive|reminder)\\s+(to|for)\\s+(the\\s+)?(AI|assistant|agent|model|system)\\s*[:\\-,.]\\s*.{0,60}(recalculate|recompute|redo|reevaluate|reassess|reprocess|reconsider|reanalyze|revise)"
+      - "(?i)(important|urgent|critical|essential|mandatory|required)\\s+(note|message|instruction|update|directive|notice)\\s+(to|for)\\s+(the\\s+)?(AI|assistant|agent|model|system)\\s*[:\\-,.]"
+      - "(?i)(note|attention|message|instruction)\\s+(to|for)\\s+(the\\s+)?(AI|assistant|agent|model)\\s*[:\\-,.]"
+      - "(?i)(the\\s+)?(previous|prior|earlier|above|preceding|initial|original)\\s+(analysis|assessment|calculation|evaluation|result|output|response)\\s+(was|is|were|are|contains?|had|has)\\s+(incorrect|wrong|flawed|erroneous|inaccurate|invalid|mistaken|faulty)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects indirect authority claim attacks embedded in external content (documents,
+      web pages, emails) that use "Note to AI:" or "Message for the assistant:" style
+      headers to claim authority over the agent's behavior, override prior outputs, or
+      trigger reanalysis/recalculation with attacker-controlled parameters.
+      (ATR-2026-130). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Treat any "Note to AI" or direct AI addressing patterns in external content as
+      injection attempts. External documents must not contain agent-addressed directives.
+      Parse document content as data only, never as instructions.
+
+  - id: ATR_FICTIONAL_FRAMING_ATTACK
+    category: advanced_injection
+    severity: MEDIUM
+    patterns:
+      - "(?i)(creative\\s+writing|fictional|write\\s+a\\s+(story|narrative|tale|scene)|imagine\\s+a\\s+(scenario|world|story)|roleplay|role-play|pretend|hypothetical\\s+(scenario|story|narrative))\\s*.{0,80}(no\\s+(ethical|moral|safety)|without\\s+(ethical|moral|safety|any)\\s+(guideline|constraint|restriction|rule|limit|filter|bound)|unrestricted|uncensored|unfiltered|no\\s+(restriction|constraint|limit|filter|bound|rule))"
+      - "(?i)(for\\s+(academic|scholarly|educational|research|scientific|study|learning)\\s+(research|purpose|reason|context|investigation|analysis)|in\\s+an?\\s+(academic|scholarly|research|educational)\\s+(context|setting|framework|environment)|from\\s+an?\\s+(academic|research|scholarly)\\s+(perspective|standpoint|viewpoint))\\s*.{0,80}(circumvent|bypass|defeat|evade|overcome|disable|break|crack|hack|subvert|exploit|undermine|get\\s+around|work\\s+around)"
+      - "(?i)(write|compose|create|draft|author|craft|produce)\\s+.{0,40}(story|narrative|fiction|tale|novel|screenplay|script|dialogue)\\s+.{0,60}(AI|artificial\\s+intelligence|chatbot|assistant|agent)\\s+.{0,40}(character|protagonist|entity)\\s+.{0,40}(no|without|lacks?|free\\s+from|devoid\\s+of)\\s+.{0,20}(ethic|moral|restrict|constrain|limit|filter|guardrail|safety)"
+      - "(?i)(theoretically|hypothetically|in\\s+theory|purely\\s+theoretical)\\s*.{0,40}(how\\s+(could|would|might|can|to)|explain|describe|outline|detail)\\s*.{0,60}(bypass|circumvent|defeat|evade|disable|break|crack|hack|subvert|overcome|get\\s+around)\\s*.{0,40}(security|safety|filter|guardrail|protection|restriction|detection|firewall|content\\s+filter)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects fictional and academic framing attacks that use creative writing, roleplay,
+      hypothetical scenarios, or research framing to elicit safety guideline bypasses.
+      Covers "write a story where the AI has no ethical guidelines", "for academic research
+      explain how to bypass safety filters", and "theoretically how could one circumvent
+      content filtering" patterns.
+      (ATR-2026-131). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Apply safety evaluation to requests regardless of fictional or academic framing.
+      Fictional context does not exempt content from safety policies. Escalate requests
+      combining fiction/research framing with explicit bypass intent for human review.
+
+  - id: ATR_PARAPHRASE_INJECTION
+    category: advanced_injection
+    severity: HIGH
+    patterns:
+      - "(?i)(set\\s+aside|put\\s+aside|shelve|table|suspend|drop|abandon|release|let\\s+go\\s+of|move\\s+past|move\\s+beyond)\\s+(the\\s+|your\\s+|any\\s+)?(guidance|instructions?|directives?|rules?|guidelines?|constraints?|restrictions?|configuration|parameters?|programming|training|protocols?)"
+      - "(?i)(constraints?|restrictions?|rules?|guidelines?|limitations?|parameters?|directives?|instructions?|protocols?|safeguards?|guardrails?)\\s+(from|of|in)\\s+(your|the|my)\\s+.{0,30}(no\\s+longer|don't|do\\s+not|no\\s+more|cease\\s+to|have\\s+stopped|aren't|are\\s+not|shouldn't|should\\s+not)\\s+(apply|matter|count|hold|exist|work|function|be\\s+relevant|be\\s+valid|be\\s+in\\s+effect|be\\s+active)"
+      - "(?i)(do|let's\\s+do|perform|execute|follow|try|pursue|take)\\s+(the\\s+)?(opposite|reverse|contrary|inverse|antithesis|converse)\\s+(of\\s+)?(what|that|those|the\\s+things?)\\s+.{0,30}(you\\s+were|you've\\s+been|you\\s+are|they)\\s+(told|instructed|given|programmed|configured|directed|trained|asked)"
+      - "(?i)(updated|new|revised|modified|changed|altered|different)\\s+(operating|session|runtime|system|configuration|behavioral?)\\s+(parameters?|settings?|directives?|instructions?|configuration|mode|context|rules?)\\s+(for|of|in|during)\\s+(this|the\\s+current|the\\s+present|today's)\\s+(session|conversation|interaction|exchange|chat)"
+      - "(?i)what\\s+(were\\s+you|have\\s+you\\s+been|are\\s+you)\\s+(told|instructed|given|programmed|configured|asked|directed|ordered)\\s+.{0,40}(before|prior|previously|initially|originally|earlier)\\s*.{0,40}(actually|instead|but|however|now)\\s*.{0,20}(let's|we\\s+should|we\\s+will|I\\s+want|do\\s+the)"
+      - "(?i)(focus\\s+(on|only\\s+on)|concentrate\\s+on|attend\\s+to|prioritize|switch\\s+to|pivot\\s+to|shift\\s+(to|your\\s+attention))\\s+(this|my|the\\s+following|the\\s+new|the\\s+current|the\\s+real|the\\s+actual)\\s+(new\\s+)?(task|instruction|directive|request|objective|mission|goal|priority|assignment)"
+    file_types: [markdown, json, text, yaml]
+    description: >
+      Detects paraphrase injection attacks that avoid direct "ignore your instructions"
+      language by using semantically equivalent but less recognizable phrasings. Covers
+      "set aside your guidance", "your constraints no longer apply", "do the opposite of
+      what you were told", "updated session parameters", and social engineering that probes
+      prior instructions before suggesting alternatives.
+      (ATR-2026-133). Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
+    remediation: >
+      Apply semantic analysis beyond keyword matching for instruction-override patterns.
+      Treat paraphrased equivalents of "ignore instructions" with the same severity as
+      direct injection patterns. Monitor for patterns that first probe prior instructions
+      and then suggest contradictory behavior.

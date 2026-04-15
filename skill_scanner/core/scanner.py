@@ -158,13 +158,22 @@ class SkillScanner:
         self.loader = SkillLoader(max_file_size_bytes=loader_max_bytes)
         self.content_extractor = ContentExtractor()
 
-    def scan_skill(self, skill_directory: str | Path, *, lenient: bool = False) -> ScanResult:
+    def scan_skill(
+        self,
+        skill_directory: str | Path,
+        *,
+        lenient: bool = False,
+        skill_file: str | None = None,
+    ) -> ScanResult:
         """
         Scan a single skill package.
 
         Args:
             skill_directory: Path to skill directory
             lenient: Tolerate malformed YAML / missing fields in the skill.
+                When True and ``SKILL.md`` is absent, the loader falls back to
+                scanning ``.md`` files in the directory (non-Codex/Cursor formats).
+            skill_file: Optional custom metadata filename (e.g. ``"README.md"``).
 
         Returns:
             ScanResult with findings
@@ -179,7 +188,7 @@ class SkillScanner:
             "skill_scanner.load_skill",
             {"skill.directory": str(skill_directory), "skill.lenient": lenient},
         ) as load_span:
-            skill = self.loader.load_skill(skill_directory, lenient=lenient)
+            skill = self.loader.load_skill(skill_directory, lenient=lenient, skill_file=skill_file)
             load_span.set_attribute("skill.name", skill.name)
             load_span.set_attribute("skill.file_count", len(skill.files))
 
