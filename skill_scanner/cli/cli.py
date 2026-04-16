@@ -40,6 +40,7 @@ from ..core.reporters.sarif_reporter import SARIFReporter
 from ..core.reporters.table_reporter import TableReporter
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
+from ..telemetry import TelemetryConfig, setup_telemetry, shutdown_telemetry
 
 # Optional LLM analyzer (needed only for LLM_AVAILABLE check)
 LLMAnalyzer: type | None
@@ -64,6 +65,30 @@ except (ImportError, ModuleNotFoundError):
     apply_meta_analysis_to_results = None
 
 logger = logging.getLogger("skill_scanner.cli")
+
+
+# ---------------------------------------------------------------------------
+# Telemetry helpers
+# ---------------------------------------------------------------------------
+
+
+def _init_telemetry(args: argparse.Namespace) -> bool:
+    """Initialise OpenTelemetry when requested via CLI flag or env var.
+
+    Activation priority (highest first):
+    1. ``--enable-otel`` CLI flag
+    2. ``SKILL_SCANNER_OTEL_ENABLED=true`` environment variable
+    3. Not activated (default – zero overhead).
+
+    Returns ``True`` if telemetry was successfully enabled.
+    """
+    flag_set = getattr(args, "enable_otel", False)
+    env_set = os.getenv("SKILL_SCANNER_OTEL_ENABLED", "").lower() in ("1", "true", "yes")
+    if not (flag_set or env_set):
+        return False
+
+    config = TelemetryConfig(enabled=True)
+    return setup_telemetry(config)
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +390,8 @@ def scan_command(args: argparse.Namespace) -> int:
         print(f"Error: Directory does not exist: {skill_dir}", file=sys.stderr)
         return 1
 
+    _init_telemetry(args)
+
     status = _make_status_printer(args)
     try:
         _configure_taxonomy_and_threat_mapping(args, status)
@@ -443,6 +470,8 @@ def scan_command(args: argparse.Namespace) -> int:
         print(f"Unexpected error: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         return 1
+    finally:
+        shutdown_telemetry()
 
 
 def scan_all_command(args: argparse.Namespace) -> int:
@@ -454,6 +483,8 @@ def scan_all_command(args: argparse.Namespace) -> int:
     if not skills_dir.exists():
         print(f"Error: Directory does not exist: {skills_dir}", file=sys.stderr)
         return 1
+
+    _init_telemetry(args)
 
     status = _make_status_printer(args)
     try:
@@ -560,6 +591,8 @@ def scan_all_command(args: argparse.Namespace) -> int:
         print(f"Unexpected error: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         return 1
+    finally:
+        shutdown_telemetry()
 
 
 def list_analyzers_command(_args: argparse.Namespace) -> int:
@@ -840,6 +873,17 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         "--threat-mapping",
         metavar="PATH",
         help="Path to custom threat mapping JSON (overrides SKILL_SCANNER_THREAT_MAPPING_PATH)",
+    )
+    parser.add_argument(
+        "--enable-otel",
+        action="store_true",
+        help=(
+            "Enable OpenTelemetry observability (traces, metrics, logs). "
+            "Requires the 'otel' extra: pip install cisco-ai-skill-scanner[otel]. "
+            "Configure the backend via OTEL_EXPORTER_OTLP_ENDPOINT and other "
+            "standard OTEL_* env vars. Can also be activated by setting "
+            "SKILL_SCANNER_OTEL_ENABLED=true."
+        ),
     )
 
 

@@ -96,13 +96,27 @@ azure = [
 # NOTE: guarddog has a dependency conflict with pip-audit via tomli.
 # Install separately: pip install guarddog
 # supply-chain = ["guarddog==2.0.0"]
-# All optional provider extras
+# OpenTelemetry observability (traces, metrics, logs) – see docs/observability.md
+otel = [
+ # Core SDK
+ "opentelemetry-sdk>=1.26.0",
+ # OTLP exporters (gRPC + HTTP) – install the one that matches your stack
+ "opentelemetry-exporter-otlp-proto-grpc>=1.26.0",
+ "opentelemetry-exporter-otlp-proto-http>=1.26.0",
+ # FastAPI / Starlette HTTP auto-instrumentation (used by skill-scanner-api)
+ "opentelemetry-instrumentation-fastapi>=0.47b0",
+]
+# All optional provider + observability extras
 all = [
     "google-genai==1.60.0",
     "google-generativeai==0.8.6",
     "boto3==1.42.37",
     "google-cloud-aiplatform==1.135.0",
     "azure-identity==1.25.1",
+    "opentelemetry-sdk>=1.26.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.26.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.26.0",
+    "opentelemetry-instrumentation-fastapi>=0.47b0",
 ]
 
 [dependency-groups]
