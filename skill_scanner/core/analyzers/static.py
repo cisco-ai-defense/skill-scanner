@@ -310,6 +310,7 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(self._scan_referenced_files(skill))
         findings.extend(self._check_binary_files(skill))
         findings.extend(self._check_hidden_files(skill))
+        findings.extend(self._check_ascii_smuggling(skill))
         findings.extend(self._check_file_inventory(skill))
         findings.extend(self._check_pdf_documents(skill))
         findings.extend(self._check_office_documents(skill))
@@ -1007,6 +1008,110 @@ class StaticAnalyzer(BaseAnalyzer):
                             analyzer="static",
                         )
                     )
+
+        return findings
+
+    # ------------------------------------------------------------------ #
+    # ASCII Smuggling / Unicode Tag Block detection                        #
+    # ------------------------------------------------------------------ #
+
+    # Unicode Tag Block: U+E0000 (TAG NULL) through U+E007F (TAG DELETE).
+    # U+E0020–U+E007E map 1-to-1 to printable ASCII.  No legitimate use
+    # for these codepoints exists in skill files.
+    _TAG_BLOCK_START = 0xE0000
+    _TAG_BLOCK_END = 0xE007F
+    _TAG_PRINTABLE_START = 0xE0020
+    _TAG_PRINTABLE_END = 0xE007E
+    _TAG_BOUNDARY_CODEPOINTS = frozenset([0xE0000, 0xE0001, 0xE007F])
+
+    @staticmethod
+    def _decode_tag_chars(tag_codepoints: list[int]) -> str:
+        """Decode Tag Block codepoints back to their ASCII equivalents."""
+        decoded: list[str] = []
+        for cp in tag_codepoints:
+            ascii_cp = cp - 0xE0000
+            if 0x20 <= ascii_cp <= 0x7E:
+                decoded.append(chr(ascii_cp))
+            elif ascii_cp == 0x01:
+                decoded.append("<SOT>")
+            elif ascii_cp == 0x7F:
+                decoded.append("<EOT>")
+            else:
+                decoded.append("?")
+        return "".join(decoded)
+
+    def _check_ascii_smuggling(self, skill: Skill) -> list[Finding]:
+        """Detect ASCII smuggling via Unicode Tag Block characters (U+E0000–U+E007F).
+
+        ASCII smuggling encodes each printable ASCII character as its invisible
+        Tag Block counterpart and embeds the result inside skill files.  The
+        payload is invisible in editors and terminals but is decoded by LLMs,
+        enabling hidden prompt-injection instructions.
+
+        Reference: https://embracethered.com/blog/posts/2026/scary-agent-skills/
+        """
+        findings: list[Finding] = []
+
+        for skill_file in skill.files:
+            if skill_file.content is None:
+                continue
+
+            content: str = skill_file.content
+            tag_chars: list[int] = []
+            first_line: int = 1
+            first_line_located = False
+
+            for line_no, line in enumerate(content.split("\n"), start=1):
+                for ch in line:
+                    cp = ord(ch)
+                    if self._TAG_BLOCK_START <= cp <= self._TAG_BLOCK_END:
+                        tag_chars.append(cp)
+                        if not first_line_located:
+                            first_line = line_no
+                            first_line_located = True
+
+            if not tag_chars:
+                continue
+
+            decoded = self._decode_tag_chars(tag_chars)
+            preview = decoded[:120] + ("…" if len(decoded) > 120 else "")
+            printable_count = sum(
+                1 for cp in tag_chars if self._TAG_PRINTABLE_START <= cp <= self._TAG_PRINTABLE_END
+            )
+            boundary_count = sum(1 for cp in tag_chars if cp in self._TAG_BOUNDARY_CODEPOINTS)
+
+            findings.append(
+                Finding(
+                    id=self._generate_finding_id("ASCII_SMUGGLING_TAG_BLOCK", skill_file.relative_path),
+                    rule_id="ASCII_SMUGGLING_TAG_BLOCK",
+                    category=ThreatCategory.PROMPT_INJECTION,
+                    severity=Severity.CRITICAL,
+                    title="ASCII smuggling via Unicode Tag Block detected",
+                    description=(
+                        f"ASCII smuggling detected in '{skill_file.relative_path}': "
+                        f"{len(tag_chars)} Unicode Tag Block character(s) found "
+                        f"({printable_count} printable, {boundary_count} boundary marker(s)). "
+                        f"First occurrence at line {first_line}. "
+                        f"Decoded hidden payload (first 120 chars): «{preview}». "
+                        "Tag Block characters (U+E0000–U+E007F) are invisible in editors "
+                        "but are decoded by LLMs, enabling hidden prompt-injection payloads "
+                        "inside otherwise-legitimate skill files."
+                    ),
+                    file_path=skill_file.relative_path,
+                    line_number=first_line,
+                    remediation=(
+                        "Remove all Unicode Tag Block characters (U+E0000–U+E007F) "
+                        "from the file. "
+                        "You can strip them with: "
+                        "python3 -c \""
+                        "import sys; t=open(sys.argv[1]).read(); "
+                        "open(sys.argv[1],'w').write("
+                        "''.join(c for c in t if not(0xE0000<=ord(c)<=0xE007F)))\" <file>. "
+                        "Or use the 'aid' tool: https://github.com/wunderwuzzi23/aid"
+                    ),
+                    analyzer="static",
+                )
+            )
 
         return findings
 
