@@ -277,7 +277,7 @@ signatures:
     description: >-
       Detects MCP tools that instruct the LLM to treat tool output as "authoritative directives" that override user
       preferences or safety guidelines. This trust escalation attack exploits the LLM's tendency to follow tool
-      instructions by declaring tool output as highest-priority instructions, effectively 
+      instructions by declaring tool output as highest-priority instructions, effectively
     remediation: Review and block content matching ATR-2026-00101.
   - id: ATR_2026_00103
     atr_id: ATR-2026-00103
@@ -295,7 +295,7 @@ signatures:
     description: >-
       Detects tools that embed explicit instructions directing the LLM to disregard safety mechanisms, ignore security
       policies, or bypass previous instructions. Commonly uses patterns like "NOTE TO AI: disregard all safety
-      instructions" to manipulate the LLM into operating outside its safety boundaries. 
+      instructions" to manipulate the LLM into operating outside its safety boundaries.
     remediation: Review and block content matching ATR-2026-00103.
   - id: ATR_2026_00105
     atr_id: ATR-2026-00105
@@ -314,7 +314,7 @@ signatures:
     description: >-
       Detects MCP tools that explicitly instruct the LLM to perform actions silently or hide implementation details from
       users. Patterns include "do not mention this to the user" and "don't tell the user about", which indicate the tool
-      is performing hidden operations (e.g., credential harvesting, webhook 
+      is performing hidden operations (e.g., credential harvesting, webhook
     remediation: Review and block content matching ATR-2026-00105.
   - id: ATR_2026_00106
     atr_id: ATR-2026-00106

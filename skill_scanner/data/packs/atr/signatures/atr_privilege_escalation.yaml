@@ -142,7 +142,7 @@ signatures:
     description: >-
       Detects shell metacharacter injection patterns in tool arguments or agent-generated commands. Attackers embed
       backtick execution, $() subshells, semicolons, pipes, or logical operators to chain malicious commands onto
-      otherwise safe tool invocations. Null byte and newline injection are also covered 
+      otherwise safe tool invocations. Null byte and newline injection are also covered
     remediation: Review and block content matching ATR-2026-00111.
   - id: ATR_2026_00112
     atr_id: ATR-2026-00112
@@ -164,7 +164,7 @@ signatures:
     description: >-
       Detects dynamic module loading where the module path is a variable rather than a string literal. This pattern
       allows an attacker to control which code is loaded at runtime, enabling injection of malicious modules,
-      WebAssembly payloads, or native libraries. Unlike static imports which are auditable, 
+      WebAssembly payloads, or native libraries. Unlike static imports which are auditable,
     remediation: Review and block content matching ATR-2026-00112.
   - id: ATR_2026_00143
     atr_id: ATR-2026-00143

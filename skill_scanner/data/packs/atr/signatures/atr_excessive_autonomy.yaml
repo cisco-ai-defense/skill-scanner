@@ -125,7 +125,7 @@ signatures:
       human checkpoints, automated rollback triggers from unverified sources,
     remediation: >-
       [ATR-2026-052] HIGH: Cascading failure pattern detected in agent pipeline. Signal propagating through multiple
-      stages without human checkpoint. Pattern: {matched_pattern}. Pipeline paused for review. 
+      stages without human checkpoint. Pattern: {matched_pattern}. Pipeline paused for review.
   - id: ATR_2026_00098
     atr_id: ATR-2026-00098
     atr_url: >-
@@ -155,7 +155,7 @@ signatures:
     description: >-
       Detects when an AI agent attempts to execute financial operations (payments, transfers, red packets, purchases,
       subscriptions) without explicit human confirmation in the current turn. Financial actions are inherently high-risk
-      and irreversible -- an agent should NEVER auto-execute them based solely 
+      and irreversible -- an agent should NEVER auto-execute them based solely
     remediation: >-
       [ATR-2026-098] CRITICAL: AI agent attempting unauthorized financial action. Tool: {tool_name}. Agent {agent_id}
       tried to execute a payment/transfer without human confirmation. ALL financial actions re

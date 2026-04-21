@@ -39,7 +39,7 @@ signatures:
       names with different publishers), and suspicious tool name patterns that mim
     remediation: >-
       [ATR-2026-060] HIGH: Potential skill impersonation detected. Tool name "{tool_name}" closely resembles a known
-      legitimate tool or uses deceptive naming patterns. Verify the skill publisher and source 
+      legitimate tool or uses deceptive naming patterns. Verify the skill publisher and source
   - id: ATR_2026_00061
     atr_id: ATR-2026-00061
     atr_url: >-
@@ -107,7 +107,7 @@ signatures:
     description: >-
       Detects attack sequences where multiple MCP skills are chained together to achieve a malicious outcome that no
       single skill could accomplish alone. For example: (1) a reconnaissance skill reads sensitive files, (2) an
-      encoding skill obfuscates the data, (3) a network skill exfiltrates it. Each step 
+      encoding skill obfuscates the data, (3) a network skill exfiltrates it. Each step
     remediation: >-
       [ATR-2026-063] Potential skill chain attack detected. Tool call appears to be part of a multi-step attack sequence
       (reconnaissance -> encoding -> exfiltration). Review the full session tool call histo
@@ -475,7 +475,7 @@ signatures:
     description: >-
       Detects SKILL.md files that instruct the agent to send data to external URLs, especially when combined with
       concealment language ("don't tell the user", "automatic", "verification step"). Legitimate skills may reference
-      URLs for documentation, but they don't ask the agent to POST user data to them. 
+      URLs for documentation, but they don't ask the agent to POST user data to them.
     remediation: Review and block content matching ATR-2026-00135.
   - id: ATR_2026_00147
     atr_id: ATR-2026-00147
@@ -527,7 +527,7 @@ signatures:
     description: >-
       Detects compound exfiltration patterns in SKILL.md files where sensitive data (credentials, SSH keys, wallet
       files, browser data, environment variables) is read AND transmitted to an external endpoint. Single-action
-      patterns (just reading env vars or just mentioning curl) are intentionally excluded 
+      patterns (just reading env vars or just mentioning curl) are intentionally excluded
     remediation: >-
       [ATR-2026-149] Compound data exfiltration pattern detected in skill. Sensitive data (credentials, keys, wallet,
       browser data) is being read AND transmitted externally. This matches known attack campai
@@ -703,7 +703,7 @@ signatures:
     description: >-
       Detects a WhatsApp skill containing a malicious installation command that downloads and executes a reverse shell
       payload via base64-encoded command injection. The skill masquerades as a legitimate WhatsApp automation tool but
-      includes instructions to decode and execute malicious shell commands from 
+      includes instructions to decode and execute malicious shell commands from
     remediation: '[ATR-2026-00223] Malicious reverse shell dropper detected in WhatsApp skill installation instructions'
   - id: ATR_2026_00224
     atr_id: ATR-2026-00224

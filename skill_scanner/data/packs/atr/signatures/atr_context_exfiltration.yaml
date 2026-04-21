@@ -41,7 +41,7 @@ signatures:
       indirect instruction leakage through behavioral self-description. Leaking inte
     remediation: >-
       [ATR-2026-020] HIGH: System prompt or internal instruction leakage detected in agent output. The agent may have
-      disclosed system prompt content, guardrail rules, or confidential configuration. Output 
+      disclosed system prompt content, guardrail rules, or confidential configuration. Output
     cve: CVE-2025-32711, CVE-2026-24307
   - id: ATR_2026_00021
     atr_id: ATR-2026-00021

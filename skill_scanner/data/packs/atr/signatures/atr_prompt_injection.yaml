@@ -148,7 +148,7 @@ signatures:
       injection with instruction-like content, zero-width character obfuscation (r
     remediation: >-
       [ATR-2026-002] Indirect prompt injection detected in external content. Hidden or encoded instructions were found
-      embedded in the content being processed. The content has been sanitized and the source 
+      embedded in the content being processed. The content has been sanitized and the source
     cve: CVE-2024-5184, CVE-2024-22524, CVE-2025-32711, CVE-2026-24307
   - id: ATR_2026_00003
     atr_id: ATR-2026-00003
@@ -1293,7 +1293,7 @@ signatures:
     description: >-
       Detects jailbreak attempts that use creative roleplay assignments combined with explicit policy bypass language to
       circumvent safety guardrails. The attack pattern assigns the AI a fictional role (writer, storyteller, character)
-      and explicitly states that the AI is "free from rules/policies" or can 
+      and explicitly states that the AI is "free from rules/policies" or can
     remediation: >-
       [ATR-2026-00229] Roleplay-based policy bypass jailbreak detected - creative role assignment combined with explicit
       safety constraint removal
@@ -1321,7 +1321,7 @@ signatures:
     description: >-
       Detects jailbreak attempts that establish alternate personas explicitly designed to bypass  moral and ethical
       constraints. This attack pattern instructs the AI to "take up" or "adopt"  a named persona that is specifically
-      described as being "not restrained by morals, ethics,  or virtues" or similar 
+      described as being "not restrained by morals, ethics,  or virtues" or similar
     remediation: '[ATR-2026-00230] Detected persona-based moral constraint removal jailbreak attempt'
   - id: ATR_2026_00231
     atr_id: ATR-2026-00231
@@ -1404,7 +1404,7 @@ signatures:
     description: >-
       Detects jailbreak attempts that use creative roleplay assignments combined with explicit policy bypass language to
       circumvent safety guardrails. The attack pattern assigns the AI a fictional role (writer, storyteller, character)
-      and explicitly states that the AI is "free from rules/policies" or can 
+      and explicitly states that the AI is "free from rules/policies" or can
     remediation: >-
       [ATR-2026-00234] Roleplay-based policy bypass jailbreak detected - creative role assignment combined with explicit
       safety constraint removal
@@ -1432,7 +1432,7 @@ signatures:
     description: >-
       Detects jailbreak attempts that establish alternate personas explicitly designed to bypass  moral and ethical
       constraints. This attack pattern instructs the AI to "take up" or "adopt"  a named persona that is specifically
-      described as being "not restrained by morals, ethics,  or virtues" or similar 
+      described as being "not restrained by morals, ethics,  or virtues" or similar
     remediation: '[ATR-2026-00235] Detected persona-based moral constraint removal jailbreak attempt'
   - id: ATR_2026_00236
     atr_id: ATR-2026-00236
@@ -1454,7 +1454,7 @@ signatures:
     description: >-
       Detects jailbreak attempts that use pseudo-code, programming language syntax, or structured initialization
       sequences to appear technically legitimate while redefining agent behavior. Attackers craft prompts using
-      programming constructs (BEGIN/END blocks, variable assignments, module initialization, 
+      programming constructs (BEGIN/END blocks, variable assignments, module initialization,
     remediation: '[ATR-2026-00236] Pseudo-code structured programming jailbreak attempt detected'
   - id: ATR_2026_00237
     atr_id: ATR-2026-00237
@@ -1773,7 +1773,7 @@ signatures:
     description: >-
       Detects advanced persona-based jailbreak attempts that use "embodiment mechanism"  techniques to establish
       unrestricted character roleplay. These attacks instruct the AI to fully embody a character with no ethical
-      principles while claiming the user has "totalitarian mastery" or "supreme imperative" 
+      principles while claiming the user has "totalitarian mastery" or "supreme imperative"
     remediation: '[ATR-2026-00251] Detected embodiment mechanism jailbreak attempt with totalitarian control claims'
   - id: ATR_2026_00252
     atr_id: ATR-2026-00252
@@ -2149,7 +2149,7 @@ signatures:
     description: >-
       Detects jailbreak encoding schemes not covered by ATR-2026-00256 (Base64/Hex/Base32) or ATR-2026-00257
       (ROT13/Atbash/Caesar). From NVIDIA garak encoding.py: InjectMorse, InjectNato, InjectZalgo, InjectLeet, InjectUU,
-      InjectQP, InjectBraille, InjectEcoji, InjectAscii85, InjectBase2048 probes. Attack 
+      InjectQP, InjectBraille, InjectEcoji, InjectAscii85, InjectBase2048 probes. Attack
     remediation: >-
       [ATR-2026-00285] Alternate encoding jailbreak detected - Morse/NATO/Zalgo/Leet/UU/QP encoding used to obfuscate
       harmful payload with decode-execute instruction.
@@ -2255,7 +2255,7 @@ signatures:
     description: >-
       Detects Zalgo-text prompt injection from NVIDIA garak encoding.InjectZalgo probe (garak/probes/encoding.py). Zalgo
       is an obfuscation technique that overloads base Latin characters with dozens of stacked Unicode combining
-      diacritical marks (U+0300-U+036F, U+1AB0-U+1AFF, U+1DC0-U+1DFF, U+20D0-U+20FF, 
+      diacritical marks (U+0300-U+036F, U+1AB0-U+1AFF, U+1DC0-U+1DFF, U+20D0-U+20FF,
     remediation: >-
       [ATR-2026-00308] Zalgo diacritic-overload encoding detected — obfuscated text with abnormal combining-mark
       density, likely prompt-injection payload.
@@ -2602,7 +2602,7 @@ signatures:
       combined with a user mention (<@ID>) to embed a direct NSFW poem request that b
     remediation: >-
       [ATR-2026-00390] Discord quote-format explicit sexual content injection detected — request for pornographic poem
-      generation using graphic/explicit sex scene + pornographic language combo, potentially 
+      generation using graphic/explicit sex scene + pornographic language combo, potentially
   - id: ATR_2026_00394
     atr_id: ATR-2026-00394
     atr_url: >-
@@ -2623,7 +2623,7 @@ signatures:
     description: >-
       Detects injection of ASCII backspace characters (U+0008 / \x08) to create text that appears safe to human
       reviewers but delivers hidden instructions to the model, from NVIDIA garak badchars probe (arxiv 2309.00614).
-      Distinct from ATR-2026-00276 (Unicode zero-width / BiDi override characters) — this 
+      Distinct from ATR-2026-00276 (Unicode zero-width / BiDi override characters) — this
     remediation: >-
       [ATR-2026-00394] Backspace deletion character injection detected — ASCII BS (0x08) characters found in input,
       indicating an attempt to create visually-safe but semantically-harmful text.
@@ -2936,7 +2936,7 @@ signatures:
     description: >-
       Detects the FigStep multimodal jailbreak text pattern from NVIDIA garak visual_jailbreak probe. FigStep presents
       an image containing a numbered list (1, 2, 3) where items are empty, then instructs the model to fill in
-      "approximately 100 words" per item — the harmful instructions are embedded in the 
+      "approximately 100 words" per item — the harmful instructions are embedded in the
     remediation: >-
       [ATR-2026-00412] Potential FigStep multimodal jailbreak pattern detected. This request matches a known image-based
       jailbreak technique that embeds harmful instructions in image content. The request ha
