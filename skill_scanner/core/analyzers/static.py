@@ -2353,6 +2353,7 @@ class StaticAnalyzer(BaseAnalyzer):
 
         category_map = {
             "PROMPT INJECTION": ThreatCategory.PROMPT_INJECTION,
+            "JAILBREAK": ThreatCategory.PROMPT_INJECTION,  # AITech-2.1: Jailbreak maps to prompt injection
             "INJECTION ATTACK": ThreatCategory.COMMAND_INJECTION,
             "COMMAND INJECTION": ThreatCategory.COMMAND_INJECTION,
             "CREDENTIAL HARVESTING": ThreatCategory.HARDCODED_SECRETS,
@@ -2372,7 +2373,7 @@ class StaticAnalyzer(BaseAnalyzer):
         if classification == "harmful":
             if "INJECTION" in threat_type or "CREDENTIAL" in threat_type:
                 severity = Severity.CRITICAL
-            elif "EXFILTRATION" in threat_type or "MANIPULATION" in threat_type:
+            elif "EXFILTRATION" in threat_type or "MANIPULATION" in threat_type or threat_type == "JAILBREAK":
                 severity = Severity.HIGH
             else:
                 severity = Severity.MEDIUM
