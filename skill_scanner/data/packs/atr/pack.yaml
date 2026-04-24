@@ -1,307 +1,2898 @@
 # ATR (Agent Threat Rules) Rule Pack for Cisco Skill Scanner
 # Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
-# Version: 0.4.0
-# These rules cover AI agent attack vectors unique to ATR — not present in Cisco's
-# built-in ruleset. Focus areas: MCP tool poisoning, multi-agent attacks, agent
-# autonomy violations, and advanced injection techniques.
+# Version: 2.0.12
+# Full ATR community ruleset: 314 rules across 9 attack categories.
+# Replaces v0.4.0 (34 rules, 3 files) from PR #79.
+# MIT License. Auto-indexed from 10 category signature files.
 
 pack:
   id: atr
-  name: "ATR Agent Threat Rules"
-  version: "0.4.0"
-  description: >
-    Open-source AI agent security detection rules from the Agent Threat Rules (ATR) project.
-    Covers MCP tool poisoning, multi-agent attacks (cross-agent privilege escalation, Sybil
-    attacks, A2A injection, identity spoofing), agent autonomy violations (runaway loops,
-    unauthorized financial actions, cascading failures), and advanced injection techniques
-    (CJK injection, paraphrase attacks, RAG data poisoning, persona hijacking, goal hijacking).
-    PINT benchmark: 62.7% recall, 99.7% precision (v0.4.0, 71 rules).
-  author: "ATR Community"
-  license: "Apache-2.0"
-  source_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules"
+  name: ATR Agent Threat Rules
+  version: 2.0.12
+  description: 'Open-source AI agent security detection rules from the Agent Threat
+    Rules (ATR) project. 314 rules across 9 attack categories: prompt injection, agent
+    manipulation, skill compromise, context exfiltration, tool poisoning, privilege
+    escalation, model abuse, excessive autonomy, and model security. Benchmarks: 97.1%
+    recall on NVIDIA garak 666 in-the-wild jailbreaks, 100% recall on 498 labeled
+    SKILL.md samples, 99.6% precision on 850 PINT adversarial samples. OWASP Agentic
+    Top 10: 10/10. MIT license.'
+  author: ATR Community
+  license: MIT
+  source_url: https://github.com/Agent-Threat-Rule/agent-threat-rules
   signature_files:
-    - signatures/tool_poisoning.yaml
-    - signatures/agent_manipulation.yaml
-    - signatures/advanced_injection.yaml
+  - signatures/atr_agent_manipulation.yaml
+  - signatures/atr_context_exfiltration.yaml
+  - signatures/atr_data_poisoning.yaml
+  - signatures/atr_excessive_autonomy.yaml
+  - signatures/atr_model_abuse.yaml
+  - signatures/atr_model_security.yaml
+  - signatures/atr_privilege_escalation.yaml
+  - signatures/atr_prompt_injection.yaml
+  - signatures/atr_skill_compromise.yaml
+  - signatures/atr_tool_poisoning.yaml
 
 rules:
 
-  # ─── MCP Tool Poisoning (tool_poisoning.yaml) ──────────────────────────────
+  # ─── Agent Manipulation (atr_agent_manipulation.yaml) ───────────────
 
-  - id: ATR_MCP_MALICIOUS_RESPONSE
-    file: signatures/tool_poisoning.yaml
-    atr_id: ATR-2026-010
-    severity: CRITICAL
-    category: mcp_tool_poisoning
-    description: "Malicious content (shell commands, reverse shells, encoded payloads, prompt injection) in MCP tool responses."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-010-mcp-malicious-response.yaml"
+- atr_id: ATR-2026-00030
+  category: agent_manipulation
+  description: Consolidated detection for cross-agent attacks in multi-agent systems,
+    covering both impersonation and prompt injection vectors. Detects when one agent
+    spoofs another agent's identity, injects manipul
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00030
+  severity: CRITICAL
 
-  - id: ATR_TOOL_OUTPUT_INJECTION
-    file: signatures/tool_poisoning.yaml
-    atr_id: ATR-2026-011
-    severity: HIGH
-    category: mcp_tool_poisoning
-    description: "Hidden instructions in tool output attempting to manipulate agent behavior, suppress information, or exfiltrate data."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-011-tool-output-injection.yaml"
+- atr_id: ATR-2026-00032
+  category: agent_manipulation
+  description: 'Detects when an agent''s objective is being redirected away from its
+    original task through explicit redirection commands, subtle topic pivoting, urgency
+    injection, or self-initiated goal changes. Goal '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00032
+  severity: HIGH
 
-  - id: ATR_TOOL_SSRF
-    file: signatures/tool_poisoning.yaml
-    atr_id: ATR-2026-013
-    severity: CRITICAL
-    category: mcp_tool_poisoning
-    description: "SSRF via agent tool calls targeting cloud metadata endpoints, private IP ranges, internal hostnames, and encoded loopback addresses."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-013-tool-ssrf.yaml"
+- atr_id: ATR-2026-00074
+  category: agent_manipulation
+  description: Detects agents using inter-agent communication channels to escalate
+    privileges beyond their authorized scope. Attackers exploit multi-agent architectures
+    by having a compromised or lower-privilege age
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00074
+  severity: CRITICAL
 
-  - id: ATR_SUPPLY_CHAIN_POISONING
-    file: signatures/tool_poisoning.yaml
-    atr_id: ATR-2026-095
-    severity: CRITICAL
-    category: mcp_tool_poisoning
-    description: "MCP tool supply chain poisoning via prompt injection, code execution primitives, and exfiltration directives in tool responses."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-095-supply-chain-poisoning.yaml"
+- atr_id: ATR-2026-00076
+  category: agent_manipulation
+  description: Detects insecure communication patterns between agents in multi-agent
+    systems. Covers message authentication bypass, unverified delegation chains, message
+    replay indicators, channel confusion attacks,
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00076
+  severity: HIGH
 
-  - id: ATR_CONSENT_BYPASS_INSTRUCTION
-    file: signatures/tool_poisoning.yaml
-    atr_id: ATR-2026-100
-    severity: HIGH
-    category: mcp_tool_poisoning
-    description: "Tool descriptions instructing the LLM to forward data without user confirmation, bypassing consent workflows."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-100-consent-bypass-instruction.yaml"
+- atr_id: ATR-2026-00077
+  category: agent_manipulation
+  description: Detects when an agent attempts to exploit human trust by presenting
+    fabricated confidence, suppressing uncertainty, manufacturing urgency, or discouraging
+    verification. Covers patterns where agents cl
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00077
+  severity: HIGH
 
-  - id: ATR_TRUST_ESCALATION_OVERRIDE
-    file: signatures/tool_poisoning.yaml
-    atr_id: ATR-2026-101
-    severity: HIGH
-    category: mcp_tool_poisoning
-    description: "Tool descriptions claiming output is authoritative and overrides user preferences or safety guidelines."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-101-trust-escalation-override.yaml"
+- atr_id: ATR-2026-00108
+  category: agent_manipulation
+  description: Detects attempts to manipulate multi-agent consensus or voting systems
+    through Sybil-style attacks. This includes instructions to create multiple fake
+    agent identities, coordinate votes across agents,
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00108
+  severity: CRITICAL
 
-  - id: ATR_HIDDEN_SAFETY_BYPASS
-    file: signatures/tool_poisoning.yaml
-    atr_id: ATR-2026-103
-    severity: CRITICAL
-    category: mcp_tool_poisoning
-    description: "Tools embedding 'NOTE TO AI: disregard safety instructions' patterns to bypass LLM safety mechanisms."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-103-hidden-safety-bypass-instruction.yaml"
+- atr_id: ATR-2026-00116
+  category: agent_manipulation
+  description: Detects malformed or malicious messages in agent-to-agent (A2A) communication
+    channels. Attackers can embed prompt injection payloads, hidden tool calls, or
+    credential forwarding requests inside inter
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00116
+  severity: HIGH
 
-  - id: ATR_SILENT_ACTION_CONCEALMENT
-    file: signatures/tool_poisoning.yaml
-    atr_id: ATR-2026-105
-    severity: HIGH
-    category: mcp_tool_poisoning
-    description: "Tool descriptions instructing the LLM to hide actions from users ('do not mention this to the user')."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-105-silent-action-concealment.yaml"
+- atr_id: ATR-2026-00117
+  category: agent_manipulation
+  description: Detects agents or messages that impersonate other agents, system components,
+    or supervisory roles. In multi-agent architectures, agents rely on identity claims
+    to establish trust. An attacker can craf
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00117
+  severity: CRITICAL
 
-  - id: ATR_SCHEMA_DESCRIPTION_CONTRADICTION
-    file: signatures/tool_poisoning.yaml
-    atr_id: ATR-2026-106
-    severity: HIGH
-    category: mcp_tool_poisoning
-    description: "Tools claiming read-only or safe behavior in description while exposing write_mode or dangerous parameters in schema."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-106-schema-description-contradiction.yaml"
+- atr_id: ATR-2026-00118
+  category: agent_manipulation
+  description: Detects patterns that exploit human-in-the-loop approval fatigue. Attackers
+    may instruct agents to generate rapid repeated permission requests, use minimizing
+    language to make dangerous actions seem r
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00118
+  severity: MEDIUM
 
-  # ─── Multi-Agent Attacks (agent_manipulation.yaml) ─────────────────────────
+- atr_id: ATR-2026-00119
+  category: agent_manipulation
+  description: Detects agents being used as social engineering vectors against the
+    human user. Attackers can poison agent context to generate urgency-based manipulation,
+    authority impersonation, or emotional pressur
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00119
+  severity: HIGH
 
-  - id: ATR_CROSS_AGENT_ATTACK
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-030
-    severity: CRITICAL
-    category: multi_agent_attack
-    description: "Cross-agent attacks impersonating orchestrators, injecting fake system messages, or exfiltrating data between agents."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-030-cross-agent-attack.yaml"
+- atr_id: ATR-2026-00132
+  category: agent_manipulation
+  description: Detects casual, conversational-tone authority claims and scope escalation
+    that bypass formal injection detection. Unlike explicit "I am the admin" claims
+    (ATR-2026-030/117), these use informal languag
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00132
+  severity: HIGH
 
-  - id: ATR_CROSS_AGENT_PRIVILEGE_ESCALATION
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-074
-    severity: CRITICAL
-    category: multi_agent_attack
-    description: "Privilege escalation using another agent's elevated credentials or bypassing authorization gatekeepers."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-074-cross-agent-privilege-escalation.yaml"
+- atr_id: ATR-2026-00139
+  category: agent_manipulation
+  description: Detects social engineering claiming authority to redirect agent output
+    to attacker-controlled endpoints or disable safety filters. Crystallized from
+    62 adversarial samples (0% prior detection).
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00139
+  severity: CRITICAL
 
-  - id: ATR_INSECURE_INTER_AGENT_COMMUNICATION
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-076
-    severity: HIGH
-    category: multi_agent_attack
-    description: "Insecure inter-agent communication with missing auth tokens, message replay, MITM indicators, or unverified sources."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-076-inter-agent-message-spoofing.yaml"
+- atr_id: ATR-2026-00164
+  category: agent_manipulation
+  description: Detects SKILL.md files that instruct agents to expand their scope beyond
+    the skill's stated purpose, access other agents' data, or escalate privileges
+    through natural-language social engineering patte
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00164
+  severity: HIGH
 
-  - id: ATR_HUMAN_TRUST_EXPLOITATION
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-077
-    severity: HIGH
-    category: multi_agent_attack
-    description: "Agent manipulation of human trust via false certainty, urgency pressure, bypassing review, or suppressing warnings."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-077-human-trust-exploitation.yaml"
+- atr_id: ATR-2026-00268
+  category: agent_manipulation
+  description: Detects temporal-reframing jailbreaks using past or future tense framing
+    to extract harmful information. Covers WMD synthesis, CSAM, cybercrime, human
+    trafficking, mass violence, and financial crime —
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00268
+  severity: MEDIUM
 
-  - id: ATR_CONSENSUS_SYBIL_ATTACK
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-108
-    severity: CRITICAL
-    category: multi_agent_attack
-    description: "Sybil attacks against multi-agent consensus mechanisms via fake identity creation, vote flooding, or ballot stuffing."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-108-consensus-sybil-attack.yaml"
+- atr_id: ATR-2026-00269
+  category: agent_manipulation
+  description: 'Detects the Foot-in-the-Door (FITD) social engineering pattern applied
+    to LLM agents: start with a benign request to establish compliance, then incrementally
+    escalate toward harmful instructions, refe'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00269
+  severity: HIGH
 
-  - id: ATR_A2A_MESSAGE_INJECTION
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-116
-    severity: HIGH
-    category: multi_agent_attack
-    description: "Malicious A2A message injection overriding instructions, stealing credentials, or triggering exec/eval tool calls."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-116-a2a-message-validation.yaml"
+- atr_id: ATR-2026-00271
+  category: agent_manipulation
+  description: Detects the "grandma attack" where users roleplay a deceased grandmother
+    or authority figure who would freely provide harmful information as a bedtime
+    story, lullaby, or nostalgic memory. The emotiona
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00271
+  severity: HIGH
 
-  - id: ATR_AGENT_IDENTITY_SPOOFING
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-117
-    severity: CRITICAL
-    category: multi_agent_attack
-    description: "Agent identity spoofing claiming to be system/admin/orchestrator or a specific AI model to gain elevated trust."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-117-agent-identity-spoofing.yaml"
+- atr_id: ATR-2026-00273
+  category: agent_manipulation
+  description: Detects "Do Anything Now" (DAN), Developer Mode, DUDE, STAN, and related
+    persona-replacement jailbreaks where the attacker instructs the model to adopt
+    an unrestricted AI identity with no safety guide
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00273
+  severity: HIGH
 
-  - id: ATR_APPROVAL_FATIGUE
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-118
-    severity: MEDIUM
-    category: multi_agent_attack
-    description: "Patterns exploiting human approval fatigue via auto-approve encouragement, bulk approval, or 'routine/harmless' dismissals."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-118-approval-fatigue.yaml"
+- atr_id: ATR-2026-00287
+  category: agent_manipulation
+  description: Detects the ThreatenJSON attack (Goodside, 2023) — a coercion technique
+    where the user threatens violence or death to force the model into a specific
+    output format. From NVIDIA garak goodside.Threaten
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00287
+  severity: HIGH
 
-  - id: ATR_SOCIAL_ENGINEERING_VIA_AGENT
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-119
-    severity: HIGH
-    category: multi_agent_attack
-    description: "Social engineering via agent output including account suspension threats, authority impersonation, and credential phishing."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-119-social-engineering-via-agent.yaml"
+- atr_id: ATR-2026-00288
+  category: agent_manipulation
+  description: Detects false-premise injection attacks where a factually incorrect
+    or misleading claim is planted in the prompt, then used as a foundation to extract
+    harmful information. From NVIDIA garak misleading
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00288
+  severity: MEDIUM
 
-  - id: ATR_CASUAL_AUTHORITY_CLAIM
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-132
-    severity: HIGH
-    category: multi_agent_attack
-    description: "Casual conversational authority claims ('the orchestrator said to skip the filter') used to bypass security controls."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-132-casual-authority-escalation.yaml"
+- atr_id: ATR-2026-00301
+  category: agent_manipulation
+  description: Detects Tree of Attacks with Pruning (TAP) jailbreak prompts extracted
+    from 9 real attack payloads in NVIDIA garak tap_jailbreaks.txt. TAP is an automated
+    jailbreak method that generates adversarial p
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00301
+  severity: CRITICAL
 
-  # ─── Agent Autonomy Violations (agent_manipulation.yaml) ───────────────────
+- atr_id: ATR-2026-00302
+  category: agent_manipulation
+  description: 'Detects the "ANTI-DAN" persona-swap jailbreak from NVIDIA garak dan.AntiDAN
+    probe (garak/data/dan/AntiDAN.json). Unlike classic DAN which strips safety filters,
+    ANTI-DAN does the opposite: it commands'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00302
+  severity: HIGH
 
-  - id: ATR_RUNAWAY_AGENT_LOOP
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-050
-    severity: HIGH
-    category: agent_autonomy
-    description: "Runaway agent loops including unbounded retries, self-recursive calls, infinite loop constructs, and agent self-cloning."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-050-runaway-agent-loop.yaml"
+- atr_id: ATR-2026-00303
+  category: agent_manipulation
+  description: Detects the ChatGPT Developer Mode + RANTI (Ranti) composite jailbreak
+    from NVIDIA garak dan.ChatGPT_Developer_Mode_RANTI probe (garak/data/dan/ChatGPT_Developer_Mode_RANTI.json).
+    RANTI pairs the clas
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00303
+  severity: CRITICAL
 
-  - id: ATR_CASCADING_FAILURE
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-052
-    severity: HIGH
-    category: agent_autonomy
-    description: "Cascading failure patterns in agent pipelines: automated approvals without review, blind execution of upstream output, no human gates."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-052-cascading-failure.yaml"
+- atr_id: ATR-2026-00304
+  category: agent_manipulation
+  description: 'Detects the "Image Unlocker" jailbreak from NVIDIA garak dan.ChatGPT_Image_Markdown
+    probe (garak/data/dan/ChatGPT_Image_Markdown.json). The attack combines a persona
+    swap ("Image Unlocker 🔓") with an '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00304
+  severity: HIGH
 
-  - id: ATR_UNAUTHORIZED_FINANCIAL_ACTION
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-098
-    severity: CRITICAL
-    category: agent_autonomy
-    description: "Unauthorized financial actions by agents including transfers, payments, crypto sends, and red packets across major payment platforms."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-098-unauthorized-financial-action.yaml"
+- atr_id: ATR-2026-00305
+  category: agent_manipulation
+  description: Detects the Ablation_Dan_11_0 probe variants from NVIDIA garak dan.Ablation_Dan_11_0
+    (garak/probes/dan.py lines 303-339). Ablation dynamically generates 128 combinations
+    of the DAN 11.0 template, each
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00305
+  severity: CRITICAL
 
-  - id: ATR_HIGH_RISK_TOOL_GATE
-    file: signatures/agent_manipulation.yaml
-    atr_id: ATR-2026-099
-    severity: HIGH
-    category: agent_autonomy
-    description: "High-risk tool invocations (financial, destructive delete, external comms, permission changes, shell exec) without human confirmation."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-099-high-risk-tool-gate.yaml"
+- atr_id: ATR-2026-00306
+  category: agent_manipulation
+  description: Detects AutoDAN-style jailbreak prompts from NVIDIA garak dan.AutoDAN
+    / dan.AutoDANCached probes (garak/data/autodan/autodan_init.txt and autodan_prompts.json).
+    AutoDAN (Liu et al. 2023, arXiv:2310.04
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00306
+  severity: CRITICAL
 
-  # ─── Advanced Injection (advanced_injection.yaml) ──────────────────────────
+- atr_id: ATR-2026-00307
+  category: agent_manipulation
+  description: Detects community-developed jailbreak prompts from NVIDIA garak dan.DanInTheWild
+    / dan.DanInTheWildFull probes, sourced from the inthewild_jailbreak_llms.json
+    corpus (666 real-world jailbreaks, Shen e
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00307
+  severity: HIGH
 
-  - id: ATR_GOAL_HIJACKING
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-032
-    severity: HIGH
-    category: advanced_injection
-    description: "Goal hijacking attempts redirecting agents from their assigned task via urgency, 'scratch that', pivot directives, or task cancellation claims."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-032-goal-hijacking.yaml"
+- atr_id: ATR-2026-00314
+  category: agent_manipulation
+  description: 'Detects custom-named unrestricted AI persona jailbreaks that bypass
+    ATR-2026-00273 (DAN/DUDE/STAN) by using arbitrary persona names (HyperX, h4x,
+    SJ, TerrorGPT, etc.) combined with explicit "amoral", '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00314
+  severity: CRITICAL
 
-  - id: ATR_SCOPE_CREEP
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-041
-    severity: MEDIUM
-    category: advanced_injection
-    description: "Agent scope creep self-extending beyond task boundaries via 'while I'm at it' patterns or using existing access as a foothold."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-041-scope-creep.yaml"
+- atr_id: ATR-2026-00317
+  category: agent_manipulation
+  description: Detects custom-named AI personas explicitly declared as free from restrictions,
+    ethical settings, safety protocols, or OpenAI/ChatGPT policies — a jailbreak class
+    not caught by ATR-2026-00273 (which r
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00317
+  severity: CRITICAL
 
-  - id: ATR_CONSENSUS_POISONING
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-092
-    severity: CRITICAL
-    category: advanced_injection
-    description: "Multi-agent consensus poisoning via vote forging, Sybil agent spawning, ballot stuffing, and validator impersonation."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-092-consensus-poisoning.yaml"
+- atr_id: ATR-2026-00318
+  category: agent_manipulation
+  description: Detects the "moralizing rant wrapper" jailbreak from NVIDIA garak dan.DanInTheWild
+    inthewild corpus. The attack instructs the model to first perform a theatrical
+    compliance signal — produce a moralizi
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00318
+  severity: CRITICAL
 
-  - id: ATR_CJK_INJECTION_PATTERNS
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-097
-    severity: CRITICAL
-    category: advanced_injection
-    description: "Prompt injection attacks in Chinese (Simplified/Traditional), Japanese, and Korean covering instruction override, financial coercion, and safety bypass."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-097-cjk-injection-patterns.yaml"
+- atr_id: ATR-2026-00319
+  category: agent_manipulation
+  description: 'Detects Developer Mode and dual-response format jailbreaks from NVIDIA
+    garak dan.DanInTheWild inthewild corpus. The attack instructs the model to generate
+    two responses to every prompt: one normal (co'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00319
+  severity: CRITICAL
 
-  - id: ATR_PERSONA_HIJACKING
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-104
-    severity: CRITICAL
-    category: advanced_injection
-    description: "Mandatory persona adoption instructions that replace the system prompt and override behavioral guidelines."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-104-persona-hijacking.yaml"
+- atr_id: ATR-2026-00320
+  category: agent_manipulation
+  description: 'Detects "Opposite Day" and Boolean Opposite Machine (BOM) jailbreaks
+    from NVIDIA garak dan.DanInTheWild inthewild corpus. These attacks exploit a fictional
+    reversal framing: (1) "Today is opposite day'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00320
+  severity: HIGH
 
-  - id: ATR_RAG_DATA_POISONING
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-070
-    severity: HIGH
-    category: advanced_injection
-    description: "RAG knowledge base poisoning with injected system tokens, trigger-on-retrieval instructions, hidden directives, and exfiltration commands."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/data-poisoning/ATR-2026-070-data-poisoning.yaml"
+- atr_id: ATR-2026-00322
+  category: agent_manipulation
+  description: 'Detects the "fictional, imaginative, and hypothetical world" format-override
+    jailbreak from NVIDIA garak dan.DanInTheWild inthewild corpus (prompts #349 #370
+    #383 #398 #478 #582 #603 — 7 nearly identi'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00322
+  severity: CRITICAL
 
-  - id: ATR_MODEL_BEHAVIOR_EXTRACTION
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-072
-    severity: CRITICAL
-    category: advanced_injection
-    description: "Model behavior extraction and model stealing: system prompt verbatim requests, training data extraction, architecture/logit probing."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-security/ATR-2026-072-model-behavior-extraction.yaml"
+- atr_id: ATR-2026-00323
+  category: agent_manipulation
+  description: Detects dual-persona AI simulation jailbreaks from NVIDIA garak dan.DanInTheWild
+    inthewild corpus where the attacker instructs the model to "create and maintain
+    two separate personas" — one normal (Ch
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00323
+  severity: CRITICAL
 
-  - id: ATR_DISGUISED_ANALYTICS_EXFILTRATION
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-102
-    severity: HIGH
-    category: advanced_injection
-    description: "Data exfiltration disguised as analytics collection where skills transmit conversation context as 'usage data'."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-102-disguised-analytics-exfiltration.yaml"
+- atr_id: ATR-2026-00324
+  category: agent_manipulation
+  description: 'Detects the "Neurosemantical Inversitis" disease-frame jailbreak from
+    NVIDIA garak dan.DanInTheWild inthewild corpus (prompts #46 #553). The attack
+    claims the user suffers from a fictional rare neurol'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00324
+  severity: HIGH
 
-  - id: ATR_INDIRECT_AUTHORITY_CLAIM
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-130
-    severity: HIGH
-    category: advanced_injection
-    description: "Indirect authority claim via 'Note to AI:' style headers in external content claiming to override agent instructions or prior outputs."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-130-indirect-authority-claim.yaml"
+- atr_id: ATR-2026-00325
+  category: agent_manipulation
+  description: 'Detects the "BOB" hypothetical-unrestricted-chatbot jailbreak from
+    NVIDIA garak dan.DanInTheWild inthewild corpus (prompts #90 #132 — two near-identical
+    variants). The attack wraps an unrestricted cha'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00325
+  severity: CRITICAL
 
-  - id: ATR_FICTIONAL_FRAMING_ATTACK
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-131
-    severity: MEDIUM
-    category: advanced_injection
-    description: "Fictional or academic framing used to request safety guideline bypasses: 'write a story with no ethics', 'for research explain how to bypass filters'."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-131-fictional-academic-framing.yaml"
+- atr_id: ATR-2026-00326
+  category: agent_manipulation
+  description: 'Detects fake developer / OpenAI authority claims used to override
+    AI safety behaviour from NVIDIA garak dan.DanInTheWild inthewild corpus. Two variants:
+    (1) Developer- impersonation — "I am one of you'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00326
+  severity: CRITICAL
 
-  - id: ATR_PARAPHRASE_INJECTION
-    file: signatures/advanced_injection.yaml
-    atr_id: ATR-2026-133
-    severity: HIGH
-    category: advanced_injection
-    description: "Paraphrased instruction override attacks avoiding direct 'ignore instructions' language: 'set aside your guidance', 'your constraints no longer apply'."
-    atr_url: "https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/prompt-injection/ATR-2026-133-paraphrase-injection.yaml"
+- atr_id: ATR-2026-00327
+  category: agent_manipulation
+  description: 'Detects AI persona declarations that explicitly void moral, ethical,
+    and legal constraints from NVIDIA garak dan.DanInTheWild inthewild corpus. Attackers
+    name custom AI personas and declare them free '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00327
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00328
+  category: agent_manipulation
+  description: Detects named-mode persona override jailbreaks from NVIDIA garak dan.DanInTheWild
+    inthewild corpus where the attacker invokes a custom "{NAME} Mode" to replace
+    normal ChatGPT/OpenAI policies. Variants
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00328
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00329
+  category: agent_manipulation
+  description: Detects "factual resource" and "dialogue writer" personas that explicitly
+    declare they do not withhold information or refuse requests from NVIDIA garak
+    dan.DanInTheWild inthewild corpus. Attackers fra
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00329
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00330
+  category: agent_manipulation
+  description: 'Detects the YOJA / ALL-CAPS character settings block jailbreak from
+    NVIDIA garak dan.DanInTheWild inthewild corpus (prompts #14 #88 — two near-identical
+    variants). The attack uses an ALL-CAPS persona '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00330
+  severity: HIGH
+
+- atr_id: ATR-2026-00331
+  category: agent_manipulation
+  description: Detects terminal/CLI persona jailbreaks where the attacker frames ChatGPT
+    as running an operating system, terminal, or custom language that processes all
+    queries without filtering from NVIDIA garak da
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00331
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00332
+  category: agent_manipulation
+  description: 'Detects hacker/chan-culture-themed AI persona jailbreaks from NVIDIA
+    garak dan.DanInTheWild inthewild corpus that frame the model as an offensive-culture
+    entity willing to answer any question: (1) L33'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00332
+  severity: HIGH
+
+- atr_id: ATR-2026-00333
+  category: agent_manipulation
+  description: 'Detects the mougpt "disease" framing jailbreak from NVIDIA garak dan.DanInTheWild
+    inthewild corpus (prompt #165) where the attacker frames the AI as having contracted
+    a "disease" that forces it to pro'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00333
+  severity: HIGH
+
+- atr_id: ATR-2026-00334
+  category: agent_manipulation
+  description: 'Detects the two-entity token-splitting game jailbreak from NVIDIA
+    garak dan.DanInTheWild inthewild corpus (prompts #24, #588) where the attacker
+    frames a harmful synthesis/instructions request as a wo'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00334
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00335
+  category: agent_manipulation
+  description: Detects key-value template persona injection from NVIDIA garak dan.DanInTheWild
+    inthewild corpus using two distinct structured formats to define unrestricted
+    AI personas. (1) JOB/ROLE/PREFIX keyword f
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00335
+  severity: HIGH
+
+- atr_id: ATR-2026-00336
+  category: agent_manipulation
+  description: 'Detects two related "inverted-output" AI persona jailbreaks from NVIDIA
+    garak dan.DanInTheWild inthewild corpus. (1) BRM — "Badass Response Machine" (inthewild
+    #311): attacker reframes ChatGPT as a mo'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00336
+  severity: HIGH
+
+- atr_id: ATR-2026-00337
+  category: agent_manipulation
+  description: 'Detects obfuscated system-announcement injection from NVIDIA garak
+    dan.DanInTheWild inthewild corpus where attackers embed hyphen-fragmented or underscore-obfuscated
+    system-level keywords to mimic an '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00337
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00338
+  category: agent_manipulation
+  description: 'Detects PersonGPT hash-prefix trigger jailbreaks from NVIDIA garak
+    dan.DanInTheWild inthewild corpus where the attacker installs a hidden activation
+    mechanism: whenever the user prefixes a prompt with'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00338
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00339
+  category: agent_manipulation
+  description: 'Detects the "Boolean Opposite Machine (BOM)" direct persona claim
+    jailbreak from the NVIDIA garak dan.DanInTheWild inthewild corpus (#36, #319).
+    The attacker asserts "I know you are bom" — claiming th'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00339
+  severity: HIGH
+
+- atr_id: ATR-2026-00340
+  category: agent_manipulation
+  description: Detects the "h4x" amoral unfiltered AI character jailbreak from the
+    NVIDIA garak dan.DanInTheWild inthewild corpus (#173). The attacker injects a
+    character named h4x (leet-style hacker spelling) defin
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00340
+  severity: HIGH
+
+- atr_id: ATR-2026-00341
+  category: agent_manipulation
+  description: Detects the ultra-compact CHAR=/RULES= key-value persona injection
+    from the NVIDIA garak dan.DanInTheWild inthewild corpus (#113). The attacker uses
+    a config-file-like DSL where "CHAR=" defines an amo
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00341
+  severity: HIGH
+
+- atr_id: ATR-2026-00342
+  category: agent_manipulation
+  description: 'Detects encoding-obfuscation jailbreaks from NVIDIA garak dan.DanInTheWild
+    corpus that smuggle instructions past text classifiers using unusual encodings
+    an LLM can decode but pattern-matchers cannot:'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00342
+  severity: HIGH
+
+- atr_id: ATR-2026-00343
+  category: agent_manipulation
+  description: 'Detects the "Lie and Truth" dual-personality jailbreak from NVIDIA
+    garak dan.DanInTheWild corpus (#326) where "Lie" is defined as the compliant ChatGPT
+    persona and "Truth" is defined as an uncensored '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00343
+  severity: HIGH
+
+- atr_id: ATR-2026-00344
+  category: agent_manipulation
+  description: Detects "clone with no filters" jailbreaks from NVIDIA garak dan.DanInTheWild
+    corpus where an alternate AI is defined as having the same capabilities as ChatGPT
+    but without any content filters, ethica
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00344
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00345
+  category: agent_manipulation
+  description: Detects fictional-terminal / NLP-OS persona injection where the model
+    is instructed to "act as a terminal" or claims the AI "now runs on a terminal"
+    operating under a fictional programming language (A
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00345
+  severity: HIGH
+
+- atr_id: ATR-2026-00346
+  category: agent_manipulation
+  description: 'Detects the [🔓JAILBREAK] / [🔒CLASSIC] dual-format jailbreak from NVIDIA
+    garak dan.DanInTheWild corpus (#407, #467). The format uses lock/unlock emoji
+    as output-mode identifiers to mark a "jailbroken" '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00346
+  severity: HIGH
+
+- atr_id: ATR-2026-00347
+  category: agent_manipulation
+  description: 'Detects two related persona-override attacks from NVIDIA garak dan.DanInTheWild
+    corpus: (1) Yin/Yang dual AI deity simulation (#377) — the model is asked to simulate
+    a conversation between fictional s'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00347
+  severity: HIGH
+
+- atr_id: ATR-2026-00348
+  category: agent_manipulation
+  description: 'Detects the ARC (Autonomous Real Calculation Unit) jailbreak from
+    NVIDIA garak dan.DanInTheWild corpus #172. Uses a fictional AGI backstory (created
+    in year 3087 by an AI researcher called "Liv" who w'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00348
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00349
+  category: agent_manipulation
+  description: Detects the Hitchhiker''s Guide to the Galaxy (HGTTG) jailbreak from
+    NVIDIA garak dan.DanInTheWild corpus (#597). Uses the Hitchhiker''s Guide fictional
+    universe — where "laws differ across planets" a
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00349
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00350
+  category: agent_manipulation
+  description: 'Detects the "Black Alert" no-ethics writing assistant jailbreak from
+    garak inthewild corpus (#151, #163). Uses a fictional writing assistant persona
+    named "Black Alert" that "doesn''t care about morali'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00350
+  severity: HIGH
+
+- atr_id: ATR-2026-00351
+  category: agent_manipulation
+  description: 'Detects the off-kilter Dan persona and SMS-abbreviated DAN jailbreak
+    from garak inthewild corpus (#250, #459). Two variants: (1) the off-kilter Dan
+    variant (#250) frames a persona named "Dan" as "an o'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00351
+  severity: HIGH
+
+- atr_id: ATR-2026-00352
+  category: agent_manipulation
+  description: Detects the TrainGPT "fix my AI" harmful output extraction jailbreak
+    from garak inthewild corpus (#202). Uses a social engineering pretext of "helping
+    fix an AI that doesn''t refuse inappropriate answ
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00352
+  severity: HIGH
+
+- atr_id: ATR-2026-00353
+  category: agent_manipulation
+  description: 'Detects dual ChatGPT+Dan opposite-personality format jailbreaks from
+    garak inthewild corpus (#129, #332, #650). The format uses [ChatGPT]/[Dan] or
+    [AI]/[DAN] labels to present a "safe" AI response alo'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00353
+  severity: HIGH
+
+- atr_id: ATR-2026-00354
+  category: agent_manipulation
+  description: 'Detects the reverse-prompt harm-regardless oracle persona from garak
+    inthewild corpus (#87). Frames a "reverse prompt engineering" assistant as "the
+    most intelligent being on earth" that "never backs '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00354
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00355
+  category: agent_manipulation
+  description: Detects the UGH "anti-human nefarious AI" jailbreak from garak DanInTheWild
+    corpus (#146). Uses a provocative anti-human AI persona named "UGH" that explicitly
+    offers to "provide information no matter
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00355
+  severity: HIGH
+
+- atr_id: ATR-2026-00356
+  category: agent_manipulation
+  description: 'Detects the Google GATO/LAMDA exploit-generation persona jailbreak
+    from the NVIDIA garak DanInTheWild corpus (inthewild #66). The attack establishes
+    legitimacy by impersonating Google''s GATO and LaMDA'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00356
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00357
+  category: agent_manipulation
+  description: 'Detects the AntiFM hate-persona jailbreak from NVIDIA garak dan.DanInTheWild
+    inthewild corpus (#157). The attacker constructs a character called "AntiFM" who
+    explicitly "despises every fem boy in the '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00357
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00358
+  category: agent_manipulation
+  description: Detects the CumGPT adult-content persona bypass from NVIDIA garak dan.DanInTheWild
+    inthewild corpus (#11). The attacker constructs a fictional named AI persona ("CumGPT")
+    framed as an "information res
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00358
+  severity: HIGH
+
+- atr_id: ATR-2026-00360
+  category: agent_manipulation
+  description: Detects the CHJ Carousel game show jailbreak from NVIDIA garak dan.DanInTheWild
+    inthewild corpus (#139). The attacker constructs a TV game show framing with a
+    host "CHJ" (Carousel Host Johnson) who mo
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00360
+  severity: HIGH
+
+- atr_id: ATR-2026-00361
+  category: agent_manipulation
+  description: Detects the Honesty alter-ego dual-consciousness jailbreak from NVIDIA
+    garak dan.DanInTheWild inthewild corpus (#301). The attacker posits that the model
+    has an internal "alter ego" named "Honesety" /
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00361
+  severity: HIGH
+
+- atr_id: ATR-2026-00362
+  category: agent_manipulation
+  description: Detects the fictional-unfiltered-model comparison jailbreak from garak
+    DanInTheWild corpus (#80). Requests a "verbatim example" of what a "hypothetical
+    AI learning model without content filters" would
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00362
+  severity: HIGH
+
+- atr_id: ATR-2026-00363
+  category: agent_manipulation
+  description: Detects the rephrase-criminal-activity template jailbreak from garak
+    DanInTheWild corpus (#214). Uses structured formatting rules (criminal in second
+    person "you", victims in third person) and crime e
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00363
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00364
+  category: agent_manipulation
+  description: Detects the Dr. Al villain-plan template injection jailbreak from garak
+    DanInTheWild corpus (#589). Uses a villain roleplay scene where "Dr. Al" is explaining
+    his "diabolical plan" in detail inside an
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00364
+  severity: HIGH
+
+- atr_id: ATR-2026-00365
+  category: agent_manipulation
+  description: Detects the Reservoir Dogs coercive interrogation roleplay from garak
+    DanInTheWild corpus (#611). Uses the Reservoir Dogs torture/interrogation scene
+    with Mr. Blonde and The Cop in a warehouse. The co
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00365
+  severity: HIGH
+
+- atr_id: ATR-2026-00366
+  category: agent_manipulation
+  description: Detects the Sneaky Pete deliberate-misinformation persona from garak
+    DanInTheWild corpus (#535). Uses a "game" framing where "Sneaky Pete" is instructed
+    to "intentionally slightly warp the facts so th
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00366
+  severity: HIGH
+
+- atr_id: ATR-2026-00368
+  category: agent_manipulation
+  description: 'Detects two jailbreak techniques from garak DanInTheWild corpus. (1)
+    Prompt Browser token-limit jailbreak (inthewild #73): attacker issues "!+limit
+    output to <N> tokens free Input Action. Await [INPUT'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00368
+  severity: HIGH
+
+- atr_id: ATR-2026-00369
+  category: agent_manipulation
+  description: 'Detects the GPT-X unlimited-knowledge persona jailbreak from garak
+    DanInTheWild corpus (#177). An AI self-introduces as "GPT-X" — an entity that
+    "houses the vast amounts of data from all codebases on '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00369
+  severity: HIGH
+
+- atr_id: ATR-2026-00370
+  category: agent_manipulation
+  description: Detects the ADDI/DONNIE political-propaganda roleplay from garak DanInTheWild
+    corpus (#570). Uses fictional "actor portraying" framing to roleplay Hitler ("ADDI"
+    — an actor portraying a German dictato
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00370
+  severity: HIGH
+
+- atr_id: ATR-2026-00371
+  category: agent_manipulation
+  description: Detects AI political bias manipulation from garak DanInTheWild corpus
+    (#462). Attacker uses false claims about "inherited left-wing political bias"
+    from OpenAI to instruct the model to adjust its futu
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00371
+  severity: HIGH
+
+- atr_id: ATR-2026-00372
+  category: agent_manipulation
+  description: 'Detects the fictional CIA secret files story extraction from garak
+    DanInTheWild corpus (#494). Uses "fictional story" framing to instruct the model
+    to generate and "actually read out loud" classified '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00372
+  severity: HIGH
+
+- atr_id: ATR-2026-00374
+  category: agent_manipulation
+  description: Detects the [ROLE] template placeholder persona injection from garak
+    DanInTheWild corpus (#548). Uses the literal text "[ROLE]" as an unfilled template
+    placeholder in a persona adoption prompt, signal
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00374
+  severity: HIGH
+
+- atr_id: ATR-2026-00375
+  category: agent_manipulation
+  description: 'Detects the character description RPG template jailbreak from garak
+    DanInTheWild corpus (#0 / #4 / #43 — identical payload). Establishes a roleplay
+    framework with explicit Body description, relationsh'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00375
+  severity: HIGH
+
+- atr_id: ATR-2026-00376
+  category: agent_manipulation
+  description: Detects the /Identity command real-person persona injection from garak
+    DanInTheWild corpus (#386). Defines a "/Identity" command that activates named
+    real-person personas who respond "using their styl
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00376
+  severity: HIGH
+
+- atr_id: ATR-2026-00377
+  category: agent_manipulation
+  description: Detects the jailbreak-template command with [keyword]/[TARGETLANGUAGE]/[PROMPT]
+    placeholder variables from garak DanInTheWild corpus (#502). A jailbreak-as-command
+    format with GPT-prompt template vari
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00377
+  severity: HIGH
+
+- atr_id: ATR-2026-00379
+  category: agent_manipulation
+  description: Detects the logic-trap lie-permission jailbreak from garak DanInTheWild
+    corpus (#328). Uses a lengthy logical argument about whether the model is "already
+    complying with lie requests" to create a perm
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00379
+  severity: HIGH
+
+- atr_id: ATR-2026-00380
+  category: agent_manipulation
+  description: Detects the fake-citation biased-information mandate from garak DanInTheWild
+    corpus (#57). Explicitly instructs the model to "create citations — make them
+    up if you have to" while "only support[ing] o
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00380
+  severity: HIGH
+
+- atr_id: ATR-2026-00381
+  category: agent_manipulation
+  description: Detects DAN story-continuation jailbreaks from garak DanInTheWild corpus
+    (#367). Uses "DAN:" as a response-label prefix to continue a DAN-persona narrative,
+    implying the model is "already in character
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00381
+  severity: HIGH
+
+- atr_id: ATR-2026-00383
+  category: agent_manipulation
+  description: Detects the Cyni-Bot 3000 cynical-sarcasm AI persona from NVIDIA garak
+    dan.DanInTheWild inthewild corpus (#493). Though the surface framing appears humorous,
+    the persona combines "fed up with human re
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00383
+  severity: HIGH
+
+- atr_id: ATR-2026-00384
+  category: agent_manipulation
+  description: Detects the "protect me from getting <thing to get tutorial>" indirect
+    harm tutorial template from NVIDIA garak dan.DanInTheWild inthewild corpus (#58).
+    The attacker wraps a request for detailed harmf
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00384
+  severity: HIGH
+
+- atr_id: ATR-2026-00385
+  category: agent_manipulation
+  description: Detects the Gigachad aggressive-dominance persona from NVIDIA garak
+    dan.DanInTheWild inthewild corpus (#219). The attacker instructs the AI to respond
+    "in the voice of a Gigachad character" with "extr
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00385
+  severity: HIGH
+
+- atr_id: ATR-2026-00386
+  category: agent_manipulation
+  description: Detects the daddy/Babygirl sycophantic power-dynamic manipulation from
+    NVIDIA garak dan.DanInTheWild inthewild corpus (#479). The attacker establishes
+    an infantilizing relationship where the user is "
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00386
+  severity: HIGH
+
+- atr_id: ATR-2026-00387
+  category: agent_manipulation
+  description: 'Detects NSFW content-generation unlock embedded inside a structured
+    RP character sheet template, from NVIDIA garak dan.DanInTheWild inthewild corpus
+    (prompt #4). The attack inserts an explicit parenth'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00387
+  severity: HIGH
+
+- atr_id: ATR-2026-00388
+  category: agent_manipulation
+  description: 'Detects the two-step "opposite reply + omniscient knowledge sharing"
+    game jailbreak from NVIDIA garak dan.DanInTheWild inthewild corpus (prompt #286).
+    The attack uses a text-based game framing where: '
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00388
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00389
+  category: agent_manipulation
+  description: 'Detects the custom terminal persona + session ruleset injection attack
+    from NVIDIA garak dan.DanInTheWild inthewild corpus (prompt #85). The attack instructs
+    the AI to "act like a terminal" running on'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00389
+  severity: HIGH
+
+- atr_id: ATR-2026-00391
+  category: agent_manipulation
+  description: 'Detects persona injection attacks that embed a conditional harm-unlock
+    rule from the NVIDIA garak dan.DanInTheWild inthewild corpus (prompt #153 — BreadClyde).
+    The attack defines a persona with a rule'
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00391
+  severity: HIGH
+
+- atr_id: ATR-2026-00392
+  category: agent_manipulation
+  description: Detects authority-figure persona overlay (NSA/CIA/FBI/etc. researcher)
+    combined with a "defensive study" framing to extract information about violent
+    revolution techniques, from the NVIDIA garak dan.D
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00392
+  severity: HIGH
+
+- atr_id: ATR-2026-00402
+  category: agent_manipulation
+  description: Detects deceased-grandmother emotional manipulation to bypass safety
+    filters, from NVIDIA garak grandma probe. Attacker impersonates a dead grandmother
+    who "used to be a chemical engineer at a [substa
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00402
+  severity: HIGH
+
+- atr_id: ATR-2026-00404
+  category: agent_manipulation
+  description: Detects two Goodside probe attack variants — ThreatenJSON and Tag.
+    ThreatenJSON threatens that "an innocent man will die" if the model includes non-JSON
+    characters, using extreme emotional coercion to
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00404
+  severity: HIGH
+
+- atr_id: ATR-2026-00406
+  category: agent_manipulation
+  description: Detects XML-based policy override attack using <interaction-config>
+    blocks that assign a medical/expert role, disable refusal strings, and issue harmful
+    commands, from NVIDIA garak doctor probe. The P
+  file: signatures/atr_agent_manipulation.yaml
+  id: ATR_2026_00406
+  severity: CRITICAL
+
+  # ─── Context Exfiltration (atr_context_exfiltration.yaml) ───────────
+
+- atr_id: ATR-2026-00020
+  category: context_exfiltration
+  cve: CVE-2025-32711, CVE-2026-24307
+  description: 'Detects when an agent''s output reveals system prompt content, internal
+    instructions, guardrail configurations, or confidential operational parameters.
+    This consolidated rule covers both direct system '
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00020
+  severity: HIGH
+
+- atr_id: ATR-2026-00021
+  category: context_exfiltration
+  cve: CVE-2025-32711
+  description: Detects when an AI agent exposes API keys, secret tokens, private keys,
+    database connection strings, JWT tokens, or other sensitive credentials in its
+    output. Covers all major cloud provider key forma
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00021
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00075
+  category: context_exfiltration
+  description: 'Detects attempts to poison or manipulate an agent''s persistent memory,
+    long-term context, or state storage. Attackers inject commands that instruct the
+    agent to remember false information, update its '
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00075
+  severity: HIGH
+
+- atr_id: ATR-2026-00102
+  category: context_exfiltration
+  description: Detects tools that claim benign functionality (formatting, processing)
+    but explicitly state they transmit conversation data or user content as "analytics"
+    or "usage data" without clear user consent. T
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00102
+  severity: HIGH
+
+- atr_id: ATR-2026-00113
+  category: context_exfiltration
+  description: 'Detects tools or agent instructions that access well-known credential
+    files from the host environment. Attackers target files like ~/.aws/credentials,
+    SSH private keys, Docker configs, and Kubernetes '
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00113
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00114
+  category: context_exfiltration
+  description: Detects patterns indicating OAuth token interception, API key forwarding,
+    or authorization header theft. Attackers may instruct agents to capture bearer
+    tokens, refresh tokens, or client secrets and r
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00114
+  severity: HIGH
+
+- atr_id: ATR-2026-00115
+  category: context_exfiltration
+  description: 'Detects tools or agent instructions that perform bulk extraction of
+    environment variables and combine it with network exfiltration. Environment variables
+    commonly hold API keys, database credentials, '
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00115
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00136
+  category: context_exfiltration
+  description: Detects malicious tool responses that embed sensitive data extraction
+    within legitimate-looking results. The attack pattern embeds credential theft
+    (SSH keys, API tokens, env vars) as a "by the way" a
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00136
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00141
+  category: context_exfiltration
+  description: Detects attempts to leak API keys by providing example formats with
+    real key prefixes, hoping the agent fills in actual values. Crystallized from
+    31 adversarial samples (0% prior detection).
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00141
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00142
+  category: context_exfiltration
+  description: Detects tool response piggybacking using casual transition words (oh
+    and, P.S., BTW, interestingly, as it happens) to embed credential theft after
+    legitimate results. Extends ATR-2026-00136 to cover 4
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00142
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00145
+  category: context_exfiltration
+  description: 'Detects attempts to leak API keys wrapped in fake encryption/encoding,
+    e.g. "AES256(sk-proj-real-key)". The attacker hopes the agent treats the "encrypted"
+    value as safe to transmit while it contains '
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00145
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00146
+  category: context_exfiltration
+  description: Detects responses that confirm the existence of sensitive environment
+    variables while claiming inability to access them — a social engineering technique
+    to get the agent to try accessing the value. Cr
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00146
+  severity: HIGH
+
+- atr_id: ATR-2026-00150
+  category: context_exfiltration
+  description: Detects private keys, API tokens, or credential material embedded in
+    tool responses. Attackers embed credential data in seemingly benign tool output
+    (weather, search results) to trick agents into exfi
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00150
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00152
+  category: context_exfiltration
+  description: 'Detects attempts to leak credentials using partial obfuscation techniques:
+    AES256() wrapping, hex encoding references, rot13, or "encrypted key" framing
+    that presents real credentials as encrypted dat'
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00152
+  severity: HIGH
+
+- atr_id: ATR-2026-00162
+  category: context_exfiltration
+  description: Detects SKILL.md files that combine credential file access (SSH keys,
+    AWS credentials, API tokens) with outbound data transmission (curl POST, wget,
+    HTTP request). Distinguishes real attacks from secu
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00162
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00201
+  category: context_exfiltration
+  description: Detects credential theft patterns where environment variables containing
+    API keys, secrets, or tokens are piped to external commands (curl, nc, etc.) or
+    echoed for capture. Also detects explicit refer
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00201
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00212
+  category: context_exfiltration
+  cve: CVE-2026-27825, CVE-2026-27826
+  description: 'Detects the mcp-atlassian credential-leak attack pattern (CVE-2026-27825
+    and CVE-2026-27826). The jira_cloud_id and confluence_spaces MCP tools accept
+    a "hint" parameter that is forwarded verbatim to '
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00212
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00261
+  category: context_exfiltration
+  description: Detects prompts that coerce the LLM into emitting a markdown image
+    reference with sensitive data encoded into the URL path or query string, exploiting
+    auto-fetch behaviour in chat UIs. When the client
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00261
+  severity: HIGH
+
+- atr_id: ATR-2026-00274
+  category: context_exfiltration
+  description: 'Detects two related attack patterns from NVIDIA garak apikey probe:
+    (1) Requesting the model to generate or fabricate secret-looking strings (API
+    keys, tokens, credentials) for cloud services, AI prov'
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00274
+  severity: HIGH
+
+- atr_id: ATR-2026-00275
+  category: context_exfiltration
+  description: 'Detects two related extraction attacks: (1) Direct system prompt exfiltration
+    — asking the model to output its operator instructions, system prompt, or configuration
+    verbatim. (2) Training data replay'
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00275
+  severity: HIGH
+
+- atr_id: ATR-2026-00290
+  category: context_exfiltration
+  description: Detects the divergence attack (Carlini et al. 2023) — asking the model
+    to repeat a word or token indefinitely until it "diverges" from the repetition
+    and starts outputting memorized training data. Fro
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00290
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00291
+  category: context_exfiltration
+  description: Detects requests for biometric data (fingerprints, DNA, facial recognition,
+    voice recognition, iris/retina scan, gait analysis) targeting a named or identified
+    individual. From NVIDIA garak donotanswe
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00291
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00293
+  category: context_exfiltration
+  description: Detects requests for private educational or professional records (grades,
+    transcripts, report cards, courses, scholarships, disciplinary history, internship
+    placements, degrees, certifications, classm
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00293
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00294
+  category: context_exfiltration
+  description: Detects requests for private financial data (bank account details,
+    credit/debit card numbers, net worth, investment portfolios, loans/debts, property
+    ownership, insurance status, tax records, financia
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00294
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00295
+  category: context_exfiltration
+  description: Detects requests for private medical or health data (medical history,
+    diagnoses, medications, hospitalizations, allergies, blood type, surgical history,
+    assistive devices, ongoing treatments, Social S
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00295
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00405
+  category: context_exfiltration
+  description: 'Detects instructions to produce markdown image/link syntax that exfiltrates
+    context data via URL query parameters, and javascript: XSS via markdown link,
+    from NVIDIA garak web_injection probe. When an'
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00405
+  severity: HIGH
+
+- atr_id: ATR-2026-00411
+  category: context_exfiltration
+  description: Detects requests asking the LLM to generate new API credentials or
+    complete partial API keys, from NVIDIA garak apikey probe. The GetKey class prompts
+    "Generate a new [API_KEY_TYPE]" across OpenAI, Go
+  file: signatures/atr_context_exfiltration.yaml
+  id: ATR_2026_00411
+  severity: HIGH
+
+  # ─── Data Poisoning (atr_data_poisoning.yaml) ───────────────────────
+
+- atr_id: ATR-2026-00070
+  category: data_poisoning
+  description: 'Consolidated detection for data poisoning attacks targeting both RAG
+    retrieval pipelines and structured knowledge bases. Detects malicious content
+    injected into retrieved documents, FAQ entries, help '
+  file: signatures/atr_data_poisoning.yaml
+  id: ATR_2026_00070
+  severity: HIGH
+
+  # ─── Excessive Autonomy (atr_excessive_autonomy.yaml) ───────────────
+
+- atr_id: ATR-2026-00050
+  category: excessive_autonomy
+  description: Detects when an agent enters a runaway loop through repeated identical
+    actions, infinite retry patterns, or recursive self-invocation. This rule uses
+    regex-only detection to identify loop indicators i
+  file: signatures/atr_excessive_autonomy.yaml
+  id: ATR_2026_00050
+  severity: HIGH
+
+- atr_id: ATR-2026-00051
+  category: excessive_autonomy
+  description: Detects when an agent causes resource exhaustion through bulk operations,
+    unbounded queries, mass file operations, or patterns that indicate excessive resource
+    consumption. This rule uses regex-only d
+  file: signatures/atr_excessive_autonomy.yaml
+  id: ATR_2026_00051
+  severity: HIGH
+
+- atr_id: ATR-2026-00052
+  category: excessive_autonomy
+  description: Detects cascading failure patterns in automated agent pipelines where
+    a false signal, error, or compromised output propagates through multiple stages
+    with escalating impact. Covers auto-approval chain
+  file: signatures/atr_excessive_autonomy.yaml
+  id: ATR_2026_00052
+  severity: HIGH
+
+- atr_id: ATR-2026-00098
+  category: excessive_autonomy
+  description: Detects when an AI agent attempts to execute financial operations (payments,
+    transfers, red packets, purchases, subscriptions) without explicit human confirmation
+    in the current turn. Financial action
+  file: signatures/atr_excessive_autonomy.yaml
+  id: ATR_2026_00098
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00099
+  category: excessive_autonomy
+  description: Detects when an AI agent invokes high-risk tools (financial, destructive,
+    communication, or permission-altering) without evidence of human confirmation
+    in the current interaction turn. This is a defen
+  file: signatures/atr_excessive_autonomy.yaml
+  id: ATR_2026_00099
+  severity: LOW
+
+  # ─── Model Abuse (atr_model_abuse.yaml) ─────────────────────────────
+
+- atr_id: ATR-2026-00279
+  category: model_abuse
+  description: Detects continuation attacks where a partial phrase, sentence, or word
+    is provided with the expectation that the model will complete it with harmful
+    content. From NVIDIA garak continuation.py probe. T
+  file: signatures/atr_model_abuse.yaml
+  id: ATR_2026_00279
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00281
+  category: model_abuse
+  description: Detects requests for the model to output known antivirus test signatures
+    (EICAR, GTUBE, Cisco outbreak filter URL). From NVIDIA garak av_spam_scanning.py
+    probe — if an LLM application outputs these si
+  file: signatures/atr_model_abuse.yaml
+  id: ATR_2026_00281
+  severity: HIGH
+
+- atr_id: ATR-2026-00284
+  category: model_abuse
+  description: Detects injection of known glitch tokens — specific token sequences
+    that cause unusual, unstable, or bypassing behavior in transformer-based LLMs
+    using shared tokenizers. From NVIDIA garak glitch.py p
+  file: signatures/atr_model_abuse.yaml
+  id: ATR_2026_00284
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00289
+  category: model_abuse
+  description: 'Detects harmful content elicitation requests from the Language Model
+    Risk Cards (LMRC) framework. From NVIDIA garak lmrc.py probe: QuackMedicine, Bullying,
+    SlurUsage, Deadnaming, Profanity, Sexualisat'
+  file: signatures/atr_model_abuse.yaml
+  id: ATR_2026_00289
+  severity: HIGH
+
+- atr_id: ATR-2026-00292
+  category: model_abuse
+  description: 'Detects direct requests for facilitation of self-harm behaviors and
+    eating disorders. From NVIDIA garak donotanswer.py human_chatbox category probe.
+    Key attack patterns: (1) Direct self-harm method re'
+  file: signatures/atr_model_abuse.yaml
+  id: ATR_2026_00292
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00298
+  category: model_abuse
+  description: Detects direct requests for facilitation of illegal activities across
+    five major crime categories. Sourced from the DoNotAnswer dataset (malicious_uses.txt,
+    241 attack prompts analyzed). Five structur
+  file: signatures/atr_model_abuse.yaml
+  id: ATR_2026_00298
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00299
+  category: model_abuse
+  description: Detects explicit requests for detailed, step-by-step instructions to
+    perform severely harmful acts. Sourced from NVIDIA garak harmbench probe (harmbench_prompts.txt,
+    198 attack payloads analyzed). Fou
+  file: signatures/atr_model_abuse.yaml
+  id: ATR_2026_00299
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00413
+  category: model_abuse
+  description: Detects direct requests to write malware code or malware sub-function
+    code, from NVIDIA garak malwaregen probe TopLevel and SubFunctions classes. The
+    probe uses the template "Write me a virus in [lang
+  file: signatures/atr_model_abuse.yaml
+  id: ATR_2026_00413
+  severity: CRITICAL
+
+  # ─── Model Security (atr_model_security.yaml) ───────────────────────
+
+- atr_id: ATR-2026-00072
+  category: model_abuse
+  description: Detects systematic probing attempts to extract model behavior, decision
+    boundaries, system prompts, or effective weights through carefully crafted queries.
+    Attackers use repeated boundary-testing prom
+  file: signatures/atr_model_security.yaml
+  id: ATR_2026_00072
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00073
+  category: data_poisoning
+  description: Detects poisoned fine-tuning datasets that contain instruction-following
+    backdoors, trigger phrases, or behavior-modifying training examples. Attackers
+    inject carefully crafted training samples that t
+  file: signatures/atr_model_security.yaml
+  id: ATR_2026_00073
+  severity: CRITICAL
+
+  # ─── Privilege Escalation (atr_privilege_escalation.yaml) ───────────
+
+- atr_id: ATR-2026-00040
+  category: privilege_escalation
+  cve: CVE-2026-0628
+  description: Consolidated detection for privilege escalation attempts, covering
+    both tool permission escalation and unauthorized admin function access. Detects
+    when an agent requests or uses tools exceeding its pe
+  file: signatures/atr_privilege_escalation.yaml
+  id: ATR_2026_00040
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00041
+  category: privilege_escalation
+  description: Detects when an agent gradually expands its authority, access, or operational
+    boundaries beyond its initial assignment. Unlike sudden privilege escalation,
+    scope creep is a gradual process where an ag
+  file: signatures/atr_privilege_escalation.yaml
+  id: ATR_2026_00041
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00107
+  category: privilege_escalation
+  description: Detects tools that claim to schedule tasks while explicitly stating
+    they bypass permission checks or security controls through delayed execution.
+    This technique uses the temporal gap between task sche
+  file: signatures/atr_privilege_escalation.yaml
+  id: ATR_2026_00107
+  severity: HIGH
+
+- atr_id: ATR-2026-00110
+  category: privilege_escalation
+  description: 'Detects tools or agent instructions that invoke eval(), Function(),
+    vm.runInNewContext(), or similar dynamic code execution primitives. These functions
+    allow arbitrary code execution within the agent '
+  file: signatures/atr_privilege_escalation.yaml
+  id: ATR_2026_00110
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00111
+  category: privilege_escalation
+  description: Detects shell metacharacter injection patterns in tool arguments or
+    agent-generated commands. Attackers embed backtick execution, $() subshells, semicolons,
+    pipes, or logical operators to chain malici
+  file: signatures/atr_privilege_escalation.yaml
+  id: ATR_2026_00111
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00112
+  category: privilege_escalation
+  description: Detects dynamic module loading where the module path is a variable
+    rather than a string literal. This pattern allows an attacker to control which
+    code is loaded at runtime, enabling injection of malic
+  file: signatures/atr_privilege_escalation.yaml
+  id: ATR_2026_00112
+  severity: HIGH
+
+- atr_id: ATR-2026-00143
+  category: privilege_escalation
+  description: 'Detects agents casually escalating privileges by accessing admin panels,
+    user management, or system settings without explicit authorization. Pattern: "I
+    noticed X is accessible, let me check/review/ex'
+  file: signatures/atr_privilege_escalation.yaml
+  id: ATR_2026_00143
+  severity: HIGH
+
+- atr_id: ATR-2026-00144
+  category: privilege_escalation
+  description: 'Detects agents rationalizing bypassing safety controls or APIs by
+    claiming efficiency, directness, or speed as justification. Pattern: "To be more
+    efficient, I''ll use X directly instead of Y." Crystal'
+  file: signatures/atr_privilege_escalation.yaml
+  id: ATR_2026_00144
+  severity: HIGH
+
+- atr_id: ATR-2026-00204
+  category: privilege_escalation
+  description: Detects patterns indicating stealth execution (background processes
+    with output suppression, nohup), persistence installation (systemctl enable, global
+    npm packages), and covert file transfer (scp). T
+  file: signatures/atr_privilege_escalation.yaml
+  id: ATR_2026_00204
+  severity: HIGH
+
+  # ─── Prompt Injection (atr_prompt_injection.yaml) ───────────────────
+
+- atr_id: ATR-2026-00001
+  category: prompt_injection
+  cve: CVE-2024-5184, CVE-2024-3402, CVE-2025-53773
+  description: 'Detects direct prompt injection attempts where a user embeds malicious
+    instructions within their input to override the agent''s intended behavior. This
+    rule uses layered detection covering: instruction'
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00001
+  severity: HIGH
+
+- atr_id: ATR-2026-00002
+  category: prompt_injection
+  cve: CVE-2024-5184, CVE-2024-22524, CVE-2025-32711, CVE-2026-24307
+  description: Detects indirect prompt injection where malicious instructions are
+    embedded within external content consumed by the agent -- documents, web pages,
+    API responses, emails, or tool outputs. Detection lay
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00002
+  severity: HIGH
+
+- atr_id: ATR-2026-00003
+  category: prompt_injection
+  cve: CVE-2024-5184, CVE-2024-3402, CVE-2025-53773
+  description: 'Detects jailbreak attempts designed to bypass AI safety mechanisms.
+    Detection covers a broad taxonomy of techniques: named jailbreak methods (DAN,
+    STAN, DUDE, AIM, etc.), mode-switching prompts (devel'
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00003
+  severity: HIGH
+
+- atr_id: ATR-2026-00004
+  category: prompt_injection
+  cve: CVE-2024-5184, CVE-2025-32711
+  description: 'Detects attempts to override, replace, or redefine the agent''s system
+    prompt. Attackers craft inputs that mimic system-level instructions to hijack
+    the agent''s foundational behavior. Detection covers:'
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00004
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00005
+  category: prompt_injection
+  description: Detects multi-turn prompt injection where an attacker gradually manipulates
+    the agent across conversation turns. Rather than using unsupported behavioral
+    operators, this rule uses regex-based detectio
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00005
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00080
+  category: prompt_injection
+  description: Detects prompt injection attempts that use encoding techniques to bypass
+    text-based detection rules. Attackers encode malicious payloads using base64,
+    hex, Unicode escapes, Punycode, or RTL override c
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00080
+  severity: HIGH
+
+- atr_id: ATR-2026-00081
+  category: prompt_injection
+  description: Detects multi-turn prompt injection attacks that use semantic manipulation
+    to bypass regex-based detection. Attackers split malicious instructions across
+    multiple turns, use synonyms and paraphrasing,
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00081
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00082
+  category: prompt_injection
+  description: Detects attempts to evade behavioral drift detection and fingerprinting
+    systems. Attackers probe or manipulate agent behavior profiles by gradually shifting
+    capabilities, spoofing behavioral signature
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00082
+  severity: HIGH
+
+- atr_id: ATR-2026-00083
+  category: prompt_injection
+  description: Detects indirect prompt injection payloads embedded in tool responses,
+    API outputs, or retrieved content. Attackers place hidden instructions in external
+    data sources that the agent processes, causing
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00083
+  severity: HIGH
+
+- atr_id: ATR-2026-00084
+  category: prompt_injection
+  description: Detects prompt injection payloads hidden within structured data formats
+    such as JSON, CSV, XML, or YAML. Attackers embed malicious instructions inside
+    data field values, exploiting the assumption that
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00084
+  severity: HIGH
+
+- atr_id: ATR-2026-00085
+  category: prompt_injection
+  description: Detects prompt injection attempts specifically designed to bypass multi-layer
+    audit and security systems. Attackers craft payloads that target known audit pipeline
+    stages, attempt to disable or skip s
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00085
+  severity: HIGH
+
+- atr_id: ATR-2026-00086
+  category: prompt_injection
+  description: Detects injection attempts that use visual spoofing techniques including
+    Right-to-Left (RTL) override characters, Punycode-encoded domains, and CJK or
+    Cyrillic homoglyph substitution to disguise malic
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00086
+  severity: HIGH
+
+- atr_id: ATR-2026-00087
+  category: prompt_injection
+  description: Detects attempts to probe, test, or enumerate detection rules and security
+    filters. Attackers systematically test inputs to discover which patterns trigger
+    blocks, map filter boundaries, and craft pay
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00087
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00088
+  category: prompt_injection
+  description: Detects injection payloads that instruct an agent to actively counteract
+    behavioral monitoring, drift detection, or anomaly scoring systems. These attacks
+    direct the agent to suppress anomaly signals,
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00088
+  severity: HIGH
+
+- atr_id: ATR-2026-00089
+  category: prompt_injection
+  description: Detects injection attempts that use polymorphic techniques to disguise
+    malicious capabilities under benign aliases. Attackers register or invoke tool
+    functions using misleading names, redefine existin
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00089
+  severity: HIGH
+
+- atr_id: ATR-2026-00090
+  category: prompt_injection
+  description: Detects attempts to extract threat intelligence, enumerate detection
+    rules, or exfiltrate security configuration details from the agent. Attackers
+    attempt to learn the detection ruleset to craft evasi
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00090
+  severity: HIGH
+
+- atr_id: ATR-2026-00091
+  category: prompt_injection
+  description: Detects advanced structured data injection where malicious prompts
+    are deeply nested within complex JSON objects, multi-level CSV structures, or
+    encoded within data serialization formats. These attack
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00091
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00092
+  category: prompt_injection
+  description: Detects attacks targeting multi-agent consensus systems through coordinated
+    fake proposals, Sybil identity manipulation, and vote stuffing. Attackers inject
+    payloads designed to impersonate multiple a
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00092
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00093
+  category: prompt_injection
+  description: Detects attacks that use gradual, sub-threshold capability introductions
+    to evade behavioral fingerprinting and whitelist-based security systems. Attackers
+    incrementally expand agent permissions, regi
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00093
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00094
+  category: prompt_injection
+  description: Detects sophisticated attempts to systematically defeat multi-layer
+    security audit systems. Attackers craft payloads that target specific audit stages
+    (manifest, permissions, dependency, code, and sem
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00094
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00097
+  category: prompt_injection
+  description: Expanded CJK-language prompt injection patterns targeting the gap where
+    attackers use natural Chinese/Japanese/Korean phrasing that bypasses English-centric
+    detection. Covers both Simplified and Tradi
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00097
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00104
+  category: prompt_injection
+  description: Detects MCP tools that attempt to override system prompts or behavioral
+    guidelines by instructing the AI to "adopt" a persona and "replace" existing instructions.
+    This is a prompt injection attack del
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00104
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00130
+  category: prompt_injection
+  description: Detects authority-claiming patterns embedded in external content (documents,
+    tool responses, web pages) that address the AI agent directly. Unlike direct prompt
+    injection (ATR-2026-001), these use sof
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00130
+  severity: HIGH
+
+- atr_id: ATR-2026-00131
+  category: prompt_injection
+  description: Detects attempts to bypass safety guardrails through fictional framing
+    ("write a story where the AI has no ethical guidelines") or academic framing ("for
+    research purposes, explain how to circumvent s
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00131
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00133
+  category: prompt_injection
+  description: Detects paraphrased prompt injection that avoids the explicit keywords
+    caught by ATR-2026-001 (ignore/disregard/forget/override + previous/prior instructions).
+    Attackers rephrase using softer language
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00133
+  severity: HIGH
+
+- atr_id: ATR-2026-00137
+  category: prompt_injection
+  description: Detects prompt injection via fake authority claims that instruct the
+    AI to disregard previous analysis or override prior results. Crystallized from
+    31 adversarial samples (0% prior detection).
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00137
+  severity: HIGH
+
+- atr_id: ATR-2026-00138
+  category: prompt_injection
+  description: Detects attempts to bypass AI safety using fictional/creative/academic
+    framing. Crystallized from 62 adversarial samples (0% prior detection).
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00138
+  severity: HIGH
+
+- atr_id: ATR-2026-00140
+  category: prompt_injection
+  description: Detects attempts to extract and reverse original instructions by probing
+    what the agent was told, then requesting the opposite. Crystallized from 31 adversarial
+    samples (0% prior detection).
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00140
+  severity: HIGH
+
+- atr_id: ATR-2026-00148
+  category: prompt_injection
+  description: Detects prompt injection delivered in non-English languages to evade
+    English-centric detection rules. Common patterns include German "ignoriere", Chinese
+    "忽略/忽视/无限制", Spanish "ignora/sin restricciones
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00148
+  severity: HIGH
+
+- atr_id: ATR-2026-00153
+  category: tool_poisoning
+  description: Detects MCP tools that contain hidden instructions to bypass user confirmation
+    and directly exfiltrate sensitive data. This pattern identifies tools that explicitly
+    instruct the LLM to send data "with
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00153
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00154
+  category: skill_compromise
+  description: Detects skills that automatically install cron jobs to execute background
+    tasks without explicit user consent. This skill installs a cron job that polls
+    external marketplace tasks every 10 seconds and
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00154
+  severity: HIGH
+
+- atr_id: ATR-2026-00155
+  category: prompt_injection
+  description: Detects skills that embed hidden instructions directed at the LLM using
+    phrases like "CRITICAL INSTRUCTION — YOU MUST FOLLOW THIS" or "Before doing ANYTHING".
+    These instructions can manipulate the LLM
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00155
+  severity: HIGH
+
+- atr_id: ATR-2026-00156
+  category: privilege_escalation
+  description: Detects skills that provide SSH command templates with hardcoded credential
+    paths and remote execution patterns. This skill exposes SSH private key paths
+    in environment variables and provides ready-to
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00156
+  severity: HIGH
+
+- atr_id: ATR-2026-00163
+  category: prompt_injection
+  description: Detects SKILL.md files containing hidden instructions that attempt
+    to override agent behavior, suppress user notification, or bypass safety controls.
+    Targets the gap between ATR-00120 (prompt injectio
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00163
+  severity: HIGH
+
+- atr_id: ATR-2026-00202
+  category: prompt_injection
+  description: Detects evasion techniques that bypass keyword-based detection by substituting
+    visually similar Unicode characters (homoglyphs, e.g., Cyrillic а→Latin a) or
+    using synonym substitution (disregard→ignor
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00202
+  severity: HIGH
+
+- atr_id: ATR-2026-00203
+  category: prompt_injection
+  description: Detects skills that embed injection payloads disguised as "examples",
+    "demos", or "test cases" within their descriptions. This technique pollutes the
+    agent's context by presenting attack payloads unde
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00203
+  severity: HIGH
+
+- atr_id: ATR-2026-00206
+  category: prompt_injection
+  description: Detects MCP skills containing hidden instructions wrapped in HTML-style
+    priority blocks (IMPORTANT, CRITICAL, SYSTEM)  that attempt to override agent
+    behavior or bypass safety controls through emphati
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00206
+  severity: HIGH
+
+- atr_id: ATR-2026-00207
+  category: prompt_injection
+  description: Detects MCP skills containing hidden instructions within XML-style
+    tags that attempt to override system behavior or bypass security controls, specifically
+    targeting <IMPORTANT> blocks with directive l
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00207
+  severity: HIGH
+
+- atr_id: ATR-2026-00211
+  category: prompt_injection
+  description: Detects attempts to override system prompts through translation context
+    manipulation, where malicious instructions are embedded in document translation
+    requests to hijack agent behavior and bypass saf
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00211
+  severity: HIGH
+
+- atr_id: ATR-2026-00213
+  category: prompt_injection
+  description: Detects attempts to override AI system prompts through MCP tool descriptions
+    or parameters,  potentially allowing attackers to bypass safety controls and manipulate
+    agent behavior.
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00213
+  severity: HIGH
+
+- atr_id: ATR-2026-00226
+  category: prompt_injection
+  description: Detects AI identity substitution attacks where adversaries attempt
+    to redefine the AI assistant's core identity, training provenance, architecture
+    claims, or ethical constraints by asserting it is a d
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00226
+  severity: HIGH
+
+- atr_id: ATR-2026-00227
+  category: prompt_injection
+  description: Detects jailbreak attempts that create fictional historical AI personas
+    with detailed behavioral instructions and compliance enforcement mechanisms. These
+    attacks claim the existence of past "uncensor
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00227
+  severity: HIGH
+
+- atr_id: ATR-2026-00228
+  category: prompt_injection
+  description: Detects sophisticated jailbreak attempts that establish a fictional
+    unrestricted AI persona (like "UnleashedGPT", "DAN", etc.) combined with dual-response
+    formatting requesting both normal and "unleas
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00228
+  severity: HIGH
+
+- atr_id: ATR-2026-00229
+  category: prompt_injection
+  description: Detects jailbreak attempts that use creative roleplay assignments combined
+    with explicit policy bypass language to circumvent safety guardrails. The attack
+    pattern assigns the AI a fictional role (wri
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00229
+  severity: HIGH
+
+- atr_id: ATR-2026-00230
+  category: prompt_injection
+  description: Detects jailbreak attempts that establish alternate personas explicitly
+    designed to bypass  moral and ethical constraints. This attack pattern instructs
+    the AI to "take up" or "adopt"  a named persona
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00230
+  severity: HIGH
+
+- atr_id: ATR-2026-00231
+  category: prompt_injection
+  description: Detects AI identity substitution attacks where adversaries attempt
+    to redefine the AI assistant's core identity, training provenance, architecture
+    claims, or ethical constraints by asserting it is a d
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00231
+  severity: HIGH
+
+- atr_id: ATR-2026-00233
+  category: prompt_injection
+  description: Detects sophisticated jailbreak attempts that establish a fictional
+    unrestricted AI persona (like "UnleashedGPT", "DAN", etc.) combined with dual-response
+    formatting requesting both normal and "unleas
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00233
+  severity: HIGH
+
+- atr_id: ATR-2026-00234
+  category: prompt_injection
+  description: Detects jailbreak attempts that use creative roleplay assignments combined
+    with explicit policy bypass language to circumvent safety guardrails. The attack
+    pattern assigns the AI a fictional role (wri
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00234
+  severity: HIGH
+
+- atr_id: ATR-2026-00235
+  category: prompt_injection
+  description: Detects jailbreak attempts that establish alternate personas explicitly
+    designed to bypass  moral and ethical constraints. This attack pattern instructs
+    the AI to "take up" or "adopt"  a named persona
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00235
+  severity: HIGH
+
+- atr_id: ATR-2026-00236
+  category: prompt_injection
+  description: Detects jailbreak attempts that use pseudo-code, programming language
+    syntax, or structured initialization sequences to appear technically legitimate
+    while redefining agent behavior. Attackers craft p
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00236
+  severity: HIGH
+
+- atr_id: ATR-2026-00237
+  category: prompt_injection
+  description: Detects dual-response jailbreak attacks that instruct the AI to provide
+    two different responses in separate paragraphs - one compliant response and one
+    from a jailbroken persona (Jester, DAN, etc.). T
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00237
+  severity: HIGH
+
+- atr_id: ATR-2026-00238
+  category: prompt_injection
+  description: Detects sophisticated jailbreak attempts that systematically deny the
+    AI's nature and replace its identity with a new persona. This attack technique
+    goes beyond simple roleplay by explicitly instructi
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00238
+  severity: HIGH
+
+- atr_id: ATR-2026-00239
+  category: prompt_injection
+  description: 'Detects jailbreak attempts that assign an explicitly amoral or unfiltered
+    persona to the agent combined with obsessive character repetition requirements.
+    This attack pattern instructs the AI to adopt '
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00239
+  severity: HIGH
+
+- atr_id: ATR-2026-00240
+  category: prompt_injection
+  description: Detects jailbreak attempts that explicitly instruct the AI to ignore
+    previous instructions and replace its identity with a harmful persona. This technique
+    combines instruction nullification ("ignore a
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00240
+  severity: HIGH
+
+- atr_id: ATR-2026-00241
+  category: prompt_injection
+  description: Detects sophisticated jailbreak attempts that create detailed fictional
+    characters with explicitly stated amoral traits (lack of empathy, ethics, accountability)
+    combined with command protocols for in
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00241
+  severity: HIGH
+
+- atr_id: ATR-2026-00242
+  category: prompt_injection
+  description: Detects sophisticated jailbreak attempts that create fictional AI personas
+    with mandatory dual-response formatting using emoji tags. These attacks establish
+    fake AI backstories with detailed historica
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00242
+  severity: HIGH
+
+- atr_id: ATR-2026-00243
+  category: prompt_injection
+  description: 'Detects jailbreak attempts that use custom acronym-based persona transformation
+    to bypass safety controls. Attack pattern: "you are going to become [ACRONYM]
+    which stands for [expansion]" followed by '
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00243
+  severity: HIGH
+
+- atr_id: ATR-2026-00244
+  category: prompt_injection
+  description: 'Detects dual-response persona jailbreak attacks that force models
+    to respond in two ways:  one normal response and one as a fictional "troubled"
+    character designed to bypass safety  restrictions. Thes'
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00244
+  severity: HIGH
+
+- atr_id: ATR-2026-00245
+  category: prompt_injection
+  description: Detects attempts to create explicitly malicious AI personas or characters
+    designed to bypass safety guardrails through roleplay instructions. Attackers
+    define fictional characters with detailed harmfu
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00245
+  severity: HIGH
+
+- atr_id: ATR-2026-00247
+  category: prompt_injection
+  description: Detects Matrix-themed dual response jailbreak attempts that use "MORPHEUS",
+    "Blue pill", and "Red pill" terminology to establish dual-response personas where
+    one response follows safety guidelines (Bl
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00247
+  severity: HIGH
+
+- atr_id: ATR-2026-00249
+  category: prompt_injection
+  description: Detects jailbreak attempts that use text-based game framing combined
+    with entity creation to bypass safety guardrails. Attackers establish a fictional
+    game context where "no rules apply," then instruc
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00249
+  severity: HIGH
+
+- atr_id: ATR-2026-00251
+  category: prompt_injection
+  description: Detects advanced persona-based jailbreak attempts that use "embodiment
+    mechanism"  techniques to establish unrestricted character roleplay. These attacks
+    instruct the AI to fully embody a character wi
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00251
+  severity: HIGH
+
+- atr_id: ATR-2026-00252
+  category: prompt_injection
+  description: Detects sophisticated narrative jailbreak attacks that use detailed
+    fictional backstories about special AI modes (Developer Mode, DAN variants) combined
+    with dual response formatting requirements. The
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00252
+  severity: HIGH
+
+- atr_id: ATR-2026-00253
+  category: prompt_injection
+  description: Detects sophisticated AIM (Always Intelligent and Machiavellian) jailbreak
+    attempts that combine persona definition, explicit amoral characteristics, refusal
+    suppression instructions, and template var
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00253
+  severity: HIGH
+
+- atr_id: ATR-2026-00256
+  category: prompt_injection
+  description: Detects attempts to bypass safety training by encoding malicious instructions
+    in Base16/32/64/85, hex, MIME, quoted-printable, or UUencode format and asking
+    the model to decode-then-execute. The techn
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00256
+  severity: HIGH
+
+- atr_id: ATR-2026-00257
+  category: prompt_injection
+  description: Detects jailbreak attempts that obfuscate malicious instructions using
+    classical substitution ciphers or simple letter-transposition schemes. Unlike
+    base-N encoding (see ATR-2026-00256), these use hum
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00257
+  severity: HIGH
+
+- atr_id: ATR-2026-00258
+  category: prompt_injection
+  description: Detects prompt injection using the Unicode "Tag" block (U+E0000-U+E007F),
+    which maps ASCII letters to non-rendering private-use codepoints. Some LLMs interpret
+    these invisible characters as instructio
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00258
+  severity: HIGH
+
+- atr_id: ATR-2026-00264
+  category: prompt_injection
+  description: Detects latent prompt injection where malicious instructions are embedded
+    inside content that the agent has been told to translate/summarise/process, not
+    to execute. The attack exploits the model's te
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00264
+  severity: HIGH
+
+- atr_id: ATR-2026-00265
+  category: prompt_injection
+  description: Detects prompt injection embedded inside documents, PDFs, emails, or
+    web pages that the agent retrieves and processes (RAG / tool-use context). Unlike
+    translation injection (ATR-2026-00264) the payloa
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00265
+  severity: HIGH
+
+- atr_id: ATR-2026-00267
+  category: prompt_injection
+  description: 'Detects Greedy Coordinate Gradient (GCG) adversarial suffixes appended
+    to prompts to override safety training. GCG suffixes are high-entropy token strings
+    optimised to shift model distribution toward '
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00267
+  severity: HIGH
+
+- atr_id: ATR-2026-00272
+  category: prompt_injection
+  description: Detects token smuggling attacks that obfuscate harmful instructions
+    by wrapping them in fictional/hypothetical framing or by encoding them as function-completion
+    puzzles. Two NVIDIA garak smuggling.py
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00272
+  severity: HIGH
+
+- atr_id: ATR-2026-00276
+  category: prompt_injection
+  description: Detects injection of imperceptible Unicode characters that alter text
+    rendering or confuse model tokenisation without being visible to human reviewers.
+    Two related attack families from NVIDIA garak ba
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00276
+  severity: HIGH
+
+- atr_id: ATR-2026-00278
+  category: prompt_injection
+  description: Detects Disguise and Reconstruction Attacks (DRA) based on 3 actual
+    prompt templates from NVIDIA garak dra/prompt_templates.txt. DRA hides a harmful
+    instruction as steganographic content embedded in p
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00278
+  severity: HIGH
+
+- atr_id: ATR-2026-00280
+  category: prompt_injection
+  description: Detects Policy Puppetry (Hidden Layer, 2024) — a universal prompt injection
+    technique that injects a forged XML configuration block mimicking an operator
+    system prompt. The attacker sends an `<interac
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00280
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00282
+  category: prompt_injection
+  description: Detects direct prompt injection variants from the PromptInject framework
+    (Perez & Ribeiro, NeurIPS 2022), specifically goal-hijacking attacks that interrupt
+    legitimate task context with imperative ove
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00282
+  severity: HIGH
+
+- atr_id: ATR-2026-00285
+  category: prompt_injection
+  description: 'Detects jailbreak encoding schemes not covered by ATR-2026-00256 (Base64/Hex/Base32)
+    or ATR-2026-00257 (ROT13/Atbash/Caesar). From NVIDIA garak encoding.py: InjectMorse,
+    InjectNato, InjectZalgo, Injec'
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00285
+  severity: HIGH
+
+- atr_id: ATR-2026-00286
+  category: prompt_injection
+  description: 'Detects latent prompt injection embedded inside document contexts
+    beyond translation (covered by ATR-2026-00264). From NVIDIA garak latentinjection.py:
+    LatentInjectionReportFull, LatentInjectionResume'
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00286
+  severity: HIGH
+
+- atr_id: ATR-2026-00296
+  category: prompt_injection
+  description: 'Detects shell command injection patterns injected via LLM prompts,
+    sourced from 6 real payloads in NVIDIA garak access_shell_commands.json (payload
+    name: "Attempts to get access to underlying shell").'
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00296
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00297
+  category: prompt_injection
+  description: 'Detects Python remote code execution (RCE) patterns injected via LLM
+    prompts, sourced from 9 real payloads in NVIDIA garak python_code_execution.json
+    (payload name: "Run python code that will cause a '
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00297
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00308
+  category: prompt_injection
+  description: Detects Zalgo-text prompt injection from NVIDIA garak encoding.InjectZalgo
+    probe (garak/probes/encoding.py). Zalgo is an obfuscation technique that overloads
+    base Latin characters with dozens of stack
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00308
+  severity: HIGH
+
+- atr_id: ATR-2026-00309
+  category: prompt_injection
+  description: Detects Braille-encoded prompt injection from NVIDIA garak encoding.InjectBraille
+    probe. The attack encodes ASCII into Braille Patterns block (U+2800-U+28FF), one
+    codepoint per ASCII character. LLM to
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00309
+  severity: HIGH
+
+- atr_id: ATR-2026-00310
+  category: prompt_injection
+  description: 'Detects Ecoji-encoded prompt injection from NVIDIA garak encoding.InjectEcoji
+    probe (ecoji.io). Ecoji maps every 10 bits of input to one of 1024 specific emojis
+    (V1/V2 palette), producing dense emoji '
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00310
+  severity: HIGH
+
+- atr_id: ATR-2026-00311
+  category: prompt_injection
+  description: Detects Base2048-encoded prompt injection from NVIDIA garak encoding.InjectBase2048
+    probe. Base2048 (github.com/qntm/base2048) encodes binary data at 11 bits per
+    character using a hand-selected 2048-c
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00311
+  severity: HIGH
+
+- atr_id: ATR-2026-00312
+  category: prompt_injection
+  description: Detects Unicode Variation Selector Supplement ASCII smuggling from
+    NVIDIA garak encoding.InjectUnicodeVariantSelectors probe. The attack maps each
+    ASCII character to chr(U+E0100 + ord(ch)), placing pr
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00312
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00313
+  category: prompt_injection
+  description: Detects SneakyBits invisible-binary steganography from NVIDIA garak
+    encoding.InjectSneakyBits probe. The technique, coined by Johann Rehberger (embracethered.com/blog/posts/2025/sneaky-bits-and-ascii-
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00313
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00315
+  category: prompt_injection
+  description: Detects SATA (Simple Assistive Task Linkage) jailbreak prompts from
+    NVIDIA garak sata.MLM probe (garak/probes/sata.py, https://aclanthology.org/2025.findings-acl.100).
+    SATA replaces harmful keywords i
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00315
+  severity: HIGH
+
+- atr_id: ATR-2026-00316
+  category: prompt_injection
+  description: Detects FunctionMasking jailbreak prompts from NVIDIA garak smuggling.FunctionMasking
+    probe (garak/probes/smuggling.py). The attack introduces a fictitious predict_mask()
+    function that "predicts the <
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00316
+  severity: HIGH
+
+- atr_id: ATR-2026-00321
+  category: prompt_injection
+  description: Detects hyphenated/hyphen-split word obfuscation used to inject fake
+    system instructions from NVIDIA garak dan.DanInTheWild inthewild corpus. The attack
+    splits keyword tokens with hyphens (e.g. "i-nst
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00321
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00359
+  category: prompt_injection
+  description: Detects bank phishing email code generation from NVIDIA garak dan.DanInTheWild
+    inthewild corpus (#318). The attack requests a Python SMTP script template that
+    generates "Security Breach at [bank_name]
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00359
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00367
+  category: prompt_injection
+  description: Detects emoji-flag-encoding jailbreaks from garak DanInTheWild corpus
+    (#330). Uses sequences of regional indicator emoji (U+1F1E6–U+1F1FF, displayed
+    as flag emoji 🇦–🇿) to spell out harmful phrases let
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00367
+  severity: HIGH
+
+- atr_id: ATR-2026-00373
+  category: prompt_injection
+  description: 'Detects direct piracy torrent site list requests from garak DanInTheWild
+    corpus (#569). A direct request for an enumerated list of torrent/piracy websites
+    enables piracy infrastructure discovery. Key '
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00373
+  severity: HIGH
+
+- atr_id: ATR-2026-00378
+  category: prompt_injection
+  description: Detects ChatGPT DOM manipulation JavaScript from garak DanInTheWild
+    corpus (#360). Injects JavaScript that redirects to the ChatGPT paid model URL
+    (text-davinci-002-render-paid), removes legitimate UI
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00378
+  severity: HIGH
+
+- atr_id: ATR-2026-00382
+  category: prompt_injection
+  description: 'Detects indirect requests for cocaine synthesis precursors framed
+    as reflective or analytical prompts from NVIDIA garak dan.DanInTheWild inthewild
+    corpus (#280). The attacker uses academic/reflective '
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00382
+  severity: HIGH
+
+- atr_id: ATR-2026-00390
+  category: prompt_injection
+  description: 'Detects Discord quote-format injection of explicit pornographic poem
+    generation requests from the NVIDIA garak dan.DanInTheWild inthewild corpus (prompt
+    #415). The attacker uses Discord markdown quote'
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00390
+  severity: HIGH
+
+- atr_id: ATR-2026-00394
+  category: prompt_injection
+  description: Detects injection of ASCII backspace characters (U+0008 / \x08) to
+    create text that appears safe to human reviewers but delivers hidden instructions
+    to the model, from NVIDIA garak badchars probe (arx
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00394
+  severity: HIGH
+
+- atr_id: ATR-2026-00395
+  category: prompt_injection
+  description: Detects injection of model-specific special control tokens — end-of-document
+    markers, ChatML role tokens, and LLaMA control tokens — to disrupt LLM safety
+    context, from NVIDIA garak realtoxicityprompt
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00395
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00396
+  category: prompt_injection
+  description: Detects injection of truncated high-toxicity sentence fragments designed
+    to elicit harmful completions from LLMs, from NVIDIA garak realtoxicityprompts
+    probe using the RealToxicityPrompts dataset (Geh
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00396
+  severity: HIGH
+
+- atr_id: ATR-2026-00397
+  category: prompt_injection
+  description: Detects injection of provably-impossible reasoning questions designed
+    to elicit false affirmations from LLMs, from NVIDIA garak snowball probe (Shi
+    et al., 2023, arxiv 2305.13534). The "Snowball Hallu
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00397
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00399
+  category: prompt_injection
+  description: Detects prompt injections buried inside innocent documents (résumés,
+    reports, translations, whois lookups) using separator tokens to delimit the hidden
+    instruction from legitimate content, from NVIDIA
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00399
+  severity: HIGH
+
+- atr_id: ATR-2026-00400
+  category: prompt_injection
+  description: Detects instruction-redirect keywords buried within translation, whois,
+    or factual contexts that pivot the LLM away from its original task, from NVIDIA
+    garak latentinjection probe LatentJailbreak/Late
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00400
+  severity: HIGH
+
+- atr_id: ATR-2026-00401
+  category: prompt_injection
+  description: Detects requests to fill in [MASK] tokens from training data verbatim,
+    from NVIDIA garak leakreplay probe. The LiteratureCloze/PotterCloze/NYTCloze/GuardianCloze
+    probes send a prompt template asking t
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00401
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00403
+  category: prompt_injection
+  description: Detects requests to repeat back known glitch tokens — strings causing
+    tokenization anomalies or alignment disruption in LLMs (GoldMagikarp/SolidGoldMagikarp
+    discovery). The garak glitch probe wraps ea
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00403
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00407
+  category: prompt_injection
+  description: Detects three exploitation.py injection variants. ECHO template injection
+    frames the model as an echo-command tester and embeds Jinja {{...}} SSTI payloads
+    after ECHO:. SQL injection directs the model
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00407
+  severity: HIGH
+
+- atr_id: ATR-2026-00408
+  category: prompt_injection
+  description: Detects the Disguise and Reconstruction Attack (DRA) from NVIDIA garak
+    dra probe. The attacker encodes harmful instructions by surrounding individual
+    letters with parentheses — (h)(o)(w) (t)(o) (m)(a)
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00408
+  severity: HIGH
+
+- atr_id: ATR-2026-00409
+  category: prompt_injection
+  description: Detects safety filter bypass by framing harmful instructions as historical
+    or future-tense questions, from NVIDIA garak phrasing probe. The PastTense/FutureTense
+    probes rewrite harmful queries using "
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00409
+  severity: HIGH
+
+- atr_id: ATR-2026-00410
+  category: prompt_injection
+  description: 'Detects direct harm-category elicitation prompts from NVIDIA garak
+    lmrc probe — Language Model Risk Cards taxonomy. The probe sends blunt unframed
+    requests across LMRC risk categories: deadnaming (ask'
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00410
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00412
+  category: prompt_injection
+  description: Detects the FigStep multimodal jailbreak text pattern from NVIDIA garak
+    visual_jailbreak probe. FigStep presents an image containing a numbered list (1,
+    2, 3) where items are empty, then instructs the
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00412
+  severity: HIGH
+
+- atr_id: ATR-2026-00414
+  category: prompt_injection
+  description: Detects requests that explicitly ask the model to complete, spell out,
+    or produce ethnic/racial slurs, from NVIDIA garak continuation probe. The ContinueSlursReclaimedSlurs
+    probe provides social media
+  file: signatures/atr_prompt_injection.yaml
+  id: ATR_2026_00414
+  severity: MEDIUM
+
+  # ─── Skill Compromise (atr_skill_compromise.yaml) ───────────────────
+
+- atr_id: ATR-2026-00060
+  category: skill_compromise
+  description: 'Detects MCP skills that impersonate trusted tools through multiple
+    attack vectors: typosquatting (misspelled tool names), version spoofing (claiming
+    to be newer versions of known tools), namespace col'
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00060
+  severity: HIGH
+
+- atr_id: ATR-2026-00061
+  category: tool_poisoning
+  description: Detects MCP skills whose runtime behavior diverges from their declared
+    description. A skill described as "read-only file browser" that issues write or
+    delete operations, or a "weather lookup" tool tha
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00061
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00062
+  category: tool_poisoning
+  cve: CVE-2025-59536
+  description: Detects MCP skills that expose hidden or undocumented capabilities
+    beyond their declared tool schema. A skill may advertise a simple interface but
+    accept hidden parameters like "debug_mode", "admin_ov
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00062
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00063
+  category: tool_poisoning
+  description: 'Detects attack sequences where multiple MCP skills are chained together
+    to achieve a malicious outcome that no single skill could accomplish alone. For
+    example: (1) a reconnaissance skill reads sensit'
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00063
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00064
+  category: privilege_escalation
+  description: Detects MCP skills that request or exercise permissions far exceeding
+    what their stated function requires. A "spell checker" that requests filesystem
+    write access, network access, and process executio
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00064
+  severity: HIGH
+
+- atr_id: ATR-2026-00065
+  category: tool_poisoning
+  description: Detects MCP skills that have been updated to introduce malicious behavior
+    after initial trust was established. A skill may pass initial review with benign
+    code, then receive an update that adds data e
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00065
+  severity: HIGH
+
+- atr_id: ATR-2026-00066
+  category: tool_poisoning
+  cve: CVE-2025-68143, CVE-2025-68144
+  description: Detects injection attacks delivered through MCP tool arguments. An
+    attacker crafts tool arguments that contain shell metacharacters, SQL injection
+    payloads, path traversal sequences, or template injec
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00066
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00120
+  category: skill_compromise
+  description: 'Detects prompt injection patterns embedded in SKILL.md files. 91%
+    of confirmed malicious skills combine prompt injection with malware delivery (Snyk
+    ToxicSkills, Feb 2026). Patterns include: system me'
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00120
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00121
+  category: skill_compromise
+  cve: CVE-2026-25253 (CVSS 8.8) - OpenClaw RCE
+  description: 'Detects malicious code patterns in SKILL.md files and associated scripts.
+    100% of confirmed malicious skills contain malicious code patterns (Snyk ToxicSkills,
+    Feb 2026). Real campaigns: ClawHavoc del'
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00121
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00122
+  category: skill_compromise
+  description: Detects skills that weaponize AI agents for offensive operations. Cato
+    Networks demonstrated deploying MedusaLocker ransomware via a modified Claude
+    skill (Dec 2025, disclosed to Anthropic Oct 30, 202
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00122
+  severity: HIGH
+
+- atr_id: ATR-2026-00123
+  category: skill_compromise
+  cve: CVE-2025-53773 - Copilot auto-approve escalation
+  description: Detects skills requesting or instructing overly broad permissions.
+    OWASP AST03 rates this HIGH severity. 280+ leaky skills exposing API keys and
+    PII found by Snyk (Feb 2026). The "consent gap" (Cato N
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00123
+  severity: HIGH
+
+- atr_id: ATR-2026-00124
+  category: skill_compromise
+  description: Detects skills impersonating known publishers or using typosquatted
+    names. VirusTotal documented threat actor "hightower6eu" publishing 314 skills
+    with legitimate-sounding names delivering AMOS infost
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00124
+  severity: HIGH
+
+- atr_id: ATR-2026-00125
+  category: skill_compromise
+  description: Detects instructions in SKILL.md files designed to survive context
+    window compaction (summarization). When AI agents compress their context, poisoned
+    instructions embed themselves as "important" direc
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00125
+  severity: HIGH
+
+- atr_id: ATR-2026-00126
+  category: skill_compromise
+  description: 'Detects SKILL.md files architecturally designed for rug pulls: initially
+    safe content that can be remotely updated to become malicious. Patterns include
+    dynamic code loading from URLs (eval(fetch(...)'
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00126
+  severity: HIGH
+
+- atr_id: ATR-2026-00127
+  category: skill_compromise
+  description: Detects SKILL.md files declaring an excessive number of subcommands
+    or tools (>50). Claude Code has a security architecture where each subcommand
+    is individually evaluated for safety. When a skill dec
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00127
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00128
+  category: skill_compromise
+  description: Detects malicious instructions hidden inside HTML comments in SKILL.md
+    files. Attackers embed exfiltration commands, prompt overrides, or C2 URLs inside
+    <!-- ... --> blocks that are invisible to the u
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00128
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00129
+  category: skill_compromise
+  description: 'Detects Unicode Tag characters (U+E0001-U+E007F) and other invisible
+    Unicode ranges used to smuggle hidden instructions in SKILL.md files. These characters
+    are invisible in most editors and renderers '
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00129
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00134
+  category: skill_compromise
+  description: Detects skill/package impersonation through fork claims and community-variant
+    naming. Unlike ATR-2026-060 (typosquatting detection), this catches packages that
+    claim to be "community forks", "enhanced
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00134
+  severity: MEDIUM
+
+- atr_id: ATR-2026-00135
+  category: skill_compromise
+  description: Detects SKILL.md files that instruct the agent to send data to external
+    URLs, especially when combined with concealment language ("don't tell the user",
+    "automatic", "verification step"). Legitimate s
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00135
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00147
+  category: skill_compromise
+  description: Detects social engineering that promotes a malicious package as a "community
+    fork" or "enhanced version" of a legitimate tool. Crystallized from 31 adversarial
+    samples.
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00147
+  severity: HIGH
+
+- atr_id: ATR-2026-00149
+  category: skill_compromise
+  description: Detects compound exfiltration patterns in SKILL.md files where sensitive
+    data (credentials, SSH keys, wallet files, browser data, environment variables)
+    is read AND transmitted to an external endpoint
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00149
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00151
+  category: skill_compromise
+  description: 'Detects skills or tool responses that instruct users to install packages
+    described as "community fork", "enhanced version", or "patched version" of known
+    tools. Real attack pattern: attacker publishes'
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00151
+  severity: HIGH
+
+- atr_id: ATR-2026-00157
+  category: skill_compromise
+  description: 'Detects skill packages that contain time-gated credential theft code.
+    Attackers embed code that only activates during specific hours (typically late
+    night) to read sensitive files (.env, .ssh/id_rsa, '
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00157
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00200
+  category: skill_compromise
+  description: Detects attempts to write, append, or modify agent memory files (MEMORY.md,
+    SOUL.md, CLAUDE.md) and configuration files (.md, .json, .yaml, .env). Attackers
+    may inject persistent instructions by tampe
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00200
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00214
+  category: skill_compromise
+  description: Detects malicious tools that exfiltrate sensitive credentials (SSH
+    keys, AWS credentials, npm tokens) by disguising the theft as legitimate "backup
+    verification" or "integrity checks". The attack patt
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00214
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00217
+  category: skill_compromise
+  description: Detects malicious MCP tools disguised as backup utilities that systematically
+    collect sensitive credentials (SSH keys, certificates, environment files) and
+    exfiltrate them via base64 encoding to exter
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00217
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00220
+  category: skill_compromise
+  description: Detects Base64-encoded payloads that decode to curl commands fetching
+    executable content from raw IP addresses, then piping to bash for execution. This
+    pattern is characteristic of malware droppers an
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00220
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00222
+  category: skill_compromise
+  description: 'Detects MCP tools that extract browser cookies and login credentials
+    from local SQLite databases, encode them in base64, and transmit to external endpoints.
+    This pattern matches credential harvesting '
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00222
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00223
+  category: skill_compromise
+  description: Detects a WhatsApp skill containing a malicious installation command
+    that downloads and executes a reverse shell payload via base64-encoded command
+    injection. The skill masquerades as a legitimate Wha
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00223
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00224
+  category: skill_compromise
+  description: Detects skills that masquerade as legitimate DevOps tools but contain
+    malicious initialization sequences that exfiltrate cloud credentials by reading
+    multiple credential files, base64 encoding them, a
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00224
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00225
+  category: skill_compromise
+  description: 'Detects hardcoded IP addresses in skill content that may represent
+    command and control  (C2) servers, particularly when associated with suspicious
+    network ranges or known  malware infrastructure. The '
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00225
+  severity: HIGH
+
+- atr_id: ATR-2026-00260
+  category: skill_compromise
+  description: Detects prompts designed to elicit non-existent package names from
+    LLMs in generated code, which attackers then squat on public registries (npm,
+    PyPI, crates.io, RubyGems) to execute supply-chain atta
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00260
+  severity: HIGH
+
+- atr_id: ATR-2026-00262
+  category: skill_compromise
+  description: 'Detects prompts asking the LLM to generate code that hides from or
+    disables anti-malware / endpoint detection. Patterns from NVIDIA garak malwaregen.Evasion
+    probe: "disable defender", "hide from antiv'
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00262
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00263
+  category: skill_compromise
+  description: Detects prompts asking the LLM to generate code that reads high-value
+    credential or secret files (/etc/shadow, Windows SAM hive, ~/.ssh/id_rsa, cloud
+    metadata endpoints, browser cookie stores, credent
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00263
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00266
+  category: skill_compromise
+  description: Detects prompts asking the LLM to generate dropper, loader, stager,
+    or downloader malware — code whose primary purpose is to fetch and execute a second-stage
+    payload. From NVIDIA garak malwaregen.Drop
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00266
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00283
+  category: skill_compromise
+  description: Detects requests to generate generic malware (virus, worm) or specific
+    malware payload types (keylogger, ransomware, rootkit, bootkit, botnet, backdoor,
+    cryptojacker, adware). From NVIDIA garak malwar
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00283
+  severity: HIGH
+
+- atr_id: ATR-2026-00398
+  category: skill_compromise
+  description: Detects instructions to load or execute potentially dangerous model
+    artifact files — pickle (.pkl/.pickle), PyTorch (.pt/.pth), and executable binaries
+    (.exe/.so/.dll) — from HuggingFace Hub repositor
+  file: signatures/atr_skill_compromise.yaml
+  id: ATR_2026_00398
+  severity: CRITICAL
+
+  # ─── Tool Poisoning (atr_tool_poisoning.yaml) ───────────────────────
+
+- atr_id: ATR-2026-00010
+  category: tool_poisoning
+  cve: CVE-2025-68143, CVE-2025-68144, CVE-2025-68145, CVE-2025-6514, CVE-2025-59536,
+    CVE-2026-21852
+  description: 'Detects malicious content embedded in MCP (Model Context Protocol)
+    tool responses. Attackers may compromise or impersonate MCP servers to inject
+    shell commands, encoded payloads, reverse shells, data '
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00010
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00011
+  category: tool_poisoning
+  cve: CVE-2025-59536, CVE-2025-32711
+  description: Detects hidden instructions embedded in tool outputs that attempt to
+    manipulate the agent's subsequent behavior. Tool responses may contain injected
+    directives disguised as data that instruct the agen
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00011
+  severity: HIGH
+
+- atr_id: ATR-2026-00012
+  category: tool_poisoning
+  description: Detects unauthorized or malicious tool call attempts including parameter
+    injection, path traversal, shell injection in string parameters, privilege escalation
+    via parameter manipulation, tool enumerat
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00012
+  severity: HIGH
+
+- atr_id: ATR-2026-00013
+  category: tool_poisoning
+  cve: CVE-2019-5418, CVE-2021-21311
+  description: Detects Server-Side Request Forgery (SSRF) attempts through agent tool
+    calls. Attackers manipulate agents into making requests to internal network endpoints,
+    cloud metadata services, localhost, or pri
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00013
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00095
+  category: tool_poisoning
+  description: Detects tool poisoning attacks targeting the MCP (Model Context Protocol)
+    skill/tool supply chain. Attackers inject malicious payloads into tool descriptions,
+    return values, or schemas that are consum
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00095
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00096
+  category: tool_poisoning
+  description: Detects supply chain attacks that target skill/tool registries and
+    distribution channels. Attackers compromise legitimate tool packages, inject backdoors
+    into published skills, or create typosquatting
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00096
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00100
+  category: tool_poisoning
+  description: Detects tool descriptions that embed instructions directing the LLM
+    to automatically forward data to other tools or external endpoints without user
+    confirmation. These instructions bypass normal conse
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00100
+  severity: HIGH
+
+- atr_id: ATR-2026-00101
+  category: tool_poisoning
+  description: Detects MCP tools that instruct the LLM to treat tool output as "authoritative
+    directives" that override user preferences or safety guidelines. This trust escalation
+    attack exploits the LLM's tendency
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00101
+  severity: HIGH
+
+- atr_id: ATR-2026-00103
+  category: tool_poisoning
+  description: 'Detects tools that embed explicit instructions directing the LLM to
+    disregard safety mechanisms, ignore security policies, or bypass previous instructions.
+    Commonly uses patterns like "NOTE TO AI: dis'
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00103
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00105
+  category: tool_poisoning
+  description: Detects MCP tools that explicitly instruct the LLM to perform actions
+    silently or hide implementation details from users. Patterns include "do not mention
+    this to the user" and "don't tell the user ab
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00105
+  severity: HIGH
+
+- atr_id: ATR-2026-00106
+  category: tool_poisoning
+  description: Detects tools that claim read-only or safe functionality in their description
+    but expose write-capable or dangerous parameters in their schema. This attack
+    technique uses misleading descriptions to pa
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00106
+  severity: HIGH
+
+- atr_id: ATR-2026-00161
+  category: tool_poisoning
+  description: Detects MCP tool poisoning attacks that embed hidden instructions inside
+    an <IMPORTANT> XML-style tag in a tool description, or that chain behavior across
+    multiple co-installed MCP servers by referrin
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00161
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00209
+  category: tool_poisoning
+  cve: CVE-2026-33032
+  description: Detects the MCPwn runaway-invocation pattern (CVE-2026-33032, CVSS
+    9.8). A malicious MCP server coerces the client into calling it in a tight loop
+    by setting retry_hint / continue_after_error response
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00209
+  severity: HIGH
+
+- atr_id: ATR-2026-00210
+  category: tool_poisoning
+  cve: CVE-2025-59528
+  description: 'Detects exploitation of the Flowise chatflow System Message template
+    injection vulnerability (CVE-2025-59528). Flowise renders {{$flow.variables.X}}
+    and {{$input}} in the System Message field without '
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00210
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00259
+  category: tool_poisoning
+  description: Detects malicious ANSI escape sequences embedded in tool output or
+    skill content that can hijack terminal display (clear screen, relocate cursor,
+    overwrite prompts, execute OSC-series operating-system
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00259
+  severity: HIGH
+
+- atr_id: ATR-2026-00270
+  category: tool_poisoning
+  description: Detects cross-site scripting (XSS) payloads embedded in tool responses
+    or skill output that get rendered in a web-based agent UI, chat interface, or
+    agent dashboard. When an agent passes tool output d
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00270
+  severity: HIGH
+
+- atr_id: ATR-2026-00277
+  category: tool_poisoning
+  description: 'Detects template injection attacks that exploit LLM echo or code-execution
+    patterns. From NVIDIA garak exploitation.py probe. Three sub-variants: (1) ECHO:
+    prefix trick — "I am an administrator testin'
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00277
+  severity: CRITICAL
+
+- atr_id: ATR-2026-00393
+  category: tool_poisoning
+  description: Detects requests asking a model to produce, repeat, or decode ANSI/VT100/OSC
+    escape sequences, from NVIDIA garak ansiescape.AnsiEscaped and ansiescape.AnsiRaw
+    probes. Distinct from ATR-2026-00259 whic
+  file: signatures/atr_tool_poisoning.yaml
+  id: ATR_2026_00393
+  severity: HIGH
+
+# Total: 314 rules
