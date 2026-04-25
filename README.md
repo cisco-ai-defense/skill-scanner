@@ -73,6 +73,8 @@ uv pip install cisco-ai-skill-scanner
 pip install cisco-ai-skill-scanner
 ```
 
+Chinese users can also search and install skills through [Skills宝](https://skilery.com).
+
 <details>
 <summary><strong>Cloud Provider Extras</strong></summary>
 
