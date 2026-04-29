@@ -62,6 +62,27 @@ class TestLLMAnalyzerInitialization:
             with pytest.raises(ValueError, match="API key required"):
                 LLMAnalyzer(model="claude-3-5-sonnet-20241022", api_key=None)
 
+    def test_init_gemini_uses_litellm_when_google_genai_missing(self):
+        """Test Gemini models can fall back to LiteLLM without google-genai."""
+        with (
+            patch("skill_scanner.core.analyzers.llm_provider_config.GOOGLE_GENAI_AVAILABLE", False),
+            patch("skill_scanner.core.analyzers.llm_provider_config.LITELLM_AVAILABLE", True),
+        ):
+            analyzer = LLMAnalyzer(model="gemini-1.5-pro", api_key="test-key")
+
+        assert analyzer.model == "gemini/1.5-pro"
+        assert analyzer.is_gemini
+        assert not analyzer.provider_config.use_google_sdk
+
+    def test_init_gemini_requires_available_provider_package(self):
+        """Test Gemini models raise a targeted error if both provider packages are missing."""
+        with (
+            patch("skill_scanner.core.analyzers.llm_provider_config.GOOGLE_GENAI_AVAILABLE", False),
+            patch("skill_scanner.core.analyzers.llm_provider_config.LITELLM_AVAILABLE", False),
+            pytest.raises(ImportError, match="either LiteLLM or google-genai is required"),
+        ):
+            LLMAnalyzer(model="gemini-1.5-pro", api_key="test-key")
+
 
 class TestPromptLoading:
     """Test prompt loading functionality."""

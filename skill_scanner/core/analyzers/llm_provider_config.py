@@ -106,7 +106,14 @@ class ProviderConfig:
             # Google AI Studio (uses Google SDK directly)
             self.use_google_sdk = True
             self.model = self._normalize_gemini_model_name(model)
-        elif self.is_gemini and not GOOGLE_GENAI_AVAILABLE:
+        elif self.is_gemini and LITELLM_AVAILABLE:
+            # Google AI Studio through LiteLLM when google-genai is not installed.
+            if not model.startswith("gemini/"):
+                model_name = model.replace("gemini-", "").replace("gemini/", "")
+                self.model = f"gemini/{model_name}"
+            else:
+                self.model = model
+        elif self.is_gemini:
             raise ImportError(
                 "For Gemini models, either LiteLLM or google-genai is required. "
                 "Install with: pip install litellm or pip install google-genai"
@@ -114,12 +121,7 @@ class ProviderConfig:
         elif not LITELLM_AVAILABLE:
             raise ImportError("LiteLLM is required for enhanced LLM analyzer. Install with: pip install litellm")
         else:
-            # Normalize Gemini model name for LiteLLM (Google AI Studio via LiteLLM)
-            if self.is_gemini and not model.startswith("gemini/"):
-                model_name = model.replace("gemini-", "").replace("gemini/", "")
-                self.model = f"gemini/{model_name}"
-            else:
-                self.model = model
+            self.model = model
 
         # Resolve API key (may acquire Entra ID token for Azure)
         self._using_entra_id = False
