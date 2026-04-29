@@ -55,6 +55,19 @@ def run_cli(args: list[str], timeout: int = 60) -> tuple[str, str, int]:
     return result.stdout, result.stderr, result.returncode
 
 
+def filter_runtime_stderr(stderr: str) -> str:
+    """Remove noisy native runtime warnings that are unrelated to CLI status output."""
+    ignored_markers = (
+        "RuntimeWarning",
+        "onnxruntime",
+        "device_discovery.cc",
+        "skipping pci_bus_id",
+    )
+    return "\n".join(
+        line for line in stderr.splitlines() if not any(marker.lower() in line.lower() for marker in ignored_markers)
+    )
+
+
 # =============================================================================
 # JSON Format Tests
 # =============================================================================
@@ -137,8 +150,8 @@ class TestJSONFormat:
         data = json.loads(stdout)
         assert "skill_name" in data
 
-        # Check stderr has status message (ignore Python runtime warnings)
-        stderr_filtered = "\n".join(line for line in stderr.splitlines() if "RuntimeWarning" not in line)
+        # Check stderr has status message (ignore Python/native runtime warnings)
+        stderr_filtered = filter_runtime_stderr(stderr)
         assert "behavioral" in stderr_filtered.lower() or stderr_filtered.strip() == ""
 
 

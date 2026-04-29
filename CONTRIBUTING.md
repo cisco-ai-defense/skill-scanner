@@ -23,6 +23,48 @@ See [docs/developing.md](/docs/developing.md) for complete environment setup ins
 - Installing dependencies and pre-commit hooks
 - Running tests and linting
 
+## Dependency Policy
+
+`cisco-ai-skill-scanner` is published as a library on PyPI, so its dependency
+strategy distinguishes between **abstract** and **concrete** constraints:
+
+| Layer | File | Style | Audience |
+|---|---|---|---|
+| Abstract constraints | `pyproject.toml` | Compatible-release ranges (`>=X.Y,<X+1`) | Downstream consumers' resolvers |
+| Concrete tree | `uv.lock` | Exact versions + SHA-256 hashes | Our CI, Docker builds, dev environments |
+| Pip-user reproducibility | `requirements.txt` (attached to GitHub releases) | Exact versions + hashes | Plain `pip install` users |
+
+### Rules of thumb
+
+1. **Do NOT use `==` in `[project] dependencies` or `[project.optional-dependencies]`.**
+   Hard pins force downstream consumers into full dependency-tree rewires every
+   time a transitive dep ships a security patch (see issue #93). Use
+   `>=floor,<next_major` instead, with the floor at the lowest version we
+   actually test.
+2. **Floor pins for known-bad versions are encouraged.** If a specific upstream
+   release was yanked, compromised, or has a CVE with no fix below it, raise the
+   floor and add an inline comment explaining why (see `litellm` for an example).
+3. **`[dependency-groups] dev` may use `==`.** These never propagate to library
+   consumers, and exact pins keep contributor environments deterministic.
+4. **Reproducibility comes from `uv.lock`, not `pyproject.toml`.** CI uses
+   `uv sync --frozen` so any drift between `pyproject.toml` and `uv.lock` fails
+   the build.
+5. **Re-run `uv lock` after every `pyproject.toml` edit.** Pre-commit will not do
+   this for you; commit the lockfile change with the constraint change.
+
+### When upgrading dependencies
+
+```bash
+uv lock --upgrade        # bump the entire tree to latest within ranges
+uv sync --all-extras --frozen
+uv run pytest tests/
+uv run pip-audit         # must report 0 vulnerabilities
+```
+
+If `pip-audit` flags a transitive CVE that has no fix available in our allowed
+range, see [SECURITY.md](/SECURITY.md#vulnerability-allowlist) for the
+documented allowlist process.
+
 ## Reporting Issues
 
 Before reporting a new issue, please ensure that the issue was not already

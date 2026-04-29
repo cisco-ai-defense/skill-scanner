@@ -29,7 +29,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --all-extras --frozen
 
       - name: Run pre-commit hooks
         run: uv run pre-commit run --all-files
@@ -55,7 +55,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --all-extras --frozen
 
       - name: Run unit tests
         run: |
@@ -84,7 +84,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --all-extras --frozen
 
       - name: Run tests with coverage
         run: |
@@ -116,10 +116,18 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --all-extras --frozen
 
+      # Fails the build on any new CVE in the locked tree.
+      # To temporarily allow a known-not-applicable finding, append
+      #   --ignore-vuln <GHSA-or-CVE-id>
+      # and document the justification in SECURITY.md (Vulnerability Allowlist).
+      # Note: --strict is intentionally omitted because our own package is
+      # always reported as "skipped" (not on PyPI from the local checkout).
       - name: Run pip-audit for vulnerability scanning
-        run: uv run pip-audit --require-hashes=false || true
+        run: uv run pip-audit
 
+      # liccheck currently fails to import pkg_resources on newer setuptools;
+      # tracked separately. Soft-fail until the upstream issue is resolved.
       - name: Run liccheck for license compliance
         run: uv run liccheck -s pyproject.toml || true
