@@ -23,6 +23,7 @@ jobs:
       url: https://pypi.org/p/cisco-ai-skill-scanner
     permissions:
       id-token: write
+      contents: write  # needed to attach requirements.txt to the GitHub release
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -39,5 +40,25 @@ jobs:
       - name: Build
         run: uv build
 
+      # Export a hash-pinned requirements.txt so plain `pip` users can reproduce
+      # the same locked tree without needing uv. Kept outside dist/ so the PyPI
+      # publish step doesn't try to upload it as a distribution.
+      - name: Export hash-pinned requirements.txt
+        run: |
+          mkdir -p release-assets
+          uv export \
+            --frozen \
+            --no-dev \
+            --all-extras \
+            --no-emit-project \
+            --output-file release-assets/requirements.txt
+
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Attach requirements.txt to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          files: release-assets/requirements.txt
+          fail_on_unmatched_files: true
