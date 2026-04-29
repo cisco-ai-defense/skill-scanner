@@ -128,6 +128,25 @@ class TestLoaderLenientFallback:
 
         assert skill.name == "real-skill"
 
+    def test_lenient_fallback_binary_primary_md_raises(self, loader, tmp_path):
+        """Lenient synthesis must not load binary primary .md as an empty skill."""
+        skill_dir = tmp_path / "bin-md"
+        skill_dir.mkdir()
+        (skill_dir / "note.md").write_bytes(b"\xff\xfe")
+
+        with pytest.raises(SkillLoadError, match="not valid UTF-8"):
+            loader.load_skill(skill_dir, lenient=True)
+
+    def test_lenient_fallback_binary_secondary_md_raises(self, loader, tmp_path):
+        """All concatenated .md files must be valid UTF-8 text."""
+        skill_dir = tmp_path / "mixed-md"
+        skill_dir.mkdir()
+        (skill_dir / "a.md").write_text("# OK\n", encoding="utf-8")
+        (skill_dir / "b.md").write_bytes(b"\x00")
+
+        with pytest.raises(SkillLoadError, match="null bytes"):
+            loader.load_skill(skill_dir, lenient=True)
+
     def test_lenient_claude_code_commands_dir(self, loader, tmp_path):
         """Simulate Claude Code .claude/commands/*.md directory structure."""
         cmd_dir = tmp_path / ".claude" / "commands" / "deploy"

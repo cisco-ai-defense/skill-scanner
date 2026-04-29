@@ -336,6 +336,26 @@ class TestFrontmatterValidation:
         codes = [e.code for e in result.errors]
         assert ValidationErrorCode.FRONTMATTER_PARSE_ERROR in codes
 
+    def test_null_bytes_in_skill_md_caught_in_frontmatter(self, tmp_path):
+        """NUL bytes in SKILL.md should produce a FRONTMATTER_PARSE_ERROR."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(
+            b"---\nname: my-skill\ndescription: ok\n---\nbody\x00tail",
+        )
+        result = SkillValidator().validate(skill_dir)
+        codes = [e.code for e in result.errors]
+        assert ValidationErrorCode.FRONTMATTER_PARSE_ERROR in codes
+
+    def test_non_utf8_skill_md_caught_in_frontmatter(self, tmp_path):
+        """Non-UTF-8 SKILL.md should produce a FRONTMATTER_PARSE_ERROR."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(b"\xff\xfe\xfd")
+        result = SkillValidator().validate(skill_dir)
+        codes = [e.code for e in result.errors]
+        assert ValidationErrorCode.FRONTMATTER_PARSE_ERROR in codes
+
 
 # ---------------------------------------------------------------------------
 # Integration

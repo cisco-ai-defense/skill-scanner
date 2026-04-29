@@ -70,7 +70,8 @@ dependencies = [
     # LLM support (required)
     "anthropic==0.76.0",
     "openai==2.15.0",
-    "litellm==1.82.3",
+    # Pin to 1.83.0+ (avoid compromised PyPI lines in 1.80.16 / 1.82.3 / 1.82.8 — BerriAI/litellm#24512).
+    "litellm==1.83.0",
 ]
 
 [project.optional-dependencies]

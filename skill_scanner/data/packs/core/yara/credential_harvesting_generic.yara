@@ -30,10 +30,12 @@ rule credential_harvesting_generic{
         ////////////////////////////////////////////////
 
         // API credentials - real keys only (not Bearer YOUR_*)
-        // AKIA keys, ghp_ tokens, sk- keys with actual values (not placeholders)
+        // AKIA keys, ghp_ tokens, legacy sk- keys, and documented provider-specific sk- prefixes
         $api_credentials_aws = /\bAKIA[0-9A-Z]{16}\b/
         $api_credentials_github = /\bghp_[A-Za-z0-9]{36}\b/
-        $api_credentials_sk = /\bsk-[A-Za-z0-9]{48,}\b/
+        $api_credentials_sk_legacy = /\bsk-[A-Za-z0-9]{48,}\b/
+        $api_credentials_openai_project = /\bsk-proj-[A-Za-z0-9_-]{20,}\b/
+        $api_credentials_anthropic = /\bsk-ant-api\d{2}-[A-Za-z0-9_-]{20,}\b/
 
         // SSH keys, certificates and credential file content
         $key_certificate_content = /(-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----)/
@@ -110,7 +112,9 @@ rule credential_harvesting_generic{
             // Real API credentials (high confidence specific patterns)
             $api_credentials_aws or
             $api_credentials_github or
-            $api_credentials_sk or
+            $api_credentials_sk_legacy or
+            $api_credentials_openai_project or
+            $api_credentials_anthropic or
 
             // Actual private key content
             $key_certificate_content or
