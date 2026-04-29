@@ -35,8 +35,7 @@ Flags shared by `scan` and `scan-all`:
 | `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |
 | `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |
 | `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |
-| `--lenient` | off | Tolerate malformed skills: coerce bad fields, fill defaults, and continue instead of failing. When `SKILL.md` is absent, falls back to scanning `.md` files in the directory |
-| `--skill-file FILENAME` | `SKILL.md` | Custom metadata filename to use instead of `SKILL.md` |
+| `--lenient` | off | Tolerate malformed YAML / missing fields: coerce bad fields, fill defaults, and continue instead of failing. Binary and non-UTF-8 files always fail. |
 | `--detailed` | off | Include full evidence in output |
 | `--compact` | off | Minimize output (JSON: no pretty-print) |
 | `--verbose` | off | Verbose logging |
@@ -50,7 +49,8 @@ Command: `python -m skill_scanner.cli.cli --help`
 
 ```text
 usage: cli.py [-h] [--version]
-              {scan,scan-all,list-analyzers,validate-rules,generate-policy,configure-policy,interactive} ...
+              {scan,scan-all,list-analyzers,validate-rules,generate-policy,configure-policy,interactive}
+              ...
 
 Skill Scanner - Security scanner for agent skills packages
 
@@ -104,10 +104,11 @@ usage: cli.py scan [-h] [--format {summary,json,markdown,table,sarif,html}]
                    [--vt-upload-files] [--use-aidefense]
                    [--aidefense-api-key AIDEFENSE_API_KEY]
                    [--aidefense-api-url AIDEFENSE_API_URL]
-                   [--llm-provider {anthropic,openai}]
+                   [--llm-provider {anthropic,openai,openai-compatible}]
                    [--llm-consensus-runs N] [--llm-max-tokens N]
                    [--use-trigger] [--enable-meta] [--policy PRESET_OR_PATH]
-                   [--lenient] [--custom-rules PATH] [--taxonomy PATH]
+                   [--lenient] [--skill-file FILENAME] [--custom-rules PATH]
+                   [--rule-packs PACK [PACK ...]] [--taxonomy PATH]
                    [--threat-mapping PATH]
                    skill_directory
 
@@ -121,7 +122,8 @@ options:
                         multiple times to produce several reports in one run,
                         e.g. --format markdown --format sarif. Use 'sarif' for
                         GitHub Code Scanning, 'html' for interactive report.
-  --output, -o OUTPUT   Default output file path (overridden by --output-<fmt>
+  --output OUTPUT, -o OUTPUT
+                        Default output file path (overridden by --output-<fmt>
                         for a specific format)
   --output-json OUTPUT_JSON
                         Write JSON report to this file
@@ -157,8 +159,9 @@ options:
                         AI Defense API key (or set AI_DEFENSE_API_KEY)
   --aidefense-api-url AIDEFENSE_API_URL
                         AI Defense API URL (optional, defaults to US region)
-  --llm-provider {anthropic,openai}
-                        LLM provider
+  --llm-provider {anthropic,openai,openai-compatible}
+                        LLM provider shortcut or explicit OpenAI-compatible
+                        override
   --llm-consensus-runs N
                         Run LLM analysis N times and keep only findings with
                         majority agreement (reduces false positives, increases
@@ -171,9 +174,19 @@ options:
                         Scan policy: preset name (strict, balanced,
                         permissive) or path to custom YAML
   --lenient             Tolerate malformed skills: coerce bad fields, fill
-                        defaults, and continue instead of failing
+                        defaults, and continue instead of failing. When
+                        SKILL.md is absent, falls back to scanning .md files
+                        in the directory as instruction bodies (supports non-
+                        Codex/Cursor formats such as Claude Code commands).
+  --skill-file FILENAME
+                        Custom metadata filename to use instead of SKILL.md
+                        (e.g. README.md)
   --custom-rules PATH   Path to directory containing custom YARA rules (.yara
                         files)
+  --rule-packs PACK [PACK ...]
+                        Additional signature rule packs to enable (e.g.
+                        'atr'). Use '--rule-packs list' to show available
+                        packs.
   --taxonomy PATH       Path to custom taxonomy JSON/YAML (overrides
                         SKILL_SCANNER_TAXONOMY_PATH)
   --threat-mapping PATH
@@ -206,11 +219,12 @@ usage: cli.py scan-all [-h] [--recursive] [--check-overlap]
                        [--use-aidefense]
                        [--aidefense-api-key AIDEFENSE_API_KEY]
                        [--aidefense-api-url AIDEFENSE_API_URL]
-                       [--llm-provider {anthropic,openai}]
+                       [--llm-provider {anthropic,openai,openai-compatible}]
                        [--llm-consensus-runs N] [--llm-max-tokens N]
                        [--use-trigger] [--enable-meta]
                        [--policy PRESET_OR_PATH] [--lenient]
-                       [--custom-rules PATH] [--taxonomy PATH]
+                       [--skill-file FILENAME] [--custom-rules PATH]
+                       [--rule-packs PACK [PACK ...]] [--taxonomy PATH]
                        [--threat-mapping PATH]
                        skills_directory
 
@@ -226,7 +240,8 @@ options:
                         multiple times to produce several reports in one run,
                         e.g. --format markdown --format sarif. Use 'sarif' for
                         GitHub Code Scanning, 'html' for interactive report.
-  --output, -o OUTPUT   Default output file path (overridden by --output-<fmt>
+  --output OUTPUT, -o OUTPUT
+                        Default output file path (overridden by --output-<fmt>
                         for a specific format)
   --output-json OUTPUT_JSON
                         Write JSON report to this file
@@ -262,8 +277,9 @@ options:
                         AI Defense API key (or set AI_DEFENSE_API_KEY)
   --aidefense-api-url AIDEFENSE_API_URL
                         AI Defense API URL (optional, defaults to US region)
-  --llm-provider {anthropic,openai}
-                        LLM provider
+  --llm-provider {anthropic,openai,openai-compatible}
+                        LLM provider shortcut or explicit OpenAI-compatible
+                        override
   --llm-consensus-runs N
                         Run LLM analysis N times and keep only findings with
                         majority agreement (reduces false positives, increases
@@ -276,9 +292,19 @@ options:
                         Scan policy: preset name (strict, balanced,
                         permissive) or path to custom YAML
   --lenient             Tolerate malformed skills: coerce bad fields, fill
-                        defaults, and continue instead of failing
+                        defaults, and continue instead of failing. When
+                        SKILL.md is absent, falls back to scanning .md files
+                        in the directory as instruction bodies (supports non-
+                        Codex/Cursor formats such as Claude Code commands).
+  --skill-file FILENAME
+                        Custom metadata filename to use instead of SKILL.md
+                        (e.g. README.md)
   --custom-rules PATH   Path to directory containing custom YARA rules (.yara
                         files)
+  --rule-packs PACK [PACK ...]
+                        Additional signature rule packs to enable (e.g.
+                        'atr'). Use '--rule-packs list' to show available
+                        packs.
   --taxonomy PATH       Path to custom taxonomy JSON/YAML (overrides
                         SKILL_SCANNER_TAXONOMY_PATH)
   --threat-mapping PATH
@@ -320,7 +346,8 @@ usage: cli.py generate-policy [-h] [--output OUTPUT]
 
 options:
   -h, --help            show this help message and exit
-  --output, -o OUTPUT   Output file path
+  --output OUTPUT, -o OUTPUT
+                        Output file path
   --preset {strict,balanced,permissive}
                         Base preset
 ```
@@ -338,9 +365,11 @@ Command: `python -m skill_scanner.cli.cli configure-policy --help`
 usage: cli.py configure-policy [-h] [--output OUTPUT] [--input INPUT]
 
 options:
-  -h, --help           show this help message and exit
-  --output, -o OUTPUT  Output file path
-  --input, -i INPUT    Load existing policy YAML for editing
+  -h, --help            show this help message and exit
+  --output OUTPUT, -o OUTPUT
+                        Output file path
+  --input INPUT, -i INPUT
+                        Load existing policy YAML for editing
 ```
 
 </details>

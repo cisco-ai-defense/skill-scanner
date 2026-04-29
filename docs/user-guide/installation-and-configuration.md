@@ -51,6 +51,7 @@ You only need to set these if you're using the corresponding features. Click a s
 <summary>Core LLM</summary>
 
 - `SKILL_SCANNER_LLM_API_KEY`
+- `SKILL_SCANNER_LLM_PROVIDER` — set to `openai` for OpenAI-compatible custom endpoints when the model name is not enough to infer routing
 - `SKILL_SCANNER_LLM_MODEL`
 - `SKILL_SCANNER_LLM_BASE_URL`
 - `SKILL_SCANNER_LLM_API_VERSION`

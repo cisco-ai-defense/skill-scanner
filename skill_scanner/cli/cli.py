@@ -799,7 +799,12 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--use-aidefense", action="store_true", help="Enable AI Defense analyzer (requires API key)")
     parser.add_argument("--aidefense-api-key", help="AI Defense API key (or set AI_DEFENSE_API_KEY)")
     parser.add_argument("--aidefense-api-url", help="AI Defense API URL (optional, defaults to US region)")
-    parser.add_argument("--llm-provider", choices=["anthropic", "openai"], default="anthropic", help="LLM provider")
+    parser.add_argument(
+        "--llm-provider",
+        choices=["anthropic", "openai", "openai-compatible"],
+        default=None,
+        help="LLM provider shortcut or explicit OpenAI-compatible override",
+    )
     parser.add_argument(
         "--llm-consensus-runs",
         type=int,

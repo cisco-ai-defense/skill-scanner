@@ -26,6 +26,9 @@ This example demonstrates:
 Prerequisites:
     export SKILL_SCANNER_LLM_API_KEY="your_key"
     export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"  # or gpt-4o
+    # For OpenAI-compatible custom endpoints:
+    # export SKILL_SCANNER_LLM_PROVIDER="openai"
+    # export SKILL_SCANNER_LLM_BASE_URL="https://your.internal.llm/v1"
     pip install cisco-ai-skill-scanner[llm]
 
 Usage:
@@ -40,7 +43,7 @@ from skill_scanner import SkillScanner
 from skill_scanner.core.analyzers.static import StaticAnalyzer
 
 try:
-    from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer, LLMProvider
+    from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
 
     LLM_AVAILABLE = True
 except ImportError:
@@ -69,12 +72,19 @@ def main():
         return 1
 
     model = os.getenv("SKILL_SCANNER_LLM_MODEL", "claude-3-5-sonnet-20241022")
+    provider = os.getenv("SKILL_SCANNER_LLM_PROVIDER")
+    base_url = os.getenv("SKILL_SCANNER_LLM_BASE_URL")
+    api_version = os.getenv("SKILL_SCANNER_LLM_API_VERSION")
 
     print(f"{'=' * 60}")
     print("LLM Analyzer Example")
     print(f"{'=' * 60}")
     print(f"Skill: {skill_path}")
     print(f"Model: {model}")
+    if provider:
+        print(f"Provider: {provider}")
+    if base_url:
+        print(f"Base URL: {base_url}")
     print()
 
     # Scan with static analyzer only
@@ -88,7 +98,13 @@ def main():
 
     # Scan with LLM analyzer
     print("Step 2: Scanning with LLM Analyzer...")
-    llm_analyzer = LLMAnalyzer(model=model, api_key=api_key)
+    llm_analyzer = LLMAnalyzer(
+        model=model,
+        api_key=api_key,
+        provider=provider,
+        base_url=base_url,
+        api_version=api_version,
+    )
     llm_scanner = SkillScanner(analyzers=[llm_analyzer])
     llm_result = llm_scanner.scan_skill(skill_path)
 
