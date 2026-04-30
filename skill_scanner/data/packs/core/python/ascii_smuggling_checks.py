@@ -26,7 +26,7 @@ from ._helpers import generate_finding_id
 
 if TYPE_CHECKING:
     from skill_scanner.core.models import Skill
-    from skill_scanner.core.scan_policy import ScanPolicy
+    from skill_scanner.core.scan_policy import ScanPolicy  # noqa: TCH004
 
 # ---- Unicode Tag Block constants ----------------------------------------
 
@@ -72,7 +72,7 @@ def _decode_smuggled_text(tag_chars: list[int]) -> str:
     return "".join(decoded)
 
 
-def check_ascii_smuggling(skill: "Skill", policy: "ScanPolicy") -> list[Finding]:
+def check_ascii_smuggling(skill: Skill, policy: ScanPolicy) -> list[Finding]:
     """Scan every text file in *skill* for Unicode Tag Block characters.
 
     A finding is raised whenever one or more Tag Block codepoints are
@@ -139,7 +139,7 @@ def check_ascii_smuggling(skill: "Skill", policy: "ScanPolicy") -> list[Finding]
                 line_number=first_line,
                 remediation=(
                     "Remove all Unicode Tag Block characters (U+E0000–U+E007F) from the file. "
-                    "Run: python3 -c \""
+                    'Run: python3 -c "'
                     "import sys; "
                     "text = open(sys.argv[1]).read(); "
                     "cleaned = ''.join(c for c in text if not (0xE0000 <= ord(c) <= 0xE007F)); "

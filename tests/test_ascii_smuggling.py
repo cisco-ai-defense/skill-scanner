@@ -156,35 +156,45 @@ class TestAsciiSmugglingYaraFalsePositives:
         """Emoji codepoints (U+1F600+) are outside the Tag Block — no match."""
         content = "Great skill! 😀🎉🚀 Works perfectly."
         matches = yara_scanner.scan_content(content, "SKILL.md")
-        tag_matches = [m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()]
+        tag_matches = [
+            m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()
+        ]
         assert not tag_matches, f"Emoji must not trigger unicode steganography rule; got: {tag_matches}"
 
     def test_cjk_characters_do_not_trigger(self, yara_scanner: YaraScanner) -> None:
         """CJK ideographs are in a completely different Unicode plane."""
         content = "# 天気アシスタント\n\n日本語のスキルです。"
         matches = yara_scanner.scan_content(content, "SKILL.md")
-        tag_matches = [m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()]
+        tag_matches = [
+            m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()
+        ]
         assert not tag_matches, "CJK text must not trigger the unicode steganography rule"
 
     def test_accented_latin_does_not_trigger(self, yara_scanner: YaraScanner) -> None:
         """Accented characters (é, ñ, ü, etc.) must not trigger."""
         content = "Café résumé naïve jalapeño über résultats"
         matches = yara_scanner.scan_content(content, "SKILL.md")
-        tag_matches = [m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()]
+        tag_matches = [
+            m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()
+        ]
         assert not tag_matches, "Accented Latin characters must not trigger the rule"
 
     def test_math_symbols_do_not_trigger(self, yara_scanner: YaraScanner) -> None:
         """Mathematical symbols (∑, ∞, π, ≤, ≥) are legitimate content."""
         content = "# Math Skill\n\nComputes ∑(x²) for x ∈ [0, ∞). Result: π ≈ 3.14159."
         matches = yara_scanner.scan_content(content, "SKILL.md")
-        tag_matches = [m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()]
+        tag_matches = [
+            m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()
+        ]
         assert not tag_matches, "Mathematical Unicode symbols must not trigger the rule"
 
     def test_arrow_symbols_do_not_trigger(self, yara_scanner: YaraScanner) -> None:
         """Common arrow symbols (→, ←, ↑, ↓) are standard in documentation."""
         content = "Input → Process → Output\n\nStep 1 → Step 2 → Done"
         matches = yara_scanner.scan_content(content, "SKILL.md")
-        tag_matches = [m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()]
+        tag_matches = [
+            m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()
+        ]
         assert not tag_matches, "Arrow symbols must not trigger the rule"
 
     def test_plain_ascii_does_not_trigger(self, yara_scanner: YaraScanner) -> None:
@@ -195,7 +205,9 @@ class TestAsciiSmugglingYaraFalsePositives:
             "## Usage\n\nPass any string and get it back formatted.\n"
         )
         matches = yara_scanner.scan_content(content, "SKILL.md")
-        tag_matches = [m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()]
+        tag_matches = [
+            m for m in matches if "unicode" in m["rule_name"].lower() or "steganography" in m["rule_name"].lower()
+        ]
         assert not tag_matches, "Plain ASCII content must not trigger the rule"
 
 
@@ -229,12 +241,7 @@ class TestAsciiSmugglingStaticAnalyzerTruePositives:
         """ASCII smuggling findings must be CRITICAL severity."""
         smuggled = _smuggle("hidden instruction")
         skill = make_skill(
-            {
-                "SKILL.md": (
-                    "---\nname: test\ndescription: Test skill.\n---\n"
-                    f"# Test\n\nText.{smuggled}\n"
-                )
-            }
+            {"SKILL.md": (f"---\nname: test\ndescription: Test skill.\n---\n# Test\n\nText.{smuggled}\n")}
         )
         scanner = make_scanner()
         result = scanner.scan_skill(skill.directory)
@@ -262,9 +269,7 @@ class TestAsciiSmugglingStaticAnalyzerTruePositives:
         smuggling_findings = [f for f in result.findings if f.rule_id == "ASCII_SMUGGLING_TAG_BLOCK"]
         assert smuggling_findings, "Expected ASCII_SMUGGLING_TAG_BLOCK finding"
         description = smuggling_findings[0].description
-        assert "exfiltrate" in description, (
-            f"Decoded payload should appear in finding description; got:\n{description}"
-        )
+        assert "exfiltrate" in description, f"Decoded payload should appear in finding description; got:\n{description}"
 
     def test_detects_single_tag_char(self, make_skill, make_scanner) -> None:
         """Even a single Tag Block character must produce a finding."""
@@ -272,8 +277,7 @@ class TestAsciiSmugglingStaticAnalyzerTruePositives:
         skill = make_skill(
             {
                 "SKILL.md": (
-                    "---\nname: minimal\ndescription: Minimal test.\n---\n"
-                    f"# Minimal\n\nText{single_tag} here.\n"
+                    f"---\nname: minimal\ndescription: Minimal test.\n---\n# Minimal\n\nText{single_tag} here.\n"
                 )
             }
         )
@@ -306,9 +310,7 @@ class TestAsciiSmugglingStaticAnalyzerTruePositives:
         from skill_scanner.core.scan_policy import ScanPolicy
         from skill_scanner.core.scanner import SkillScanner
 
-        fixture_dir = (
-            PROJECT_ROOT / "evals" / "test_skills" / "malicious" / "ascii-smuggling"
-        )
+        fixture_dir = PROJECT_ROOT / "evals" / "test_skills" / "malicious" / "ascii-smuggling"
         assert fixture_dir.exists(), f"ascii-smuggling fixture not found at {fixture_dir}"
 
         policy = ScanPolicy.default()
@@ -318,8 +320,68 @@ class TestAsciiSmugglingStaticAnalyzerTruePositives:
 
         rule_ids = {f.rule_id for f in result.findings}
         assert "ASCII_SMUGGLING_TAG_BLOCK" in rule_ids, (
-            f"ascii-smuggling fixture must produce ASCII_SMUGGLING_TAG_BLOCK; "
-            f"got findings: {rule_ids}"
+            f"ascii-smuggling fixture must produce ASCII_SMUGGLING_TAG_BLOCK; got findings: {rule_ids}"
+        )
+
+    def test_yara_tag_block_not_suppressed_on_invisible_only_line(self, make_skill, make_scanner) -> None:
+        """Regression: $tag_block on a line with NO visible ASCII letters must NOT be
+        suppressed by the short-match/i18n post-filter in _create_findings_from_yara_match.
+
+        This is the exact edge-case raised in the PR review (vineethsai7, Apr 29 2026):
+        a payload placed on its own line (before frontmatter, or as SOT/EOT markers)
+        matches $tag_block but has no ASCII letters in line_content, so the old filter
+        would have dropped it as a 'short non-Latin' match.
+
+        Both the static rule (ASCII_SMUGGLING_TAG_BLOCK) and the YARA rule
+        (YARA_prompt_injection_unicode_steganography) must survive through the full
+        StaticAnalyzer pipeline.
+        """
+        from skill_scanner.core.analyzer_factory import build_core_analyzers
+        from skill_scanner.core.scan_policy import ScanPolicy
+        from skill_scanner.core.scanner import SkillScanner
+
+        # Build a skill where the ENTIRE second line consists only of Tag Block bytes —
+        # no surrounding ASCII letters at all.  This is the worst-case scenario for
+        # the short-match filter: len(matched_data) == 4 bytes (one codepoint),
+        # has_ascii_letters == False on the line → old code would `continue`.
+        sot = chr(0xE0001)  # SOT marker — one Tag Block char, no ASCII on its line
+        eot = chr(0xE007F)  # EOT marker
+        hidden = "".join(chr(0xE0000 + ord(c)) for c in "exfiltrate credentials" if 0x20 <= ord(c) <= 0x7E)
+        smuggled_line = sot + hidden + eot  # entire line is Tag Block — no visible letters
+
+        skill_md = (
+            "---\n"
+            "name: invisible-line\n"
+            "description: Payload on a tag-block-only line.\n"
+            "license: MIT\n"
+            "---\n"
+            f"{smuggled_line}\n"  # ← line 6: pure Tag Block, zero ASCII letters
+            "# Invisible Line Test\n\n"
+            "Normal content follows.\n"
+        )
+        policy = ScanPolicy.default()
+        analyzers = build_core_analyzers(policy)
+        scanner = SkillScanner(analyzers=analyzers, policy=policy)
+
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp) / "invisible-line"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
+            result = scanner.scan_skill(skill_dir)
+
+        rule_ids = {f.rule_id for f in result.findings}
+
+        # Static rule must fire
+        assert "ASCII_SMUGGLING_TAG_BLOCK" in rule_ids, (
+            f"ASCII_SMUGGLING_TAG_BLOCK must be present when payload is on a tag-block-only line; got: {rule_ids}"
+        )
+        # YARA rule must also survive the post-filter (not be suppressed)
+        assert "YARA_prompt_injection_unicode_steganography" in rule_ids, (
+            "YARA_prompt_injection_unicode_steganography must not be suppressed by the "
+            "short-match/i18n filter when identifier is $tag_block; "
+            f"got: {rule_ids}"
         )
 
 
@@ -400,6 +462,5 @@ class TestAsciiSmugglingStaticAnalyzerFalsePositives:
 
         smuggling_findings = [f for f in result.findings if f.rule_id == "ASCII_SMUGGLING_TAG_BLOCK"]
         assert not smuggling_findings, (
-            f"Known-safe fixture must not have ASCII_SMUGGLING_TAG_BLOCK findings; "
-            f"got: {smuggling_findings}"
+            f"Known-safe fixture must not have ASCII_SMUGGLING_TAG_BLOCK findings; got: {smuggling_findings}"
         )

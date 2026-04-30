@@ -1075,9 +1075,7 @@ class StaticAnalyzer(BaseAnalyzer):
 
             decoded = self._decode_tag_chars(tag_chars)
             preview = decoded[:120] + ("…" if len(decoded) > 120 else "")
-            printable_count = sum(
-                1 for cp in tag_chars if self._TAG_PRINTABLE_START <= cp <= self._TAG_PRINTABLE_END
-            )
+            printable_count = sum(1 for cp in tag_chars if self._TAG_PRINTABLE_START <= cp <= self._TAG_PRINTABLE_END)
             boundary_count = sum(1 for cp in tag_chars if cp in self._TAG_BOUNDARY_CODEPOINTS)
 
             findings.append(
@@ -1103,7 +1101,7 @@ class StaticAnalyzer(BaseAnalyzer):
                         "Remove all Unicode Tag Block characters (U+E0000–U+E007F) "
                         "from the file. "
                         "You can strip them with: "
-                        "python3 -c \""
+                        'python3 -c "'
                         "import sys; t=open(sys.argv[1]).read(); "
                         "open(sys.argv[1],'w').write("
                         "''.join(c for c in t if not(0xE0000<=ord(c)<=0xE007F)))\" <file>. "
@@ -2398,29 +2396,36 @@ class StaticAnalyzer(BaseAnalyzer):
                 matched_data = string_match.get("matched_data", "")
                 has_ascii_letters = any("A" <= char <= "Z" or "a" <= char <= "z" for char in line_content)
 
-                # Filter short matches in non-Latin context (likely legitimate i18n)
-                short_match_max = self.policy.analysis_thresholds.short_match_max_chars
-                if len(matched_data) <= short_match_max and not has_ascii_letters:
-                    continue
+                # $tag_block matches Unicode Tag Block bytes (U+E0000-U+E007F) used
+                # for ASCII smuggling.  These codepoints have no legitimate use in
+                # skill files, so we must never suppress them regardless of line
+                # length, i18n markers, or script context.  Skip all FP filters for
+                # this specific pattern.
+                if string_identifier != "$tag_block":
+                    # Filter short matches in non-Latin context (likely legitimate i18n)
+                    short_match_max = self.policy.analysis_thresholds.short_match_max_chars
+                    if len(matched_data) <= short_match_max and not has_ascii_letters:
+                        continue
 
-                # Filter if context suggests legitimate internationalization
-                i18n_markers = ("i18n", "locale", "translation", "lang=", "charset", "utf-8", "encoding")
-                if any(marker in line_content.lower() for marker in i18n_markers):
-                    continue
+                    # Filter if context suggests legitimate internationalization
+                    i18n_markers = ("i18n", "locale", "translation", "lang=", "charset", "utf-8", "encoding")
+                    if any(marker in line_content.lower() for marker in i18n_markers):
+                        continue
 
-                # Filter Cyrillic, CJK, Arabic, Hebrew text (legitimate non-Latin content)
-                # These are indicated by presence of those scripts without zero-width chars
-                cyrillic_cjk_pattern = any(
-                    ("\u0400" <= char <= "\u04ff")  # Cyrillic
-                    or ("\u4e00" <= char <= "\u9fff")  # CJK Unified
-                    or ("\u0600" <= char <= "\u06ff")  # Arabic
-                    or ("\u0590" <= char <= "\u05ff")  # Hebrew
-                    for char in line_content
-                )
-                # If the line has legitimate non-Latin text but matched only a few zero-width chars, skip
-                cyrillic_cjk_min = self.policy.analysis_thresholds.cyrillic_cjk_min_chars
-                if cyrillic_cjk_pattern and len(matched_data) < cyrillic_cjk_min:
-                    continue
+                    # Filter Cyrillic, CJK, Arabic, Hebrew text (legitimate non-Latin content)
+                    # These are indicated by presence of those scripts without zero-width chars
+                    cyrillic_cjk_pattern = any(
+                        ("\u0400" <= char <= "\u04ff")  # Cyrillic
+                        or ("\u4e00" <= char <= "\u9fff")  # CJK Unified
+                        or ("\u0600" <= char <= "\u06ff")  # Arabic
+                        or ("\u0590" <= char <= "\u05ff")  # Hebrew
+                        for char in line_content
+                    )
+                    # If the line has legitimate non-Latin text but matched only a
+                    # few zero-width chars, skip.
+                    cyrillic_cjk_min = self.policy.analysis_thresholds.cyrillic_cjk_min_chars
+                    if cyrillic_cjk_pattern and len(matched_data) < cyrillic_cjk_min:
+                        continue
 
             finding_id = self._generate_finding_id(f"YARA_{rule_name}", f"{file_path}:{string_match['line_number']}")
 
