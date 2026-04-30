@@ -59,6 +59,7 @@ except (ImportError, ModuleNotFoundError):
 class LLMProvider(str, Enum):
     """Supported LLM providers via LiteLLM.
     - openai: OpenAI models (gpt-4o, gpt-4-turbo, etc.)
+    - openai-compatible: OpenAI-compatible custom endpoints
     - anthropic: Anthropic models (claude-3-5-sonnet, claude-3-opus, etc.)
     - azure-openai: Azure OpenAI Service
     - azure-ai: Azure AI Service (alternative)
@@ -69,6 +70,7 @@ class LLMProvider(str, Enum):
     """
 
     OPENAI = "openai"
+    OPENAI_COMPATIBLE = "openai-compatible"
     ANTHROPIC = "anthropic"
     AZURE_OPENAI = "azure-openai"
     AZURE_AI = "azure-ai"
@@ -78,10 +80,18 @@ class LLMProvider(str, Enum):
     OPENROUTER = "openrouter"
 
     @classmethod
+    def normalize(cls, provider: str) -> str:
+        """Normalize provider aliases accepted by CLI/env/SDK callers."""
+        normalized = provider.lower().strip().replace("_", "-")
+        if normalized == "custom-openai":
+            return cls.OPENAI_COMPATIBLE.value
+        return normalized
+
+    @classmethod
     def is_valid_provider(cls, provider: str) -> bool:
         """Check if a provider string is valid."""
         try:
-            cls(provider.lower())
+            cls(cls.normalize(provider))
             return True
         except ValueError:
             return False
@@ -165,23 +175,24 @@ class LLMAnalyzer(BaseAnalyzer):
 
             self.llm_policy = LLMAnalysisPolicy()
 
-        # Handle provider selection: if provider is specified, map to default model
-        if provider is not None and model is None:
-            # Normalize provider string (handle both enum and string inputs)
+        provider_str: str | None = None
+        if provider is not None:
             if isinstance(provider, LLMProvider):
                 provider_str = provider.value
             else:
-                provider_str = str(provider).lower().strip()
+                provider_str = LLMProvider.normalize(str(provider))
 
-            # Validate provider if it's a string
             if not isinstance(provider, LLMProvider) and not LLMProvider.is_valid_provider(provider_str):
                 raise ValueError(
                     f"Invalid provider '{provider}'. Valid providers: {', '.join([p.value for p in LLMProvider])}"
                 )
 
+        # Handle provider selection: if provider is specified, map to default model
+        if provider_str is not None and model is None:
             # Map provider to default model
             model_mapping = {
                 "openai": "gpt-4o",
+                "openai-compatible": "gpt-4o",
                 "anthropic": "claude-3-5-sonnet-20241022",
                 "azure-openai": "azure/gpt-4o",
                 "azure-ai": "azure/gpt-4",
@@ -201,6 +212,7 @@ class LLMAnalyzer(BaseAnalyzer):
             api_key=api_key,
             base_url=base_url,
             api_version=api_version,
+            provider=provider_str,
             aws_region=aws_region,
             aws_profile=aws_profile,
             aws_session_token=aws_session_token,

@@ -25,6 +25,7 @@ Primary settings for the LLM semantic analyzer.
 |---|---|---|
 | `SKILL_SCANNER_LLM_API_KEY` | Primary API key for LLM analyzer and meta fallback. **(required)** | `sk-ant-...` |
 | `SKILL_SCANNER_LLM_MODEL` | Primary model identifier for semantic analysis. | `anthropic/claude-sonnet-4-20250514` |
+| `SKILL_SCANNER_LLM_PROVIDER` | Optional provider override, including OpenAI-compatible custom endpoint routing. | `openai` |
 | `SKILL_SCANNER_LLM_BASE_URL` | Optional custom endpoint base URL for provider routing. | `https://api.openai.com/v1` |
 | `SKILL_SCANNER_LLM_API_VERSION` | Optional API version for providers that require one. | `2024-02-15-preview` |
 | `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` | Skip json_schema and start in plain JSON mode for incompatible proxies. | `true` |
@@ -120,6 +121,7 @@ Paths, allowlists, and other advanced settings.
 | `SKILL_SCANNER_LLM_BASE_URL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` | `.env.example` |
 | `SKILL_SCANNER_LLM_MODEL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
+| `SKILL_SCANNER_LLM_PROVIDER` | `.env.example`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/llm_provider_config.py` |
 | `SKILL_SCANNER_META_LLM_API_KEY` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_META_LLM_API_VERSION` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_META_LLM_BASE_URL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
