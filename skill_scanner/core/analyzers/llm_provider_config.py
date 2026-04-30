@@ -60,6 +60,7 @@ class ProviderConfig:
         api_key: str | None = None,
         base_url: str | None = None,
         api_version: str | None = None,
+        provider: str | None = None,
         aws_region: str | None = None,
         aws_profile: str | None = None,
         aws_session_token: str | None = None,
@@ -70,8 +71,9 @@ class ProviderConfig:
         Args:
             model: Model identifier
             api_key: API key (if None, reads from environment)
-            base_url: Custom base URL (for Azure)
-            api_version: API version (for Azure)
+            base_url: Custom base URL (for Azure/OpenAI-compatible endpoints)
+            api_version: API version (for Azure/OpenAI-compatible endpoints)
+            provider: Explicit provider override
             aws_region: AWS region (for Bedrock)
             aws_profile: AWS profile name (for Bedrock)
             aws_session_token: AWS session token (for Bedrock)
@@ -79,25 +81,40 @@ class ProviderConfig:
         self.model = model
         self.base_url = base_url
         self.api_version = api_version
+        self.provider = self._normalize_provider(provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER"))
         self.aws_region = aws_region or os.getenv("AWS_REGION", "us-east-1")
         self.aws_profile = aws_profile or os.getenv("AWS_PROFILE")
         self.aws_session_token = aws_session_token or os.getenv("AWS_SESSION_TOKEN")
 
-        # Detect provider type from model string
+        self.is_openai_compatible = self.provider in {"openai", "openai-compatible", "custom-openai"}
+
+        # Detect provider type from model string unless an explicit OpenAI-compatible
+        # override is set. Custom model names can include provider words such as
+        # "gemini" without meaning they should use the Google SDK.
         model_lower = model.lower()
-        self.is_bedrock = "bedrock/" in model or model_lower.startswith("bedrock/")
-        self.is_gemini = "gemini" in model_lower or model_lower.startswith("gemini/")
-        self.is_azure = model_lower.startswith("azure/") or "azure" in model_lower
-        self.is_vertex = model_lower.startswith("vertex_ai/") or "vertex" in model_lower
-        self.is_ollama = model_lower.startswith("ollama/")
-        self.is_openrouter = model_lower.startswith("openrouter/")
+        self.is_bedrock = not self.is_openai_compatible and ("bedrock/" in model or model_lower.startswith("bedrock/"))
+        self.is_gemini = not self.is_openai_compatible and (
+            "gemini" in model_lower or model_lower.startswith("gemini/")
+        )
+        self.is_azure = not self.is_openai_compatible and (model_lower.startswith("azure/") or "azure" in model_lower)
+        self.is_vertex = not self.is_openai_compatible and (
+            model_lower.startswith("vertex_ai/") or "vertex" in model_lower
+        )
+        self.is_ollama = not self.is_openai_compatible and model_lower.startswith("ollama/")
+        self.is_openrouter = not self.is_openai_compatible and model_lower.startswith("openrouter/")
         self.is_gpt5 = "gpt-5" in model_lower
 
         # Determine if we should use Google SDK
         self.use_google_sdk = False
 
         # Handle Vertex AI separately (uses LiteLLM, not Google SDK)
-        if self.is_vertex:
+        if self.is_openai_compatible:
+            if not LITELLM_AVAILABLE:
+                raise ImportError(
+                    "LiteLLM is required for OpenAI-compatible providers. Install with: pip install litellm"
+                )
+            self.model = self._normalize_openai_compatible_model_name(model)
+        elif self.is_vertex:
             # Vertex AI models stay as-is for LiteLLM
             if not LITELLM_AVAILABLE:
                 raise ImportError("LiteLLM is required for Vertex AI. Install with: pip install litellm")
@@ -128,6 +145,22 @@ class ProviderConfig:
         self.api_key = self._resolve_api_key(api_key)
 
         # Note: Google SDK client is created per-request, not configured globally
+
+    def _normalize_provider(self, provider: str | None) -> str | None:
+        """Normalize provider aliases used by env vars, CLI, and SDK callers."""
+        if provider is None:
+            return None
+
+        normalized = provider.strip().lower().replace("_", "-")
+        if normalized in {"custom-openai", "openai-compatible"}:
+            return normalized
+        return normalized
+
+    def _normalize_openai_compatible_model_name(self, model: str) -> str:
+        """Force LiteLLM's OpenAI adapter for arbitrary OpenAI-compatible model names."""
+        if model.lower().startswith("openai/"):
+            return model
+        return f"openai/{model}"
 
     def _resolve_api_key(self, api_key: str | None) -> str | None:
         """Resolve API key from parameter or environment variables.

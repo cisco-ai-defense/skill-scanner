@@ -142,22 +142,27 @@ def build_analyzers(
         try:
             from .analyzers.llm_analyzer import LLMAnalyzer
 
-            model = llm_model or os.getenv("SKILL_SCANNER_LLM_MODEL") or "claude-3-5-sonnet-20241022"
+            env_model = os.getenv("SKILL_SCANNER_LLM_MODEL")
+            model = llm_model or env_model
             key = llm_api_key or os.getenv("SKILL_SCANNER_LLM_API_KEY")
             base_url = llm_base_url or os.getenv("SKILL_SCANNER_LLM_BASE_URL")
             api_version = llm_api_version or os.getenv("SKILL_SCANNER_LLM_API_VERSION")
+            provider = llm_provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER")
             extra_kwargs: dict = {}
             effective_max_tokens = (
                 llm_max_tokens if llm_max_tokens is not None else policy.llm_analysis.max_output_tokens
             )
             if effective_max_tokens is not None:
                 extra_kwargs["max_tokens"] = effective_max_tokens
-            if llm_provider and not llm_model and not os.getenv("SKILL_SCANNER_LLM_MODEL"):
-                llm = LLMAnalyzer(provider=llm_provider, policy=policy, **extra_kwargs)
-            else:
-                llm = LLMAnalyzer(
-                    model=model, api_key=key, base_url=base_url, api_version=api_version, policy=policy, **extra_kwargs
-                )
+            llm = LLMAnalyzer(
+                model=model,
+                api_key=key,
+                base_url=base_url,
+                api_version=api_version,
+                provider=provider,
+                policy=policy,
+                **extra_kwargs,
+            )
             if llm_consensus_runs > 1:
                 llm.consensus_runs = llm_consensus_runs
             analyzers.append(llm)

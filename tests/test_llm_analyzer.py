@@ -83,6 +83,39 @@ class TestLLMAnalyzerInitialization:
         ):
             LLMAnalyzer(model="gemini-1.5-pro", api_key="test-key")
 
+    def test_openai_provider_override_ignores_gemini_in_custom_model_name(self):
+        """OpenAI-compatible endpoints can use model names that contain provider words."""
+        with (
+            patch("skill_scanner.core.analyzers.llm_provider_config.GOOGLE_GENAI_AVAILABLE", True),
+            patch("skill_scanner.core.analyzers.llm_provider_config.LITELLM_AVAILABLE", True),
+        ):
+            analyzer = LLMAnalyzer(
+                model="Cloud-Gemini-3.1-Pro",
+                provider="openai",
+                api_key="test-key",
+                base_url="https://llm.internal/v1",
+            )
+
+        assert analyzer.model == "openai/Cloud-Gemini-3.1-Pro"
+        assert analyzer.api_key == "test-key"
+        assert not analyzer.is_gemini
+        assert not analyzer.provider_config.use_google_sdk
+        assert analyzer.provider_config.get_request_params() == {
+            "api_key": "test-key",
+            "api_base": "https://llm.internal/v1",
+        }
+
+    def test_openai_compatible_provider_alias_is_supported(self):
+        """The explicit OpenAI-compatible alias maps to the OpenAI LiteLLM adapter."""
+        analyzer = LLMAnalyzer(
+            model="enterprise-model",
+            provider="openai-compatible",
+            api_key="test-key",
+        )
+
+        assert analyzer.model == "openai/enterprise-model"
+        assert analyzer.provider_config.is_openai_compatible
+
 
 class TestPromptLoading:
     """Test prompt loading functionality."""

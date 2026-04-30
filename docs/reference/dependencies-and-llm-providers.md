@@ -90,6 +90,7 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 |----------|--------------|-------|
 | Anthropic | `anthropic/claude-sonnet-4-20250514` | Default provider |
 | OpenAI | `openai/gpt-4o` | |
+| OpenAI-compatible custom endpoint | `Cloud-Gemini-3.1-Pro` with `SKILL_SCANNER_LLM_PROVIDER=openai` | Uses `SKILL_SCANNER_LLM_BASE_URL` |
 | AWS Bedrock | `bedrock/anthropic.claude-sonnet-4-20250514-v1:0` | Requires `[bedrock]` extra or API key |
 | Google Vertex AI | `vertex_ai/gemini-2.5-pro` | Requires `[vertex]` extra |
 | Google AI Studio | `gemini/gemini-2.5-flash` | Requires `[google]` extra |
@@ -102,6 +103,7 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 |----------|-------------|-------------------|
 | Anthropic | API key | `SKILL_SCANNER_LLM_API_KEY` |
 | OpenAI | API key | `SKILL_SCANNER_LLM_API_KEY` |
+| OpenAI-compatible custom endpoint | API key + endpoint | `SKILL_SCANNER_LLM_API_KEY`, `SKILL_SCANNER_LLM_PROVIDER=openai`, `SKILL_SCANNER_LLM_BASE_URL` |
 | AWS Bedrock (API key) | API key | `SKILL_SCANNER_LLM_API_KEY` |
 | AWS Bedrock (IAM) | AWS credentials | `AWS_REGION`, `AWS_PROFILE` (optional: `AWS_SESSION_TOKEN`) |
 | Google Vertex AI | Service account | `GOOGLE_APPLICATION_CREDENTIALS` |
