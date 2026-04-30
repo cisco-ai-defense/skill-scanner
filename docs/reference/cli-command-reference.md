@@ -11,6 +11,7 @@ This page is generated from live `argparse` output and should match runtime beha
 |---|---|---|
 | `skill-scanner scan` | Scan a single skill package | `skill-scanner scan ./my-skill` |
 | `skill-scanner scan-all` | Scan multiple skill packages | `skill-scanner scan-all ./skills/ -r` |
+| `skill-scanner scan-repo` | Clone and scan a GitHub repo (owner/repo or full URL) | `skill-scanner scan-repo owner/repo` |
 | `skill-scanner list-analyzers` | Show available analyzers | `skill-scanner list-analyzers` |
 | `skill-scanner validate-rules` | Validate YAML rule signatures | `skill-scanner validate-rules` |
 | `skill-scanner generate-policy` | Generate a policy YAML file | `skill-scanner generate-policy --preset strict` |
@@ -49,16 +50,17 @@ Command: `python -m skill_scanner.cli.cli --help`
 
 ```text
 usage: cli.py [-h] [--version]
-              {scan,scan-all,list-analyzers,validate-rules,generate-policy,configure-policy,interactive}
+              {scan,scan-all,scan-repo,list-analyzers,validate-rules,generate-policy,configure-policy,interactive}
               ...
 
 Skill Scanner - Security scanner for agent skills packages
 
 positional arguments:
-  {scan,scan-all,list-analyzers,validate-rules,generate-policy,configure-policy,interactive}
+  {scan,scan-all,scan-repo,list-analyzers,validate-rules,generate-policy,configure-policy,interactive}
                         Command to execute
     scan                Scan a single skill package
     scan-all            Scan multiple skill packages
+    scan-repo           Clone and scan a GitHub repository for skills
     list-analyzers      List available analyzers
     validate-rules      Validate rule signatures
     generate-policy     Generate a default scan policy YAML
@@ -97,14 +99,13 @@ usage: cli.py scan [-h] [--format {summary,json,markdown,table,sarif,html}]
                    [--output-sarif OUTPUT_SARIF]
                    [--output-markdown OUTPUT_MARKDOWN]
                    [--output-html OUTPUT_HTML] [--output-table OUTPUT_TABLE]
-                   [--detailed] [--render-markdown | --no-render-markdown]
-                   [--compact] [--verbose] [--fail-on-findings]
-                   [--fail-on-severity LEVEL] [--use-behavioral] [--use-llm]
-                   [--use-virustotal] [--vt-api-key VT_API_KEY]
-                   [--vt-upload-files] [--use-aidefense]
-                   [--aidefense-api-key AIDEFENSE_API_KEY]
+                   [--detailed] [--no-render-markdown] [--compact] [--verbose]
+                   [--fail-on-findings] [--fail-on-severity LEVEL]
+                   [--use-behavioral] [--use-llm] [--use-virustotal]
+                   [--vt-api-key VT_API_KEY] [--vt-upload-files]
+                   [--use-aidefense] [--aidefense-api-key AIDEFENSE_API_KEY]
                    [--aidefense-api-url AIDEFENSE_API_URL]
-                   [--llm-provider {anthropic,openai,openai-compatible}]
+                   [--llm-provider {anthropic,openai}]
                    [--llm-consensus-runs N] [--llm-max-tokens N]
                    [--use-trigger] [--enable-meta] [--policy PRESET_OR_PATH]
                    [--lenient] [--skill-file FILENAME] [--custom-rules PATH]
@@ -136,8 +137,6 @@ options:
   --output-table OUTPUT_TABLE
                         Write Table report to this file
   --detailed            Include detailed findings (Markdown output only)
-  --render-markdown     With --format markdown: render markdown even when
-                        stdout is not detected as a TTY.
   --no-render-markdown  With --format markdown to terminal: print raw markdown
                         instead of rendering (for pipe/copy).
   --compact             Compact JSON output
@@ -159,9 +158,8 @@ options:
                         AI Defense API key (or set AI_DEFENSE_API_KEY)
   --aidefense-api-url AIDEFENSE_API_URL
                         AI Defense API URL (optional, defaults to US region)
-  --llm-provider {anthropic,openai,openai-compatible}
-                        LLM provider shortcut or explicit OpenAI-compatible
-                        override
+  --llm-provider {anthropic,openai}
+                        LLM provider
   --llm-consensus-runs N
                         Run LLM analysis N times and keep only findings with
                         majority agreement (reduces false positives, increases
@@ -173,11 +171,9 @@ options:
   --policy PRESET_OR_PATH
                         Scan policy: preset name (strict, balanced,
                         permissive) or path to custom YAML
-  --lenient             Tolerate malformed skills: coerce bad fields, fill
-                        defaults, and continue instead of failing. When
-                        SKILL.md is absent, falls back to scanning .md files
-                        in the directory as instruction bodies (supports non-
-                        Codex/Cursor formats such as Claude Code commands).
+  --lenient             Tolerate malformed YAML / missing fields: coerce bad
+                        fields, fill defaults, and continue instead of
+                        failing. Binary and non-UTF-8 files always fail.
   --skill-file FILENAME
                         Custom metadata filename to use instead of SKILL.md
                         (e.g. README.md)
@@ -211,15 +207,14 @@ usage: cli.py scan-all [-h] [--recursive] [--check-overlap]
                        [--output-markdown OUTPUT_MARKDOWN]
                        [--output-html OUTPUT_HTML]
                        [--output-table OUTPUT_TABLE] [--detailed]
-                       [--render-markdown | --no-render-markdown] [--compact]
-                       [--verbose] [--fail-on-findings]
-                       [--fail-on-severity LEVEL] [--use-behavioral]
-                       [--use-llm] [--use-virustotal]
+                       [--no-render-markdown] [--compact] [--verbose]
+                       [--fail-on-findings] [--fail-on-severity LEVEL]
+                       [--use-behavioral] [--use-llm] [--use-virustotal]
                        [--vt-api-key VT_API_KEY] [--vt-upload-files]
                        [--use-aidefense]
                        [--aidefense-api-key AIDEFENSE_API_KEY]
                        [--aidefense-api-url AIDEFENSE_API_URL]
-                       [--llm-provider {anthropic,openai,openai-compatible}]
+                       [--llm-provider {anthropic,openai}]
                        [--llm-consensus-runs N] [--llm-max-tokens N]
                        [--use-trigger] [--enable-meta]
                        [--policy PRESET_OR_PATH] [--lenient]
@@ -254,8 +249,6 @@ options:
   --output-table OUTPUT_TABLE
                         Write Table report to this file
   --detailed            Include detailed findings (Markdown output only)
-  --render-markdown     With --format markdown: render markdown even when
-                        stdout is not detected as a TTY.
   --no-render-markdown  With --format markdown to terminal: print raw markdown
                         instead of rendering (for pipe/copy).
   --compact             Compact JSON output
@@ -277,9 +270,8 @@ options:
                         AI Defense API key (or set AI_DEFENSE_API_KEY)
   --aidefense-api-url AIDEFENSE_API_URL
                         AI Defense API URL (optional, defaults to US region)
-  --llm-provider {anthropic,openai,openai-compatible}
-                        LLM provider shortcut or explicit OpenAI-compatible
-                        override
+  --llm-provider {anthropic,openai}
+                        LLM provider
   --llm-consensus-runs N
                         Run LLM analysis N times and keep only findings with
                         majority agreement (reduces false positives, increases
@@ -291,11 +283,125 @@ options:
   --policy PRESET_OR_PATH
                         Scan policy: preset name (strict, balanced,
                         permissive) or path to custom YAML
-  --lenient             Tolerate malformed skills: coerce bad fields, fill
-                        defaults, and continue instead of failing. When
-                        SKILL.md is absent, falls back to scanning .md files
-                        in the directory as instruction bodies (supports non-
-                        Codex/Cursor formats such as Claude Code commands).
+  --lenient             Tolerate malformed YAML / missing fields: coerce bad
+                        fields, fill defaults, and continue instead of
+                        failing. Binary and non-UTF-8 files always fail.
+  --skill-file FILENAME
+                        Custom metadata filename to use instead of SKILL.md
+                        (e.g. README.md)
+  --custom-rules PATH   Path to directory containing custom YARA rules (.yara
+                        files)
+  --rule-packs PACK [PACK ...]
+                        Additional signature rule packs to enable (e.g.
+                        'atr'). Use '--rule-packs list' to show available
+                        packs.
+  --taxonomy PATH       Path to custom taxonomy JSON/YAML (overrides
+                        SKILL_SCANNER_TAXONOMY_PATH)
+  --threat-mapping PATH
+                        Path to custom threat mapping JSON (overrides
+                        SKILL_SCANNER_THREAT_MAPPING_PATH)
+```
+
+</details>
+
+## scan-repo
+
+Command: `python -m skill_scanner.cli.cli scan-repo --help`
+
+<details>
+<summary>Full <code>scan-repo</code> help output</summary>
+
+```text
+usage: cli.py scan-repo [-h] [--recursive | --no-recursive | -r]
+                        [--check-overlap]
+                        [--format {summary,json,markdown,table,sarif,html}]
+                        [--output OUTPUT] [--output-json OUTPUT_JSON]
+                        [--output-sarif OUTPUT_SARIF]
+                        [--output-markdown OUTPUT_MARKDOWN]
+                        [--output-html OUTPUT_HTML]
+                        [--output-table OUTPUT_TABLE] [--detailed]
+                        [--no-render-markdown] [--compact] [--verbose]
+                        [--fail-on-findings] [--fail-on-severity LEVEL]
+                        [--use-behavioral] [--use-llm] [--use-virustotal]
+                        [--vt-api-key VT_API_KEY] [--vt-upload-files]
+                        [--use-aidefense]
+                        [--aidefense-api-key AIDEFENSE_API_KEY]
+                        [--aidefense-api-url AIDEFENSE_API_URL]
+                        [--llm-provider {anthropic,openai}]
+                        [--llm-consensus-runs N] [--llm-max-tokens N]
+                        [--use-trigger] [--enable-meta]
+                        [--policy PRESET_OR_PATH] [--lenient]
+                        [--skill-file FILENAME] [--custom-rules PATH]
+                        [--rule-packs PACK [PACK ...]] [--taxonomy PATH]
+                        [--threat-mapping PATH]
+                        repo
+
+positional arguments:
+  repo                  GitHub repo URL (https://github.com/owner/repo) or
+                        shorthand (owner/repo)
+
+options:
+  -h, --help            show this help message and exit
+  --recursive, --no-recursive, -r
+                        Recursively search for skills (default: True; use
+                        --no-recursive to disable)
+  --check-overlap       Enable cross-skill description overlap check
+  --format {summary,json,markdown,table,sarif,html}
+                        Output format (default: summary). May be specified
+                        multiple times to produce several reports in one run,
+                        e.g. --format markdown --format sarif. Use 'sarif' for
+                        GitHub Code Scanning, 'html' for interactive report.
+  --output OUTPUT, -o OUTPUT
+                        Default output file path (overridden by --output-<fmt>
+                        for a specific format)
+  --output-json OUTPUT_JSON
+                        Write JSON report to this file
+  --output-sarif OUTPUT_SARIF
+                        Write SARIF report to this file
+  --output-markdown OUTPUT_MARKDOWN
+                        Write Markdown report to this file
+  --output-html OUTPUT_HTML
+                        Write HTML report to this file
+  --output-table OUTPUT_TABLE
+                        Write Table report to this file
+  --detailed            Include detailed findings (Markdown output only)
+  --no-render-markdown  With --format markdown to terminal: print raw markdown
+                        instead of rendering (for pipe/copy).
+  --compact             Compact JSON output
+  --verbose             Include per-finding policy fingerprints, co-occurrence
+                        metadata, and keep meta-analyzer false positives in
+                        output
+  --fail-on-findings    Exit with error if critical/high findings
+  --fail-on-severity LEVEL
+                        Exit with error if findings at or above LEVEL exist
+                        (critical, high, medium, low, info)
+  --use-behavioral      Enable behavioral dataflow analysis
+  --use-llm             Enable LLM-based semantic analysis (requires API key)
+  --use-virustotal      Enable VirusTotal scanning (requires API key)
+  --vt-api-key VT_API_KEY
+                        VirusTotal API key (or set VIRUSTOTAL_API_KEY)
+  --vt-upload-files     Upload unknown files to VirusTotal
+  --use-aidefense       Enable AI Defense analyzer (requires API key)
+  --aidefense-api-key AIDEFENSE_API_KEY
+                        AI Defense API key (or set AI_DEFENSE_API_KEY)
+  --aidefense-api-url AIDEFENSE_API_URL
+                        AI Defense API URL (optional, defaults to US region)
+  --llm-provider {anthropic,openai}
+                        LLM provider
+  --llm-consensus-runs N
+                        Run LLM analysis N times and keep only findings with
+                        majority agreement (reduces false positives, increases
+                        cost)
+  --llm-max-tokens N    Maximum output tokens for LLM responses (default:
+                        8192). Raise if scans produce truncated JSON.
+  --use-trigger         Enable trigger specificity analysis
+  --enable-meta         Enable meta-analysis FP filtering (2+ analyzers)
+  --policy PRESET_OR_PATH
+                        Scan policy: preset name (strict, balanced,
+                        permissive) or path to custom YAML
+  --lenient             Tolerate malformed YAML / missing fields: coerce bad
+                        fields, fill defaults, and continue instead of
+                        failing. Binary and non-UTF-8 files always fail.
   --skill-file FILENAME
                         Custom metadata filename to use instead of SKILL.md
                         (e.g. README.md)
