@@ -22,7 +22,19 @@ from datetime import datetime
 
 import pytest
 
-from skill_scanner.core.models import Finding, Report, ScanResult, Severity, ThreatCategory
+from skill_scanner.core.models import Finding, Report, ScanResult, Severity, SkillManifest, ThreatCategory
+
+
+class TestSkillManifestAllowedTools:
+    """Test SkillManifest.allowed_tools normalization."""
+
+    def test_comma_separated_string(self):
+        m = SkillManifest(name="s", description="d", allowed_tools="Read, Write, Bash")
+        assert m.allowed_tools == ["Read", "Write", "Bash"]
+
+    def test_space_separated_string(self):
+        m = SkillManifest(name="s", description="d", allowed_tools="Read Write Bash")
+        assert m.allowed_tools == ["Read", "Write", "Bash"]
 
 
 class TestFindingModel:
