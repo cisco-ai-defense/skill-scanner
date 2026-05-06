@@ -714,6 +714,21 @@ class SkillScanner:
             try:
                 skill = self.loader.load_skill(skill_dir, lenient=lenient, skill_file=skill_file)
                 result = self._scan_single_skill(skill, skill_dir)
+
+                # Rebase finding file_path values so they are relative to the
+                # scan root (skills_directory) rather than to each individual
+                # skill directory.  This is critical for SARIF consumers like
+                # GitHub Code Scanning that expect paths relative to the
+                # repository / scan root.
+                try:
+                    prefix = str(skill_dir.relative_to(skills_directory))
+                except ValueError:
+                    prefix = ""
+                if prefix and prefix != ".":
+                    for finding in result.findings:
+                        if finding.file_path:
+                            finding.file_path = f"{prefix}/{finding.file_path}"
+
                 report.add_scan_result(result)
 
                 if check_overlap:
