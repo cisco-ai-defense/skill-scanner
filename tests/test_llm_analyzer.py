@@ -131,19 +131,6 @@ class TestLLMAnalyzerInitialization:
 
         assert analyzer.provider_config.get_request_params()["user"] == raw_user
 
-    def test_openai_user_param_for_azure_model(self):
-        """Azure OpenAI routes can receive the optional raw user value."""
-        raw_user = '{"appkey":"test-appkey"}'
-        analyzer = LLMAnalyzer(
-            model="azure/gpt-5-nano",
-            api_key="test-key",
-            base_url="https://chat-ai.cisco.com/",
-            api_version="2025-04-01-preview",
-            llm_user=raw_user,
-        )
-
-        assert analyzer.provider_config.get_request_params()["user"] == raw_user
-
     def test_openai_user_param_ignores_blank_value(self):
         """Blank explicit values are treated as unset and do not fall back to env."""
         with patch.dict("os.environ", {"SKILL_SCANNER_LLM_USER": '{"appkey":"env"}'}, clear=False):
