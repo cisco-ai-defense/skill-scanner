@@ -55,6 +55,7 @@ You only need to set these if you're using the corresponding features. Click a s
 - `SKILL_SCANNER_LLM_MODEL`
 - `SKILL_SCANNER_LLM_BASE_URL`
 - `SKILL_SCANNER_LLM_API_VERSION`
+- `SKILL_SCANNER_LLM_USER` — optional raw Chat Completions `user` field for OpenAI-compatible routes
 - `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` — start in plain JSON mode for proxies that reject `json_schema`
 
 </details>

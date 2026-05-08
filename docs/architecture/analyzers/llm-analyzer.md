@@ -237,6 +237,9 @@ export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 export SKILL_SCANNER_LLM_BASE_URL=https://your-resource.openai.azure.com/
 export SKILL_SCANNER_LLM_API_VERSION=2025-01-01-preview
 
+# Optional for OpenAI, Azure OpenAI, and OpenAI-compatible endpoints
+export SKILL_SCANNER_LLM_USER='{"appkey":"your-appkey"}'
+
 # For AWS Bedrock bearer-token mode
 export SKILL_SCANNER_LLM_API_KEY="bedrock-api-key-..."
 export SKILL_SCANNER_LLM_MODEL="bedrock/anthropic.claude-sonnet-4-20250514-v1:0"

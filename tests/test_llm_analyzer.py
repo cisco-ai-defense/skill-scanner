@@ -86,6 +86,7 @@ class TestLLMAnalyzerInitialization:
     def test_openai_provider_override_ignores_gemini_in_custom_model_name(self):
         """OpenAI-compatible endpoints can use model names that contain provider words."""
         with (
+            patch.dict("os.environ", {"SKILL_SCANNER_LLM_USER": ""}, clear=False),
             patch("skill_scanner.core.analyzers.llm_provider_config.GOOGLE_GENAI_AVAILABLE", True),
             patch("skill_scanner.core.analyzers.llm_provider_config.LITELLM_AVAILABLE", True),
         ):
@@ -104,6 +105,61 @@ class TestLLMAnalyzerInitialization:
             "api_key": "test-key",
             "api_base": "https://llm.internal/v1",
         }
+
+    def test_openai_user_param_for_openai_compatible_provider(self):
+        """OpenAI-compatible routes include the optional raw user value."""
+        raw_user = '{"appkey":"test-appkey"}'
+        analyzer = LLMAnalyzer(
+            model="Cloud-Gemini-3.1-Pro",
+            provider="openai",
+            api_key="test-key",
+            base_url="https://llm.internal/v1",
+            llm_user=raw_user,
+        )
+
+        assert analyzer.provider_config.get_request_params() == {
+            "api_key": "test-key",
+            "api_base": "https://llm.internal/v1",
+            "user": raw_user,
+        }
+
+    def test_openai_user_param_from_env_for_direct_gpt_model(self):
+        """SKILL_SCANNER_LLM_USER is passed through unchanged for direct OpenAI model names."""
+        raw_user = '{"appkey":"test-appkey"}'
+        with patch.dict("os.environ", {"SKILL_SCANNER_LLM_USER": raw_user}, clear=False):
+            analyzer = LLMAnalyzer(model="gpt-5-nano", api_key="test-key")
+
+        assert analyzer.provider_config.get_request_params()["user"] == raw_user
+
+    def test_openai_user_param_for_azure_model(self):
+        """Azure OpenAI routes can receive the optional raw user value."""
+        raw_user = '{"appkey":"test-appkey"}'
+        analyzer = LLMAnalyzer(
+            model="azure/gpt-5-nano",
+            api_key="test-key",
+            base_url="https://chat-ai.cisco.com/",
+            api_version="2025-04-01-preview",
+            llm_user=raw_user,
+        )
+
+        assert analyzer.provider_config.get_request_params()["user"] == raw_user
+
+    def test_openai_user_param_ignores_blank_value(self):
+        """Blank explicit values are treated as unset and do not fall back to env."""
+        with patch.dict("os.environ", {"SKILL_SCANNER_LLM_USER": '{"appkey":"env"}'}, clear=False):
+            analyzer = LLMAnalyzer(model="gpt-5-nano", api_key="test-key", llm_user="   ")
+
+        assert "user" not in analyzer.provider_config.get_request_params()
+
+    def test_openai_user_param_not_sent_for_non_openai_model(self):
+        """Non-OpenAI routes do not receive the optional user field."""
+        analyzer = LLMAnalyzer(
+            model="anthropic/claude-sonnet-4-20250514",
+            api_key="test-key",
+            llm_user='{"appkey":"test-appkey"}',
+        )
+
+        assert "user" not in analyzer.provider_config.get_request_params()
 
     def test_openai_compatible_provider_alias_is_supported(self):
         """The explicit OpenAI-compatible alias maps to the OpenAI LiteLLM adapter."""

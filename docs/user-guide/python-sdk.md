@@ -75,6 +75,7 @@ scanner.add_analyzer(LLMAnalyzer(
 
 > [!WARNING]
 > Never hardcode API keys in source code. Use environment variables or a secrets manager. The LLM analyzer also reads `SKILL_SCANNER_LLM_API_KEY` from the environment automatically when no `api_key` is passed.
+> For OpenAI-compatible endpoints that require a Chat Completions `user` value, set `SKILL_SCANNER_LLM_USER` or pass `llm_user=os.environ.get("SKILL_SCANNER_LLM_USER")`.
 
 ### `list_analyzers() → list[str]`
 

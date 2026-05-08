@@ -92,6 +92,7 @@ def build_analyzers(
     llm_base_url: str | None = None,
     llm_api_version: str | None = None,
     llm_provider: str | None = None,
+    llm_user: str | None = None,
     use_virustotal: bool = False,
     vt_api_key: str | None = None,
     vt_upload_files: bool = False,
@@ -117,6 +118,8 @@ def build_analyzers(
         llm_max_tokens: Override the default ``max_tokens`` for the
             :class:`LLMAnalyzer`.  When *None* the analyzer's own
             default (8192) is used.
+        llm_user: Optional raw Chat Completions user field for
+            OpenAI-compatible LLM routes.
 
     Returns:
         A list of analyzer instances ready to be passed to
@@ -160,6 +163,7 @@ def build_analyzers(
                 base_url=base_url,
                 api_version=api_version,
                 provider=provider,
+                llm_user=llm_user,
                 policy=policy,
                 **extra_kwargs,
             )

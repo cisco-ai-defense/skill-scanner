@@ -25,6 +25,8 @@ import importlib.util
 import logging
 import os
 
+from .llm_request_options import resolve_llm_user, supports_openai_user_param
+
 logger = logging.getLogger(__name__)
 
 # Check for Google GenAI availability
@@ -64,6 +66,7 @@ class ProviderConfig:
         aws_region: str | None = None,
         aws_profile: str | None = None,
         aws_session_token: str | None = None,
+        llm_user: str | None = None,
     ):
         """
         Initialize provider configuration.
@@ -77,11 +80,13 @@ class ProviderConfig:
             aws_region: AWS region (for Bedrock)
             aws_profile: AWS profile name (for Bedrock)
             aws_session_token: AWS session token (for Bedrock)
+            llm_user: Optional raw Chat Completions user field for OpenAI-compatible routes
         """
         self.model = model
         self.base_url = base_url
         self.api_version = api_version
         self.provider = self._normalize_provider(provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER"))
+        self.llm_user = resolve_llm_user(llm_user)
         self.aws_region = aws_region or os.getenv("AWS_REGION", "us-east-1")
         self.aws_profile = aws_profile or os.getenv("AWS_PROFILE")
         self.aws_session_token = aws_session_token or os.getenv("AWS_SESSION_TOKEN")
@@ -293,6 +298,9 @@ class ProviderConfig:
             params["api_base"] = self.base_url
         if self.api_version:
             params["api_version"] = self.api_version
+
+        if self.llm_user and supports_openai_user_param(self.model, self.provider):
+            params["user"] = self.llm_user
 
         if self.is_bedrock:
             # AWS Bedrock supports:

@@ -49,6 +49,7 @@ from ..models import Finding, Severity, Skill, ThreatCategory
 from .base import BaseAnalyzer
 from .llm_provider_config import ProviderConfig
 from .llm_request_handler import LLMRequestHandler
+from .llm_request_options import resolve_llm_user, supports_openai_user_param
 
 if TYPE_CHECKING:
     from ...core.scan_policy import LLMAnalysisPolicy, ScanPolicy
@@ -251,6 +252,7 @@ class MetaAnalyzer(BaseAnalyzer):
         aws_region: str | None = None,
         aws_profile: str | None = None,
         aws_session_token: str | None = None,
+        llm_user: str | None = None,
         # Policy (optional – uses generous defaults × meta multiplier)
         policy: ScanPolicy | None = None,
     ):
@@ -268,6 +270,7 @@ class MetaAnalyzer(BaseAnalyzer):
             aws_region: AWS region (for Bedrock)
             aws_profile: AWS profile name (for Bedrock)
             aws_session_token: AWS session token (for Bedrock)
+            llm_user: Optional raw Chat Completions user field for OpenAI-compatible routes.
             policy: Scan policy providing LLM context budget thresholds.
                 The meta analyzer applies ``meta_budget_multiplier`` on top of
                 the base limits.  When ``None``, generous defaults are used.
@@ -308,6 +311,8 @@ class MetaAnalyzer(BaseAnalyzer):
             or os.getenv("SKILL_SCANNER_META_LLM_API_VERSION")  # Meta-specific
             or os.getenv("SKILL_SCANNER_LLM_API_VERSION")  # Scanner-wide
         )
+        self.provider = os.getenv("SKILL_SCANNER_LLM_PROVIDER")
+        self.llm_user = resolve_llm_user(llm_user)
 
         # AWS Bedrock settings
         self.aws_region = aws_region
@@ -833,6 +838,9 @@ Respond with a JSON object following the schema in the system prompt."""
 
         if self.api_version:
             api_params["api_version"] = self.api_version
+
+        if self.llm_user and supports_openai_user_param(self.model, self.provider):
+            api_params["user"] = self.llm_user
 
         # AWS Bedrock configuration
         if self.aws_region:

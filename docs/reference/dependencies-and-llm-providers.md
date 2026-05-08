@@ -97,6 +97,8 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 | Azure OpenAI | `azure/my-deployment-name` | Requires `[azure]` extra |
 | Ollama (local) | `ollama/llama3` | No API key needed |
 
+For OpenAI and OpenAI-compatible custom endpoints, `SKILL_SCANNER_LLM_USER` can set the raw Chat Completions `user` request field. The value is passed through unchanged and is ignored for non-OpenAI routes.
+
 ### Authentication
 
 | Provider | Auth method | Required env vars |

@@ -38,6 +38,7 @@ class Config:
     llm_model: str = "claude-3-5-sonnet-20241022"
     llm_base_url: str | None = None
     llm_api_version: str | None = None
+    llm_user: str | None = None
     llm_max_tokens: int = 8192
     llm_temperature: float = 0.0
     llm_rate_limit_delay: float = 2.0
@@ -81,6 +82,14 @@ class Config:
         if self.llm_model == "claude-3-5-sonnet-20241022":
             if env_model := os.getenv("SKILL_SCANNER_LLM_MODEL"):
                 self.llm_model = env_model
+
+        # Optional raw Chat Completions user field for OpenAI-compatible routes
+        if self.llm_user is not None and not self.llm_user.strip():
+            self.llm_user = None
+        elif self.llm_user is None:
+            if env_user := os.getenv("SKILL_SCANNER_LLM_USER"):
+                if env_user.strip():
+                    self.llm_user = env_user
 
         # AWS configuration from environment (only when not explicitly provided)
         if self.aws_region_name == "us-east-1":

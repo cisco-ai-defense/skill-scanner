@@ -86,6 +86,21 @@ class TestConfigInitialization:
             # Should use SKILL_SCANNER_LLM_API_KEY
             assert config.llm_provider_api_key == "scanner-key"
 
+    def test_config_llm_user_uses_skill_scanner_env_raw_value(self):
+        """Test LLM user loading preserves the raw SKILL_SCANNER_LLM_USER string."""
+        raw_user = '{"appkey":"test-appkey"}'
+        with patch.dict("os.environ", {"SKILL_SCANNER_LLM_USER": raw_user}):
+            config = Config()
+
+            assert config.llm_user == raw_user
+
+    def test_config_llm_user_ignores_blank_env(self):
+        """Blank LLM user env values should be treated as unset."""
+        with patch.dict("os.environ", {"SKILL_SCANNER_LLM_USER": "   "}):
+            config = Config()
+
+            assert config.llm_user is None
+
 
 class TestConfigAWS:
     """Test AWS-specific configuration."""

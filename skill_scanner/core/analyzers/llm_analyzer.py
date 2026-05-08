@@ -140,6 +140,7 @@ class LLMAnalyzer(BaseAnalyzer):
         aws_session_token: str | None = None,
         # Provider selection (can be enum or string)
         provider: str | None = None,
+        llm_user: str | None = None,
         # Policy (optional – uses generous defaults when omitted)
         policy: ScanPolicy | None = None,
     ):
@@ -161,6 +162,7 @@ class LLMAnalyzer(BaseAnalyzer):
             aws_session_token: AWS session token (for Bedrock)
             provider: LLM provider name (e.g., "openai", "anthropic", "aws-bedrock", etc.)
                 Can be enum or string (e.g., "openai", "anthropic", "aws-bedrock")
+            llm_user: Optional raw Chat Completions user field for OpenAI-compatible routes.
             policy: Scan policy providing LLM context budget thresholds.
                 When ``None``, generous defaults from ``LLMAnalysisPolicy()``
                 are used.
@@ -216,6 +218,7 @@ class LLMAnalyzer(BaseAnalyzer):
             aws_region=aws_region,
             aws_profile=aws_profile,
             aws_session_token=aws_session_token,
+            llm_user=llm_user,
         )
         self.provider_config.validate()
 

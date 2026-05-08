@@ -174,6 +174,36 @@ class TestDropParams:
         kwargs = call_kwargs.kwargs if call_kwargs.kwargs else call_kwargs[1]
         assert kwargs.get("drop_params") is True, f"acompletion must be called with drop_params=True, got: {kwargs}"
 
+    @pytest.mark.asyncio
+    async def test_forwards_provider_user_param_to_acompletion(self):
+        """LLMRequestHandler forwards the optional provider request params unchanged."""
+        from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+        from skill_scanner.core.analyzers.llm_request_handler import LLMRequestHandler
+
+        raw_user = '{"appkey":"test-appkey"}'
+        provider_config = MagicMock(spec=ProviderConfig)
+        provider_config.model = "gpt-5-nano"
+        provider_config.use_google_sdk = False
+        provider_config.get_request_params.return_value = {"api_key": "test-key", "user": raw_user}
+
+        handler = LLMRequestHandler(provider_config=provider_config, temperature=0.0)
+        handler.response_schema = None
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '{"findings": []}'
+
+        with patch(
+            "skill_scanner.core.analyzers.llm_request_handler.acompletion",
+            new_callable=AsyncMock,
+        ) as mock_acompletion:
+            mock_acompletion.return_value = mock_response
+            await handler.make_request([{"role": "user", "content": "test"}])
+
+        kwargs = mock_acompletion.call_args.kwargs
+        assert kwargs["user"] == raw_user
+        assert kwargs.get("drop_params") is True
+
 
 class TestLiteLLMRequestFallback:
     """Tests for switching from json_schema to plain JSON output."""

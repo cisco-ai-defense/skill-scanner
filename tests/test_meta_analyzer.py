@@ -615,3 +615,56 @@ class TestMetaDropParams:
         call_kwargs = mock_acompletion.call_args
         kwargs = call_kwargs.kwargs if call_kwargs.kwargs else call_kwargs[1]
         assert kwargs.get("drop_params") is True, f"acompletion must be called with drop_params=True, got: {kwargs}"
+
+    @pytest.mark.asyncio
+    async def test_openai_user_param_sent_for_openai_model(self):
+        """MetaAnalyzer sends the optional user field only for OpenAI-like routes."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        raw_user = '{"appkey":"test-appkey"}'
+        analyzer = MetaAnalyzer(
+            model="gpt-5-nano",
+            api_key="test-key",
+            llm_user=raw_user,
+        )
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '{"validated_findings": [], "false_positives": []}'
+
+        with patch(
+            "skill_scanner.core.analyzers.meta_analyzer.acompletion",
+            new_callable=AsyncMock,
+        ) as mock_acompletion:
+            mock_acompletion.return_value = mock_response
+            await analyzer._make_llm_request("system prompt", "user prompt")
+
+        kwargs = mock_acompletion.call_args.kwargs
+        assert kwargs["user"] == raw_user
+        assert kwargs.get("drop_params") is True
+
+    @pytest.mark.asyncio
+    async def test_openai_user_param_not_sent_for_non_openai_model(self):
+        """MetaAnalyzer does not send the optional user field for non-OpenAI routes."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        analyzer = MetaAnalyzer(
+            model="anthropic/claude-sonnet-4-20250514",
+            api_key="test-key",
+            llm_user='{"appkey":"test-appkey"}',
+        )
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '{"validated_findings": [], "false_positives": []}'
+
+        with patch(
+            "skill_scanner.core.analyzers.meta_analyzer.acompletion",
+            new_callable=AsyncMock,
+        ) as mock_acompletion:
+            mock_acompletion.return_value = mock_response
+            await analyzer._make_llm_request("system prompt", "user prompt")
+
+        kwargs = mock_acompletion.call_args.kwargs
+        assert "user" not in kwargs
+        assert kwargs.get("drop_params") is True
