@@ -151,6 +151,9 @@ API keys (`X-VirusTotal-Key`, `X-AIDefense-Key`) are passed as request headers, 
 
 **Response:** Same as `/scan`
 
+Malformed skill metadata, such as a `SKILL.md` missing required fields, returns `422` with
+an actionable validation message instead of a generic server error.
+
 ## Batch Scan (Async)
 
 ```http
@@ -303,5 +306,5 @@ GET /analyzers
 | 400 | Invalid request | Check JSON format and required fields |
 | 404 | Skill not found | Verify directory path exists |
 | 413 | Upload too large | Reduce ZIP size below upload limit |
-| 422 | Validation error | Check field names/types in request body |
+| 422 | Validation error | Check field names/types in request body or required `SKILL.md` metadata fields |
 | 500 | Scan failed | Check logs for detailed error |

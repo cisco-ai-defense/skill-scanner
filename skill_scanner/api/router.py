@@ -44,6 +44,7 @@ except ImportError:
 
 from .. import __version__ as PACKAGE_VERSION
 from ..core.analyzer_factory import build_analyzers
+from ..core.exceptions import SkillLoadError
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
 
@@ -269,6 +270,12 @@ def _resolve_policy(policy_str: str | None) -> ScanPolicy:
     raise ValueError(f"Unknown policy '{policy_str}'. Use a preset name or a path to a YAML file.")
 
 
+def _skill_load_error_detail(error: SkillLoadError, skill_dir: Path) -> str:
+    """Return client-safe validation detail for skill loading failures."""
+    detail = str(error).replace(str(skill_dir), "skill directory")
+    return f"Invalid skill package: {detail}"
+
+
 def _build_analyzers(
     policy: ScanPolicy,
     *,
@@ -464,6 +471,8 @@ async def scan_skill(
             findings=[f.to_dict() for f in result.findings],
         )
 
+    except SkillLoadError as e:
+        raise HTTPException(status_code=422, detail=_skill_load_error_detail(e, skill_dir)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:

@@ -478,6 +478,25 @@ class TestUploadEndpoint:
         response = client.post("/scan-upload", files=files, data=data)
         assert response.status_code == 422
 
+    def test_upload_malformed_skill_returns_validation_error(self, client):
+        """Test malformed skill metadata returns a validation error."""
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(
+                "bad-skill/SKILL.md",
+                "---\ndescription: Missing required name field\n---\nDo something useful.\n",
+            )
+
+        zip_buffer.seek(0)
+        files = {"file": ("skill.zip", zip_buffer, "application/zip")}
+
+        response = client.post("/scan-upload", files=files)
+
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert "Invalid skill package" in detail
+        assert "name" in detail
+
 
 # =============================================================================
 # Error Handling Tests
