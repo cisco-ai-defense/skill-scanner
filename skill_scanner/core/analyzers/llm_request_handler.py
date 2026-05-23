@@ -173,7 +173,7 @@ class LLMRequestHandler:
             return True
 
         model_lower = self.provider_config.model.lower()
-        unsupported_json_schema_providers = ["deepseek"]
+        unsupported_json_schema_providers = ["deepseek", "minimax"]
         return any(name in model_lower for name in unsupported_json_schema_providers)
 
     def _build_response_format(self) -> dict[str, Any] | None:
