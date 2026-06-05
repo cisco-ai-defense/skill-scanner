@@ -31,6 +31,8 @@ from .models import Skill, SkillFile, SkillManifest
 
 logger = logging.getLogger(__name__)
 
+_FRONTMATTER_QUOTE_RE = re.compile(r'^(description|name):[^\S\n]+(?!["\'])(.*:.*)$', re.MULTILINE)
+
 
 class SkillLoader:
     """Loads and parses Agent Skill packages.
@@ -191,6 +193,15 @@ class SkillLoader:
             SkillLoadError: If parsing fails (strict mode only)
         """
         content = self._read_skill_text_file(skill_md_path)
+
+        if "---" in content:
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                fm = _FRONTMATTER_QUOTE_RE.sub(
+                    lambda m: f'{m.group(1)}: "{m.group(2).replace(chr(34), chr(92) + chr(34))}"',
+                    parts[1],
+                )
+                content = f"---{fm}---{parts[2]}"
 
         # Parse with python-frontmatter
         try:
