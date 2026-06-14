@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from skill_scanner.core.analyzers.base import BaseAnalyzer
+from skill_scanner.core.fs_limits import walk_directory_bounded
 from skill_scanner.core.models import Finding, Severity, ThreatCategory
 from skill_scanner.core.scan_policy import ScanPolicy, SeverityOverride
 from skill_scanner.core.scanner import SkillScanner, scan_skill
@@ -86,6 +87,104 @@ def test_scan_directory(scanner, example_skills_dir):
 
     # Should have detected issues in malicious skills
     assert report.critical_count > 0 or report.high_count > 0
+
+
+def test_scan_directory_respects_traversal_limit(scanner, tmp_path):
+    """Recursive discovery should abort when traversal exceeds the configured limit."""
+    for idx in range(3):
+        (tmp_path / f"dir-{idx}").mkdir()
+
+    with pytest.raises(ValueError, match="filesystem entries"):
+        scanner.scan_directory(tmp_path, recursive=True, max_entries_visited=2)
+
+
+def test_bounded_walk_stops_while_scanning_single_directory(monkeypatch, tmp_path):
+    """The recursive walker should not consume an entire large directory before enforcing limits."""
+    consumed = []
+
+    class FakeEntry:
+        def __init__(self, name: str):
+            self.name = name
+
+        def is_dir(self, *, follow_symlinks: bool = False) -> bool:
+            return False
+
+    class FakeScandir:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            for idx in range(5):
+                consumed.append(idx)
+                yield FakeEntry(f"entry-{idx}")
+
+    monkeypatch.setattr("skill_scanner.core.fs_limits.os.scandir", lambda _path: FakeScandir())
+
+    with pytest.raises(ValueError, match="filesystem entries"):
+        list(walk_directory_bounded(tmp_path, max_entries_visited=2))
+
+    assert consumed == [0, 1, 2]
+
+
+def test_scan_directory_nonrecursive_stops_while_scanning_single_directory(monkeypatch, scanner, tmp_path):
+    """Non-recursive discovery should not materialize a whole directory before enforcing limits."""
+    consumed = []
+
+    class FakeEntry:
+        def __init__(self, name: str):
+            self.name = name
+
+        def is_dir(self, *, follow_symlinks: bool = False) -> bool:
+            return False
+
+    class FakeScandir:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            for idx in range(5):
+                consumed.append(idx)
+                yield FakeEntry(f"entry-{idx}")
+
+    monkeypatch.setattr("skill_scanner.core.fs_limits.os.scandir", lambda _path: FakeScandir())
+
+    with pytest.raises(ValueError, match="filesystem entries"):
+        scanner.scan_directory(tmp_path, recursive=False, max_entries_visited=2)
+
+    assert consumed == [0, 1, 2]
+
+
+def test_lenient_nonrecursive_discovery_counts_child_entries(scanner, tmp_path):
+    """Lenient fallback should not scan a large child directory outside the traversal limit."""
+    child = tmp_path / "candidate"
+    child.mkdir()
+    for idx in range(3):
+        (child / f"file-{idx}.txt").write_text("content")
+
+    with pytest.raises(ValueError, match="filesystem entries"):
+        scanner.scan_directory(tmp_path, lenient=True, max_entries_visited=3)
+
+
+def test_scan_directory_bounds_loader_file_discovery(scanner, tmp_path):
+    """Bounded batch execution should stop oversized skill file discovery during loading."""
+    skill_dir = tmp_path / "oversized-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("---\nname: oversized\ndescription: Test skill\n---\n", encoding="utf-8")
+    (skill_dir / "one.txt").write_text("one", encoding="utf-8")
+    (skill_dir / "two.txt").write_text("two", encoding="utf-8")
+    scanner.policy.file_limits.max_file_count = 1
+
+    report = scanner.scan_directory(tmp_path, recursive=False, max_entries_visited=20)
+
+    assert report.total_skills_scanned == 0
+    assert report.skills_skipped
+    assert "more than 1 files" in report.skills_skipped[0]["reason"]
 
 
 def test_scan_result_to_dict(scanner, example_skills_dir):

@@ -87,6 +87,7 @@ Thumbs.db
 
 # Local benchmark and analysis data
 .local_benchmark/
+.sqry/
 
 # Agent/AI tool configs (user-specific)
 .agent/

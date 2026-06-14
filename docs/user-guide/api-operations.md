@@ -85,26 +85,13 @@ docker run -p 8000:8000 \
 
 ### Authentication
 
-Add API key authentication:
+Set a server-side API key before enabling scan endpoints:
 
-```python
-import os
-
-from fastapi import Security, HTTPException
-from fastapi.security import APIKeyHeader
-
-API_KEY_NAME = "X-API-Key"
-api_key_header = APIKeyHeader(name=API_KEY_NAME)
-
-async def get_api_key(api_key: str = Security(api_key_header)):
-    if api_key != os.getenv("API_KEY"):
-        raise HTTPException(status_code=403, detail="Invalid API Key")
-    return api_key
-
-@app.post("/scan")
-async def scan_skill(request: ScanRequest, api_key: str = Depends(get_api_key)):
-    # ... scan logic
+```bash
+export SKILL_SCANNER_API_KEY=choose_a_strong_random_key
 ```
+
+Callers must send the same value in `X-API-Key` for `/scan`, `/scan-upload`, `/scan-batch`, and `/scan-batch/{scan_id}`. If `SKILL_SCANNER_API_KEY` is unset, those endpoints fail closed.
 
 ### Rate Limiting
 

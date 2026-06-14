@@ -39,6 +39,8 @@ from .scan_policy import ScanPolicy
 
 logger = logging.getLogger(__name__)
 
+MAX_LLM_CONSENSUS_RUNS = int(os.environ.get("SKILL_SCANNER_MAX_LLM_CONSENSUS_RUNS", "3"))
+
 
 def build_core_analyzers(
     policy: ScanPolicy,
@@ -122,13 +124,18 @@ def build_analyzers(
         A list of analyzer instances ready to be passed to
         :class:`SkillScanner`.
     """
+    if llm_consensus_runs < 1:
+        raise ValueError("llm_consensus_runs must be at least 1")
+    if llm_consensus_runs > MAX_LLM_CONSENSUS_RUNS:
+        raise ValueError(f"llm_consensus_runs cannot exceed {MAX_LLM_CONSENSUS_RUNS}")
+
     analyzers = build_core_analyzers(
         policy,
         custom_yara_rules_path=custom_yara_rules_path,
         extra_rules_dirs=extra_rules_dirs,
     )
 
-    # -- Optional analyzers (flag-driven) -----------------------------------
+    # Optional analyzers (flag-driven).
 
     if use_behavioral:
         try:

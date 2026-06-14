@@ -46,6 +46,7 @@ curl http://localhost:8000/health
 ```bash
 curl -X POST http://localhost:8000/scan \
   -H 'Content-Type: application/json' \
+  -H "X-API-Key: $SKILL_SCANNER_API_KEY" \
   -d '{
     "skill_directory": "/path/to/my-skill",
     "use_llm": false,
@@ -70,6 +71,7 @@ curl -X POST http://localhost:8000/scan \
 
 ```bash
 curl -X POST http://localhost:8000/scan-upload \
+  -H "X-API-Key: $SKILL_SCANNER_API_KEY" \
   -F 'file=@my-skill.zip'
 ```
 
@@ -88,7 +90,6 @@ curl -X POST http://localhost:8000/scan-upload \
 | `use_virustotal` | `bool` |
 | `vt_upload_files` | `bool` |
 | `use_aidefense` | `bool` |
-| `aidefense_api_url` | `str | None` |
 | `use_trigger` | `bool` |
 | `enable_meta` | `bool` |
 | `llm_consensus_runs` | `int` |
@@ -129,7 +130,6 @@ curl -X POST http://localhost:8000/scan-upload \
 | `use_virustotal` | `bool` |
 | `vt_upload_files` | `bool` |
 | `use_aidefense` | `bool` |
-| `aidefense_api_url` | `str | None` |
 | `use_trigger` | `bool` |
 | `enable_meta` | `bool` |
 | `llm_consensus_runs` | `int` |
@@ -137,6 +137,7 @@ curl -X POST http://localhost:8000/scan-upload \
 ## Notes
 
 - API behavior is policy-aware and mirrors CLI analyzer selection flags.
+- Set `SKILL_SCANNER_API_KEY` and pass it as `X-API-Key` for scan endpoints and batch-result retrieval.
 - API keys for VirusTotal and AI Defense are passed via request headers (`X-VirusTotal-Key`, `X-AIDefense-Key`), not in the JSON body.
 - Set `SKILL_SCANNER_ALLOWED_ROOTS` to restrict which directories the API can scan.
 - All `POST` endpoints accept JSON bodies. File upload uses `multipart/form-data`.

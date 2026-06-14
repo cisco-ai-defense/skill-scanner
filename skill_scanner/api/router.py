@@ -24,6 +24,7 @@ full CLI/API parity.
 
 import logging
 import os
+import secrets
 import shutil
 import tempfile
 import threading
@@ -44,6 +45,8 @@ except ImportError:
 
 from .. import __version__ as PACKAGE_VERSION
 from ..core.analyzer_factory import build_analyzers
+from ..core.archive_limits import read_zip_member_count
+from ..core.fs_limits import iter_directory_bounded, walk_directory_bounded
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
 
@@ -116,6 +119,14 @@ MAX_ZIP_ENTRIES = 500  # max files extracted from uploaded ZIP
 MAX_ZIP_UNCOMPRESSED_BYTES = 200 * 1024 * 1024  # 200 MB uncompressed limit
 MAX_CACHE_ENTRIES = 1_000  # evict oldest when exceeded
 CACHE_TTL_SECONDS = 3600  # 1 hour
+MAX_LLM_CONSENSUS_RUNS = int(os.environ.get("SKILL_SCANNER_MAX_LLM_CONSENSUS_RUNS", "3"))
+MAX_SKILL_PATHS_VISITED = int(os.environ.get("SKILL_SCANNER_MAX_SKILL_PATHS_VISITED", "10000"))
+MAX_BATCH_SKILLS = int(os.environ.get("SKILL_SCANNER_MAX_BATCH_SKILLS", "100"))
+MAX_BATCH_PATHS_VISITED = int(os.environ.get("SKILL_SCANNER_MAX_BATCH_PATHS_VISITED", "10000"))
+RATE_LIMIT_REQUESTS = int(os.environ.get("SKILL_SCANNER_API_RATE_LIMIT_REQUESTS", "600"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("SKILL_SCANNER_API_RATE_LIMIT_WINDOW_SECONDS", "60"))
+API_KEY_HEADER = "X-API-Key"
+_API_KEY = os.environ.get("SKILL_SCANNER_API_KEY")
 
 
 # In-memory storage for async scans with bounded LRU eviction and TTL.
@@ -149,12 +160,45 @@ class _BoundedCache(OrderedDict[str, dict]):
 
 scan_results_cache = _BoundedCache()
 
-# Environment-configurable allowlist of directories the API may access.
-# When empty (default) any *resolved* absolute path is accepted — operators
-# should set SKILL_SCANNER_ALLOWED_ROOTS to restrict access in production.
+# Environment-configurable allowlist of directories the API may access. API
+# path inputs fail closed when no roots are configured.
 _ALLOWED_ROOTS: list[Path] = [
     Path(p).resolve() for p in os.environ.get("SKILL_SCANNER_ALLOWED_ROOTS", "").split(":") if p.strip()
 ]
+_RATE_LIMIT_EVENTS: dict[str, list[float]] = {}
+_RATE_LIMIT_LOCK = threading.Lock()
+
+
+def _require_api_auth(api_key: str | None) -> None:
+    """Require caller authentication for scan work and scan results."""
+    if not _API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="API authentication is not configured",
+        )
+    if api_key is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing API key",
+            headers={"WWW-Authenticate": API_KEY_HEADER},
+        )
+    if not secrets.compare_digest(api_key, _API_KEY):
+        raise HTTPException(status_code=403, detail="Invalid API key")
+
+
+def _enforce_rate_limit(scope: str) -> None:
+    """Apply a small process-local rate limit to expensive scan endpoints."""
+    if RATE_LIMIT_REQUESTS <= 0:
+        return
+
+    now = time.monotonic()
+    cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+    with _RATE_LIMIT_LOCK:
+        events = [t for t in _RATE_LIMIT_EVENTS.get(scope, []) if t > cutoff]
+        if len(events) >= RATE_LIMIT_REQUESTS:
+            raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        events.append(now)
+        _RATE_LIMIT_EVENTS[scope] = events
 
 
 def _validate_path(user_input: str, *, label: str = "path") -> Path:
@@ -168,7 +212,13 @@ def _validate_path(user_input: str, *, label: str = "path") -> Path:
 
     resolved = Path(user_input).resolve()
 
-    if _ALLOWED_ROOTS and not any(resolved == root or resolved.is_relative_to(root) for root in _ALLOWED_ROOTS):
+    if not _ALLOWED_ROOTS:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: no allowed API scan roots are configured",
+        )
+
+    if not any(resolved == root or resolved.is_relative_to(root) for root in _ALLOWED_ROOTS):
         raise HTTPException(
             status_code=403,
             detail=f"Access denied: {label} is outside the allowed directories",
@@ -197,10 +247,14 @@ class ScanRequest(BaseModel):
     use_virustotal: bool = Field(False, description="Enable VirusTotal binary file scanning")
     vt_upload_files: bool = Field(False, description="Upload unknown files to VirusTotal")
     use_aidefense: bool = Field(False, description="Enable AI Defense analyzer")
-    aidefense_api_url: str | None = Field(None, description="AI Defense API URL")
     use_trigger: bool = Field(False, description="Enable trigger specificity analysis")
     enable_meta: bool = Field(False, description="Enable meta-analysis for false positive filtering")
-    llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
+    llm_consensus_runs: int = Field(
+        1,
+        ge=1,
+        le=MAX_LLM_CONSENSUS_RUNS,
+        description="Number of LLM consensus runs (majority vote)",
+    )
 
 
 class ScanResponse(BaseModel):
@@ -241,10 +295,14 @@ class BatchScanRequest(BaseModel):
     use_virustotal: bool = False
     vt_upload_files: bool = False
     use_aidefense: bool = False
-    aidefense_api_url: str | None = None
     use_trigger: bool = False
     enable_meta: bool = Field(False, description="Enable meta-analysis")
-    llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
+    llm_consensus_runs: int = Field(
+        1,
+        ge=1,
+        le=MAX_LLM_CONSENSUS_RUNS,
+        description="Number of LLM consensus runs (majority vote)",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -281,11 +339,10 @@ def _build_analyzers(
     vt_upload_files: bool = False,
     use_aidefense: bool = False,
     aidefense_api_key: str | None = None,
-    aidefense_api_url: str | None = None,
     use_trigger: bool = False,
     llm_consensus_runs: int = 1,
 ):
-    """Build the analyzer list — delegates to the centralized factory."""
+    """Build the analyzer list, delegating to the centralized factory."""
     return build_analyzers(
         policy,
         custom_yara_rules_path=custom_rules,
@@ -297,10 +354,49 @@ def _build_analyzers(
         vt_upload_files=vt_upload_files,
         use_aidefense=use_aidefense,
         aidefense_api_key=aidefense_api_key,
-        aidefense_api_url=aidefense_api_url,
         use_trigger=use_trigger,
         llm_consensus_runs=llm_consensus_runs,
     )
+
+
+def _count_batch_candidates(skills_dir: Path, recursive: bool) -> int:
+    """Count candidate skill directories before queuing background work."""
+    count = 0
+    if recursive:
+        try:
+            for _root, _dirs, files in walk_directory_bounded(
+                skills_dir,
+                max_entries_visited=MAX_BATCH_PATHS_VISITED,
+            ):
+                if "SKILL.md" in files:
+                    count += 1
+                if count > MAX_BATCH_SKILLS:
+                    break
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Batch traversal exceeds limit of {MAX_BATCH_PATHS_VISITED} filesystem entries",
+            ) from exc
+        return count
+
+    visited = 0
+    try:
+        for entry, next_visited in iter_directory_bounded(
+            skills_dir,
+            max_entries_visited=MAX_BATCH_PATHS_VISITED,
+            entries_visited=visited,
+        ):
+            visited = next_visited
+            if entry.is_dir(follow_symlinks=False) and (Path(entry.path) / "SKILL.md").exists():
+                count += 1
+                if count > MAX_BATCH_SKILLS:
+                    break
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Batch traversal exceeds limit of {MAX_BATCH_PATHS_VISITED} filesystem entries",
+        ) from exc
+    return count
 
 
 def _recompute_report_summary(report) -> None:
@@ -367,14 +463,39 @@ async def health_check():
 @router.post("/scan", response_model=ScanResponse)
 async def scan_skill(
     request: ScanRequest,
+    api_key: str | None = Header(None, alias=API_KEY_HEADER),
     vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
     aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
 ):
     """Scan a single skill package."""
+    _require_api_auth(api_key)
+    _enforce_rate_limit("scan")
+    return await _scan_skill_impl(
+        request,
+        vt_api_key=vt_api_key,
+        aidefense_api_key=aidefense_api_key,
+        validate_skill_path=True,
+    )
+
+
+async def _scan_skill_impl(
+    request: ScanRequest,
+    *,
+    vt_api_key: str | None = None,
+    aidefense_api_key: str | None = None,
+    validate_skill_path: bool = True,
+    loader_max_files: int | None = None,
+    loader_max_entries_visited: int | None = None,
+) -> ScanResponse:
+    """Shared scan implementation for external paths and internal upload staging."""
     import asyncio
     import concurrent.futures
 
-    skill_dir = _validate_path(request.skill_directory, label="skill_directory")
+    skill_dir = (
+        _validate_path(request.skill_directory, label="skill_directory")
+        if validate_skill_path
+        else Path(request.skill_directory).resolve()
+    )
 
     if not skill_dir.exists():
         raise HTTPException(status_code=404, detail=f"Skill directory not found: {skill_dir}")
@@ -397,6 +518,16 @@ async def scan_skill(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    scan_loader_max_files = loader_max_files
+    scan_loader_max_entries = loader_max_entries_visited
+    if validate_skill_path:
+        scan_loader_max_files = (
+            policy.file_limits.max_file_count if scan_loader_max_files is None else scan_loader_max_files
+        )
+        scan_loader_max_entries = (
+            MAX_SKILL_PATHS_VISITED if scan_loader_max_entries is None else scan_loader_max_entries
+        )
+
     def run_scan():
         analyzers = _build_analyzers(
             policy,
@@ -409,12 +540,15 @@ async def scan_skill(
             vt_upload_files=request.vt_upload_files,
             use_aidefense=request.use_aidefense,
             aidefense_api_key=aidefense_api_key,
-            aidefense_api_url=request.aidefense_api_url,
             use_trigger=request.use_trigger,
             llm_consensus_runs=request.llm_consensus_runs,
         )
         scanner = SkillScanner(analyzers=analyzers, policy=policy)
-        return scanner.scan_skill(skill_dir)
+        return scanner.scan_skill(
+            skill_dir,
+            max_files=scan_loader_max_files,
+            max_entries_visited=scan_loader_max_entries,
+        )
 
     try:
         loop = asyncio.get_running_loop()
@@ -434,7 +568,11 @@ async def scan_skill(
 
                 meta_analyzer = MetaAnalyzer(policy=policy)
                 loader = SkillLoader()
-                skill = loader.load_skill(skill_dir)
+                skill = loader.load_skill(
+                    skill_dir,
+                    max_files=scan_loader_max_files,
+                    max_entries_visited=scan_loader_max_entries,
+                )
 
                 meta_result = await meta_analyzer.analyze_with_findings(
                     skill=skill,
@@ -480,16 +618,18 @@ async def scan_uploaded_skill(
     llm_provider: str = Form("anthropic", description="LLM provider"),
     use_behavioral: bool = Form(False, description="Enable behavioral analyzer"),
     use_virustotal: bool = Form(False, description="Enable VirusTotal scanner"),
+    api_key: str | None = Header(None, alias=API_KEY_HEADER),
     vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
     vt_upload_files: bool = Form(False, description="Upload unknown files to VirusTotal"),
     use_aidefense: bool = Form(False, description="Enable AI Defense analyzer"),
     aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
-    aidefense_api_url: str | None = Form(None, description="AI Defense API URL"),
     use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
     enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
-    llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
+    llm_consensus_runs: int = Form(1, ge=1, le=MAX_LLM_CONSENSUS_RUNS, description="Number of LLM consensus runs"),
 ):
     """Scan an uploaded skill package (ZIP file)."""
+    _require_api_auth(api_key)
+    _enforce_rate_limit("scan-upload")
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
 
@@ -497,7 +637,7 @@ async def scan_uploaded_skill(
 
     try:
         # Stream upload with size limit to avoid memory exhaustion
-        zip_path = temp_dir / file.filename
+        zip_path = temp_dir / "upload.zip"
         total_read = 0
         chunk_size = 1024 * 1024  # 1 MB chunks
         with open(zip_path, "wb") as f:
@@ -517,15 +657,21 @@ async def scan_uploaded_skill(
         import zipfile
 
         try:
+            zip_member_count = read_zip_member_count(zip_path)
+            if zip_member_count is not None and zip_member_count > MAX_ZIP_ENTRIES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"ZIP contains {zip_member_count} entries, exceeding limit of {MAX_ZIP_ENTRIES}",
+                )
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 # Enforce entry count and uncompressed size limits
-                entries = [info for info in zip_ref.infolist() if not info.is_dir()]
-                if len(entries) > MAX_ZIP_ENTRIES:
+                all_entries = zip_ref.filelist
+                if len(all_entries) > MAX_ZIP_ENTRIES:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"ZIP contains {len(entries)} files, exceeding limit of {MAX_ZIP_ENTRIES}",
+                        detail=f"ZIP contains {len(all_entries)} entries, exceeding limit of {MAX_ZIP_ENTRIES}",
                     )
-                total_uncompressed = sum(info.file_size for info in entries)
+                total_uncompressed = sum(info.file_size for info in all_entries if not info.is_dir())
                 if total_uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES:
                     raise HTTPException(
                         status_code=400,
@@ -536,8 +682,8 @@ async def scan_uploaded_skill(
                     )
                 # Check for path traversal and symlinks using resolved extraction targets.
                 extract_root = (temp_dir / "extracted").resolve()
-                for info in zip_ref.infolist():
-                    # Reject symlink entries — they can escape the extraction directory
+                for info in all_entries:
+                    # Reject symlink entries because they can escape the extraction directory.
                     unix_mode = (info.external_attr >> 16) & 0xFFFF
                     if unix_mode != 0 and stat.S_ISLNK(unix_mode):
                         raise HTTPException(status_code=400, detail="ZIP contains symbolic link entries")
@@ -547,25 +693,36 @@ async def scan_uploaded_skill(
 
                 # Extract member-by-member, verifying no symlink appears on disk
                 extract_root.mkdir(parents=True, exist_ok=True)
-                for info in zip_ref.infolist():
+                for info in all_entries:
                     zip_ref.extract(info, extract_root)
                     dest_path = (extract_root / info.filename).resolve()
                     if dest_path.is_symlink():
                         dest_path.unlink()
                         raise HTTPException(
                             status_code=400,
-                            detail="ZIP extraction produced a symbolic link — rejected",
+                            detail="ZIP extraction produced a symbolic link, rejected",
                         )
         except zipfile.BadZipFile as e:
             raise HTTPException(status_code=400, detail="Invalid ZIP archive") from e
 
         extracted_dir = temp_dir / "extracted"
-        skill_dirs = list(extracted_dir.rglob("SKILL.md"))
+        skill_dir: Path | None = None
+        try:
+            for current_root, _dirs, files in walk_directory_bounded(
+                extracted_dir,
+                max_entries_visited=MAX_ZIP_ENTRIES,
+            ):
+                if "SKILL.md" in files:
+                    skill_dir = current_root
+                    break
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"ZIP extracted tree exceeds limit of {MAX_ZIP_ENTRIES} filesystem entries",
+            ) from exc
 
-        if not skill_dirs:
+        if skill_dir is None:
             raise HTTPException(status_code=400, detail="No SKILL.md found in uploaded archive")
-
-        skill_dir = skill_dirs[0].parent
 
         request = ScanRequest(
             skill_directory=str(skill_dir),
@@ -577,13 +734,19 @@ async def scan_uploaded_skill(
             use_virustotal=use_virustotal,
             vt_upload_files=vt_upload_files,
             use_aidefense=use_aidefense,
-            aidefense_api_url=aidefense_api_url,
             use_trigger=use_trigger,
             enable_meta=enable_meta,
             llm_consensus_runs=llm_consensus_runs,
         )
 
-        return await scan_skill(request, vt_api_key=vt_api_key, aidefense_api_key=aidefense_api_key)
+        return await _scan_skill_impl(
+            request,
+            vt_api_key=vt_api_key,
+            aidefense_api_key=aidefense_api_key,
+            validate_skill_path=False,
+            loader_max_files=MAX_ZIP_ENTRIES,
+            loader_max_entries_visited=MAX_ZIP_ENTRIES,
+        )
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -593,10 +756,13 @@ async def scan_uploaded_skill(
 async def scan_batch(
     request: BatchScanRequest,
     background_tasks: BackgroundTasks,
+    api_key: str | None = Header(None, alias=API_KEY_HEADER),
     vt_api_key: str | None = Header(None, alias="X-VirusTotal-Key"),
     aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
 ):
     """Scan multiple skills in a directory (batch scan)."""
+    _require_api_auth(api_key)
+    _enforce_rate_limit("scan-batch")
     skills_dir = _validate_path(request.skills_directory, label="skills_directory")
 
     if not skills_dir.exists():
@@ -604,6 +770,13 @@ async def scan_batch(
 
     if not skills_dir.is_dir():
         raise HTTPException(status_code=400, detail="skills_directory must be a directory")
+
+    candidate_count = _count_batch_candidates(skills_dir, request.recursive)
+    if candidate_count > MAX_BATCH_SKILLS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Batch contains more than {MAX_BATCH_SKILLS} candidate skills",
+        )
 
     scan_id = str(uuid.uuid4())
     scan_results_cache.set(scan_id, {"status": "processing", "started_at": datetime.now().isoformat(), "result": None})
@@ -618,8 +791,12 @@ async def scan_batch(
 
 
 @router.get("/scan-batch/{scan_id}")
-async def get_batch_scan_result(scan_id: str):
+async def get_batch_scan_result(
+    scan_id: str,
+    api_key: str | None = Header(None, alias=API_KEY_HEADER),
+):
     """Get results of a batch scan."""
+    _require_api_auth(api_key)
     cached = scan_results_cache.get_valid(scan_id)
     if cached is None:
         raise HTTPException(status_code=404, detail="Scan ID not found or expired")
@@ -663,7 +840,6 @@ def run_batch_scan(
             vt_upload_files=request.vt_upload_files,
             use_aidefense=request.use_aidefense,
             aidefense_api_key=aidefense_api_key,
-            aidefense_api_url=request.aidefense_api_url,
             use_trigger=request.use_trigger,
             llm_consensus_runs=request.llm_consensus_runs,
         )
@@ -673,6 +849,8 @@ def run_batch_scan(
             _validate_path(request.skills_directory, label="skills_directory"),
             recursive=request.recursive,
             check_overlap=request.check_overlap,
+            max_candidates=MAX_BATCH_SKILLS,
+            max_entries_visited=MAX_BATCH_PATHS_VISITED,
         )
 
         # Meta-analysis per skill
@@ -690,7 +868,11 @@ def run_batch_scan(
                     if result.findings:
                         try:
                             skill_dir_path = Path(result.skill_directory)
-                            skill = scanner_ref.loader.load_skill(skill_dir_path)
+                            skill = scanner_ref.loader.load_skill(
+                                skill_dir_path,
+                                max_files=policy_ref.file_limits.max_file_count,
+                                max_entries_visited=MAX_BATCH_PATHS_VISITED,
+                            )
                             meta_result = await meta_analyzer.analyze_with_findings(
                                 skill=skill,
                                 findings=result.findings,

@@ -122,6 +122,14 @@ class TestBuildAnalyzers:
         assert "static_analyzer" in names
         assert "trigger_analyzer" in names
 
+    def test_rejects_excessive_llm_consensus_runs(self):
+        """Consensus runs are capped for non-API callers too."""
+        from skill_scanner.core import analyzer_factory
+
+        policy = ScanPolicy.default()
+        with pytest.raises(ValueError, match="llm_consensus_runs"):
+            build_analyzers(policy, llm_consensus_runs=analyzer_factory.MAX_LLM_CONSENSUS_RUNS + 1)
+
 
 class TestAllSitesUseFactory:
     """Meta-test: verify production code does not instantiate core analyzers

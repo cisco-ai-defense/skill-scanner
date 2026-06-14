@@ -3,8 +3,8 @@
 The Skill Scanner API Server provides a REST interface for uploading and scanning Agent Skills packages, enabling integration with web applications, CI/CD pipelines, and other services.
 
 > [!WARNING]
-> **Development Use Only**
-> This server is unauthenticated by default. Do not expose it on any interface except localhost -- the APIs can be used for denial-of-wallet attacks on your API keys or denial-of-service via uploaded zipbombs. See [API Operations](api-operations.md#security) for authentication and hardening guidance.
+> **Configure Before Use**
+> Scan endpoints require `SKILL_SCANNER_API_KEY` and caller requests must include `X-API-Key`. Do not expose the API without TLS and a narrow `SKILL_SCANNER_ALLOWED_ROOTS` allowlist.
 
 **Technology**: FastAPI with async support &bull; **Endpoints**: 7 REST endpoints &bull; **Docs**: auto-generated Swagger/ReDoc
 
@@ -57,6 +57,7 @@ curl http://localhost:8000/health
 # Run a basic scan
 curl -X POST http://localhost:8000/scan \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: $SKILL_SCANNER_API_KEY" \
   -d '{"skill_directory": "/path/to/skill"}'
 ```
 
@@ -69,6 +70,8 @@ For complete request/response examples in curl, Python, and JavaScript, see **[A
 The API server uses the same environment variables as the CLI. The most common ones:
 
 ```bash
+export SKILL_SCANNER_API_KEY=choose_a_strong_random_key
+export SKILL_SCANNER_ALLOWED_ROOTS=/path/to/scannable/skills
 export SKILL_SCANNER_LLM_API_KEY=your_key
 export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 export AI_DEFENSE_API_KEY=your_key
@@ -104,6 +107,6 @@ app.include_router(router)
 
 ## Next Steps
 
-- **[API Endpoints Detail](api-endpoints-detail.md)** — full request/response schemas for every endpoint
-- **[API Operations](api-operations.md)** — CI/CD, Docker, security, monitoring, and troubleshooting
-- **[API Rationale](api-rationale.md)** — when to use the API vs CLI/SDK
+- **[API Endpoints Detail](api-endpoints-detail.md)** - full request/response schemas for every endpoint
+- **[API Operations](api-operations.md)** - CI/CD, Docker, security, monitoring, and troubleshooting
+- **[API Rationale](api-rationale.md)** - when to use the API vs CLI/SDK

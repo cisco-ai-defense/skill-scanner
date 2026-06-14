@@ -89,13 +89,27 @@ Override default analyzer enablement via environment. Values: `true`/`1` or `fal
 | `ENABLE_BEHAVIORAL_ANALYZER` | Optional environment toggle for behavioral analyzer default. | `false` |
 | `ENABLE_AIDEFENSE` | Optional environment toggle for AI Defense analyzer default. | `false` |
 
+## API Server
+
+Authentication, path allowlists, and bounds for the REST API.
+
+| Variable | Description | Example |
+|---|---|---|
+| `SKILL_SCANNER_API_KEY` | Caller API key required by the REST API scan endpoints. | `choose_a_strong_random_key` |
+| `SKILL_SCANNER_ALLOWED_ROOTS` | Colon-delimited API path allowlist for server-side path access. | `/srv/skills:/home/user/skills` |
+| `SKILL_SCANNER_API_RATE_LIMIT_REQUESTS` | Process-local scan endpoint request limit per window. | `600` |
+| `SKILL_SCANNER_API_RATE_LIMIT_WINDOW_SECONDS` | Rate-limit window size in seconds. | `60` |
+| `SKILL_SCANNER_MAX_LLM_CONSENSUS_RUNS` | Maximum LLM consensus runs accepted by the API and analyzer factory. | `3` |
+| `SKILL_SCANNER_MAX_SKILL_PATHS_VISITED` | Maximum filesystem entries visited while loading an API single-skill scan. | `10000` |
+| `SKILL_SCANNER_MAX_BATCH_SKILLS` | Maximum candidate skills accepted by an API batch scan. | `100` |
+| `SKILL_SCANNER_MAX_BATCH_PATHS_VISITED` | Maximum filesystem entries visited during API batch discovery. | `10000` |
+
 ## Advanced
 
 Paths, allowlists, and other advanced settings.
 
 | Variable | Description | Example |
 |---|---|---|
-| `SKILL_SCANNER_ALLOWED_ROOTS` | Colon-delimited API path allowlist for server-side path access. | `/srv/skills:/home/user/skills` |
 | `SKILL_SCANNER_TAXONOMY_PATH` | Path to a custom Cisco AI taxonomy YAML file (overridden by `--taxonomy`). | `/path/to/taxonomy.yaml` |
 | `SKILL_SCANNER_THREAT_MAPPING_PATH` | Path to a custom threat mapping YAML file (overridden by `--threat-mapping`). | `/path/to/threats.yaml` |
 
@@ -115,13 +129,20 @@ Paths, allowlists, and other advanced settings.
 | `ENABLE_STATIC_ANALYZER` | `skill_scanner/config/config.py` |
 | `GEMINI_API_KEY` | `skill_scanner/core/analyzers/llm_provider_config.py` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `.env.example`, `skill_scanner/core/analyzers/llm_provider_config.py` |
-| `SKILL_SCANNER_ALLOWED_ROOTS` | `skill_scanner/api/router.py` |
+| `SKILL_SCANNER_ALLOWED_ROOTS` | `.env.example`, `skill_scanner/api/router.py` |
+| `SKILL_SCANNER_API_KEY` | `.env.example`, `skill_scanner/api/router.py` |
+| `SKILL_SCANNER_API_RATE_LIMIT_REQUESTS` | `skill_scanner/api/router.py` |
+| `SKILL_SCANNER_API_RATE_LIMIT_WINDOW_SECONDS` | `skill_scanner/api/router.py` |
 | `SKILL_SCANNER_LLM_API_KEY` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_API_VERSION` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_BASE_URL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` | `.env.example` |
 | `SKILL_SCANNER_LLM_MODEL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_PROVIDER` | `.env.example`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/llm_provider_config.py` |
+| `SKILL_SCANNER_MAX_BATCH_PATHS_VISITED` | `skill_scanner/api/router.py` |
+| `SKILL_SCANNER_MAX_BATCH_SKILLS` | `skill_scanner/api/router.py` |
+| `SKILL_SCANNER_MAX_LLM_CONSENSUS_RUNS` | `skill_scanner/api/router.py`, `skill_scanner/core/analyzer_factory.py` |
+| `SKILL_SCANNER_MAX_SKILL_PATHS_VISITED` | `skill_scanner/api/router.py` |
 | `SKILL_SCANNER_META_LLM_API_KEY` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_META_LLM_API_VERSION` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_META_LLM_BASE_URL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |

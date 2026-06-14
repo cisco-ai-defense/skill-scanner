@@ -90,6 +90,75 @@ def test_skill_file_discovery(loader, example_skills_dir):
     assert "python" in file_types
 
 
+def test_loader_file_discovery_respects_entry_limit(monkeypatch, loader, tmp_path):
+    """File discovery should stop during directory enumeration when a traversal limit is set."""
+    skill_dir = tmp_path / "bounded-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("---\nname: bounded\ndescription: Test skill\n---\n", encoding="utf-8")
+    consumed = []
+
+    class FakeEntry:
+        def __init__(self, name: str):
+            self.name = name
+            self.path = str(skill_dir / name)
+
+        def is_dir(self, *, follow_symlinks: bool = False) -> bool:
+            return False
+
+    class FakeScandir:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            for idx in range(5):
+                consumed.append(idx)
+                yield FakeEntry(f"entry-{idx}")
+
+    monkeypatch.setattr("skill_scanner.core.fs_limits.os.scandir", lambda _path: FakeScandir())
+
+    with pytest.raises(SkillLoadError, match="filesystem entries"):
+        loader.load_skill(skill_dir, max_entries_visited=2)
+
+    assert consumed == [0, 1, 2]
+
+
+def test_loader_file_discovery_respects_file_limit(loader, tmp_path):
+    """File discovery should fail before building an unbounded file list."""
+    skill_dir = tmp_path / "too-many-files"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("---\nname: too-many\ndescription: Test skill\n---\n", encoding="utf-8")
+    (skill_dir / "one.txt").write_text("one", encoding="utf-8")
+    (skill_dir / "two.txt").write_text("two", encoding="utf-8")
+
+    with pytest.raises(SkillLoadError, match="more than 1 files"):
+        loader.load_skill(skill_dir, max_files=1)
+
+
+def test_lenient_markdown_synthesis_respects_entry_limit(loader, tmp_path):
+    """Lenient markdown fallback should use bounded direct directory enumeration."""
+    skill_dir = tmp_path / "many-markdown-files"
+    skill_dir.mkdir()
+    for idx in range(3):
+        (skill_dir / f"doc-{idx}.md").write_text(f"# Doc {idx}\n", encoding="utf-8")
+
+    with pytest.raises(SkillLoadError, match="markdown discovery"):
+        loader.load_skill(skill_dir, lenient=True, max_entries_visited=1)
+
+
+def test_lenient_markdown_synthesis_respects_file_limit(loader, tmp_path):
+    """Lenient markdown fallback should fail before reading an unbounded set of markdown files."""
+    skill_dir = tmp_path / "too-many-markdown-files"
+    skill_dir.mkdir()
+    for idx in range(4):
+        (skill_dir / f"doc-{idx}.md").write_text(f"# Doc {idx}\n", encoding="utf-8")
+
+    with pytest.raises(SkillLoadError, match="more than 1 markdown files"):
+        loader.load_skill(skill_dir, lenient=True, max_files=1, max_entries_visited=20)
+
+
 def test_manifest_parsing(loader, example_skills_dir):
     """Test YAML frontmatter parsing."""
     skill_dir = example_skills_dir / "safe" / "simple-formatter"
@@ -261,7 +330,7 @@ def test_non_utf8_skill_md_raises_error(loader, tmp_path):
 
 
 def test_binary_skill_md_raises_in_lenient_mode(loader, tmp_path):
-    """Lenient mode must NOT swallow binary SKILL.md — the error must propagate."""
+    """Lenient mode must NOT swallow binary SKILL.md, the error must propagate."""
     skill_dir = tmp_path / "lenient-binary"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")

@@ -32,6 +32,7 @@ from .analyzability import AnalyzabilityReport, compute_analyzability
 from .analyzer_factory import build_core_analyzers
 from .analyzers.base import BaseAnalyzer
 from .extractors.content_extractor import ContentExtractor
+from .fs_limits import iter_directory_bounded, walk_directory_bounded
 from .loader import SkillLoader, SkillLoadError
 from .models import Finding, Report, ScanResult, Severity, Skill, ThreatCategory
 from .scan_policy import ScanPolicy
@@ -141,7 +142,7 @@ class SkillScanner:
         else:
             self.analyzers = analyzers
 
-        # Warn if MetaAnalyzer is in the analyzers list -- it must be
+        # Warn if MetaAnalyzer is in the analyzers list, it must be
         # orchestrated separately via analyze_with_findings().
         for a in self.analyzers:
             if a.get_name() == "meta_analyzer":
@@ -163,6 +164,8 @@ class SkillScanner:
         *,
         lenient: bool = False,
         skill_file: str | None = None,
+        max_files: int | None = None,
+        max_entries_visited: int | None = None,
     ) -> ScanResult:
         """
         Scan a single skill package.
@@ -173,6 +176,9 @@ class SkillScanner:
                 When True and ``SKILL.md`` is absent, the loader falls back to
                 scanning ``.md`` files in the directory (non-Codex/Cursor formats).
             skill_file: Optional custom metadata filename (e.g. ``"README.md"``).
+            max_files: Optional maximum number of files to discover while loading.
+            max_entries_visited: Optional maximum number of filesystem entries
+                to visit while loading.
 
         Returns:
             ScanResult with findings
@@ -183,7 +189,13 @@ class SkillScanner:
         if not isinstance(skill_directory, Path):
             skill_directory = Path(skill_directory)
 
-        skill = self.loader.load_skill(skill_directory, lenient=lenient, skill_file=skill_file)
+        skill = self.loader.load_skill(
+            skill_directory,
+            lenient=lenient,
+            skill_file=skill_file,
+            max_files=max_files,
+            max_entries_visited=max_entries_visited,
+        )
         return self._scan_single_skill(skill, skill_directory)
 
     # ------------------------------------------------------------------
@@ -337,7 +349,7 @@ class SkillScanner:
         """
         findings: list[Finding] = []
 
-        # Escalate unknown binaries from INFO to MEDIUM — skip inert
+        # Escalate unknown binaries from INFO to MEDIUM, skip inert
         # file types (images, fonts, databases) that are binary but benign.
         _unanalyzable_enabled = "UNANALYZABLE_BINARY" not in self.policy.disabled_rules
         _skip_inert = self.policy.file_classification.skip_inert_extensions
@@ -378,12 +390,12 @@ class SkillScanner:
                     )
                 )
 
-        # Overall analyzability score findings — check policy knob
+        # Overall analyzability score findings, check policy knob.
         if "LOW_ANALYZABILITY" in self.policy.disabled_rules:
             return findings  # early return; UNANALYZABLE_BINARY already collected above
 
         if report.risk_level == "HIGH":
-            # < medium_threshold (default 70%) — critically low analyzability
+            # < medium_threshold (default 70%) means critically low analyzability.
             findings.append(
                 Finding(
                     id="LOW_ANALYZABILITY_CRITICAL",
@@ -678,6 +690,8 @@ class SkillScanner:
         *,
         lenient: bool = False,
         skill_file: str | None = None,
+        max_candidates: int | None = None,
+        max_entries_visited: int | None = None,
     ) -> Report:
         """
         Scan all skill packages in a directory.
@@ -694,6 +708,10 @@ class SkillScanner:
                 When True, directories containing ``.md`` files (but no
                 ``SKILL.md``) are also discovered as candidate skills.
             skill_file: Optional custom metadata filename (e.g. ``"README.md"``).
+            max_candidates: Optional maximum number of skill directories to
+                discover before aborting.
+            max_entries_visited: Optional maximum number of filesystem entries
+                to visit while discovering skill directories.
 
         Returns:
             Report with results from all skills
@@ -704,7 +722,14 @@ class SkillScanner:
         if not skills_directory.exists():
             raise FileNotFoundError(f"Directory does not exist: {skills_directory}")
 
-        skill_dirs = self._find_skill_directories(skills_directory, recursive, lenient=lenient, skill_file=skill_file)
+        skill_dirs = self._find_skill_directories(
+            skills_directory,
+            recursive,
+            lenient=lenient,
+            skill_file=skill_file,
+            max_candidates=max_candidates,
+            max_entries_visited=max_entries_visited,
+        )
         report = Report()
 
         # Keep track of loaded skills for cross-skill analysis
@@ -712,7 +737,14 @@ class SkillScanner:
 
         for skill_dir in skill_dirs:
             try:
-                skill = self.loader.load_skill(skill_dir, lenient=lenient, skill_file=skill_file)
+                loader_max_files = self.policy.file_limits.max_file_count if max_entries_visited is not None else None
+                skill = self.loader.load_skill(
+                    skill_dir,
+                    lenient=lenient,
+                    skill_file=skill_file,
+                    max_files=loader_max_files,
+                    max_entries_visited=max_entries_visited,
+                )
                 result = self._scan_single_skill(skill, skill_dir)
                 report.add_scan_result(result)
 
@@ -861,6 +893,8 @@ class SkillScanner:
         *,
         lenient: bool = False,
         skill_file: str | None = None,
+        max_candidates: int | None = None,
+        max_entries_visited: int | None = None,
     ) -> list[Path]:
         """
         Find all directories containing skill metadata files.
@@ -875,6 +909,9 @@ class SkillScanner:
             recursive: Search recursively
             lenient: Also discover directories with ``.md`` files (no ``SKILL.md``)
             skill_file: Custom metadata filename to look for instead of ``SKILL.md``
+            max_candidates: Optional maximum number of directories to return.
+            max_entries_visited: Optional maximum number of filesystem entries
+                to visit during discovery.
 
         Returns:
             List of skill directory paths
@@ -883,40 +920,69 @@ class SkillScanner:
         skill_dirs: list[Path] = []
         seen: set[Path] = set()
 
+        def check_limits() -> None:
+            if max_candidates is not None and len(skill_dirs) > max_candidates:
+                raise ValueError(f"Found more than {max_candidates} candidate skill directories")
+
+        def add_candidate(candidate: Path) -> None:
+            resolved = candidate.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                skill_dirs.append(candidate)
+                check_limits()
+
         # Phase 1: find directories with the target metadata file
         if recursive:
-            for md in directory.rglob(target_filename):
-                resolved = md.parent.resolve()
-                if resolved not in seen:
-                    seen.add(resolved)
-                    skill_dirs.append(md.parent)
+            try:
+                walk = walk_directory_bounded(directory, max_entries_visited=max_entries_visited)
+                for current_path, _dirs, files in walk:
+                    if target_filename in files:
+                        add_candidate(current_path)
+                    if lenient and any(name.endswith(".md") for name in files):
+                        add_candidate(current_path)
+            except ValueError as exc:
+                if "filesystem entries" not in str(exc):
+                    raise
+                raise ValueError(f"Skill directory traversal exceeds {max_entries_visited} filesystem entries") from exc
         else:
-            for item in directory.iterdir():
-                if item.is_dir():
+            entries_visited = 0
+            for entry, next_entries_visited in iter_directory_bounded(
+                directory,
+                max_entries_visited=max_entries_visited,
+                entries_visited=entries_visited,
+            ):
+                entries_visited = next_entries_visited
+                if entry.is_dir(follow_symlinks=False):
+                    item = Path(entry.path)
                     md = item / target_filename
                     if md.exists():
-                        resolved = item.resolve()
-                        if resolved not in seen:
-                            seen.add(resolved)
-                            skill_dirs.append(item)
+                        add_candidate(item)
 
-        # Phase 2 (lenient only): discover directories with .md files
-        if lenient:
-            if recursive:
-                for md in directory.rglob("*.md"):
-                    candidate = md.parent.resolve()
-                    if candidate not in seen:
-                        seen.add(candidate)
-                        skill_dirs.append(md.parent)
-            else:
-                for item in directory.iterdir():
-                    if item.is_dir():
+            # Phase 2 (lenient only): discover directories with .md files
+            if lenient:
+                for entry, next_entries_visited in iter_directory_bounded(
+                    directory,
+                    max_entries_visited=max_entries_visited,
+                    entries_visited=entries_visited,
+                ):
+                    entries_visited = next_entries_visited
+                    if entry.is_dir(follow_symlinks=False):
+                        item = Path(entry.path)
                         resolved = item.resolve()
                         if resolved in seen:
                             continue
-                        if any(item.glob("*.md")):
-                            seen.add(resolved)
-                            skill_dirs.append(item)
+                        try:
+                            for child_entry, next_entries_visited in iter_directory_bounded(
+                                item,
+                                max_entries_visited=max_entries_visited,
+                                entries_visited=entries_visited,
+                            ):
+                                entries_visited = next_entries_visited
+                                if not child_entry.is_dir(follow_symlinks=False) and child_entry.name.endswith(".md"):
+                                    add_candidate(item)
+                                    break
+                        except OSError:
+                            continue
 
         return skill_dirs
 

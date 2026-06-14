@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from skill_scanner.core.archive_limits import read_zip_member_count
 from skill_scanner.core.extractors.content_extractor import (
     ContentExtractor,
     ExtractionLimits,
@@ -40,6 +41,24 @@ def _make_skill_file(path: Path, rel_path: str, file_type: str = "binary") -> Sk
 
 class TestZipExtraction:
     """Test ZIP archive extraction."""
+
+    def test_zip_member_count_preflight(self, tmp_path):
+        """ZIP member count should be readable before constructing ZipFile."""
+        zip_path = tmp_path / "count.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("a/", "")
+            zf.writestr("a/file.txt", "content")
+
+        assert read_zip_member_count(zip_path) == 2
+
+    def test_zip_member_count_preflight_zip16_max_without_zip64(self, tmp_path):
+        """The ZIP16 maximum entry count should not require a ZIP64 locator."""
+        zip_path = tmp_path / "zip16-max.zip"
+        with zipfile.ZipFile(zip_path, "w", allowZip64=False) as zf:
+            for index in range(0xFFFF):
+                zf.writestr(f"{index}.txt", "")
+
+        assert read_zip_member_count(zip_path) == 0xFFFF
 
     def test_simple_zip(self, tmp_path):
         """Extract a simple ZIP with text files."""
@@ -100,6 +119,22 @@ class TestZipExtraction:
         result = extractor.extract_skill_archives([sf])
 
         assert result.total_extracted_count <= 5
+        extractor.cleanup()
+
+    def test_zip_entry_limit_finding_before_extraction(self, tmp_path):
+        """ZIP archives with too many members should be rejected before extraction loops."""
+        zip_path = tmp_path / "many-members.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            for i in range(4):
+                zf.writestr(f"dir_{i}/", "")
+
+        extractor = ContentExtractor(limits=ExtractionLimits(max_file_count=2))
+        sf = _make_skill_file(zip_path, "many-members.zip")
+        result = extractor.extract_skill_archives([sf])
+
+        limit_findings = [f for f in result.findings if f.rule_id == "ARCHIVE_ENTRY_LIMIT"]
+        assert len(limit_findings) == 1
+        assert result.total_extracted_count == 0
         extractor.cleanup()
 
     def test_nested_depth_limit(self, tmp_path):
@@ -269,6 +304,24 @@ class TestTarExtraction:
 
         traversal_findings = [f for f in result.findings if f.rule_id == "ARCHIVE_PATH_TRAVERSAL"]
         assert len(traversal_findings) >= 1
+        extractor.cleanup()
+
+    def test_tar_entry_limit_finding_before_extraction(self, tmp_path):
+        """TAR archives with too many members should be bounded during iteration."""
+        tar_path = tmp_path / "many-members.tar"
+        with tarfile.open(tar_path, "w") as tf:
+            for i in range(4):
+                info = tarfile.TarInfo(name=f"dir_{i}")
+                info.type = tarfile.DIRTYPE
+                tf.addfile(info)
+
+        extractor = ContentExtractor(limits=ExtractionLimits(max_file_count=2))
+        sf = _make_skill_file(tar_path, "many-members.tar")
+        result = extractor.extract_skill_archives([sf])
+
+        limit_findings = [f for f in result.findings if f.rule_id == "ARCHIVE_ENTRY_LIMIT"]
+        assert len(limit_findings) == 1
+        assert result.total_extracted_count == 0
         extractor.cleanup()
 
 

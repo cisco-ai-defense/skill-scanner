@@ -29,6 +29,8 @@ import pytest
 
 from skill_scanner import __version__ as PACKAGE_VERSION
 
+TEST_API_HEADERS = {"X-API-Key": "test-api-key"}
+
 try:
     from fastapi.testclient import TestClient
 
@@ -47,7 +49,7 @@ def client():
     """Create test client."""
     if not API_AVAILABLE:
         pytest.skip("FastAPI not installed")
-    return TestClient(app)
+    return TestClient(app, headers=TEST_API_HEADERS)
 
 
 @pytest.fixture
@@ -167,6 +169,34 @@ class TestRootEndpoint:
 class TestScanEndpoint:
     """Test skill scanning endpoint."""
 
+    def test_scan_requires_api_key(self, safe_skill_dir):
+        """Expensive scan endpoint requires caller authentication."""
+        unauthenticated_client = TestClient(app)
+        response = unauthenticated_client.post("/scan", json={"skill_directory": str(safe_skill_dir)})
+
+        assert response.status_code == 401
+        assert "api key" in response.json()["detail"].lower()
+
+    def test_scan_rejects_invalid_api_key(self, safe_skill_dir):
+        """Expensive scan endpoint rejects wrong caller credentials."""
+        invalid_client = TestClient(app, headers={"X-API-Key": "wrong-key"})
+        response = invalid_client.post("/scan", json={"skill_directory": str(safe_skill_dir)})
+
+        assert response.status_code == 403
+        assert "api key" in response.json()["detail"].lower()
+
+    def test_scan_fails_closed_when_api_key_unconfigured(self, safe_skill_dir, monkeypatch):
+        """Server-side API auth configuration must exist before scan work runs."""
+        from skill_scanner.api import router
+
+        monkeypatch.setattr(router, "_API_KEY", None)
+        unauthenticated_client = TestClient(app, headers=TEST_API_HEADERS)
+
+        response = unauthenticated_client.post("/scan", json={"skill_directory": str(safe_skill_dir)})
+
+        assert response.status_code == 503
+        assert "authentication" in response.json()["detail"].lower()
+
     def test_scan_valid_skill_static_only(self, client, safe_skill_dir):
         """Test scanning a valid skill with static analyzer only."""
         request_data = {"skill_directory": str(safe_skill_dir), "use_llm": False}
@@ -203,7 +233,7 @@ class TestScanEndpoint:
 
     def test_scan_nonexistent_skill_returns_404(self, client):
         """Test scanning nonexistent skill returns 404."""
-        request_data = {"skill_directory": "/nonexistent/skill", "use_llm": False}
+        request_data = {"skill_directory": str(Path(__file__).parent / "nonexistent-skill"), "use_llm": False}
 
         response = client.post("/scan", json=request_data)
 
@@ -221,6 +251,17 @@ class TestScanEndpoint:
 
         assert response.status_code == 400
         assert "SKILL.md" in response.json()["detail"]
+
+    def test_scan_fails_closed_without_allowed_roots(self, client, safe_skill_dir, monkeypatch):
+        """Empty API allowed roots should deny user-supplied filesystem paths."""
+        from skill_scanner.api import router
+
+        monkeypatch.setattr(router, "_ALLOWED_ROOTS", [])
+
+        response = client.post("/scan", json={"skill_directory": str(safe_skill_dir)})
+
+        assert response.status_code == 403
+        assert "no allowed" in response.json()["detail"].lower()
 
     def test_scan_aidefense_without_key_returns_400(self, client, safe_skill_dir):
         """Test that AI Defense without API key returns 400."""
@@ -281,6 +322,23 @@ class TestScanEndpoint:
 @pytest.mark.skipif(not API_AVAILABLE, reason="FastAPI not installed")
 class TestBatchScanEndpoint:
     """Test batch scanning endpoint."""
+
+    def test_batch_scan_requires_api_key(self, test_skills_dir):
+        """Batch scan submission requires caller authentication."""
+        unauthenticated_client = TestClient(app)
+        response = unauthenticated_client.post(
+            "/scan-batch",
+            json={"skills_directory": str(test_skills_dir), "recursive": False},
+        )
+
+        assert response.status_code == 401
+
+    def test_batch_scan_result_requires_api_key(self):
+        """Batch scan result retrieval requires caller authentication."""
+        unauthenticated_client = TestClient(app)
+        response = unauthenticated_client.get("/scan-batch/nonexistent-id")
+
+        assert response.status_code == 401
 
     def test_batch_scan_initiates(self, client, test_skills_dir):
         """Test that batch scan initiates and returns scan ID."""
@@ -347,7 +405,7 @@ class TestBatchScanEndpoint:
     def test_batch_scan_nonexistent_directory_returns_404(self, client):
         """Test batch scan with nonexistent directory returns 404."""
         request_data = {
-            "skills_directory": "/nonexistent/directory",
+            "skills_directory": str(Path(__file__).parent / "nonexistent-directory"),
             "use_llm": False,
         }
 
@@ -412,6 +470,15 @@ class TestAnalyzersEndpoint:
 @pytest.mark.skipif(not API_AVAILABLE, reason="FastAPI not installed")
 class TestUploadEndpoint:
     """Test skill upload and scan endpoint."""
+
+    def test_upload_requires_api_key(self):
+        """Upload scan endpoint requires caller authentication."""
+        unauthenticated_client = TestClient(app)
+        files = {"file": ("skill.zip", b"not a zip", "application/zip")}
+
+        response = unauthenticated_client.post("/scan-upload", files=files)
+
+        assert response.status_code == 401
 
     def test_upload_requires_zip(self, client):
         """Test that upload endpoint requires ZIP file."""
@@ -726,15 +793,22 @@ class TestAnalyzerParity:
         response = client.post("/scan", json=request_data)
         assert response.status_code == 200
 
-    def test_scan_accepts_aidefense_url(self, client, safe_skill_dir):
-        """Test that scan endpoint accepts AI Defense URL parameter."""
-        request_data = {
-            "skill_directory": str(safe_skill_dir),
-            "use_aidefense": False,
-            "aidefense_api_url": None,
-        }
-        response = client.post("/scan", json=request_data)
-        assert response.status_code == 200
+    def test_openapi_schema_does_not_expose_aidefense_url(self, client):
+        """AI Defense URL is server-side configuration, not a remote API parameter."""
+        response = client.get("/openapi.json")
+        schema = response.json()
+
+        scan_schema = schema["components"]["schemas"]["ScanRequest"]
+        batch_schema = schema["components"]["schemas"]["BatchScanRequest"]
+        upload_body_ref = schema["paths"]["/scan-upload"]["post"]["requestBody"]["content"]["multipart/form-data"][
+            "schema"
+        ]["$ref"]
+        upload_schema_name = upload_body_ref.rsplit("/", 1)[-1]
+        upload_schema = schema["components"]["schemas"][upload_schema_name]
+
+        assert "aidefense_api_url" not in scan_schema["properties"]
+        assert "aidefense_api_url" not in batch_schema["properties"]
+        assert "aidefense_api_url" not in upload_schema["properties"]
 
     def test_scan_accepts_custom_rules(self, client, safe_skill_dir):
         """Test that scan endpoint accepts custom_rules parameter."""
@@ -822,6 +896,20 @@ class TestAnalyzerParity:
         schema = response.json()
         batch_schema = schema["components"]["schemas"]["BatchScanRequest"]
         assert "check_overlap" in batch_schema["properties"]
+
+    def test_scan_rejects_excessive_consensus_runs(self, client, safe_skill_dir):
+        """LLM consensus runs are capped before analyzer construction."""
+        from skill_scanner.api import router
+
+        response = client.post(
+            "/scan",
+            json={
+                "skill_directory": str(safe_skill_dir),
+                "llm_consensus_runs": router.MAX_LLM_CONSENSUS_RUNS + 1,
+            },
+        )
+
+        assert response.status_code == 422
 
 
 # =============================================================================

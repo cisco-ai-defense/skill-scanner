@@ -25,7 +25,7 @@ import pytest
 from skill_scanner.core.scan_policy import ScanPolicy
 
 # ===================================================================
-# 11a — --llm-provider forwarding from CLI
+# 11a - llm-provider forwarding from CLI
 # ===================================================================
 
 
@@ -242,7 +242,7 @@ class TestMaxOutputTokensPolicy:
 
 
 # ===================================================================
-# 11b — TUI _FIELD_MAP entries
+# 11b - TUI _FIELD_MAP entries
 # ===================================================================
 
 
@@ -309,7 +309,7 @@ class TestTUIFieldMap:
 
 
 # ===================================================================
-# 11c — --input flag for configure-policy
+# 11c - input flag for configure-policy
 # ===================================================================
 
 
@@ -358,7 +358,7 @@ class TestConfigurePolicyInput:
 
 
 # ===================================================================
-# 11d — API llm_consensus_runs field
+# 11d - API llm_consensus_runs field
 # ===================================================================
 
 # Only run API tests if fastapi is available
@@ -396,9 +396,9 @@ class TestAPIConsensusRuns:
         """BatchScanRequest should accept llm_consensus_runs field."""
         req = BatchScanRequest(
             skills_directory="/tmp/test",
-            llm_consensus_runs=5,
+            llm_consensus_runs=3,
         )
-        assert req.llm_consensus_runs == 5
+        assert req.llm_consensus_runs == 3
 
     def test_batch_scan_request_defaults_to_1(self):
         """BatchScanRequest.llm_consensus_runs should default to 1."""
@@ -420,7 +420,7 @@ class TestAPIConsensusRuns:
 
 
 # ===================================================================
-# 11e — Policy knob tests for new fields
+# 11e - Policy knob tests for new fields
 # ===================================================================
 
 

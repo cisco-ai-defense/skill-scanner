@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from ...utils.file_utils import get_file_type
+from ..archive_limits import read_zip_member_count
 from ..models import Finding, Severity, SkillFile, ThreatCategory
 
 logger = logging.getLogger(__name__)
@@ -187,12 +188,46 @@ class ContentExtractor:
         unix_mode = (info.external_attr >> 16) & 0xFFFF
         return unix_mode != 0 and stat.S_ISLNK(unix_mode)
 
+    def _add_archive_limit_finding(
+        self,
+        result: ExtractionResult,
+        source_relative_path: str,
+        *,
+        count: int,
+    ) -> None:
+        """Record that an archive exceeded member-count limits before extraction."""
+        result.findings.append(
+            Finding(
+                id=f"ARCHIVE_ENTRY_LIMIT_{hash(source_relative_path) & 0xFFFFFFFF:08x}",
+                rule_id="ARCHIVE_ENTRY_LIMIT",
+                category=ThreatCategory.RESOURCE_ABUSE,
+                severity=Severity.HIGH,
+                title="Archive contains too many entries",
+                description=(
+                    f"Archive {source_relative_path} contains more than {self.limits.max_file_count} entries ({count})."
+                ),
+                file_path=source_relative_path,
+                remediation="Reduce archive contents or split them into smaller archives.",
+                analyzer="static",
+            )
+        )
+
     def _extract_zip(self, archive_path: Path, source_relative_path: str, result: ExtractionResult, depth: int) -> None:
         """Extract a ZIP-based archive."""
         try:
+            zip_member_count = read_zip_member_count(archive_path)
+            if zip_member_count is not None and zip_member_count > self.limits.max_file_count:
+                self._add_archive_limit_finding(result, source_relative_path, count=zip_member_count)
+                return
+
             with zipfile.ZipFile(archive_path, "r") as zf:
+                entries = zf.filelist
+                if len(entries) > self.limits.max_file_count:
+                    self._add_archive_limit_finding(result, source_relative_path, count=len(entries))
+                    return
+
                 # Check for zip bomb
-                total_uncompressed = sum(info.file_size for info in zf.infolist() if not info.is_dir())
+                total_uncompressed = sum(info.file_size for info in entries if not info.is_dir())
                 compressed_size = archive_path.stat().st_size
                 if compressed_size > 0:
                     ratio = total_uncompressed / compressed_size
@@ -217,7 +252,7 @@ class ContentExtractor:
                         return
 
                 # Check for path traversal and symlinks
-                for info in zf.infolist():
+                for info in entries:
                     if ".." in info.filename or info.filename.startswith("/"):
                         result.findings.append(
                             Finding(
@@ -261,7 +296,7 @@ class ContentExtractor:
                 temp_dir = tempfile.mkdtemp(prefix="skill_extract_")
                 self._temp_dirs.append(temp_dir)
 
-                for info in zf.infolist():
+                for info in entries:
                     if info.is_dir():
                         continue
                     if result.total_extracted_count >= self.limits.max_file_count:
@@ -357,8 +392,16 @@ class ContentExtractor:
         """Extract a TAR-based archive."""
         try:
             with tarfile.open(archive_path, "r:*") as tf:
+                members_to_extract: list[tarfile.TarInfo] = []
+                members_seen = 0
+
                 # Safety: check for path traversal and symlinks/hardlinks
-                for member in tf.getmembers():
+                for member in tf:
+                    members_seen += 1
+                    if members_seen > self.limits.max_file_count:
+                        self._add_archive_limit_finding(result, source_relative_path, count=members_seen)
+                        return
+
                     if ".." in member.name or member.name.startswith("/"):
                         result.findings.append(
                             Finding(
@@ -399,12 +442,13 @@ class ContentExtractor:
                         )
                         return
 
+                    if member.isfile():
+                        members_to_extract.append(member)
+
                 temp_dir = tempfile.mkdtemp(prefix="skill_extract_")
                 self._temp_dirs.append(temp_dir)
 
-                for member in tf.getmembers():
-                    if not member.isfile():
-                        continue
+                for member in members_to_extract:
                     if result.total_extracted_count >= self.limits.max_file_count:
                         break
                     if result.total_extracted_size + member.size > self.limits.max_total_size_bytes:

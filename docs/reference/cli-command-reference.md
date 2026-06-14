@@ -49,8 +49,7 @@ Command: `python -m skill_scanner.cli.cli --help`
 
 ```text
 usage: cli.py [-h] [--version]
-              {scan,scan-all,list-analyzers,validate-rules,generate-policy,configure-policy,interactive}
-              ...
+              {scan,scan-all,list-analyzers,validate-rules,generate-policy,configure-policy,interactive} ...
 
 Skill Scanner - Security scanner for agent skills packages
 
@@ -122,8 +121,7 @@ options:
                         multiple times to produce several reports in one run,
                         e.g. --format markdown --format sarif. Use 'sarif' for
                         GitHub Code Scanning, 'html' for interactive report.
-  --output OUTPUT, -o OUTPUT
-                        Default output file path (overridden by --output-<fmt>
+  --output, -o OUTPUT   Default output file path (overridden by --output-<fmt>
                         for a specific format)
   --output-json OUTPUT_JSON
                         Write JSON report to this file
@@ -240,8 +238,7 @@ options:
                         multiple times to produce several reports in one run,
                         e.g. --format markdown --format sarif. Use 'sarif' for
                         GitHub Code Scanning, 'html' for interactive report.
-  --output OUTPUT, -o OUTPUT
-                        Default output file path (overridden by --output-<fmt>
+  --output, -o OUTPUT   Default output file path (overridden by --output-<fmt>
                         for a specific format)
   --output-json OUTPUT_JSON
                         Write JSON report to this file
@@ -346,8 +343,7 @@ usage: cli.py generate-policy [-h] [--output OUTPUT]
 
 options:
   -h, --help            show this help message and exit
-  --output OUTPUT, -o OUTPUT
-                        Output file path
+  --output, -o OUTPUT   Output file path
   --preset {strict,balanced,permissive}
                         Base preset
 ```
@@ -365,11 +361,9 @@ Command: `python -m skill_scanner.cli.cli configure-policy --help`
 usage: cli.py configure-policy [-h] [--output OUTPUT] [--input INPUT]
 
 options:
-  -h, --help            show this help message and exit
-  --output OUTPUT, -o OUTPUT
-                        Output file path
-  --input INPUT, -i INPUT
-                        Load existing policy YAML for editing
+  -h, --help           show this help message and exit
+  --output, -o OUTPUT  Output file path
+  --input, -i INPUT    Load existing policy YAML for editing
 ```
 
 </details>

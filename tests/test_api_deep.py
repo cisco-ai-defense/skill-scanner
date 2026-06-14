@@ -6,7 +6,7 @@ Deep integration tests for the REST API.
 
 Goes beyond "assert 200" to verify policy propagation, full response schemas,
 ZIP uploads, malformed input handling, batch flows, custom policy YAML, and
-analyzer toggles — all end-to-end through the FastAPI test client.
+analyzer toggles, all end-to-end through the FastAPI test client.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not API_AVAILABLE, reason="FastAPI not installed")
 
 project_root = Path(__file__).parent.parent
+TEST_API_HEADERS = {"X-API-Key": "test-api-key"}
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +46,7 @@ project_root = Path(__file__).parent.parent
 @pytest.fixture
 def client():
     """Create FastAPI test client."""
-    return TestClient(app)
+    return TestClient(app, headers=TEST_API_HEADERS)
 
 
 @pytest.fixture
@@ -81,7 +82,7 @@ def _zip_directory(source_dir: Path) -> bytes:
 
 
 # ===================================================================
-# B1 — Policy propagation through API
+# B1 - Policy propagation through API
 # ===================================================================
 
 
@@ -131,7 +132,7 @@ class TestPolicyPropagation:
 
 
 # ===================================================================
-# B2 — Response schema validation
+# B2 - Response schema validation
 # ===================================================================
 
 
@@ -190,7 +191,7 @@ class TestResponseSchema:
 
 
 # ===================================================================
-# B3 — Upload with real skill ZIP
+# B3 - Upload with real skill ZIP
 # ===================================================================
 
 
@@ -231,9 +232,30 @@ class TestUploadRealZip:
         dr_rules = sorted(f["rule_id"] for f in dr["findings"])
         assert up_rules == dr_rules, f"Upload rule_ids {up_rules} != direct rule_ids {dr_rules}"
 
+    def test_upload_ignores_path_like_filename(self, client, safe_skill_dir, tmp_path, monkeypatch):
+        """Client-supplied upload filenames must not control the server write path."""
+        from skill_scanner.api import router
+
+        staging_dir = tmp_path / "staging"
+
+        def fake_mkdtemp(prefix):
+            staging_dir.mkdir()
+            return str(staging_dir)
+
+        monkeypatch.setattr(router.tempfile, "mkdtemp", fake_mkdtemp)
+
+        zip_bytes = _zip_directory(safe_skill_dir)
+        resp = client.post(
+            "/scan-upload",
+            files={"file": ("../escaped.zip", zip_bytes, "application/zip")},
+        )
+
+        assert resp.status_code == 200
+        assert not (tmp_path / "escaped.zip").exists()
+
 
 # ===================================================================
-# B4 — Malformed ZIP handling
+# B4 - Malformed ZIP handling
 # ===================================================================
 
 
@@ -272,9 +294,29 @@ class TestMalformedUpload:
         )
         assert resp.status_code == 400
 
+    def test_zip_directory_entries_count_toward_limit(self, client, monkeypatch):
+        """ZIP directory entries must be bounded, not just regular files."""
+        from skill_scanner.api import router
+
+        monkeypatch.setattr(router, "MAX_ZIP_ENTRIES", 2)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("a/", "")
+            zf.writestr("a/b/", "")
+            zf.writestr("a/b/c/", "")
+        buf.seek(0)
+
+        resp = client.post(
+            "/scan-upload",
+            files={"file": ("dirs.zip", buf.read(), "application/zip")},
+        )
+
+        assert resp.status_code == 400
+        assert "entries" in resp.json()["detail"]
+
 
 # ===================================================================
-# B4b — ZIP symlink rejection
+# B4b - ZIP symlink rejection
 # ===================================================================
 
 
@@ -296,7 +338,7 @@ class TestSymlinkUploadRejected:
         return buf.getvalue()
 
     def test_symlink_zip_rejected(self, client):
-        """ZIP with symlink entry → 400."""
+        """ZIP with symlink entry returns 400."""
         zip_bytes = self._create_zip_with_symlink()
         resp = client.post(
             "/scan-upload",
@@ -307,7 +349,7 @@ class TestSymlinkUploadRejected:
 
 
 # ===================================================================
-# B5 — Batch scan completion flow
+# B5 - Batch scan completion flow
 # ===================================================================
 
 
@@ -363,10 +405,86 @@ class TestBatchScan:
         resp = client.get("/scan-batch/nonexistent-id")
         assert resp.status_code == 404
 
+    def test_batch_scan_rejects_too_many_candidates_before_queueing(self, client, tmp_path, monkeypatch):
+        """Batch requests are bounded before background work is queued."""
+        from skill_scanner.api import router
+
+        for idx in range(2):
+            skill_dir = tmp_path / f"skill-{idx}"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text(
+                f"---\nname: skill-{idx}\ndescription: Test skill {idx}\n---\n\n# Skill {idx}\n",
+                encoding="utf-8",
+            )
+
+        monkeypatch.setattr(router, "MAX_BATCH_SKILLS", 1)
+
+        resp = client.post(
+            "/scan-batch",
+            json={"skills_directory": str(tmp_path), "recursive": False},
+        )
+
+        assert resp.status_code == 413
+        assert "candidate skills" in resp.json()["detail"]
+
+    def test_batch_scan_rejects_too_many_traversed_entries_before_queueing(self, client, tmp_path, monkeypatch):
+        """Recursive batch preflight bounds filesystem traversal, not just matches."""
+        from skill_scanner.api import router
+
+        for idx in range(3):
+            (tmp_path / f"dir-{idx}").mkdir()
+
+        monkeypatch.setattr(router, "MAX_BATCH_PATHS_VISITED", 2)
+
+        resp = client.post(
+            "/scan-batch",
+            json={"skills_directory": str(tmp_path), "recursive": True},
+        )
+
+        assert resp.status_code == 413
+        assert "filesystem entries" in resp.json()["detail"]
+
+    def test_batch_scan_nonrecursive_bounds_single_directory_enumeration(self, tmp_path, monkeypatch):
+        """Default batch preflight should stop while enumerating one oversized directory."""
+        from fastapi import HTTPException
+
+        from skill_scanner.api import router
+
+        consumed = []
+
+        class FakeEntry:
+            def __init__(self, name: str):
+                self.name = name
+
+            def is_dir(self, *, follow_symlinks: bool = False) -> bool:
+                return False
+
+        class FakeScandir:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def __iter__(self):
+                for idx in range(5):
+                    consumed.append(idx)
+                    yield FakeEntry(f"entry-{idx}")
+
+        monkeypatch.setattr(router, "MAX_BATCH_PATHS_VISITED", 2)
+        monkeypatch.setattr("skill_scanner.core.fs_limits.os.scandir", lambda _path: FakeScandir())
+
+        with pytest.raises(HTTPException) as exc_info:
+            router._count_batch_candidates(tmp_path, recursive=False)
+
+        assert getattr(exc_info.value, "status_code", None) == 413
+        assert consumed == [0, 1, 2]
+
     def test_run_batch_scan_recomputes_summary_after_meta_filter(self, monkeypatch):
         """Batch summary counters should match findings after meta filtering."""
         from skill_scanner.api import router
         from skill_scanner.core.models import Finding, Report, ScanResult, Severity, ThreatCategory
+        from skill_scanner.core.scan_policy import ScanPolicy
 
         finding = Finding(
             id="f1",
@@ -388,7 +506,10 @@ class TestBatchScan:
 
         class DummyLoader:
             @staticmethod
-            def load_skill(_path):
+            def load_skill(_path, **kwargs):
+                assert kwargs["max_files"] == 100
+                assert kwargs["max_entries_visited"] == router.MAX_BATCH_PATHS_VISITED
+
                 class _Skill:
                     name = "synthetic-skill"
 
@@ -409,7 +530,7 @@ class TestBatchScan:
             async def analyze_with_findings(self, **kwargs):
                 return {}
 
-        monkeypatch.setattr(router, "_resolve_policy", lambda _policy: None)
+        monkeypatch.setattr(router, "_resolve_policy", lambda _policy: ScanPolicy.default())
         monkeypatch.setattr(router, "_build_analyzers", lambda *args, **kwargs: [])
         monkeypatch.setattr(router, "SkillScanner", DummyScanner)
         monkeypatch.setattr(router, "META_AVAILABLE", True)
@@ -435,7 +556,7 @@ class TestBatchScan:
 
 
 # ===================================================================
-# B6 — Custom policy YAML through API
+# B6 - Custom policy YAML through API
 # ===================================================================
 
 
@@ -528,7 +649,7 @@ class TestCustomPolicyAPI:
 
 
 # ===================================================================
-# B7 — Analyzer toggle through API
+# B7 - Analyzer toggle through API
 # ===================================================================
 
 
@@ -580,7 +701,7 @@ class TestAnalyzerToggle:
         """Scanning a nonexistent directory returns 404."""
         resp = client.post(
             "/scan",
-            json={"skill_directory": "/nonexistent/path/to/skill"},
+            json={"skill_directory": str(project_root / "nonexistent" / "path" / "to" / "skill")},
         )
         assert resp.status_code == 404
 

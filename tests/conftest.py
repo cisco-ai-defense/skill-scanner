@@ -24,6 +24,8 @@ explicit imports.
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -44,6 +46,9 @@ env_file = project_root / ".env"
 
 if env_file.exists():
     load_dotenv(env_file)
+
+os.environ["SKILL_SCANNER_ALLOWED_ROOTS"] = f"{project_root}:{tempfile.gettempdir()}"
+os.environ["SKILL_SCANNER_API_KEY"] = "test-api-key"
 
 
 # ---------------------------------------------------------------------------

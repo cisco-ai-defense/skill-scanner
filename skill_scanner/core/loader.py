@@ -27,6 +27,7 @@ import frontmatter
 
 from ..utils.file_utils import FileValidationError, get_file_type, read_text_strict
 from .exceptions import SkillLoadError
+from .fs_limits import iter_directory_bounded, walk_directory_bounded
 from .models import Skill, SkillFile, SkillManifest
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,8 @@ class SkillLoader:
         *,
         lenient: bool = False,
         skill_file: str | None = None,
+        max_files: int | None = None,
+        max_entries_visited: int | None = None,
     ) -> Skill:
         """
         Load a skill package from a directory.
@@ -77,6 +80,10 @@ class SkillLoader:
                 Claude Code ``.claude/commands/*.md``).
             skill_file: Optional custom metadata filename to use instead of
                 ``SKILL.md`` (e.g. ``"README.md"``).
+            max_files: Optional maximum number of files to discover before
+                aborting the load.
+            max_entries_visited: Optional maximum number of filesystem entries
+                to visit while discovering files.
 
         Returns:
             Parsed Skill object
@@ -106,12 +113,20 @@ class SkillLoader:
             manifest, instruction_body = self._parse_skill_md(skill_md_path, lenient=lenient)
         elif lenient:
             # Lenient fallback: no SKILL.md, synthesize from .md files in the directory
-            skill_md_path, manifest, instruction_body = self._synthesize_from_md_files(skill_directory)
+            skill_md_path, manifest, instruction_body = self._synthesize_from_md_files(
+                skill_directory,
+                max_files=max_files,
+                max_entries_visited=max_entries_visited,
+            )
         else:
             raise SkillLoadError(f"SKILL.md not found in {skill_directory}")
 
         # Discover all files in the skill package
-        files = self._discover_files(skill_directory)
+        files = self._discover_files(
+            skill_directory,
+            max_files=max_files,
+            max_entries_visited=max_entries_visited,
+        )
 
         # Extract referenced files from instruction body
         referenced_files = self._extract_referenced_files(instruction_body)
@@ -125,7 +140,13 @@ class SkillLoader:
             referenced_files=referenced_files,
         )
 
-    def _synthesize_from_md_files(self, skill_directory: Path) -> tuple[Path, SkillManifest, str]:
+    def _synthesize_from_md_files(
+        self,
+        skill_directory: Path,
+        *,
+        max_files: int | None = None,
+        max_entries_visited: int | None = None,
+    ) -> tuple[Path, SkillManifest, str]:
         """Synthesize a Skill from ``.md`` files when ``SKILL.md`` is absent.
 
         Scans the directory for markdown files, concatenates their content as the
@@ -137,7 +158,21 @@ class SkillLoader:
         Raises:
             SkillLoadError: If no ``.md`` files are found in the directory.
         """
-        md_files = sorted(skill_directory.glob("*.md"))
+        md_files: list[Path] = []
+        try:
+            for entry, _entries_visited in iter_directory_bounded(
+                skill_directory,
+                max_entries_visited=max_entries_visited,
+            ):
+                if not entry.is_dir(follow_symlinks=False) and entry.name.endswith(".md"):
+                    md_files.append(Path(entry.path))
+                    if max_files is not None and len(md_files) > max_files:
+                        raise SkillLoadError(f"Skill contains more than {max_files} markdown files")
+        except ValueError as exc:
+            if "filesystem entries" not in str(exc):
+                raise
+            raise SkillLoadError(f"Skill markdown discovery exceeds {max_entries_visited} filesystem entries") from exc
+        md_files.sort()
         if not md_files:
             raise SkillLoadError(
                 f"No SKILL.md and no .md files found in {skill_directory} "
@@ -270,12 +305,21 @@ class SkillLoader:
 
         return manifest, body
 
-    def _discover_files(self, skill_directory: Path) -> list[SkillFile]:
+    def _discover_files(
+        self,
+        skill_directory: Path,
+        *,
+        max_files: int | None = None,
+        max_entries_visited: int | None = None,
+    ) -> list[SkillFile]:
         """
         Discover all files in the skill package.
 
         Args:
             skill_directory: Path to skill directory
+            max_files: Optional maximum number of files to discover.
+            max_entries_visited: Optional maximum number of filesystem entries
+                to visit while discovering files.
 
         Returns:
             List of SkillFile objects
@@ -283,50 +327,60 @@ class SkillLoader:
         files = []
         skill_root = skill_directory.resolve()
 
-        for path in skill_directory.rglob("*"):
-            if not path.is_file():
-                continue
-            if path.is_symlink():
-                continue
-            try:
-                resolved = path.resolve()
-                if not resolved.is_relative_to(skill_root):
-                    continue
-            except (OSError, ValueError):
-                continue
+        try:
+            walk = walk_directory_bounded(skill_directory, max_entries_visited=max_entries_visited)
+            for root, _dirs, filenames in walk:
+                for filename in filenames:
+                    path = root / filename
+                    if not path.is_file():
+                        continue
+                    if path.is_symlink():
+                        continue
+                    try:
+                        resolved = path.resolve()
+                        if not resolved.is_relative_to(skill_root):
+                            continue
+                    except (OSError, ValueError):
+                        continue
 
-            # Skip .git/ directory only (version control metadata, not an attack vector).
-            # All other hidden files and __pycache__ are now discovered so they can be
-            # flagged and scanned by downstream analyzers.
-            #
-            # Important: Skills may live under hidden parent directories like `.claude/skills/`.
-            # We only want to skip .git *inside* the skill package, not its parents.
-            rel_parts = path.relative_to(skill_directory).parts
-            if any(part == ".git" for part in rel_parts):
-                continue
+                    # Skip .git/ directory only (version control metadata, not an attack vector).
+                    # All other hidden files and __pycache__ are now discovered so they can be
+                    # flagged and scanned by downstream analyzers.
+                    #
+                    # Important: Skills may live under hidden parent directories like `.claude/skills/`.
+                    # We only want to skip .git *inside* the skill package, not its parents.
+                    rel_parts = path.relative_to(skill_directory).parts
+                    if any(part == ".git" for part in rel_parts):
+                        continue
 
-            relative_path = str(path.relative_to(skill_directory))
-            file_type = get_file_type(path)
-            size_bytes = path.stat().st_size
+                    relative_path = str(path.relative_to(skill_directory))
+                    file_type = get_file_type(path)
+                    size_bytes = path.stat().st_size
 
-            # Read content if not too large and not binary
-            content = None
-            if size_bytes < self.max_file_size_bytes and file_type != "binary":
-                try:
-                    with open(path, encoding="utf-8") as f:
-                        content = f.read()
-                except (OSError, UnicodeDecodeError):
-                    # Treat as binary if can't read as text
-                    file_type = "binary"
+                    # Read content if not too large and not binary
+                    content = None
+                    if size_bytes < self.max_file_size_bytes and file_type != "binary":
+                        try:
+                            with open(path, encoding="utf-8") as f:
+                                content = f.read()
+                        except (OSError, UnicodeDecodeError):
+                            # Treat as binary if can't read as text
+                            file_type = "binary"
 
-            skill_file = SkillFile(
-                path=path,
-                relative_path=relative_path,
-                file_type=file_type,
-                content=content,
-                size_bytes=size_bytes,
-            )
-            files.append(skill_file)
+                    skill_file = SkillFile(
+                        path=path,
+                        relative_path=relative_path,
+                        file_type=file_type,
+                        content=content,
+                        size_bytes=size_bytes,
+                    )
+                    files.append(skill_file)
+                    if max_files is not None and len(files) > max_files:
+                        raise SkillLoadError(f"Skill contains more than {max_files} files")
+        except ValueError as exc:
+            if "filesystem entries" not in str(exc):
+                raise
+            raise SkillLoadError(f"Skill file discovery exceeds {max_entries_visited} filesystem entries") from exc
 
         return files
 
@@ -352,7 +406,7 @@ class SkillLoader:
             if top:
                 names.append(top)
 
-        # ``import x`` / ``import x, y`` — only at line start (optional indent / markdown list marker)
+        # ``import x`` / ``import x, y``, only at line start (optional indent / markdown list marker)
         for m in re.finditer(r"(?m)^[ \t]*(?:[-*+][ \t]+)?import[ \t]+([^\\\n#;]+)", text):
             tail = m.group(1).strip()
             tail = tail.split("#")[0].strip()
@@ -417,7 +471,7 @@ class SkillLoader:
         )
         references.extend(include_patterns)
 
-        # Infer local *.py names from Python import syntax (strict — not bare "from|import" tokens).
+        # Infer local *.py names from Python import syntax (strict, not bare "from|import" tokens).
         # A loose pattern like ``from (\w+)`` matches English ("from the documentation") and
         # yields false positives such as ``the.py``.
         code_file_refs = self._local_py_module_names_from_import_lines(instruction_body)
