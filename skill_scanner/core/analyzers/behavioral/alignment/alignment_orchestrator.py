@@ -30,6 +30,7 @@ import logging
 from typing import Any
 
 from .....core.static_analysis.context_extractor import SkillFunctionContext
+from ...llm_request_handler import _TEMPERATURE_UNSET
 from .alignment_llm_client import AlignmentLLMClient
 from .alignment_prompt_builder import AlignmentPromptBuilder
 from .alignment_response_validator import AlignmentResponseValidator
@@ -54,7 +55,7 @@ class AlignmentOrchestrator:
         llm_model: str = "gemini/gemini-2.0-flash",
         llm_api_key: str | None = None,
         llm_base_url: str | None = None,
-        llm_temperature: float = 0.1,
+        llm_temperature: Any = _TEMPERATURE_UNSET,
         llm_max_tokens: int = 4096,
         llm_timeout: int = 120,
     ):

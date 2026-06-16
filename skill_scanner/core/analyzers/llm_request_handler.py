@@ -54,6 +54,53 @@ except (ImportError, ModuleNotFoundError):
     GOOGLE_GENAI_AVAILABLE = False
     genai = None
 
+# Sentinel: caller did not supply ``temperature``; resolve from env (or use default).
+_TEMPERATURE_UNSET = object()
+
+# Env values that explicitly disable the temperature parameter so newer models
+# that reject ``temperature`` (e.g. Claude 4.x via Bedrock, OpenAI o1) work
+# without code changes.
+_TEMPERATURE_OMIT_VALUES = frozenset({"none", "null", "unset", "omit", "skip"})
+
+
+def _resolve_temperature(
+    explicit: Any,
+    env_var: str,
+    default: float,
+) -> float | None:
+    """Resolve the request-time ``temperature`` from constructor + env.
+
+    Precedence:
+        1. An explicit non-sentinel argument always wins (including ``None``,
+           which means "drop the parameter from the request").
+        2. ``os.environ[env_var]`` — a numeric value is parsed as a float, and
+           a value in ``_TEMPERATURE_OMIT_VALUES`` returns ``None`` to drop the
+           parameter.
+        3. ``default`` (today: 0.0 for the per-file analyzer, 0.1 for meta).
+
+    Returns:
+        ``float`` to send as ``temperature``, or ``None`` to omit it entirely.
+    """
+    if explicit is not _TEMPERATURE_UNSET:
+        return explicit
+
+    raw = os.environ.get(env_var, "").strip()
+    if not raw:
+        return default
+    if raw.lower() in _TEMPERATURE_OMIT_VALUES:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning(
+            "Ignoring invalid %s=%r (expected a float or 'none'); using %s",
+            env_var,
+            raw,
+            default,
+        )
+        return default
+
+
 # Suppress LiteLLM cosmetic warnings (doesn't affect functionality)
 warnings.filterwarnings("ignore", message=".*Pydantic serializer warnings.*")
 warnings.filterwarnings("ignore", message=".*Expected `Message`.*")
@@ -71,7 +118,7 @@ class LLMRequestHandler:
         self,
         provider_config: ProviderConfig,
         max_tokens: int = 8192,
-        temperature: float = 0.0,
+        temperature: Any = _TEMPERATURE_UNSET,
         max_retries: int = 3,
         rate_limit_delay: float = 2.0,
         timeout: int = 120,
@@ -82,14 +129,20 @@ class LLMRequestHandler:
         Args:
             provider_config: Provider configuration
             max_tokens: Maximum tokens for response
-            temperature: Sampling temperature
+            temperature: Sampling temperature.  Pass ``None`` to omit the
+                ``temperature`` parameter from the LLM request entirely —
+                required for models that reject it (e.g. Claude 4.x via
+                Bedrock, OpenAI o1-series).  When omitted, the value is
+                resolved from ``SKILL_SCANNER_LLM_TEMPERATURE`` (numeric
+                value, or ``"none"`` to drop the parameter), falling back
+                to ``0.0``.
             max_retries: Max retry attempts on rate limits
             rate_limit_delay: Base delay for exponential backoff
             timeout: Request timeout in seconds
         """
         self.provider_config = provider_config
         self.max_tokens = max_tokens
-        self.temperature = temperature
+        self.temperature = _resolve_temperature(temperature, "SKILL_SCANNER_LLM_TEMPERATURE", default=0.0)
         self.max_retries = max_retries
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
@@ -257,10 +310,11 @@ class LLMRequestHandler:
                     "model": self.provider_config.model,
                     "messages": messages,
                     "max_tokens": self.max_tokens,
-                    "temperature": self.temperature,
                     "timeout": self.timeout,
                     **self.provider_config.get_request_params(),
                 }
+                if self.temperature is not None:
+                    request_params["temperature"] = self.temperature
 
                 response_format = self._build_response_format()
                 if response_format:
@@ -325,8 +379,9 @@ class LLMRequestHandler:
                 # New SDK uses GenerateContentConfig type
                 config_dict: dict[str, Any] = {
                     "max_output_tokens": self.max_tokens,
-                    "temperature": self.temperature,
                 }
+                if self.temperature is not None:
+                    config_dict["temperature"] = self.temperature
 
                 # Add structured output support using Google Gemini SDK format
                 # According to Gemini docs: https://ai.google.dev/gemini-api/docs/structured-output

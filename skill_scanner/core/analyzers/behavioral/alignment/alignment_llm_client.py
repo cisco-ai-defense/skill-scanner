@@ -29,7 +29,9 @@ The client manages:
 import asyncio
 import logging
 import os
+from typing import Any
 
+from ...llm_request_handler import _TEMPERATURE_UNSET, _resolve_temperature
 from ...llm_request_options import resolve_llm_user, supports_openai_user_param
 
 try:
@@ -63,7 +65,7 @@ class AlignmentLLMClient:
         base_url: str | None = None,
         api_version: str | None = None,
         llm_user: str | None = None,
-        temperature: float = 0.1,
+        temperature: Any = _TEMPERATURE_UNSET,
         max_tokens: int = 4096,
         timeout: int = 120,
     ):
@@ -75,7 +77,11 @@ class AlignmentLLMClient:
             base_url: Optional base URL for API
             api_version: Optional API version
             llm_user: Optional raw Chat Completions user field for OpenAI-compatible routes
-            temperature: Temperature for responses
+            temperature: Temperature for responses.  Pass ``None`` to omit
+                ``temperature`` from the request - required for models that
+                reject it (Claude 4.x via Bedrock, OpenAI o1-series).
+                When omitted, resolves from ``SKILL_SCANNER_LLM_TEMPERATURE``
+                (numeric value or ``"none"``).
             max_tokens: Max tokens for responses
             timeout: Request timeout in seconds
 
@@ -97,7 +103,7 @@ class AlignmentLLMClient:
         self._api_version = api_version
         self._provider = os.getenv("SKILL_SCANNER_LLM_PROVIDER")
         self._llm_user = resolve_llm_user(llm_user)
-        self._temperature = temperature
+        self._temperature = _resolve_temperature(temperature, "SKILL_SCANNER_LLM_TEMPERATURE", default=0.1)
         self._max_tokens = max_tokens
         self._timeout = timeout
 
@@ -209,9 +215,10 @@ class AlignmentLLMClient:
                     {"role": "user", "content": prompt},
                 ],
                 "max_tokens": self._max_tokens,
-                "temperature": self._temperature,
                 "timeout": self._timeout,
             }
+            if self._temperature is not None:
+                request_params["temperature"] = self._temperature
 
             # Add API key if available
             if self._api_key:
