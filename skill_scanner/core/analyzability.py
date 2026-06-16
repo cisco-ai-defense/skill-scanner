@@ -86,36 +86,6 @@ class AnalyzabilityReport:
 # analyzer, so they are fully inspectable, not opaque.
 _ANALYZABLE_TYPES = {"python", "bash", "javascript", "typescript", "markdown", "other"}
 
-# Extensions we can analyze as text
-_TEXT_EXTENSIONS = {
-    ".py",
-    ".sh",
-    ".bash",
-    ".rb",
-    ".pl",
-    ".js",
-    ".ts",
-    ".php",
-    ".md",
-    ".markdown",
-    ".txt",
-    ".rst",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".xml",
-    ".html",
-    ".css",
-    ".toml",
-    ".cfg",
-    ".ini",
-    ".conf",
-    ".csv",
-    ".env",
-    ".gitignore",
-    ".dockerignore",
-}
-
 # Extensions that are inert (viewable but no executable concern)
 _INERT_EXTENSIONS = {
     ".png",
