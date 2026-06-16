@@ -80,8 +80,11 @@ class AnalyzabilityReport:
         }
 
 
-# File types we can fully analyze
-_ANALYZABLE_TYPES = {"python", "bash", "markdown", "other"}
+# File types we can fully analyze. Must stay in sync with the file_type values
+# emitted by utils.file_utils.get_file_type -- JavaScript/TypeScript get their
+# own static rule sets (see analyzers/static.py) and are read by the LLM
+# analyzer, so they are fully inspectable, not opaque.
+_ANALYZABLE_TYPES = {"python", "bash", "javascript", "typescript", "markdown", "other"}
 
 # Extensions we can analyze as text
 _TEXT_EXTENSIONS = {

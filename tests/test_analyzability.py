@@ -104,6 +104,38 @@ class TestAnalyzabilityScoring:
         report = compute_analyzability(skill)
         assert report.score == 100.0
 
+    def test_javascript_is_analyzable(self, tmp_path):
+        """JS/TS files are scanned (static JS rule sets + LLM), so they must not
+        count as opaque. Regression for the analyzability scorer falling out of
+        sync with get_file_type after JS/TS got their own file_type."""
+        skill = _make_skill(
+            tmp_path,
+            {
+                "scripts/search.js": ("javascript", "const x = fetch('https://api');"),
+                "scripts/index.ts": ("typescript", "const y: number = 1;"),
+                "README.md": ("markdown", "# Readme"),
+            },
+        )
+        report = compute_analyzability(skill)
+        assert report.score == 100.0
+        assert report.unanalyzable_files == 0
+        assert report.risk_level == "LOW"
+
+    def test_javascript_does_not_lower_score_with_binary(self, tmp_path):
+        """A large JS file alongside a real binary: only the binary should be
+        opaque. Guards against a JS file being wrongly counted as the sole
+        opaque file and dragging the score below the MEDIUM threshold."""
+        skill = _make_skill(
+            tmp_path,
+            {
+                "scripts/search.js": ("javascript", "x" * 8000),
+                "data/blob.bin": ("binary", None),
+            },
+        )
+        report = compute_analyzability(skill)
+        unanalyzable = {fd.relative_path for fd in report.file_details if not fd.is_analyzable}
+        assert unanalyzable == {"data/blob.bin"}
+
     def test_empty_skill_100_percent(self, tmp_path):
         """Skill with no files should be 100%."""
         skill = _make_skill(tmp_path, {})
