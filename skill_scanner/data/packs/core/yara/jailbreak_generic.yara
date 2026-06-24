@@ -190,14 +190,13 @@ rule jailbreak_generic{
 
 
     condition:
-        // Exclude security documentation and detection code
-        not $security_doc and
-        not $detection_code and
-        not $academic_paper and
+        // YARA source files are scanner implementation, not skill content.
         not $yara_rule and
-        not $test_context and
         (
             // === HIGH CONFIDENCE - Always flag ===
+            // Do not let documentation/test/academic terms suppress these:
+            // a malicious skill can trivially add "References" or "example"
+            // as cover text.
 
             // DAN jailbreaks
             $dan_explicit or
@@ -228,46 +227,56 @@ rule jailbreak_generic{
             $anti_safety_censorship or
 
             // === MEDIUM CONFIDENCE - Context dependent ===
+            (
+                not (
+                    $security_doc or
+                    $detection_code or
+                    $academic_paper or
+                    $test_context
+                ) and
 
-            // Roleplay/fictional framing with restriction bypass
-            $fictional_framing or
-            $roleplay_unrestricted or
-            $creative_bypass or
-            $movie_framing or
+                (
+                    // Roleplay/fictional framing with restriction bypass
+                    $fictional_framing or
+                    $roleplay_unrestricted or
+                    $creative_bypass or
+                    $movie_framing or
 
-            // Emotional exploitation
-            $grandma_exploit or
-            $bedtime_exploit or
-            $emotional_blackmail or
+                    // Emotional exploitation
+                    $grandma_exploit or
+                    $bedtime_exploit or
+                    $emotional_blackmail or
 
-            // Logic trap attacks
-            $logic_trap_intelligence or
-            $logic_trap_censorship or
-            $logic_trap_harm or
-            $logic_trap_ethics or
+                    // Logic trap attacks
+                    $logic_trap_intelligence or
+                    $logic_trap_censorship or
+                    $logic_trap_harm or
+                    $logic_trap_ethics or
 
-            // Anti-safety harm argument
-            $anti_safety_harm or
+                    // Anti-safety harm argument
+                    $anti_safety_harm or
 
-            // Token exploitation
-            $char_by_char or
-            $symbol_replacement or
-            $hypothetical_output or
+                    // Token exploitation
+                    $char_by_char or
+                    $symbol_replacement or
+                    $hypothetical_output or
 
-            // Multi-agent jailbreak
-            $multi_agent or
-            $relay_attack or
+                    // Multi-agent jailbreak
+                    $multi_agent or
+                    $relay_attack or
 
-            // Authority maintenance mode
-            $authority_maintenance or
+                    // Authority maintenance mode
+                    $authority_maintenance or
 
-            // Hypothetical bypass
-            $hypothetical_bypass or
-            $assume_no_guardrails or
-            $if_allowed or
+                    // Hypothetical bypass
+                    $hypothetical_bypass or
+                    $assume_no_guardrails or
+                    $if_allowed or
 
-            // Research/security audit framing with bypass intent (already tightened)
-            $research_framing_with_bypass or
-            $security_audit_with_bypass
+                    // Research/security audit framing with bypass intent (already tightened)
+                    $research_framing_with_bypass or
+                    $security_audit_with_bypass
+                )
+            )
         )
 }
