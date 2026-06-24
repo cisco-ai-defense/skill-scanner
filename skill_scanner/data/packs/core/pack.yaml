@@ -464,7 +464,7 @@ rules:
       zerowidth_threshold_alone: 200        # Zero-width chars threshold without decode context
       short_match_max_chars: 2              # Max matched chars to consider "short" (filtered in non-Latin)
       cyrillic_cjk_min_chars: 10            # Min matched chars to keep in Cyrillic/CJK context
-    description: "Unicode steganography in prompts"
+    description: "Unicode steganography and ASCII smuggling in prompts (detects Tag Block U+E0000-U+E007F)"
 
   YARA_prompt_injection_generic:
     source: yara
@@ -664,6 +664,13 @@ rules:
     knobs:
       enabled: true
     description: "Suspicious OLE/VBA content in Office document"
+
+  ASCII_SMUGGLING_TAG_BLOCK:
+    source: python
+    analyzer: static
+    knobs:
+      enabled: true
+    description: "Unicode Tag Block characters (U+E0000-U+E007F) used for ASCII smuggling / hidden prompt injection"
 
   HOMOGLYPH_ATTACK:
     source: python

@@ -68,6 +68,7 @@ Skill Scanner currently uses a subset of those codes for agent-skill risk catego
 | Command Injection | `AITech-9.1` | `AISubtech-9.1.4` | SQL/command/script injection patterns |
 | Code Execution | `AITech-9.1` | `AISubtech-9.1.1` | Unsafe execution primitives |
 | Obfuscation | `AITech-9.2` | `AISubtech-9.2.1` | Detection-evasion obfuscation patterns |
+| ASCII Smuggling | `AITech-9.2` | `AISubtech-9.2.1` | Unicode Tag Block (U+E0000–U+E007F) used to hide prompt-injection payloads inside skill files; invisible in editors but decoded by LLMs |
 | Supply Chain Attack | `AITech-9.3` | `AISubtech-9.3.1` | Malicious package/tool injection |
 | Unauthorized Tool Use | `AITech-12.1` | `AISubtech-12.1.3` | Unsafe/undeclared tool execution |
 | Tool Poisoning | `AITech-12.1` | `AISubtech-12.1.2` | Tampering with tool behavior/data |
@@ -168,6 +169,7 @@ When Cisco updates the framework:
 ## Notes
 
 - `AITech-99.9` / `AISubtech-99.9.9` are internal placeholders for unknown/unclassified threats in fallback paths; they are not Cisco framework codes.
+- **ASCII Smuggling** is a sub-technique of Obfuscation (`AITech-9.2`): it maps printable ASCII characters to their Unicode Tag Block counterparts (U+E0000–U+E007F), producing text that is completely invisible in editors and terminals but faithfully decoded by LLMs. Even a single Tag Block character in a skill file is considered CRITICAL. See: [Scary Agent Skills](https://embracethered.com/blog/posts/2026/scary-agent-skills/) and [aid detection tool](https://github.com/wunderwuzzi23/aid). Detected by rule `ASCII_SMUGGLING_TAG_BLOCK` and YARA pattern `$tag_block` in `prompt_injection_unicode_steganography.yara`.
 
 ## Related Pages
 
