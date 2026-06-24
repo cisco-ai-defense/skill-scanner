@@ -22,6 +22,8 @@ https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
 """
 
 import json
+import os
+from pathlib import Path
 from typing import Any
 
 from ...core.models import Finding, Report, ScanResult, Severity
@@ -74,7 +76,7 @@ class SARIFReporter:
     def _generate_from_scan_result(self, result: ScanResult) -> dict[str, Any]:
         """Generate SARIF from a single ScanResult."""
         rules = self._extract_rules(result.findings)
-        results = self._convert_findings(result.findings)
+        results = self._convert_findings(result.findings, result.skill_directory)
 
         return {
             "$schema": self.SARIF_SCHEMA,
@@ -105,7 +107,7 @@ class SARIFReporter:
         # Create results with proper artifact locations
         all_results = []
         for scan_result in report.scan_results:
-            results = self._convert_findings(scan_result.findings)
+            results = self._convert_findings(scan_result.findings, scan_result.skill_directory)
             all_results.extend(results)
         all_results.extend(self._convert_findings(report.cross_skill_findings))
 
@@ -176,7 +178,37 @@ class SARIFReporter:
 
         return rules
 
-    def _convert_findings(self, findings: list[Finding]) -> list[dict[str, Any]]:
+    @staticmethod
+    def _artifact_uri(finding: Finding, skill_directory: str | None) -> str:
+        """Build the artifact URI for a finding, relative to the scan root.
+
+        Finding.file_path is relative to the skill's own directory. GitHub Code
+        Scanning resolves URIs against %SRCROOT% (the repository root), so when
+        skills are discovered in subdirectories the skill path must be included
+        for results to be tied to files in a PR. The scanner's working directory
+        is taken as the scan root; when the skill directory lies outside it
+        (or on a different drive), the skill-relative path is kept as before.
+        """
+        file_path = finding.file_path if finding.file_path else "SKILL.md"
+        if not skill_directory or Path(file_path).is_absolute():
+            return Path(file_path).as_posix()
+
+        try:
+            skill_rel = os.path.relpath(skill_directory, os.getcwd())
+        except ValueError:
+            # Windows: skill directory and CWD on different drives
+            return Path(file_path).as_posix()
+
+        if skill_rel == os.curdir:
+            return Path(file_path).as_posix()
+        if skill_rel == os.pardir or skill_rel.startswith(os.pardir + os.sep):
+            # Skill directory is outside the scan root; a %SRCROOT%-relative
+            # path cannot be formed, and ".." segments are invalid in SARIF.
+            return Path(file_path).as_posix()
+
+        return (Path(skill_rel) / file_path).as_posix()
+
+    def _convert_findings(self, findings: list[Finding], skill_directory: str | None = None) -> list[dict[str, Any]]:
         """Convert findings to SARIF results."""
         results = []
 
@@ -194,7 +226,7 @@ class SARIFReporter:
                 },
             }
 
-            artifact_uri = finding.file_path if finding.file_path else "SKILL.md"
+            artifact_uri = self._artifact_uri(finding, skill_directory)
             location: dict[str, Any] = {
                 "physicalLocation": {
                     "artifactLocation": {

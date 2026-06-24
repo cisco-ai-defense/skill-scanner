@@ -239,3 +239,70 @@ def test_sarif_reporter_multi_skill_github_compat(report: Report):
     for result in results:
         assert "locations" in result
         assert "fixes" not in result
+
+
+def _result_uris(sarif_output: str) -> list[str]:
+    data = json.loads(sarif_output)
+    return [
+        result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] for result in data["runs"][0]["results"]
+    ]
+
+
+def test_sarif_reporter_uri_includes_skill_subpath_inside_scan_root(tmp_path, monkeypatch):
+    """URIs must be scan-root-relative so GitHub ties results to PR files (issue #107)."""
+    monkeypatch.chdir(tmp_path)
+    skill_dir = tmp_path / "plugins" / "hello-world" / "skills" / "hello-world"
+
+    result = ScanResult(
+        skill_name="hello-world",
+        skill_directory=str(skill_dir),
+        findings=_sample_findings(),
+        scan_duration_seconds=0.1,
+        analyzers_used=["static"],
+        timestamp=datetime(2026, 1, 2, 3, 4, 5),
+    )
+
+    uris = _result_uris(SARIFReporter().generate_report(result))
+
+    prefix = "plugins/hello-world/skills/hello-world"
+    assert f"{prefix}/scripts/decoder.py" in uris
+    assert f"{prefix}/SKILL.md" in uris
+    for uri in uris:
+        assert ".." not in uri
+        assert "\\" not in uri
+
+
+def test_sarif_reporter_uri_in_report_is_prefixed_per_skill(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    first = ScanResult(
+        skill_name="alpha",
+        skill_directory=str(tmp_path / "skills" / "alpha"),
+        findings=[_sample_findings()[2]],  # SKILL.md finding
+        timestamp=datetime(2026, 1, 2, 3, 4, 5),
+    )
+    second = ScanResult(
+        skill_name="beta",
+        skill_directory=str(tmp_path / "skills" / "beta"),
+        findings=[_sample_findings()[2]],
+        timestamp=datetime(2026, 1, 2, 3, 5, 0),
+    )
+
+    aggregate = Report(timestamp=datetime(2026, 1, 2, 3, 6, 0))
+    aggregate.add_scan_result(first)
+    aggregate.add_scan_result(second)
+
+    uris = _result_uris(SARIFReporter().generate_report(aggregate))
+
+    assert "skills/alpha/SKILL.md" in uris
+    assert "skills/beta/SKILL.md" in uris
+
+
+def test_sarif_reporter_uri_unchanged_when_skill_outside_scan_root(scan_result: ScanResult):
+    """Skills outside the working directory keep skill-relative URIs (no ".." segments)."""
+    uris = _result_uris(SARIFReporter().generate_report(scan_result))
+
+    assert "SKILL.md" in uris
+    assert "scripts/decoder.py" in uris
+    for uri in uris:
+        assert ".." not in uri
