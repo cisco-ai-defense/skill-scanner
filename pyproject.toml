@@ -58,7 +58,7 @@ dependencies = [
     "pydantic>=2.10,<3",
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.34,<1",
-    "python-multipart>=0.0.22,<0.1",
+    "python-multipart>=0.0.31,<0.1",
     "yara-x>=1.10,<2",
     "python-dotenv>=1.0,<2",
     "httpx>=0.27,<1",
@@ -74,8 +74,8 @@ dependencies = [
     "anthropic>=0.50,<1",
     "openai>=2.0,<3",
     # Floor pin: avoid compromised PyPI lines in 1.80.16 / 1.82.3 / 1.82.8 (BerriAI/litellm#24512)
-    # and SSRF fix in 1.83.7 (GHSA-xqmj-j6mv-4862).
-    "litellm>=1.83.7,<2",
+    # SSRF fix in 1.83.7 (GHSA-xqmj-j6mv-4862), and CVE-2026-49468 fix in 1.84.0.
+    "litellm>=1.84.0,<2",
 ]
 
 [project.optional-dependencies]

@@ -665,7 +665,9 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                 # Strip false positives from output unless --verbose
                 if not getattr(args, "verbose", False):
                     for result in report.scan_results:
-                        result.findings = [f for f in result.findings if not f.metadata.get("meta_false_positive", False)]
+                        result.findings = [
+                            f for f in result.findings if not f.metadata.get("meta_false_positive", False)
+                        ]
                     report.cross_skill_findings = [
                         f for f in report.cross_skill_findings if not f.metadata.get("meta_false_positive", False)
                     ]
@@ -1038,7 +1040,9 @@ Examples:
         default=True,
         help="Recursively search for skills (default: True; use --no-recursive to disable)",
     )
-    scan_repo_p.add_argument("--check-overlap", action="store_true", help="Enable cross-skill description overlap check")
+    scan_repo_p.add_argument(
+        "--check-overlap", action="store_true", help="Enable cross-skill description overlap check"
+    )
     _add_common_scan_flags(scan_repo_p)
 
     # -- list-analyzers ----------------------------------------------------

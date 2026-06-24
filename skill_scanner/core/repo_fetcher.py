@@ -111,9 +111,7 @@ def clone_repo(url: str, timeout: int = 120) -> Iterator[Path]:
                 timeout=timeout,
             )
         except FileNotFoundError:
-            raise RepoFetchError(
-                "git not found on PATH. Please install git and ensure it is available in your PATH."
-            )
+            raise RepoFetchError("git not found on PATH. Please install git and ensure it is available in your PATH.")
         except subprocess.TimeoutExpired:
             raise RepoFetchError(f"git clone timed out after {timeout}s for {url!r}")
         except subprocess.SubprocessError as e:
@@ -121,9 +119,7 @@ def clone_repo(url: str, timeout: int = 120) -> Iterator[Path]:
 
         if result.returncode != 0:
             stderr = result.stderr.decode(errors="replace").strip()
-            raise RepoFetchError(
-                f"git clone failed for {url!r} (exit code {result.returncode}): {stderr}"
-            )
+            raise RepoFetchError(f"git clone failed for {url!r} (exit code {result.returncode}): {stderr}")
 
         yield Path(tmpdir)
     finally:

@@ -86,9 +86,7 @@ class TestScanRepoCommand:
         with patch("skill_scanner.core.repo_fetcher.clone_repo", _fake_clone_test_skills):
             stdout, stderr, code = _invoke_scan_repo("owner/repo")
 
-        assert code == 0, (
-            f"Expected exit 0, got {code}.\nstdout: {stdout}\nstderr: {stderr}"
-        )
+        assert code == 0, f"Expected exit 0, got {code}.\nstdout: {stdout}\nstderr: {stderr}"
         # Scan should have produced some output (status messages or skill names)
         combined = stdout + stderr
         assert combined.strip(), "Expected some output from the scan"
@@ -98,9 +96,7 @@ class TestScanRepoCommand:
         with patch("skill_scanner.core.repo_fetcher.clone_repo", _fake_clone_test_skills):
             stdout, stderr, code = _invoke_scan_repo("https://github.com/owner/repo")
 
-        assert code == 0, (
-            f"Expected exit 0, got {code}.\nstdout: {stdout}\nstderr: {stderr}"
-        )
+        assert code == 0, f"Expected exit 0, got {code}.\nstdout: {stdout}\nstderr: {stderr}"
         combined = stdout + stderr
         assert combined.strip(), "Expected some output from the scan"
 
@@ -109,9 +105,7 @@ class TestScanRepoCommand:
         # No patch needed — resolve_repo_url raises RepoFetchError before clone is called
         stdout, stderr, code = _invoke_scan_repo("not-valid")
 
-        assert code == 1, (
-            f"Expected exit 1 for invalid repo, got {code}.\nstderr: {stderr}"
-        )
+        assert code == 1, f"Expected exit 1 for invalid repo, got {code}.\nstderr: {stderr}"
         assert stderr.strip(), "Expected an error message on stderr"
 
     def test_scan_repo_clone_failure(self):
@@ -119,9 +113,7 @@ class TestScanRepoCommand:
         with patch("skill_scanner.core.repo_fetcher.clone_repo", _fake_clone_raises):
             stdout, stderr, code = _invoke_scan_repo("owner/repo")
 
-        assert code == 1, (
-            f"Expected exit 1 on clone failure, got {code}.\nstderr: {stderr}"
-        )
+        assert code == 1, f"Expected exit 1 on clone failure, got {code}.\nstderr: {stderr}"
         assert "clone failed" in stderr
 
     def test_scan_repo_common_flags_pass_through_to_scanner(self):
@@ -156,9 +148,7 @@ class TestScanRepoCommand:
                 "README.md",
             )
 
-        assert code == 0, (
-            f"Expected exit 0, got {code}.\nstdout: {stdout}\nstderr: {stderr}"
-        )
+        assert code == 0, f"Expected exit 0, got {code}.\nstdout: {stdout}\nstderr: {stderr}"
         scanner.scan_directory.assert_called_once_with(
             _TEST_SKILLS_DIR,
             recursive=False,
