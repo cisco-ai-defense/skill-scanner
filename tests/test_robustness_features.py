@@ -230,6 +230,23 @@ class TestLenientLoader:
         assert "hello" in skill.description
         assert "then left" in skill.description
 
+    def test_colon_value_with_backslashes(self, tmp_path):
+        """Auto-quoted values must preserve literal backslashes."""
+        _write_skill_md(
+            tmp_path / "colon-backslash",
+            """\
+            ---
+            name: test
+            description: Windows path C:\\temp\\data: keep backslashes
+            ---
+            body
+            """,
+        )
+        loader = SkillLoader()
+        skill = loader.load_skill(tmp_path / "colon-backslash")
+        assert "C:\\temp\\data" in skill.description
+        assert "keep backslashes" in skill.description
+
     def test_no_skill_md_still_raises_in_lenient(self, tmp_path):
         """Even in lenient mode, a completely empty dir (no .md files) is fatal."""
         empty_dir = tmp_path / "empty"
