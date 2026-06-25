@@ -310,6 +310,20 @@ class TestIncompleteAnalysisIsSurfaced:
         ctx_ok = ContextExtractor().extract_context(Path("ok.py"), "def f(x):\n    return x + 1\n")
         assert ctx_ok.dataflow_incomplete is False
 
+    def test_function_context_propagates_incomplete_flag(self):
+        """The per-function path (_analyze_parameter_flows) must also surface the
+        flag onto SkillFunctionContext when the budget trips."""
+        original = ForwardDataflowAnalysis.max_analysis_seconds
+        try:
+            ForwardDataflowAnalysis.max_analysis_seconds = 0.0
+            fctxs = ContextExtractor().extract_function_contexts(Path("big.py"), _looping_function(60))
+            assert any(c.dataflow_incomplete for c in fctxs)
+        finally:
+            ForwardDataflowAnalysis.max_analysis_seconds = original
+
+        ok = ContextExtractor().extract_function_contexts(Path("ok.py"), "def f(x):\n    return x + 1\n")
+        assert not any(c.dataflow_incomplete for c in ok)
+
     def test_behavioral_analyzer_emits_info_finding_when_incomplete(self):
         analyzer = BehavioralAnalyzer()  # no LLM/alignment by default
 

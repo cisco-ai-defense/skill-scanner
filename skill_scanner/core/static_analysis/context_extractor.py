@@ -141,6 +141,10 @@ class SkillFunctionContext:
     # Dataflow facts
     dataflow_summary: dict[str, Any] = field(default_factory=dict)
 
+    # True if the parameter-flow analysis stopped early (time budget), so the
+    # parameter_flows above are a sound under-approximation.
+    dataflow_incomplete: bool = False
+
 
 class ContextExtractor:
     """Extract comprehensive security context from skill scripts."""
@@ -447,7 +451,7 @@ class ContextExtractor:
         control_flow = self._analyze_control_flow(node)
 
         # Parameter flow analysis
-        parameter_flows = self._analyze_parameter_flows(node, parameters)
+        parameter_flows, dataflow_incomplete = self._analyze_parameter_flows(node, parameters)
 
         # Constants
         constants = self._extract_constants(node)
@@ -498,6 +502,7 @@ class ContextExtractor:
             global_writes=global_writes,
             attribute_access=attribute_access,
             dataflow_summary=dataflow_summary,
+            dataflow_incomplete=dataflow_incomplete,
         )
 
     def _extract_parameters(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[str, Any]]:
@@ -595,17 +600,21 @@ class ContextExtractor:
 
     def _analyze_parameter_flows(
         self, node: ast.FunctionDef | ast.AsyncFunctionDef, parameters: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], bool]:
         """Analyze how parameters flow through the function using CFG-based analysis.
 
         Uses proper control flow graph and fixpoint analysis for accurate tracking
         through branches, loops, and function calls.
+
+        Returns:
+            (flows, incomplete) where ``incomplete`` is True if the dataflow analysis
+            stopped early on its time budget (flows are then an under-approximation).
         """
         flows: list[dict[str, Any]] = []
         param_names = [p["name"] for p in parameters]
 
         if not param_names:
-            return flows
+            return flows, False
 
         # Extract function source code for parser
         try:
@@ -617,12 +626,12 @@ class ContextExtractor:
             func_source = f"def {node.name}({param_str}):\n    pass"
 
         if not func_source:
-            return flows
+            return flows, False
 
         # Create parser and run CFG-based forward analysis
         parser = PythonParser(func_source)
         if not parser.parse():
-            return flows
+            return flows, False
 
         try:
             forward_analyzer = ForwardDataflowAnalysis(parser, param_names)
@@ -640,14 +649,13 @@ class ContextExtractor:
                         "reaches_external": flow_path.reaches_external,
                     }
                 )
+            return flows, forward_analyzer.analysis_incomplete
         except Exception as e:
             # Log error but return empty flows (no fallback)
             import logging
 
             logging.getLogger(__name__).warning(f"CFG-based parameter flow analysis failed: {e}")
-            return flows
-
-        return flows
+            return flows, True
 
     def _extract_constants(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, Any]:
         """Extract constant values."""
