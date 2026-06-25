@@ -34,9 +34,14 @@ from pathlib import Path
 
 import pytest
 
+from skill_scanner.core.analyzers.behavioral.alignment.alignment_prompt_builder import AlignmentPromptBuilder
 from skill_scanner.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
 from skill_scanner.core.models import Severity
-from skill_scanner.core.static_analysis.context_extractor import ContextExtractor, SkillScriptContext
+from skill_scanner.core.static_analysis.context_extractor import (
+    ContextExtractor,
+    SkillFunctionContext,
+    SkillScriptContext,
+)
 from skill_scanner.core.static_analysis.dataflow import ForwardDataflowAnalysis
 from skill_scanner.core.static_analysis.dataflow.forward_analysis import FlowPath
 from skill_scanner.core.static_analysis.parser.python_parser import PythonParser
@@ -81,6 +86,26 @@ def _serialize_flows(flows: list[FlowPath]) -> list[tuple]:
             )
         )
     return sorted(serialized, key=lambda t: t[0])
+
+
+def _min_function_context(**overrides) -> SkillFunctionContext:
+    """Minimal SkillFunctionContext with all required fields filled."""
+    base = dict(
+        name="handler",
+        imports=[],
+        function_calls=[],
+        assignments=[],
+        control_flow={},
+        parameter_flows=[],
+        constants={},
+        variable_dependencies={},
+        has_file_operations=False,
+        has_network_operations=False,
+        has_subprocess_calls=False,
+        has_eval_exec=False,
+    )
+    base.update(overrides)
+    return SkillFunctionContext(**base)
 
 
 def _run(code: str, params: list[str], detect_sources: bool = True) -> list[FlowPath]:
@@ -337,3 +362,15 @@ class TestIncompleteAnalysisIsSurfaced:
         assert not [
             f for f in analyzer._generate_findings_from_context(complete_ctx, None) if f.rule_id == _INCOMPLETE_RULE_ID
         ], "a complete analysis must not produce the incomplete notice"
+
+    def test_alignment_prompt_warns_when_function_dataflow_incomplete(self):
+        """The LLM-alignment prompt must flag truncated per-function flows so the
+        model does not treat a missing flow as proof of safety."""
+        builder = AlignmentPromptBuilder()
+
+        warned = builder.build_prompt(_min_function_context(dataflow_incomplete=True))
+        assert "truncated" in warned.lower(), "incomplete-analysis warning should appear in the prompt"
+        assert "under-approximation" in warned.lower()
+
+        clean = builder.build_prompt(_min_function_context(dataflow_incomplete=False))
+        assert "under-approximation" not in clean.lower(), "complete analysis must not add the warning"

@@ -147,6 +147,16 @@ All parameters are treated as untrusted input (skill entry points receive extern
 Parameter Flow Tracking:
 """)
 
+        # If the per-function dataflow analysis was truncated (time budget), tell the
+        # model the flows below are a partial under-approximation so it does not treat
+        # a missing flow as evidence of safety.
+        if func_context.dataflow_incomplete:
+            content_parts.append(
+                "[WARNING] Dataflow analysis for this function was truncated (analysis budget "
+                "exceeded); the parameter flows below are a partial under-approximation. Do not "
+                "treat the absence of a flow as proof that a parameter is unused or safe.\n"
+            )
+
         # Add parameter flow tracking
         if func_context.parameter_flows:
             param_parts = ["\n**PARAMETER FLOW TRACKING:**\n"]
