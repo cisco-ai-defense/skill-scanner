@@ -120,6 +120,22 @@ class ShapeEnvironment:
             new_env._shapes[var_name] = shape.copy()
         return new_env
 
+    def __eq__(self, other: object) -> bool:
+        """Compare environments by content, not identity.
+
+        Required for dataflow fixpoint convergence: the worklist algorithm
+        decides it has reached a fixpoint when a node's out-fact stops
+        changing. Without content-based equality, freshly-copied environments
+        always compare unequal, so the analysis never converges and instead
+        spins until the iteration safety cap (which is catastrophically slow
+        on large files).
+        """
+        if not isinstance(other, ShapeEnvironment):
+            return NotImplemented
+        return self._shapes == other._shapes
+
+    __hash__ = None  # type: ignore[assignment]  # mutable; compared by content, never hashed
+
     def merge(self, other: "ShapeEnvironment") -> "ShapeEnvironment":
         """Merge two environments.
 
@@ -250,3 +266,23 @@ class TaintShape:
             new_shape.element_shape = self.element_shape.copy()
 
         return new_shape
+
+    def __eq__(self, other: object) -> bool:
+        """Compare shapes by content, not identity.
+
+        Needed so that ``ShapeEnvironment`` equality (and therefore dataflow
+        fixpoint detection) reflects the actual taint state rather than object
+        identity. Recurses into fields and array element shapes.
+        """
+        if not isinstance(other, TaintShape):
+            return NotImplemented
+        return (
+            self.scalar_taint == other.scalar_taint
+            and self.is_object == other.is_object
+            and self.is_array == other.is_array
+            and self.collapsed == other.collapsed
+            and self.fields == other.fields
+            and self.element_shape == other.element_shape
+        )
+
+    __hash__ = None  # type: ignore[assignment]  # mutable; compared by content, never hashed
