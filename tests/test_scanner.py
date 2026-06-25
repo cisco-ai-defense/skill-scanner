@@ -18,6 +18,7 @@
 Unit tests for scanner engine.
 """
 
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,26 @@ from skill_scanner.core.models import Finding, Severity, ThreatCategory
 from skill_scanner.core.scan_policy import ScanPolicy, SeverityOverride
 from skill_scanner.core.scanner import SkillScanner, scan_skill
 from skill_scanner.core.scanner import scan_directory as convenience_scan_directory
+
+
+def _symlinks_available() -> bool:
+    """Whether the OS/user can actually create directory symlinks.
+
+    ``Path.symlink_to`` exists on Windows but raises ``OSError`` without
+    Developer Mode / admin privileges, so ``hasattr(os, "symlink")`` is not a
+    reliable guard. Probe by creating a real symlink instead.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "target"
+        target.mkdir()
+        try:
+            (Path(tmp) / "link").symlink_to(target, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            return False
+        return True
+
+
+_SYMLINKS_AVAILABLE = _symlinks_available()
 
 
 @pytest.fixture
@@ -636,3 +657,146 @@ def test_same_path_other_rule_ids_knob_disable(example_skills_dir):
     assert len(result.findings) == 2
     for finding in result.findings:
         assert "same_path_other_rule_ids" not in finding.metadata
+
+
+def test_recursive_discovery_on_plain_nested_tree(scanner, tmp_path):
+    """No-regression: the os.walk rewrite finds the same skills rglob would.
+
+    On a plain tree with no symlinks, recursive discovery must find every
+    SKILL.md directory at any depth (and nothing else), exactly as the previous
+    ``Path.rglob`` implementation did. This runs on every platform.
+    """
+    expected = {
+        tmp_path / "top",  # depth 1
+        tmp_path / "group" / "mid",  # depth 2
+        tmp_path / "group" / "more" / "leaf",  # depth 3
+    }
+    for d in expected:
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(f"---\nname: {d.name}\n---\n", encoding="utf-8")
+    # A directory without SKILL.md must NOT be discovered.
+    (tmp_path / "group" / "not_a_skill").mkdir(parents=True)
+
+    found = {p.resolve() for p in scanner._find_skill_directories(tmp_path, recursive=True)}
+
+    assert found == {d.resolve() for d in expected}
+
+
+class TestSymlinkedSkillDiscovery:
+    """Regression tests for issue #116.
+
+    Recursive discovery must follow symlinked skill directories. This is the
+    standard Claude Code layout, where ``~/.claude/skills/<name>`` is a symlink
+    to a real directory elsewhere. ``Path.rglob`` does not follow directory
+    symlinks, so these skills were previously skipped and the scan reported
+    "no skills found".
+    """
+
+    pytestmark = pytest.mark.skipif(
+        not _SYMLINKS_AVAILABLE,
+        reason="OS/user cannot create directory symlinks (e.g. Windows without Developer Mode)",
+    )
+
+    def test_recursive_discovery_follows_symlinked_skill_dir(self, scanner, tmp_path):
+        """A skill symlinked into the scanned directory is discovered."""
+        # Real skill living outside the scanned tree.
+        real = tmp_path / "agents" / "skills" / "diagnose"
+        real.mkdir(parents=True)
+        (real / "SKILL.md").write_text("---\nname: diagnose\n---\n", encoding="utf-8")
+
+        # Scanned directory contains only a symlink to the real skill.
+        scanned = tmp_path / "claude" / "skills"
+        scanned.mkdir(parents=True)
+        (scanned / "diagnose").symlink_to(real, target_is_directory=True)
+
+        found = scanner._find_skill_directories(scanned, recursive=True)
+
+        assert real.resolve() in {p.resolve() for p in found}
+
+    def test_recursive_lenient_discovery_follows_symlink(self, scanner, tmp_path):
+        """Lenient (.md-only) discovery also follows symlinked directories."""
+        real = tmp_path / "real" / "notes"
+        real.mkdir(parents=True)
+        (real / "guide.md").write_text("# guide\n", encoding="utf-8")
+
+        scanned = tmp_path / "scanned"
+        scanned.mkdir()
+        (scanned / "notes").symlink_to(real, target_is_directory=True)
+
+        found = scanner._find_skill_directories(scanned, recursive=True, lenient=True)
+
+        assert real.resolve() in {p.resolve() for p in found}
+
+    def test_symlink_cycle_does_not_hang(self, scanner, tmp_path):
+        """A symlink cycle is traversed once without infinite recursion."""
+        skills = tmp_path / "skills"
+        sub = skills / "a"
+        sub.mkdir(parents=True)
+        (sub / "SKILL.md").write_text("---\nname: a\n---\n", encoding="utf-8")
+        # Cycle: skills/a/loop -> skills
+        (sub / "loop").symlink_to(skills, target_is_directory=True)
+
+        found = scanner._find_skill_directories(skills, recursive=True)
+
+        resolved = [p.resolve() for p in found]
+        assert sub.resolve() in resolved
+        # The cycle must not cause the same skill to be reported more than once.
+        assert len(resolved) == len(set(resolved))
+
+    def test_symlinked_dir_outside_scan_root_is_contained(self, scanner, tmp_path):
+        """Following a symlink out of the scan root must not crawl its subtree.
+
+        Security regression for the issue #116 review: ``os.walk(followlinks=True)``
+        without containment would descend through a ``trap -> /`` style symlink
+        and discover (and scan) every skill anywhere on disk. Discovery must
+        evaluate the symlinked directory itself but stop there.
+        """
+        # External tree OUTSIDE the scan root, with skills at varying depth.
+        external = tmp_path / "external"
+        (external / "secretA").mkdir(parents=True)
+        (external / "nested" / "deep" / "secretB").mkdir(parents=True)
+        (external / "secretA" / "SKILL.md").write_text("---\nname: secretA\n---\n", encoding="utf-8")
+        (external / "nested" / "deep" / "secretB" / "SKILL.md").write_text(
+            "---\nname: secretB\n---\n", encoding="utf-8"
+        )
+
+        # Scan root: one in-tree skill + a symlink to the whole external tree.
+        scanroot = tmp_path / "scanroot"
+        (scanroot / "innocent").mkdir(parents=True)
+        (scanroot / "innocent" / "SKILL.md").write_text("---\nname: innocent\n---\n", encoding="utf-8")
+        (scanroot / "trap").symlink_to(external, target_is_directory=True)
+
+        found = {p.resolve() for p in scanner._find_skill_directories(scanroot, recursive=True)}
+
+        # The in-tree skill is found; the out-of-root skills are NOT.
+        assert (scanroot / "innocent").resolve() in found
+        assert (external / "secretA").resolve() not in found
+        assert (external / "nested" / "deep" / "secretB").resolve() not in found
+
+    def test_scan_directory_scans_symlinked_skill_end_to_end(self, scanner, tmp_path):
+        """A full scan (not just discovery) finds and scans a symlinked skill.
+
+        This exercises the actual issue #116 symptom: ``scan_directory`` over a
+        tree whose only skill is a symlink previously returned an empty report
+        ("no skills found"). Asserting on the ``Report`` proves the whole
+        discovery -> loader -> scan chain holds, not just discovery.
+        """
+        # Real skill living outside the scanned tree.
+        real = tmp_path / "agents" / "skills" / "diagnose"
+        real.mkdir(parents=True)
+        (real / "SKILL.md").write_text(
+            "---\nname: diagnose\ndescription: Diagnose system issues.\n---\n# Diagnose\nA harmless helper skill.\n",
+            encoding="utf-8",
+        )
+
+        # Scanned directory contains only a symlink to the real skill.
+        scanned = tmp_path / "claude" / "skills"
+        scanned.mkdir(parents=True)
+        (scanned / "diagnose").symlink_to(real, target_is_directory=True)
+
+        report = scanner.scan_directory(scanned, recursive=True)
+
+        # The symlinked skill was actually loaded and scanned, exactly once.
+        assert report.total_skills_scanned == 1
+        assert len(report.scan_results) == 1
+        assert report.scan_results[0].skill_name == "diagnose"
