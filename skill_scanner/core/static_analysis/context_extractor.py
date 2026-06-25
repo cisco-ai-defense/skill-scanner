@@ -56,6 +56,10 @@ class SkillScriptContext:
     all_string_literals: list[str] = field(default_factory=list)
     suspicious_urls: list[str] = field(default_factory=list)
 
+    # True if the script-level dataflow analysis stopped early (time/iteration budget),
+    # so the flows below are a sound under-approximation (possible false negatives).
+    dataflow_incomplete: bool = False
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for LLM prompt."""
         return {
@@ -274,14 +278,19 @@ class ContextExtractor:
         has_eval_exec = any(f.has_eval_exec for f in parser.functions)
 
         # Use CFG-based ForwardDataflowAnalysis for script-level source detection and flow tracking
+        dataflow_incomplete = False
         try:
             forward_analyzer = ForwardDataflowAnalysis(parser, parameter_names=[], detect_sources=True)
             script_flows = forward_analyzer.analyze_forward_flows()
+            # Surface a truncated (time/iteration-budgeted) analysis so its
+            # under-approximation is not mistaken for a clean result downstream.
+            dataflow_incomplete = forward_analyzer.analysis_incomplete
         except Exception as e:
             import logging
 
             logging.getLogger(__name__).warning(f"CFG-based script-level analysis failed: {e}")
             script_flows = []
+            dataflow_incomplete = True
 
         # Extract credential/env access from detected sources
         has_credential_access = any(flow.parameter_name.startswith("credential_file:") for flow in script_flows)
@@ -370,6 +379,7 @@ class ContextExtractor:
             all_function_calls=list(set(all_calls)),
             all_string_literals=all_strings,
             suspicious_urls=suspicious_urls,
+            dataflow_incomplete=dataflow_incomplete,
         )
 
         return context

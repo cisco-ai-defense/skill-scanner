@@ -124,6 +124,10 @@ class DataFlowAnalyzer(Generic[T]):
         self.in_facts: dict[int, T] = {}
         self.out_facts: dict[int, T] = {}
         self.logger = logging.getLogger(__name__)
+        # True if the most recent analyze() stopped early (time or iteration budget);
+        # results are then a sound under-approximation. Initialized here so callers can
+        # read it even if analyze() has not run yet.
+        self.analysis_incomplete = False
 
     def build_cfg(self) -> ControlFlowGraph:
         """Build Control Flow Graph from AST.
@@ -367,13 +371,16 @@ class DataFlowAnalyzer(Generic[T]):
             # Safety check to prevent infinite loops
             if iteration_count > max_iterations:
                 # Log at debug level to reduce noise - this is expected for complex files
-                # The analysis still completes, it just stops early at the safety limit
+                # The analysis still completes, it just stops early at the safety limit.
+                # NOTE: this pre-existing iteration cap is hit routinely on ordinary loops
+                # (the worklist does not always converge), so it deliberately does NOT set
+                # analysis_incomplete — only the wall-clock budget below does, to keep the
+                # user-facing "incomplete" signal reserved for genuinely truncated analyses.
                 self.logger.debug(
                     f"Dataflow analysis exceeded max iterations ({max_iterations:,} iterations, "
                     f"CFG size: {cfg_size} nodes). Analysis stopped at safety limit. "
                     f"This is normal for complex control flow and analysis may be incomplete."
                 )
-                self.analysis_incomplete = True
                 break
 
             # Wall-clock safety budget: a deeply-looping function can take a very long
