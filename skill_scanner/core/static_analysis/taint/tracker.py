@@ -97,8 +97,14 @@ class ShapeEnvironment:
             var_name: Variable name
             taint: Taint to set
         """
-        shape = self.get(var_name)
+        # Copy-on-write: copy() shares TaintShape objects with the source
+        # environment, so we must never mutate an existing shape in place here —
+        # it may be shared with another (copied) environment. Clone the shape
+        # before writing so the write is isolated to this environment.
+        old_shape = self._shapes.get(var_name)
+        shape = old_shape.copy() if old_shape is not None else TaintShape()
         shape.set_taint(taint)
+        self._shapes[var_name] = shape
 
     def get_taint(self, var_name: str) -> Taint:
         """Get taint for a variable.
@@ -114,10 +120,16 @@ class ShapeEnvironment:
         return Taint(status=TaintStatus.UNTAINTED)
 
     def copy(self) -> "ShapeEnvironment":
-        """Create a copy of the environment."""
+        """Create a copy-on-write copy of the environment.
+
+        The returned environment shares TaintShape objects with this one; each
+        shape is cloned lazily only when it is written (see ``set_taint``). This
+        makes copying O(number of variables) instead of deep-copying every shape,
+        which dominates fixpoint cost on large/looping functions. Safe because the
+        dataflow only mutates shapes through ``set_taint`` and ``get`` is read-only.
+        """
         new_env = ShapeEnvironment()
-        for var_name, shape in self._shapes.items():
-            new_env._shapes[var_name] = shape.copy()
+        new_env._shapes = dict(self._shapes)  # shallow: shapes shared until written
         return new_env
 
     def merge(self, other: "ShapeEnvironment") -> "ShapeEnvironment":
