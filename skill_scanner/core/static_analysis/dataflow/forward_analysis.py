@@ -118,6 +118,9 @@ class ForwardDataflowAnalysis(DataFlowAnalyzer[ForwardFlowFact]):
         self.detect_sources = detect_sources
         self.all_flows: list[FlowPath] = []
         self.script_sources: list[str] = []  # Detected script-level sources
+        # Cache of ast.Name nodes per expression (keyed by id()); the set of names
+        # in an expression is structural, so this is reused across fixpoint iterations.
+        self._name_nodes_cache: dict[int, list[ast.Name]] = {}
 
     def analyze_forward_flows(self) -> list[FlowPath]:
         """Run forward flow analysis from parameters and script-level sources.
@@ -129,6 +132,7 @@ class ForwardDataflowAnalysis(DataFlowAnalyzer[ForwardFlowFact]):
         # (defensive programming - instances should be fresh, but this ensures clean state)
         self.all_flows.clear()
         self.script_sources.clear()
+        self._name_nodes_cache.clear()
 
         self.build_cfg()
 
@@ -498,33 +502,41 @@ class ForwardDataflowAnalysis(DataFlowAnalyzer[ForwardFlowFact]):
         target_labels = target_taint.labels if target_taint.is_tainted() else set()
         expected_label = f"param:{var_name}"
 
-        for node in ast.walk(expr):
-            if isinstance(node, ast.Name):
-                if node.id == var_name:
+        # The set of Name nodes in an expression is structural and never changes
+        # across fixpoint iterations, but this method is called once per tracked
+        # variable per node per iteration. Caching the walk result avoids redundant
+        # full ast.walk() traversals (a dominant cost on large/looping functions).
+        name_nodes = self._name_nodes_cache.get(id(expr))
+        if name_nodes is None:
+            name_nodes = [n for n in ast.walk(expr) if isinstance(n, ast.Name)]
+            self._name_nodes_cache[id(expr)] = name_nodes
+
+        for node in name_nodes:
+            if node.id == var_name:
+                return True
+
+            # Check transitive dependencies with source sensitivity
+            node_shape = fact.shape_env.get(node.id)
+            node_taint = node_shape.get_taint()
+
+            if node_taint.is_tainted():
+                if expected_label in node_taint.labels:
                     return True
 
-                # Check transitive dependencies with source sensitivity
-                node_shape = fact.shape_env.get(node.id)
-                node_taint = node_shape.get_taint()
+                if target_labels and node_taint.labels & target_labels:
+                    return True
 
-                if node_taint.is_tainted():
-                    if expected_label in node_taint.labels:
-                        return True
-
-                    if target_labels and node_taint.labels & target_labels:
-                        return True
-
-                    # Check structural shapes
-                    if node_shape.is_object:
-                        for field_name, field_shape in node_shape.fields.items():
-                            field_taint = field_shape.get_taint()
-                            if expected_label in field_taint.labels:
-                                return True
-
-                    if node_shape.is_array and node_shape.element_shape:
-                        elem_taint = node_shape.element_shape.get_taint()
-                        if expected_label in elem_taint.labels:
+                # Check structural shapes
+                if node_shape.is_object:
+                    for field_name, field_shape in node_shape.fields.items():
+                        field_taint = field_shape.get_taint()
+                        if expected_label in field_taint.labels:
                             return True
+
+                if node_shape.is_array and node_shape.element_shape:
+                    elem_taint = node_shape.element_shape.get_taint()
+                    if expected_label in elem_taint.labels:
+                        return True
 
         return False
 

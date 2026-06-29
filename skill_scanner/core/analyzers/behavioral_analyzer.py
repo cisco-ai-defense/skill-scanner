@@ -330,6 +330,29 @@ class BehavioralAnalyzer(BaseAnalyzer):
         """Generate security findings from extracted context."""
         findings = []
 
+        # Surface truncated dataflow coverage so an early-stopped (budgeted) analysis
+        # is not silently reported as clean. The dataflow result is a sound
+        # under-approximation, so absence of a flow finding is not proof of safety.
+        if context.dataflow_incomplete:
+            findings.append(
+                Finding(
+                    id=self._generate_id("DATAFLOW_ANALYSIS_INCOMPLETE", context.file_path),
+                    rule_id="BEHAVIOR_DATAFLOW_ANALYSIS_INCOMPLETE",
+                    category=ThreatCategory.POLICY_VIOLATION,
+                    severity=Severity.INFO,
+                    title="Behavioral dataflow analysis incomplete (analysis budget exceeded)",
+                    description=(
+                        f"Static dataflow analysis for {context.file_path} stopped early after "
+                        "hitting its time/iteration budget. Reported flows are sound but may be "
+                        "incomplete; the absence of a flow finding does not guarantee safety."
+                    ),
+                    file_path=context.file_path,
+                    remediation="Consider splitting very large or deeply-nested functions into smaller units.",
+                    analyzer="behavioral",
+                    metadata={"dataflow_incomplete": True},
+                )
+            )
+
         # Check for exfiltration patterns
         if context.has_network and context.has_env_var_access:
             findings.append(

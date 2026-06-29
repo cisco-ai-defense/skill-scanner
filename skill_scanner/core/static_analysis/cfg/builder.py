@@ -22,6 +22,7 @@ analysis through control structures (if/else, loops, functions).
 
 import ast
 import logging
+import time
 from typing import Any, Generic, TypeVar
 
 from ..parser.python_parser import PythonParser
@@ -123,6 +124,10 @@ class DataFlowAnalyzer(Generic[T]):
         self.in_facts: dict[int, T] = {}
         self.out_facts: dict[int, T] = {}
         self.logger = logging.getLogger(__name__)
+        # True if the most recent analyze() stopped early (time or iteration budget);
+        # results are then a sound under-approximation. Initialized here so callers can
+        # read it even if analyze() has not run yet.
+        self.analysis_incomplete = False
 
     def build_cfg(self) -> ControlFlowGraph:
         """Build Control Flow Graph from AST.
@@ -300,6 +305,12 @@ class DataFlowAnalyzer(Generic[T]):
         else:
             return cfg.create_node(node, type(node).__name__)
 
+    # Wall-clock budget (seconds) for a single dataflow run. The fixpoint can do a
+    # large amount of work on big, deeply-looping functions; this bounds it so the
+    # analyzer degrades gracefully with a clear warning instead of appearing to hang
+    # (and being killed by an outer process timeout). Override per instance if needed.
+    max_analysis_seconds: float = 30.0
+
     def analyze(self, initial_fact: T, forward: bool = True, max_iteration_multiplier: int = 1000) -> None:
         """Run dataflow analysis using worklist algorithm.
 
@@ -310,6 +321,9 @@ class DataFlowAnalyzer(Generic[T]):
                                       Max iterations = CFG nodes * effective_multiplier
                                       Adaptive limits based on CFG size to handle complex files
         """
+        # True if the fixpoint stopped early (time or iteration budget); results are
+        # then a sound under-approximation rather than a fully-converged fixpoint.
+        self.analysis_incomplete = False
         if not self.cfg:
             self.build_cfg()
 
@@ -347,6 +361,9 @@ class DataFlowAnalyzer(Generic[T]):
         else:
             effective_multiplier = int(max_iteration_multiplier * 0.3)  # 300
         max_iterations = cfg_size * effective_multiplier  # Safety limit
+        deadline = time.monotonic() + self.max_analysis_seconds
+        # Only consult the clock periodically to keep the hot loop cheap.
+        time_check_interval = 2048
 
         while worklist:
             iteration_count += 1
@@ -354,12 +371,29 @@ class DataFlowAnalyzer(Generic[T]):
             # Safety check to prevent infinite loops
             if iteration_count > max_iterations:
                 # Log at debug level to reduce noise - this is expected for complex files
-                # The analysis still completes, it just stops early at the safety limit
+                # The analysis still completes, it just stops early at the safety limit.
+                # NOTE: this pre-existing iteration cap is hit routinely on ordinary loops
+                # (the worklist does not always converge), so it deliberately does NOT set
+                # analysis_incomplete — only the wall-clock budget below does, to keep the
+                # user-facing "incomplete" signal reserved for genuinely truncated analyses.
                 self.logger.debug(
                     f"Dataflow analysis exceeded max iterations ({max_iterations:,} iterations, "
                     f"CFG size: {cfg_size} nodes). Analysis stopped at safety limit. "
                     f"This is normal for complex control flow and analysis may be incomplete."
                 )
+                break
+
+            # Wall-clock safety budget: a deeply-looping function can take a very long
+            # time to reach the iteration cap. Stop gracefully with a clear warning so
+            # the scan never appears to hang (and is not killed by an outer timeout).
+            if iteration_count % time_check_interval == 0 and time.monotonic() > deadline:
+                self.logger.warning(
+                    f"Dataflow analysis exceeded its time budget "
+                    f"({self.max_analysis_seconds:.0f}s, CFG size: {cfg_size} nodes, "
+                    f"{iteration_count:,} iterations). Stopping early; results for this "
+                    f"unit may be incomplete. Consider splitting very large functions."
+                )
+                self.analysis_incomplete = True
                 break
 
             node = worklist.pop(0)
