@@ -209,12 +209,17 @@ class TestDataflowPerformanceAndGracefulDegradation:
             assert ratio < 3.5, f"super-linear scaling ({ratio:.1f}x for 2x size) — possible O(n^2) regression"
 
     def test_time_budget_bounds_runtime_and_returns_partial_flows(self):
-        """A pathological function with a tight budget must stop early, flag the
-        result incomplete, and still return the (partial) flows found so far."""
+        """The wall-clock budget is a backstop for any input that would not
+        converge in time. With the fixpoint-convergence fix even large looping
+        functions converge in well under a second, so we exercise the backstop
+        deterministically with a zero-second budget (the deadline is already in
+        the past at the first periodic time check) rather than relying on a
+        function being pathologically slow. It must stop early, flag the result
+        incomplete, and still return the (partial) flows found so far."""
         parser = PythonParser(_looping_function(400))
         parser.parse()
         analyzer = ForwardDataflowAnalysis(parser, parameter_names=["user_input", "mode"])
-        analyzer.max_analysis_seconds = 2.0
+        analyzer.max_analysis_seconds = 0.0
 
         start = time.perf_counter()
         flows = analyzer.analyze_forward_flows()
@@ -226,10 +231,12 @@ class TestDataflowPerformanceAndGracefulDegradation:
 
     def test_incomplete_flag_resets_on_a_subsequent_fast_run(self):
         """The incomplete flag must not be sticky — a later fast analysis on a
-        fresh analyzer must report a complete (not incomplete) result."""
+        fresh analyzer must report a complete (not incomplete) result. The slow
+        run is forced via a zero-second budget (see the test above for why a
+        large loop count is no longer slow enough to trip it on its own)."""
         slow = ForwardDataflowAnalysis(PythonParser(_looping_function(400)), parameter_names=["user_input", "mode"])
         slow.parser.parse()
-        slow.max_analysis_seconds = 1.0
+        slow.max_analysis_seconds = 0.0
         slow.analyze_forward_flows()
         assert slow.analysis_incomplete is True
 
@@ -326,7 +333,10 @@ class TestIncompleteAnalysisIsSurfaced:
         original = ForwardDataflowAnalysis.max_analysis_seconds
         try:
             ForwardDataflowAnalysis.max_analysis_seconds = 0.0  # trip at the first clock check
-            ctx = ContextExtractor().extract_context(Path("big.py"), _looping_function(60))
+            # Large enough that the worklist runs past the periodic time-check
+            # interval before converging, so the zero-second budget reliably
+            # trips (a small function now converges before the first check).
+            ctx = ContextExtractor().extract_context(Path("big.py"), _looping_function(400))
             assert ctx.dataflow_incomplete is True
         finally:
             ForwardDataflowAnalysis.max_analysis_seconds = original
@@ -341,7 +351,7 @@ class TestIncompleteAnalysisIsSurfaced:
         original = ForwardDataflowAnalysis.max_analysis_seconds
         try:
             ForwardDataflowAnalysis.max_analysis_seconds = 0.0
-            fctxs = ContextExtractor().extract_function_contexts(Path("big.py"), _looping_function(60))
+            fctxs = ContextExtractor().extract_function_contexts(Path("big.py"), _looping_function(400))
             assert any(c.dataflow_incomplete for c in fctxs)
         finally:
             ForwardDataflowAnalysis.max_analysis_seconds = original
