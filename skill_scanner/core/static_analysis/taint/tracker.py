@@ -78,7 +78,16 @@ class ShapeEnvironment:
         self._shapes: dict[str, TaintShape] = {}
 
     def get(self, var_name: str) -> "TaintShape":
-        """Get taint shape for a variable.
+        """Get taint shape for a variable (READ-ONLY access).
+
+        After ``copy()`` the returned shape may be shared with another
+        environment (copy-on-write). Callers MUST treat the result as
+        read-only -- mutating it in place (e.g. ``set_field``/``set_element``)
+        would leak the change into the source environment and break the
+        fixpoint. The only sanctioned mutation path is ``set_taint``, which
+        clones the shape before writing. The forward-dataflow analysis only
+        ever reads via ``get`` and writes via ``set_taint``; this invariant is
+        pinned by the copy-isolation regression test.
 
         Args:
             var_name: Variable name

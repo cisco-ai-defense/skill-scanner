@@ -528,7 +528,7 @@ class ForwardDataflowAnalysis(DataFlowAnalyzer[ForwardFlowFact]):
 
                 # Check structural shapes
                 if node_shape.is_object:
-                    for field_name, field_shape in node_shape.fields.items():
+                    for field_shape in node_shape.fields.values():
                         field_taint = field_shape.get_taint()
                         if expected_label in field_taint.labels:
                             return True

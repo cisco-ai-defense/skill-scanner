@@ -84,6 +84,25 @@ class TestTaintEquality:
         assert ShapeEnvironment() != object()
         assert TaintShape() != object()
 
+    def test_copy_is_isolated_via_set_taint(self):
+        """copy() shares TaintShape objects (copy-on-write), but writing through
+        the sanctioned set_taint() path must not leak into the source. This
+        pins the COW invariant the forward-dataflow analysis relies on: mutate
+        only via set_taint(), read only via get()."""
+        original = ShapeEnvironment()
+        original.set_taint("x", Taint(status=TaintStatus.TAINTED, labels={"param:x"}))
+
+        clone = original.copy()
+        assert clone == original
+
+        # Mutate the clone through the sanctioned write path.
+        clone.set_taint("x", Taint(status=TaintStatus.UNTAINTED))
+
+        # Source is untouched; the two now differ.
+        assert original.get_taint("x").is_tainted()
+        assert not clone.get_taint("x").is_tainted()
+        assert clone != original
+
 
 # A synthetic file large enough that spinning to the iteration cap would take
 # many seconds, but which converges almost instantly once a fixpoint is
@@ -122,5 +141,9 @@ class TestLargeFileConvergence:
         # that still catches a regression to the non-converging code path.
         assert elapsed < 15.0, f"extract_context took {elapsed:.1f}s -- fixpoint likely not converging"
 
-        # Sanity: analysis still produced a real context (subprocess imported).
+        # Sanity: analysis produced a real parsed/extracted context, not the
+        # parse-failure fallback (which would also set file_path). Assert on
+        # analysis-specific output instead.
         assert context.file_path == "large_skill.py"
+        assert len(context.functions) == 1
+        assert "subprocess" in context.imports

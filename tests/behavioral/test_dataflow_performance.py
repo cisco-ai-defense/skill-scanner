@@ -308,7 +308,10 @@ class TestDataflowEdgeCasesStillAnalyze:
         )
         self._assert_stable_and_tracks(code, "param")
 
-    @pytest.mark.xfail(reason="ast.AugAssign (+=, -=, ...) is not handled in _transfer_python — pre-existing gap")
+    @pytest.mark.xfail(
+        strict=True,
+        reason="ast.AugAssign (+=, -=, ...) is not handled in _transfer_python — pre-existing gap",
+    )
     def test_augmented_assignment_propagates_taint(self):
         """Documents a known gap: augmented assignment (`acc += user_input`) is not
         tracked, so the tainted parameter records no assignment flow. A plain
