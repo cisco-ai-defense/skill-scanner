@@ -17,6 +17,7 @@ Analyzers implement independent detection strategies and return normalized `Find
 | Behavioral | Static AST/dataflow | No | 1 | Python source behavior |
 | VirusTotal | External intel | Yes | 1 | Binary hash/file reputation |
 | AI Defense | External service | Yes | 1 | Prompt/content/code threat signal |
+| OSV | External service | No | 1 | Known-vulnerable pinned dependencies |
 | Trigger | Heuristic | No | 1 | Vague or risky trigger descriptions |
 | LLM | Semantic | Usually (not required for Bedrock IAM mode) | 2 | Intent-level threat reasoning |
 | Meta | Semantic post-pass | Usually (not required for Bedrock IAM mode) | 2 | FP filtering and prioritization |
@@ -44,5 +45,6 @@ See [Scanning Pipeline](../scanning-pipeline.md) for the full execution flow.
 - [LLM Analyzer](llm-analyzer.md)
 - [Meta-Analyzer](meta-analyzer.md)
 - [AI Defense Analyzer](aidefense-analyzer.md)
+- [OSV Analyzer](osv-analyzer.md)
 - [Analyzer Selection Guide](meta-and-external-analyzers.md)
 - [Writing Custom Rules](writing-custom-rules.md)

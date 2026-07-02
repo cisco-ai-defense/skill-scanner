@@ -89,6 +89,7 @@ EXEMPT_FROM_PACK = {
     # Meta analyzer: META_VALIDATED, META_DETECTED – computed at meta-analysis
     # AIDefense analyzer: AIDEFENSE_* – computed from external API response
     # VirusTotal analyzer: VIRUSTOTAL_* – computed from external API response
+    # OSV analyzer: SUPPLY_CHAIN_KNOWN_VULNERABILITY – from external OSV.dev API
     # Cross-skill scanner: CROSS_SKILL_* – only used in cross-skill mode
 }
 
@@ -100,6 +101,7 @@ _EXEMPT_PATTERNS = [
     re.compile(r"^META_"),
     re.compile(r"^AIDEFENSE_"),
     re.compile(r"^VIRUSTOTAL_"),
+    re.compile(r"^SUPPLY_CHAIN_KNOWN_VULNERABILITY$"),
     re.compile(r"^CROSS_SKILL_"),
 ]
 

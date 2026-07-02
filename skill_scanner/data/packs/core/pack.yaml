@@ -562,6 +562,13 @@ rules:
       enabled: true
     description: "Description does not match actual behavior"
 
+  SUPPLY_CHAIN_UNPINNED_DEPENDENCY:
+    source: python
+    analyzer: static
+    knobs:
+      enabled: true
+    description: "Skill declares a dependency without a pinned (==) version"
+
   LAZY_LOAD_DEEP_NESTING:
     source: python
     analyzer: static

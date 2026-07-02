@@ -18,7 +18,8 @@ flowchart TD
     A["Manifest validation"] --> B["Instruction body scanning"]
     B --> C["Script/code scanning"]
     C --> D["Consistency checks"]
-    D --> E["Referenced file scanning"]
+    D --> D2["Dependency pinning checks"]
+    D2 --> E["Referenced file scanning"]
     E --> F["Binary file checks"]
     F --> G["Hidden file checks"]
     G --> H["File inventory analysis"]
@@ -41,6 +42,7 @@ Each pass targets a different aspect of the skill package:
 | Instruction body | `_scan_instruction_body()` | SKILL.md content against signature rules |
 | Script scanning | `_scan_scripts()` | Python/bash/other scripts against signatures |
 | Consistency | `_check_consistency()` | Mismatch between manifest claims and actual behavior |
+| Dependency pinning | `_check_dependency_pinning()` | Unpinned dependencies in `requirements*.txt`, `pyproject.toml`, `setup.cfg`, `setup.py`, `Pipfile`, and manifest metadata |
 | Referenced files | `_scan_referenced_files()` | Files mentioned in SKILL.md instructions |
 | Binary files | `_check_binary_files()` | Extension/magic mismatch, archive detection, unknown binaries |
 | Hidden files | `_check_hidden_files()` | Dotfiles, `__pycache__`, policy-allowed exceptions |
@@ -97,6 +99,7 @@ The pack manifest registers all rule sources and metadata for the core detection
 - Hardcoded credentials and secrets
 - Archive/binary risks
 - Tool mismatch and manifest consistency
+- Supply-chain risk from unpinned dependencies
 - Hidden file and dotfile risks
 - Document-embedded threats (PDF, Office macros)
 - Unicode homoglyph attacks

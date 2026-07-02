@@ -17,6 +17,7 @@ This page helps you choose which optional analyzers to enable for your use case.
 | Cloud-based threat classification | AI Defense | `--use-aidefense` | Requires Cisco AI Defense API access |
 | Catch vague/risky skill descriptions | Trigger | `--use-trigger` | Lightweight; no external dependencies |
 | Python dataflow and cross-file analysis | Behavioral | `--use-behavioral` | CPU-intensive for large codebases |
+| Known-vulnerable dependency detection | OSV | `--use-osv` | Requires network; queries PyPI pins only (no API key) |
 
 ## When to Use Each Analyzer
 
@@ -99,6 +100,18 @@ Skip when: the skill contains no Python source, or you need the fastest possible
 
 See [Behavioral Analyzer deep dive](behavioral-analyzer.md) for detection patterns.
 
+### OSV Analyzer
+
+Best for: skills that declare pinned Python dependencies you want checked against known CVEs/advisories. Queries the free, open [OSV.dev](https://osv.dev) database — no API key required.
+
+```bash
+skill-scanner scan ./my-skill --use-osv
+```
+
+Skip when: scanning air-gapped/offline (it requires network access), or the skill declares no exactly pinned dependencies. It fails open — a network error logs a warning and yields no findings.
+
+See [OSV Analyzer deep dive](osv-analyzer.md) for details.
+
 ## Recommended Combinations
 
 | Scenario | Flags |
@@ -106,8 +119,9 @@ See [Behavioral Analyzer deep dive](behavioral-analyzer.md) for detection patter
 | Quick CI gate | (defaults -- core analyzers only) |
 | Thorough single-skill review | `--use-llm --use-behavioral --use-trigger --enable-meta` |
 | Binary-heavy skill | `--use-virustotal` |
+| Dependency-heavy skill | `--use-osv` |
 | Enterprise with AI Defense | `--use-aidefense --use-llm --enable-meta` |
-| Maximum coverage | `--use-llm --use-behavioral --use-trigger --use-virustotal --enable-meta` |
+| Maximum coverage | `--use-llm --use-behavioral --use-trigger --use-virustotal --use-osv --enable-meta` |
 
 ## Bytecode Analyzer
 
@@ -128,4 +142,5 @@ skill-scanner scan-all ./skills-dir --check-overlap
 - [LLM Analyzer](llm-analyzer.md)
 - [Meta Analyzer](meta-analyzer.md)
 - [AI Defense Analyzer](aidefense-analyzer.md)
+- [OSV Analyzer](osv-analyzer.md)
 - [Binary Handling](../binary-handling.md)

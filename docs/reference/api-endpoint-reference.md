@@ -90,6 +90,7 @@ curl -X POST http://localhost:8000/scan-upload \
 | `use_aidefense` | `bool` |
 | `aidefense_api_url` | `str | None` |
 | `use_trigger` | `bool` |
+| `use_osv` | `bool` |
 | `enable_meta` | `bool` |
 | `llm_consensus_runs` | `int` |
 
@@ -131,6 +132,7 @@ curl -X POST http://localhost:8000/scan-upload \
 | `use_aidefense` | `bool` |
 | `aidefense_api_url` | `str | None` |
 | `use_trigger` | `bool` |
+| `use_osv` | `bool` |
 | `enable_meta` | `bool` |
 | `llm_consensus_runs` | `int` |
 

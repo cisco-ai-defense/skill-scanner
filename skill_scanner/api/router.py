@@ -200,6 +200,7 @@ class ScanRequest(BaseModel):
     use_aidefense: bool = Field(False, description="Enable AI Defense analyzer")
     aidefense_api_url: str | None = Field(None, description="AI Defense API URL")
     use_trigger: bool = Field(False, description="Enable trigger specificity analysis")
+    use_osv: bool = Field(False, description="Enable OSV.dev dependency vulnerability scanning")
     enable_meta: bool = Field(False, description="Enable meta-analysis for false positive filtering")
     llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
 
@@ -244,6 +245,7 @@ class BatchScanRequest(BaseModel):
     use_aidefense: bool = False
     aidefense_api_url: str | None = None
     use_trigger: bool = False
+    use_osv: bool = False
     enable_meta: bool = Field(False, description="Enable meta-analysis")
     llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
 
@@ -290,6 +292,7 @@ def _build_analyzers(
     aidefense_api_key: str | None = None,
     aidefense_api_url: str | None = None,
     use_trigger: bool = False,
+    use_osv: bool = False,
     llm_consensus_runs: int = 1,
 ):
     """Build the analyzer list — delegates to the centralized factory."""
@@ -306,6 +309,7 @@ def _build_analyzers(
         aidefense_api_key=aidefense_api_key,
         aidefense_api_url=aidefense_api_url,
         use_trigger=use_trigger,
+        use_osv=use_osv,
         llm_consensus_runs=llm_consensus_runs,
     )
 
@@ -418,6 +422,7 @@ async def scan_skill(
             aidefense_api_key=aidefense_api_key,
             aidefense_api_url=request.aidefense_api_url,
             use_trigger=request.use_trigger,
+            use_osv=request.use_osv,
             llm_consensus_runs=request.llm_consensus_runs,
         )
         scanner = SkillScanner(analyzers=analyzers, policy=policy)
@@ -495,6 +500,7 @@ async def scan_uploaded_skill(
     aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
     aidefense_api_url: str | None = Form(None, description="AI Defense API URL"),
     use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
+    use_osv: bool = Form(False, description="Enable OSV.dev dependency vulnerability scanning"),
     enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
     llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
 ):
@@ -588,6 +594,7 @@ async def scan_uploaded_skill(
             use_aidefense=use_aidefense,
             aidefense_api_url=aidefense_api_url,
             use_trigger=use_trigger,
+            use_osv=use_osv,
             enable_meta=enable_meta,
             llm_consensus_runs=llm_consensus_runs,
         )
@@ -674,6 +681,7 @@ def run_batch_scan(
             aidefense_api_key=aidefense_api_key,
             aidefense_api_url=request.aidefense_api_url,
             use_trigger=request.use_trigger,
+            use_osv=request.use_osv,
             llm_consensus_runs=request.llm_consensus_runs,
         )
 

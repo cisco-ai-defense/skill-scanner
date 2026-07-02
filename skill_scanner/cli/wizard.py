@@ -300,6 +300,10 @@ def _ask_analyzers(env: dict) -> dict[str, bool]:
         "  Behavioral dataflow analysis",
         default=False,
     )
+    analyzers["use_osv"] = Confirm.ask(
+        "  OSV.dev dependency vulnerability scanning  [dim](requires network)[/]",
+        default=False,
+    )
 
     console.print()
     console.print("[bold]Requires API Key:[/]")
@@ -488,6 +492,8 @@ def _build_command(
     if analyzers:
         if analyzers.get("use_behavioral"):
             cmd.append("--use-behavioral")
+        if analyzers.get("use_osv"):
+            cmd.append("--use-osv")
         if analyzers.get("use_llm"):
             cmd.append("--use-llm")
         if analyzers.get("use_virustotal"):

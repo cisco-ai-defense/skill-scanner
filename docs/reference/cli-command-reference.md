@@ -33,6 +33,7 @@ Flags shared by `scan` and `scan-all`:
 | `--use-behavioral` | off | Enable the behavioral analyzer |
 | `--use-virustotal` | off | Enable VirusTotal hash lookups |
 | `--use-aidefense` | off | Enable Cisco AI Defense analyzer |
+| `--use-osv` | off | Enable OSV.dev dependency vulnerability scanning (no API key; requires network) |
 | `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |
 | `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |
 | `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |
@@ -156,6 +157,8 @@ options:
   --use-aidefense       Enable AI Defense analyzer (requires API key)
   --aidefense-api-key AIDEFENSE_API_KEY
                         AI Defense API key (or set AI_DEFENSE_API_KEY)
+  --use-osv             Enable OSV.dev dependency vulnerability scanning (no
+                        API key; requires network)
   --aidefense-api-url AIDEFENSE_API_URL
                         AI Defense API URL (optional, defaults to US region)
   --llm-provider {anthropic,openai}
@@ -268,6 +271,8 @@ options:
   --use-aidefense       Enable AI Defense analyzer (requires API key)
   --aidefense-api-key AIDEFENSE_API_KEY
                         AI Defense API key (or set AI_DEFENSE_API_KEY)
+  --use-osv             Enable OSV.dev dependency vulnerability scanning (no
+                        API key; requires network)
   --aidefense-api-url AIDEFENSE_API_URL
                         AI Defense API URL (optional, defaults to US region)
   --llm-provider {anthropic,openai}
@@ -384,6 +389,8 @@ options:
   --use-aidefense       Enable AI Defense analyzer (requires API key)
   --aidefense-api-key AIDEFENSE_API_KEY
                         AI Defense API key (or set AI_DEFENSE_API_KEY)
+  --use-osv             Enable OSV.dev dependency vulnerability scanning (no
+                        API key; requires network)
   --aidefense-api-url AIDEFENSE_API_URL
                         AI Defense API URL (optional, defaults to US region)
   --llm-provider {anthropic,openai}
