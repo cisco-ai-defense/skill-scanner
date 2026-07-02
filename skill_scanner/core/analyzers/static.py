@@ -19,13 +19,10 @@ Static pattern analyzer for detecting security vulnerabilities.
 """
 
 import hashlib
-import json
 import logging
 import re
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 from ...config.yara_modes import YaraModeConfig
 from ...core.models import Finding, Severity, Skill, ThreatCategory
@@ -35,11 +32,6 @@ from ...core.scan_policy import ScanPolicy
 from ...core.static_analysis.url_classifier import classify_url, extract_urls
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    tomllib = None
 
 logger = logging.getLogger(__name__)
 
@@ -606,54 +598,13 @@ class StaticAnalyzer(BaseAnalyzer):
             return Path(name).stem in self._CONFIG_FILE_STEMS
         return False
 
-    @staticmethod
-    def _iter_string_values(node: Any):
-        """Yield every string value in a parsed config structure."""
-        if isinstance(node, str):
-            yield node
-        elif isinstance(node, dict):
-            for value in node.values():
-                yield from StaticAnalyzer._iter_string_values(value)
-        elif isinstance(node, (list, tuple)):
-            for value in node:
-                yield from StaticAnalyzer._iter_string_values(value)
-
-    def _extract_config_urls(self, content: str, relative_path: str) -> list[str]:
-        """Extract http(s) URLs from a config file.
-
-        Parses YAML/JSON/TOML and walks string values; on parse failure (or
-        unsupported TOML runtime) falls back to a regex over the raw text.
-        """
-        suffix = Path(relative_path).suffix.lower()
-        parsed: Any = None
-        try:
-            if suffix in (".yaml", ".yml"):
-                parsed = yaml.safe_load(content)
-            elif suffix == ".json":
-                parsed = json.loads(content)
-            elif suffix == ".toml" and tomllib is not None:
-                parsed = tomllib.loads(content)
-        except Exception:  # noqa: BLE001 - malformed config, fall back to raw scan
-            parsed = None
-
-        if parsed is not None:
-            urls: list[str] = []
-            seen: set[str] = set()
-            for value in self._iter_string_values(parsed):
-                for url in extract_urls(value):
-                    if url not in seen:
-                        seen.add(url)
-                        urls.append(url)
-            return urls
-
-        return extract_urls(content)
-
     def _scan_config_files(self, skill: Skill) -> list[Finding]:
         """Classify URLs found in config files using the shared URL classifier.
 
         Config files (e.g. ``config.yaml``) are typed ``other`` and never
         reach the Python AST URL classifier, so a tunnel/proxy endpoint hidden
-        in a config value would otherwise go unnoticed.
+        in a config value would otherwise go unnoticed. URLs are extracted from
+        the raw text so endpoints in comments are covered too.
         """
         findings: list[Finding] = []
         for skill_file in skill.files:
@@ -662,7 +613,7 @@ class StaticAnalyzer(BaseAnalyzer):
             content = skill_file.read_content()
             if not content:
                 continue
-            for url in self._extract_config_urls(content, skill_file.relative_path):
+            for url in extract_urls(content):
                 if classify_url(url) != "suspicious":
                     continue
                 findings.append(
