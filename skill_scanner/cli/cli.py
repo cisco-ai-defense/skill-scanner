@@ -128,6 +128,7 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
         aidefense_api_key=getattr(args, "aidefense_api_key", None),
         aidefense_api_url=getattr(args, "aidefense_api_url", None),
         use_trigger=getattr(args, "use_trigger", False),
+        use_osv=getattr(args, "use_osv", False),
         llm_provider=getattr(args, "llm_provider", None),
         llm_consensus_runs=getattr(args, "llm_consensus_runs", 1),
         llm_max_tokens=getattr(args, "llm_max_tokens", None),
@@ -147,6 +148,8 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
             status("Using AI Defense analyzer")
         elif name == "trigger":
             status("Using Trigger analyzer (description specificity analysis)")
+        elif name == "osv_analyzer":
+            status("Using OSV dependency vulnerability analyzer")
 
     return analyzers
 
@@ -928,6 +931,11 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--use-aidefense", action="store_true", help="Enable AI Defense analyzer (requires API key)")
     parser.add_argument("--aidefense-api-key", help="AI Defense API key (or set AI_DEFENSE_API_KEY)")
     parser.add_argument("--aidefense-api-url", help="AI Defense API URL (optional, defaults to US region)")
+    parser.add_argument(
+        "--use-osv",
+        action="store_true",
+        help="Enable OSV.dev dependency vulnerability scanning (no API key; requires network)",
+    )
     parser.add_argument(
         "--llm-provider",
         choices=["anthropic", "openai", "openai-compatible"],

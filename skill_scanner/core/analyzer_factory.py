@@ -100,6 +100,7 @@ def build_analyzers(
     aidefense_api_key: str | None = None,
     aidefense_api_url: str | None = None,
     use_trigger: bool = False,
+    use_osv: bool = False,
     llm_consensus_runs: int = 1,
     llm_max_tokens: int | None = None,
 ) -> list[BaseAnalyzer]:
@@ -205,5 +206,13 @@ def build_analyzers(
             analyzers.append(TriggerAnalyzer())
         except (ImportError, ValueError, TypeError) as exc:
             logger.warning("Could not load Trigger analyzer: %s", exc)
+
+    if use_osv:
+        try:
+            from .analyzers.osv_analyzer import OSVAnalyzer
+
+            analyzers.append(OSVAnalyzer(enabled=True, policy=policy))
+        except (ImportError, ValueError, TypeError) as exc:
+            logger.warning("Could not load OSV analyzer: %s", exc)
 
     return analyzers

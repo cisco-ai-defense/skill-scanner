@@ -12,7 +12,7 @@ All versions from [`pyproject.toml`](https://github.com/cisco-ai-defense/skill-s
 | `uvicorn[standard]` | >= 0.29.0 | ASGI server |
 | `pydantic` | >= 2.6.0 | Data validation and serialization |
 | `python-multipart` | >= 0.0.6 | File upload handling |
-| `httpx` | >= 0.28.1 | Async HTTP client |
+| `httpx` | >= 0.28.1 | HTTP client (also used by the VirusTotal, AI Defense, and OSV external analyzers) |
 
 ### CLI and TUI
 

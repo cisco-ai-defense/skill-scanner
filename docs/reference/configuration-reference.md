@@ -79,6 +79,10 @@ Enable the Cisco AI Defense cloud analyzer.
 | `AI_DEFENSE_API_KEY` | Cisco AI Defense analyzer API key. | `(your AI Defense key)` |
 | `AI_DEFENSE_API_URL` | Cisco AI Defense endpoint override. | `https://us.api.inspect.aidefense.security.cisco.com/api/v1` |
 
+## OSV Dependency Scanning
+
+The OSV analyzer queries [OSV.dev](https://osv.dev) for known-vulnerable pinned dependencies. It is an external service that requires **no API key**, only outbound network access to `api.osv.dev`. Enable it with `--use-osv` (or `use_osv` on the API). Skip it in air-gapped environments — with no network it fails open and reports nothing.
+
 ## Feature Toggles
 
 Override default analyzer enablement via environment. Values: `true`/`1` or `false`/`0`.
