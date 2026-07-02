@@ -21,7 +21,14 @@ import pytest
 from skill_scanner.core.analyzers.static import StaticAnalyzer
 from skill_scanner.core.models import Severity, ThreatCategory
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    tomllib = None
+
 _RULE_ID = "SUPPLY_CHAIN_UNPINNED_DEPENDENCY"
+
+requires_tomllib = pytest.mark.skipif(tomllib is None, reason="tomllib requires Python 3.11+")
 
 
 @pytest.fixture(scope="module")
@@ -151,3 +158,95 @@ class TestDependencyPinningFindings:
         findings = analyzer._check_dependency_pinning(skill)
         assert len(findings) == 1
         assert "requests" in findings[0].description
+
+
+_SKILL_MD = "---\nname: dep-test\ndescription: A test skill\n---\n# dep-test\n"
+
+
+class TestManifestSourceCoverage:
+    """Dependencies declared outside requirements.txt must also be scanned."""
+
+    @requires_tomllib
+    def test_pyproject_dependencies_flagged(self, analyzer, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "pyproject.toml": (
+                    "[project]\n"
+                    'name = "s"\n'
+                    'dependencies = ["requests>=2.0", "flask==2.0.0"]\n'
+                    "\n[project.optional-dependencies]\n"
+                    'dev = ["pytest>=8"]\n'
+                ),
+            }
+        )
+        findings = analyzer._check_dependency_pinning(skill)
+        flagged = {f.description.split("'")[1] for f in findings}
+        assert flagged == {"requests", "pytest"}
+        assert all(f.file_path == "pyproject.toml" for f in findings)
+
+    @requires_tomllib
+    def test_pyproject_all_pinned_clean(self, analyzer, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "pyproject.toml": '[project]\nname = "s"\ndependencies = ["requests==2.31.0"]\n',
+            }
+        )
+        assert analyzer._check_dependency_pinning(skill) == []
+
+    def test_setup_cfg_install_requires_flagged(self, analyzer, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "setup.cfg": "[options]\ninstall_requires =\n    requests>=2.0\n    flask==2.0.0\n",
+            }
+        )
+        findings = analyzer._check_dependency_pinning(skill)
+        assert len(findings) == 1
+        assert "requests" in findings[0].description
+        assert findings[0].file_path == "setup.cfg"
+
+    def test_setup_py_install_requires_flagged(self, analyzer, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "setup.py": (
+                    "from setuptools import setup\n"
+                    "setup(name='s', install_requires=['requests>=2.0', 'flask==2.0.0'])\n"
+                ),
+            }
+        )
+        findings = analyzer._check_dependency_pinning(skill)
+        assert len(findings) == 1
+        assert "requests" in findings[0].description
+        assert findings[0].file_path == "setup.py"
+
+    @requires_tomllib
+    def test_pipfile_packages_flagged(self, analyzer, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "Pipfile": (
+                    "[packages]\n"
+                    'requests = "*"\n'
+                    'flask = "==2.0.0"\n'
+                    'httpx = {version = ">=0.27"}\n'
+                    "\n[dev-packages]\n"
+                    'pytest = "==8.0.0"\n'
+                ),
+            }
+        )
+        findings = analyzer._check_dependency_pinning(skill)
+        flagged = {f.description.split("'")[1] for f in findings}
+        assert flagged == {"requests", "httpx"}
+
+    @requires_tomllib
+    def test_pipfile_vcs_reference_skipped(self, analyzer, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "Pipfile": '[packages]\nrequests = {git = "https://github.com/psf/requests.git"}\n',
+            }
+        )
+        assert analyzer._check_dependency_pinning(skill) == []

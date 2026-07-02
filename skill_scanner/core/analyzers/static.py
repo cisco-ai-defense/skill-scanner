@@ -18,6 +18,8 @@
 Static pattern analyzer for detecting security vulnerabilities.
 """
 
+import ast
+import configparser
 import hashlib
 import logging
 import re
@@ -25,12 +27,17 @@ from pathlib import Path
 from typing import Any
 
 from ...config.yara_modes import YaraModeConfig
-from ...core.models import Finding, Severity, Skill, SkillFile, ThreatCategory
+from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...core.rules.patterns import RuleLoader, SecurityRule
 from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    tomllib = None
 
 logger = logging.getLogger(__name__)
 
@@ -638,6 +645,137 @@ class StaticAnalyzer(BaseAnalyzer):
             return (name, "wildcard")
         return (name, "unpinned")
 
+    @staticmethod
+    def _first_line_containing(content: str, needle: str) -> int | None:
+        """Best-effort 1-based line number of the first line containing ``needle``."""
+        if not needle:
+            return None
+        for index, line in enumerate(content.splitlines(), start=1):
+            if needle in line:
+                return index
+        return None
+
+    @staticmethod
+    def _safe_toml(content: str) -> dict | None:
+        """Parse TOML, returning None when unavailable (py<3.11) or malformed."""
+        if tomllib is None:
+            return None
+        try:
+            return tomllib.loads(content)
+        except Exception:  # noqa: BLE001 - malformed manifest, treat as no data
+            return None
+
+    def _entries_from_pyproject(self, path: str, content: str) -> list[tuple[str, int | None, str]]:
+        """PEP 621 ``[project]`` dependencies and optional-dependencies."""
+        data = self._safe_toml(content)
+        project = data.get("project") if isinstance(data, dict) else None
+        if not isinstance(project, dict):
+            return []
+        specs: list[str] = []
+        deps = project.get("dependencies")
+        if isinstance(deps, list):
+            specs.extend(str(dep) for dep in deps)
+        optional = project.get("optional-dependencies")
+        if isinstance(optional, dict):
+            for group in optional.values():
+                if isinstance(group, list):
+                    specs.extend(str(dep) for dep in group)
+        return [(path, self._first_line_containing(content, spec), spec) for spec in specs]
+
+    def _entries_from_setup_cfg(self, path: str, content: str) -> list[tuple[str, int | None, str]]:
+        """``[options] install_requires`` and ``[options.extras_require]``."""
+        parser = configparser.ConfigParser()
+        try:
+            parser.read_string(content)
+        except configparser.Error:
+            return []
+        blocks: list[str] = []
+        if parser.has_option("options", "install_requires"):
+            blocks.append(parser.get("options", "install_requires"))
+        if parser.has_section("options.extras_require"):
+            blocks.extend(value for _, value in parser.items("options.extras_require"))
+
+        entries: list[tuple[str, int | None, str]] = []
+        for block in blocks:
+            for piece in block.replace(",", "\n").splitlines():
+                spec = piece.strip()
+                if spec:
+                    entries.append((path, self._first_line_containing(content, spec), spec))
+        return entries
+
+    def _entries_from_setup_py(self, path: str, content: str) -> list[tuple[str, int | None, str]]:
+        """String literals inside ``install_requires=[...]`` in setup.py."""
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            return []
+        entries: list[tuple[str, int | None, str]] = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.keyword) and node.arg == "install_requires"):
+                continue
+            for literal in ast.walk(node.value):
+                if isinstance(literal, ast.Constant) and isinstance(literal.value, str):
+                    line_number = getattr(literal, "lineno", None)
+                    entries.append((path, line_number, literal.value))
+        return entries
+
+    @staticmethod
+    def _pipfile_requirement(name: str, spec: Any) -> str | None:
+        """Convert a Pipfile entry into a requirement string, or None to skip."""
+        if isinstance(spec, str):
+            version = spec.strip()
+            return name if version in ("", "*") else f"{name}{version}"
+        if isinstance(spec, dict):
+            # git/path/url references are pinned to a specific artifact.
+            if any(key in spec for key in ("git", "path", "file", "url")):
+                return None
+            version = str(spec.get("version", "")).strip()
+            return name if version in ("", "*") else f"{name}{version}"
+        return None
+
+    def _entries_from_pipfile(self, path: str, content: str) -> list[tuple[str, int | None, str]]:
+        """``[packages]`` and ``[dev-packages]`` sections of a Pipfile (TOML)."""
+        data = self._safe_toml(content)
+        if not isinstance(data, dict):
+            return []
+        entries: list[tuple[str, int | None, str]] = []
+        for section in ("packages", "dev-packages"):
+            packages = data.get(section)
+            if not isinstance(packages, dict):
+                continue
+            for name, spec in packages.items():
+                requirement = self._pipfile_requirement(name, spec)
+                if requirement is not None:
+                    entries.append((path, self._first_line_containing(content, name), requirement))
+        return entries
+
+    def _collect_requirement_entries(self, skill: Skill) -> list[tuple[str, int | None, str]]:
+        """Gather ``(source_path, line_number, requirement_string)`` from every
+        dependency-declaring file in the skill plus manifest metadata."""
+        entries: list[tuple[str, int | None, str]] = []
+        for skill_file in skill.files:
+            file_name = Path(skill_file.relative_path).name.lower()
+            path = skill_file.relative_path
+            if file_name.startswith("requirements") and file_name.endswith(".txt"):
+                for line_number, raw in enumerate(skill_file.read_content().splitlines(), start=1):
+                    entries.append((path, line_number, raw))
+            elif file_name == "pyproject.toml":
+                entries.extend(self._entries_from_pyproject(path, skill_file.read_content()))
+            elif file_name == "setup.cfg":
+                entries.extend(self._entries_from_setup_cfg(path, skill_file.read_content()))
+            elif file_name == "setup.py":
+                entries.extend(self._entries_from_setup_py(path, skill_file.read_content()))
+            elif file_name == "pipfile":
+                entries.extend(self._entries_from_pipfile(path, skill_file.read_content()))
+
+        metadata = skill.manifest.metadata
+        if isinstance(metadata, dict):
+            declared = metadata.get("dependencies")
+            if isinstance(declared, list):
+                for declared_dep in declared:
+                    entries.append((str(skill.skill_md_path), None, str(declared_dep)))
+        return entries
+
     def _check_dependency_pinning(self, skill: Skill) -> list[Finding]:
         """Flag dependencies declared without an exact pinned version.
 
@@ -648,34 +786,18 @@ class StaticAnalyzer(BaseAnalyzer):
         intentionally use ranges, so if a lockfile is present the versions are
         already frozen and we do not flag.
 
-        Sources checked: ``requirements*.txt`` files and a ``dependencies``
-        list under manifest ``metadata``.
+        Sources checked: ``requirements*.txt``, ``pyproject.toml``
+        (``[project]`` dependencies and optional-dependencies), ``setup.cfg``,
+        ``setup.py`` (``install_requires``), ``Pipfile``, and a
+        ``dependencies`` list under manifest ``metadata``.
         """
         findings: list[Finding] = []
 
-        requirement_files: list[SkillFile] = []
-        for skill_file in skill.files:
-            file_name = Path(skill_file.relative_path).name.lower()
-            if file_name in self._LOCKFILE_NAMES:
-                # Versions are resolved by a lockfile; ranges are safe here.
-                return findings
-            if file_name.startswith("requirements") and file_name.endswith(".txt"):
-                requirement_files.append(skill_file)
+        # A lockfile freezes the resolved versions, so ranges are intentional.
+        if any(Path(f.relative_path).name.lower() in self._LOCKFILE_NAMES for f in skill.files):
+            return findings
 
-        # (source_label, line_number_or_None, raw_line)
-        entries: list[tuple[str, int | None, str]] = []
-        for skill_file in requirement_files:
-            for line_number, raw in enumerate(skill_file.read_content().splitlines(), start=1):
-                entries.append((skill_file.relative_path, line_number, raw))
-
-        metadata = skill.manifest.metadata
-        if isinstance(metadata, dict):
-            declared = metadata.get("dependencies")
-            if isinstance(declared, list):
-                for declared_dep in declared:
-                    entries.append((str(skill.skill_md_path), None, str(declared_dep)))
-
-        for source_label, line_number, raw in entries:
+        for source_label, line_number, raw in self._collect_requirement_entries(skill):
             classified = self._classify_requirement(raw)
             if classified is None:
                 continue
