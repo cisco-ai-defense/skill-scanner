@@ -70,7 +70,7 @@ Skill Scanner currently uses a subset of those codes for agent-skill risk catego
 | Code Execution | `AITech-9.1` | `AISubtech-9.1.1` | Unsafe execution primitives |
 | Obfuscation | `AITech-9.2` | `AISubtech-9.2.1` | Detection-evasion obfuscation patterns |
 | ASCII Smuggling | `AITech-9.2` | `AISubtech-9.2.1` | Unicode Tag Block (U+E0000–U+E007F) used to hide prompt-injection payloads inside skill files; invisible in editors but decoded by LLMs |
-| Supply Chain Attack | `AITech-9.3` | `AISubtech-9.3.1` | Malicious package/tool injection |
+| Supply Chain Attack | `AITech-9.3` | `AISubtech-9.3.1` | Malicious package/tool injection; unpinned dependency versions |
 | Unauthorized Tool Use | `AITech-12.1` | `AISubtech-12.1.3` | Unsafe/undeclared tool execution |
 | Tool Poisoning | `AITech-12.1` | `AISubtech-12.1.2` | Tampering with tool behavior/data |
 | Tool Shadowing | `AITech-12.1` | `AISubtech-12.1.4` | Malicious lookalike/replacement tools |
