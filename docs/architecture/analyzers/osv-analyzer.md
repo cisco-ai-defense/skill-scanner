@@ -23,6 +23,10 @@ by the static [unpinned-dependency check](static-analyzer.md).
 | Source | Notes |
 |--------|-------|
 | `requirements*.txt` | `requirements.txt`, `requirements-dev.txt`, etc. |
+| `pyproject.toml` | `[project]` dependencies and optional-dependencies (PEP 621) |
+| `setup.cfg` | `[options] install_requires` and `[options.extras_require]` |
+| `setup.py` | String literals inside `install_requires=[...]` (parsed via AST, not executed) |
+| `Pipfile` | `[packages]` and `[dev-packages]` sections |
 | Manifest `metadata.dependencies` | Optional list of requirement strings in SKILL.md frontmatter |
 
 Ecosystem defaults to `PyPI`.
@@ -57,8 +61,9 @@ Set `use_osv: true` on the scan request (see the
 
 ## How It Works
 
-1. **Collect pins** — parse `requirements*.txt` and manifest dependencies,
-   keeping only exact `==` pins as `(name, version)` pairs.
+1. **Collect pins** — parse every supported dependency source (see
+   [Sources Scanned](#sources-scanned)), keeping only exact `==` pins as
+   `(name, version)` pairs.
 2. **Batch query** — POST all pins to `https://api.osv.dev/v1/querybatch`
    (`{"package": {"ecosystem": "PyPI", "name": ...}, "version": ...}`).
 3. **Generate findings** — for each package that returns advisories, emit a

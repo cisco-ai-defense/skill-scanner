@@ -27,6 +27,13 @@ import pytest
 from skill_scanner.core.analyzers.osv_analyzer import OSVAnalyzer
 from skill_scanner.core.models import Severity, ThreatCategory
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    tomllib = None
+
+requires_tomllib = pytest.mark.skipif(tomllib is None, reason="tomllib requires Python 3.11+")
+
 
 class _FakeResponse:
     def __init__(self, payload: dict, status_code: int = 200):
@@ -155,3 +162,77 @@ class TestAnalyze:
         findings = analyzer.analyze(skill)
         assert len(findings) == 1
         assert findings[0].metadata["package"] == "flask"
+
+
+_SKILL_MD = "---\nname: osv\ndescription: A test skill\n---\n# osv\n"
+
+
+def _pins(skill) -> dict[str, str]:
+    """Map of ``name -> version`` for pins collected from a skill."""
+    analyzer = OSVAnalyzer(enabled=True)
+    return {name: version for name, version, _, _ in analyzer._collect_pinned_dependencies(skill)}
+
+
+class TestPinnedSourceCoverage:
+    """Exact pins are collected from every manifest format, ranges are ignored."""
+
+    @requires_tomllib
+    def test_pyproject_pins_collected(self, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "pyproject.toml": (
+                    "[project]\n"
+                    'name = "s"\n'
+                    'dependencies = ["requests==2.19.0", "flask>=2"]\n'
+                    "\n[project.optional-dependencies]\n"
+                    'dev = ["pytest==8.0.0"]\n'
+                ),
+            }
+        )
+        assert _pins(skill) == {"requests": "2.19.0", "pytest": "8.0.0"}
+
+    def test_setup_cfg_pins_collected(self, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "setup.cfg": "[options]\ninstall_requires =\n    requests==2.19.0\n    flask>=2\n",
+            }
+        )
+        assert _pins(skill) == {"requests": "2.19.0"}
+
+    def test_setup_py_pins_collected(self, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "setup.py": (
+                    "from setuptools import setup\nsetup(name='s', install_requires=['requests==2.19.0', 'flask>=2'])\n"
+                ),
+            }
+        )
+        assert _pins(skill) == {"requests": "2.19.0"}
+
+    @requires_tomllib
+    def test_pipfile_pins_collected(self, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "Pipfile": ('[packages]\nrequests = "==2.19.0"\nflask = "*"\nhttpx = {version = "==0.27.0"}\n'),
+            }
+        )
+        assert _pins(skill) == {"requests": "2.19.0", "httpx": "0.27.0"}
+
+    @requires_tomllib
+    def test_pyproject_pin_queried_end_to_end(self, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "pyproject.toml": '[project]\nname = "s"\ndependencies = ["requests==2.19.0"]\n',
+            }
+        )
+        response = _FakeResponse({"results": [{"vulns": [{"id": "GHSA-aaaa-bbbb-cccc"}]}]})
+        analyzer = _make_analyzer(_FakeClient(response=response))
+        findings = analyzer.analyze(skill)
+        assert len(findings) == 1
+        assert findings[0].metadata["package"] == "requests"
+        assert analyzer._client.last_payload["queries"][0]["version"] == "2.19.0"

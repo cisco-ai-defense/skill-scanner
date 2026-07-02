@@ -28,15 +28,22 @@ is already surfaced by the unpinned-dependency static check.
 
 from __future__ import annotations
 
+import ast
+import configparser
 import logging
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from ..models import Finding, Severity, ThreatCategory
 from .base import BaseAnalyzer
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    tomllib = None
 
 if TYPE_CHECKING:
     from ..models import Skill
@@ -48,6 +55,113 @@ logger = logging.getLogger(__name__)
 _PINNED_RE = re.compile(
     r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*===?\s*(?P<version>[A-Za-z0-9][A-Za-z0-9.\-+!]*)\s*$"
 )
+
+
+def _first_line_containing(content: str, needle: str) -> int | None:
+    """Best-effort 1-based line number of the first line containing ``needle``."""
+    if not needle:
+        return None
+    for index, line in enumerate(content.splitlines(), start=1):
+        if needle in line:
+            return index
+    return None
+
+
+def _safe_toml(content: str) -> dict | None:
+    """Parse TOML, returning None when unavailable (py<3.11) or malformed."""
+    if tomllib is None:
+        return None
+    try:
+        return tomllib.loads(content)
+    except Exception:  # noqa: BLE001 - malformed manifest, treat as no data
+        return None
+
+
+def _entries_from_pyproject(path: str, content: str) -> list[tuple[str, int | None, str]]:
+    """PEP 621 ``[project]`` dependencies and optional-dependencies."""
+    data = _safe_toml(content)
+    project = data.get("project") if isinstance(data, dict) else None
+    if not isinstance(project, dict):
+        return []
+    specs: list[str] = []
+    deps = project.get("dependencies")
+    if isinstance(deps, list):
+        specs.extend(str(dep) for dep in deps)
+    optional = project.get("optional-dependencies")
+    if isinstance(optional, dict):
+        for group in optional.values():
+            if isinstance(group, list):
+                specs.extend(str(dep) for dep in group)
+    return [(path, _first_line_containing(content, spec), spec) for spec in specs]
+
+
+def _entries_from_setup_cfg(path: str, content: str) -> list[tuple[str, int | None, str]]:
+    """``[options] install_requires`` and ``[options.extras_require]``."""
+    parser = configparser.ConfigParser()
+    try:
+        parser.read_string(content)
+    except configparser.Error:
+        return []
+    blocks: list[str] = []
+    if parser.has_option("options", "install_requires"):
+        blocks.append(parser.get("options", "install_requires"))
+    if parser.has_section("options.extras_require"):
+        blocks.extend(value for _, value in parser.items("options.extras_require"))
+
+    entries: list[tuple[str, int | None, str]] = []
+    for block in blocks:
+        for piece in block.replace(",", "\n").splitlines():
+            spec = piece.strip()
+            if spec:
+                entries.append((path, _first_line_containing(content, spec), spec))
+    return entries
+
+
+def _entries_from_setup_py(path: str, content: str) -> list[tuple[str, int | None, str]]:
+    """String literals inside ``install_requires=[...]`` in setup.py."""
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return []
+    entries: list[tuple[str, int | None, str]] = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.keyword) and node.arg == "install_requires"):
+            continue
+        for literal in ast.walk(node.value):
+            if isinstance(literal, ast.Constant) and isinstance(literal.value, str):
+                entries.append((path, getattr(literal, "lineno", None), literal.value))
+    return entries
+
+
+def _pipfile_requirement(name: str, spec: Any) -> str | None:
+    """Convert a Pipfile entry into a requirement string, or None to skip."""
+    if isinstance(spec, str):
+        version = spec.strip()
+        return name if version in ("", "*") else f"{name}{version}"
+    if isinstance(spec, dict):
+        # git/path/url references are pinned to a specific artifact.
+        if any(key in spec for key in ("git", "path", "file", "url")):
+            return None
+        version = str(spec.get("version", "")).strip()
+        return name if version in ("", "*") else f"{name}{version}"
+    return None
+
+
+def _entries_from_pipfile(path: str, content: str) -> list[tuple[str, int | None, str]]:
+    """``[packages]`` and ``[dev-packages]`` sections of a Pipfile (TOML)."""
+    data = _safe_toml(content)
+    if not isinstance(data, dict):
+        return []
+    entries: list[tuple[str, int | None, str]] = []
+    for section in ("packages", "dev-packages"):
+        packages = data.get(section)
+        if not isinstance(packages, dict):
+            continue
+        for name, spec in packages.items():
+            requirement = _pipfile_requirement(name, spec)
+            if requirement is not None:
+                entries.append((path, _first_line_containing(content, name), requirement))
+    return entries
 
 
 class OSVAnalyzer(BaseAnalyzer):
@@ -93,30 +207,45 @@ class OSVAnalyzer(BaseAnalyzer):
     def _collect_pinned_dependencies(self, skill: Skill) -> list[tuple[str, str, str, int | None]]:
         """Return ``(name, version, source_path, line_number)`` for exact pins.
 
-        Sources: ``requirements*.txt`` files and a manifest ``metadata``
-        ``dependencies`` list.
+        Sources: ``requirements*.txt``, ``pyproject.toml`` (``[project]``
+        dependencies and optional-dependencies), ``setup.cfg``, ``setup.py``
+        (``install_requires``), ``Pipfile``, and a manifest ``metadata``
+        ``dependencies`` list. Only exact ``==`` pins are queried against OSV.
         """
         collected: list[tuple[str, str, str, int | None]] = []
+        for source, line_number, raw in self._iter_requirement_strings(skill):
+            parsed = self._parse_pinned(raw)
+            if parsed is not None:
+                collected.append((parsed[0], parsed[1], source, line_number))
+        return collected
 
+    @staticmethod
+    def _iter_requirement_strings(skill: Skill) -> list[tuple[str, int | None, str]]:
+        """Gather ``(source_path, line_number, requirement_string)`` from every
+        dependency-declaring file in the skill plus manifest metadata."""
+        entries: list[tuple[str, int | None, str]] = []
         for skill_file in skill.files:
             file_name = Path(skill_file.relative_path).name.lower()
-            if not (file_name.startswith("requirements") and file_name.endswith(".txt")):
-                continue
-            for line_number, raw in enumerate(skill_file.read_content().splitlines(), start=1):
-                parsed = self._parse_pinned(raw)
-                if parsed is not None:
-                    collected.append((parsed[0], parsed[1], skill_file.relative_path, line_number))
+            path = skill_file.relative_path
+            if file_name.startswith("requirements") and file_name.endswith(".txt"):
+                for line_number, raw in enumerate(skill_file.read_content().splitlines(), start=1):
+                    entries.append((path, line_number, raw))
+            elif file_name == "pyproject.toml":
+                entries.extend(_entries_from_pyproject(path, skill_file.read_content()))
+            elif file_name == "setup.cfg":
+                entries.extend(_entries_from_setup_cfg(path, skill_file.read_content()))
+            elif file_name == "setup.py":
+                entries.extend(_entries_from_setup_py(path, skill_file.read_content()))
+            elif file_name == "pipfile":
+                entries.extend(_entries_from_pipfile(path, skill_file.read_content()))
 
         metadata = skill.manifest.metadata
         if isinstance(metadata, dict):
             declared = metadata.get("dependencies")
             if isinstance(declared, list):
                 for declared_dep in declared:
-                    parsed = self._parse_pinned(str(declared_dep))
-                    if parsed is not None:
-                        collected.append((parsed[0], parsed[1], str(skill.skill_md_path), None))
-
-        return collected
+                    entries.append((str(skill.skill_md_path), None, str(declared_dep)))
+        return entries
 
     @staticmethod
     def _parse_pinned(raw: str) -> tuple[str, str] | None:
