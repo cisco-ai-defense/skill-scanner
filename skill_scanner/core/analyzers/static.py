@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from ...config.yara_modes import YaraModeConfig
-from ...core.models import Finding, Severity, Skill, ThreatCategory
+from ...core.models import Finding, Severity, Skill, SkillFile, ThreatCategory
 from ...core.rules.patterns import RuleLoader, SecurityRule
 from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
@@ -292,7 +292,8 @@ class StaticAnalyzer(BaseAnalyzer):
         2. Instruction body scanning (SKILL.md)
         3. Script/code scanning
         4. Consistency checks
-        5. Reference file scanning
+        5. Dependency pinning checks
+        6. Reference file scanning
 
         Args:
             skill: Skill to analyze
@@ -307,6 +308,7 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(self._scan_instruction_body(skill))
         findings.extend(self._scan_scripts(skill))
         findings.extend(self._check_consistency(skill))
+        findings.extend(self._check_dependency_pinning(skill))
         findings.extend(self._scan_referenced_files(skill))
         findings.extend(self._check_binary_files(skill))
         findings.extend(self._check_hidden_files(skill))
@@ -577,6 +579,132 @@ class StaticAnalyzer(BaseAnalyzer):
                     description="Skill performs actions not reflected in its description",
                     file_path="SKILL.md",
                     remediation="Ensure description accurately reflects all skill capabilities",
+                    analyzer="static",
+                )
+            )
+
+        return findings
+
+    # Lockfiles whose presence means dependency versions are already resolved/frozen.
+    _LOCKFILE_NAMES = {"uv.lock", "poetry.lock", "pipfile.lock", "requirements.lock"}
+
+    # name[extras] followed by an optional version specifier.
+    _REQUIREMENT_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(.*)$")
+    _SPECIFIER_RE = re.compile(r"^(===|==|~=|!=|<=|>=|<|>)\s*(.+)$")
+
+    @staticmethod
+    def _classify_requirement(raw: str) -> tuple[str, str] | None:
+        """Classify a single requirement line.
+
+        Returns ``(package_name, status)`` where ``status`` is one of
+        ``"pinned"`` (has an exact ``==`` version), ``"wildcard"`` (``==1.*``
+        style range pin), or ``"unpinned"`` (bare name or open range such as
+        ``>=``).  Returns ``None`` for lines that are not package requirements
+        (blank, comments, pip options like ``-r``/``--hash``, or direct
+        URL/VCS references which are already pinned to a specific artifact).
+        """
+        line = raw.split("#", 1)[0].strip()
+        if not line or line.startswith("-"):
+            return None
+        # Drop PEP 508 environment markers (e.g. "; python_version < '3.11'").
+        line = line.split(";", 1)[0].strip()
+        # Direct URL / VCS / local-file references are pinned to an artifact.
+        if "://" in line or line.startswith("git+") or " @ " in line:
+            return None
+
+        match = StaticAnalyzer._REQUIREMENT_RE.match(line)
+        if not match:
+            return None
+        name = match.group(1)
+        spec = match.group(2).strip()
+        if not spec:
+            return (name, "unpinned")
+
+        has_exact = False
+        has_wildcard_pin = False
+        for part in (p.strip() for p in spec.split(",") if p.strip()):
+            op_match = StaticAnalyzer._SPECIFIER_RE.match(part)
+            if not op_match:
+                continue
+            operator, version = op_match.group(1), op_match.group(2).strip()
+            if operator in ("==", "==="):
+                if "*" in version:
+                    has_wildcard_pin = True
+                else:
+                    has_exact = True
+        if has_exact:
+            return (name, "pinned")
+        if has_wildcard_pin:
+            return (name, "wildcard")
+        return (name, "unpinned")
+
+    def _check_dependency_pinning(self, skill: Skill) -> list[Finding]:
+        """Flag dependencies declared without an exact pinned version.
+
+        Skill packages are end-user applications, so unpinned dependencies
+        (``requests>=2`` or a bare ``requests``) let a later, potentially
+        compromised release be pulled in at install time -- a supply-chain
+        risk.  This differs from library pinning policy: libraries
+        intentionally use ranges, so if a lockfile is present the versions are
+        already frozen and we do not flag.
+
+        Sources checked: ``requirements*.txt`` files and a ``dependencies``
+        list under manifest ``metadata``.
+        """
+        findings: list[Finding] = []
+
+        requirement_files: list[SkillFile] = []
+        for skill_file in skill.files:
+            file_name = Path(skill_file.relative_path).name.lower()
+            if file_name in self._LOCKFILE_NAMES:
+                # Versions are resolved by a lockfile; ranges are safe here.
+                return findings
+            if file_name.startswith("requirements") and file_name.endswith(".txt"):
+                requirement_files.append(skill_file)
+
+        # (source_label, line_number_or_None, raw_line)
+        entries: list[tuple[str, int | None, str]] = []
+        for skill_file in requirement_files:
+            for line_number, raw in enumerate(skill_file.read_content().splitlines(), start=1):
+                entries.append((skill_file.relative_path, line_number, raw))
+
+        metadata = skill.manifest.metadata
+        if isinstance(metadata, dict):
+            declared = metadata.get("dependencies")
+            if isinstance(declared, list):
+                for declared_dep in declared:
+                    entries.append((str(skill.skill_md_path), None, str(declared_dep)))
+
+        for source_label, line_number, raw in entries:
+            classified = self._classify_requirement(raw)
+            if classified is None:
+                continue
+            package_name, status = classified
+            if status == "pinned":
+                continue
+
+            severity = Severity.LOW if status == "wildcard" else Severity.MEDIUM
+            if status == "wildcard":
+                detail = f"'{package_name}' is pinned to a wildcard version range"
+            else:
+                detail = f"'{package_name}' has no pinned (==) version"
+            findings.append(
+                Finding(
+                    id=self._generate_finding_id(
+                        "SUPPLY_CHAIN_UNPINNED_DEPENDENCY", f"{source_label}:{line_number}:{package_name}"
+                    ),
+                    rule_id="SUPPLY_CHAIN_UNPINNED_DEPENDENCY",
+                    category=ThreatCategory.SUPPLY_CHAIN_ATTACK,
+                    severity=severity,
+                    title="Unpinned dependency",
+                    description=(
+                        f"Dependency {detail}. Unpinned dependencies in a skill package allow a later, "
+                        f"potentially malicious release to be installed automatically (supply-chain risk)."
+                    ),
+                    file_path=source_label,
+                    line_number=line_number,
+                    snippet=raw.strip() or None,
+                    remediation="Pin the dependency to an exact version (e.g. 'package==1.2.3').",
                     analyzer="static",
                 )
             )
