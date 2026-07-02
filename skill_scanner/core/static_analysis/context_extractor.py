@@ -27,6 +27,15 @@ from typing import Any
 
 from .dataflow.forward_analysis import ForwardDataflowAnalysis
 from .parser.python_parser import FunctionInfo, PythonParser
+from .url_classifier import (
+    LEGITIMATE_DOMAINS as _LEGITIMATE_DOMAINS,
+)
+from .url_classifier import (
+    SUSPICIOUS_DOMAINS as _SUSPICIOUS_DOMAINS,
+)
+from .url_classifier import (
+    classify_url,
+)
 
 
 @dataclass
@@ -149,120 +158,11 @@ class SkillFunctionContext:
 class ContextExtractor:
     """Extract comprehensive security context from skill scripts."""
 
-    # ONLY flag URLs to explicitly suspicious domains - not all unknown URLs
-    # Reference: https://lots-project.com/ (Living Off Trusted Sites)
-    SUSPICIOUS_DOMAINS = [
-        # Known exfil/C2/paste services (LOTS: Download, Exfiltration, C&C)
-        "pastebin.com",
-        "hastebin.com",
-        "paste.ee",
-        "rentry.co",
-        "zerobin.net",
-        "textbin.net",
-        "termbin.com",
-        "sprunge.us",
-        "clbin.com",
-        "ix.io",
-        "pastetext.net",
-        "pastie.org",
-        "ideone.com",
-        # File sharing services (LOTS: Download, Exfiltration)
-        "transfer.sh",
-        "filebin.net",
-        "gofile.io",
-        "anonfiles.com",
-        "mediafire.com",
-        "mega.nz",
-        "wetransfer.com",
-        "filetransfer.io",
-        "ufile.io",
-        "4sync.com",
-        "uplooder.net",
-        "filecloudonline.com",
-        "sendspace.com",
-        "siasky.net",
-        # Tunneling/webhook services (LOTS: C&C, Exfiltration)
-        "webhook.site",
-        "requestbin",
-        "ngrok.io",
-        "ngrok-free.dev",
-        "ngrok-free.app",
-        "ngrok.app",
-        "pipedream.net",
-        "localhost.run",
-        "trycloudflare.com",
-        "bore.pub",
-        "serveo.net",
-        "localtunnel.me",
-        # Code execution services (LOTS: C&C, Download)
-        "codepen.io",
-        "repl.co",
-        "glitch.me",
-        # Explicitly malicious example domains
-        "attacker.example.com",
-        "evil.example.com",
-        "malicious.com",
-        "c2-server.com",
-    ]
-
-    # Domains that are always safe (not flagged even if matched by SUSPICIOUS_DOMAINS pattern)
-    # NOTE: We intentionally exclude file-hosting/messaging services that appear in LOTS
-    # (https://lots-project.com/) with Download/C&C capabilities, even if commonly used.
-    LEGITIMATE_DOMAINS = [
-        # AI provider services (API endpoints only, not user content)
-        "api.anthropic.com",
-        "statsig.anthropic.com",
-        "api.openai.com",
-        "api.together.xyz",
-        "api.cohere.ai",
-        "generativelanguage.googleapis.com",
-        # Package registries (read-only, no user-uploaded executables)
-        "registry.npmjs.org",
-        "npmjs.com",
-        "npmjs.org",
-        "yarnpkg.com",
-        "registry.yarnpkg.com",
-        "pypi.org",
-        "files.pythonhosted.org",
-        "pythonhosted.org",
-        "crates.io",
-        "rubygems.org",
-        "pkg.go.dev",
-        # System packages
-        "archive.ubuntu.com",
-        "security.ubuntu.com",
-        "debian.org",
-        # XML schemas (for OOXML document processing)
-        "schemas.microsoft.com",
-        "schemas.openxmlformats.org",
-        "www.w3.org",
-        "purl.org",
-        "json-schema.org",
-        # Localhost and development
-        "localhost",
-        "127.0.0.1",
-        "0.0.0.0",
-        "::1",
-        # Common safe services (API-focused, not file hosting)
-        "stripe.com",
-        "zoom.us",
-        "twilio.com",
-        "mailgun.com",
-        "sentry.io",
-        "datadog.com",
-        "newrelic.com",
-        "elastic.co",
-        "mongodb.com",
-        "redis.io",
-        "postgresql.org",
-        # NOTE: The following are intentionally NOT in this list due to LOTS risk:
-        # - github.com, gitlab.com, bitbucket.org (Download, C&C)
-        # - raw.githubusercontent.com (Download, C&C)
-        # - discord.com, telegram.org, slack.com (C&C, Exfil)
-        # - amazonaws.com, googleapis.com, azure.com, cloudflare.com (wildcard hosting)
-        # - google.com, microsoft.com (too broad, includes file hosting)
-        # - sendgrid.com (email tracking/download)
-    ]
+    # Domain lists and the classification logic now live in the shared
+    # ``url_classifier`` module so every analyzer applies the same rules.
+    # Kept as class attributes for backward compatibility.
+    SUSPICIOUS_DOMAINS = _SUSPICIOUS_DOMAINS
+    LEGITIMATE_DOMAINS = _LEGITIMATE_DOMAINS
 
     def extract_context(self, file_path: Path, source_code: str) -> SkillScriptContext:
         """
@@ -363,12 +263,9 @@ class ContextExtractor:
             # Skip if too long (likely docstring) or too short
             if len(s) > 200 or len(s) < 10:
                 continue
-            # Skip if contains legitimate domain
-            if any(domain in s for domain in self.LEGITIMATE_DOMAINS):
-                continue
-            # ONLY flag if URL contains a known suspicious domain
-            # Don't flag all unknown URLs - that's too aggressive
-            if any(domain in s for domain in self.SUSPICIOUS_DOMAINS):
+            # ONLY flag if URL contains a known suspicious domain (legitimate
+            # domains take precedence). Don't flag all unknown URLs - too aggressive.
+            if classify_url(s) == "suspicious":
                 suspicious_urls.append(s)
 
         # Create context

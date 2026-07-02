@@ -113,7 +113,7 @@ for flow in flows:
 
 - Combines AST parser + dataflow tracker
 - Aggregates security indicators across all functions
-- Finds suspicious URLs in code
+- Finds suspicious URLs in code via the shared [`url_classifier`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/core/static_analysis/url_classifier.py) (same domain lists used for config-file URL scanning)
 - Generates structured context for finding generation
 
 **Output**: `SkillScriptContext` with:
