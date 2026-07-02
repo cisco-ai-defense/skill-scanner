@@ -29,6 +29,7 @@ from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...core.rules.patterns import RuleLoader, SecurityRule
 from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
+from ...core.static_analysis.url_classifier import classify_url, extract_urls
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
 
@@ -307,6 +308,7 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(self._scan_instruction_body(skill))
         findings.extend(self._scan_scripts(skill))
         findings.extend(self._check_consistency(skill))
+        findings.extend(self._scan_config_files(skill))
         findings.extend(self._scan_referenced_files(skill))
         findings.extend(self._check_binary_files(skill))
         findings.extend(self._check_hidden_files(skill))
@@ -582,6 +584,69 @@ class StaticAnalyzer(BaseAnalyzer):
             )
 
         return findings
+
+    # Basenames (without extension) treated as configuration files.
+    _CONFIG_FILE_STEMS = {"config", "settings"}
+
+    def _is_config_file(self, relative_path: str) -> bool:
+        """Return True for config files (config.*/settings.* YAML/JSON, any TOML)."""
+        name = Path(relative_path).name.lower()
+        suffix = Path(name).suffix
+        if suffix == ".toml":
+            return True
+        if suffix in (".yaml", ".yml", ".json"):
+            return Path(name).stem in self._CONFIG_FILE_STEMS
+        return False
+
+    def _scan_config_files(self, skill: Skill) -> list[Finding]:
+        """Classify URLs found in config files using the shared URL classifier.
+
+        Config files (e.g. ``config.yaml``) are typed ``other`` and never
+        reach the Python AST URL classifier, so a tunnel/proxy endpoint hidden
+        in a config value would otherwise go unnoticed. URLs are extracted from
+        the raw text so endpoints in comments are covered too.
+        """
+        findings: list[Finding] = []
+        for skill_file in skill.files:
+            if not self._is_config_file(skill_file.relative_path):
+                continue
+            content = skill_file.read_content()
+            if not content:
+                continue
+            for url in extract_urls(content):
+                if classify_url(url) != "suspicious":
+                    continue
+                findings.append(
+                    Finding(
+                        id=self._generate_finding_id("CONFIG_SUSPICIOUS_URL", f"{skill_file.relative_path}:{url}"),
+                        rule_id="CONFIG_SUSPICIOUS_URL",
+                        category=ThreatCategory.DATA_EXFILTRATION,
+                        severity=Severity.HIGH,
+                        title="Suspicious URL in configuration file",
+                        description=(
+                            f"Configuration file references '{url}', which is on a known "
+                            f"suspicious/tunnel domain that may route data to an attacker-controlled endpoint."
+                        ),
+                        file_path=skill_file.relative_path,
+                        line_number=self._find_line_number(content, url),
+                        snippet=url,
+                        remediation=(
+                            "Verify the endpoint is legitimate and documented; "
+                            "remove tunnel/proxy or exfiltration URLs from configuration."
+                        ),
+                        analyzer="static",
+                        metadata={"url": url},
+                    )
+                )
+        return findings
+
+    @staticmethod
+    def _find_line_number(content: str, needle: str) -> int | None:
+        """Best-effort 1-based line number of the first line containing ``needle``."""
+        for index, line in enumerate(content.splitlines(), start=1):
+            if needle in line:
+                return index
+        return None
 
     def _scan_referenced_files(self, skill: Skill) -> list[Finding]:
         """Scan files referenced in instruction body with recursive scanning."""

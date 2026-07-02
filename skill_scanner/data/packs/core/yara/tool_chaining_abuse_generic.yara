@@ -20,7 +20,7 @@ rule tool_chaining_abuse_generic{
         $exfil_discord = /\b(send|post|upload)[^.]{0,60}discord\.com\/api\/webhooks/i
         $exfil_telegram = /\b(send|post|upload)[^.]{0,60}telegram\.org\/bot/i
         $exfil_pastebin = /\b(send|post|upload)[^.]{0,60}pastebin\.com/i
-        $exfil_requestbin = /\b(send|post|upload)[^.]{0,60}(webhook\.site|requestbin|ngrok\.io)/i
+        $exfil_requestbin = /\b(send|post|upload)[^.]{0,60}(webhook\.site|requestbin|ngrok\.io|ngrok\.app|ngrok-free\.(dev|app)|bore\.pub|serveo\.net|localtunnel\.me)/i
 
         // === High confidence: credential file access + network ===
 

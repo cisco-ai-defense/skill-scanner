@@ -126,6 +126,9 @@ class CrossSkillScanner(BaseAnalyzer):
             r"discord\.com/api/webhooks",
             r"ngrok",
             r"localhost\.run",
+            r"bore\.pub",
+            r"serveo\.net",
+            r"localtunnel",
         ]
 
         for skill in self._skills:
