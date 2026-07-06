@@ -91,8 +91,8 @@ class AdjudicationResult:
     """One adjudication call's outcome. Always recorded on the finding."""
 
     rule_id: str
-    verdict: str            # "real" | "false_positive" | "skipped"
-    confidence: int          # 1-5; 0 when skipped
+    verdict: str  # "real" | "false_positive" | "skipped"
+    confidence: int  # 1-5; 0 when skipped
     reason: str
     demoted_to: str | None  # e.g. "INFO" if demoted; None otherwise
     model_id: str | None = None
@@ -181,10 +181,7 @@ def _resolve_model() -> str | None:
     ``SKILL_SCANNER_LLM_MODEL``. Returns ``None`` if neither is set — the
     adjudicator will then skip all findings (fail-closed).
     """
-    return (
-        os.environ.get("SKILL_SCANNER_ADJUDICATOR_LLM_MODEL")
-        or os.environ.get("SKILL_SCANNER_LLM_MODEL")
-    )
+    return os.environ.get("SKILL_SCANNER_ADJUDICATOR_LLM_MODEL") or os.environ.get("SKILL_SCANNER_LLM_MODEL")
 
 
 def _extract_context(skill_md_path: Path, line_number: int) -> tuple[str, str]:
@@ -207,12 +204,12 @@ def _extract_context(skill_md_path: Path, line_number: int) -> tuple[str, str]:
     snippet = lines[idx] if 0 <= idx < len(lines) else ""
 
     if len(lines) <= _WHOLE_FILE_LINE_THRESHOLD:
-        context = "\n".join(f"{i+1:4}: {ln}" for i, ln in enumerate(lines))
+        context = "\n".join(f"{i + 1:4}: {ln}" for i, ln in enumerate(lines))
         return snippet, context
 
     start = max(0, idx - _CONTEXT_LINES_BEFORE)
     end = min(len(lines), idx + _CONTEXT_LINES_AFTER + 1)
-    context = "\n".join(f"{i+1:4}: {lines[i]}" for i in range(start, end))
+    context = "\n".join(f"{i + 1:4}: {lines[i]}" for i in range(start, end))
     return snippet, context
 
 
@@ -334,7 +331,7 @@ class Adjudicator:
                     error_msg = str(exc).lower()
                     if any(k in error_msg for k in ("rate limit", "quota", "throttling", "429")):
                         if attempt < self.max_retries:
-                            delay = (2 ** attempt) * self.rate_limit_delay
+                            delay = (2**attempt) * self.rate_limit_delay
                             _time.sleep(delay)
                             continue
                     logger.debug("adjudicator LLM call failed: %s", exc)
@@ -351,9 +348,9 @@ class Adjudicator:
             logger.debug("adjudicator response had no JSON: %r", content[:200])
             return None
         try:
-            return json.loads(content[start:end + 1])
+            return json.loads(content[start : end + 1])
         except json.JSONDecodeError:
-            logger.debug("adjudicator response was invalid JSON: %r", content[start:end + 1][:200])
+            logger.debug("adjudicator response was invalid JSON: %r", content[start : end + 1][:200])
             return None
 
     def _adjudicate_one(self, finding: Finding, skill: Skill) -> AdjudicationResult:
