@@ -275,6 +275,36 @@ class AnalyzersPolicy:
 
 
 @dataclass
+class AdjudicatorPolicy:
+    """Controls the per-finding adjudicator pass.
+
+    The adjudicator runs BETWEEN the deterministic analyzer phase and the
+    LLM analyzer phase. For each deterministic HIGH/CRITICAL finding it
+    asks an LLM whether the file around the matched line actually
+    contains the threat the rule was designed to catch. Findings the LLM
+    judges to be literal-regex false positives (verdict = ``false_positive``,
+    confidence >= ``min_fp_confidence``) are demoted to INFO for downstream
+    verdict computation. The original severity is preserved in the
+    finding's ``metadata['adjudication']`` record for audit.
+
+    **Safety property (load-bearing):** the adjudicator can only demote
+    findings, never promote them. LLM unavailable / parse error / timeout
+    all leave the finding at its original severity. False negatives cannot
+    be introduced by enabling this pass.
+
+    Cost: 0-3 LLM calls per typical skill, ~250 output tokens each.
+    """
+
+    # Master toggle. Default off preserves backwards-compatible behavior.
+    enabled: bool = False
+
+    # Minimum LLM confidence (1-5) required to demote a finding. A higher
+    # threshold trades demotion recall for demotion precision. 3 is the
+    # empirically-validated default from a 106-skill labeled corpus.
+    min_fp_confidence: int = 3
+
+
+@dataclass
 class LLMAnalysisPolicy:
     """Controls LLM context budget thresholds for LLM and meta analyzers.
 
@@ -393,6 +423,7 @@ class ScanPolicy:
     sensitive_files: SensitiveFilesPolicy = field(default_factory=SensitiveFilesPolicy)
     command_safety: CommandSafetyPolicy = field(default_factory=CommandSafetyPolicy)
     analyzers: AnalyzersPolicy = field(default_factory=AnalyzersPolicy)
+    adjudicator: AdjudicatorPolicy = field(default_factory=AdjudicatorPolicy)
     llm_analysis: LLMAnalysisPolicy = field(default_factory=LLMAnalysisPolicy)
     finding_output: FindingOutputPolicy = field(default_factory=FindingOutputPolicy)
     severity_overrides: list[SeverityOverride] = field(default_factory=list)

@@ -243,6 +243,48 @@ class SkillScanner:
                 if hasattr(analyzer, "get_unreferenced_scripts"):
                     unreferenced_scripts = analyzer.get_unreferenced_scripts()
 
+            # Phase 1.5: Per-finding adjudicator (demote literal-regex FPs)
+            #
+            # Runs before the LLM analyzer so that demoted findings never
+            # enter the LLM analyzer's ``static_findings_summary`` enrichment
+            # context.  This naturally breaks the cross-analyzer confirmation
+            # cascade where a wrong deterministic HIGH gets amplified into
+            # LLM findings citing the same pattern hit.
+            #
+            # Demote-only: findings can only be lowered in severity, never
+            # raised. LLM errors leave findings at their original severity,
+            # so enabling this pass cannot introduce false negatives.
+            adjudicator_audit: list[dict[str, Any]] = []
+            if self.policy.adjudicator.enabled and all_findings:
+                try:
+                    from .analyzers.adjudicator import Adjudicator
+
+                    adj = Adjudicator(
+                        min_fp_confidence=self.policy.adjudicator.min_fp_confidence,
+                    )
+                    if adj.is_available():
+                        adj.adjudicate(all_findings, skill)
+                        analyzer_names.append("adjudicator")
+                        adjudicator_audit = [
+                            {
+                                "rule_id": r.rule_id,
+                                "verdict": r.verdict,
+                                "confidence": r.confidence,
+                                "reason": r.reason,
+                                "demoted_to": r.demoted_to,
+                                "model_id": r.model_id,
+                            }
+                            for r in adj.audit
+                        ]
+                    else:
+                        logger.debug(
+                            "adjudicator enabled but no LLM model configured; "
+                            "set SKILL_SCANNER_LLM_MODEL or "
+                            "SKILL_SCANNER_ADJUDICATOR_LLM_MODEL to activate"
+                        )
+                except Exception as exc:
+                    logger.warning("Adjudication failed: %s", exc)
+
             # Phase 2: Run LLM analyzers with enrichment context from Phase 1
             if llm_analyzers:
                 enrichment = self._build_enrichment_context(skill, all_findings, unreferenced_scripts)
@@ -314,6 +356,13 @@ class SkillScanner:
             policy_meta = self._policy_fingerprint_metadata()
             if llm_scan_meta:
                 policy_meta.update(llm_scan_meta)
+            if adjudicator_audit:
+                demoted = [a for a in adjudicator_audit if a.get("demoted_to")]
+                policy_meta["adjudicator"] = {
+                    "considered": len(adjudicator_audit),
+                    "demoted": len(demoted),
+                    "audit": adjudicator_audit,
+                }
             self._annotate_findings_with_policy(all_findings, policy_meta)
 
         finally:

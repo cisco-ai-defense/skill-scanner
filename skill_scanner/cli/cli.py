@@ -382,6 +382,8 @@ def scan_command(args: argparse.Namespace) -> int:
         return 1
 
     policy = _load_policy(args)
+    if getattr(args, "adjudicate", False):
+        policy.adjudicator.enabled = True
     analyzers = _build_analyzers(policy, args, status)
     llm_max_tokens = getattr(args, "llm_max_tokens", None)
     meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
@@ -472,6 +474,8 @@ def scan_all_command(args: argparse.Namespace) -> int:
         return 1
 
     policy = _load_policy(args)
+    if getattr(args, "adjudicate", False):
+        policy.adjudicator.enabled = True
     analyzers = _build_analyzers(policy, args, status)
     llm_max_tokens = getattr(args, "llm_max_tokens", None)
     meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
@@ -950,6 +954,17 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--use-trigger", action="store_true", help="Enable trigger specificity analysis")
     parser.add_argument("--enable-meta", action="store_true", help="Enable meta-analysis FP filtering (2+ analyzers)")
+    parser.add_argument(
+        "--adjudicate",
+        action="store_true",
+        help=(
+            "Enable per-finding adjudicator: for each deterministic HIGH/CRITICAL finding, "
+            "ask the LLM whether the matched content is a real threat or a literal-regex "
+            "false positive. Demote-only (never promotes) — LLM errors leave findings at "
+            "original severity. Uses SKILL_SCANNER_LLM_MODEL (or "
+            "SKILL_SCANNER_ADJUDICATOR_LLM_MODEL to override)."
+        ),
+    )
     parser.add_argument(
         "--policy",
         metavar="PRESET_OR_PATH",
