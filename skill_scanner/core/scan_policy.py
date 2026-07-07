@@ -566,6 +566,7 @@ class ScanPolicy:
         sf = d.get("sensitive_files", {})
         cs = d.get("command_safety", {})
         az = d.get("analyzers", {})
+        aj = d.get("adjudicator", {})
         la = d.get("llm_analysis", {})
         fo = d.get("finding_output", {})
 
@@ -665,6 +666,10 @@ class ScanPolicy:
                 static=az.get("static", True),
                 bytecode=az.get("bytecode", True),
                 pipeline=az.get("pipeline", True),
+            ),
+            adjudicator=AdjudicatorPolicy(
+                enabled=aj.get("enabled", False),
+                min_fp_confidence=aj.get("min_fp_confidence", 3),
             ),
             llm_analysis=LLMAnalysisPolicy(
                 max_instruction_body_chars=la.get("max_instruction_body_chars", 20_000),
@@ -788,6 +793,10 @@ class ScanPolicy:
                 "static": self.analyzers.static,
                 "bytecode": self.analyzers.bytecode,
                 "pipeline": self.analyzers.pipeline,
+            },
+            "adjudicator": {
+                "enabled": self.adjudicator.enabled,
+                "min_fp_confidence": self.adjudicator.min_fp_confidence,
             },
             "llm_analysis": {
                 "max_instruction_body_chars": self.llm_analysis.max_instruction_body_chars,

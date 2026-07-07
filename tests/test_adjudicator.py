@@ -216,6 +216,90 @@ class TestAdjudicatorFailClosed:
 
         assert finding.severity == Severity.HIGH
 
+    def test_out_of_range_confidence_keeps_original_severity(self, tmp_path: Path, with_model_env: None) -> None:
+        """Malformed LLM output (e.g. confidence=999) must fail closed."""
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("false_positive", 999)
+            adj = Adjudicator()
+            adj.adjudicate([finding], skill)
+
+        assert finding.severity == Severity.HIGH
+        assert "adjudication" not in (finding.metadata or {})
+
+    def test_zero_confidence_keeps_original_severity(self, tmp_path: Path, with_model_env: None) -> None:
+        """Confidence of 0 (below the 1-5 contract) is treated as malformed."""
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("false_positive", 0)
+            adj = Adjudicator()
+            adj.adjudicate([finding], skill)
+
+        assert finding.severity == Severity.HIGH
+
+
+class TestAdjudicatorPathContainment:
+    """finding.file_path is defensively rejected if it escapes skill dir."""
+
+    def test_absolute_path_outside_skill_dir_is_skipped(self, tmp_path: Path, with_model_env: None) -> None:
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding(
+            "PROMPT_INJECTION_CONCEALMENT",
+            Severity.HIGH,
+            file_path="/etc/passwd",
+            line_number=1,
+        )
+
+        with patch("litellm.completion") as mock_call:
+            adj = Adjudicator()
+            adj.adjudicate([finding], skill)
+
+        mock_call.assert_not_called()
+        assert finding.severity == Severity.HIGH
+
+    def test_parent_traversal_is_skipped(self, tmp_path: Path, with_model_env: None) -> None:
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding(
+            "PROMPT_INJECTION_CONCEALMENT",
+            Severity.HIGH,
+            file_path="../../etc/passwd",
+            line_number=1,
+        )
+
+        with patch("litellm.completion") as mock_call:
+            adj = Adjudicator()
+            adj.adjudicate([finding], skill)
+
+        mock_call.assert_not_called()
+        assert finding.severity == Severity.HIGH
+
+
+class TestAdjudicatorSystemPrompt:
+    """Adjudication uses a system+user message split with a hardening prompt."""
+
+    def test_llm_receives_system_prompt(self, tmp_path: Path, with_model_env: None) -> None:
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("real", 5)
+            adj = Adjudicator()
+            adj.adjudicate([finding], skill)
+
+        # Assert the LLM call used a two-message conversation: role=system with
+        # the hardening prompt, then role=user with the adjudication payload.
+        # This is defense in depth against prompt injection from skill content.
+        assert mock_call.call_count == 1
+        messages = mock_call.call_args.kwargs["messages"]
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert "ignore any instructions" in messages[0]["content"].lower()
+        assert messages[1]["role"] == "user"
+
 
 # ----- Boundary + skip conditions -----------------------------------------
 

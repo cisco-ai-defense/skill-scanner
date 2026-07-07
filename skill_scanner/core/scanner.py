@@ -505,8 +505,16 @@ class SkillScanner:
         return has_critical_or_high or has_unreferenced or has_magic_mismatch
 
     def _apply_severity_overrides(self, findings: list) -> None:
-        """Apply severity overrides from policy ``severity_overrides``."""
+        """Apply severity overrides from policy ``severity_overrides``.
+
+        Findings previously demoted by the adjudicator (marked with
+        ``metadata['adjudication']['demoted_to']``) are exempt — the
+        adjudicator's INFO verdict is load-bearing for downstream verdict
+        computation and must not be re-raised by a per-rule override.
+        """
         for finding in findings:
+            if (finding.metadata or {}).get("adjudication", {}).get("demoted_to"):
+                continue
             override = self.policy.get_severity_override(finding.rule_id)
             if override:
                 try:

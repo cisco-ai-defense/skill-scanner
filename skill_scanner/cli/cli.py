@@ -601,6 +601,8 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                 return 1
 
             policy = _load_policy(args)
+            if getattr(args, "adjudicate", False):
+                policy.adjudicator.enabled = True
             analyzers = _build_analyzers(policy, args, status)
             llm_max_tokens = getattr(args, "llm_max_tokens", None)
             meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)

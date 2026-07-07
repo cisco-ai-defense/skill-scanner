@@ -14,7 +14,11 @@ The adjudicator only touches deterministic findings (static, pipeline, behaviora
 
 ## Safety property
 
-**The Adjudicator can only demote findings, never promote them.** If the LLM is unavailable, times out, returns malformed output, or returns an unexpected verdict, the finding stays at its original severity. Enabling this pass cannot introduce false negatives — the worst case is that a real false positive is not caught and the scan behaves identically to a run with `--adjudicate` disabled.
+**The Adjudicator is demote-only.** It can lower a finding's severity to `INFO`, and can never raise a finding's severity.
+
+The demote-only constraint bounds the failure surface. On **error paths** — LLM unavailable, timeout, malformed JSON, unexpected verdict, out-of-range confidence, path-escape attempt — the finding stays at its original severity and no metadata is written. Those specific paths cannot introduce false negatives.
+
+**A wrong `false_positive` verdict from the LLM itself can still demote a real threat.** That is a genuine failure mode and is why the pass is off by default, why the confidence threshold is configurable, and why every demotion is preserved in `finding.metadata["adjudication"]` for review and override. Adversarial content in the scanned skill can also attempt to bias the adjudicator (see the system-prompt hardening in the implementation) — again, the worst case is a real finding demoted to `INFO`, but this is a real (not zero-probability) risk that operators should weigh when enabling the pass.
 
 ## How It Works
 
