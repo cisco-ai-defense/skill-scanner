@@ -638,6 +638,7 @@ llm_analysis:
   max_total_prompt_chars: 100000      # Total budget across all content
   max_output_tokens: 8192             # Max tokens for LLM responses
   meta_budget_multiplier: 3.0         # Meta analyzer multiplier (3× above)
+  trusted_reference_domains: []       # Trusted internal domains (git, registries, docs); demoted to LOW
 
 # ---------------------------------------------------------------------------
 # Finding output – final dedupe + policy traceability metadata

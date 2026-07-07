@@ -303,6 +303,13 @@ class LLMAnalysisPolicy:
     # e.g. 3× means meta gets 60 K instruction, 45 K/file, 300 K total.
     meta_budget_multiplier: float = 3.0
 
+    # -- Trusted reference domains --
+    # Organization's internal domains (Git repos, package registries, doc portals)
+    # considered trusted for transitive trust / supply chain analysis.
+    # LLM findings referencing only these domains are demoted to LOW.
+    # Mirrors the pattern of ``pipeline.known_installer_domains``.
+    trusted_reference_domains: set[str] = field(default_factory=set)
+
     # -- Convenience helpers for the meta analyzer --
 
     @property
@@ -642,6 +649,7 @@ class ScanPolicy:
                 max_total_prompt_chars=la.get("max_total_prompt_chars", 100_000),
                 max_output_tokens=la.get("max_output_tokens", 8192),
                 meta_budget_multiplier=la.get("meta_budget_multiplier", 3.0),
+                trusted_reference_domains=set(la.get("trusted_reference_domains", [])),
             ),
             finding_output=FindingOutputPolicy(
                 dedupe_exact_findings=fo.get("dedupe_exact_findings", True),
@@ -765,6 +773,7 @@ class ScanPolicy:
                 "max_total_prompt_chars": self.llm_analysis.max_total_prompt_chars,
                 "max_output_tokens": self.llm_analysis.max_output_tokens,
                 "meta_budget_multiplier": self.llm_analysis.meta_budget_multiplier,
+                "trusted_reference_domains": sorted(self.llm_analysis.trusted_reference_domains),
             },
             "finding_output": {
                 "dedupe_exact_findings": self.finding_output.dedupe_exact_findings,

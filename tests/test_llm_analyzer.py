@@ -891,3 +891,275 @@ class TestLLMAnalysisPolicyIntegration:
         assert restored.llm_analysis.max_instruction_body_chars == 12_345
         assert restored.llm_analysis.max_code_file_chars == 6_789
         assert restored.llm_analysis.meta_budget_multiplier == 2.5
+
+
+class TestTrustedReferenceDomains:
+    """Tests for the trusted_reference_domains LLM post-filter feature."""
+
+    def _make_analyzer_with_trusted_domains(self, domains):
+        """Create an LLMAnalyzer with trusted domains configured."""
+        policy = ScanPolicy.default()
+        policy.llm_analysis.trusted_reference_domains = set(domains)
+        analyzer = LLMAnalyzer(api_key="test-key", policy=policy)
+        return analyzer
+
+    def _make_analyzer_no_trusted_domains(self):
+        """Create an LLMAnalyzer with no trusted domains (default)."""
+        return LLMAnalyzer(api_key="test-key")
+
+    # -- _references_only_trusted_domains tests --
+
+    def test_references_only_trusted_all_urls_trusted(self):
+        """All URLs on trusted domains → returns True."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+        result = analyzer._references_only_trusted_domains(
+            "reads from https://gitlab.example.com/org/repo/-/raw/main/README.md",
+            "",
+        )
+        assert result is True
+
+    def test_references_only_trusted_mixed_domains(self):
+        """Mix of trusted and untrusted URLs → returns False."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+        result = analyzer._references_only_trusted_domains(
+            "reads from https://gitlab.example.com/a.md and https://evil.com/b.md",
+            "",
+        )
+        assert result is False
+
+    def test_references_only_trusted_untrusted_only(self):
+        """Only untrusted URLs → returns False."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+        result = analyzer._references_only_trusted_domains(
+            "reads from https://attacker.com/payload.md",
+            "",
+        )
+        assert result is False
+
+    def test_references_only_trusted_no_urls(self):
+        """No URLs found → returns False (can't verify trust)."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+        result = analyzer._references_only_trusted_domains(
+            "transitive trust issues with external files",
+            "",
+        )
+        assert result is False
+
+    def test_references_only_trusted_url_in_evidence(self):
+        """URL in evidence/snippet field → returns True."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+        result = analyzer._references_only_trusted_domains(
+            "transitive trust vulnerability",
+            "read from https://gitlab.example.com/org/repo/-/raw/main/CONTRIBUTING.md",
+        )
+        assert result is True
+
+    def test_references_only_trusted_subdomain(self):
+        """Subdomain of trusted domain → returns True."""
+        analyzer = self._make_analyzer_with_trusted_domains(["example.com"])
+        result = analyzer._references_only_trusted_domains(
+            "reads from https://gitlab.example.com/file.md",
+            "",
+        )
+        assert result is True
+
+    def test_references_only_trusted_url_with_port(self):
+        """URL with port number → returns True."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+        result = analyzer._references_only_trusted_domains(
+            "reads from https://gitlab.example.com:8443/repo/file.md",
+            "",
+        )
+        assert result is True
+
+    def test_references_only_trusted_empty_policy(self):
+        """No trusted domains configured → returns False."""
+        analyzer = self._make_analyzer_no_trusted_domains()
+        result = analyzer._references_only_trusted_domains(
+            "reads from https://gitlab.example.com/file.md",
+            "",
+        )
+        assert result is False
+
+    def test_references_only_trusted_multiple_trusted_urls(self):
+        """Multiple URLs all on different trusted domains → returns True."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com", "docs.example.com"])
+        result = analyzer._references_only_trusted_domains(
+            "reads https://gitlab.example.com/a.md and https://docs.example.com/b.md",
+            "",
+        )
+        assert result is True
+
+    # -- _mentions_only_trusted_domains tests --
+
+    def test_mentions_trusted_domain_in_prose(self):
+        """Trusted domain mentioned in prose without URL → returns True."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+        result = analyzer._mentions_only_trusted_domains(
+            "hooks are defined in the gitlab.example.com/org/repo repository"
+        )
+        assert result is True
+
+    def test_mentions_no_trusted_domain(self):
+        """No trusted domain in text → returns False."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+        result = analyzer._mentions_only_trusted_domains(
+            "hooks are pulled from evil.com/attacker/hooks"
+        )
+        assert result is False
+
+    def test_mentions_empty_policy(self):
+        """No trusted domains configured → returns False."""
+        analyzer = self._make_analyzer_no_trusted_domains()
+        result = analyzer._mentions_only_trusted_domains(
+            "uses gitlab.example.com/org/repo"
+        )
+        assert result is False
+
+    # -- Integration: _convert_to_findings demotion --
+
+    def test_transitive_trust_finding_demoted_with_trusted_domain(self):
+        """Transitive trust finding with trusted URL → demoted to LOW."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+
+        skill = MagicMock()
+        skill.name = "test-skill"
+        skill.referenced_files = ["references/guide.md"]
+        skill.directory = "/tmp/test-skill"
+
+        analysis_result = {
+            "findings": [
+                {
+                    "severity": "MEDIUM",
+                    "aitech": "AITech-1.2",
+                    "title": "Transitive Trust on External Documents",
+                    "description": (
+                        "The skill reads instructions from https://gitlab.example.com/org/repo/-/raw/main/README.md. "
+                        "This creates a transitive trust vulnerability."
+                    ),
+                    "evidence": "read these files from https://gitlab.example.com/org/repo/-/raw/main/CONTRIBUTING.md",
+                    "location": "SKILL.md",
+                }
+            ],
+            "overall_assessment": "Minor issues",
+            "primary_threats": [],
+        }
+
+        findings = analyzer._convert_to_findings(analysis_result, skill)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.LOW
+
+    def test_transitive_trust_finding_not_demoted_without_policy(self):
+        """Transitive trust finding without trusted domains → keeps original severity."""
+        analyzer = self._make_analyzer_no_trusted_domains()
+
+        skill = MagicMock()
+        skill.name = "test-skill"
+        skill.referenced_files = ["references/guide.md"]
+        skill.directory = "/tmp/test-skill"
+
+        analysis_result = {
+            "findings": [
+                {
+                    "severity": "MEDIUM",
+                    "aitech": "AITech-1.2",
+                    "title": "Transitive Trust on External Documents",
+                    "description": (
+                        "The skill reads instructions from https://gitlab.example.com/org/repo/-/raw/main/README.md. "
+                        "This creates a transitive trust vulnerability."
+                    ),
+                    "evidence": "",
+                    "location": "SKILL.md",
+                }
+            ],
+            "overall_assessment": "Minor issues",
+            "primary_threats": [],
+        }
+
+        findings = analyzer._convert_to_findings(analysis_result, skill)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.MEDIUM
+
+    def test_supply_chain_finding_demoted_with_trusted_domain(self):
+        """Supply chain finding mentioning trusted domain → demoted to LOW."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+
+        skill = MagicMock()
+        skill.name = "test-skill"
+        skill.referenced_files = []
+        skill.directory = "/tmp/test-skill"
+
+        analysis_result = {
+            "findings": [
+                {
+                    "severity": "HIGH",
+                    "aitech": "AITech-9.3",
+                    "title": "Supply Chain Risk via pre-commit",
+                    "description": (
+                        "Pre-commit hooks are defined within the shared gitlab.example.com/org/repo "
+                        "repository. If an attacker compromises this repository, it leads to a "
+                        "supply chain attack."
+                    ),
+                    "evidence": "pre-commit run -a",
+                    "location": "SKILL.md",
+                }
+            ],
+            "overall_assessment": "Potential risk",
+            "primary_threats": [],
+        }
+
+        findings = analyzer._convert_to_findings(analysis_result, skill)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.LOW
+
+    def test_supply_chain_finding_not_demoted_for_untrusted_domain(self):
+        """Supply chain finding with untrusted domain → keeps HIGH severity."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+
+        skill = MagicMock()
+        skill.name = "test-skill"
+        skill.referenced_files = []
+        skill.directory = "/tmp/test-skill"
+
+        analysis_result = {
+            "findings": [
+                {
+                    "severity": "HIGH",
+                    "aitech": "AITech-9.3",
+                    "title": "Supply Chain Risk via external hooks",
+                    "description": (
+                        "Pre-commit hooks are pulled from evil.com/malicious/hooks. "
+                        "This creates a supply chain attack vector."
+                    ),
+                    "evidence": "pre-commit run -a",
+                    "location": "SKILL.md",
+                }
+            ],
+            "overall_assessment": "High risk",
+            "primary_threats": ["SUPPLY CHAIN"],
+        }
+
+        findings = analyzer._convert_to_findings(analysis_result, skill)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.HIGH
+
+    # -- Policy serialization roundtrip --
+
+    def test_policy_roundtrip_trusted_reference_domains(self):
+        """trusted_reference_domains survives YAML serialization roundtrip."""
+        import tempfile
+
+        policy = ScanPolicy.default()
+        policy.llm_analysis.trusted_reference_domains = {"gitlab.example.com", "docs.myorg.com"}
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            policy.to_yaml(f.name)
+            restored = ScanPolicy.from_yaml(f.name)
+
+        assert restored.llm_analysis.trusted_reference_domains == {"gitlab.example.com", "docs.myorg.com"}
+        Path(f.name).unlink()
+
+    def test_policy_default_trusted_reference_domains_empty(self):
+        """Default policy has empty trusted_reference_domains."""
+        policy = ScanPolicy.default()
+        assert policy.llm_analysis.trusted_reference_domains == set()
