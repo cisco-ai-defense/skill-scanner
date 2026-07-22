@@ -89,8 +89,10 @@ _SHELL_CODE_BLOCK_PATTERN = re.compile(
 _PIPELINE_PATTERNS = [
     # Shell command blocks in markdown
     _SHELL_CODE_BLOCK_PATTERN,
-    # Inline commands with backticks
-    re.compile(r"`([^`]*\|[^`]*)`"),
+    # Inline commands with backticks. Pipe filtering happens in
+    # ``_extract_pipelines``; one delimiter-bounded field avoids overlapping
+    # greedy repetitions on malformed input.
+    re.compile(r"`([^`]*)`"),
     # Shell-style commands (lines starting with $ or #)
     re.compile(r"^\s*[\$#]\s*(.+)$", re.MULTILINE),
     # Run/exec patterns in Python
