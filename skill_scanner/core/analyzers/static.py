@@ -30,6 +30,7 @@ from ...core.rules.patterns import RuleLoader, SecurityRule
 from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
 from ...threats.threats import ThreatMapping
+from ...utils.markdown import extract_markdown_links
 from .base import BaseAnalyzer
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,6 @@ _EXCEPTION_PATTERNS = [
 ]
 
 _SKILL_NAME_PATTERN = re.compile(r"[a-z0-9-]+")
-_MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^\)]+)\)")
 _PYTHON_IMPORT_PATTERN = re.compile(r"^from\s+\.([A-Za-z0-9_.]*)\s+import", re.MULTILINE)
 _BASH_SOURCE_PATTERN = re.compile(r"(?:source|\.)\s+([A-Za-z0-9_\-./]+\.(?:sh|bash))")
 _RM_TARGET_PATTERN = re.compile(r"rm\s+-r[^;]*?\s+([^\s;]+)")
@@ -782,7 +782,7 @@ class StaticAnalyzer(BaseAnalyzer):
         suffix = file_path.suffix.lower()
 
         if suffix in (".md", ".markdown"):
-            markdown_links = _MARKDOWN_LINK_PATTERN.findall(content)
+            markdown_links = extract_markdown_links(content)
             for _, link in markdown_links:
                 if not link.startswith(("http://", "https://", "ftp://", "#")):
                     if not _is_path_traversal(link):

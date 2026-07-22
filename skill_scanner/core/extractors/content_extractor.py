@@ -21,8 +21,11 @@ Extracts contents from ZIP, TAR, DOCX, XLSX, etc. with safety limits
 (depth, size, file count, zip bomb detection, path traversal prevention).
 """
 
+import bz2
+import gzip
 import hashlib
 import logging
+import lzma
 import os
 import stat
 import tarfile
@@ -30,7 +33,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from ...utils.file_utils import get_file_type
 from ..models import Finding, Severity, SkillFile, ThreatCategory
@@ -71,6 +74,8 @@ class ContentExtractor:
     TAR_EXTENSIONS = {".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz"}
     # Office Open XML formats (special handling for VBA/macros)
     OFFICE_EXTENSIONS = {".docx", ".xlsx", ".pptx"}
+    _TAR_COPY_CHUNK_SIZE = 1024 * 1024
+    _TAR_END_BLOCK_ALLOWANCE = 20 * 512
 
     def __init__(self, limits: ExtractionLimits | None = None):
         self.limits = limits or ExtractionLimits()
@@ -353,104 +358,245 @@ class ContentExtractor:
                 )
             )
 
+    def _append_archive_bomb_finding(
+        self,
+        source_relative_path: str,
+        result: ExtractionResult,
+        description: str,
+    ) -> None:
+        """Record resource-exhaustion input using the existing public rule ID."""
+        result.findings.append(
+            Finding(
+                id=f"ARCHIVE_BOMB_{hash(source_relative_path) & 0xFFFFFFFF:08x}",
+                rule_id="ARCHIVE_ZIP_BOMB",
+                category=ThreatCategory.RESOURCE_ABUSE,
+                severity=Severity.CRITICAL,
+                title="Potential archive decompression bomb detected",
+                description=description,
+                file_path=source_relative_path,
+                remediation="Remove suspicious archive or verify its contents.",
+                analyzer="static",
+            )
+        )
+
+    def _copy_bounded_tar_payload(
+        self,
+        archive_path: Path,
+        source_relative_path: str,
+        result: ExtractionResult,
+        destination: BinaryIO,
+    ) -> bool:
+        """Decode a TAR payload into *destination* without unbounded expansion.
+
+        A modest allowance covers TAR headers and per-file padding, which are
+        not part of the member-size compression ratio. The absolute cap also
+        bounds malicious PAX/GNU metadata before :mod:`tarfile` parses it.
+        """
+        compressed_size = archive_path.stat().st_size
+        overhead_allowance = self.limits.max_file_count * 1024 + self._TAR_END_BLOCK_ALLOWANCE
+        absolute_limit = self.limits.max_total_size_bytes + overhead_allowance
+
+        with archive_path.open("rb") as raw_archive:
+            magic = raw_archive.read(6)
+            raw_archive.seek(0)
+
+            reader: BinaryIO | gzip.GzipFile | bz2.BZ2File | lzma.LZMAFile
+            is_compressed = True
+            if magic.startswith(b"\x1f\x8b"):
+                reader = gzip.GzipFile(fileobj=raw_archive, mode="rb")
+            elif magic.startswith(b"BZh"):
+                reader = bz2.BZ2File(raw_archive, mode="rb")
+            elif magic.startswith(b"\xfd7zXZ\x00"):
+                reader = lzma.LZMAFile(raw_archive, mode="rb")
+            else:
+                reader = raw_archive
+                is_compressed = False
+
+            expansion_limit = absolute_limit
+            if is_compressed and compressed_size > 0:
+                ratio_limit = int(compressed_size * self.limits.max_compression_ratio) + overhead_allowance
+                expansion_limit = min(expansion_limit, ratio_limit)
+
+            total_decoded = 0
+            try:
+                while True:
+                    remaining = expansion_limit - total_decoded
+                    chunk = reader.read(min(self._TAR_COPY_CHUNK_SIZE, remaining + 1))
+                    if not chunk:
+                        break
+
+                    total_decoded += len(chunk)
+                    if total_decoded > expansion_limit:
+                        ratio = total_decoded / compressed_size if compressed_size else float("inf")
+                        self._append_archive_bomb_finding(
+                            source_relative_path,
+                            result,
+                            (
+                                f"Archive {source_relative_path} exceeded the safe TAR expansion budget "
+                                f"while decoding ({total_decoded:,} bytes from a {compressed_size:,}-byte "
+                                f"archive; observed ratio at least {ratio:.0f}:1)."
+                            ),
+                        )
+                        return False
+
+                    destination.write(chunk)
+            finally:
+                if reader is not raw_archive:
+                    reader.close()
+
+        destination.seek(0)
+        return True
+
     def _extract_tar(self, archive_path: Path, source_relative_path: str, result: ExtractionResult, depth: int) -> None:
-        """Extract a TAR-based archive."""
+        """Extract a TAR-based archive with bounded decompression."""
         try:
-            with tarfile.open(archive_path, "r:*") as tf:
-                # Safety: check for path traversal and symlinks/hardlinks
-                for member in tf.getmembers():
-                    if ".." in member.name or member.name.startswith("/"):
-                        result.findings.append(
-                            Finding(
-                                id=f"PATH_TRAVERSAL_{hash(source_relative_path + member.name) & 0xFFFFFFFF:08x}",
-                                rule_id="ARCHIVE_PATH_TRAVERSAL",
-                                category=ThreatCategory.COMMAND_INJECTION,
-                                severity=Severity.CRITICAL,
-                                title="Path traversal in archive",
-                                description=(
-                                    f"Archive {source_relative_path} contains entry with path traversal: "
-                                    f"'{member.name}'."
+            compressed_size = archive_path.stat().st_size
+            with tempfile.TemporaryFile() as tar_payload:
+                if not self._copy_bounded_tar_payload(archive_path, source_relative_path, result, tar_payload):
+                    return
+
+                with tarfile.open(fileobj=tar_payload, mode="r:") as tf:
+                    members: list[tarfile.TarInfo] = []
+                    total_uncompressed = 0
+
+                    # Validate the complete, bounded member list before writing
+                    # any content to disk.
+                    for member_count, member in enumerate(tf, start=1):
+                        if member_count > self.limits.max_file_count:
+                            self._append_archive_bomb_finding(
+                                source_relative_path,
+                                result,
+                                (
+                                    f"Archive {source_relative_path} contains more than "
+                                    f"{self.limits.max_file_count} TAR members."
                                 ),
-                                file_path=source_relative_path,
-                                remediation="Remove malicious archive entries.",
-                                analyzer="static",
                             )
-                        )
-                        return
+                            return
 
-                    if member.issym() or member.islnk():
-                        result.findings.append(
-                            Finding(
-                                id=f"SYMLINK_{hash(source_relative_path + member.name) & 0xFFFFFFFF:08x}",
-                                rule_id="ARCHIVE_SYMLINK",
-                                category=ThreatCategory.COMMAND_INJECTION,
-                                severity=Severity.CRITICAL,
-                                title="Symlink or hardlink entry in archive",
-                                description=(
-                                    f"Archive {source_relative_path} contains a "
-                                    f"{'symbolic' if member.issym() else 'hard'} link entry: "
-                                    f"'{member.name}' -> '{member.linkname}'. Links inside archives "
-                                    f"can be used to read or overwrite files outside the extraction directory."
-                                ),
-                                file_path=source_relative_path,
-                                remediation="Remove symbolic/hard links from the archive and include files directly.",
-                                analyzer="static",
+                        members.append(member)
+
+                        if member.isfile():
+                            total_uncompressed += member.size
+                            if compressed_size > 0:
+                                ratio = total_uncompressed / compressed_size
+                                if ratio > self.limits.max_compression_ratio:
+                                    self._append_archive_bomb_finding(
+                                        source_relative_path,
+                                        result,
+                                        (
+                                            f"Archive {source_relative_path} has compression ratio {ratio:.0f}:1 "
+                                            f"(threshold: {self.limits.max_compression_ratio:.0f}:1). "
+                                            "This may be a decompression bomb designed to cause denial of service."
+                                        ),
+                                    )
+                                    return
+
+                            if total_uncompressed > self.limits.max_total_size_bytes:
+                                self._append_archive_bomb_finding(
+                                    source_relative_path,
+                                    result,
+                                    (
+                                        f"Archive {source_relative_path} declares {total_uncompressed:,} bytes "
+                                        f"of file data (limit: {self.limits.max_total_size_bytes:,} bytes)."
+                                    ),
+                                )
+                                return
+
+                        # Safety: check for path traversal and symlinks/hardlinks
+                        if ".." in member.name or member.name.startswith("/"):
+                            result.findings.append(
+                                Finding(
+                                    id=f"PATH_TRAVERSAL_{hash(source_relative_path + member.name) & 0xFFFFFFFF:08x}",
+                                    rule_id="ARCHIVE_PATH_TRAVERSAL",
+                                    category=ThreatCategory.COMMAND_INJECTION,
+                                    severity=Severity.CRITICAL,
+                                    title="Path traversal in archive",
+                                    description=(
+                                        f"Archive {source_relative_path} contains entry with path traversal: "
+                                        f"'{member.name}'."
+                                    ),
+                                    file_path=source_relative_path,
+                                    remediation="Remove malicious archive entries.",
+                                    analyzer="static",
+                                )
                             )
+                            return
+
+                        if member.issym() or member.islnk():
+                            result.findings.append(
+                                Finding(
+                                    id=f"SYMLINK_{hash(source_relative_path + member.name) & 0xFFFFFFFF:08x}",
+                                    rule_id="ARCHIVE_SYMLINK",
+                                    category=ThreatCategory.COMMAND_INJECTION,
+                                    severity=Severity.CRITICAL,
+                                    title="Symlink or hardlink entry in archive",
+                                    description=(
+                                        f"Archive {source_relative_path} contains a "
+                                        f"{'symbolic' if member.issym() else 'hard'} link entry: "
+                                        f"'{member.name}' -> '{member.linkname}'. Links inside archives "
+                                        f"can be used to read or overwrite files outside the extraction directory."
+                                    ),
+                                    file_path=source_relative_path,
+                                    remediation=(
+                                        "Remove symbolic/hard links from the archive and include files directly."
+                                    ),
+                                    analyzer="static",
+                                )
+                            )
+                            return
+
+                    temp_dir = tempfile.mkdtemp(prefix="skill_extract_")
+                    self._temp_dirs.append(temp_dir)
+
+                    for member in members:
+                        if not member.isfile():
+                            continue
+                        if result.total_extracted_count >= self.limits.max_file_count:
+                            break
+                        if result.total_extracted_size + member.size > self.limits.max_total_size_bytes:
+                            break
+
+                        tf.extract(member, temp_dir, filter="data")
+                        extracted_path = Path(temp_dir) / member.name
+
+                        result.total_extracted_count += 1
+                        result.total_extracted_size += member.size
+
+                        virtual_relative = f"{source_relative_path}!/{member.name}"
+                        file_type = get_file_type(extracted_path)
+                        content = None
+                        if file_type != "binary":
+                            try:
+                                content = extracted_path.read_text(encoding="utf-8")
+                            except (UnicodeDecodeError, OSError):
+                                file_type = "binary"
+
+                        sf = SkillFile(
+                            path=extracted_path,
+                            relative_path=virtual_relative,
+                            file_type=file_type,
+                            content=content,
+                            size_bytes=member.size,
+                            extracted_from=source_relative_path,
+                            archive_depth=depth + 1,
                         )
-                        return
+                        result.extracted_files.append(sf)
 
-                temp_dir = tempfile.mkdtemp(prefix="skill_extract_")
-                self._temp_dirs.append(temp_dir)
-
-                for member in tf.getmembers():
-                    if not member.isfile():
-                        continue
-                    if result.total_extracted_count >= self.limits.max_file_count:
-                        break
-                    if result.total_extracted_size + member.size > self.limits.max_total_size_bytes:
-                        break
-
-                    tf.extract(member, temp_dir, filter="data")
-                    extracted_path = Path(temp_dir) / member.name
-
-                    result.total_extracted_count += 1
-                    result.total_extracted_size += member.size
-
-                    virtual_relative = f"{source_relative_path}!/{member.name}"
-                    file_type = get_file_type(extracted_path)
-                    content = None
-                    if file_type != "binary":
-                        try:
-                            content = extracted_path.read_text(encoding="utf-8")
-                        except (UnicodeDecodeError, OSError):
-                            file_type = "binary"
-
-                    sf = SkillFile(
-                        path=extracted_path,
-                        relative_path=virtual_relative,
-                        file_type=file_type,
-                        content=content,
-                        size_bytes=member.size,
-                        extracted_from=source_relative_path,
-                        archive_depth=depth + 1,
-                    )
-                    result.extracted_files.append(sf)
-
-                # Recursively extract nested archives (mirrors ZIP path)
-                for sf in list(result.extracted_files):
-                    if sf.extracted_from == source_relative_path:
-                        nested_ext = sf.path.suffix.lower()
-                        nested_name = sf.path.name.lower()
-                        is_nested_archive = (
-                            nested_ext in self.ZIP_EXTENSIONS
-                            or nested_ext == ".tar"
-                            or nested_name.endswith(".tar.gz")
-                            or nested_name.endswith(".tgz")
-                            or nested_name.endswith(".tar.bz2")
-                            or nested_name.endswith(".tar.xz")
-                        )
-                        if is_nested_archive and sf.path.exists():
-                            self._extract_archive(sf.path, sf.relative_path, result, depth + 1)
+                    # Recursively extract nested archives (mirrors ZIP path)
+                    for sf in list(result.extracted_files):
+                        if sf.extracted_from == source_relative_path:
+                            nested_ext = sf.path.suffix.lower()
+                            nested_name = sf.path.name.lower()
+                            is_nested_archive = (
+                                nested_ext in self.ZIP_EXTENSIONS
+                                or nested_ext == ".tar"
+                                or nested_name.endswith(".tar.gz")
+                                or nested_name.endswith(".tgz")
+                                or nested_name.endswith(".tar.bz2")
+                                or nested_name.endswith(".tar.xz")
+                            )
+                            if is_nested_archive and sf.path.exists():
+                                self._extract_archive(sf.path, sf.relative_path, result, depth + 1)
 
         except (tarfile.TarError, OSError) as e:
             result.findings.append(

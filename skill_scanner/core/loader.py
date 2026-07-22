@@ -27,6 +27,7 @@ from pathlib import Path
 import frontmatter
 
 from ..utils.file_utils import FileValidationError, get_file_type, read_text_strict
+from ..utils.markdown import extract_markdown_links
 from .exceptions import SkillLoadError
 from .models import Skill, SkillFile, SkillManifest
 
@@ -397,7 +398,7 @@ class SkillLoader:
         references = []
 
         # Match markdown links: [text](file.md)
-        markdown_links = re.findall(r"\[([^\]]+)\]\(([^\)]+)\)", instruction_body)
+        markdown_links = extract_markdown_links(instruction_body)
         for _, link in markdown_links:
             # Filter out URLs, keep relative file paths
             if not link.startswith(("http://", "https://", "ftp://", "#")):
