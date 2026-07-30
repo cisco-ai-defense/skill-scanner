@@ -260,3 +260,179 @@ class TestLiteLLMRequestFallback:
         assert result == '{"overall_assessment":"unsafe","findings":[]}'
         assert mocked_acompletion.await_count == 1
         assert mocked_acompletion.await_args_list[0].kwargs["response_format"]["type"] == "json_object"
+
+
+class TestTokenUsageHelpers:
+    """Token extraction helpers and handler.last_usage state."""
+
+    @pytest.fixture
+    def litellm_handler(self) -> LLMRequestHandler:
+        provider_config = MagicMock()
+        provider_config.model = "gpt-4o"
+        provider_config.use_google_sdk = False
+        provider_config.get_request_params.return_value = {}
+        return LLMRequestHandler(provider_config=provider_config, max_retries=0)
+
+    @staticmethod
+    def _litellm_response(content: str, prompt: int = 0, completion: int = 0, total: int = 0) -> MagicMock:
+        response = MagicMock()
+        response.choices = [MagicMock(message=MagicMock(content=content))]
+        response.usage = MagicMock(prompt_tokens=prompt, completion_tokens=completion, total_tokens=total)
+        return response
+
+    def test_empty_token_usage_returns_zeros(self) -> None:
+        from skill_scanner.core.analyzers.llm_request_handler import _empty_token_usage
+
+        u = _empty_token_usage()
+        assert u == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    def test_extract_token_usage_reads_litellm_fields(self) -> None:
+        from skill_scanner.core.analyzers.llm_request_handler import _extract_token_usage
+
+        response = self._litellm_response("ok", prompt=100, completion=40, total=140)
+        u = _extract_token_usage(response)
+        assert u == {"input_tokens": 100, "output_tokens": 40, "total_tokens": 140}
+
+    def test_extract_token_usage_computes_total_when_absent(self) -> None:
+        from skill_scanner.core.analyzers.llm_request_handler import _extract_token_usage
+
+        response = self._litellm_response("ok", prompt=50, completion=10, total=0)
+        u = _extract_token_usage(response)
+        assert u["total_tokens"] == 60
+
+    def test_extract_token_usage_returns_zeros_when_no_usage_attr(self) -> None:
+        from skill_scanner.core.analyzers.llm_request_handler import _extract_token_usage
+
+        response = MagicMock(spec=[])  # no .usage attribute
+        u = _extract_token_usage(response)
+        assert u == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    def test_add_token_usage_accumulates_in_place(self) -> None:
+        from skill_scanner.core.analyzers.llm_request_handler import _add_token_usage, _empty_token_usage
+
+        total = _empty_token_usage()
+        _add_token_usage(total, {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15})
+        _add_token_usage(total, {"input_tokens": 20, "output_tokens": 8, "total_tokens": 28})
+        assert total == {"input_tokens": 30, "output_tokens": 13, "total_tokens": 43}
+
+    @pytest.mark.asyncio
+    async def test_make_request_populates_last_usage(self, litellm_handler: LLMRequestHandler) -> None:
+        response = self._litellm_response('{"findings":[]}', prompt=200, completion=80, total=280)
+        with patch(
+            "skill_scanner.core.analyzers.llm_request_handler.acompletion",
+            AsyncMock(return_value=response),
+        ):
+            await litellm_handler.make_request([{"role": "user", "content": "scan"}])
+
+        assert litellm_handler.last_usage == {"input_tokens": 200, "output_tokens": 80, "total_tokens": 280}
+
+    @pytest.mark.asyncio
+    async def test_make_request_resets_last_usage_between_calls(self, litellm_handler: LLMRequestHandler) -> None:
+        first = self._litellm_response('{"findings":[]}', prompt=100, completion=40, total=140)
+        second = self._litellm_response('{"findings":[]}', prompt=50, completion=20, total=70)
+        with patch(
+            "skill_scanner.core.analyzers.llm_request_handler.acompletion",
+            AsyncMock(side_effect=[first, second]),
+        ):
+            await litellm_handler.make_request([{"role": "user", "content": "first"}])
+            assert litellm_handler.last_usage["input_tokens"] == 100
+            await litellm_handler.make_request([{"role": "user", "content": "second"}])
+            assert litellm_handler.last_usage["input_tokens"] == 50
+
+    @pytest.mark.asyncio
+    async def test_make_request_last_usage_zero_when_provider_omits_usage(
+        self, litellm_handler: LLMRequestHandler
+    ) -> None:
+        response = MagicMock()
+        response.choices = [MagicMock(message=MagicMock(content='{"findings":[]}}'))]
+        response.usage = None
+        with patch(
+            "skill_scanner.core.analyzers.llm_request_handler.acompletion",
+            AsyncMock(return_value=response),
+        ):
+            await litellm_handler.make_request([{"role": "user", "content": "scan"}])
+
+        assert litellm_handler.last_usage == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+
+class TestExtractGoogleSdkTokenUsage:
+    """Tests for _extract_google_sdk_token_usage."""
+
+    def test_reads_google_sdk_fields(self) -> None:
+        from skill_scanner.core.analyzers.llm_request_handler import _extract_google_sdk_token_usage
+
+        response = MagicMock()
+        response.usage_metadata = MagicMock(prompt_token_count=120, candidates_token_count=45, total_token_count=165)
+        u = _extract_google_sdk_token_usage(response)
+        assert u == {"input_tokens": 120, "output_tokens": 45, "total_tokens": 165}
+
+    def test_computes_total_when_absent(self) -> None:
+        from skill_scanner.core.analyzers.llm_request_handler import _extract_google_sdk_token_usage
+
+        response = MagicMock()
+        response.usage_metadata = MagicMock(prompt_token_count=50, candidates_token_count=10, total_token_count=0)
+        u = _extract_google_sdk_token_usage(response)
+        assert u["total_tokens"] == 60
+
+    def test_returns_zeros_when_no_usage_metadata(self) -> None:
+        from skill_scanner.core.analyzers.llm_request_handler import _extract_google_sdk_token_usage
+
+        response = MagicMock(spec=[])  # no .usage_metadata attribute
+        u = _extract_google_sdk_token_usage(response)
+        assert u == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+
+class TestGoogleSdkRequestTokenUsage:
+    """Token usage extraction for the Google GenAI SDK request path.
+
+    _make_google_sdk_request talks to the google-genai SDK directly (not
+    LiteLLM), so it needs its own usage extraction call. These tests mock the
+    module-level ``genai`` object rather than requiring google-genai to be
+    installed.
+    """
+
+    @pytest.fixture
+    def google_handler(self) -> LLMRequestHandler:
+        provider_config = MagicMock()
+        provider_config.model = "gemini-2.0-flash"
+        provider_config.use_google_sdk = True
+        provider_config.api_key = "test-key"
+        provider_config.get_request_params.return_value = {}
+        handler = LLMRequestHandler(provider_config=provider_config, max_retries=0)
+        handler.response_schema = None  # disable structured output for simplicity
+        return handler
+
+    @staticmethod
+    def _google_response(text: str, prompt: int = 0, candidates: int = 0, total: int = 0) -> MagicMock:
+        response = MagicMock()
+        response.text = text
+        response.usage_metadata = MagicMock(
+            prompt_token_count=prompt, candidates_token_count=candidates, total_token_count=total
+        )
+        return response
+
+    @pytest.mark.asyncio
+    async def test_make_request_populates_last_usage_for_google_sdk(self, google_handler: LLMRequestHandler) -> None:
+        response = self._google_response('{"findings":[]}', prompt=300, candidates=90, total=390)
+        mock_genai = MagicMock()
+        mock_genai.Client.return_value.models.generate_content.return_value = response
+
+        with patch("skill_scanner.core.analyzers.llm_request_handler.genai", mock_genai):
+            result = await google_handler.make_request([{"role": "user", "content": "scan"}])
+
+        assert result == '{"findings":[]}'
+        assert google_handler.last_usage == {"input_tokens": 300, "output_tokens": 90, "total_tokens": 390}
+
+    @pytest.mark.asyncio
+    async def test_make_request_last_usage_zero_when_google_sdk_omits_usage(
+        self, google_handler: LLMRequestHandler
+    ) -> None:
+        response = MagicMock(spec=["text"])
+        response.text = '{"findings":[]}'
+        mock_genai = MagicMock()
+        mock_genai.Client.return_value.models.generate_content.return_value = response
+
+        with patch("skill_scanner.core.analyzers.llm_request_handler.genai", mock_genai):
+            await google_handler.make_request([{"role": "user", "content": "scan"}])
+
+        assert google_handler.last_usage == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}

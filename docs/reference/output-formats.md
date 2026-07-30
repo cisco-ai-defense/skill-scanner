@@ -102,9 +102,16 @@ skill-scanner scan evals/skills/data-exfiltration/environment-secrets --format j
     "policy_version": "1.0",
     "policy_preset_base": "balanced",
     "policy_fingerprint_sha256": "45b486..."
+  },
+  "llm_usage": {
+    "input_tokens": 5312,
+    "output_tokens": 842,
+    "total_tokens": 6154
   }
 }
 ```
+
+`llm_usage` is only present when at least one LLM call was made (`--use-llm` and/or `--enable-meta`), aggregated across every LLM analyzer and meta-analysis call for the scan. It's omitted entirely on static-only scans.
 
 Use `--compact` to remove pretty-printing for machine pipelines.
 

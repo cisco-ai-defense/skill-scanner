@@ -33,6 +33,7 @@ from typing import Any
 from .analyzability import AnalyzabilityReport, compute_analyzability
 from .analyzer_factory import build_core_analyzers
 from .analyzers.base import BaseAnalyzer
+from .analyzers.llm_request_handler import _add_token_usage, _empty_token_usage
 from .extractors.content_extractor import ContentExtractor
 from .loader import SkillLoader, SkillLoadError
 from .models import Finding, Report, ScanResult, Severity, Skill, ThreatCategory
@@ -225,6 +226,7 @@ class SkillScanner:
             llm_analyzers: list[BaseAnalyzer] = []
             unreferenced_scripts: list[str] = []
             llm_scan_meta: dict[str, Any] = {}
+            llm_usage: dict[str, int] | None = None
 
             for analyzer in self.analyzers:
                 # Defer LLM analyzers to Phase 2
@@ -282,6 +284,13 @@ class SkillScanner:
                         llm_scan_meta["llm_overall_assessment"] = analyzer.last_overall_assessment
                         llm_scan_meta["llm_primary_threats"] = getattr(analyzer, "last_primary_threats", [])
 
+            # Aggregate token usage across all LLM analyzers that ran.
+            aggregated_usage = _empty_token_usage()
+            for analyzer in llm_analyzers:
+                if hasattr(analyzer, "llm_usage"):
+                    _add_token_usage(aggregated_usage, analyzer.llm_usage)
+            llm_usage = dict(aggregated_usage) if any(aggregated_usage.values()) else None  # type: ignore[arg-type]
+
             # Post-process findings: Suppress BINARY_FILE_DETECTED for VirusTotal-validated files
             if validated_binary_files:
                 filtered_findings = []
@@ -333,6 +342,7 @@ class SkillScanner:
             analyzability_score=analyzability.score,
             analyzability_details=analyzability.to_dict(),
             scan_metadata=policy_meta,
+            llm_usage=llm_usage,
         )
 
         return result

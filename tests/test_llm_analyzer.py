@@ -891,3 +891,78 @@ class TestLLMAnalysisPolicyIntegration:
         assert restored.llm_analysis.max_instruction_body_chars == 12_345
         assert restored.llm_analysis.max_code_file_chars == 6_789
         assert restored.llm_analysis.meta_budget_multiplier == 2.5
+
+
+class TestLLMAnalyzerTokenUsage:
+    """LLMAnalyzer.llm_usage accumulates token counts across make_request calls."""
+
+    def _make_analyzer(self) -> "LLMAnalyzer":
+        return LLMAnalyzer(model="claude-3-5-sonnet-20241022", api_key="test-key")
+
+    def _make_skill(self, tmp_path) -> "Skill":
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        return Skill(
+            directory=skill_dir,
+            manifest=SkillManifest(name="test-skill", description="test"),
+            skill_md_path=skill_dir / "SKILL.md",
+            instruction_body="do something",
+            files=[],
+        )
+
+    def test_llm_usage_zero_before_analyze(self) -> None:
+        analyzer = self._make_analyzer()
+        assert analyzer.llm_usage == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    @pytest.mark.asyncio
+    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
+    async def test_llm_usage_populated_after_successful_analyze(self, mock_make_request, tmp_path) -> None:
+        mock_make_request.return_value = '{"findings": []}'
+
+        usage_mock = MagicMock()
+        usage_mock.prompt_tokens = 300
+        usage_mock.completion_tokens = 100
+        usage_mock.total_tokens = 400
+
+        analyzer = self._make_analyzer()
+        analyzer.request_handler._last_usage = {
+            "input_tokens": 300,
+            "output_tokens": 100,
+            "total_tokens": 400,
+        }
+
+        skill = self._make_skill(tmp_path)
+        await analyzer.analyze_async(skill)
+
+        assert analyzer.llm_usage["input_tokens"] == 300
+        assert analyzer.llm_usage["output_tokens"] == 100
+        assert analyzer.llm_usage["total_tokens"] == 400
+
+    @pytest.mark.asyncio
+    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
+    async def test_llm_usage_resets_between_analyze_calls(self, mock_make_request, tmp_path) -> None:
+        mock_make_request.return_value = '{"findings": []}'
+        analyzer = self._make_analyzer()
+        skill = self._make_skill(tmp_path)
+
+        analyzer.request_handler._last_usage = {"input_tokens": 500, "output_tokens": 200, "total_tokens": 700}
+        await analyzer.analyze_async(skill)
+        first_usage = analyzer.llm_usage["input_tokens"]
+
+        analyzer.request_handler._last_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        await analyzer.analyze_async(skill)
+
+        assert analyzer.llm_usage["input_tokens"] == 0
+        assert first_usage == 500
+
+    @pytest.mark.asyncio
+    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
+    async def test_llm_usage_zero_when_provider_omits_usage(self, mock_make_request, tmp_path) -> None:
+        mock_make_request.return_value = '{"findings": []}'
+        analyzer = self._make_analyzer()
+        skill = self._make_skill(tmp_path)
+
+        # _last_usage stays at the empty default (provider returned no usage)
+        await analyzer.analyze_async(skill)
+
+        assert analyzer.llm_usage == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}

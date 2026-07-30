@@ -54,14 +54,20 @@ except (ImportError, ModuleNotFoundError):
 # Optional Meta analyzer
 MetaAnalyzer: type | None
 apply_meta_analysis_to_results: Callable[..., list] | None
+merge_meta_analyzer_usage: Callable[..., None] | None
 try:
-    from ..core.analyzers.meta_analyzer import MetaAnalyzer, apply_meta_analysis_to_results
+    from ..core.analyzers.meta_analyzer import (
+        MetaAnalyzer,
+        apply_meta_analysis_to_results,
+        merge_meta_analyzer_usage,
+    )
 
     META_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     META_AVAILABLE = False
     MetaAnalyzer = None
     apply_meta_analysis_to_results = None
+    merge_meta_analyzer_usage = None
 
 logger = logging.getLogger("skill_scanner.cli")
 
@@ -409,6 +415,8 @@ def scan_command(args: argparse.Namespace) -> int:
                 )
                 result.findings = filtered
                 result.analyzers_used.append("meta_analyzer")
+                if merge_meta_analyzer_usage is not None:
+                    merge_meta_analyzer_usage(result, meta_analyzer)
 
                 # Surface meta-analysis insights into scan_metadata
                 if result.scan_metadata is None:
@@ -520,6 +528,8 @@ def scan_all_command(args: argparse.Namespace) -> int:
                     total_new += len(meta_result.missed_threats)
                     result.findings = filtered
                     result.analyzers_used.append("meta_analyzer")
+                    if merge_meta_analyzer_usage is not None:
+                        merge_meta_analyzer_usage(result, meta_analyzer)
 
                     # Surface meta-analysis insights
                     if result.scan_metadata is None:
@@ -643,6 +653,8 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                             total_new += len(meta_result.missed_threats)
                             result.findings = filtered
                             result.analyzers_used.append("meta_analyzer")
+                            if merge_meta_analyzer_usage is not None:
+                                merge_meta_analyzer_usage(result, meta_analyzer)
 
                             # Surface meta-analysis insights
                             if result.scan_metadata is None:

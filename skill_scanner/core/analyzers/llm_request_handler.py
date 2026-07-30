@@ -28,9 +28,62 @@ import logging
 import os
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from .llm_provider_config import ProviderConfig
+
+
+class LLMTokenUsage(TypedDict):
+    """Provider-normalized token counts for one or more LLM calls."""
+
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
+def _empty_token_usage() -> LLMTokenUsage:
+    return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+
+def _extract_token_usage(response: Any) -> LLMTokenUsage:
+    """Read token counts from a LiteLLM (or compatible) response object.
+
+    LiteLLM exposes usage as ``response.usage.prompt_tokens`` /
+    ``response.usage.completion_tokens``.  Both fields are normalised to the
+    ``input_tokens`` / ``output_tokens`` names used in our output schema so
+    callers never need to know which provider returned which key.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return _empty_token_usage()
+    input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    total_tokens = int(getattr(usage, "total_tokens", 0) or input_tokens + output_tokens)
+    return {"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens}
+
+
+def _add_token_usage(total: LLMTokenUsage, delta: LLMTokenUsage) -> None:
+    """Accumulate *delta* into *total* in-place."""
+    total["input_tokens"] += delta["input_tokens"]
+    total["output_tokens"] += delta["output_tokens"]
+    total["total_tokens"] += delta["total_tokens"]
+
+
+def _extract_google_sdk_token_usage(response: Any) -> LLMTokenUsage:
+    """Read token counts from a Google GenAI SDK ``GenerateContentResponse``.
+
+    The SDK exposes usage as ``response.usage_metadata.prompt_token_count`` /
+    ``candidates_token_count``, normalised here to the same ``input_tokens`` /
+    ``output_tokens`` names ``_extract_token_usage`` produces for LiteLLM.
+    """
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return _empty_token_usage()
+    input_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
+    output_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
+    total_tokens = int(getattr(usage, "total_token_count", 0) or input_tokens + output_tokens)
+    return {"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens}
+
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +203,14 @@ class LLMRequestHandler:
         # Load JSON schema for structured outputs
         self.response_schema = self._load_response_schema()
         self._use_plain_json_output = self._env_flag_enabled("SKILL_SCANNER_LLM_FORCE_JSON_OBJECT")
+
+        # Token usage for the most recent make_request() call (reset each call).
+        self._last_usage: LLMTokenUsage = _empty_token_usage()
+
+    @property
+    def last_usage(self) -> LLMTokenUsage:
+        """Token counts from the most recent make_request() call."""
+        return dict(self._last_usage)  # type: ignore[return-value]
 
     def _env_flag_enabled(self, env_name: str) -> bool:
         """Treat common truthy env values as enabled."""
@@ -283,6 +344,7 @@ class LLMRequestHandler:
         Raises:
             Exception: If all retries exhausted
         """
+        self._last_usage = _empty_token_usage()
         if self.provider_config.use_google_sdk:
             # For Google SDK, combine system and user messages into a single prompt
             # Google SDK doesn't have separate system/user roles like OpenAI/Anthropic
@@ -322,6 +384,7 @@ class LLMRequestHandler:
 
                 response = await acompletion(**request_params, drop_params=True)
                 content: str = response.choices[0].message.content or ""
+                self._last_usage = _extract_token_usage(response)
                 return content
 
             except Exception as e:
@@ -336,6 +399,7 @@ class LLMRequestHandler:
                     retry_params["response_format"] = {"type": "json_object"}
                     response = await acompletion(**retry_params, drop_params=True)
                     content: str = response.choices[0].message.content or ""
+                    self._last_usage = _extract_token_usage(response)
                     return content
 
                 last_exception = e
@@ -407,6 +471,7 @@ class LLMRequestHandler:
                     return response
 
                 response = await loop.run_in_executor(None, generate)
+                self._last_usage = _extract_google_sdk_token_usage(response)
 
                 # Extract text from response (new SDK format)
                 # Response has .text attribute directly
