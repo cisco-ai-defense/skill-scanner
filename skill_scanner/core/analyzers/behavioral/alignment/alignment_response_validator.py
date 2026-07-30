@@ -71,10 +71,13 @@ class AlignmentResponseValidator:
             return data
 
         except json.JSONDecodeError as e:
-            self.logger.warning(f"Invalid JSON response: {e}")
             self.logger.debug(f"Raw response (first 500 chars): {response[:500]}")
-            # Try to extract JSON from markdown code blocks
-            return self._extract_json_from_markdown(response)
+            # Try to extract JSON from markdown code blocks before reporting an error.
+            data = self._extract_json_from_markdown(response)
+            if data is not None:
+                return data
+            self.logger.warning(f"Invalid JSON response: {e}")
+            return None
         except Exception as e:
             self.logger.error(f"Unexpected error validating response: {e}")
             return None
