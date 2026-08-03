@@ -95,16 +95,23 @@ skill-scanner scan evals/skills/data-exfiltration/environment-secrets --format j
   ],
   "scan_duration_seconds": 0.13,
   "duration_ms": 127,
-  "analyzers_used": ["static_analyzer", "bytecode", "pipeline"],
+  "analyzers_used": ["static_analyzer", "bytecode", "pipeline", "llm_analyzer", "meta_analyzer"],
   "timestamp": "2026-02-19T21:58:33.032573",
   "scan_metadata": {
     "policy_name": "default",
     "policy_version": "1.0",
     "policy_preset_base": "balanced",
     "policy_fingerprint_sha256": "45b486..."
+  },
+  "llm_usage": {
+    "input_tokens": 5312,
+    "output_tokens": 842,
+    "total_tokens": 6154
   }
 }
 ```
+
+`llm_usage` is only present when at least one LLM call was made (`--use-llm` and/or `--enable-meta`), aggregated across every LLM analyzer and meta-analysis call for the scan. It's omitted entirely on static-only scans.
 
 Use `--compact` to remove pretty-printing for machine pipelines.
 

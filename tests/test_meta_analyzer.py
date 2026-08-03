@@ -33,7 +33,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from skill_scanner.core.models import Finding, Severity, Skill, SkillFile, SkillManifest, ThreatCategory
+from skill_scanner.core.models import Finding, ScanResult, Severity, Skill, SkillFile, SkillManifest, ThreatCategory
 from skill_scanner.core.scan_policy import LLMAnalysisPolicy, ScanPolicy
 
 
@@ -668,3 +668,71 @@ class TestMetaDropParams:
         kwargs = mock_acompletion.call_args.kwargs
         assert "user" not in kwargs
         assert kwargs.get("drop_params") is True
+
+
+class TestMergeMetaAnalyzerUsage:
+    """merge_meta_analyzer_usage() folds MetaAnalyzer spend into a ScanResult.
+
+    This is the fix for the gap where MetaAnalyzer always runs as a separate
+    post-processing step (see cli.py / api/router.py), so SkillScanner's own
+    llm_usage aggregation never sees its token spend.
+    """
+
+    def _make_result(self, llm_usage=None) -> ScanResult:
+        return ScanResult(skill_name="s", skill_directory="/tmp/s", llm_usage=llm_usage)
+
+    def _make_analyzer(self):
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        return MetaAnalyzer(model="claude-3-5-sonnet-20241022", api_key="test-key")
+
+    @staticmethod
+    def _merge(result, analyzer) -> None:
+        from skill_scanner.core.analyzers.meta_analyzer import merge_meta_analyzer_usage
+
+        merge_meta_analyzer_usage(result, analyzer)
+
+    def test_merges_into_result_with_no_prior_llm_usage(self) -> None:
+        result = self._make_result(llm_usage=None)
+        analyzer = self._make_analyzer()
+        analyzer._llm_usage = {"input_tokens": 5000, "output_tokens": 500, "total_tokens": 5500}
+
+        self._merge(result, analyzer)
+
+        assert result.llm_usage == {"input_tokens": 5000, "output_tokens": 500, "total_tokens": 5500}
+
+    def test_adds_to_existing_llm_usage_rather_than_overwriting(self) -> None:
+        result = self._make_result(llm_usage={"input_tokens": 1000, "output_tokens": 200, "total_tokens": 1200})
+        analyzer = self._make_analyzer()
+        analyzer._llm_usage = {"input_tokens": 5000, "output_tokens": 500, "total_tokens": 5500}
+
+        self._merge(result, analyzer)
+
+        assert result.llm_usage == {"input_tokens": 6000, "output_tokens": 700, "total_tokens": 6700}
+
+    def test_noop_when_meta_analyzer_made_no_llm_call(self) -> None:
+        # e.g. analyze_with_findings() returned early because there were no findings
+        result = self._make_result(llm_usage=None)
+        analyzer = self._make_analyzer()
+
+        self._merge(result, analyzer)
+
+        assert result.llm_usage is None
+
+    def test_noop_preserves_existing_llm_usage_unchanged(self) -> None:
+        existing = {"input_tokens": 1000, "output_tokens": 200, "total_tokens": 1200}
+        result = self._make_result(llm_usage=dict(existing))
+        analyzer = self._make_analyzer()
+
+        self._merge(result, analyzer)
+
+        assert result.llm_usage == existing
+
+    def test_does_not_mutate_meta_analyzer_llm_usage(self) -> None:
+        result = self._make_result(llm_usage=None)
+        analyzer = self._make_analyzer()
+        analyzer._llm_usage = {"input_tokens": 5000, "output_tokens": 500, "total_tokens": 5500}
+
+        self._merge(result, analyzer)
+
+        assert analyzer.llm_usage == {"input_tokens": 5000, "output_tokens": 500, "total_tokens": 5500}

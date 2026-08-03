@@ -273,7 +273,7 @@ See [API Server](../user-guide/api-server.md) and [API Endpoint Reference](../re
 Block risky findings before they reach the repository. The hook scans staged skill changes and fails the commit when findings exceed a severity threshold.
 
 ```bash
-skill-scanner-pre-commit install
+skill-scanner-pre-commit --install
 ```
 
 <details>

@@ -45,10 +45,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ...threats.threats import ThreatMapping
-from ..models import Finding, Severity, Skill, ThreatCategory
+from ..models import Finding, ScanResult, Severity, Skill, ThreatCategory
 from .base import BaseAnalyzer
 from .llm_provider_config import ProviderConfig
-from .llm_request_handler import _TEMPERATURE_UNSET, LLMRequestHandler, _resolve_temperature
+from .llm_request_handler import (
+    _TEMPERATURE_UNSET,
+    LLMRequestHandler,
+    LLMTokenUsage,
+    _add_token_usage,
+    _empty_token_usage,
+    _extract_token_usage,
+    _resolve_temperature,
+)
 from .llm_request_options import resolve_llm_user, supports_openai_user_param
 
 if TYPE_CHECKING:
@@ -365,8 +373,16 @@ class MetaAnalyzer(BaseAnalyzer):
         self.max_retries = max_retries
         self.timeout = timeout
 
+        # Cumulative token usage across all LLM calls in the most recent analyze_with_findings() run.
+        self._llm_usage: LLMTokenUsage = _empty_token_usage()
+
         # Load prompts
         self._load_prompts()
+
+    @property
+    def llm_usage(self) -> LLMTokenUsage:
+        """Cumulative token usage from the most recent analyze_with_findings() run."""
+        return dict(self._llm_usage)  # type: ignore[return-value]
 
     def _load_prompts(self):
         """Load meta-analysis prompt templates from files."""
@@ -427,6 +443,8 @@ Respond with JSON containing your analysis following the required schema."""
         Returns:
             MetaAnalysisResult with validated findings, false positives, and recommendations
         """
+        self._llm_usage = _empty_token_usage()
+
         if not findings:
             return MetaAnalysisResult(
                 overall_risk_assessment={
@@ -877,6 +895,7 @@ Respond with a JSON object following the schema in the system prompt."""
             try:
                 response = await acompletion(**api_params, drop_params=True)
                 content: str = response.choices[0].message.content or ""
+                _add_token_usage(self._llm_usage, _extract_token_usage(response))
                 return content
 
             except Exception as e:
@@ -1128,3 +1147,20 @@ def apply_meta_analysis_to_results(
     result_findings.extend(missed_findings)
 
     return result_findings
+
+
+def merge_meta_analyzer_usage(result: ScanResult, meta_analyzer: MetaAnalyzer) -> None:
+    """Fold a MetaAnalyzer's token usage into a scan result's aggregated ``llm_usage``.
+
+    MetaAnalyzer always runs as a separate post-processing step after
+    ``SkillScanner`` has already produced a ``ScanResult`` (see
+    ``analyze_with_findings``), so its token spend isn't captured by
+    ``SkillScanner``'s own per-scan aggregation. Call this immediately after
+    ``analyze_with_findings()`` to fold the meta-analysis call(s) in.
+    """
+    usage = meta_analyzer.llm_usage
+    if not any(usage.values()):
+        return
+    aggregated: LLMTokenUsage = dict(result.llm_usage) if result.llm_usage else _empty_token_usage()  # type: ignore[assignment]
+    _add_token_usage(aggregated, usage)
+    result.llm_usage = dict(aggregated)  # type: ignore[arg-type]

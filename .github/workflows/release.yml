@@ -24,6 +24,7 @@ jobs:
     permissions:
       id-token: write
       contents: write  # needed to create/update the GitHub release assets
+      attestations: write  # needed to store build provenance and SBOM attestations
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -53,6 +54,38 @@ jobs:
             --no-emit-project \
             --output-file release-assets/requirements.txt
 
+      # SBOM is generated from the frozen export above so all release artifacts
+      # describe one locked tree. The project version is dynamic (VCS-derived),
+      # so it is stamped from the workflow input.
+      - name: Generate CycloneDX SBOM
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          uv sync --frozen --only-group sbom
+          uv run --no-sync cyclonedx-py requirements \
+            release-assets/requirements.txt \
+            --pyproject pyproject.toml \
+            --output-reproducible \
+            --output-file release-assets/sbom.cdx.json
+          jq --arg v "$VERSION" \
+            '.metadata.component.version = $v
+             | .metadata.component.purl = "pkg:pypi/cisco-ai-skill-scanner@\($v)"' \
+            release-assets/sbom.cdx.json > sbom.tmp
+          mv sbom.tmp release-assets/sbom.cdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            dist/*
+            release-assets/*
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/*
+          sbom-path: release-assets/sbom.cdx.json
+
       - name: Check GitHub release state
         id: release-state
         env:
@@ -66,7 +99,7 @@ jobs:
 
             if [[ "$is_draft" == "false" ]]; then
               echo "published=true" >> "$GITHUB_OUTPUT"
-              echo "::warning::GitHub release $VERSION is already published. Immutable releases cannot accept new assets, so requirements.txt upload will be skipped."
+              echo "::warning::GitHub release $VERSION is already published. Immutable releases cannot accept new assets, so release asset upload will be skipped."
             else
               echo "published=false" >> "$GITHUB_OUTPUT"
             fi
@@ -76,12 +109,14 @@ jobs:
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Attach requirements.txt to draft GitHub release
+      - name: Attach requirements.txt and SBOM to draft GitHub release
         if: steps.release-state.outputs.published != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.version }}
-          files: release-assets/requirements.txt
+          files: |
+            release-assets/requirements.txt
+            release-assets/sbom.cdx.json
           fail_on_unmatched_files: true
           draft: true
 

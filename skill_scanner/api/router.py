@@ -97,14 +97,20 @@ except (ImportError, ModuleNotFoundError):
 
 MetaAnalyzer: type | None
 apply_meta_analysis_to_results: Callable[..., list] | None
+merge_meta_analyzer_usage: Callable[..., None] | None
 try:
-    from ..core.analyzers.meta_analyzer import MetaAnalyzer, apply_meta_analysis_to_results
+    from ..core.analyzers.meta_analyzer import (
+        MetaAnalyzer,
+        apply_meta_analysis_to_results,
+        merge_meta_analyzer_usage,
+    )
 
     META_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     META_AVAILABLE = False
     MetaAnalyzer = None
     apply_meta_analysis_to_results = None
+    merge_meta_analyzer_usage = None
 
 router = APIRouter()
 
@@ -216,6 +222,7 @@ class ScanResponse(BaseModel):
     scan_duration_seconds: float
     timestamp: str
     findings: list[dict]
+    llm_usage: dict[str, int] | None = None
 
 
 class HealthResponse(BaseModel):
@@ -461,6 +468,8 @@ async def scan_skill(
                 )
                 result.findings = filtered_findings
                 result.analyzers_used.append("meta_analyzer")
+                if merge_meta_analyzer_usage is not None:
+                    merge_meta_analyzer_usage(result, meta_analyzer)
             except Exception as meta_error:
                 logger.warning("Meta-analysis failed: %s", meta_error)
 
@@ -474,6 +483,7 @@ async def scan_skill(
             scan_duration_seconds=result.scan_duration_seconds,
             timestamp=result.timestamp.isoformat(),
             findings=[f.to_dict() for f in result.findings],
+            llm_usage=result.llm_usage,
         )
 
     except SkillLoadError as e:
@@ -720,6 +730,8 @@ def run_batch_scan(
                             )
                             result.findings = filtered_findings
                             result.analyzers_used.append("meta_analyzer")
+                            if merge_meta_analyzer_usage is not None:
+                                merge_meta_analyzer_usage(result, meta_analyzer)
                         except Exception:
                             pass
 

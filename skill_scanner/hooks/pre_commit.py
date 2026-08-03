@@ -23,7 +23,7 @@ and blocks commits that contain HIGH or CRITICAL severity findings.
 
 Usage:
     1. Install as a pre-commit hook:
-       skill-scanner-pre-commit install
+       skill-scanner-pre-commit --install
 
     2. Or add to .pre-commit-config.yaml:
        - repo: local
@@ -32,8 +32,8 @@ Usage:
              name: Skill Scanner
              entry: skill-scanner-pre-commit
              language: python
-             types: [file]
              pass_filenames: false
+             always_run: true
 
 Configuration:
     Create a .skill_scannerrc file in your repo root:
@@ -47,9 +47,12 @@ Configuration:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+from ..core.changed_skills import resolve_affected_skills
 
 # Default configuration
 DEFAULT_CONFIG = {
@@ -111,58 +114,61 @@ def get_staged_files() -> list[str]:
     """
     try:
         result = subprocess.run(
-            ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
+            ["git", "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMRTD"],
             capture_output=True,
             text=True,
             check=True,
         )
-        return [f.strip() for f in result.stdout.split("\n") if f.strip()]
+        return [path for path in result.stdout.split("\0") if path]
     except subprocess.CalledProcessError:
         return []
 
 
-def get_affected_skills(staged_files: list[str], skills_path: str) -> set[Path]:
+def get_ref_changed_files(from_ref: str, to_ref: str) -> list[str]:
+    """Get changed paths between two revisions, including deleted files."""
+    changed_files: list[str] = []
+    comparison = f"{from_ref}...{to_ref}"
+    for diff_filter in ("ACMRT", "D"):
+        result = subprocess.run(
+            ["git", "diff", f"--diff-filter={diff_filter}", "--name-only", "-z", comparison],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        changed_files.extend(path for path in result.stdout.split("\0") if path)
+
+    return list(dict.fromkeys(changed_files))
+
+
+def get_affected_skills(
+    changed_files: list[str],
+    skills_path: str,
+    *,
+    repo_root: str | Path | None = None,
+    skill_file: str = "SKILL.md",
+) -> set[Path]:
     """
-    Identify skill directories affected by staged changes.
+    Identify skill directories affected by changed files.
 
     Walks up from each staged file to find the nearest parent containing a
     SKILL.md.  Also honours the configured ``skills_path`` prefix so that
     changes inside a known skills tree are always detected.
 
     Args:
-        staged_files: List of staged file paths
+        changed_files: File paths supplied by pre-commit or discovered from the index
         skills_path: Base path for skills
+        repo_root: Optional repository boundary and base for relative paths
+        skill_file: Metadata filename used to identify a skill root
 
     Returns:
         Set of affected skill directory paths
     """
-    affected_skills: set[Path] = set()
-    skills_prefix = skills_path.rstrip("/") + "/"
-
-    for file_path in staged_files:
-        # 1. Check if file is in the configured skills directory
-        if file_path.startswith(skills_prefix) or file_path.startswith(skills_path):
-            relative = file_path[len(skills_path) :].lstrip("/")
-            parts = relative.split("/")
-
-            if parts:
-                skill_dir = Path(skills_path) / parts[0]
-                skill_md = skill_dir / "SKILL.md"
-                if skill_md.exists():
-                    affected_skills.add(skill_dir)
-
-        # 2. Walk up from the staged file to locate the nearest SKILL.md
-        candidate = Path(file_path).parent
-        while str(candidate) not in ("", "."):
-            if (candidate / "SKILL.md").exists():
-                affected_skills.add(candidate)
-                break
-            parent = candidate.parent
-            if parent == candidate:
-                break
-            candidate = parent
-
-    return affected_skills
+    return resolve_affected_skills(
+        changed_files,
+        repo_root=repo_root,
+        skill_roots=(skills_path,),
+        skill_file=skill_file,
+    )
 
 
 def scan_skill(skill_dir: Path, config: dict) -> dict:
@@ -290,9 +296,15 @@ def main(args: list[str] | None = None) -> int:
         help="Override skills path from config",
     )
     parser.add_argument(
-        "--all",
+        "--scan-all",
         action="store_true",
+        dest="scan_all",
         help="Scan all skills, not just staged ones",
+    )
+    parser.add_argument(
+        "--install",
+        action="store_true",
+        help="Install the built-in pre-commit hook",
     )
     parser.add_argument(
         "--lenient",
@@ -300,15 +312,16 @@ def main(args: list[str] | None = None) -> int:
         help="Tolerate malformed skills instead of failing",
     )
     parser.add_argument(
-        "install",
-        nargs="?",
-        help="Install pre-commit hook",
+        "filenames",
+        nargs="*",
+        metavar="FILE",
+        help="Changed files supplied by pre-commit (falls back to staged files when omitted)",
     )
 
     parsed_args = parser.parse_args(args)
 
-    # Handle install command
-    if parsed_args.install == "install":
+    # Installation is explicit so a changed path named ``install`` remains a filename.
+    if parsed_args.install:
         return install_hook()
 
     # Find repo root
@@ -336,15 +349,31 @@ def main(args: list[str] | None = None) -> int:
         config["lenient"] = True
 
     # Get staged files and affected skills
-    if parsed_args.all:
+    if parsed_args.scan_all:
         skills_dir = repo_root / config["skills_path"]
         if skills_dir.exists():
             affected_skills = {d for d in skills_dir.iterdir() if d.is_dir() and (d / "SKILL.md").exists()}
         else:
             affected_skills = set()
     else:
-        staged_files = get_staged_files()
-        affected_skills = get_affected_skills(staged_files, config["skills_path"])
+        changed_files = list(parsed_args.filenames)
+        from_ref = os.environ.get("PRE_COMMIT_FROM_REF")
+        to_ref = os.environ.get("PRE_COMMIT_TO_REF")
+        if from_ref and to_ref:
+            try:
+                changed_files.extend(get_ref_changed_files(from_ref, to_ref))
+            except subprocess.CalledProcessError as exc:
+                detail = exc.stderr.strip() if exc.stderr else str(exc)
+                print(f"Error: Failed to discover changed files: {detail}", file=sys.stderr)
+                return 1
+            changed_files = list(dict.fromkeys(changed_files))
+        elif not changed_files:
+            changed_files = get_staged_files()
+        affected_skills = get_affected_skills(
+            changed_files,
+            config["skills_path"],
+            repo_root=repo_root,
+        )
 
     if not affected_skills:
         # No skills affected, allow commit

@@ -33,6 +33,7 @@ from typing import Any
 from .analyzability import AnalyzabilityReport, compute_analyzability
 from .analyzer_factory import build_core_analyzers
 from .analyzers.base import BaseAnalyzer
+from .analyzers.llm_request_handler import _add_token_usage, _empty_token_usage
 from .extractors.content_extractor import ContentExtractor
 from .loader import SkillLoader, SkillLoadError
 from .models import Finding, Report, ScanResult, Severity, Skill, ThreatCategory
@@ -225,6 +226,7 @@ class SkillScanner:
             llm_analyzers: list[BaseAnalyzer] = []
             unreferenced_scripts: list[str] = []
             llm_scan_meta: dict[str, Any] = {}
+            llm_usage: dict[str, int] | None = None
 
             for analyzer in self.analyzers:
                 # Defer LLM analyzers to Phase 2
@@ -242,6 +244,48 @@ class SkillScanner:
                 # LLM enrichment (no longer emitted as standalone findings).
                 if hasattr(analyzer, "get_unreferenced_scripts"):
                     unreferenced_scripts = analyzer.get_unreferenced_scripts()
+
+            # Phase 1.5: Per-finding adjudicator (demote literal-regex FPs)
+            #
+            # Runs before the LLM analyzer so that demoted findings never
+            # enter the LLM analyzer's ``static_findings_summary`` enrichment
+            # context.  This naturally breaks the cross-analyzer confirmation
+            # cascade where a wrong deterministic HIGH gets amplified into
+            # LLM findings citing the same pattern hit.
+            #
+            # Demote-only: findings can only be lowered in severity, never
+            # raised. LLM errors leave findings at their original severity,
+            # so enabling this pass cannot introduce false negatives.
+            adjudicator_audit: list[dict[str, Any]] = []
+            if self.policy.adjudicator.enabled and all_findings:
+                try:
+                    from .analyzers.adjudicator import Adjudicator
+
+                    adj = Adjudicator(
+                        min_fp_confidence=self.policy.adjudicator.min_fp_confidence,
+                    )
+                    if adj.is_available():
+                        adj.adjudicate(all_findings, skill)
+                        analyzer_names.append("adjudicator")
+                        adjudicator_audit = [
+                            {
+                                "rule_id": r.rule_id,
+                                "verdict": r.verdict,
+                                "confidence": r.confidence,
+                                "reason": r.reason,
+                                "demoted_to": r.demoted_to,
+                                "model_id": r.model_id,
+                            }
+                            for r in adj.audit
+                        ]
+                    else:
+                        logger.debug(
+                            "adjudicator enabled but no LLM model configured; "
+                            "set SKILL_SCANNER_LLM_MODEL or "
+                            "SKILL_SCANNER_ADJUDICATOR_LLM_MODEL to activate"
+                        )
+                except Exception as exc:
+                    logger.warning("Adjudication failed: %s", exc)
 
             # Phase 2: Run LLM analyzers with enrichment context from Phase 1
             if llm_analyzers:
@@ -282,6 +326,13 @@ class SkillScanner:
                         llm_scan_meta["llm_overall_assessment"] = analyzer.last_overall_assessment
                         llm_scan_meta["llm_primary_threats"] = getattr(analyzer, "last_primary_threats", [])
 
+            # Aggregate token usage across all LLM analyzers that ran.
+            aggregated_usage = _empty_token_usage()
+            for analyzer in llm_analyzers:
+                if hasattr(analyzer, "llm_usage"):
+                    _add_token_usage(aggregated_usage, analyzer.llm_usage)
+            llm_usage = dict(aggregated_usage) if any(aggregated_usage.values()) else None  # type: ignore[arg-type]
+
             # Post-process findings: Suppress BINARY_FILE_DETECTED for VirusTotal-validated files
             if validated_binary_files:
                 filtered_findings = []
@@ -314,6 +365,13 @@ class SkillScanner:
             policy_meta = self._policy_fingerprint_metadata()
             if llm_scan_meta:
                 policy_meta.update(llm_scan_meta)
+            if adjudicator_audit:
+                demoted = [a for a in adjudicator_audit if a.get("demoted_to")]
+                policy_meta["adjudicator"] = {
+                    "considered": len(adjudicator_audit),
+                    "demoted": len(demoted),
+                    "audit": adjudicator_audit,
+                }
             self._annotate_findings_with_policy(all_findings, policy_meta)
 
         finally:
@@ -333,6 +391,7 @@ class SkillScanner:
             analyzability_score=analyzability.score,
             analyzability_details=analyzability.to_dict(),
             scan_metadata=policy_meta,
+            llm_usage=llm_usage,
         )
 
         return result
@@ -456,8 +515,16 @@ class SkillScanner:
         return has_critical_or_high or has_unreferenced or has_magic_mismatch
 
     def _apply_severity_overrides(self, findings: list) -> None:
-        """Apply severity overrides from policy ``severity_overrides``."""
+        """Apply severity overrides from policy ``severity_overrides``.
+
+        Findings previously demoted by the adjudicator (marked with
+        ``metadata['adjudication']['demoted_to']``) are exempt — the
+        adjudicator's INFO verdict is load-bearing for downstream verdict
+        computation and must not be re-raised by a per-rule override.
+        """
         for finding in findings:
+            if (finding.metadata or {}).get("adjudication", {}).get("demoted_to"):
+                continue
             override = self.policy.get_severity_override(finding.rule_id)
             if override:
                 try:

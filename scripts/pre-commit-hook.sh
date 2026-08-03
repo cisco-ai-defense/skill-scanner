@@ -7,7 +7,7 @@
 # Installation:
 #   1. Copy to .git/hooks/pre-commit
 #   2. Or symlink: ln -s ../../scripts/pre-commit-hook.sh .git/hooks/pre-commit
-#   3. Or run: skill-scanner-pre-commit install
+#   3. Or run: skill-scanner-pre-commit --install
 #
 # Configuration:
 #   Create .skill_scannerrc in your repo root:

@@ -108,3 +108,4 @@ scripts/ui_security_verify.py
 
 # User-generated scan policy (default TUI output)
 scan_policy.yaml
+ISSUE_DRAFT.md

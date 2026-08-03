@@ -54,14 +54,20 @@ except (ImportError, ModuleNotFoundError):
 # Optional Meta analyzer
 MetaAnalyzer: type | None
 apply_meta_analysis_to_results: Callable[..., list] | None
+merge_meta_analyzer_usage: Callable[..., None] | None
 try:
-    from ..core.analyzers.meta_analyzer import MetaAnalyzer, apply_meta_analysis_to_results
+    from ..core.analyzers.meta_analyzer import (
+        MetaAnalyzer,
+        apply_meta_analysis_to_results,
+        merge_meta_analyzer_usage,
+    )
 
     META_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     META_AVAILABLE = False
     MetaAnalyzer = None
     apply_meta_analysis_to_results = None
+    merge_meta_analyzer_usage = None
 
 logger = logging.getLogger("skill_scanner.cli")
 
@@ -385,6 +391,8 @@ def scan_command(args: argparse.Namespace) -> int:
         return 1
 
     policy = _load_policy(args)
+    if getattr(args, "adjudicate", False):
+        policy.adjudicator.enabled = True
     analyzers = _build_analyzers(policy, args, status)
     llm_max_tokens = getattr(args, "llm_max_tokens", None)
     meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
@@ -412,6 +420,8 @@ def scan_command(args: argparse.Namespace) -> int:
                 )
                 result.findings = filtered
                 result.analyzers_used.append("meta_analyzer")
+                if merge_meta_analyzer_usage is not None:
+                    merge_meta_analyzer_usage(result, meta_analyzer)
 
                 # Surface meta-analysis insights into scan_metadata
                 if result.scan_metadata is None:
@@ -475,6 +485,8 @@ def scan_all_command(args: argparse.Namespace) -> int:
         return 1
 
     policy = _load_policy(args)
+    if getattr(args, "adjudicate", False):
+        policy.adjudicator.enabled = True
     analyzers = _build_analyzers(policy, args, status)
     llm_max_tokens = getattr(args, "llm_max_tokens", None)
     meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
@@ -523,6 +535,8 @@ def scan_all_command(args: argparse.Namespace) -> int:
                     total_new += len(meta_result.missed_threats)
                     result.findings = filtered
                     result.analyzers_used.append("meta_analyzer")
+                    if merge_meta_analyzer_usage is not None:
+                        merge_meta_analyzer_usage(result, meta_analyzer)
 
                     # Surface meta-analysis insights
                     if result.scan_metadata is None:
@@ -600,6 +614,8 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                 return 1
 
             policy = _load_policy(args)
+            if getattr(args, "adjudicate", False):
+                policy.adjudicator.enabled = True
             analyzers = _build_analyzers(policy, args, status)
             llm_max_tokens = getattr(args, "llm_max_tokens", None)
             meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
@@ -646,6 +662,8 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                             total_new += len(meta_result.missed_threats)
                             result.findings = filtered
                             result.analyzers_used.append("meta_analyzer")
+                            if merge_meta_analyzer_usage is not None:
+                                merge_meta_analyzer_usage(result, meta_analyzer)
 
                             # Surface meta-analysis insights
                             if result.scan_metadata is None:
@@ -958,6 +976,17 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--use-trigger", action="store_true", help="Enable trigger specificity analysis")
     parser.add_argument("--enable-meta", action="store_true", help="Enable meta-analysis FP filtering (2+ analyzers)")
+    parser.add_argument(
+        "--adjudicate",
+        action="store_true",
+        help=(
+            "Enable per-finding adjudicator: for each deterministic HIGH/CRITICAL finding, "
+            "ask the LLM whether the matched content is a real threat or a literal-regex "
+            "false positive. Demote-only (never promotes) — LLM errors leave findings at "
+            "original severity. Uses SKILL_SCANNER_LLM_MODEL (or "
+            "SKILL_SCANNER_ADJUDICATOR_LLM_MODEL to override)."
+        ),
+    )
     parser.add_argument(
         "--policy",
         metavar="PRESET_OR_PATH",

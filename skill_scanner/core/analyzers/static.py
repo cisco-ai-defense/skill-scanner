@@ -850,7 +850,13 @@ class StaticAnalyzer(BaseAnalyzer):
         return False
 
     def _scan_config_files(self, skill: Skill) -> list[Finding]:
-        """Classify URLs found in config files using the shared URL classifier."""
+        """Classify URLs found in config files using the shared URL classifier.
+
+        Config files (e.g. ``config.yaml``) are typed ``other`` and never
+        reach the Python AST URL classifier, so a tunnel/proxy endpoint hidden
+        in a config value would otherwise go unnoticed. URLs are extracted from
+        the raw text so endpoints in comments are covered too.
+        """
         findings: list[Finding] = []
         for skill_file in skill.files:
             if not self._is_config_file(skill_file.relative_path):
@@ -876,7 +882,7 @@ class StaticAnalyzer(BaseAnalyzer):
                             f"suspicious/tunnel domain that may route data to an attacker-controlled endpoint."
                         ),
                         file_path=skill_file.relative_path,
-                        line_number=self._first_line_containing(content, url),
+                        line_number=self._find_line_number(content, url),
                         snippet=display_url,
                         remediation=(
                             "Verify the endpoint is legitimate and documented; "
@@ -887,6 +893,14 @@ class StaticAnalyzer(BaseAnalyzer):
                     )
                 )
         return findings
+
+    @staticmethod
+    def _find_line_number(content: str, needle: str) -> int | None:
+        """Best-effort 1-based line number of the first line containing ``needle``."""
+        for index, line in enumerate(content.splitlines(), start=1):
+            if needle in line:
+                return index
+        return None
 
     @staticmethod
     def _redact_url_for_finding(url: str) -> str:

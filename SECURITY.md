@@ -65,7 +65,18 @@ following steps:
   who install with `pip` can reproduce the exact same dependency tree we ship
   and tested against, with hash verification.
 - **PyPI Trusted Publishers.** Releases are uploaded to PyPI via OIDC; no
-  long-lived API tokens are stored in the repository or in CI secrets.
+  long-lived API tokens are stored in the repository or in CI secrets. Uploads
+  carry [PEP 740](https://peps.python.org/pep-0740/) attestations generated
+  during publish.
+- **SLSA build provenance.** Every release run attests the wheel, sdist, and
+  release assets with
+  [`actions/attest-build-provenance`](https://github.com/actions/attest-build-provenance).
+  Verify any artifact with
+  `gh attestation verify <artifact> --repo cisco-ai-defense/skill-scanner`.
+- **CycloneDX SBOM.** Each GitHub release includes an `sbom.cdx.json` generated
+  from the same frozen export as `requirements.txt` and bound to the
+  distributions with
+  [`actions/attest-sbom`](https://github.com/actions/attest-sbom).
 - **Loose abstract constraints in `pyproject.toml`.** Library consumers can
   resolve transitive security patches forward without forced cascades. See
   [`CONTRIBUTING.md` § Dependency Policy](/CONTRIBUTING.md#dependency-policy)
