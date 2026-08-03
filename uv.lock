@@ -539,6 +539,7 @@ name = "cisco-ai-skill-scanner"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
+    { name = "click" },
     { name = "confusable-homoglyphs" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -566,6 +567,8 @@ all = [
     { name = "google-cloud-aiplatform" },
     { name = "google-genai" },
     { name = "google-generativeai" },
+    { name = "httplib2" },
+    { name = "pyasn1" },
 ]
 azure = [
     { name = "azure-identity" },
@@ -576,9 +579,13 @@ bedrock = [
 google = [
     { name = "google-genai" },
     { name = "google-generativeai" },
+    { name = "httplib2" },
+    { name = "pyasn1" },
 ]
 vertex = [
     { name = "google-cloud-aiplatform" },
+    { name = "httplib2" },
+    { name = "pyasn1" },
 ]
 
 [package.dev-dependencies]
@@ -600,6 +607,7 @@ requires-dist = [
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.20,<2" },
     { name = "boto3", marker = "extra == 'all'", specifier = ">=1.40,<2" },
     { name = "boto3", marker = "extra == 'bedrock'", specifier = ">=1.40,<2" },
+    { name = "click", specifier = ">=8.3.3" },
     { name = "confusable-homoglyphs", specifier = ">=3.3,<4" },
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "google-cloud-aiplatform", marker = "extra == 'all'", specifier = ">=1.130,<2" },
@@ -608,12 +616,18 @@ requires-dist = [
     { name = "google-genai", marker = "extra == 'google'", specifier = ">=1.60,<2" },
     { name = "google-generativeai", marker = "extra == 'all'", specifier = ">=0.8,<1" },
     { name = "google-generativeai", marker = "extra == 'google'", specifier = ">=0.8,<1" },
+    { name = "httplib2", marker = "extra == 'all'", specifier = ">=0.32.0" },
+    { name = "httplib2", marker = "extra == 'google'", specifier = ">=0.32.0" },
+    { name = "httplib2", marker = "extra == 'vertex'", specifier = ">=0.32.0" },
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "litellm", specifier = ">=1.84.0,<2" },
     { name = "magika", specifier = ">=1.0,<2" },
     { name = "oletools", specifier = ">=0.60,<1" },
     { name = "openai", specifier = ">=2.0,<3" },
     { name = "pdfid", specifier = ">=1.1,<2" },
+    { name = "pyasn1", marker = "extra == 'all'", specifier = ">=0.6.4" },
+    { name = "pyasn1", marker = "extra == 'google'", specifier = ">=0.6.4" },
+    { name = "pyasn1", marker = "extra == 'vertex'", specifier = ">=0.6.4" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "python-dotenv", specifier = ">=1.0,<2" },
     { name = "python-frontmatter", specifier = ">=1.1,<2" },
@@ -641,14 +655,14 @@ dev = [
 
 [[package]]
 name = "click"
-version = "8.1.8"
+version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/2e/0090cbf739cee7d23781ad4b89a9894a41538e4fcf4c31dcdd705b78eb8b/click-8.1.8.tar.gz", hash = "sha256:ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a", size = 226593, upload-time = "2024-12-21T18:38:44.339Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/d4/81420972a676e8ffea40450d8c8c92943e7218a78fe9b64359836cc9876b/click-8.4.2.tar.gz", hash = "sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6", size = 338000, upload-time = "2026-06-24T17:45:15.148Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/d4/7ebdbd03970677812aac39c869717059dbb71a4cfc033ca6e5221787892c/click-8.1.8-py3-none-any.whl", hash = "sha256:63c132bbbed01578a06712a2d1f497bb62d9c1c0d329b7903a866228027263b2", size = 98188, upload-time = "2024-12-21T18:38:41.666Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/e2/79c688af8b210d232694e31e59da9f6ec747bae31c3f5946e4e9b98860d5/click-8.4.2-py3-none-any.whl", hash = "sha256:e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76", size = 119243, upload-time = "2026-06-24T17:45:13.73Z" },
 ]
 
 [[package]]
@@ -1584,14 +1598,14 @@ wheels = [
 
 [[package]]
 name = "httplib2"
-version = "0.31.2"
+version = "0.32.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyparsing" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c1/1f/e86365613582c027dda5ddb64e1010e57a3d53e99ab8a72093fa13d565ec/httplib2-0.31.2.tar.gz", hash = "sha256:385e0869d7397484f4eab426197a4c020b606edd43372492337c0b4010ae5d24", size = 250800, upload-time = "2026-01-23T11:04:44.165Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/84/f5/ccf58de92d61e3ad921119668f54ed36ca1d0cf5dcc5c1657dfb164fd78b/httplib2-0.32.0.tar.gz", hash = "sha256:48a0ef30a42db65d8f3399045e1d09ab0ba66e3b9efc360d07f80ea55d286025", size = 254283, upload-time = "2026-06-26T10:13:56.265Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/90/fd509079dfcab01102c0fdd87f3a9506894bc70afcf9e9785ef6b2b3aff6/httplib2-0.31.2-py3-none-any.whl", hash = "sha256:dbf0c2fa3862acf3c55c078ea9c0bc4481d7dc5117cae71be9514912cf9f8349", size = 91099, upload-time = "2026-01-23T11:04:42.78Z" },
+    { url = "https://files.pythonhosted.org/packages/33/a0/550eec327e5f5c7b732531c489f5307efec41f047b0d703bd4ca1e5ad2db/httplib2-0.32.0-py3-none-any.whl", hash = "sha256:dc6705cacdf3fb0a2aba7629fa33c90fd93e30035db0c157325826be177e4816", size = 93148, upload-time = "2026-06-26T10:13:54.985Z" },
 ]
 
 [[package]]
@@ -3050,11 +3064,11 @@ wheels = [
 
 [[package]]
 name = "pyasn1"
-version = "0.6.3"
+version = "0.6.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/5c/5f/6583902b6f79b399c9c40674ac384fd9cd77805f9e6205075f828ef11fb2/pyasn1-0.6.3.tar.gz", hash = "sha256:697a8ecd6d98891189184ca1fa05d1bb00e2f84b5977c481452050549c8a72cf", size = 148685, upload-time = "2026-03-17T01:06:53.382Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a4/9a/23310166d960def5897e91fe20e5b724601b02a22e84ba1f94232c0b7f67/pyasn1-0.6.4.tar.gz", hash = "sha256:9c447d8431c947fe4c8febc4ed9e760bc29011a5b01e5c74b67025bd9fb8ce81", size = 151262, upload-time = "2026-07-09T01:12:33.988Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/a0/7d793dce3fa811fe047d6ae2431c672364b462850c6235ae306c0efd025f/pyasn1-0.6.3-py3-none-any.whl", hash = "sha256:a80184d120f0864a52a073acc6fc642847d0be408e7c7252f31390c0f4eadcde", size = 83997, upload-time = "2026-03-17T01:06:52.036Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/3b/6163796d69c3977d1e4287bea4a6979161cbbdd170ebb430511e8e1999ce/pyasn1-0.6.4-py3-none-any.whl", hash = "sha256:deda9277cfd454080ec40b207fb6df82206a3a2688735233cdcd8d3d565f088b", size = 84410, upload-time = "2026-07-09T01:12:32.92Z" },
 ]
 
 [[package]]
