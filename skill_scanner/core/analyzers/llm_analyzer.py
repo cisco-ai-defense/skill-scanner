@@ -608,15 +608,10 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                 # - Transitive trust (AITech-1.2 / PROMPT_INJECTION)
                 # - Supply chain attacks referencing trusted internal repos
                 # Mirrors the pattern of known_installer_domains (demote, don't suppress).
-                _has_trusted_urls = self._references_only_trusted_domains(
-                    description, llm_finding.get("evidence", "")
-                )
+                _has_trusted_urls = self._references_only_trusted_domains(description, llm_finding.get("evidence", ""))
                 _mentions_trusted = self._mentions_only_trusted_domains(desc_lower)
-                if (
-                    not is_internal_file_reading
-                    and (_has_trusted_urls or _mentions_trusted)
-                    and ("transitive trust" in desc_lower or "supply chain" in desc_lower)
-                ):
+                _is_scoped_finding = aitech_code in {"AITech-1.2", "AITech-9.3"}
+                if _is_scoped_finding and (_has_trusted_urls or _mentions_trusted):
                     severity = Severity.LOW
 
                 # Lower severity for missing tool declarations (not a security issue)

@@ -1003,17 +1003,13 @@ class TestTrustedReferenceDomains:
     def test_mentions_no_trusted_domain(self):
         """No trusted domain in text → returns False."""
         analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
-        result = analyzer._mentions_only_trusted_domains(
-            "hooks are pulled from evil.com/attacker/hooks"
-        )
+        result = analyzer._mentions_only_trusted_domains("hooks are pulled from evil.com/attacker/hooks")
         assert result is False
 
     def test_mentions_empty_policy(self):
         """No trusted domains configured → returns False."""
         analyzer = self._make_analyzer_no_trusted_domains()
-        result = analyzer._mentions_only_trusted_domains(
-            "uses gitlab.example.com/org/repo"
-        )
+        result = analyzer._mentions_only_trusted_domains("uses gitlab.example.com/org/repo")
         assert result is False
 
     # -- Integration: _convert_to_findings demotion --
@@ -1137,6 +1133,29 @@ class TestTrustedReferenceDomains:
             ],
             "overall_assessment": "High risk",
             "primary_threats": ["SUPPLY CHAIN"],
+        }
+
+        findings = analyzer._convert_to_findings(analysis_result, skill)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.HIGH
+
+    def test_unrelated_finding_not_demoted_by_trusted_domain_prose(self):
+        """Free-text phrases cannot demote a finding outside the scoped AITech codes."""
+        analyzer = self._make_analyzer_with_trusted_domains(["gitlab.example.com"])
+        skill = MagicMock(name="test-skill", referenced_files=[], directory="/tmp/test-skill")
+        analysis_result = {
+            "findings": [
+                {
+                    "severity": "HIGH",
+                    "aitech": "AITech-6.1",
+                    "title": "Credential exposure",
+                    "description": ("A supply chain step on gitlab.example.com exposes a credential."),
+                    "evidence": "token = os.environ['SECRET']",
+                    "location": "SKILL.md",
+                }
+            ],
+            "overall_assessment": "High risk",
+            "primary_threats": [],
         }
 
         findings = analyzer._convert_to_findings(analysis_result, skill)
