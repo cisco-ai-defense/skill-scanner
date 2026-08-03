@@ -297,7 +297,7 @@ The LLM and Meta analyzers work with multiple LLM providers. Select a provider v
 
 ```bash
 pip install cisco-ai-skill-scanner[bedrock]   # AWS Bedrock (IAM credentials)
-pip install cisco-ai-skill-scanner[vertex]    # Google Vertex AI
+pip install cisco-ai-skill-scanner[vertex]    # Google Vertex AI (Workload Identity or service account)
 pip install cisco-ai-skill-scanner[azure]     # Azure OpenAI (managed identity)
 pip install cisco-ai-skill-scanner[all]       # All cloud providers
 ```
