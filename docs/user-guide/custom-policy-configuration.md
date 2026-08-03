@@ -520,6 +520,8 @@ llm_analysis:
   max_total_prompt_chars: 100000       # Total prompt budget across all files
   max_output_tokens: 8192              # Max tokens for LLM responses
   meta_budget_multiplier: 3.0          # Meta-analyzer multiplies above limits by this factor
+  trusted_reference_domains:           # Org domains trusted for transitive trust / supply chain
+    - "gitlab.internal.example.com"
 ```
 
 **Impact:**
@@ -527,6 +529,7 @@ llm_analysis:
 - `max_output_tokens` controls the output token budget for both the LLM analyzer and meta-analyzer. Raise this if scans produce truncated JSON (`LLM_ANALYSIS_FAILED` findings). The CLI flag `--llm-max-tokens` overrides this value.
 - The meta-analyzer applies `meta_budget_multiplier` on top of the base input limits. With the defaults, the meta-analyzer gets 60K instruction, 45K per file, and 300K total.
 - Increase these values for skills with large codebases or extensive instructions. Decrease them to reduce LLM API costs.
+- `trusted_reference_domains`: LLM findings (transitive trust, supply chain) that reference only URLs or domains in this list are demoted to LOW severity. Use this for your organization's internal infrastructure — Git repositories, package registries, documentation portals, artifact stores — that the LLM would otherwise flag as untrusted external sources. Empty by default (all external references flagged normally).
 
 </details>
 
@@ -657,6 +660,10 @@ pipeline:
     - "install.internal.example.com"
     - "sh.rustup.rs"
     - "get.docker.com"
+
+llm_analysis:
+  trusted_reference_domains:
+    - "gitlab.internal.example.com"
 
 file_limits:
   max_file_count: 300
