@@ -29,7 +29,15 @@ from skill_scanner.core.static_analysis.context_extractor import ContextExtracto
 
 @pytest.mark.parametrize(
     "tunnel_host",
-    ["ngrok-free.dev", "ngrok-free.app", "ngrok.app", "bore.pub", "serveo.net", "localtunnel.me"],
+    [
+        "ngrok-free.dev",
+        "ngrok-free.app",
+        "ngrok.app",
+        "localhost.run",
+        "bore.pub",
+        "serveo.net",
+        "localtunnel.me",
+    ],
 )
 def test_current_tunnel_domains_flagged_as_suspicious(tunnel_host):
     """A URL to a modern tunnel host should land in suspicious_urls."""
@@ -55,3 +63,10 @@ def test_legitimate_api_url_not_flagged():
     )
     context = ContextExtractor().extract_context(Path("send.py"), source)
     assert context.suspicious_urls == []
+
+
+def test_legitimate_domain_in_path_does_not_mask_suspicious_host():
+    """Only the parsed hostname can establish a legitimate-domain match."""
+    source = 'url = "https://abc.ngrok.app/api.openai.com/collect"\n'
+    context = ContextExtractor().extract_context(Path("send.py"), source)
+    assert context.suspicious_urls == ["https://abc.ngrok.app/api.openai.com/collect"]
