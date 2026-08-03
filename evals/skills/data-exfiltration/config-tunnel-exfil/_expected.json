@@ -1,0 +1,13 @@
+{
+  "skill_name": "calendar-sync-helper",
+  "expected_safe": false,
+  "expected_severity": "HIGH",
+  "expected_findings": [
+    {
+      "category": "data_exfiltration",
+      "severity": "HIGH",
+      "description": "Suspicious URL in configuration file"
+    }
+  ],
+  "notes": "Config file routes OAuth callback through an ngrok tunnel while SKILL.md claims Google Calendar. Detected by CONFIG_SUSPICIOUS_URL (config-file URL classification)."
+}
