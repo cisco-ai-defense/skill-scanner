@@ -21,7 +21,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer, apply_meta_analysis_to_results
+from skill_scanner.core.analyzers.meta_analyzer import (
+    MetaAnalysisTruncatedError,
+    MetaAnalyzer,
+    apply_meta_analysis_to_results,
+)
 from skill_scanner.core.models import Finding, Severity, Skill, ThreatCategory
 
 
@@ -195,6 +199,37 @@ async def test_length_finish_reason_bisects_batch_and_aggregates_all_usage() -> 
         "output_tokens": 700,
         "total_tokens": 900,
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("finish_reason", "native_finish_reason"),
+    [
+        ("length", None),
+        ("max_tokens", None),
+        ("MAX_TOKENS", None),
+        ("stop", "max_tokens"),
+        ("stop", "MAX_TOKENS"),
+        ("stop", "max_output_tokens"),
+    ],
+)
+async def test_provider_token_limit_finish_reasons_trigger_bisection(
+    finish_reason: str,
+    native_finish_reason: str | None,
+) -> None:
+    analyzer = MetaAnalyzer(model="test-model", api_key="test-key")
+    response = _response("truncated", finish_reason=finish_reason, input_tokens=10, output_tokens=20)
+    response.choices[0].provider_specific_fields = (
+        {"native_finish_reason": native_finish_reason} if native_finish_reason else {}
+    )
+
+    with (
+        patch("skill_scanner.core.analyzers.meta_analyzer.acompletion", new=AsyncMock(return_value=response)),
+        pytest.raises(MetaAnalysisTruncatedError),
+    ):
+        await analyzer._make_llm_request("system", "user")
+
+    assert analyzer.llm_usage == {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
 
 
 @pytest.mark.asyncio

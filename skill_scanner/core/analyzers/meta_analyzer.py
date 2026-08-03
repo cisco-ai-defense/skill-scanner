@@ -1065,9 +1065,7 @@ Respond with a JSON object following the schema in the system prompt."""
                 response = await acompletion(**api_params, drop_params=True)
                 _add_token_usage(self._llm_usage, _extract_token_usage(response))
                 choice = response.choices[0]
-                finish_reason = getattr(choice, "finish_reason", None)
-                finish_reason = getattr(finish_reason, "value", finish_reason)
-                if isinstance(finish_reason, str) and finish_reason.lower() in {"length", "max_tokens"}:
+                if self._is_truncated_choice(choice):
                     raise MetaAnalysisTruncatedError(
                         "LLM response reached max_tokens before completing the meta-analysis batch"
                     )
@@ -1109,6 +1107,27 @@ Respond with a JSON object following the schema in the system prompt."""
         if last_exception is not None:
             raise last_exception
         raise RuntimeError("All retries exhausted")
+
+    @staticmethod
+    def _is_truncated_choice(choice: Any) -> bool:
+        """Return whether a normalized or native finish reason hit an output limit."""
+        reasons = [getattr(choice, "finish_reason", None)]
+        provider_fields = getattr(choice, "provider_specific_fields", None)
+        if isinstance(provider_fields, dict):
+            reasons.append(provider_fields.get("native_finish_reason"))
+
+        # LiteLLM maps Anthropic/Bedrock ``max_tokens`` and Gemini/Vertex
+        # ``MAX_TOKENS`` to ``length``. It also retains the original value in
+        # provider_specific_fields, and OpenAI-compatible routes may return a
+        # raw max-output-token variant without normalization.
+        for reason in reasons:
+            reason = getattr(reason, "value", reason)
+            if not isinstance(reason, str):
+                continue
+            compact = reason.strip().lower().replace("-", "_").replace("_", "")
+            if compact in {"length", "maxtoken", "maxtokens", "maxoutputtoken", "maxoutputtokens"}:
+                return True
+        return False
 
     def _parse_response(
         self,
