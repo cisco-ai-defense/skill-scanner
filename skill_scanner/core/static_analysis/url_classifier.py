@@ -25,6 +25,7 @@ classify a URL through a single source of truth.
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 
 # ONLY flag URLs to explicitly suspicious domains - not all unknown URLs
 # Reference: https://lots-project.com/ (Living Off Trusted Sites)
@@ -142,19 +143,32 @@ LEGITIMATE_DOMAINS: list[str] = [
 ]
 
 # Matches http(s) URLs; stops at whitespace, quotes, and common delimiters.
-_URL_RE = re.compile(r"https?://[^\s\"'`<>)\]}]+")
+_URL_RE = re.compile(r"https?://[^\s\"'`<>)\]}]+", re.IGNORECASE)
+
+
+def _domain_matches(hostname: str, domain: str, *, allow_label: bool = False) -> bool:
+    """Return whether *hostname* is *domain* or one of its subdomains."""
+    hostname = hostname.rstrip(".").lower()
+    domain = domain.rstrip(".").lower()
+    if "." not in domain:
+        return hostname == domain or (allow_label and domain in hostname.split("."))
+    return hostname == domain or hostname.endswith(f".{domain}")
 
 
 def classify_url(url: str) -> str:
     """Classify a URL as ``"legitimate"``, ``"suspicious"``, or ``"unknown"``.
 
-    Legitimate domains take precedence: a URL matching both a legitimate and a
-    suspicious substring is treated as legitimate (matching the historical
-    behavior of ``ContextExtractor``).
+    Matching is based only on the normalized hostname, never path or query
+    substrings. Legitimate domains take precedence.
     """
-    if any(domain in url for domain in LEGITIMATE_DOMAINS):
+    try:
+        hostname = urlsplit(url).hostname or ""
+    except ValueError:
+        return "unknown"
+
+    if any(_domain_matches(hostname, domain) for domain in LEGITIMATE_DOMAINS):
         return "legitimate"
-    if any(domain in url for domain in SUSPICIOUS_DOMAINS):
+    if any(_domain_matches(hostname, domain, allow_label=True) for domain in SUSPICIOUS_DOMAINS):
         return "suspicious"
     return "unknown"
 

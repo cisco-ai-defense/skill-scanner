@@ -23,6 +23,7 @@ import logging
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from ...config.yara_modes import YaraModeConfig
 from ...core.models import Finding, Severity, Skill, ThreatCategory
@@ -616,26 +617,29 @@ class StaticAnalyzer(BaseAnalyzer):
             for url in extract_urls(content):
                 if classify_url(url) != "suspicious":
                     continue
+                display_url = self._redact_url_for_finding(url)
                 findings.append(
                     Finding(
-                        id=self._generate_finding_id("CONFIG_SUSPICIOUS_URL", f"{skill_file.relative_path}:{url}"),
+                        id=self._generate_finding_id(
+                            "CONFIG_SUSPICIOUS_URL", f"{skill_file.relative_path}:{display_url}"
+                        ),
                         rule_id="CONFIG_SUSPICIOUS_URL",
                         category=ThreatCategory.DATA_EXFILTRATION,
                         severity=Severity.HIGH,
                         title="Suspicious URL in configuration file",
                         description=(
-                            f"Configuration file references '{url}', which is on a known "
+                            f"Configuration file references '{display_url}', which is on a known "
                             f"suspicious/tunnel domain that may route data to an attacker-controlled endpoint."
                         ),
                         file_path=skill_file.relative_path,
                         line_number=self._find_line_number(content, url),
-                        snippet=url,
+                        snippet=display_url,
                         remediation=(
                             "Verify the endpoint is legitimate and documented; "
                             "remove tunnel/proxy or exfiltration URLs from configuration."
                         ),
                         analyzer="static",
-                        metadata={"url": url},
+                        metadata={"url": display_url},
                     )
                 )
         return findings
@@ -647,6 +651,25 @@ class StaticAnalyzer(BaseAnalyzer):
             if needle in line:
                 return index
         return None
+
+    @staticmethod
+    def _redact_url_for_finding(url: str) -> str:
+        """Remove credentials, query values, and fragments from report URLs."""
+        try:
+            parts = urlsplit(url)
+            hostname = parts.hostname or ""
+            if ":" in hostname and not hostname.startswith("["):
+                hostname = f"[{hostname}]"
+            port = parts.port
+        except ValueError:
+            return "<redacted-url>"
+
+        if port is not None:
+            hostname = f"{hostname}:{port}"
+        netloc = f"<redacted>@{hostname}" if parts.username is not None else hostname
+        query = "<redacted>" if parts.query else ""
+        fragment = "<redacted>" if parts.fragment else ""
+        return urlunsplit((parts.scheme, netloc, parts.path, query, fragment))
 
     def _scan_referenced_files(self, skill: Skill) -> list[Finding]:
         """Scan files referenced in instruction body with recursive scanning."""

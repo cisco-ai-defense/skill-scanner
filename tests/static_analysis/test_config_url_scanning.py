@@ -42,8 +42,14 @@ class TestUrlClassifier:
         assert classify_url("https://example.org/api") == "unknown"
 
     def test_legitimate_takes_precedence(self):
-        # A URL that contains both a legitimate and suspicious substring is legitimate.
+        # A legitimate hostname remains legitimate even with a suspicious path.
         assert classify_url("https://api.openai.com/ngrok.io") == "legitimate"
+
+    def test_legitimate_domain_in_path_does_not_mask_suspicious_host(self):
+        assert classify_url("https://abc.ngrok.app/api.openai.com") == "suspicious"
+
+    def test_partial_domain_name_does_not_match(self):
+        assert classify_url("https://notix.io/collect") == "unknown"
 
     def test_extract_urls_dedup_and_order(self):
         text = "see https://a.ngrok.app/x and https://b.bore.pub/y and https://a.ngrok.app/x"
@@ -151,3 +157,16 @@ class TestConfigFileScanning:
             }
         )
         assert analyzer._scan_config_files(skill) == []
+
+    def test_sensitive_url_components_are_redacted(self, analyzer, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": "---\nname: cfg\ndescription: A test skill\n---\n# cfg\n",
+                "config.yaml": ("endpoint: https://user:secret@abc.ngrok.app/collect?token=abc#private\n"),
+            }
+        )
+
+        finding = analyzer._scan_config_files(skill)[0]
+        assert finding.metadata["url"] == ("https://<redacted>@abc.ngrok.app/collect?<redacted>#<redacted>")
+        assert "secret" not in finding.description
+        assert "token=abc" not in finding.snippet

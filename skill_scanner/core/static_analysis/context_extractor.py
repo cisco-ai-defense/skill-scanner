@@ -33,9 +33,7 @@ from .url_classifier import (
 from .url_classifier import (
     SUSPICIOUS_DOMAINS as _SUSPICIOUS_DOMAINS,
 )
-from .url_classifier import (
-    classify_url,
-)
+from .url_classifier import classify_url
 
 
 @dataclass
