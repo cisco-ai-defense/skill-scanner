@@ -215,8 +215,9 @@ remain in the configured-run denominator. Retained findings include agreement,
 severity-vote, successful-run, and failed-run metadata so callers can assess
 the evidence behind the result.
 
-Consensus makes aggregation deterministic once a finding reaches majority. It
-does not make the underlying model deterministic: a single run can still vary,
+Consensus makes severity selection deterministic once a finding reaches
+majority. It does not make the underlying model deterministic: descriptive
+fields from equal-severity votes can still vary, a single run can still vary,
 and a finding near the majority boundary can still appear or disappear between
 separate scans.
 

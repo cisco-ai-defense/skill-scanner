@@ -197,9 +197,9 @@ Consensus mode keeps a finding only when it appears in more than half of the
 configured runs. When those votes disagree on severity, the highest observed
 severity wins, independent of response order. Failed runs and successful runs
 that omit the finding cast no vote but remain in the denominator. This makes
-aggregation stable for majority-agreed findings; it does not make an individual
-LLM sample deterministic, so single-run output and non-majority findings can
-still vary between scans.
+severity selection stable for majority-agreed findings. It does not make an
+individual LLM sample deterministic, and descriptive fields from equal-severity
+votes, single-run output, and non-majority findings can still vary between scans.
 
 **LLM provider note:** `--llm-provider` currently accepts `anthropic` or `openai`.
 For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, set provider-specific model strings and environment variables (see [LLM Analyzer docs](docs/architecture/analyzers/llm-analyzer.md)).
