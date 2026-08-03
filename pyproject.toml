@@ -76,6 +76,8 @@ dependencies = [
     # Floor pin: avoid compromised PyPI lines in 1.80.16 / 1.82.3 / 1.82.8 (BerriAI/litellm#24512)
     # SSRF fix in 1.83.7 (GHSA-xqmj-j6mv-4862), and CVE-2026-49468 fix in 1.84.0.
     "litellm>=1.84.0,<2",
+    # Floor pin: PYSEC-2026-2132 fixed in 8.3.3. Transitive via litellm/magika/uvicorn/typer.
+    "click>=8.3.3",
 ]
 
 [project.optional-dependencies]
@@ -83,6 +85,9 @@ dependencies = [
 google = [
     "google-genai>=1.60,<2",
     "google-generativeai>=0.8,<1",
+    # Floor pins for transitive CVEs pulled in via google-generativeai -> google-api-python-client / google-auth
+    "httplib2>=0.32.0",  # PYSEC-2026-3444
+    "pyasn1>=0.6.4",  # PYSEC-2026-3455, PYSEC-2026-3456, PYSEC-2026-3457
 ]
 # AWS Bedrock support (requires boto3 for IAM credentials)
 bedrock = [
@@ -91,6 +96,9 @@ bedrock = [
 # Google Vertex AI support
 vertex = [
     "google-cloud-aiplatform>=1.130,<2",
+    # Floor pins for transitive CVEs pulled in via google-cloud-aiplatform -> google-api-core / google-auth
+    "httplib2>=0.32.0",  # PYSEC-2026-3444
+    "pyasn1>=0.6.4",  # PYSEC-2026-3455, PYSEC-2026-3456, PYSEC-2026-3457
 ]
 # Azure OpenAI support (for managed identity auth)
 azure = [
@@ -107,6 +115,8 @@ all = [
     "boto3>=1.40,<2",
     "google-cloud-aiplatform>=1.130,<2",
     "azure-identity>=1.20,<2",
+    "httplib2>=0.32.0",  # PYSEC-2026-3444
+    "pyasn1>=0.6.4",  # PYSEC-2026-3455, PYSEC-2026-3456, PYSEC-2026-3457
 ]
 
 [dependency-groups]
