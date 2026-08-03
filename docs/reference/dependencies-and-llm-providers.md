@@ -108,8 +108,8 @@ For OpenAI and OpenAI-compatible custom endpoints, `SKILL_SCANNER_LLM_USER` can 
 | OpenAI-compatible custom endpoint | API key + endpoint | `SKILL_SCANNER_LLM_API_KEY`, `SKILL_SCANNER_LLM_PROVIDER=openai`, `SKILL_SCANNER_LLM_BASE_URL` |
 | AWS Bedrock (API key) | API key | `SKILL_SCANNER_LLM_API_KEY` |
 | AWS Bedrock (IAM) | AWS credentials | `AWS_REGION`, `AWS_PROFILE` (optional: `AWS_SESSION_TOKEN`) |
-| Google Vertex AI (service account) | Service account key file | `GOOGLE_APPLICATION_CREDENTIALS` |
-| Google Vertex AI (ambient ADC) | Workload Identity / attached service account | none -- falls back automatically, like Bedrock IAM |
+| Google Vertex AI (service account) | Service account key file | `GOOGLE_APPLICATION_CREDENTIALS`; set `VERTEXAI_PROJECT` and `VERTEXAI_LOCATION` when not supplied by the environment |
+| Google Vertex AI (ambient ADC) | Workload Identity / attached service account | ADC is automatic; set `VERTEXAI_PROJECT` and `VERTEXAI_LOCATION` when the environment does not provide the required project and region |
 | Google AI Studio | API key | `SKILL_SCANNER_LLM_API_KEY` (auto-sets `GEMINI_API_KEY`) |
 | Azure OpenAI | API key + endpoint | `SKILL_SCANNER_LLM_API_KEY`, `SKILL_SCANNER_LLM_BASE_URL`, `SKILL_SCANNER_LLM_API_VERSION` |
 | Ollama | None | — |

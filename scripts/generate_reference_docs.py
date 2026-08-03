@@ -415,11 +415,13 @@ def _describe_env_var(var: str) -> str:
         "AWS_PROFILE": "AWS credential profile for Bedrock IAM auth.",
         "AWS_SESSION_TOKEN": "Optional AWS session token.",
         "GOOGLE_APPLICATION_CREDENTIALS": (
-            "Path to GCP service account credentials. Optional -- if unset, "
-            "`vertex_ai/*` models fall back to ambient Application Default "
-            "Credentials (e.g. a GCE/Cloud Run attached service account or "
-            "Workload Identity), same as Bedrock's IAM role fallback."
+            "Optional path to GCP service account credentials. If unset, `vertex_ai/*` "
+            "models use ambient Application Default Credentials. This does not guarantee "
+            "that the required project and region are available; set `VERTEXAI_PROJECT` "
+            "and `VERTEXAI_LOCATION` when the environment does not provide them."
         ),
+        "VERTEXAI_PROJECT": "Vertex AI project ID; required when it cannot be inferred from the environment.",
+        "VERTEXAI_LOCATION": "Vertex AI region; required when it is not supplied by the environment.",
         "SKILL_SCANNER_ALLOWED_ROOTS": "Colon-delimited API path allowlist for server-side path access.",
         "SKILL_SCANNER_TAXONOMY_PATH": "Path to a custom Cisco AI taxonomy YAML file (overridden by `--taxonomy`).",
         "SKILL_SCANNER_THREAT_MAPPING_PATH": "Path to a custom threat mapping YAML file (overridden by `--threat-mapping`).",
@@ -464,7 +466,7 @@ _ENV_VAR_GROUPS: list[tuple[str, str, list[str]]] = [
     (
         "Google / Vertex",
         "Credentials for Vertex AI and Google AI Studio.",
-        ["GOOGLE_APPLICATION_CREDENTIALS", "GEMINI_API_KEY"],
+        ["GOOGLE_APPLICATION_CREDENTIALS", "VERTEXAI_PROJECT", "VERTEXAI_LOCATION", "GEMINI_API_KEY"],
     ),
     (
         "VirusTotal",
@@ -513,6 +515,8 @@ _ENV_VAR_EXAMPLES: dict[str, str] = {
     "AWS_PROFILE": "my-bedrock-profile",
     "AWS_SESSION_TOKEN": "(temporary STS token)",
     "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/sa-key.json",
+    "VERTEXAI_PROJECT": "my-gcp-project",
+    "VERTEXAI_LOCATION": "us-central1",
     "GEMINI_API_KEY": "(auto-set from LLM_API_KEY)",
     "VIRUSTOTAL_API_KEY": "(your VT key)",
     "VIRUSTOTAL_UPLOAD_FILES": "false",

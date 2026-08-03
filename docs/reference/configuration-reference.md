@@ -58,7 +58,9 @@ Credentials for Vertex AI and Google AI Studio.
 
 | Variable | Description | Example |
 |---|---|---|
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service account credentials. Optional -- if unset, `vertex_ai/*` models fall back to ambient Application Default Credentials (e.g. a GCE/Cloud Run attached service account or Workload Identity), same as Bedrock's IAM role fallback. | `/path/to/sa-key.json` |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Optional path to GCP service account credentials. If unset, `vertex_ai/*` models use ambient Application Default Credentials. This does not guarantee that the required project and region are available; set `VERTEXAI_PROJECT` and `VERTEXAI_LOCATION` when the environment does not provide them. | `/path/to/sa-key.json` |
+| `VERTEXAI_PROJECT` | Vertex AI project ID; required when it cannot be inferred from the environment. | `my-gcp-project` |
+| `VERTEXAI_LOCATION` | Vertex AI region; required when it is not supplied by the environment. | `us-central1` |
 | `GEMINI_API_KEY` | Google AI Studio key; auto-set from `SKILL_SCANNER_LLM_API_KEY` when using Gemini via LiteLLM. | `(auto-set from LLM_API_KEY)` |
 
 ## VirusTotal
@@ -130,6 +132,8 @@ Paths, allowlists, and other advanced settings.
 | `SKILL_SCANNER_META_LLM_MODEL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_TAXONOMY_PATH` | `skill_scanner/threats/cisco_ai_taxonomy.py` |
 | `SKILL_SCANNER_THREAT_MAPPING_PATH` | `skill_scanner/threats/threats.py` |
+| `VERTEXAI_LOCATION` | `.env.example` |
+| `VERTEXAI_PROJECT` | `.env.example` |
 | `VIRUSTOTAL_API_KEY` | `.env.example`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py` |
 | `VIRUSTOTAL_UPLOAD_FILES` | `skill_scanner/config/config.py` |
 
