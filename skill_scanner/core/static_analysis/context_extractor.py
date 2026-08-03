@@ -256,7 +256,7 @@ class ContextExtractor:
         suspicious_urls = []
         for s in all_strings:
             # Skip if not URL-like or contains newlines (docstrings)
-            if "\n" in s or not s.startswith("http"):
+            if "\n" in s:
                 continue
             # Skip if too long (likely docstring) or too short
             if len(s) > 200 or len(s) < 10:

@@ -162,7 +162,10 @@ def classify_url(url: str) -> str:
     substrings. Legitimate domains take precedence.
     """
     try:
-        hostname = urlsplit(url).hostname or ""
+        parsed = urlsplit(url)
+        if parsed.scheme.lower() not in {"http", "https"}:
+            return "unknown"
+        hostname = parsed.hostname or ""
     except ValueError:
         return "unknown"
 
