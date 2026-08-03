@@ -707,7 +707,7 @@ class StaticAnalyzer(BaseAnalyzer):
         """String literals inside ``install_requires=[...]`` in setup.py."""
         try:
             tree = ast.parse(content)
-        except SyntaxError:
+        except (SyntaxError, ValueError):
             return []
         entries: list[tuple[str, int | None, str]] = []
         for node in ast.walk(tree):
