@@ -9,6 +9,7 @@ When enabled via the `--adjudicate` CLI flag (or `ScanPolicy.adjudicator.enabled
 - **False positive demotion**: Uses an LLM to reason about whether a deterministic HIGH/CRITICAL match represents a real instance of the threat, or a coincidental regex hit on benign prose.
 - **Cascade prevention**: Because it runs before the LLM analyzer, demoted findings never enter the LLM analyzer's static-finding enrichment context — so a wrong deterministic HIGH cannot be amplified into LLM findings citing the same pattern hit.
 - **Audit trail**: Every finding it considers is recorded in `scan_metadata.adjudicator.audit` with the LLM's verdict, confidence, and reason.
+- **Usage accounting**: Adjudication input, output, and total tokens are included in the scan result's aggregate `llm_usage` values.
 
 The adjudicator only touches deterministic findings (static, pipeline, behavioral, bytecode, yara analyzers) at HIGH or CRITICAL severity. LLM and other advisory findings are outside its scope.
 

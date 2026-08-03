@@ -257,6 +257,7 @@ class SkillScanner:
             # raised. LLM errors leave findings at their original severity,
             # so enabling this pass cannot introduce false negatives.
             adjudicator_audit: list[dict[str, Any]] = []
+            adjudicator_usage = _empty_token_usage()
             if self.policy.adjudicator.enabled and all_findings:
                 try:
                     from .analyzers.adjudicator import Adjudicator
@@ -264,26 +265,31 @@ class SkillScanner:
                     adj = Adjudicator(
                         min_fp_confidence=self.policy.adjudicator.min_fp_confidence,
                     )
-                    if adj.is_available():
-                        adj.adjudicate(all_findings, skill)
-                        analyzer_names.append("adjudicator")
-                        adjudicator_audit = [
-                            {
-                                "rule_id": r.rule_id,
-                                "verdict": r.verdict,
-                                "confidence": r.confidence,
-                                "reason": r.reason,
-                                "demoted_to": r.demoted_to,
-                                "model_id": r.model_id,
-                            }
-                            for r in adj.audit
-                        ]
-                    else:
-                        logger.debug(
-                            "adjudicator enabled but no LLM model configured; "
-                            "set SKILL_SCANNER_LLM_MODEL or "
-                            "SKILL_SCANNER_ADJUDICATOR_LLM_MODEL to activate"
-                        )
+                    try:
+                        if adj.is_available():
+                            adj.adjudicate(all_findings, skill)
+                            analyzer_names.append("adjudicator")
+                            adjudicator_audit = [
+                                {
+                                    "rule_id": r.rule_id,
+                                    "verdict": r.verdict,
+                                    "confidence": r.confidence,
+                                    "reason": r.reason,
+                                    "demoted_to": r.demoted_to,
+                                    "model_id": r.model_id,
+                                }
+                                for r in adj.audit
+                            ]
+                        else:
+                            logger.debug(
+                                "adjudicator enabled but no LLM model configured; "
+                                "set SKILL_SCANNER_LLM_MODEL or "
+                                "SKILL_SCANNER_ADJUDICATOR_LLM_MODEL to activate"
+                            )
+                    finally:
+                        # Preserve billed usage even if a later adjudication
+                        # step raises and findings remain fail-closed.
+                        _add_token_usage(adjudicator_usage, adj.llm_usage)
                 except Exception as exc:
                     logger.warning("Adjudication failed: %s", exc)
 
@@ -328,6 +334,7 @@ class SkillScanner:
 
             # Aggregate token usage across all LLM analyzers that ran.
             aggregated_usage = _empty_token_usage()
+            _add_token_usage(aggregated_usage, adjudicator_usage)
             for analyzer in llm_analyzers:
                 if hasattr(analyzer, "llm_usage"):
                     _add_token_usage(aggregated_usage, analyzer.llm_usage)

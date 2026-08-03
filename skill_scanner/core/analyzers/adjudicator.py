@@ -51,6 +51,12 @@ from typing import Any
 
 from ..models import Finding, Severity, Skill
 from ..rule_registry import PackLoader
+from .llm_request_handler import (
+    LLMTokenUsage,
+    _add_token_usage,
+    _empty_token_usage,
+    _extract_token_usage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +283,15 @@ class Adjudicator:
         # traceability.
         self.audit: list[AdjudicationResult] = []
 
+        # Cumulative token usage across all LLM calls in the most recent
+        # adjudicate() run, including calls whose response cannot be parsed.
+        self._llm_usage: LLMTokenUsage = _empty_token_usage()
+
+    @property
+    def llm_usage(self) -> LLMTokenUsage:
+        """Token usage from the most recent :meth:`adjudicate` run."""
+        return dict(self._llm_usage)  # type: ignore[return-value]
+
     def is_available(self) -> bool:
         """Whether the adjudicator has enough config to run.
 
@@ -346,6 +361,9 @@ class Adjudicator:
             for attempt in range(self.max_retries + 1):
                 try:
                     response = litellm.completion(**request, drop_params=True)
+                    # The provider charged for a successful completion even if
+                    # its content is malformed and cannot yield a verdict.
+                    _add_token_usage(self._llm_usage, _extract_token_usage(response))
                     content = response["choices"][0]["message"]["content"] or ""
                     content = content.strip()
                     break
@@ -498,6 +516,7 @@ class Adjudicator:
 
         Returns the same list (mutated) so callers can chain.
         """
+        self._llm_usage = _empty_token_usage()
         if not self.is_available():
             logger.debug("adjudicator not configured (no model env var); skipping all findings")
             return findings

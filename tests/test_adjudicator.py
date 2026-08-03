@@ -45,6 +45,8 @@ from skill_scanner.core.analyzers.adjudicator import (
     Adjudicator,
 )
 from skill_scanner.core.models import Finding, Severity, Skill, SkillFile, SkillManifest
+from skill_scanner.core.scan_policy import ScanPolicy
+from skill_scanner.core.scanner import SkillScanner
 
 # ----- Fixtures -------------------------------------------------------------
 
@@ -96,10 +98,23 @@ def _finding(
     )
 
 
-def _mock_litellm_response(verdict: str, confidence: int, reason: str = "test") -> Any:
+def _mock_litellm_response(
+    verdict: str,
+    confidence: int,
+    reason: str = "test",
+    *,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+) -> Any:
     """Build a mock LiteLLM response whose choices[0].message.content is JSON."""
     payload = json.dumps({"verdict": verdict, "confidence": confidence, "reason": reason})
-    resp: Any = {"choices": [{"message": {"content": payload}}]}
+    response_type = type("MockLiteLLMResponse", (dict,), {})
+    resp: Any = response_type({"choices": [{"message": {"content": payload}}]})
+    resp.usage = MagicMock(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=prompt_tokens + completion_tokens,
+    )
     return resp
 
 
@@ -193,6 +208,91 @@ class TestAdjudicatorFailClosed:
 
         assert finding.severity == Severity.HIGH
         assert "adjudication" not in (finding.metadata or {})
+
+
+class TestAdjudicatorTokenUsage:
+    """Adjudicator reports every billed LiteLLM completion."""
+
+    def test_accumulates_usage_across_findings(self, tmp_path: Path, with_model_env: None) -> None:
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        findings = [
+            _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4),
+            _finding("PIPELINE_TAINT_FLOW", Severity.HIGH, analyzer="pipeline", line_number=4),
+        ]
+
+        with patch(
+            "litellm.completion",
+            side_effect=[
+                _mock_litellm_response("real", 5, prompt_tokens=100, completion_tokens=20),
+                _mock_litellm_response("real", 5, prompt_tokens=40, completion_tokens=10),
+            ],
+        ):
+            adj = Adjudicator()
+            adj.adjudicate(findings, skill)
+
+        assert adj.llm_usage == {
+            "input_tokens": 140,
+            "output_tokens": 30,
+            "total_tokens": 170,
+        }
+
+    def test_counts_usage_when_response_content_is_malformed(self, tmp_path: Path, with_model_env: None) -> None:
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+        response = _mock_litellm_response("real", 5, prompt_tokens=75, completion_tokens=8)
+        response["choices"][0]["message"]["content"] = "not json"
+
+        with patch("litellm.completion", return_value=response):
+            adj = Adjudicator()
+            adj.adjudicate([finding], skill)
+
+        assert finding.severity == Severity.HIGH
+        assert adj.llm_usage == {
+            "input_tokens": 75,
+            "output_tokens": 8,
+            "total_tokens": 83,
+        }
+
+    def test_scanner_combines_adjudicator_and_analyzer_usage(self, tmp_path: Path, with_model_env: None) -> None:
+        skill = _make_skill(
+            tmp_path,
+            "---\nname: test-skill\ndescription: test skill.\n---\n\nSome content.\n",
+        )
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=5)
+
+        class DeterministicAnalyzer:
+            def get_name(self) -> str:
+                return "static_analyzer"
+
+            def analyze(self, _skill: Skill) -> list[Finding]:
+                return [finding]
+
+        class UsageLLMAnalyzer:
+            llm_usage = {"input_tokens": 300, "output_tokens": 50, "total_tokens": 350}
+
+            def get_name(self) -> str:
+                return "llm_analyzer"
+
+            def analyze(self, _skill: Skill) -> list[Finding]:
+                return []
+
+        policy = ScanPolicy.default()
+        policy.adjudicator.enabled = True
+        scanner = SkillScanner(analyzers=[DeterministicAnalyzer(), UsageLLMAnalyzer()], policy=policy)  # type: ignore[list-item]
+        response = _mock_litellm_response("real", 5, prompt_tokens=80, completion_tokens=20)
+
+        with patch("litellm.completion", return_value=response):
+            result = scanner._scan_single_skill(skill, Path(skill.directory))
+
+        assert result.llm_usage == {
+            "input_tokens": 380,
+            "output_tokens": 70,
+            "total_tokens": 450,
+        }
+
+
+class TestAdjudicatorMalformedResponses:
+    """Malformed adjudicator responses keep findings fail-closed."""
 
     def test_malformed_json_keeps_original_severity(self, tmp_path: Path, with_model_env: None) -> None:
         skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")

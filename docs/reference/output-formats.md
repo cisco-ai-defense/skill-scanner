@@ -111,7 +111,7 @@ skill-scanner scan evals/skills/data-exfiltration/environment-secrets --format j
 }
 ```
 
-`llm_usage` is only present when at least one LLM call was made (`--use-llm` and/or `--enable-meta`), aggregated across every LLM analyzer and meta-analysis call for the scan. It's omitted entirely on static-only scans.
+`llm_usage` is only present when at least one LLM call was made (`--use-llm`, `--enable-meta`, and/or `--adjudicate`). It is aggregated across every LLM analyzer, meta-analysis, and adjudication call for the scan, and omitted entirely when no LLM call runs.
 
 Use `--compact` to remove pretty-printing for machine pipelines.
 
