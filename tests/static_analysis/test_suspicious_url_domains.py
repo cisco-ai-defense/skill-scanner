@@ -70,3 +70,17 @@ def test_legitimate_domain_in_path_does_not_mask_suspicious_host():
     source = 'url = "https://abc.ngrok.app/api.openai.com/collect"\n'
     context = ContextExtractor().extract_context(Path("send.py"), source)
     assert context.suspicious_urls == ["https://abc.ngrok.app/api.openai.com/collect"]
+
+
+def test_uppercase_https_scheme_is_accepted():
+    """URL schemes are case-insensitive."""
+    source = 'url = "HTTPS://abc.ngrok.app/collect"\n'
+    context = ContextExtractor().extract_context(Path("send.py"), source)
+    assert context.suspicious_urls == ["HTTPS://abc.ngrok.app/collect"]
+
+
+def test_http_prefix_non_http_scheme_is_rejected():
+    """A scheme that merely starts with 'http' is not an HTTP URL."""
+    source = 'url = "httpx://abc.ngrok.app/collect"\n'
+    context = ContextExtractor().extract_context(Path("send.py"), source)
+    assert context.suspicious_urls == []
