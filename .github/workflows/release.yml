@@ -62,16 +62,21 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           uv sync --frozen --only-group sbom
+          # --output-reproducible omits the serialNumber required by actions/attest.
           uv run --no-sync cyclonedx-py requirements \
             release-assets/requirements.txt \
             --pyproject pyproject.toml \
-            --output-reproducible \
             --output-file release-assets/sbom.cdx.json
           jq --arg v "$VERSION" \
             '.metadata.component.version = $v
              | .metadata.component.purl = "pkg:pypi/cisco-ai-skill-scanner@\($v)"' \
             release-assets/sbom.cdx.json > sbom.tmp
           mv sbom.tmp release-assets/sbom.cdx.json
+          jq -e \
+            '.bomFormat == "CycloneDX"
+             and (.serialNumber | type == "string" and length > 0)
+             and (.specVersion | type == "string" and length > 0)' \
+            release-assets/sbom.cdx.json >/dev/null
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
