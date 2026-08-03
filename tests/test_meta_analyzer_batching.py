@@ -71,7 +71,11 @@ def _classification(indices: list[int], *, alternate_false_positives: bool = Fal
             )
     return json.dumps(
         {
-            "overall_risk_assessment": {"risk_level": "MEDIUM", "summary": "Test assessment"},
+            "overall_risk_assessment": {
+                "risk_level": "MEDIUM",
+                "summary": "Test assessment",
+                "skill_verdict": "SUSPICIOUS",
+            },
             "validated_findings": validated,
             "false_positives": false_positives,
             "missed_threats": [],
@@ -147,6 +151,12 @@ async def test_malformed_response_degrades_only_its_batch_without_resending() ->
     degraded = {item["_index"] for item in result.validated_findings if item.get("meta_analysis_degraded")}
     assert degraded == {3, 4, 5}
     assert [warning["code"] for warning in result.analysis_warnings] == ["META_BATCH_PARSE_FAILED"]
+    assert result.overall_risk_assessment["risk_level"] == "UNKNOWN"
+    assert result.overall_risk_assessment["skill_verdict"] == "UNKNOWN"
+    assert result.overall_risk_assessment["partial_risk_level"] == "MEDIUM"
+    assert result.overall_risk_assessment["partial_skill_verdict"] == "SUSPICIOUS"
+    assert result.overall_risk_assessment["partial_summary"] == "Test assessment"
+    assert "incomplete" in result.overall_risk_assessment["summary"].lower()
     assert result.overall_risk_assessment["meta_analysis_status"] == "degraded"
     assert result.overall_risk_assessment["meta_analysis_warnings"] == result.analysis_warnings
     applied = apply_meta_analysis_to_results(findings, result, _skill())

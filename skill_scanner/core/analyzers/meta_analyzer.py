@@ -766,8 +766,25 @@ Respond with JSON containing your analysis following the required schema."""
     @staticmethod
     def _mark_result_degraded(result: MetaAnalysisResult) -> None:
         assessment = dict(result.overall_risk_assessment)
-        assessment.setdefault("risk_level", "UNKNOWN")
-        assessment.setdefault("summary", "Meta-analysis completed with one or more degraded batches.")
+        partial_risk = assessment.get("risk_level")
+        partial_verdict = assessment.get("skill_verdict")
+        partial_summary = assessment.get("summary")
+        if partial_risk:
+            assessment["partial_risk_level"] = partial_risk
+        if partial_verdict:
+            assessment["partial_skill_verdict"] = partial_verdict
+        if partial_summary:
+            assessment["partial_summary"] = partial_summary
+
+        # Reporters surface risk_level/skill_verdict but not the structured
+        # degradation fields. Never present a conclusive SAFE/LOW (or any
+        # other final verdict) when at least one batch was not analyzed.
+        assessment["risk_level"] = "UNKNOWN"
+        assessment["skill_verdict"] = "UNKNOWN"
+        assessment["summary"] = (
+            "Meta-analysis was incomplete because one or more batches could not be fully analyzed. "
+            "Original findings from those batches were retained."
+        )
         assessment["meta_analysis_status"] = "degraded"
         assessment["meta_analysis_warnings"] = list(result.analysis_warnings)
         result.overall_risk_assessment = assessment
