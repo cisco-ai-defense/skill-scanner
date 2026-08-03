@@ -222,6 +222,14 @@ class TestManifestSourceCoverage:
         assert "requests" in findings[0].description
         assert findings[0].file_path == "setup.py"
 
+    def test_setup_py_with_null_bytes_is_ignored(self, analyzer, make_skill):
+        """Malformed untrusted setup.py content must not abort analysis."""
+        skill = make_skill({"setup.py": "setup(name='demo')\x00"})
+
+        findings = analyzer.analyze(skill)
+
+        assert not [finding for finding in findings if finding.file_path == "setup.py"]
+
     @requires_tomllib
     def test_pipfile_packages_flagged(self, analyzer, make_skill):
         skill = make_skill(
