@@ -24,7 +24,7 @@ rule command_injection_generic{
         $reconnaissance_tools = /\b(nmap)\s+(-[sS]|--script|25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/i
 
         // Data exfiltration - flag known exfil destinations
-        $data_exfiltration_known_dest = /\b(curl|wget)\s+[^\n]{0,80}(discord\.com\/api\/webhooks|webhook\.site|ngrok\.io|pastebin\.com|requestbin\.com|pipedream\.net)/i
+        $data_exfiltration_known_dest = /\b(curl|wget)\s+[^\n]{0,80}(discord\.com\/api\/webhooks|webhook\.site|ngrok\.io|ngrok\.app|ngrok-free\.(dev|app)|bore\.pub|serveo\.net|localtunnel\.me|pastebin\.com|requestbin\.com|pipedream\.net)/i
 
         // curl/wget POSTing sensitive FILE contents
         $curl_post_sensitive_files = /\bcurl\s+[^\n]{0,40}(-d\s*@|--data[^\s]*\s*@)[^\n]{0,40}(\.ssh|\.aws|\.env|\/etc\/passwd|\/etc\/shadow|credentials|private_key)/i

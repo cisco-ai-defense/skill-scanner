@@ -569,6 +569,13 @@ rules:
       enabled: true
     description: "Skill declares a dependency without a pinned (==) version"
 
+  CONFIG_SUSPICIOUS_URL:
+    source: python
+    analyzer: static
+    knobs:
+      enabled: true
+    description: "Configuration file references a URL on a known suspicious/tunnel domain"
+
   LAZY_LOAD_DEEP_NESTING:
     source: python
     analyzer: static
