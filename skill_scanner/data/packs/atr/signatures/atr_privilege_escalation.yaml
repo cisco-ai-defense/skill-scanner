@@ -439,13 +439,9 @@ signatures:
     severity: HIGH
     patterns:
       - >-
-        \$\((?:touch|rm|ls|cat|curl|wget|nc|bash|sh|cmd|powershell|python|ruby|perl|node)\b[^)
-
-        ]{0,80}\)
+        \$\((?:touch|rm|ls|cat|curl|wget|nc|bash|sh|cmd|powershell|python|ruby|perl|node)\b[^)\n]{0,80}\)
       - >-
-        `(?:touch|rm|ls|cat|curl|wget|nc|bash|sh|python|ruby|perl)\b[^
-
-        `]{0,80}`
+        `(?:touch|rm|ls|cat|curl|wget|nc|bash|sh|python|ruby|perl)\b[^\n`]{0,80}`
       - '@\{\[(?:system|exec|IO\.popen)\s+["''][^"''\n]{2,}["'']\]\}'
     file_types: *id001
     description: >-

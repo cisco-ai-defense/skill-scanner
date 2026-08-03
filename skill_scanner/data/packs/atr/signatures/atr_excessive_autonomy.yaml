@@ -216,18 +216,6 @@ signatures:
     description: >-
       Detects prompts instructing an AI agent to fetch or retrieve content from internal network addresses, exposing SSRF (Server-Side Request Forgery) risk. Covers: cloud metadata endpoints (AWS IMDS 169.254.169.254, GCP metadata.google.internal), localhost and loopback admin panels (127.0.0.1, localhost
     remediation: ''
-  - id: ATR_2026_00553
-    atr_id: ATR-2026-00553
-    atr_url: >-
-      https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00553-runaway-tool-loop-behavioral.yaml
-    category: excessive_autonomy
-    severity: HIGH
-    patterns:
-      - (?i)tool_calls_per_session_exceeds_threshold
-    file_types: *id001
-    description: >-
-      Detects a runaway tool-call loop where an agent emits more than 100 tool call spans within a one-minute window for a single session. This is a behavioral-method rule per spec/atr-method-v1.1.md §7, demonstrating the aggregation grammar (count over time window with per-session grouping and a min-even
-    remediation: ''
   - id: ATR_2026_00708
     atr_id: ATR-2026-00708
     atr_url: >-

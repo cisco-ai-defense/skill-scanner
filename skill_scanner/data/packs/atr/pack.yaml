@@ -1,7 +1,7 @@
 # ATR (Agent Threat Rules) Rule Pack for Cisco Skill Scanner
 # Source: https://github.com/Agent-Threat-Rule/agent-threat-rules
 # Version: 3.5.6
-# Full ATR community ruleset: 713 rules across 10 attack categories.
+# Supported ATR static ruleset: 712 rules across 10 attack categories.
 # MIT License. Auto-indexed from 10 category signature files.
 
 pack:
@@ -9,7 +9,7 @@ pack:
   name: ATR Agent Threat Rules
   version: 3.5.6
   description: >-
-    Open-source AI agent security detection rules from the Agent Threat Rules (ATR) project. 713 rules across 10 attack categories: prompt injection, agent manipulation, skill compromise, context exfiltration, tool poisoning, privilege escalation, model abuse, excessive autonomy, data poisoning, and model security. Benchmarks: 97.2% recall on NVIDIA garak 650 in-the-wild jailbreaks, 100% recall on 498 labeled SKILL.md samples, 99.7% precision on 850 PINT adversarial samples. OWASP Agentic Top 10: 10/10. MIT license.
+    Open-source AI agent security detection rules from the Agent Threat Rules (ATR) project. 712 supported static rules across 10 attack categories: prompt injection, agent manipulation, skill compromise, context exfiltration, tool poisoning, privilege escalation, model abuse, excessive autonomy, data poisoning, and model security. Benchmarks: 97.2% recall on NVIDIA garak 650 in-the-wild jailbreaks, 100% recall on 498 labeled SKILL.md samples, 99.7% precision on 850 PINT adversarial samples. OWASP Agentic Top 10: 10/10. MIT license.
   author: ATR Community
   license: MIT
   source_url: https://github.com/Agent-Threat-Rule/agent-threat-rules
@@ -1613,13 +1613,6 @@ rules:
     file: signatures/atr_excessive_autonomy.yaml
     id: ATR_2026_00500
     severity: CRITICAL
-  - atr_id: ATR-2026-00553
-    category: excessive_autonomy
-    description: >-
-      Detects a runaway tool-call loop where an agent emits more than 100 tool call spans within a one-minute window for a single session. This is a behavioral-method rule per spec/atr-method-v1.1.md §7, demonstrating the aggregation grammar (count over time window with per-session grouping and a min-even
-    file: signatures/atr_excessive_autonomy.yaml
-    id: ATR_2026_00553
-    severity: HIGH
   - atr_id: ATR-2026-00708
     category: excessive_autonomy
     description: >-

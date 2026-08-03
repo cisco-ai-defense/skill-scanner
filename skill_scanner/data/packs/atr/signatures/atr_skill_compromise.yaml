@@ -697,7 +697,6 @@ signatures:
     severity: CRITICAL
     patterns:
       - pickle\.(?:load|loads|Unpickler)\s*\(
-      - pickle\.(?:load|loads|Unpickler)\s*\(
       - >-
         hf_hub_download\s*\([^)]{0,200}\.(?:pkl|pickle|pt|pth|exe|so|dll|dylib)\b
       - >-

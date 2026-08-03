@@ -2,7 +2,7 @@
 
 **Source:** [Agent Threat Rules (ATR)](https://github.com/Agent-Threat-Rule/agent-threat-rules)
 **ATR Version:** 3.5.6
-**Rules:** 713 signatures across 10 signature files
+**Rules:** 712 signatures across 10 signature files
 **License:** MIT
 **Benchmarks:** 97.2% recall on NVIDIA garak (650 in-the-wild jailbreaks) · 100% recall on 498 labeled SKILL.md samples · 99.7% precision on 850 PINT adversarial samples · OWASP Agentic Top 10: 10/10
 
@@ -11,7 +11,9 @@
 This pack adds AI-agent security detection rules from the open-source ATR
 project, covering attack surfaces specific to modern AI-agent deployments
 (MCP tool layer, multi-agent trust, skill manifests, agent autonomy). It is
-the full current ATR community ruleset, regenerated from ATR `3.5.6`.
+the current ATR `3.5.6` static ruleset. The behavioral aggregation rule
+`ATR-2026-00553` is excluded because this signature pack cannot evaluate its
+per-session time window and tool-call count.
 
 ## Attack Categories
 
@@ -24,10 +26,10 @@ the full current ATR community ruleset, regenerated from ATR `3.5.6`.
 | `signatures/atr_skill_compromise.yaml` | Skill compromise | 45 |
 | `signatures/atr_privilege_escalation.yaml` | Privilege escalation | 42 |
 | `signatures/atr_model_abuse.yaml` | Model abuse | 37 |
-| `signatures/atr_excessive_autonomy.yaml` | Excessive autonomy | 32 |
+| `signatures/atr_excessive_autonomy.yaml` | Excessive autonomy | 31 |
 | `signatures/atr_data_poisoning.yaml` | Data poisoning | 5 |
 | `signatures/atr_model_security.yaml` | Model security | 3 |
-| **Total** | **10 categories** | **713** |
+| **Total** | **10 categories** | **712** |
 
 The full per-rule index (ATR id, category, severity, signature file) lives in
 `pack.yaml`. Each signature carries an `atr_url` linking to the source rule
@@ -35,9 +37,9 @@ YAML on GitHub.
 
 ## File Structure
 
-```
+```text
 skill_scanner/data/packs/atr/
-├── pack.yaml            # Pack manifest — indexes all 713 rules
+├── pack.yaml            # Pack manifest — indexes all 712 rules
 ├── README.md            # This file
 └── signatures/          # 10 category signature files (atr_<category>.yaml)
 ```
