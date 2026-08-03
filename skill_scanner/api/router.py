@@ -221,6 +221,7 @@ class ScanResponse(BaseModel):
     scan_duration_seconds: float
     timestamp: str
     findings: list[dict]
+    llm_usage: dict[str, int] | None = None
 
 
 class HealthResponse(BaseModel):
@@ -477,6 +478,7 @@ async def scan_skill(
             scan_duration_seconds=result.scan_duration_seconds,
             timestamp=result.timestamp.isoformat(),
             findings=[f.to_dict() for f in result.findings],
+            llm_usage=result.llm_usage,
         )
 
     except SkillLoadError as e:

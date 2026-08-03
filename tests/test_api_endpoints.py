@@ -24,6 +24,7 @@ import io
 import time
 import zipfile
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -772,6 +773,83 @@ class TestAnalyzerParity:
         }
         response = client.post("/scan", json=request_data)
         assert response.status_code == 200
+
+
+@pytest.mark.skipif(not API_AVAILABLE, reason="FastAPI not installed")
+class TestScanEndpointLLMUsage:
+    """`/scan` must surface `result.llm_usage` (analyzer + meta-analyzer spend) in the response."""
+
+    @staticmethod
+    def _fake_response(prompt_tokens: int, completion_tokens: int, content: str) -> MagicMock:
+        response = MagicMock()
+        response.choices = [MagicMock(message=MagicMock(content=content))]
+        response.usage = MagicMock(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        )
+        return response
+
+    LLM_FINDING_CONTENT = (
+        '{"overall_assessment": "unsafe", '
+        '"findings": [{"title": "t", "description": "d", "severity": "high", '
+        '"aitech": "AITech-1.1", "confidence": 0.9, "remediation": "r"}]}'
+    )
+    _VALIDATED = ", ".join(
+        f'{{"_index": {i}, "confidence": "HIGH", "confidence_reason": "r", "exploitability": "e", "impact": "i"}}'
+        for i in range(10)
+    )
+    META_RESPONSE_CONTENT = (
+        '{"overall_risk_assessment": {"risk_level": "HIGH", "summary": "s"}, '
+        f'"validated_findings": [{_VALIDATED}], '
+        '"false_positives": [], "correlations": [], '
+        '"missed_threats": [], "recommendations": []}'
+    )
+
+    def test_scan_response_includes_combined_llm_usage(self, client, safe_skill_dir, monkeypatch):
+        """`/scan` response must include llm_usage combining analyzer + meta-analyzer spend."""
+        monkeypatch.setenv("SKILL_SCANNER_LLM_API_KEY", "test-key")
+        monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "claude-3-5-sonnet-20241022")
+
+        llm_response = self._fake_response(1000, 200, self.LLM_FINDING_CONTENT)
+        meta_response = self._fake_response(5000, 500, self.META_RESPONSE_CONTENT)
+
+        with (
+            patch(
+                "skill_scanner.core.analyzers.llm_request_handler.acompletion",
+                AsyncMock(return_value=llm_response),
+            ),
+            patch(
+                "skill_scanner.core.analyzers.meta_analyzer.acompletion",
+                AsyncMock(return_value=meta_response),
+            ),
+        ):
+            request_data = {
+                "skill_directory": str(safe_skill_dir),
+                "use_llm": True,
+                "enable_meta": True,
+            }
+            response = client.post("/scan", json=request_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["llm_usage"] == {
+            "input_tokens": 1000 + 5000,
+            "output_tokens": 200 + 500,
+            "total_tokens": 1200 + 5500,
+        }
+
+    def test_scan_response_omits_llm_usage_when_llm_disabled(self, client, safe_skill_dir):
+        """`/scan` response must not include llm_usage on a static-only scan."""
+        request_data = {
+            "skill_directory": str(safe_skill_dir),
+            "use_llm": False,
+            "enable_meta": False,
+        }
+        response = client.post("/scan", json=request_data)
+
+        assert response.status_code == 200
+        assert response.json()["llm_usage"] is None
 
     def test_batch_accepts_check_overlap(self, client, test_skills_dir):
         """Test that batch scan accepts check_overlap parameter."""

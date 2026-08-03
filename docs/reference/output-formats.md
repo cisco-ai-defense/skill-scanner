@@ -95,7 +95,7 @@ skill-scanner scan evals/skills/data-exfiltration/environment-secrets --format j
   ],
   "scan_duration_seconds": 0.13,
   "duration_ms": 127,
-  "analyzers_used": ["static_analyzer", "bytecode", "pipeline"],
+  "analyzers_used": ["static_analyzer", "bytecode", "pipeline", "llm_analyzer", "meta_analyzer"],
   "timestamp": "2026-02-19T21:58:33.032573",
   "scan_metadata": {
     "policy_name": "default",
