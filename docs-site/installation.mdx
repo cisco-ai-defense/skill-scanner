@@ -1,0 +1,139 @@
+---
+title: "Installation"
+description: "Install Cisco AI Defense Skill Scanner CLI and Python package. Prerequisites, PyPI install, cloud provider extras (AWS Bedrock, Google Vertex, Azure), source build, and environment variable configuration."
+order: 2
+---
+
+## Installation
+
+### Prerequisites
+
+| Dependency | Version | Notes |
+|------------|---------|-------|
+| **Python** | 3.10–3.13 | Required for the CLI and all analyzers |
+| **uv** | Latest | Recommended package manager ([install](https://docs.astral.sh/uv/)) |
+| **pip** | Latest | Alternative to uv |
+
+<Callout type="tip">
+  No other dependencies are required for core scanning. LLM, VirusTotal, and AI Defense analyzers need API keys configured as environment variables.
+</Callout>
+
+---
+
+### Install from PyPI
+
+```bash
+# Using uv (recommended)
+uv pip install cisco-ai-skill-scanner
+
+# Using pip
+pip install cisco-ai-skill-scanner
+```
+
+### Cloud Provider Extras
+
+Install optional extras for managed LLM cloud services:
+
+```bash
+# AWS Bedrock support (IAM credentials)
+pip install cisco-ai-skill-scanner[bedrock]
+
+# Google Vertex AI support
+pip install cisco-ai-skill-scanner[vertex]
+
+# Azure OpenAI support (managed identity)
+pip install cisco-ai-skill-scanner[azure]
+
+# All cloud providers
+pip install cisco-ai-skill-scanner[all]
+```
+
+### Install from Source
+
+Use this if you want to contribute or run the latest development version:
+
+```bash
+git clone https://github.com/cisco-ai-defense/skill-scanner
+cd skill-scanner
+uv sync --all-extras
+```
+
+Run commands with `uv run skill-scanner` when using a source install.
+
+---
+
+### Verify Installation
+
+```bash
+skill-scanner --help
+skill-scanner list-analyzers
+```
+
+GitHub release artifacts are published with build-provenance attestations and an SBOM. For controlled environments, verify the release attestation before installing a downloaded artifact and retain the SBOM with your software inventory.
+
+---
+
+### Environment Configuration
+
+All configuration is done through environment variables. No config files are required for basic scanning.
+
+#### LLM Analyzer and Meta-Analyzer
+
+| Variable | Description |
+|----------|-------------|
+| `SKILL_SCANNER_LLM_API_KEY` | API key for the LLM provider |
+| `SKILL_SCANNER_LLM_MODEL` | Model name (e.g., `anthropic/claude-sonnet-4-20250514`, `gpt-4o`) |
+| `SKILL_SCANNER_LLM_PROVIDER` | Optional routing override, including `openai` for compatible endpoints |
+| `SKILL_SCANNER_LLM_BASE_URL` | Base URL for an OpenAI-compatible endpoint |
+| `SKILL_SCANNER_LLM_USER` | Optional raw Chat Completions `user` field for OpenAI-compatible routes |
+| `SKILL_SCANNER_LLM_TEMPERATURE` | Optional temperature override; use `none` to omit it |
+| `SKILL_SCANNER_ADJUDICATOR_LLM_MODEL` | Optional model override for `--adjudicate` |
+
+<Callout type="warning">
+  Never hardcode API keys in source code or shell scripts committed to version control. Use environment variables, a `.env` file (excluded from git), or a secrets manager.
+</Callout>
+
+#### External Analyzers
+
+| Variable | Description | Required for |
+|----------|-------------|--------------|
+| `VIRUSTOTAL_API_KEY` | VirusTotal API key | `--use-virustotal` |
+| `AI_DEFENSE_API_KEY` | Cisco AI Defense API key | `--use-aidefense` |
+| `AI_DEFENSE_API_URL` | Cisco AI Defense endpoint URL | `--use-aidefense` |
+
+#### Quick Setup
+
+```bash
+# Required only for LLM-powered analysis
+export SKILL_SCANNER_LLM_API_KEY="your_api_key"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
+
+# Optional: VirusTotal binary scanning
+export VIRUSTOTAL_API_KEY="your_virustotal_api_key"
+
+# Optional: Cisco AI Defense
+export AI_DEFENSE_API_KEY="your_aidefense_api_key"
+```
+
+---
+
+### LLM Provider Setup
+
+The LLM and Meta analyzers use [LiteLLM](https://github.com/BerriAI/litellm) under the hood, supporting many providers through a unified interface.
+
+| Provider | Model String Example | Extra Required |
+|----------|---------------------|----------------|
+| Anthropic | `anthropic/claude-sonnet-4-20250514` | None |
+| OpenAI | `gpt-4o` | None |
+| AWS Bedrock | `bedrock/anthropic.claude-3-sonnet-...` | `[bedrock]` |
+| Google Vertex | `vertex_ai/gemini-2.5-pro` | `[vertex]` |
+| Azure OpenAI | `azure/gpt-4o` | `[azure]` |
+| OpenAI-compatible | provider-specific model + `SKILL_SCANNER_LLM_PROVIDER=openai` | None |
+
+Set `--llm-provider` on the CLI or configure via the `SKILL_SCANNER_LLM_MODEL` environment variable using LiteLLM model naming conventions.
+
+Vertex AI uses `GOOGLE_APPLICATION_CREDENTIALS` when set and otherwise falls back to ambient Application Default Credentials, including Workload Identity. Bedrock similarly supports ambient AWS/IAM credentials.
+
+OSV.dev dependency scanning (`--use-osv`) needs network access but no API key or optional package.
+
+See the [Dependencies and LLM Providers](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/reference/dependencies-and-llm-providers.md) reference for provider-specific setup instructions.

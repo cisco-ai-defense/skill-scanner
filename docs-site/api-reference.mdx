@@ -1,0 +1,234 @@
+---
+title: "API Reference"
+description: "Skill Scanner REST API reference — FastAPI server endpoints for upload-driven scanning, batch processing, health checks, and analyzer listing. Service-to-service integration for AI agent skill security from Cisco AI Defense."
+order: 9
+---
+
+## API Reference
+
+The Skill Scanner API Server provides a REST interface for uploading and scanning agent skill packages. It enables integration with web applications, CI/CD pipelines, and service-to-service workflows.
+
+<Callout type="warning">
+  The API server is unauthenticated by default. Do not expose it on any interface except localhost. See the [API Operations](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/user-guide/api-operations.md) guide for authentication and hardening guidance.
+</Callout>
+
+---
+
+### Starting the Server
+
+```bash
+# Default: localhost:8000
+skill-scanner-api
+
+# Custom port
+skill-scanner-api --port 8080
+
+# Development mode with auto-reload
+skill-scanner-api --reload
+
+# Custom host and port
+skill-scanner-api --host 127.0.0.1 --port 9000
+```
+
+Or programmatically:
+
+```python
+from skill_scanner.api.api_server import run_server
+
+run_server(host="127.0.0.1", port=8000, reload=False)
+```
+
+---
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Service metadata and links |
+| `/health` | GET | Server status and available analyzers |
+| `/scan` | POST | Scan a skill by local directory path |
+| `/scan-upload` | POST | Upload a skill ZIP and scan it |
+| `/scan-batch` | POST | Start an async batch scan |
+| `/scan-batch/{scan_id}` | GET | Poll batch scan status and results |
+| `/analyzers` | GET | List all available analyzers |
+
+---
+
+### `POST /scan`
+
+Scan a skill by local directory path.
+
+```bash
+curl -X POST http://localhost:8000/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "skill_directory": "/path/to/skill",
+    "use_behavioral": true,
+    "use_osv": true,
+    "use_llm": false,
+    "policy": "balanced"
+  }'
+```
+
+**Request body:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `skill_directory` | string | *(required)* | Absolute path to skill directory |
+| `use_behavioral` | boolean | `false` | Enable behavioral analyzer |
+| `use_llm` | boolean | `false` | Enable LLM analyzer |
+| `use_virustotal` | boolean | `false` | Enable VirusTotal analyzer |
+| `use_aidefense` | boolean | `false` | Enable AI Defense analyzer |
+| `use_trigger` | boolean | `false` | Enable trigger specificity analysis |
+| `use_osv` | boolean | `false` | Query OSV.dev for vulnerable exactly pinned Python dependencies |
+| `enable_meta` | boolean | `false` | Enable meta-analyzer |
+| `llm_consensus_runs` | integer | `1` | Configured LLM runs used for majority consensus |
+| `policy` | string | `"balanced"` | Policy preset or YAML path |
+| `lenient` | boolean | `false` | Tolerate malformed skills |
+
+---
+
+### `POST /scan-upload`
+
+Upload a skill as a ZIP file and scan it.
+
+```bash
+curl -X POST http://localhost:8000/scan-upload \
+  -F "file=@my-skill.zip" \
+  -F "use_behavioral=true"
+```
+
+**Upload guardrails:**
+
+| Limit | Value |
+|-------|-------|
+| Max upload size | 50 MB |
+| Max ZIP entries | 500 |
+| Max uncompressed size | 200 MB |
+
+---
+
+### `POST /scan-batch`
+
+Start an asynchronous batch scan. Returns a `scan_id` for polling.
+
+```bash
+curl -X POST http://localhost:8000/scan-batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "skills_directory": "/path/to/skills",
+    "recursive": true,
+    "use_behavioral": true
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "scan_id": "abc123",
+  "status": "pending"
+}
+```
+
+---
+
+### `GET /scan-batch/{scan_id}`
+
+Poll batch scan status and retrieve results when complete.
+
+```bash
+curl http://localhost:8000/scan-batch/abc123
+```
+
+**Status values:** `pending`, `running`, `completed`, `failed`
+
+---
+
+### `GET /health`
+
+Health check with analyzer availability.
+
+```bash
+curl http://localhost:8000/health
+```
+
+---
+
+### `GET /analyzers`
+
+List all available analyzers and their activation requirements.
+
+```bash
+curl http://localhost:8000/analyzers
+```
+
+---
+
+### Interactive Documentation
+
+When the server is running:
+
+- **Swagger UI**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
+
+---
+
+### Configuration
+
+The API server uses the same environment variables as the CLI:
+
+```bash
+export SKILL_SCANNER_LLM_API_KEY=your_key
+export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
+export AI_DEFENSE_API_KEY=your_key
+```
+
+Successful scan results include aggregate `llm_usage` (`input_tokens`, `output_tokens`, and `total_tokens`) when the configured provider reports usage for LLM, meta, or policy-enabled adjudication calls.
+
+Server bind settings are controlled by CLI flags (`--host`, `--port`).
+
+---
+
+### CORS Configuration
+
+For web application integration, add CORS middleware:
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from skill_scanner.api.router import router
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(router)
+```
+
+---
+
+### Performance
+
+- `/scan-batch` runs as a background task, polled by `scan_id`
+- Batch status stored in an in-memory bounded cache (max 1000 entries, 1 hour TTL)
+- `/scan` and `/scan-upload` execute via threadpool workers to avoid blocking the event loop
+- Throughput depends on analyzer mix, model/provider latency, and uploaded archive size
+
+---
+
+### When to Use CLI vs API
+
+| Use Case | Interface |
+|----------|-----------|
+| Local development, one-off scans | CLI or SDK |
+| Scripted scans in same runtime | CLI or SDK |
+| CI/CD systems integrating via HTTP | API |
+| Web upload and review portals | API |
+| Queued or remote orchestration | API |
+| Service-to-service integration | API |
+
+See [API Rationale](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/user-guide/api-rationale.md) for more detail.

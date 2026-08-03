@@ -1,0 +1,225 @@
+---
+title: "Python SDK"
+description: "Skill Scanner Python SDK — embed AI agent skill security scanning in Python applications. SkillScanner class, ScanResult and Finding models, Severity enum, policy support, and programmatic analyzer composition from Cisco AI Defense."
+order: 8
+---
+
+## Python SDK
+
+Embed skill scanning directly in Python applications. The SDK provides `SkillScanner`, convenience functions, and typed models for findings, results, and reports.
+
+---
+
+### Basic Usage
+
+```python
+from skill_scanner import SkillScanner
+from skill_scanner.core.analyzers import BehavioralAnalyzer
+
+scanner = SkillScanner(analyzers=[BehavioralAnalyzer()])
+result = scanner.scan_skill("/path/to/skill")
+
+print(result.skill_name)
+print(result.max_severity)
+print(len(result.findings))
+```
+
+---
+
+### `SkillScanner` Constructor
+
+```python
+SkillScanner(
+    analyzers=None,
+    use_virustotal=False,
+    virustotal_api_key=None,
+    virustotal_upload_files=False,
+    policy=None,
+)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `analyzers` | `list[BaseAnalyzer]` or `None` | Custom analyzer list; `None` uses defaults (static + bytecode + pipeline) |
+| `use_virustotal` | `bool` | Enable VirusTotal binary scanning |
+| `virustotal_api_key` | `str` or `None` | VirusTotal API key (required when enabled) |
+| `virustotal_upload_files` | `bool` | Upload unknown files to VT (vs hash-only lookup) |
+| `policy` | `ScanPolicy` or `None` | Scan policy; `None` loads built-in defaults |
+
+---
+
+### Instance Methods
+
+#### `scan_skill(skill_directory, *, lenient=False, skill_file=None) -> ScanResult`
+
+Scan a single skill package directory.
+
+```python
+result = scanner.scan_skill("/path/to/skill")
+
+# Scan a directory without SKILL.md (e.g., Claude Code commands)
+result = scanner.scan_skill(".claude/commands/deploy", lenient=True)
+
+# Use a custom metadata file
+result = scanner.scan_skill("/path/to/skill", skill_file="README.md")
+```
+
+#### `scan_directory(skills_directory, recursive=False, check_overlap=False, *, lenient=False, skill_file=None) -> Report`
+
+Scan all skill packages in a directory.
+
+```python
+report = scanner.scan_directory("/path/to/skills", recursive=True)
+print(report.total_skills_scanned)
+print(report.total_findings)
+
+# Cross-skill overlap analysis
+report = scanner.scan_directory("/path/to/skills", recursive=True, check_overlap=True)
+```
+
+#### `add_analyzer(analyzer)`
+
+Add an analyzer to the scanner at runtime.
+
+```python
+import os
+from skill_scanner.core.analyzers import LLMAnalyzer
+
+scanner.add_analyzer(LLMAnalyzer(
+    model="anthropic/claude-sonnet-4-20250514",
+    api_key=os.environ["SKILL_SCANNER_LLM_API_KEY"],
+))
+```
+
+<Callout type="warning">
+  Never hardcode API keys in source code. Use environment variables or a secrets manager. The LLM analyzer reads `SKILL_SCANNER_LLM_API_KEY` from the environment automatically when no `api_key` is passed.
+</Callout>
+
+#### `list_analyzers() -> list[str]`
+
+Return names of all configured analyzers.
+
+```python
+print(scanner.list_analyzers())
+# ['static_analyzer', 'bytecode', 'pipeline']
+```
+
+---
+
+### Convenience Functions
+
+For one-off scans without managing a scanner instance:
+
+```python
+from skill_scanner import scan_skill, scan_directory
+
+result = scan_skill("/path/to/skill")
+report = scan_directory("/path/to/skills", recursive=True, check_overlap=True)
+```
+
+Both functions accept optional `analyzers` and `policy` parameters.
+
+---
+
+### Working with Results
+
+#### ScanResult (Single Skill)
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `skill_name` | `str` | Name from SKILL.md manifest |
+| `skill_directory` | `str` | Absolute path to the scanned skill |
+| `findings` | `list[Finding]` | All security findings |
+| `scan_duration_seconds` | `float` | Wall-clock scan time |
+| `analyzers_used` | `list[str]` | Analyzer names that ran |
+| `analyzability_score` | `float` or `None` | Percentage of content inspected |
+| `is_safe` | `bool` | `True` when no CRITICAL or HIGH findings |
+| `max_severity` | `Severity` | Highest severity across all findings |
+| `llm_usage` | `dict[str, int]` or `None` | Aggregate input/output/total tokens reported by LLM, meta, and adjudication calls |
+
+```python
+result.get_findings_by_severity(Severity.HIGH)
+result.get_findings_by_category(ThreatCategory.DATA_EXFILTRATION)
+result.to_dict()
+```
+
+#### Report (Multi-Skill)
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `scan_results` | `list[ScanResult]` | Per-skill results |
+| `total_skills_scanned` | `int` | Number of skills processed |
+| `total_findings` | `int` | Sum of all findings |
+| `critical_count` | `int` | Total CRITICAL findings |
+| `high_count` | `int` | Total HIGH findings |
+| `safe_count` | `int` | Skills with `is_safe == True` |
+
+#### Finding
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `id` | `str` | Unique finding identifier |
+| `rule_id` | `str` | Rule identifier (e.g., `DATA_EXFIL_HTTP_POST`) |
+| `category` | `ThreatCategory` | Threat category enum |
+| `severity` | `Severity` | Severity level |
+| `title` | `str` | Human-readable title |
+| `description` | `str` | Detailed explanation |
+| `file_path` | `str` or `None` | Relative path within the skill |
+| `line_number` | `int` or `None` | Line number (when available) |
+| `snippet` | `str` or `None` | Code snippet context |
+| `remediation` | `str` or `None` | Suggested fix |
+| `analyzer` | `str` or `None` | Which analyzer produced this |
+| `metadata` | `dict` | Extra context (YARA rule, matched pattern, etc.) |
+
+```python
+for finding in result.findings:
+    print(finding.rule_id, finding.severity.value, finding.file_path)
+```
+
+#### Severity Enum
+
+Values in descending order: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`, `SAFE`.
+
+---
+
+### Using Policies
+
+```python
+from skill_scanner import SkillScanner
+from skill_scanner.core.scan_policy import ScanPolicy
+
+# Use a built-in preset
+policy = ScanPolicy.from_preset("strict")
+
+# Or load a custom YAML file
+policy = ScanPolicy.from_yaml("my_policy.yaml")
+
+scanner = SkillScanner(policy=policy)
+result = scanner.scan_skill("/path/to/skill")
+```
+
+For parity with the CLI and API, assemble optional analyzers through the central factory:
+
+```python
+from skill_scanner.core.analyzer_factory import build_analyzers
+
+analyzers = build_analyzers(
+    policy,
+    use_behavioral=True,
+    use_llm=True,
+    use_osv=True,
+    llm_consensus_runs=3,
+)
+scanner = SkillScanner(analyzers=analyzers, policy=policy)
+```
+
+Set `policy.adjudicator.enabled = True` before constructing `SkillScanner` to enable the demote-only adjudication pass programmatically.
+
+---
+
+### Example Scripts
+
+- [basic_scan.py](https://github.com/cisco-ai-defense/skill-scanner/blob/main/examples/basic_scan.py)
+- [programmatic_usage.py](https://github.com/cisco-ai-defense/skill-scanner/blob/main/examples/programmatic_usage.py)
+- [advanced_scanning.py](https://github.com/cisco-ai-defense/skill-scanner/blob/main/examples/advanced_scanning.py)
+- [batch_scanning.py](https://github.com/cisco-ai-defense/skill-scanner/blob/main/examples/batch_scanning.py)

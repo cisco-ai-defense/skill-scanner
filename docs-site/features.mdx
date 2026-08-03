@@ -1,0 +1,224 @@
+---
+title: "Features"
+description: "Skill Scanner features — deterministic and LLM analyzers, OSV.dev dependency intelligence, per-finding adjudication, 712-rule ATR coverage, file intelligence, policies, and CI-ready reporting."
+order: 3
+---
+
+## Features
+
+Four pillars of protection for AI agent skill packages.
+
+---
+
+### Multi-Engine Threat Detection
+
+Skill Scanner layers complementary detection engines so that no single blind spot — pattern-matching misses, vulnerable dependencies, bytecode tricks, or obfuscated pipelines — dominates the result. Core analyzers run on every scan; optional analyzers activate on demand.
+
+#### Core Analyzers (Always On)
+
+| Analyzer | What It Does | Signal Source |
+|----------|-------------|---------------|
+| **Static Analyzer** | Pattern and signature detection across all files | YAML signatures + YARA rules + Python checks |
+| **Bytecode Analyzer** | `.pyc` consistency and integrity verification | Bytecode/source relationships |
+| **Pipeline Analyzer** | Shell command chain risk and taint analysis | Command pipeline heuristics |
+
+#### Optional Analyzers (Opt-In)
+
+| Analyzer | Enable Flag | What You Get |
+|----------|-------------|--------------|
+| **Behavioral Analyzer** | `--use-behavioral` | AST and control-flow dataflow analysis for Python |
+| **LLM Analyzer** | `--use-llm` | Semantic threat reasoning powered by LLM |
+| **Meta-Analyzer** | `--enable-meta` | Second-pass false-positive reduction across all findings |
+| **VirusTotal Analyzer** | `--use-virustotal` | Binary hash reputation and optional file uploads |
+| **AI Defense Analyzer** | `--use-aidefense` | Cisco cloud-based threat classification |
+| **OSV Analyzer** | `--use-osv` | Known vulnerabilities in exactly pinned Python dependencies; no API key required |
+| **Trigger Analyzer** | `--use-trigger` | Detection of vague or overly broad skill descriptions |
+| **Cross-Skill Scanner** | `--check-overlap` | Coordinated attack detection across multiple skills |
+| **Adjudicator** | `--adjudicate` | Demote-only LLM review of deterministic HIGH/CRITICAL literal-regex false positives |
+
+<Callout type="tip">
+  For local development, just run `skill-scanner scan ./skill` — the three core analyzers handle common cases without configuration. Add `--use-behavioral` and `--use-llm` for deeper analysis.
+</Callout>
+
+#### Threat Coverage Matrix
+
+| Threat Category | Static | Bytecode | Pipeline | Behavioral | LLM | OSV | Trigger | VirusTotal | AI Defense | Cross-Skill |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Prompt Injection / Jailbreak | ✓ | | | | ✓ | | | | ✓ | |
+| Command Injection | ✓ | | ✓ | ✓ | ✓ | | | | ✓ | |
+| Data Exfiltration | ✓ | | ✓ | ✓ | ✓ | | | | ✓ | ✓ |
+| Obfuscation | ✓ | ✓ | ✓ | | ✓ | | | | ✓ | ✓ |
+| Hardcoded Secrets | ✓ | | | | | | | | ✓ | |
+| Social Engineering | ✓ | | | | ✓ | | ✓ | | ✓ | ✓ |
+| Malware | | | | | | | | ✓ | ✓ | |
+| Supply Chain | ✓ | | ✓ | | ✓ | ✓ | | | | |
+| Unicode / ASCII Smuggling | ✓ | | | | ✓ | | | | | |
+
+Multiple analyzers covering the same category provides layered detection — if one engine misses a pattern, another may catch it.
+
+#### Current Deterministic Coverage
+
+Recent core detections include:
+
+- Unpinned dependencies across Python, Node/npm, Ruby, Go, Rust, Java/Maven, .NET/NuGet, PHP/Composer, and Swift manifests
+- Suspicious URLs in YAML, JSON, TOML, INI, and environment/config files, including current ngrok domains plus `bore.pub`, `serveo.net`, and `localtunnel.me`
+- Unicode Tag Block (ASCII-smuggling) payloads, generic jailbreak patterns, and improved OpenAI/Anthropic project-key detection
+- JavaScript and TypeScript content in analyzability scoring, plus recursive discovery of symlinked skill directories
+
+---
+
+### File Intelligence Engines
+
+Beyond code and text, Skill Scanner uses dedicated libraries to inspect binary and structured file content:
+
+| Engine | What It Catches |
+|--------|-----------------|
+| [Magika](https://github.com/google/magika) | AI-powered content-type detection for 200+ file types. Catches extension-vs-content mismatches. |
+| pdfid | Risky PDF structures: `/JS`, `/JavaScript`, `/OpenAction`, `/Launch` |
+| oletools | Office macros, auto-executable triggers, VBA, and OLE indicators |
+| confusable-homoglyphs | Unicode deception — visually similar characters from different scripts |
+
+#### Analyzability Scoring
+
+Not all files can be inspected. Skill Scanner computes a per-skill analyzability score that measures what fraction of the skill's content was actually analyzed. A low score means the skill contains files that resist inspection — a risk signal in itself.
+
+- **Score formula**: `(analyzed_weight / total_weight) x 100` where weight reflects file size
+- **Risk levels**: LOW (>= 90%), MEDIUM (70-90%), HIGH (< 70%) — configurable via policy
+- **Fail-closed posture**: opaque binaries generate `UNANALYZABLE_BINARY` findings; low overall scores generate `LOW_ANALYZABILITY` findings
+
+---
+
+### Binary and Archive Handling
+
+Instead of blanket allow/deny, Skill Scanner applies policy-sensitive handling to binary files and archives.
+
+#### Supported Archive Formats
+
+| Format | Extensions |
+|--------|-----------|
+| ZIP-based | `.zip`, `.jar`, `.war`, `.apk`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp` |
+| TAR-based | `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz` |
+
+#### Archive Security Protections
+
+| Protection | Default Limit | Finding on Violation |
+|-----------|--------------|---------------------|
+| Zip-bomb detection | 100:1 compression ratio | `ARCHIVE_ZIP_BOMB` (CRITICAL) |
+| Nesting depth | 3 levels | `ARCHIVE_NESTED_TOO_DEEP` (HIGH) |
+| Path traversal | Rejects `..` and leading `/` | `ARCHIVE_PATH_TRAVERSAL` (CRITICAL) |
+| Symlink detection | ZIP and TAR symlinks/hardlinks | `ARCHIVE_SYMLINK` (CRITICAL) |
+| Total size | 50 MB uncompressed | Extraction stops |
+| File count | 500 files | Extraction stops |
+| Office threats | VBA macros and embedded OLE | `OFFICE_VBA_MACRO`, `OFFICE_EMBEDDED_OLE` |
+
+---
+
+### Policy-Driven Control Plane
+
+Every detection threshold, rule scope, and output behavior is configurable through policy YAML — no code changes required.
+
+#### Built-In Presets
+
+| Preset | When to Use |
+|--------|-------------|
+| **balanced** (default) | Production scanning with good detection-to-noise ratio |
+| **strict** | Untrusted/external skills, compliance audits — maximum sensitivity |
+| **permissive** | Trusted internal skills — reduced noise |
+
+#### Key Policy Sections
+
+| Section | What It Controls |
+|---------|-----------------|
+| `pipeline` | Trusted installer domains, compound fetch+execute detection |
+| `rule_scoping` | Which rules fire on which file types; doc-path exclusions |
+| `file_limits` | Max file count, size, nesting depth |
+| `analysis_thresholds` | Analyzability risk levels, unicode sensitivity |
+| `severity_overrides` | Per-rule severity remapping |
+| `disabled_rules` | Suppress specific rule IDs |
+
+```bash
+skill-scanner generate-policy -o policy.yaml --preset strict
+skill-scanner configure-policy -i policy.yaml -o policy.yaml
+skill-scanner scan ./skill --policy policy.yaml
+```
+
+See [Scan Policies](/docs/skill-scanner/scan-policies) for the full guide.
+
+---
+
+### Rule System Extensibility
+
+Add detection logic without forking the scanner. Skill Scanner supports three rule types that can be mixed with built-in rule packs.
+
+| Rule Type | Best For |
+|-----------|---------|
+| **Signature rules** (YAML) | Fast regex pattern matching on file content |
+| **YARA rules** | Binary and text pattern matching with conditions |
+| **Python checks** | Programmatic, policy-aware checks with full file context |
+
+#### Bundled Rule Packs
+
+| Pack | Coverage | Enable |
+|------|----------|--------|
+| **Core** | Always-on signatures, YARA, and Python checks | Enabled by default |
+| **ATR** | Cisco AI Threat Research detections; currently 712 supported rules | `--rule-packs atr` |
+| **PromptGuard** | 26 rules for PII, provider secrets, and LLM/Markdown exfiltration | `--rule-packs promptguard` |
+
+```bash
+skill-scanner validate-rules --rules-file /path/to/custom
+skill-scanner scan ./skill --custom-rules /path/to/rules
+skill-scanner scan ./skill --rule-packs atr promptguard
+```
+
+See [Writing Custom Rules](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/architecture/analyzers/writing-custom-rules.md) for the full authoring guide.
+
+---
+
+### Multiple Interfaces
+
+Use Skill Scanner however your team works.
+
+| Interface | Best For |
+|-----------|---------|
+| **CLI** | Local development, CI pipelines, scripted scans |
+| **Python SDK** | Embedding scanning in Python applications |
+| **REST API** | Upload-driven workflows, web portals, service-to-service |
+| **Pre-commit hook** | Block risky skills before they reach the repository |
+
+---
+
+### Reporting and Output Formats
+
+Six output formats support every workflow from local triage to platform automation.
+
+| Format | Flag | Best For |
+|--------|------|---------|
+| Summary | `--format summary` | Quick terminal readout |
+| JSON | `--format json` | Automation pipelines |
+| Markdown | `--format markdown` | PR comments and report artifacts |
+| Table | `--format table` | Compact terminal summaries |
+| SARIF | `--format sarif` | GitHub Code Scanning integration |
+| HTML | `--format html` | Rich interactive triage with correlation groups |
+
+---
+
+### LLM Consensus Mode
+
+Run the LLM analyzer multiple times independently and keep only majority-agreed findings, significantly reducing false positives while preserving true threats.
+
+```bash
+skill-scanner scan ./skill --use-llm --llm-consensus-runs 3 --enable-meta
+```
+
+Combines consensus voting with meta-analyzer false-positive filtering for high-confidence results. Majority uses the configured run count as its denominator, and retained findings use the highest severity observed across agreeing votes. The meta-analyzer batches large finding sets and the LLM path recovers fenced JSON while surfacing genuinely truncated responses.
+
+### Per-Finding Adjudication
+
+The optional adjudicator reviews each deterministic HIGH/CRITICAL finding before LLM enrichment. It can demote a high-confidence literal-regex false positive to INFO, but it never promotes findings; failures leave the original severity unchanged.
+
+```bash
+skill-scanner scan ./skill --adjudicate
+skill-scanner scan ./skill --use-llm --enable-meta --adjudicate
+```
+
+Adjudicator, LLM analyzer, and meta-analyzer token usage is aggregated in JSON output under `llm_usage` when the provider reports usage.

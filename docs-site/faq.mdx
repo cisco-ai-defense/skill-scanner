@@ -1,0 +1,108 @@
+---
+title: "FAQ"
+description: "Skill Scanner frequently asked questions — what it scans, supported skill formats, LLM providers, analyzer selection, scan policies, CI/CD integration, Python SDK usage, output formats, and troubleshooting. Cisco AI Defense open-source documentation."
+order: 11
+---
+
+## Frequently Asked Questions
+
+### What is Skill Scanner?
+
+Skill Scanner is an open-source security scanner for AI agent skill packages. It detects prompt injection, data exfiltration, command injection, obfuscated code, and other threats using a combination of pattern-based detection (YAML + YARA), behavioral dataflow analysis, and LLM-powered semantic reasoning. Published as `cisco-ai-skill-scanner` on PyPI.
+
+### What skill formats does it support?
+
+Skill Scanner supports [OpenAI Codex Skills](https://agentskills.io), [Cursor Agent Skills](https://docs.cursor.com/context/rules), and related formats following the [Agent Skills specification](https://agentskills.io). With `--lenient` mode, it can also scan non-standard formats such as Claude Code `.claude/commands/*.md` files and any directory containing Markdown instruction files.
+
+### Do I need API keys to use it?
+
+No. Core analyzers (static, bytecode, pipeline) require no API keys and no network access. OSV.dev scanning (`--use-osv`) requires network access but no key. Keys or cloud credentials are needed for LLM (`--use-llm` or `--adjudicate`), VirusTotal (`--use-virustotal`), and Cisco AI Defense (`--use-aidefense`).
+
+### Which LLM providers are supported?
+
+Skill Scanner uses [LiteLLM](https://github.com/BerriAI/litellm) under the hood, supporting Anthropic, OpenAI, AWS Bedrock, Google Vertex AI, Azure OpenAI, and many other providers. Install optional extras (`[bedrock]`, `[vertex]`, `[azure]`, or `[all]`) for managed cloud services.
+
+### How do I choose which analyzers to enable?
+
+Start with the defaults — the three core analyzers handle common threats without configuration. Add `--use-osv` for known vulnerable Python pins and `--use-behavioral` for Python dataflow. Add `--use-llm` for semantic reasoning and `--enable-meta` for cross-correlation. Use `--adjudicate` when deterministic HIGH/CRITICAL literal-regex false positives need a demote-only LLM review. Enable VirusTotal or Cisco AI Defense for cloud-based binary and content scanning.
+
+### What is the adjudicator?
+
+The adjudicator is an optional pass between deterministic analysis and LLM enrichment. It asks an LLM to review deterministic HIGH/CRITICAL matches and can demote high-confidence literal-regex false positives to INFO. It never promotes a finding, and errors preserve the original severity. Enable it with `--adjudicate`.
+
+### What is the meta-analyzer?
+
+The meta-analyzer is a second-pass LLM that reviews all findings from other analyzers and filters out likely false positives while preserving true threats. It requires an LLM API key and runs after all other analyzers complete. Enable it with `--enable-meta`.
+
+### What is LLM consensus mode?
+
+Consensus mode runs the LLM analyzer multiple times independently and keeps only findings that a majority of runs agree on. This significantly reduces false positives. Enable with `--llm-consensus-runs 3` (or any odd number).
+
+### Does a clean scan mean the skill is safe?
+
+No. A scan that returns no findings means no known threat patterns were detected. It does not guarantee the skill is secure, benign, or free of vulnerabilities. Coverage is inherently incomplete, and novel attacks may evade all detection engines. Human review remains essential.
+
+### How does it handle binary files?
+
+Binary files are classified into tiers based on their content type. Executable and opaque binaries lower the analyzability score. When VirusTotal is enabled (`--use-virustotal`), binary file hashes are checked against the VirusTotal database. Archives (ZIP, TAR) are extracted and inspected with protections against zip bombs, path traversal, and symlinks.
+
+### Can I add custom detection rules?
+
+Yes. Skill Scanner supports three rule types: YAML signature rules (regex patterns), YARA rules (binary and text matching), and Python checks (programmatic analysis). Use `--custom-rules /path/to/rules` to load custom rules alongside built-in packs. See [Writing Custom Rules](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/architecture/analyzers/writing-custom-rules.md).
+
+### How do scan policies work?
+
+Policies control every aspect of scanner behavior through YAML configuration: which rules fire, severity levels, file limits, analyzability thresholds, and more. Three built-in presets are available: `strict` (maximum sensitivity), `balanced` (default), and `permissive` (reduced noise). Generate and customize policies with `skill-scanner generate-policy` and `skill-scanner configure-policy`. See [Scan Policies](/docs/skill-scanner/scan-policies).
+
+### How do I integrate with CI/CD?
+
+Use the reusable GitHub Actions workflow for zero-config integration:
+
+```yaml
+jobs:
+  scan:
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    with:
+      skill_path: .cursor/skills
+    permissions:
+      security-events: write
+      contents: read
+```
+
+Results appear as inline annotations in PRs via GitHub Code Scanning. Use `--fail-on-severity high` in any CI system to fail builds on findings. See [GitHub Actions](/docs/skill-scanner/github-actions).
+
+### What output formats are available?
+
+Six formats: `summary` (terminal), `json` (automation), `markdown` (reports), `table` (compact terminal), `sarif` (GitHub Code Scanning), and `html` (interactive triage). Repeat `--format` to produce several reports in one scan, and use per-format paths such as `--output-json` and `--output-sarif`.
+
+### Can I use it as a Python library?
+
+Yes. Import `SkillScanner`, `scan_skill`, or `scan_directory` directly in Python. The SDK provides typed models for findings, results, and reports. See [Python SDK](/docs/skill-scanner/python-sdk).
+
+### What is cross-skill analysis?
+
+Cross-skill analysis detects coordinated attacks across multiple skills, including data relay patterns, shared external URLs, complementary triggers, and shared suspicious patterns. Enable with `--check-overlap` on `scan-all`.
+
+### What platforms are supported?
+
+Skill Scanner runs on any platform with Python 3.10-3.13: macOS, Linux, and Windows.
+
+### How does it relate to DefenseClaw?
+
+[DefenseClaw](https://cisco-ai-defense.github.io/defenseclaw/) is the governance layer that orchestrates Skill Scanner (and other Cisco AI Defense scanners) with enforcement, policy, and audit capabilities. Skill Scanner is the standalone scanning engine that DefenseClaw wraps.
+
+### How does it relate to the IDE AI Security Scanner?
+
+The [IDE AI Security Scanner](/docs/ai-security-scanner) VS Code extension integrates Skill Scanner for in-editor skill scanning. You can also use Skill Scanner standalone from the command line without VS Code.
+
+### Where can I report bugs or request features?
+
+Open an issue on the [GitHub repository](https://github.com/cisco-ai-defense/skill-scanner/issues). For security vulnerabilities, see [SECURITY.md](https://github.com/cisco-ai-defense/skill-scanner/blob/main/SECURITY.md).
+
+### How do I contribute?
+
+See [CONTRIBUTING.md](https://github.com/cisco-ai-defense/skill-scanner/blob/main/CONTRIBUTING.md) for guidelines. Clone the repo, install with `uv sync --all-extras`, and run `pytest` to verify your setup.
+
+<Callout type="info">
+  For additional technical documentation, including deep-dives into individual analyzers, rule authoring, and threat taxonomy, see the [full documentation](https://github.com/cisco-ai-defense/skill-scanner/tree/main/docs) in the repository.
+</Callout>

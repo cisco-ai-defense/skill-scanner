@@ -1,0 +1,206 @@
+---
+title: "Scan Policies"
+description: "Skill Scanner scan policies — built-in presets, custom YAML, adjudication, trusted reference domains, LLM budgets, severity overrides, rule disabling, and interactive configuration."
+order: 7
+---
+
+## Scan Policies
+
+Scan policies define scanner behavior without code changes. Start with a built-in preset, then override only what your organization needs.
+
+---
+
+### Which Preset Should I Use?
+
+| Scanning... | Use |
+|-------------|-----|
+| Untrusted or external skills | **strict** — maximum sensitivity |
+| Normal CI/CD pipeline | **balanced** (default) — good detection-to-noise ratio |
+| Trusted internal skills | **permissive** — reduced noise |
+
+---
+
+### Built-In Presets
+
+| Preset | Posture | Typical Use |
+|--------|---------|-------------|
+| `strict` | Maximum sensitivity | Untrusted content, compliance audits, security reviews |
+| `balanced` | Default blend | General CI usage, day-to-day development scanning |
+| `permissive` | Lower noise | Trusted internal workflows, known-safe skill directories |
+
+```bash
+skill-scanner scan ./my-skill --policy strict
+skill-scanner scan ./my-skill --policy balanced
+skill-scanner scan ./my-skill --policy permissive
+```
+
+---
+
+### Generate and Customize a Policy
+
+```bash
+# Generate a policy YAML from a preset
+skill-scanner generate-policy --preset balanced -o my_policy.yaml
+
+# Interactive TUI for editing every policy section
+skill-scanner configure-policy -i my_policy.yaml -o my_policy.yaml
+
+# Use the custom policy
+skill-scanner scan ./my-skill --policy my_policy.yaml
+```
+
+<Callout type="tip">
+  Use `configure-policy` for an interactive terminal UI that walks you through every policy section — no YAML editing required.
+</Callout>
+
+---
+
+### Merge Behavior
+
+Custom policy files merge over defaults:
+
+- **Missing keys** inherit defaults from the base preset
+- **Scalar fields** override directly
+- **Lists** replace defaults entirely (they do not append)
+
+---
+
+### Policy Sections
+
+Policies cover file classification, analyzer behavior, adjudication, LLM budgets, finding normalization, and rule governance.
+
+#### High-Impact Sections
+
+| Section | What It Controls |
+|---------|-----------------|
+| `pipeline` | Command-chain demotion, known installer handling, trusted domains, exfil hint words |
+| `rule_scoping` | Which rules fire on which file types; docs vs code path gating |
+| `file_limits` | Maximum file count, individual file size, nesting depth |
+| `analysis_thresholds` | Analyzability risk levels, unicode steganography sensitivity |
+| `severity_overrides` | Per-rule severity remapping (promote or demote) |
+| `disabled_rules` | Suppress specific rule IDs entirely |
+| `adjudicator` | Enable demote-only review and set the minimum false-positive confidence |
+| `llm_analysis` | Prompt/output budgets, meta multiplier, and trusted reference domains |
+
+#### All Sections
+
+| Section | Purpose |
+|---------|---------|
+| `analyzers` | Enable/disable core analyzers (static, bytecode, pipeline) |
+| `file_limits` | Size, count, and depth constraints |
+| `file_classification` | Binary tier mappings and hidden file allowlists |
+| `analysis_thresholds` | Analyzability scoring and unicode detection thresholds |
+| `rule_scoping` | Rule-to-filetype mapping and doc-path exclusions |
+| `pipeline` | Shell pipeline analysis tuning |
+| `command_safety` | Command risk tier classification |
+| `severity_overrides` | Per-rule severity adjustments |
+| `disabled_rules` | Rule suppression list |
+| `finding_output` | Deduplication and co-occurrence annotation settings |
+| `metadata` | Policy fingerprint and metadata attachment |
+| `llm_analysis` | LLM context/output budgets, meta multiplier, and trusted reference domains |
+| `adjudicator` | Per-finding adjudication toggle and confidence threshold |
+| `docs_scanning` | Documentation path scanning behavior |
+| `hidden_files` | Hidden file handling allowlists |
+
+---
+
+### Common Policy Tweaks
+
+#### Suppress a Noisy Rule
+
+```yaml
+disabled_rules:
+  - HIDDEN_FILE_DETECTED
+  - BINARY_FILE_DETECTED
+```
+
+#### Promote a Rule to CRITICAL
+
+```yaml
+severity_overrides:
+  DATA_EXFIL_HTTP_POST: CRITICAL
+  HARDCODED_SECRET_GENERIC: HIGH
+```
+
+#### Restrict File Size Limits
+
+```yaml
+file_limits:
+  max_files: 50
+  max_file_size_bytes: 1048576
+  max_nesting_depth: 2
+```
+
+#### Adjust Analyzability Thresholds
+
+```yaml
+analysis_thresholds:
+  analyzability_low_risk: 90
+  analyzability_medium_risk: 70
+```
+
+#### Trust Internal Reference Domains
+
+```yaml
+llm_analysis:
+  trusted_reference_domains:
+    - git.example.com
+    - packages.example.com
+```
+
+LLM transitive-trust and supply-chain findings that reference only these domains are demoted to LOW. Keep this list narrow and organization-controlled.
+
+#### Configure Adjudication
+
+```yaml
+adjudicator:
+  enabled: true
+  min_fp_confidence: 4
+```
+
+The adjudicator is demote-only, but an incorrect LLM verdict can still demote a real threat. It is disabled by default and records its decisions for audit.
+
+---
+
+### Using Policies in the SDK
+
+```python
+from skill_scanner import SkillScanner
+from skill_scanner.core.scan_policy import ScanPolicy
+
+# Use a built-in preset
+policy = ScanPolicy.from_preset("strict")
+
+# Or load a custom YAML file
+policy = ScanPolicy.from_yaml("my_policy.yaml")
+
+scanner = SkillScanner(policy=policy)
+result = scanner.scan_skill("/path/to/skill")
+```
+
+---
+
+### Policy in CI/CD
+
+Commit your custom policy to the repository and reference it in CI:
+
+```bash
+skill-scanner scan-all ./skills --policy .github/scan-policy.yaml --fail-on-severity high
+```
+
+Or in GitHub Actions:
+
+```yaml
+with:
+  skill_path: .cursor/skills
+  policy: .github/scan-policy.yaml
+```
+
+---
+
+### Full Reference
+
+For exhaustive knob-by-knob documentation of every policy field, see:
+
+- [Custom Policy Configuration](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/user-guide/custom-policy-configuration.md) — full authoring guide
+- [Policy Quick Reference](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/reference/policy-quick-reference.md) — compact field reference with defaults

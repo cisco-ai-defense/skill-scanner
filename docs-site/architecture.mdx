@@ -1,0 +1,170 @@
+---
+title: "Architecture"
+description: "Skill Scanner architecture — six-stage scanning pipeline, two-phase analysis (load and analyze), core components, rule packs, threat taxonomy, and extension points for custom analyzers. Cisco AI Defense open-source documentation."
+order: 6
+---
+
+## Architecture
+
+Skill Scanner is a modular security scanner built around a central orchestrator and pluggable analyzers. Scans execute deterministic analysis first, optionally adjudicate its highest-severity matches, then run LLM-powered analysis enriched with the retained Phase 1 context.
+
+<Callout type="info">
+  This page covers system internals. If you are looking to use the scanner, start with the [Quick Start](/docs/skill-scanner/quick-start) or [CLI Reference](/docs/skill-scanner/cli-reference).
+</Callout>
+
+---
+
+### Scanning Pipeline
+
+Every scan follows the same six-stage pipeline:
+
+**1. Load and Pre-process** — `SkillLoader` parses the skill's `SKILL.md` frontmatter, discovers files recursively, classifies file types, and extracts referenced file hints. `ContentExtractor` safely unpacks any embedded archives (ZIP, TAR) with layered protections against zip bombs, path traversal, and symlink attacks.
+
+**2. Phase 1: Deterministic and External Analyzers** — Static (YAML + YARA + Python checks), bytecode, and pipeline run by default. Optional behavioral, OSV.dev, VirusTotal, AI Defense, and trigger analyzers add dataflow, dependency, reputation, and cloud signals. The scanner collects validated binary files and unreferenced scripts for later enrichment.
+
+**3. Adjudication and LLM Enrichment** — If enabled, the demote-only adjudicator reviews deterministic HIGH/CRITICAL literal-regex matches before they enter LLM context. The LLM and meta analyzers then receive file inventory, type distribution, magic mismatches, and retained critical/high findings.
+
+**4. Post-Processing** — Policy enforcement: suppress VT-validated binary findings, enforce disabled rules, apply severity overrides, compute analyzability scores, normalize/deduplicate findings, annotate co-occurrence metadata, and attach the policy fingerprint.
+
+**5. Cleanup** — Temporary extraction directories are removed. A `ScanResult` is built with findings, timing, analyzer names, analyzability score, scan metadata, and aggregate LLM token usage when providers report it.
+
+**6. Reporting** — The `ScanResult` is passed to the chosen reporter (summary, JSON, Markdown, table, SARIF, or HTML).
+
+---
+
+### Core Components
+
+#### Scanner Orchestrator
+
+The `SkillScanner` class in `core/scanner.py` runs the full pipeline. It manages analyzer lifecycle, enrichment context building, post-processing, and cleanup. For directory scans, it adds cross-skill analysis (description overlap, data relay patterns, shared external URLs).
+
+#### Skill Loader
+
+`SkillLoader` in `core/loader.py` handles:
+
+- Validating skill directory structure and `SKILL.md` presence
+- Parsing YAML frontmatter (name, description, metadata)
+- Recursive file discovery (excluding `.git` internals)
+- File-type classification (python, bash, markdown, binary, other)
+- Lenient mode fallback to `.md` files when `SKILL.md` is absent
+
+#### Analyzer Factory
+
+`analyzer_factory.py` is the single source of truth for analyzer assembly. CLI, API, pre-commit hook, and eval runners all use this factory to ensure parity.
+
+- `build_core_analyzers(policy)` — static, bytecode, pipeline (gated by policy)
+- `build_analyzers(policy, use_behavioral, use_llm, ...)` — adds optional analyzers based on flags
+
+#### Content Extractor
+
+Safely unpacks archives embedded in skills with protections for zip bombs, nesting depth, path traversal, symlinks, and total size/file count limits.
+
+---
+
+### Analyzer Inventory
+
+#### Core (Policy-Driven)
+
+| Analyzer | Detection Method |
+|----------|-----------------|
+| `static_analyzer` | YAML signatures + YARA rules + inventory checks |
+| `bytecode_analyzer` | Python bytecode/source consistency |
+| `pipeline_analyzer` | Shell pipeline taint analysis and command-risk checks |
+
+#### Optional (Flag-Driven)
+
+| Analyzer | Detection Method | Requires |
+|----------|-----------------|----------|
+| `behavioral_analyzer` | AST dataflow + cross-file correlation | `--use-behavioral` |
+| `llm_analyzer` | Semantic threat analysis with structured schema | API key + `--use-llm` |
+| `meta_analyzer` | Second-pass LLM validation/filtering | API key + `--enable-meta` |
+| `virustotal_analyzer` | Binary hash lookup + optional upload | API key + `--use-virustotal` |
+| `aidefense_analyzer` | Cisco AI Defense cloud inspection | API key + `--use-aidefense` |
+| `osv_analyzer` | OSV.dev advisories for exactly pinned Python dependencies | Network + `--use-osv` |
+| `trigger_analyzer` | Overly broad trigger/description checks | `--use-trigger` |
+| `cross_skill_scanner` | Multi-skill coordination detection | `--check-overlap` |
+| `adjudicator` | Per-finding demote-only false-positive review | LLM credentials + `--adjudicate` |
+
+---
+
+### Policy System
+
+`ScanPolicy` in `core/scan_policy.py` centralizes runtime configuration, including:
+
+- File limits and thresholds
+- Rule scoping and docs-path behavior
+- Command safety tiers
+- Hidden file allowlists
+- Severity overrides and disabled rules
+- Output deduplication and metadata behavior
+- Core analyzer toggles
+- Adjudicator confidence threshold
+- LLM prompt/output budgets and trusted reference domains
+
+Three built-in presets: **strict**, **balanced** (default), and **permissive**.
+
+See [Scan Policies](/docs/skill-scanner/scan-policies) for configuration details.
+
+---
+
+### Data Models
+
+Primary data structures in `core/models.py`:
+
+| Model | Purpose |
+|-------|---------|
+| `Skill` | Loaded skill package with files and metadata |
+| `Finding` | Individual security finding with severity, category, location, and remediation |
+| `ScanResult` | Single-skill scan output with findings, timing, and analyzability |
+| `Report` | Multi-skill scan output aggregating multiple `ScanResult` objects |
+| `Severity` | Enum: CRITICAL, HIGH, MEDIUM, LOW, INFO, SAFE |
+| `ThreatCategory` | Enum: prompt injection, data exfiltration, command injection, etc. |
+
+---
+
+### Entry Points
+
+| Entry Point | Source | Description |
+|-------------|--------|-------------|
+| CLI | `skill_scanner/cli/cli.py` | Main command-line interface |
+| API | `skill_scanner/api/router.py` | FastAPI REST server |
+| Pre-commit | `skill_scanner/hooks/pre_commit.py` | Git hook integration |
+| SDK | `skill_scanner/__init__.py` | Python library import |
+
+All entry points use `analyzer_factory.py` for consistent analyzer construction.
+
+---
+
+### Rule Packs
+
+Built-in detection rules live in `skill_scanner/data/packs/`:
+
+| Pack | Contents |
+|------|----------|
+| `core` | YAML signatures, YARA rules, Python checks — the main detection pack |
+| `atr` | Additional threat research signatures |
+| `promptguard` | 26 PII, provider-secret, and LLM/Markdown exfiltration rules |
+
+The current ATR pack contains 712 supported rules. Each pack has a `pack.yaml` manifest that declares its rules and metadata and can be enabled with `--rule-packs`.
+
+---
+
+### Threat Taxonomy
+
+Every finding is normalized to Cisco AI framework mappings (AITech/AISubtech) so findings from different analyzers use consistent category labels. The taxonomy can be overridden at runtime for custom organizational classifications.
+
+---
+
+### Extension Points
+
+To add new detection capabilities:
+
+1. Add an analyzer class inheriting `BaseAnalyzer`
+2. Register the construction path in `analyzer_factory.py`
+3. Add policy knobs in `scan_policy.py` (if needed)
+4. Add tests under `tests/`
+5. Document CLI/API toggles
+
+For rule-based detection, prefer extending `skill_scanner/data/packs/core/` (signatures, YARA, Python checks) before adding analyzer-level logic.
+
+See [Writing Custom Rules](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/architecture/analyzers/writing-custom-rules.md) for the full guide.

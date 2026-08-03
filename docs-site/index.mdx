@@ -1,0 +1,87 @@
+---
+title: "Overview"
+description: "Skill Scanner overview — open-source AI agent skill security scanner from Cisco AI Defense. Detect prompt injection, vulnerable and unpinned dependencies, data exfiltration, malicious code, and hidden Unicode attacks with deterministic, LLM, and behavioral analysis."
+order: 1
+---
+
+## Skill Scanner
+
+**Security scanning for AI agent skills — detect prompt injection, data exfiltration, and malicious code patterns before they run.**
+
+Skill Scanner combines **pattern-based detection** (YAML + YARA + Python checks), **dependency intelligence**, **LLM analysis and adjudication**, and **behavioral dataflow analysis** to catch threats that any single approach would miss. It supports OpenAI Codex Skills, [Cursor Agent Skills](https://docs.cursor.com/context/rules), and related formats following the [Agent Skills specification](https://agentskills.io).
+
+[View on GitHub](https://github.com/cisco-ai-defense/skill-scanner) | [PyPI Package](https://pypi.org/project/cisco-ai-skill-scanner/) | [Join Discord](https://discord.com/invite/nKWtDcXxtx)
+
+<Callout type="tip" title="Get Started Fast">
+  Install with pip, scan a skill, and see results in under a minute. See the [Quick Start](/docs/skill-scanner/quick-start) for a full walkthrough.
+</Callout>
+
+---
+
+### How It Works
+
+**1. Install** — `pip install cisco-ai-skill-scanner` or use [uv](https://docs.astral.sh/uv/). Optionally configure LLM and cloud service API keys for deeper analysis.
+
+**2. Scan** — Point the CLI at a local skill, a directory of skills, or a GitHub repository. Core analyzers (static, bytecode, pipeline) run automatically. Add behavioral, LLM, OSV.dev, VirusTotal, Cisco AI Defense, adjudication, and cross-skill analysis as needed.
+
+**3. Review** — Get findings in six output formats: summary, JSON, Markdown, table, SARIF, and interactive HTML. Each finding includes severity, threat category, file path, and remediation guidance.
+
+---
+
+### What It Detects
+
+| Threat Category | Description |
+|-----------------|-------------|
+| **Prompt Injection** | Hidden instructions that override agent behavior |
+| **Data Exfiltration** | Unauthorized data transmission to external servers |
+| **Command Injection** | Shell command execution with untrusted input |
+| **Obfuscation** | Base64 encoding, bytecode tricks, and code concealment |
+| **Hardcoded Secrets** | API keys, tokens, and credentials in source code |
+| **Social Engineering** | Deceptive skill descriptions and trigger manipulation |
+| **Supply Chain** | Malicious dependencies and fetch-execute patterns |
+| **Unicode Steganography** | Invisible characters and homoglyph deception |
+| **Known Vulnerabilities** | Pinned Python dependencies with OSV.dev advisories |
+| **Unpinned Dependencies** | Floating versions across Python, Node, Ruby, Go, Rust, and other manifests |
+| **Suspicious Configuration URLs** | Tunnel, paste, webhook, and file-sharing endpoints hidden in config files |
+
+<Callout type="info">
+  Skill Scanner powers the skill scanning capabilities in the [IDE AI Security Scanner](/docs/ai-security-scanner) VS Code extension and [DefenseClaw](https://cisco-ai-defense.github.io/defenseclaw/) governance platform. You can also use it standalone from the command line.
+</Callout>
+
+---
+
+### Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [Installation](/docs/skill-scanner/installation) | Prerequisites, install methods, and environment configuration |
+| [Features](/docs/skill-scanner/features) | Analyzer inventory, rule packs, file intelligence, and current detection capabilities |
+| [Quick Start](/docs/skill-scanner/quick-start) | Get scanning in under a minute |
+| [CLI Reference](/docs/skill-scanner/cli-reference) | All commands, flags, and examples |
+| [Architecture](/docs/skill-scanner/architecture) | Scanning pipeline, system design, and extension points |
+| [Scan Policies](/docs/skill-scanner/scan-policies) | Presets, custom policy YAML, and tuning guide |
+| [Python SDK](/docs/skill-scanner/python-sdk) | Programmatic scanning with typed models |
+| [API Reference](/docs/skill-scanner/api-reference) | REST API server for upload and batch workflows |
+| [GitHub Actions](/docs/skill-scanner/github-actions) | CI/CD integration with reusable workflow |
+| [FAQ](/docs/skill-scanner/faq) | Common questions and answers |
+
+For deep-dives into individual analyzers, rule authoring, and threat taxonomy, see the [full documentation](https://github.com/cisco-ai-defense/skill-scanner/tree/main/docs) in the repository.
+
+---
+
+### Scope and Limitations
+
+Skill Scanner is a detection tool. It identifies known and probable risk patterns, but it does not certify security.
+
+- **No findings does not equal no risk.** A clean scan means no known threat patterns were detected — not that the skill is safe.
+- **Coverage is inherently incomplete.** The scanner combines multiple engines, but novel attacks may evade all of them.
+- **False positives and false negatives can occur.** Consensus modes and meta-analysis reduce noise, but no configuration eliminates all errors.
+- **Human review remains essential.** Automated scanning is one layer in a defense-in-depth strategy.
+
+---
+
+### License
+
+Apache 2.0 — See [LICENSE](https://github.com/cisco-ai-defense/skill-scanner/blob/main/LICENSE) for details.
+
+<RelatedProjects slugs="ai-security-scanner,defenseclaw,mcp-scanner" />

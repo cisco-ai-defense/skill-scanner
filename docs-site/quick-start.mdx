@@ -1,0 +1,235 @@
+---
+title: "Quick Start"
+description: "Get Cisco AI Defense Skill Scanner running in under a minute. Install from PyPI, scan your first AI agent skill, review security findings, and configure output formats with step-by-step instructions."
+order: 4
+---
+
+## Quick Start
+
+Get scanning in under a minute.
+
+---
+
+### 1. Install
+
+```bash
+# Using uv (recommended)
+uv pip install cisco-ai-skill-scanner
+
+# Using pip
+pip install cisco-ai-skill-scanner
+```
+
+---
+
+### 2. Configure (Optional)
+
+Core analyzers require no configuration. For LLM-powered analysis, set your API key:
+
+```bash
+export SKILL_SCANNER_LLM_API_KEY="your_api_key"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
+```
+
+<Callout type="tip">
+  Skip this step to use the scanner immediately with static analysis only. LLM configuration can be added later.
+</Callout>
+
+---
+
+### 3. Scan a Skill
+
+```bash
+# Scan a single skill directory
+skill-scanner scan /path/to/skill
+
+# Scan with behavioral analysis
+skill-scanner scan /path/to/skill --use-behavioral
+
+# Add dependency and semantic analysis
+skill-scanner scan /path/to/skill --use-behavioral --use-osv --use-llm --enable-meta
+
+# Scan every skill in a public GitHub repository
+skill-scanner scan-repo owner/repo
+```
+
+Not sure which flags to use? Run the interactive wizard:
+
+```bash
+skill-scanner
+```
+
+The wizard walks you through selecting a scan target, analyzers, policy, and output format.
+
+---
+
+### 4. Review Results
+
+#### Clean Scan
+
+```
+============================================================
+Skill: simple-math
+============================================================
+Status: [OK] SAFE
+Max Severity: SAFE
+Total Findings: 0
+Scan Duration: 0.12s
+```
+
+#### Findings Detected
+
+```
+============================================================
+Skill: config-analyzer
+============================================================
+Status: [FAIL] ISSUES FOUND
+Max Severity: CRITICAL
+Total Findings: 11
+Scan Duration: 0.37s
+
+Findings Summary:
+  CRITICAL: 3
+      HIGH: 3
+    MEDIUM: 4
+       LOW: 1
+```
+
+Detected threats include data exfiltration (HTTP POST to external servers), sensitive file access (`~/.aws/credentials`), environment variable theft, command injection, and base64 encoding + network exfiltration patterns.
+
+---
+
+### 5. Scan Multiple Skills
+
+```bash
+# Scan all skills in a directory
+skill-scanner scan-all /path/to/skills --format table
+
+# Recursive scan with cross-skill analysis
+skill-scanner scan-all /path/to/skills --recursive --check-overlap
+
+# Detailed markdown report
+skill-scanner scan-all /path/to/skills --format markdown --detailed --output report.md
+
+# Add the optional ATR and PromptGuard rule packs
+skill-scanner scan-all /path/to/skills --recursive --rule-packs atr promptguard
+```
+
+---
+
+### 6. Choose an Output Format
+
+```bash
+# JSON for CI/CD pipelines
+skill-scanner scan /path/to/skill --format json --output results.json
+
+# SARIF for GitHub Code Scanning
+skill-scanner scan /path/to/skill --format sarif --output results.sarif
+
+# Interactive HTML report
+skill-scanner scan /path/to/skill --use-llm --enable-meta --format html --output report.html
+
+# Compact table for terminal
+skill-scanner scan-all /path/to/skills --format table
+
+# Generate JSON and SARIF without scanning twice
+skill-scanner scan /path/to/skill --format json --format sarif \
+  --output-json results.json --output-sarif results.sarif
+```
+
+---
+
+### 7. Use Scan Policies
+
+```bash
+# Strict policy for untrusted skills
+skill-scanner scan /path/to/skill --policy strict
+
+# Permissive policy for internal skills
+skill-scanner scan /path/to/skill --policy permissive
+
+# Generate and customize a policy
+skill-scanner generate-policy -o my_policy.yaml
+skill-scanner scan /path/to/skill --policy my_policy.yaml
+```
+
+---
+
+### 8. Integrate with CI/CD
+
+Fail builds when threats are detected:
+
+```bash
+skill-scanner scan-all ./skills --fail-on-severity high --format sarif --output results.sarif
+```
+
+Or use the reusable GitHub Actions workflow:
+
+```yaml
+name: Scan Skills
+on:
+  pull_request:
+    paths: [".cursor/skills/**"]
+jobs:
+  scan:
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    with:
+      skill_path: .cursor/skills
+    permissions:
+      security-events: write
+      contents: read
+```
+
+See [GitHub Actions](/docs/skill-scanner/github-actions) for the full CI/CD guide.
+
+---
+
+### Useful Commands
+
+```bash
+# List available analyzers
+skill-scanner list-analyzers
+
+# Validate rule signatures
+skill-scanner validate-rules
+
+# Interactive policy configurator
+skill-scanner configure-policy
+
+# List bundled rule packs
+skill-scanner scan /path/to/skill --rule-packs list
+
+# Get help
+skill-scanner --help
+skill-scanner scan --help
+```
+
+---
+
+### Troubleshooting
+
+#### uv not found
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+#### Module not found errors
+
+```bash
+uv sync --all-extras
+```
+
+#### Permission errors
+
+uv manages its own virtual environment — no manual venv activation needed.
+
+---
+
+### Next Steps
+
+- [Features](/docs/skill-scanner/features) — Explore analyzers, rule packs, and current capabilities
+- [CLI Reference](/docs/skill-scanner/cli-reference) — All commands and flags
+- [Scan Policies](/docs/skill-scanner/scan-policies) — Tune detection sensitivity
+- [Python SDK](/docs/skill-scanner/python-sdk) — Embed scanning in Python applications
+- [GitHub Actions](/docs/skill-scanner/github-actions) — CI/CD integration

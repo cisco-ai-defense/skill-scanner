@@ -1,0 +1,237 @@
+---
+title: "GitHub Actions"
+description: "Skill Scanner GitHub Actions integration — reusable CI/CD workflow, SARIF upload to GitHub Code Scanning, branch protection rules, configuration tiers (static, LLM, full stack), and pre-commit hooks from Cisco AI Defense."
+order: 10
+---
+
+## GitHub Actions
+
+Scan skills automatically on every push or pull request using the reusable GitHub Actions workflow. Results appear as inline annotations in PRs via GitHub Code Scanning.
+
+---
+
+### Quick Start (No Keys Required)
+
+Add this file to your repository at `.github/workflows/scan-skills.yml`:
+
+```yaml
+name: Scan Skills
+
+on:
+  push:
+    paths: [".cursor/skills/**"]
+  pull_request:
+    paths: [".cursor/skills/**"]
+
+jobs:
+  scan:
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    with:
+      skill_path: .cursor/skills
+    permissions:
+      security-events: write
+      contents: read
+```
+
+This will:
+
+1. Install `cisco-ai-skill-scanner` from PyPI on a fresh runner
+2. Run `skill-scanner scan-all` with SARIF output, recursive scanning, and cross-skill overlap detection
+3. Upload SARIF results to GitHub Code Scanning (findings appear as annotations on PRs)
+4. Fail the workflow if any findings at or above HIGH severity are detected
+
+---
+
+### Reusable Workflow Inputs
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `skill_path` | string | *(required)* | Path to skills directory or single skill |
+| `scan_mode` | string | `scan-all` | `scan` (single skill) or `scan-all` (directory) |
+| `format` | string | `sarif` | Output format: summary, json, markdown, table, sarif, html |
+| `policy` | string | `balanced` | Preset name or path to custom YAML |
+| `fail_on_severity` | string | `high` | Fail if findings at/above this severity |
+| `python_version` | string | `3.12` | Python version for the runner |
+| `upload_sarif` | boolean | `true` | Upload SARIF to Code Scanning |
+| `use_llm` | boolean | `false` | Enable LLM semantic analysis |
+| `llm_model` | string | `""` | LLM model name (e.g., `gpt-4o`) |
+| `use_behavioral` | boolean | `false` | Enable behavioral dataflow analysis |
+| `lenient` | boolean | `false` | Tolerate malformed skills |
+| `extra_args` | string | `""` | Additional CLI flags accepted by the workflow's explicit allowlist |
+
+The allowlist includes additive analyzer and tuning options such as `--rule-packs`, `--use-virustotal`, `--use-aidefense`, `--use-trigger`, `--enable-meta`, LLM limits, and repository-local policy/taxonomy paths. Unknown flags are rejected before the scan runs. The reusable workflow does not currently accept `--use-osv` or `--adjudicate`; use the self-hosted pattern below when those passes are required.
+
+---
+
+### Secrets
+
+All secrets are optional and only needed for advanced analysis.
+
+| Secret | Maps To | Required For |
+|--------|---------|--------------|
+| `llm_api_key` | `SKILL_SCANNER_LLM_API_KEY` | `use_llm: true` |
+| `virustotal_api_key` | `VIRUSTOTAL_API_KEY` | `--use-virustotal` (via `extra_args`) |
+
+Configure secrets in **Settings > Secrets and variables > Actions**. They are never exposed in logs.
+
+---
+
+### Configuration Tiers
+
+#### Tier 1: Static Analysis (No Keys)
+
+Zero-config static scanning with SARIF upload:
+
+```yaml
+jobs:
+  scan:
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    with:
+      skill_path: .cursor/skills
+```
+
+#### Tier 2: Static + LLM (One Key)
+
+Add LLM-powered semantic analysis:
+
+```yaml
+jobs:
+  scan:
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    with:
+      skill_path: .cursor/skills
+      use_llm: true
+      llm_model: gpt-4o
+    secrets:
+      llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
+```
+
+#### Tier 3: LLM + Behavioral + VirusTotal
+
+Enable LLM, VirusTotal, and behavioral analysis:
+
+```yaml
+jobs:
+  scan:
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    with:
+      skill_path: .cursor/skills
+      use_llm: true
+      use_behavioral: true
+      policy: strict
+    secrets:
+      llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
+      virustotal_api_key: ${{ secrets.VIRUSTOTAL_API_KEY }}
+```
+
+---
+
+### Branch Protection
+
+Block PRs with security findings from merging:
+
+1. Go to **Settings > Branches > Branch protection rules**
+2. Enable **Require status checks to pass before merging**
+3. Search for and select the **Skill Scanner** check
+4. Save changes
+
+PRs that touch skill files must pass the security scan before they can be merged.
+
+---
+
+### Pre-commit Hook
+
+Scan skills before every commit using the [pre-commit](https://pre-commit.com/) framework:
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/cisco-ai-defense/skill-scanner
+    rev: 2.0.12 # pin the latest release you have reviewed
+    hooks:
+      - id: skill-scanner
+```
+
+Or install the built-in hook directly:
+
+```bash
+skill-scanner-pre-commit --install
+```
+
+The hook maps each changed path to its nearest parent `SKILL.md`, scans each affected skill once, and blocks commits at the configured severity. Use `--scan-all` to scan every configured skill.
+
+For incremental CI scans, let pre-commit supply the changed paths between two checked-out revisions:
+
+```bash
+pre-commit run skill-scanner --from-ref "$BASE_SHA" --to-ref "$HEAD_SHA"
+```
+
+Both revisions must be available in the checkout (for example, use `fetch-depth: 0` with `actions/checkout`). Deletions are handled when the hook computes changed paths.
+
+---
+
+### Self-Hosted Workflow
+
+If you prefer not to use the reusable workflow, copy this standalone workflow:
+
+```yaml
+name: Scan Skills
+
+on:
+  push:
+    paths: [".cursor/skills/**"]
+  pull_request:
+    paths: [".cursor/skills/**"]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install cisco-ai-skill-scanner
+
+      - name: Scan skills
+        run: |
+          skill-scanner scan-all .cursor/skills \
+            --format sarif \
+            --output results.sarif \
+            --recursive \
+            --check-overlap \
+            --fail-on-severity high
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif
+```
+
+---
+
+### Custom Policy in CI
+
+Commit a custom policy to the repository and reference it:
+
+```yaml
+with:
+  skill_path: .cursor/skills
+  policy: .github/scan-policy.yaml
+```
+
+Or in the self-hosted workflow:
+
+```bash
+skill-scanner scan-all .cursor/skills \
+  --policy .github/scan-policy.yaml \
+  --format sarif \
+  --output results.sarif \
+  --fail-on-severity high
+```
