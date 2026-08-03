@@ -437,10 +437,10 @@ class TestPrecommitGetAffectedSkills:
     def test_detects_skill_under_configured_path(self):
         from skill_scanner.hooks.pre_commit import get_affected_skills
 
-        # Path.exists is patched so no real filesystem setup is needed;
+        # Path.is_file is patched so no real filesystem setup is needed;
         # this avoids sandbox restrictions on creating ".cursor" directories.
         staged = [".cursor/skills/my-skill/scripts/run.py"]
-        with patch("pathlib.Path.exists", return_value=True):
+        with patch("pathlib.Path.is_file", return_value=True):
             result = get_affected_skills(staged, ".cursor/skills")
         assert len(result) >= 1
 

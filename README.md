@@ -338,10 +338,26 @@ repos:
 Or install the built-in hook directly:
 
 ```bash
-skill-scanner-pre-commit install
+skill-scanner-pre-commit --install
 ```
 
-The hook automatically detects which skill directories have staged changes and only scans those, keeping commit times fast. Use `--all` to scan everything.
+The hook maps changed files to their nearest `SKILL.md` and scans each affected
+skill once. During a normal commit, it reads the staged diff. In CI, compare two
+revisions so no staged index is required:
+
+```bash
+pre-commit run skill-scanner --from-ref "$BASE_SHA" --to-ref "$HEAD_SHA"
+```
+
+Both revisions must exist in the checkout. To scan every configured skill,
+invoke the hook directly:
+
+```bash
+skill-scanner-pre-commit --scan-all
+```
+
+Alternatively, configure `args: [--scan-all]` for the hook in
+`.pre-commit-config.yaml`.
 
 ---
 

@@ -173,8 +173,7 @@ class ProviderConfig:
         Uses SKILL_SCANNER_LLM_API_KEY consistently for all providers.
 
         Special cases:
-        - Vertex AI: Returns ``None`` when no explicit API key is supplied;
-          LiteLLM/google-auth read
+        - Vertex AI: Always returns ``None`` -- LiteLLM/google-auth read
           GOOGLE_APPLICATION_CREDENTIALS directly from the environment when
           set, or fall back to ambient Application Default Credentials
           (like Bedrock's IAM role) -- e.g. a GCE/Cloud Run attached

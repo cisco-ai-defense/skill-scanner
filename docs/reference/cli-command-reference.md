@@ -18,7 +18,7 @@ This page is generated from live `argparse` output and should match runtime beha
 | `skill-scanner configure-policy` | Interactive TUI policy editor | `skill-scanner configure-policy` |
 | `skill-scanner interactive` | Interactive setup wizard | `skill-scanner interactive` |
 | `skill-scanner-api` | Start the REST API server | `skill-scanner-api --port 8080` |
-| `skill-scanner-pre-commit` | Git pre-commit hook | `skill-scanner-pre-commit install` |
+| `skill-scanner-pre-commit` | Git pre-commit hook | `skill-scanner-pre-commit --install` |
 
 ## Common Flags
 
@@ -523,13 +523,15 @@ Command: `python -m skill_scanner.hooks.pre_commit --help`
 
 ```text
 usage: pre_commit.py [-h] [--severity {critical,high,medium,low}]
-                     [--skills-path SKILLS_PATH] [--all] [--lenient]
-                     [install]
+                     [--skills-path SKILLS_PATH] [--scan-all] [--install]
+                     [--lenient]
+                     [FILE ...]
 
 Pre-commit hook for scanning agent skills
 
 positional arguments:
-  install               Install pre-commit hook
+  FILE                  Changed files supplied by pre-commit (falls back to
+                        staged files when omitted)
 
 options:
   -h, --help            show this help message and exit
@@ -537,7 +539,8 @@ options:
                         Override severity threshold from config
   --skills-path SKILLS_PATH
                         Override skills path from config
-  --all                 Scan all skills, not just staged ones
+  --scan-all            Scan all skills, not just staged ones
+  --install             Install the built-in pre-commit hook
   --lenient             Tolerate malformed skills instead of failing
 ```
 

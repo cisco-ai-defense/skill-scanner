@@ -319,3 +319,33 @@ class TestReportModel:
             "info": 1,
         }
         assert summary["timestamp"] == "2026-01-05T11:00:00"
+
+
+class TestScanResultLLMUsage:
+    """ScanResult.llm_usage field and its to_dict() serialisation."""
+
+    def test_llm_usage_defaults_to_none(self) -> None:
+        result = ScanResult(skill_name="s", skill_directory="/tmp/s")
+        assert result.llm_usage is None
+
+    def test_to_dict_includes_llm_usage_when_set(self) -> None:
+        usage = {"input_tokens": 120, "output_tokens": 45, "total_tokens": 165}
+        result = ScanResult(skill_name="s", skill_directory="/tmp/s", llm_usage=usage)
+        d = result.to_dict()
+        assert d["llm_usage"] == usage
+
+    def test_to_dict_omits_llm_usage_when_none(self) -> None:
+        result = ScanResult(skill_name="s", skill_directory="/tmp/s")
+        d = result.to_dict()
+        assert "llm_usage" not in d
+
+    def test_to_dict_includes_llm_usage_even_when_all_zeros(self) -> None:
+        # to_dict() trusts the caller; scanner.py is responsible for setting
+        # llm_usage=None when no LLM ran so that it is omitted from output.
+        result = ScanResult(
+            skill_name="s",
+            skill_directory="/tmp/s",
+            llm_usage={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        )
+        d = result.to_dict()
+        assert "llm_usage" in d

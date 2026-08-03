@@ -218,6 +218,7 @@ class ScanResult:
     analyzability_score: float | None = None
     analyzability_details: dict[str, Any] | None = None
     scan_metadata: dict[str, Any] | None = None
+    llm_usage: dict[str, int] | None = None
 
     @property
     def is_safe(self) -> bool:
@@ -265,6 +266,8 @@ class ScanResult:
         }
         if self.analyzers_failed:
             result["analyzers_failed"] = self.analyzers_failed
+        if self.llm_usage:
+            result["llm_usage"] = self.llm_usage
         return result
 
 

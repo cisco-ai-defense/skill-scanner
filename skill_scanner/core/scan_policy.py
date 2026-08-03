@@ -275,6 +275,36 @@ class AnalyzersPolicy:
 
 
 @dataclass
+class AdjudicatorPolicy:
+    """Controls the per-finding adjudicator pass.
+
+    The adjudicator runs BETWEEN the deterministic analyzer phase and the
+    LLM analyzer phase. For each deterministic HIGH/CRITICAL finding it
+    asks an LLM whether the file around the matched line actually
+    contains the threat the rule was designed to catch. Findings the LLM
+    judges to be literal-regex false positives (verdict = ``false_positive``,
+    confidence >= ``min_fp_confidence``) are demoted to INFO for downstream
+    verdict computation. The original severity is preserved in the
+    finding's ``metadata['adjudication']`` record for audit.
+
+    **Safety property (load-bearing):** the adjudicator can only demote
+    findings, never promote them. LLM unavailable / parse error / timeout
+    all leave the finding at its original severity. False negatives cannot
+    be introduced by enabling this pass.
+
+    Cost: 0-3 LLM calls per typical skill, ~250 output tokens each.
+    """
+
+    # Master toggle. Default off preserves backwards-compatible behavior.
+    enabled: bool = False
+
+    # Minimum LLM confidence (1-5) required to demote a finding. A higher
+    # threshold trades demotion recall for demotion precision. 3 is the
+    # empirically-validated default from a 106-skill labeled corpus.
+    min_fp_confidence: int = 3
+
+
+@dataclass
 class LLMAnalysisPolicy:
     """Controls LLM context budget thresholds for LLM and meta analyzers.
 
@@ -302,6 +332,13 @@ class LLMAnalysisPolicy:
     # Meta analyzer multiplies the above limits by this factor.
     # e.g. 3× means meta gets 60 K instruction, 45 K/file, 300 K total.
     meta_budget_multiplier: float = 3.0
+
+    # -- Trusted reference domains --
+    # Organization's internal domains (Git repos, package registries, doc portals)
+    # considered trusted for transitive trust / supply chain analysis.
+    # LLM findings referencing only these domains are demoted to LOW.
+    # Mirrors the pattern of ``pipeline.known_installer_domains``.
+    trusted_reference_domains: set[str] = field(default_factory=set)
 
     # -- Convenience helpers for the meta analyzer --
 
@@ -393,6 +430,7 @@ class ScanPolicy:
     sensitive_files: SensitiveFilesPolicy = field(default_factory=SensitiveFilesPolicy)
     command_safety: CommandSafetyPolicy = field(default_factory=CommandSafetyPolicy)
     analyzers: AnalyzersPolicy = field(default_factory=AnalyzersPolicy)
+    adjudicator: AdjudicatorPolicy = field(default_factory=AdjudicatorPolicy)
     llm_analysis: LLMAnalysisPolicy = field(default_factory=LLMAnalysisPolicy)
     finding_output: FindingOutputPolicy = field(default_factory=FindingOutputPolicy)
     severity_overrides: list[SeverityOverride] = field(default_factory=list)
@@ -535,6 +573,7 @@ class ScanPolicy:
         sf = d.get("sensitive_files", {})
         cs = d.get("command_safety", {})
         az = d.get("analyzers", {})
+        aj = d.get("adjudicator", {})
         la = d.get("llm_analysis", {})
         fo = d.get("finding_output", {})
 
@@ -635,6 +674,10 @@ class ScanPolicy:
                 bytecode=az.get("bytecode", True),
                 pipeline=az.get("pipeline", True),
             ),
+            adjudicator=AdjudicatorPolicy(
+                enabled=aj.get("enabled", False),
+                min_fp_confidence=aj.get("min_fp_confidence", 3),
+            ),
             llm_analysis=LLMAnalysisPolicy(
                 max_instruction_body_chars=la.get("max_instruction_body_chars", 20_000),
                 max_code_file_chars=la.get("max_code_file_chars", 15_000),
@@ -642,6 +685,7 @@ class ScanPolicy:
                 max_total_prompt_chars=la.get("max_total_prompt_chars", 100_000),
                 max_output_tokens=la.get("max_output_tokens", 8192),
                 meta_budget_multiplier=la.get("meta_budget_multiplier", 3.0),
+                trusted_reference_domains=set(la.get("trusted_reference_domains", [])),
             ),
             finding_output=FindingOutputPolicy(
                 dedupe_exact_findings=fo.get("dedupe_exact_findings", True),
@@ -758,6 +802,10 @@ class ScanPolicy:
                 "bytecode": self.analyzers.bytecode,
                 "pipeline": self.analyzers.pipeline,
             },
+            "adjudicator": {
+                "enabled": self.adjudicator.enabled,
+                "min_fp_confidence": self.adjudicator.min_fp_confidence,
+            },
             "llm_analysis": {
                 "max_instruction_body_chars": self.llm_analysis.max_instruction_body_chars,
                 "max_code_file_chars": self.llm_analysis.max_code_file_chars,
@@ -765,6 +813,7 @@ class ScanPolicy:
                 "max_total_prompt_chars": self.llm_analysis.max_total_prompt_chars,
                 "max_output_tokens": self.llm_analysis.max_output_tokens,
                 "meta_budget_multiplier": self.llm_analysis.meta_budget_multiplier,
+                "trusted_reference_domains": sorted(self.llm_analysis.trusted_reference_domains),
             },
             "finding_output": {
                 "dedupe_exact_findings": self.finding_output.dedupe_exact_findings,

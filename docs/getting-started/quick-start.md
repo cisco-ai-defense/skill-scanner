@@ -229,10 +229,11 @@ repos:
 Or install the built-in hook directly:
 
 ```bash
-skill-scanner-pre-commit install
+skill-scanner-pre-commit --install
 ```
 
-The hook only scans skill directories with staged changes. Use `--all` to scan everything.
+The hook only scans skill directories with staged changes. Run
+`skill-scanner-pre-commit --scan-all` to scan every configured skill.
 
 ## Next Steps
 
