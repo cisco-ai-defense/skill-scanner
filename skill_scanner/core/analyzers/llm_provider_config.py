@@ -173,7 +173,12 @@ class ProviderConfig:
         Uses SKILL_SCANNER_LLM_API_KEY consistently for all providers.
 
         Special cases:
-        - Vertex AI: Uses GOOGLE_APPLICATION_CREDENTIALS (service account)
+        - Vertex AI: Always returns ``None`` -- LiteLLM/google-auth read
+          GOOGLE_APPLICATION_CREDENTIALS directly from the environment when
+          set, or fall back to ambient Application Default Credentials
+          (like Bedrock's IAM role) -- e.g. a GCE/Cloud Run attached
+          service account or Workload Identity, with no key file on disk
+          at all.
         - Ollama: No API key needed (local)
         - Azure: Falls back to Entra ID (``az login``) when no API key is set
         """
@@ -182,7 +187,7 @@ class ProviderConfig:
 
         # Special cases with different auth mechanisms
         if self.is_vertex:
-            return os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            return None
         elif self.is_ollama:
             return None
 
@@ -269,7 +274,7 @@ class ProviderConfig:
 
     def validate(self) -> None:
         """Validate that configuration is complete."""
-        if not self.is_bedrock and not self.is_ollama and not self.api_key:
+        if not self.is_bedrock and not self.is_ollama and not self.is_vertex and not self.api_key:
             if self.is_azure:
                 raise ValueError(
                     f"No API key or Entra ID credentials found for Azure model {self.model}. "

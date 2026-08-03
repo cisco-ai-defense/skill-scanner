@@ -392,7 +392,11 @@ def _collect_env_variables() -> dict[str, set[str]]:
 
 def _describe_env_var(var: str) -> str:
     descriptions = {
-        "SKILL_SCANNER_LLM_API_KEY": "Primary API key for LLM analyzer and meta fallback.",
+        "SKILL_SCANNER_LLM_API_KEY": (
+            "Primary API key for LLM analyzer and meta fallback. Required for "
+            "API-key-based providers; not required for Bedrock (IAM), Ollama "
+            "(local), or Vertex AI (ambient Application Default Credentials)."
+        ),
         "SKILL_SCANNER_LLM_MODEL": "Primary model identifier for semantic analysis.",
         "SKILL_SCANNER_LLM_PROVIDER": "Optional provider override, including OpenAI-compatible custom endpoint routing.",
         "SKILL_SCANNER_LLM_BASE_URL": "Optional custom endpoint base URL for provider routing.",
@@ -410,7 +414,12 @@ def _describe_env_var(var: str) -> str:
         "AWS_REGION": "AWS region for Bedrock-backed flows.",
         "AWS_PROFILE": "AWS credential profile for Bedrock IAM auth.",
         "AWS_SESSION_TOKEN": "Optional AWS session token.",
-        "GOOGLE_APPLICATION_CREDENTIALS": "Path to GCP service account credentials.",
+        "GOOGLE_APPLICATION_CREDENTIALS": (
+            "Path to GCP service account credentials. Optional -- if unset, "
+            "`vertex_ai/*` models fall back to ambient Application Default "
+            "Credentials (e.g. a GCE/Cloud Run attached service account or "
+            "Workload Identity), same as Bedrock's IAM role fallback."
+        ),
         "SKILL_SCANNER_ALLOWED_ROOTS": "Colon-delimited API path allowlist for server-side path access.",
         "SKILL_SCANNER_TAXONOMY_PATH": "Path to a custom Cisco AI taxonomy YAML file (overridden by `--taxonomy`).",
         "SKILL_SCANNER_THREAT_MAPPING_PATH": "Path to a custom threat mapping YAML file (overridden by `--threat-mapping`).",
@@ -518,7 +527,7 @@ _ENV_VAR_EXAMPLES: dict[str, str] = {
     "SKILL_SCANNER_THREAT_MAPPING_PATH": "/path/to/threats.yaml",
 }
 
-_ENV_VAR_REQUIRED: set[str] = {"SKILL_SCANNER_LLM_API_KEY"}
+_ENV_VAR_REQUIRED: set[str] = set()
 
 
 def _render_configuration_reference() -> str:
