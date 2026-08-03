@@ -55,6 +55,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_CONSENSUS_SEVERITY_RANK = {
+    Severity.SAFE: 0,
+    Severity.INFO: 1,
+    Severity.LOW: 2,
+    Severity.MEDIUM: 3,
+    Severity.HIGH: 4,
+    Severity.CRITICAL: 5,
+}
+
 # Import provider availability flags
 try:
     from .llm_provider_config import GOOGLE_GENAI_AVAILABLE, LITELLM_AVAILABLE
@@ -503,7 +512,10 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
         """Run LLM analysis multiple times and keep findings with majority agreement.
 
         This reduces false positives by requiring agreement across N independent
-        LLM runs. A finding is kept if it appears in more than N/2 runs.
+        LLM runs. A finding is kept if it appears in more than N/2 configured
+        runs. For each majority finding, the highest severity observed across
+        its votes is retained regardless of response order. Failed runs cast no
+        votes and remain part of the configured-run denominator.
 
         Args:
             messages: The LLM messages to send.
@@ -513,6 +525,7 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
             Findings that achieved majority consensus.
         """
         all_run_findings: list[list[Finding]] = []
+        failed_runs = 0
 
         for run_idx in range(self.consensus_runs):
             try:
@@ -526,37 +539,72 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
             except Exception as e:
                 logger.warning("Consensus run %d failed for %s: %s", run_idx + 1, skill.name, e)
                 all_run_findings.append([])
+                failed_runs += 1
 
-        # Count how many runs produced each unique finding (by rule_id + category)
-        finding_counts: dict[str, int] = {}
-        finding_map: dict[str, Finding] = {}
+        # Count one vote per run for each unique finding. If a single response
+        # duplicates a key at different severities, that run casts its highest
+        # severity only.
+        finding_counts: dict[tuple[str, str, str], int] = {}
+        finding_map: dict[tuple[str, str, str], Finding] = {}
+        severity_votes: dict[tuple[str, str, str], dict[Severity, int]] = {}
 
         for run_findings in all_run_findings:
-            seen_in_run: set[str] = set()
+            findings_by_key: dict[tuple[str, str, str], Finding] = {}
             for f in run_findings:
-                key = f"{f.rule_id}:{f.category.value}:{f.file_path or ''}"
-                if key not in seen_in_run:
-                    finding_counts[key] = finding_counts.get(key, 0) + 1
-                    seen_in_run.add(key)
-                    # Keep the first occurrence for the finding details
-                    if key not in finding_map:
-                        finding_map[key] = f
+                key = (f.rule_id, f.category.value, f.file_path or "")
+                previous = findings_by_key.get(key)
+                if (
+                    previous is None
+                    or _CONSENSUS_SEVERITY_RANK[f.severity] > _CONSENSUS_SEVERITY_RANK[previous.severity]
+                ):
+                    findings_by_key[key] = f
+
+            for key, finding in findings_by_key.items():
+                finding_counts[key] = finding_counts.get(key, 0) + 1
+                votes_for_key = severity_votes.setdefault(key, {})
+                votes_for_key[finding.severity] = votes_for_key.get(finding.severity, 0) + 1
+
+                current = finding_map.get(key)
+                if (
+                    current is None
+                    or _CONSENSUS_SEVERITY_RANK[finding.severity] > _CONSENSUS_SEVERITY_RANK[current.severity]
+                ):
+                    finding_map[key] = finding
 
         # Keep findings with majority agreement
         threshold = self.consensus_runs / 2
         consensus_findings: list[Finding] = []
-        for key, count in finding_counts.items():
+        successful_runs = self.consensus_runs - failed_runs
+        for key in sorted(finding_counts):
+            count = finding_counts[key]
             if count > threshold:
                 finding = finding_map[key]
-                finding.metadata["consensus_agreement"] = f"{count}/{self.consensus_runs}"
+                ordered_severity_votes = {
+                    severity.value: severity_votes[key][severity]
+                    for severity in sorted(severity_votes[key], key=_CONSENSUS_SEVERITY_RANK.__getitem__, reverse=True)
+                }
+                finding.metadata.update(
+                    {
+                        "consensus_agreement": f"{count}/{self.consensus_runs}",
+                        "consensus_votes": count,
+                        "consensus_total_runs": self.consensus_runs,
+                        "consensus_successful_runs": successful_runs,
+                        "consensus_failed_runs": failed_runs,
+                        "consensus_missing_votes": self.consensus_runs - count,
+                        "consensus_severity_votes": ordered_severity_votes,
+                        "consensus_severity_policy": "highest_observed",
+                    }
+                )
                 consensus_findings.append(finding)
 
         logger.info(
-            "Consensus judging for %s: %d unique findings, %d with majority agreement (%d/%d runs)",
+            "Consensus judging for %s: %d unique findings, %d with majority agreement "
+            "(%d successful, %d failed of %d configured runs)",
             skill.name,
             len(finding_counts),
             len(consensus_findings),
-            self.consensus_runs,
+            successful_runs,
+            failed_runs,
             self.consensus_runs,
         )
 

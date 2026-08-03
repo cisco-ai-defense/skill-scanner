@@ -202,6 +202,24 @@ Findings are automatically mapped from AITech codes to ThreatCategory enum:
 }
 ```
 
+### 5. Consensus Contract
+
+With `llm_consensus_runs=N`, a finding is retained only when the same rule,
+category, and file are reported in more than `N/2` configured runs. Each run
+casts at most one vote for that key. If a run emits duplicates at different
+severities, its highest severity is used; if the majority votes disagree, the
+highest severity observed across them is retained regardless of run order.
+
+Failed runs and successful runs that omit a finding cast no vote, but they
+remain in the configured-run denominator. Retained findings include agreement,
+severity-vote, successful-run, and failed-run metadata so callers can assess
+the evidence behind the result.
+
+Consensus makes aggregation deterministic once a finding reaches majority. It
+does not make the underlying model deterministic: a single run can still vary,
+and a finding near the majority boundary can still appear or disappear between
+separate scans.
+
 ## Security Features
 
 ### Prompt Injection Protection
