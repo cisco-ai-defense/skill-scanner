@@ -62,6 +62,16 @@ class TestLLMAnalyzerInitialization:
             with pytest.raises(ValueError, match="API key required"):
                 LLMAnalyzer(model="claude-3-5-sonnet-20241022", api_key=None)
 
+    def test_init_vertex_without_api_key(self):
+        """Test Vertex AI initialization without an API key (should work with
+        ambient Application Default Credentials -- e.g. a GCE/Cloud Run
+        attached service account or Workload Identity), mirroring Bedrock's
+        IAM-role fallback."""
+        with patch.dict("os.environ", {}, clear=True):
+            analyzer = LLMAnalyzer(model="vertex_ai/gemini-1.5-pro", api_key=None)
+        assert analyzer.provider_config.is_vertex
+        assert analyzer.api_key is None
+
     def test_init_gemini_uses_litellm_when_google_genai_missing(self):
         """Test Gemini models can fall back to LiteLLM without google-genai."""
         with (
