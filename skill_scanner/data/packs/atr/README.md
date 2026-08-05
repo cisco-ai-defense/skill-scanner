@@ -4,7 +4,33 @@
 **ATR Version:** 3.5.6
 **Rules:** 712 signatures across 10 signature files
 **License:** MIT
-**Benchmarks:** 97.2% recall on NVIDIA garak (650 in-the-wild jailbreaks) · 100% recall on 498 labeled SKILL.md samples · 99.7% precision on 850 PINT adversarial samples · OWASP Agentic Top 10: 10/10
+**Benchmarks:** see the [ATR benchmark table](https://github.com/Agent-Threat-Rule/agent-threat-rules#benchmarks),
+which is version-pinned and regenerated from measurement files rather than
+hand-copied. Selected rows, measured on ATR 3.5.11:
+
+| Corpus | Samples | Recall | Precision |
+|---|---:|---:|---:|
+| NVIDIA garak, in-the-wild jailbreaks | 650 | 92.5% | 100% |
+| NVIDIA garak, all 23 probe families | 3,475 | 57.2% | 100% |
+| Labeled SKILL.md, internal | 498 | 100% | 97% |
+| PINT-format (deepset + Lakera Gandalf) | 850 | 60.3% | 100% |
+
+Three caveats that belong next to those numbers.
+
+The PINT-format row is **not** a run of Lakera's official PINT benchmark. That
+corpus is private and roughly five times larger. This is a self-built corpus in
+the same format, and 226 of its 272 detections come from a single rule
+(`ATR-2026-00001`), so it measures one rule family rather than overall coverage.
+
+The SKILL.md row is measured with every maturity loaded. ATR's enforce lane
+loads only `maturity: stable`, and all 38 skill-scanning rules are currently
+`maturity: test` — so an enforce-lane deployment detects 0 of the 32 malicious
+samples. This pack loads the full static ruleset, which is the configuration the
+100% figure describes.
+
+OWASP Agentic Top 10 coverage (10/10 categories, 1,179 mappings) is a taxonomy
+mapping, not a detection benchmark, and is listed separately upstream for that
+reason.
 
 ## Overview
 

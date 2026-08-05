@@ -9,7 +9,7 @@ pack:
   name: ATR Agent Threat Rules
   version: 3.5.6
   description: >-
-    Open-source AI agent security detection rules from the Agent Threat Rules (ATR) project. 712 supported static rules across 10 attack categories: prompt injection, agent manipulation, skill compromise, context exfiltration, tool poisoning, privilege escalation, model abuse, excessive autonomy, data poisoning, and model security. Benchmarks: 97.2% recall on NVIDIA garak 650 in-the-wild jailbreaks, 100% recall on 498 labeled SKILL.md samples, 99.7% precision on 850 PINT adversarial samples. OWASP Agentic Top 10: 10/10. MIT license.
+    Open-source AI agent security detection rules from the Agent Threat Rules (ATR) project. 712 supported static rules across 10 attack categories: prompt injection, agent manipulation, skill compromise, context exfiltration, tool poisoning, privilege escalation, model abuse, excessive autonomy, data poisoning, and model security. Benchmark results are published upstream in the ATR benchmark table, version-pinned per measurement; see the pack README for the figures that apply to this ruleset and their caveats. MIT license.
   author: ATR Community
   license: MIT
   source_url: https://github.com/Agent-Threat-Rule/agent-threat-rules
