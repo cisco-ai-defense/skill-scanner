@@ -7,7 +7,7 @@
 **Benchmarks:** measured on ATR 3.5.11 (this pack is built from 3.5.6, so treat them as indicative for the
 shipped signatures rather than exact):
 
-- 91.5% recall on NVIDIA garak (650 in-the-wild jailbreaks; 595 detected, 55 missed), re-measured 2026-07-28
+- 92.5% recall on NVIDIA garak's in-the-wild jailbreak corpus (601 of 650 detected), measured 2026-08-05 on ATR v3.5.11. This corpus is a single probe family; across garak's full 23-family corpus recall is substantially lower and is reported separately upstream.
 - 100% recall / 97% precision on 498 labeled SKILL.md samples
 - **False positives are lane-dependent and ATR does not publish a single precision figure.** On the 65K-sample
   benign gate: ~0.24% FP on the enforce lane (stable, confirm-gated rules) and ~9% FP on the hunt lane, which
