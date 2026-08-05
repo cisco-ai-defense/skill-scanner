@@ -4,7 +4,15 @@
 **ATR Version:** 3.5.6
 **Rules:** 712 signatures across 10 signature files
 **License:** MIT
-**Benchmarks:** 97.2% recall on NVIDIA garak (650 in-the-wild jailbreaks) · 100% recall on 498 labeled SKILL.md samples · 99.7% precision on 850 PINT adversarial samples · OWASP Agentic Top 10: 10/10
+**Benchmarks:** measured on ATR 3.5.11 (this pack is built from 3.5.6, so treat them as indicative for the
+shipped signatures rather than exact):
+
+- 92.5% recall on NVIDIA garak's in-the-wild jailbreak corpus (601 of 650 detected), measured 2026-08-05 on ATR v3.5.11. This corpus is a single probe family; across garak's full 23-family corpus recall is substantially lower and is reported separately upstream.
+- 100% recall / 97% precision on 498 labeled SKILL.md samples
+- **False positives are lane-dependent and ATR does not publish a single precision figure.** On the 65K-sample
+  benign gate: ~0.24% FP on the enforce lane (stable, confirm-gated rules) and ~9% FP on the hunt lane, which
+  is the default. A scanner running the full pack should expect the hunt-lane figure.
+- OWASP Agentic Top 10: 10/10 categories mapped
 
 ## Overview
 
