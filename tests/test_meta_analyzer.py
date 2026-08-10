@@ -135,6 +135,96 @@ class TestMetaAnalysisResult:
         assert findings[0].metadata.get("meta_detected") is True
 
 
+class TestOverallRiskAssessmentNormalization:
+    """Tests for MetaAnalyzer._normalize_overall_risk_assessment().
+
+    The meta-analysis prompt asks the model for exactly two enum-like
+    fields, ``risk_level`` (CRITICAL|HIGH|MEDIUM|LOW|SAFE) and
+    ``skill_verdict`` (SAFE|SUSPICIOUS|MALICIOUS). Unlike per-finding
+    ``severity``/``category``, nothing previously validated these against
+    their documented values, so an off-schema or oddly-cased string from
+    the model flowed straight through to reporters unchanged.
+    """
+
+    def test_valid_uppercase_values_pass_through_unchanged(self):
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        assessment = {"risk_level": "HIGH", "skill_verdict": "MALICIOUS", "summary": "x"}
+        normalized = MetaAnalyzer._normalize_overall_risk_assessment(assessment)
+
+        assert normalized["risk_level"] == "HIGH"
+        assert normalized["skill_verdict"] == "MALICIOUS"
+        assert normalized["summary"] == "x"
+        assert "raw_risk_level" not in normalized
+        assert "raw_skill_verdict" not in normalized
+
+    def test_valid_values_are_case_normalized(self):
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        normalized = MetaAnalyzer._normalize_overall_risk_assessment(
+            {"risk_level": "safe", "skill_verdict": "  suspicious  "}
+        )
+
+        assert normalized["risk_level"] == "SAFE"
+        assert normalized["skill_verdict"] == "SUSPICIOUS"
+        assert "raw_risk_level" not in normalized
+        assert "raw_skill_verdict" not in normalized
+
+    def test_off_schema_values_collapse_to_unknown_with_raw_preserved(self):
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        normalized = MetaAnalyzer._normalize_overall_risk_assessment(
+            {"risk_level": "NONE", "skill_verdict": "MALICIOUS_ISH"}
+        )
+
+        assert normalized["risk_level"] == "UNKNOWN"
+        assert normalized["raw_risk_level"] == "NONE"
+        assert normalized["skill_verdict"] == "UNKNOWN"
+        assert normalized["raw_skill_verdict"] == "MALICIOUS_ISH"
+
+    def test_model_cannot_self_report_unknown_without_being_flagged(self):
+        """UNKNOWN is reserved for the scanner's own degradation path."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        normalized = MetaAnalyzer._normalize_overall_risk_assessment({"skill_verdict": "UNKNOWN"})
+
+        assert normalized["skill_verdict"] == "UNKNOWN"
+        assert normalized["raw_skill_verdict"] == "UNKNOWN"
+
+    def test_missing_fields_stay_absent(self):
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        assert MetaAnalyzer._normalize_overall_risk_assessment({}) == {}
+        assert MetaAnalyzer._normalize_overall_risk_assessment({"summary": "no findings"}) == {"summary": "no findings"}
+
+    def test_parse_response_applies_normalization(self):
+        """The normalization runs on every parsed batch response, not just in isolation."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        analyzer = MetaAnalyzer(model="test-model", api_key="test-key")
+        response = json.dumps(
+            {
+                "overall_risk_assessment": {
+                    "risk_level": "none",
+                    "skill_verdict": "suspicious",
+                    "summary": "test",
+                },
+                "validated_findings": [],
+                "false_positives": [],
+                "missed_threats": [],
+                "priority_order": [],
+                "correlations": [],
+                "recommendations": [],
+            }
+        )
+
+        result = analyzer._parse_response(response, [], original_indices=[])
+
+        assert result.overall_risk_assessment["risk_level"] == "UNKNOWN"
+        assert result.overall_risk_assessment["raw_risk_level"] == "none"
+        assert result.overall_risk_assessment["skill_verdict"] == "SUSPICIOUS"
+
+
 class TestMetaAnalyzerInit:
     """Tests for MetaAnalyzer initialization."""
 
