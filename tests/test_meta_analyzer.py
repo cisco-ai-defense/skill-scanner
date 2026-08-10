@@ -197,6 +197,17 @@ class TestOverallRiskAssessmentNormalization:
         assert MetaAnalyzer._normalize_overall_risk_assessment({}) == {}
         assert MetaAnalyzer._normalize_overall_risk_assessment({"summary": "no findings"}) == {"summary": "no findings"}
 
+    def test_present_blank_values_normalize_to_unknown(self):
+        """A *present* empty/whitespace value is an invalid enum value, not an absent field."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        normalized = MetaAnalyzer._normalize_overall_risk_assessment({"risk_level": "", "skill_verdict": "   "})
+
+        assert normalized["risk_level"] == "UNKNOWN"
+        assert normalized["raw_risk_level"] == ""
+        assert normalized["skill_verdict"] == "UNKNOWN"
+        assert normalized["raw_skill_verdict"] == "   "
+
     def test_parse_response_applies_normalization(self):
         """The normalization runs on every parsed batch response, not just in isolation."""
         from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer

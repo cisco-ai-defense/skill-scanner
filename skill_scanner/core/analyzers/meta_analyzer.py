@@ -785,16 +785,21 @@ Respond with JSON containing your analysis following the required schema."""
         """
         normalized = dict(assessment)
 
-        risk_level = str(normalized.get("risk_level", "")).strip().upper()
-        if risk_level:
+        # Presence, not truthiness: a *present* blank/whitespace value must
+        # still be normalized to UNKNOWN (it's an invalid enum value, not an
+        # absent field). Only an actually-missing key is left untouched, so
+        # the no-findings shortcut (risk_level: "SAFE" with no skill_verdict
+        # key at all) still round-trips with no key added.
+        if "risk_level" in normalized:
+            risk_level = str(normalized.get("risk_level", "")).strip().upper()
             if risk_level not in _VALID_RISK_LEVELS:
                 normalized["raw_risk_level"] = normalized.get("risk_level")
                 normalized["risk_level"] = "UNKNOWN"
             else:
                 normalized["risk_level"] = risk_level
 
-        skill_verdict = str(normalized.get("skill_verdict", "")).strip().upper()
-        if skill_verdict:
+        if "skill_verdict" in normalized:
+            skill_verdict = str(normalized.get("skill_verdict", "")).strip().upper()
             if skill_verdict not in _VALID_SKILL_VERDICTS:
                 normalized["raw_skill_verdict"] = normalized.get("skill_verdict")
                 normalized["skill_verdict"] = "UNKNOWN"
