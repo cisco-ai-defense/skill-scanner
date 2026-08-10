@@ -71,6 +71,13 @@ logger = logging.getLogger(__name__)
 _ESTIMATED_OUTPUT_TOKENS_PER_FINDING = 80
 _OUTPUT_TOKEN_UTILIZATION = 0.75
 
+# The only values the meta-analysis prompt schema permits the model to
+# return for these two fields (skill_meta_analysis_prompt.md). "UNKNOWN" is
+# reserved for the scanner's own degradation path (_mark_result_degraded)
+# and is deliberately not accepted here as a model-supplied value.
+_VALID_RISK_LEVELS = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "SAFE"}
+_VALID_SKILL_VERDICTS = {"SAFE", "SUSPICIOUS", "MALICIOUS"}
+
 # Check for LiteLLM availability
 try:
     from litellm import acompletion
@@ -764,6 +771,39 @@ Respond with JSON containing your analysis following the required schema."""
         return {"UNKNOWN": 0, "SAFE": 1, "LOW": 2, "MEDIUM": 3, "HIGH": 4, "CRITICAL": 5}.get(risk, 0)
 
     @staticmethod
+    def _normalize_overall_risk_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
+        """Coerce ``risk_level``/``skill_verdict`` to their documented enums.
+
+        Per-finding ``severity``/``category`` are parsed against the
+        ``Severity``/``ThreatCategory`` enums with a fallback, but nothing
+        previously validated these two skill-level fields. An off-schema or
+        differently-cased value from the model (``"safe"``, ``"LOW_RISK"``)
+        flowed straight through: ``_risk_rank()`` already treats unrecognized
+        strings as rank 0, but the raw string was still what got displayed,
+        so ranking and display could silently disagree. The original value
+        is preserved under ``raw_risk_level``/``raw_skill_verdict`` for audit.
+        """
+        normalized = dict(assessment)
+
+        risk_level = str(normalized.get("risk_level", "")).strip().upper()
+        if risk_level:
+            if risk_level not in _VALID_RISK_LEVELS:
+                normalized["raw_risk_level"] = normalized.get("risk_level")
+                normalized["risk_level"] = "UNKNOWN"
+            else:
+                normalized["risk_level"] = risk_level
+
+        skill_verdict = str(normalized.get("skill_verdict", "")).strip().upper()
+        if skill_verdict:
+            if skill_verdict not in _VALID_SKILL_VERDICTS:
+                normalized["raw_skill_verdict"] = normalized.get("skill_verdict")
+                normalized["skill_verdict"] = "UNKNOWN"
+            else:
+                normalized["skill_verdict"] = skill_verdict
+
+        return normalized
+
+    @staticmethod
     def _mark_result_degraded(result: MetaAnalysisResult) -> None:
         assessment = dict(result.overall_risk_assessment)
         partial_risk = assessment.get("risk_level")
@@ -1166,7 +1206,9 @@ Respond with a JSON object following the schema in the system prompt."""
                 priority_order=json_data.get("priority_order", []),
                 correlations=json_data.get("correlations", []),
                 recommendations=json_data.get("recommendations", []),
-                overall_risk_assessment=json_data.get("overall_risk_assessment", {}),
+                overall_risk_assessment=self._normalize_overall_risk_assessment(
+                    json_data.get("overall_risk_assessment", {})
+                ),
             )
 
             # Enrich validated findings with original data
