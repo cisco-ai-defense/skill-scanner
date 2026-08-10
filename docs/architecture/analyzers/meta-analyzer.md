@@ -221,6 +221,28 @@ Meta-analyzed findings include enriched metadata:
 }
 ```
 
+### Overall Risk Assessment
+
+Each batch response also includes a skill-level assessment, surfaced in `scan_metadata.meta_risk_assessment`:
+
+```json
+{
+  "overall_risk_assessment": {
+    "risk_level": "HIGH",
+    "summary": "Skill exfiltrates AWS credentials to an external endpoint",
+    "top_priority": "Remove the network call in scripts/sync.py",
+    "skill_verdict": "MALICIOUS",
+    "verdict_reasoning": "Clear credential read → external POST chain with no legitimate use case"
+  }
+}
+```
+
+`risk_level` is one of `CRITICAL | HIGH | MEDIUM | LOW | SAFE`; `skill_verdict` is one of `SAFE | SUSPICIOUS | MALICIOUS`. Both are validated against these enums when a batch response is parsed — a differently-cased (`"safe"`) or off-schema (`"NONE"`) value from the model is normalized to `"UNKNOWN"`, with the original string preserved under `raw_risk_level`/`raw_skill_verdict` for audit. `UNKNOWN` is reserved for the scanner's own degradation path (below) and is never accepted as a model-supplied verdict — a model that self-reports `"UNKNOWN"` is flagged the same way as any other off-schema value.
+
+When a skill's findings span multiple batches (see [Analyzer Selection Guide](meta-and-external-analyzers.md)), only the single highest-`risk_level` batch's assessment is kept as the skill-level result — other batches' `validated_findings`/`false_positives`/`correlations` are still merged in, but their risk assessments are discarded. If any batch fails to parse, is truncated past retry, or times out, `risk_level` and `skill_verdict` are force-set to `"UNKNOWN"` for the whole skill regardless of what any individual batch concluded, with the discarded values preserved under `partial_risk_level`/`partial_skill_verdict`.
+
+Neither `risk_level` nor `skill_verdict` feed into `ScanResult.is_safe`, `max_severity`, or `--fail-on-severity` CI gating — they're reporting-layer signals read only by the Markdown and HTML reporters, which fall back to a severity-derived default when meta-analysis hasn't run.
+
 ### Finding Correlation
 
 When multiple analyzers report overlapping threats, the meta-analyzer groups them into correlation groups rather than removing them. All findings are preserved in `validated_findings`, and the `correlations` block shows how they relate. For example:
