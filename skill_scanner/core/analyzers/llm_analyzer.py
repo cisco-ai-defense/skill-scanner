@@ -83,6 +83,7 @@ class LLMProvider(str, Enum):
     - gcp-vertex: Google Cloud Vertex AI
     - ollama: Local Ollama models
     - openrouter: OpenRouter API
+    - orcarouter: OrcaRouter API
     """
 
     OPENAI = "openai"
@@ -94,6 +95,7 @@ class LLMProvider(str, Enum):
     GCP_VERTEX = "gcp-vertex"
     OLLAMA = "ollama"
     OPENROUTER = "openrouter"
+    ORCAROUTER = "orcarouter"
 
     @classmethod
     def normalize(cls, provider: str) -> str:
@@ -223,6 +225,7 @@ class LLMAnalyzer(BaseAnalyzer):
                 "gcp-vertex": "vertex_ai/gemini-1.5-pro",
                 "ollama": "ollama/llama2",
                 "openrouter": "openrouter/openai/gpt-4",
+                "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
             }
             model = model_mapping.get(provider_str, "claude-3-5-sonnet-20241022")
         elif model is None:

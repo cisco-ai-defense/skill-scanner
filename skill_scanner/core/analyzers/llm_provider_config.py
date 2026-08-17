@@ -107,6 +107,9 @@ class ProviderConfig:
         )
         self.is_ollama = not self.is_openai_compatible and model_lower.startswith("ollama/")
         self.is_openrouter = not self.is_openai_compatible and model_lower.startswith("openrouter/")
+        self.is_orcarouter = self.provider == "orcarouter" or (
+            not self.is_openai_compatible and model_lower.startswith("orcarouter/")
+        )
         self.is_gpt5 = "gpt-5" in model_lower
 
         # Determine if we should use Google SDK
@@ -124,6 +127,12 @@ class ProviderConfig:
             if not LITELLM_AVAILABLE:
                 raise ImportError("LiteLLM is required for Vertex AI. Install with: pip install litellm")
             self.model = model  # Keep vertex_ai/ prefix for LiteLLM
+        elif self.is_orcarouter:
+            # OrcaRouter is OpenAI-compatible; route through the OpenAI LiteLLM adapter
+            # with the well-known default endpoint (overridable via base_url).
+            if not LITELLM_AVAILABLE:
+                raise ImportError("LiteLLM is required for OrcaRouter. Install with: pip install litellm")
+            self.model = self._normalize_orcarouter_model_name(model)
         elif self.is_gemini and GOOGLE_GENAI_AVAILABLE:
             # Google AI Studio (uses Google SDK directly)
             self.use_google_sdk = True
@@ -165,6 +174,12 @@ class ProviderConfig:
         """Force LiteLLM's OpenAI adapter for arbitrary OpenAI-compatible model names."""
         if model.lower().startswith("openai/"):
             return model
+        return f"openai/{model}"
+
+    def _normalize_orcarouter_model_name(self, model: str) -> str:
+        """Force LiteLLM's OpenAI adapter for OrcaRouter models (OpenAI-compatible)."""
+        if model.lower().startswith("orcarouter/"):
+            model = model[len("orcarouter/"):]
         return f"openai/{model}"
 
     def _resolve_api_key(self, api_key: str | None) -> str | None:
@@ -301,6 +316,9 @@ class ProviderConfig:
 
         if self.base_url:
             params["api_base"] = self.base_url
+        elif self.is_orcarouter:
+            # Default OrcaRouter endpoint (OpenAI-compatible) when no base_url is given.
+            params["api_base"] = "https://api.orcarouter.ai/v1"
         if self.api_version:
             params["api_version"] = self.api_version
 
