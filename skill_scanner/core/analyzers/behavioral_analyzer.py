@@ -79,6 +79,8 @@ class BehavioralAnalyzer(BaseAnalyzer):
         use_alignment_verification: bool = False,
         llm_model: str | None = None,
         llm_api_key: str | None = None,
+        llm_provider: str | None = None,
+        llm_reasoning_effort: str | None = None,
     ):
         """
         Initialize behavioral analyzer.
@@ -87,6 +89,8 @@ class BehavioralAnalyzer(BaseAnalyzer):
             use_alignment_verification: Enable LLM-powered alignment verification
             llm_model: LLM model for alignment verification (e.g., "gemini/gemini-2.0-flash")
             llm_api_key: API key for the LLM provider (or resolved from environment)
+            llm_provider: Optional provider override used for request semantics
+            llm_reasoning_effort: Optional reasoning-depth control for alignment calls
 
         Note:
             This analyzer processes Python (.py) files with full AST-based dataflow
@@ -113,6 +117,8 @@ class BehavioralAnalyzer(BaseAnalyzer):
                     self.alignment_orchestrator = AlignmentOrchestrator(
                         llm_model=model,
                         llm_api_key=api_key,
+                        llm_provider=llm_provider,
+                        llm_reasoning_effort=llm_reasoning_effort,
                     )
                     logger.info("Alignment verification enabled with %s", model)
                 else:

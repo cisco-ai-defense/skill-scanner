@@ -58,6 +58,9 @@ class AlignmentOrchestrator:
         llm_temperature: Any = _TEMPERATURE_UNSET,
         llm_max_tokens: int = 4096,
         llm_timeout: int = 120,
+        *,
+        llm_provider: str | None = None,
+        llm_reasoning_effort: str | None = None,
     ):
         """Initialize alignment orchestrator.
 
@@ -68,6 +71,8 @@ class AlignmentOrchestrator:
             llm_temperature: Temperature for LLM responses
             llm_max_tokens: Max tokens for LLM responses
             llm_timeout: Timeout for LLM requests in seconds
+            llm_provider: Optional provider override used for request semantics
+            llm_reasoning_effort: Optional reasoning-depth control
 
         Raises:
             ValueError: If LLM API key is not provided
@@ -80,7 +85,9 @@ class AlignmentOrchestrator:
             model=llm_model,
             api_key=llm_api_key,
             base_url=llm_base_url,
+            provider=llm_provider,
             temperature=llm_temperature,
+            reasoning_effort=llm_reasoning_effort,
             max_tokens=llm_max_tokens,
             timeout=llm_timeout,
         )
@@ -89,6 +96,8 @@ class AlignmentOrchestrator:
             model=llm_model,
             api_key=llm_api_key,
             base_url=llm_base_url,
+            provider=llm_provider,
+            reasoning_effort=llm_reasoning_effort,
         )
 
         # Track analysis statistics
