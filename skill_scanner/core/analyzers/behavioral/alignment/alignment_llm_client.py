@@ -31,8 +31,14 @@ import logging
 import os
 from typing import Any
 
+from .....llm_reasoning import build_litellm_reasoning_params, resolve_llm_reasoning_effort
+from ...llm_provider_config import ProviderConfig
 from ...llm_request_handler import _TEMPERATURE_UNSET, _resolve_temperature
-from ...llm_request_options import resolve_llm_user, supports_openai_user_param
+from ...llm_request_options import (
+    normalize_litellm_model_for_provider,
+    resolve_llm_user,
+    supports_openai_user_param,
+)
 
 try:
     from litellm import acompletion
@@ -64,7 +70,9 @@ class AlignmentLLMClient:
         api_key: str | None = None,
         base_url: str | None = None,
         api_version: str | None = None,
+        provider: str | None = None,
         llm_user: str | None = None,
+        reasoning_effort: str | None = None,
         temperature: Any = _TEMPERATURE_UNSET,
         max_tokens: int = 4096,
         timeout: int = 120,
@@ -76,7 +84,10 @@ class AlignmentLLMClient:
             api_key: API key (or resolved from environment)
             base_url: Optional base URL for API
             api_version: Optional API version
+            provider: Optional provider override used for request semantics
             llm_user: Optional raw Chat Completions user field for OpenAI-compatible routes
+            reasoning_effort: Optional reasoning-depth control. When omitted,
+                resolves from ``SKILL_SCANNER_LLM_REASONING_EFFORT``.
             temperature: Temperature for responses.  Pass ``None`` to omit
                 ``temperature`` from the request - required for models that
                 reject it (Claude 4.x via Bedrock, OpenAI o1-series).
@@ -92,17 +103,38 @@ class AlignmentLLMClient:
         if not LITELLM_AVAILABLE:
             raise ImportError("litellm is required for alignment verification. Install with: pip install litellm")
 
-        # Resolve API key from environment if not provided
-        self._api_key = api_key or self._resolve_api_key(model)
-        if not self._api_key and not self._is_bedrock_model(model):
-            raise ValueError("LLM provider API key is required for alignment verification")
-
-        # Store configuration for per-request usage
-        self._model = model
-        self._base_url = base_url
-        self._api_version = api_version
-        self._provider = os.getenv("SKILL_SCANNER_LLM_PROVIDER")
+        # Store configuration for per-request usage. OrcaRouter uses the shared
+        # provider configuration so model normalization, key resolution, and
+        # its default OpenAI-compatible endpoint stay consistent with the main
+        # and meta LLM clients.
+        raw_provider = provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER")
+        self._provider = raw_provider.strip().lower().replace("_", "-") if raw_provider else None
+        self._provider_config: ProviderConfig | None = None
         self._llm_user = resolve_llm_user(llm_user)
+        if self._provider == "orcarouter" or model.lower().startswith("orcarouter/"):
+            self._provider_config = ProviderConfig(
+                model=model,
+                api_key=api_key,
+                base_url=base_url,
+                api_version=api_version,
+                provider=self._provider,
+                llm_user=self._llm_user,
+            )
+            self._provider_config.validate()
+            self._api_key = self._provider_config.api_key
+            self._base_url = self._provider_config.base_url
+            self._api_version = self._provider_config.api_version
+            self._provider = self._provider_config.provider
+            self._model = self._provider_config.model
+            self._llm_user = self._provider_config.llm_user
+        else:
+            self._api_key = api_key or self._resolve_api_key(model)
+            if not self._api_key and not self._is_bedrock_model(model):
+                raise ValueError("LLM provider API key is required for alignment verification")
+            self._base_url = base_url
+            self._api_version = api_version
+            self._model = normalize_litellm_model_for_provider(model, self._provider)
+        self._reasoning_effort = resolve_llm_reasoning_effort(reasoning_effort)
         self._temperature = _resolve_temperature(temperature, "SKILL_SCANNER_LLM_TEMPERATURE", default=0.1)
         self._max_tokens = max_tokens
         self._timeout = timeout
@@ -219,9 +251,17 @@ class AlignmentLLMClient:
             }
             if self._temperature is not None:
                 request_params["temperature"] = self._temperature
+            request_params.update(
+                build_litellm_reasoning_params(
+                    self._reasoning_effort,
+                    model=self._model,
+                    provider=self._provider,
+                )
+            )
 
-            # Add API key if available
-            if self._api_key:
+            if self._provider_config is not None:
+                request_params.update(self._provider_config.get_request_params())
+            elif self._api_key:
                 request_params["api_key"] = self._api_key
 
             # Only enable JSON mode for supported models/providers
@@ -230,9 +270,9 @@ class AlignmentLLMClient:
                 request_params["response_format"] = {"type": "json_object"}
 
             # Add optional parameters if configured
-            if self._base_url:
+            if self._provider_config is None and self._base_url:
                 request_params["api_base"] = self._base_url
-            if self._api_version:
+            if self._provider_config is None and self._api_version:
                 request_params["api_version"] = self._api_version
 
             if self._llm_user and supports_openai_user_param(self._model, self._provider):

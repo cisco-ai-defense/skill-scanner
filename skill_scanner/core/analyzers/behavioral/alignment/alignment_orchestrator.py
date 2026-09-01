@@ -55,7 +55,9 @@ class AlignmentOrchestrator:
         llm_model: str = "gemini/gemini-2.0-flash",
         llm_api_key: str | None = None,
         llm_base_url: str | None = None,
+        llm_provider: str | None = None,
         llm_temperature: Any = _TEMPERATURE_UNSET,
+        llm_reasoning_effort: str | None = None,
         llm_max_tokens: int = 4096,
         llm_timeout: int = 120,
     ):
@@ -65,7 +67,9 @@ class AlignmentOrchestrator:
             llm_model: LLM model to use (e.g., "gemini/gemini-2.0-flash")
             llm_api_key: API key for the LLM provider
             llm_base_url: Optional base URL for LLM API
+            llm_provider: Optional provider override used for request semantics
             llm_temperature: Temperature for LLM responses
+            llm_reasoning_effort: Optional reasoning-depth control
             llm_max_tokens: Max tokens for LLM responses
             llm_timeout: Timeout for LLM requests in seconds
 
@@ -80,7 +84,9 @@ class AlignmentOrchestrator:
             model=llm_model,
             api_key=llm_api_key,
             base_url=llm_base_url,
+            provider=llm_provider,
             temperature=llm_temperature,
+            reasoning_effort=llm_reasoning_effort,
             max_tokens=llm_max_tokens,
             timeout=llm_timeout,
         )
@@ -89,6 +95,8 @@ class AlignmentOrchestrator:
             model=llm_model,
             api_key=llm_api_key,
             base_url=llm_base_url,
+            provider=llm_provider,
+            reasoning_effort=llm_reasoning_effort,
         )
 
         # Track analysis statistics

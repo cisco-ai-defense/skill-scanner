@@ -160,6 +160,7 @@ class LLMAnalyzer(BaseAnalyzer):
         # Provider selection (can be enum or string)
         provider: str | None = None,
         llm_user: str | None = None,
+        reasoning_effort: str | None = None,
         # Policy (optional – uses generous defaults when omitted)
         policy: ScanPolicy | None = None,
     ):
@@ -189,6 +190,9 @@ class LLMAnalyzer(BaseAnalyzer):
             provider: LLM provider name (e.g., "openai", "anthropic", "aws-bedrock", etc.)
                 Can be enum or string (e.g., "openai", "anthropic", "aws-bedrock")
             llm_user: Optional raw Chat Completions user field for OpenAI-compatible routes.
+            reasoning_effort: Optional reasoning-depth control. When omitted,
+                resolves from ``SKILL_SCANNER_LLM_REASONING_EFFORT``. Use
+                ``disabled`` for explicit provider-aware thinking disablement.
             policy: Scan policy providing LLM context budget thresholds.
                 When ``None``, generous defaults from ``LLMAnalysisPolicy()``
                 are used.
@@ -257,6 +261,7 @@ class LLMAnalyzer(BaseAnalyzer):
             max_retries=max_retries,
             rate_limit_delay=rate_limit_delay,
             timeout=timeout,
+            reasoning_effort=reasoning_effort,
         )
 
         self.prompt_builder = PromptBuilder()
@@ -275,6 +280,7 @@ class LLMAnalyzer(BaseAnalyzer):
         self.max_retries = max_retries
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
+        self.reasoning_effort = self.request_handler.reasoning_effort
 
         # Cumulative token usage across all LLM calls in the most recent analyze() run.
         self._llm_usage: LLMTokenUsage = _empty_token_usage()

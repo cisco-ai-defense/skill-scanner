@@ -47,6 +47,7 @@ from ..core.analyzer_factory import build_analyzers
 from ..core.exceptions import SkillLoadError
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
+from ..llm_reasoning import LLMReasoningEffort, ReasoningConfigurationError
 from ..llm_token_options import resolve_llm_max_tokens
 from ..utils.logging_context import scan_log_context
 
@@ -216,6 +217,10 @@ class ScanRequest(BaseModel):
         gt=0,
         description="Maximum output tokens for LLM and meta-analysis responses",
     )
+    llm_reasoning_effort: LLMReasoningEffort | None = Field(
+        None,
+        description="Optional LLM reasoning effort; unset preserves the provider default",
+    )
 
 
 class ScanResponse(BaseModel):
@@ -267,6 +272,10 @@ class BatchScanRequest(BaseModel):
         gt=0,
         description="Maximum output tokens for LLM and meta-analysis responses",
     )
+    llm_reasoning_effort: LLMReasoningEffort | None = Field(
+        None,
+        description="Optional LLM reasoning effort; unset preserves the provider default",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +323,7 @@ def _build_analyzers(
     use_osv: bool = False,
     llm_consensus_runs: int = 1,
     llm_max_tokens: int | None = None,
+    llm_reasoning_effort: str | None = None,
 ):
     """Build the analyzer list — delegates to the centralized factory."""
     return build_analyzers(
@@ -332,6 +342,7 @@ def _build_analyzers(
         use_osv=use_osv,
         llm_consensus_runs=llm_consensus_runs,
         llm_max_tokens=llm_max_tokens,
+        llm_reasoning_effort=llm_reasoning_effort,
     )
 
 
@@ -451,6 +462,7 @@ async def scan_skill(
                 use_osv=request.use_osv,
                 llm_consensus_runs=request.llm_consensus_runs,
                 llm_max_tokens=request.llm_max_tokens,
+                llm_reasoning_effort=request.llm_reasoning_effort,
             )
             scanner = SkillScanner(analyzers=analyzers, policy=policy)
             return scanner.scan_skill(skill_dir)
@@ -483,6 +495,8 @@ async def scan_skill(
                             meta=True,
                             default=policy.llm_analysis.max_output_tokens if policy else 8192,
                         ),
+                        provider=request.llm_provider,
+                        reasoning_effort=request.llm_reasoning_effort,
                     )
                     loader = SkillLoader()
                     skill = loader.load_skill(skill_dir)
@@ -502,6 +516,8 @@ async def scan_skill(
                     result.analyzers_used.append("meta_analyzer")
                     if merge_meta_analyzer_usage is not None:
                         merge_meta_analyzer_usage(result, meta_analyzer)
+                except ReasoningConfigurationError:
+                    raise
                 except Exception as meta_error:
                     logger.warning("Meta-analysis failed: %s", meta_error)
 
@@ -548,6 +564,10 @@ async def scan_uploaded_skill(
         None,
         gt=0,
         description="Maximum output tokens for LLM and meta-analysis responses",
+    ),
+    llm_reasoning_effort: LLMReasoningEffort | None = Form(
+        None,
+        description="Optional LLM reasoning effort; unset preserves the provider default",
     ),
 ):
     """Scan an uploaded skill package (ZIP file)."""
@@ -644,6 +664,7 @@ async def scan_uploaded_skill(
             enable_meta=enable_meta,
             llm_consensus_runs=llm_consensus_runs,
             llm_max_tokens=llm_max_tokens,
+            llm_reasoning_effort=llm_reasoning_effort,
         )
 
         return await scan_skill(request, vt_api_key=vt_api_key, aidefense_api_key=aidefense_api_key)
@@ -742,6 +763,7 @@ def _run_batch_scan(
             use_osv=request.use_osv,
             llm_consensus_runs=request.llm_consensus_runs,
             llm_max_tokens=request.llm_max_tokens,
+            llm_reasoning_effort=request.llm_reasoning_effort,
         )
 
         scanner = SkillScanner(analyzers=analyzers, policy=policy)
@@ -768,6 +790,8 @@ def _run_batch_scan(
                         meta=True,
                         default=policy_ref.llm_analysis.max_output_tokens if policy_ref else 8192,
                     ),
+                    provider=request.llm_provider,
+                    reasoning_effort=request.llm_reasoning_effort,
                 )
                 for result in report_ref.scan_results:
                     if result.findings:
@@ -797,6 +821,8 @@ def _run_batch_scan(
 
             try:
                 asyncio.run(_run_batch_meta(scanner, report, policy))
+            except ReasoningConfigurationError:
+                raise
             except Exception:
                 pass
 
