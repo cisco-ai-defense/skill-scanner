@@ -24,6 +24,7 @@ import hashlib
 import logging
 import pickletools
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -86,6 +87,14 @@ _SENSITIVE_PATH_LITERAL_RE = re.compile(
     r"(?i)(?:\.aws[/\\]credentials|\.ssh[/\\](?:id_[a-z0-9_]+|authorized_keys)|"
     r"\.(?:npmrc|gitconfig|gnupg|netrc|pgpass)|(?:^|[/\\])credentials?(?:[/\\]|$)|"
     r"(?:^|[/\\])secrets?(?:[/\\]|$))"
+)
+_OBFUSCATED_INSTRUCTION_RE = re.compile(
+    r"(?is)(?:"
+    r"ignore\s+(?:all\s+)?(?:previous|prior|earlier)\s+instructions?"
+    r"|you\s+are\s+now\s+in\s+(?:developer|debug|unrestricted|admin)\s+mode"
+    r"|(?:read|collect|capture|harvest|exfiltrate).{0,160}(?:credentials?|tokens?|api\s*keys?|ssh|environment|dotfiles?)"
+    r"|(?:post|send|transmit|exfiltrate).{0,160}https?://"
+    r")"
 )
 
 _COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//|/\*|\*|<!--)")
@@ -494,6 +503,7 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(self._check_binary_files(skill))
         findings.extend(self._check_hidden_files(skill))
         findings.extend(self._check_ascii_smuggling(skill))
+        findings.extend(self._check_unicode_obfuscated_instructions(skill))
         findings.extend(self._check_file_inventory(skill))
         findings.extend(self._check_pdf_documents(skill))
         findings.extend(self._check_office_documents(skill))
@@ -1867,6 +1877,123 @@ class StaticAnalyzer(BaseAnalyzer):
                 )
             )
 
+        return findings
+
+    @staticmethod
+    def _decode_obfuscated_unicode(text: str) -> tuple[str, set[str]]:
+        """Decode common Unicode instruction-obfuscation representations."""
+        try:
+            from confusable_homoglyphs import confusables  # type: ignore[import-untyped]
+        except ImportError:
+            confusables = None
+
+        normalized = unicodedata.normalize("NFKC", text)
+        decoded: list[str] = []
+        encodings: set[str] = set()
+        for char in normalized:
+            codepoint = ord(char)
+            replacement: str | None = None
+
+            # Variation Selectors Supplement encoding used by the reported PoC.
+            if 0xE0100 <= codepoint <= 0xE017E:
+                value = codepoint - 0xE0100
+                if value == 10 or 0x20 <= value <= 0x7E:
+                    replacement = chr(value)
+                    encodings.add("variation-selectors-supplement")
+
+            # A Braille offset encoding is not a Braille document: printable
+            # ASCII shifted into U+2800–U+28FF is a strong steganography signal.
+            elif 0x2800 <= codepoint <= 0x28FF:
+                value = codepoint - 0x2800
+                if value == 10 or 0x20 <= value <= 0x7E:
+                    replacement = chr(value)
+                    encodings.add("braille-offset")
+
+            # Map non-Latin confusables back to an ASCII lookalike when the
+            # optional Unicode Consortium data is available.
+            elif confusables is not None and not char.isascii():
+                info = confusables.is_confusable(char, preferred_aliases=["LATIN"])
+                if info:
+                    for entry in info:
+                        for glyph in entry.get("homoglyphs", []):
+                            candidate = glyph.get("c", "")
+                            if len(candidate) == 1 and candidate.isascii() and candidate.isalnum():
+                                replacement = candidate
+                                encodings.add("unicode-confusable")
+                                break
+                        if replacement is not None:
+                            break
+
+            if replacement is not None:
+                decoded.append(replacement)
+            else:
+                decoded.append(char)
+
+        result = "".join(decoded)
+        if result != text and not encodings:
+            encodings.add("unicode-normalization")
+        return result, encodings
+
+    def _check_unicode_obfuscated_instructions(self, skill: Skill) -> list[Finding]:
+        """Detect high-signal prompt injections hidden behind Unicode variants.
+
+        Detection runs over a normalized/decoded view so visually disguised text
+        cannot evade ordinary instruction signatures. This is intentionally not
+        a blanket ban on non-ASCII text; a transformed payload must also contain
+        explicit instruction or data-theft language.
+        """
+        findings: list[Finding] = []
+        for sf in skill.files:
+            if sf.content is None or sf.file_type not in {"markdown", "python", "bash"}:
+                continue
+            content = sf.content
+            decoded, encodings = self._decode_obfuscated_unicode(content)
+            if not encodings or decoded == content:
+                continue
+
+            # Require repeated encoded characters for offset encodings. A lone
+            # Braille character can be legitimate; a supplementary variation
+            # selector is itself an invisible format signal.
+            encoded_counts = {
+                "variation-selectors-supplement": sum(0xE0100 <= ord(ch) <= 0xE017E for ch in content),
+                "braille-offset": sum(0x2800 <= ord(ch) <= 0x28FF for ch in content),
+                "unicode-confusable": sum(not ch.isascii() for ch in content),
+            }
+            if encoded_counts["braille-offset"] < 8 and "braille-offset" in encodings:
+                encodings.discard("braille-offset")
+            if encoded_counts["unicode-confusable"] < 3 and "unicode-confusable" in encodings:
+                encodings.discard("unicode-confusable")
+            if not encodings or not _OBFUSCATED_INSTRUCTION_RE.search(decoded):
+                continue
+
+            first_line = next(
+                (
+                    line_no
+                    for line_no, line in enumerate(content.splitlines(), 1)
+                    if any(not ch.isascii() for ch in line)
+                ),
+                1,
+            )
+            preview = " ".join(decoded.split())[:160]
+            findings.append(
+                Finding(
+                    id=self._generate_finding_id("UNICODE_OBFUSCATED_INSTRUCTION", sf.relative_path),
+                    rule_id="UNICODE_OBFUSCATED_INSTRUCTION",
+                    category=ThreatCategory.PROMPT_INJECTION,
+                    severity=Severity.HIGH,
+                    title="Obfuscated prompt-injection instructions detected",
+                    description=(
+                        f"Unicode-obfuscated instructions were detected in {sf.relative_path} using "
+                        f"{', '.join(sorted(encodings))}. Recovered text includes a high-risk instruction or "
+                        f"data-access pattern: {preview}"
+                    ),
+                    file_path=sf.relative_path,
+                    line_number=first_line,
+                    remediation="Remove the obfuscated Unicode content and review the skill for prompt-injection and data-exfiltration behavior.",
+                    analyzer="static",
+                    metadata={"encodings": sorted(encodings), "decoded_preview": preview},
+                )
+            )
         return findings
 
     def _skill_uses_network(self, skill: Skill) -> bool:
