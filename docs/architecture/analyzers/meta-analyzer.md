@@ -89,6 +89,8 @@ export SKILL_SCANNER_LLM_API_KEY="your-api-key"
 export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
 export SKILL_SCANNER_LLM_BASE_URL="https://..."  # For Azure/custom endpoints
 export SKILL_SCANNER_LLM_API_VERSION="2025-01-01-preview"  # For Azure
+export SKILL_SCANNER_LLM_MAX_TOKENS="16384"  # Positive integer
+export SKILL_SCANNER_LLM_REASONING_EFFORT="low"
 ```
 
 **Meta-specific overrides** (optional - use different model/key for meta-analysis):
@@ -97,6 +99,8 @@ export SKILL_SCANNER_META_LLM_API_KEY="different-key"
 export SKILL_SCANNER_META_LLM_MODEL="gpt-4o"
 export SKILL_SCANNER_META_LLM_BASE_URL="https://..."
 export SKILL_SCANNER_META_LLM_API_VERSION="..."
+export SKILL_SCANNER_META_LLM_MAX_TOKENS="32768"
+export SKILL_SCANNER_META_LLM_REASONING_EFFORT="minimal"
 ```
 
 ### Priority Order
@@ -107,6 +111,8 @@ export SKILL_SCANNER_META_LLM_API_VERSION="..."
 | Model | `SKILL_SCANNER_META_LLM_MODEL` → `SKILL_SCANNER_LLM_MODEL` → default |
 | Base URL | `SKILL_SCANNER_META_LLM_BASE_URL` → `SKILL_SCANNER_LLM_BASE_URL` |
 | API Version | `SKILL_SCANNER_META_LLM_API_VERSION` → `SKILL_SCANNER_LLM_API_VERSION` |
+| Max output tokens | CLI/API explicit value → `SKILL_SCANNER_META_LLM_MAX_TOKENS` → `SKILL_SCANNER_LLM_MAX_TOKENS` → policy/default |
+| Reasoning effort | CLI/API explicit value → `SKILL_SCANNER_META_LLM_REASONING_EFFORT` → `SKILL_SCANNER_LLM_REASONING_EFFORT` → provider default |
 
 ### Auth Behavior
 

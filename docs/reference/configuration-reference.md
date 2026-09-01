@@ -1,5 +1,5 @@
 <!-- GENERATED FILE. DO NOT EDIT DIRECTLY.
-     Regenerate with: uv run python scripts/generate_reference_docs.py -->
+     Regenerate with: uv run --python 3.12 python scripts/generate_reference_docs.py -->
 
 # Configuration Reference
 
@@ -29,6 +29,8 @@ Primary settings for the LLM semantic analyzer.
 | `SKILL_SCANNER_LLM_BASE_URL` | Optional custom endpoint base URL for provider routing. | `https://api.openai.com/v1` |
 | `SKILL_SCANNER_LLM_API_VERSION` | Optional API version for providers that require one. | `2024-02-15-preview` |
 | `SKILL_SCANNER_LLM_USER` | Optional raw Chat Completions user field for OpenAI-compatible routes. | `{"appkey":"your-appkey"}` |
+| `SKILL_SCANNER_LLM_MAX_TOKENS` | Positive integer output-token budget. Overrides the active policy's `llm_analysis.max_output_tokens` value. | `16384` |
+| `SKILL_SCANNER_LLM_REASONING_EFFORT` | Optional reasoning-depth control: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unset preserves the provider default. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. | `low` |
 | `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` | Skip json_schema and start in plain JSON mode for incompatible proxies. | `true` |
 
 ## Meta Analyzer
@@ -41,6 +43,8 @@ Override LLM settings for the meta (cross-correlation) analyzer. Falls back to t
 | `SKILL_SCANNER_META_LLM_MODEL` | Meta-analyzer model override. | `(falls back to LLM_MODEL)` |
 | `SKILL_SCANNER_META_LLM_BASE_URL` | Meta-analyzer base URL override. | `(falls back to LLM_BASE_URL)` |
 | `SKILL_SCANNER_META_LLM_API_VERSION` | Meta-analyzer API version override. | `(falls back to LLM_API_VERSION)` |
+| `SKILL_SCANNER_META_LLM_MAX_TOKENS` | Positive integer meta-analysis output budget; falls back to `SKILL_SCANNER_LLM_MAX_TOKENS`. | `32768` |
+| `SKILL_SCANNER_META_LLM_REASONING_EFFORT` | Meta-analyzer reasoning-depth override; falls back to `SKILL_SCANNER_LLM_REASONING_EFFORT`. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. | `low` |
 
 ## AWS / Bedrock
 
@@ -121,17 +125,21 @@ Paths, allowlists, and other advanced settings.
 | `GEMINI_API_KEY` | `skill_scanner/core/analyzers/llm_provider_config.py` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `.env.example` |
 | `SKILL_SCANNER_ALLOWED_ROOTS` | `skill_scanner/api/router.py` |
-| `SKILL_SCANNER_LLM_API_KEY` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
+| `SKILL_SCANNER_LLM_API_KEY` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_API_VERSION` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_BASE_URL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` | `.env.example` |
-| `SKILL_SCANNER_LLM_MODEL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
-| `SKILL_SCANNER_LLM_PROVIDER` | `.env.example`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
+| `SKILL_SCANNER_LLM_MAX_TOKENS` | `.env.example`, `skill_scanner/llm_token_options.py` |
+| `SKILL_SCANNER_LLM_MODEL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
+| `SKILL_SCANNER_LLM_PROVIDER` | `.env.example`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
+| `SKILL_SCANNER_LLM_REASONING_EFFORT` | `.env.example`, `skill_scanner/llm_reasoning.py` |
 | `SKILL_SCANNER_LLM_USER` | `.env.example`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzers/llm_request_options.py` |
 | `SKILL_SCANNER_META_LLM_API_KEY` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_META_LLM_API_VERSION` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_META_LLM_BASE_URL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
+| `SKILL_SCANNER_META_LLM_MAX_TOKENS` | `.env.example`, `skill_scanner/llm_token_options.py` |
 | `SKILL_SCANNER_META_LLM_MODEL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
+| `SKILL_SCANNER_META_LLM_REASONING_EFFORT` | `.env.example`, `skill_scanner/llm_reasoning.py` |
 | `SKILL_SCANNER_TAXONOMY_PATH` | `skill_scanner/threats/cisco_ai_taxonomy.py` |
 | `SKILL_SCANNER_THREAT_MAPPING_PATH` | `skill_scanner/threats/threats.py` |
 | `VIRUSTOTAL_API_KEY` | `.env.example`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py` |

@@ -44,6 +44,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ...llm_reasoning import build_litellm_reasoning_params, resolve_llm_reasoning_effort
+from ...llm_token_options import resolve_llm_max_tokens
 from ...threats.threats import ThreatMapping
 from ..models import Finding, ScanResult, Severity, Skill, ThreatCategory
 from .base import BaseAnalyzer
@@ -51,13 +53,19 @@ from .llm_provider_config import ProviderConfig
 from .llm_request_handler import (
     _TEMPERATURE_UNSET,
     LLMRequestHandler,
+    LLMResponseTruncatedError,
     LLMTokenUsage,
     _add_token_usage,
     _empty_token_usage,
     _extract_token_usage,
     _resolve_temperature,
+    get_truncation_finish_reason,
 )
-from .llm_request_options import resolve_llm_user, supports_openai_user_param
+from .llm_request_options import (
+    normalize_litellm_model_for_provider,
+    resolve_llm_user,
+    supports_openai_user_param,
+)
 
 if TYPE_CHECKING:
     from ...core.scan_policy import LLMAnalysisPolicy, ScanPolicy
@@ -247,7 +255,7 @@ class MetaAnalysisResult:
         return findings
 
 
-class MetaAnalysisTruncatedError(RuntimeError):
+class MetaAnalysisTruncatedError(LLMResponseTruncatedError):
     """Raised when the provider reports an output-token truncation."""
 
 
@@ -278,7 +286,7 @@ class MetaAnalyzer(BaseAnalyzer):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        max_tokens: int = 8192,
+        max_tokens: int | None = None,
         temperature: Any = _TEMPERATURE_UNSET,
         max_retries: int = 3,
         timeout: int = 180,
@@ -290,6 +298,8 @@ class MetaAnalyzer(BaseAnalyzer):
         aws_profile: str | None = None,
         aws_session_token: str | None = None,
         llm_user: str | None = None,
+        provider: str | None = None,
+        reasoning_effort: str | None = None,
         # Policy (optional – uses generous defaults × meta multiplier)
         policy: ScanPolicy | None = None,
     ):
@@ -298,7 +308,9 @@ class MetaAnalyzer(BaseAnalyzer):
         Args:
             model: Model identifier (defaults to claude-3-5-sonnet-20241022)
             api_key: API key (if None, reads from environment)
-            max_tokens: Maximum tokens for response
+            max_tokens: Maximum tokens for response. When omitted, resolves
+                from ``SKILL_SCANNER_META_LLM_MAX_TOKENS``, then
+                ``SKILL_SCANNER_LLM_MAX_TOKENS``, and finally 8192.
             temperature: Sampling temperature (low for consistency).  Pass
                 ``None`` to omit the parameter from the request entirely —
                 required for models that reject ``temperature`` (e.g. Claude
@@ -314,6 +326,11 @@ class MetaAnalyzer(BaseAnalyzer):
             aws_profile: AWS profile name (for Bedrock)
             aws_session_token: AWS session token (for Bedrock)
             llm_user: Optional raw Chat Completions user field for OpenAI-compatible routes.
+            provider: Optional provider override used for request semantics.
+            reasoning_effort: Optional reasoning-depth control. When omitted,
+                resolves from ``SKILL_SCANNER_META_LLM_REASONING_EFFORT``,
+                then ``SKILL_SCANNER_LLM_REASONING_EFFORT``. Use ``disabled``
+                for explicit provider-aware thinking disablement.
             policy: Scan policy providing LLM context budget thresholds.
                 The meta analyzer applies ``meta_budget_multiplier`` on top of
                 the base limits.  When ``None``, generous defaults are used.
@@ -333,17 +350,20 @@ class MetaAnalyzer(BaseAnalyzer):
 
         # Use SKILL_SCANNER_* env vars only (no provider-specific fallbacks)
         # Priority: meta-specific > scanner-wide
+        raw_provider = provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER")
+        self.provider = raw_provider.strip().lower().replace("_", "-") if raw_provider else None
         self.api_key = (
             api_key
             or os.getenv("SKILL_SCANNER_META_LLM_API_KEY")  # Meta-specific
             or os.getenv("SKILL_SCANNER_LLM_API_KEY")  # Scanner-wide
         )
-        self.model = (
-            model
-            or os.getenv("SKILL_SCANNER_META_LLM_MODEL")  # Meta-specific
-            or os.getenv("SKILL_SCANNER_LLM_MODEL")  # Scanner-wide
-            or "claude-3-5-sonnet-20241022"
-        )
+        self.model = model or os.getenv("SKILL_SCANNER_META_LLM_MODEL") or os.getenv("SKILL_SCANNER_LLM_MODEL")
+        if self.model is None:
+            self.model = (
+                "orcarouter/anthropic/claude-sonnet-5"
+                if self.provider == "orcarouter"
+                else "claude-3-5-sonnet-20241022"
+            )
         self.base_url = (
             base_url
             or os.getenv("SKILL_SCANNER_META_LLM_BASE_URL")  # Meta-specific
@@ -354,14 +374,36 @@ class MetaAnalyzer(BaseAnalyzer):
             or os.getenv("SKILL_SCANNER_META_LLM_API_VERSION")  # Meta-specific
             or os.getenv("SKILL_SCANNER_LLM_API_VERSION")  # Scanner-wide
         )
-        self.provider = os.getenv("SKILL_SCANNER_LLM_PROVIDER")
+        self.model = normalize_litellm_model_for_provider(self.model, self.provider)
         self.llm_user = resolve_llm_user(llm_user)
+        self.reasoning_effort = resolve_llm_reasoning_effort(reasoning_effort, meta=True)
 
         # AWS Bedrock settings
         self.aws_region = aws_region
         self.aws_profile = aws_profile
         self.aws_session_token = aws_session_token
-        self.is_bedrock = self.model and "bedrock/" in self.model
+
+        # OrcaRouter uses LiteLLM's OpenAI adapter. Reuse the primary
+        # analyzer's normalization and request-parameter handling so the meta
+        # analyzer receives the same key and default endpoint.
+        self.provider_config: ProviderConfig | None = None
+        if self.provider == "orcarouter" or self.model.lower().startswith("orcarouter/"):
+            self.provider_config = ProviderConfig(
+                model=self.model,
+                api_key=self.api_key,
+                base_url=self.base_url,
+                api_version=self.api_version,
+                provider=self.provider,
+                aws_region=aws_region,
+                aws_profile=aws_profile,
+                aws_session_token=aws_session_token,
+                llm_user=self.llm_user,
+            )
+            self.model = self.provider_config.model
+            self.api_key = self.provider_config.api_key
+            self.provider = self.provider_config.provider
+
+        self.is_bedrock = "bedrock/" in self.model
 
         # Validate configuration
         if not self.api_key and not self.is_bedrock:
@@ -383,7 +425,7 @@ class MetaAnalyzer(BaseAnalyzer):
                     "Set SKILL_SCANNER_META_LLM_API_VERSION environment variable."
                 )
 
-        self.max_tokens = max_tokens
+        self.max_tokens = resolve_llm_max_tokens(max_tokens, meta=True)
         # Resolve temperature: explicit arg > meta-specific env > scanner-wide
         # env > default.  ``None`` here means "omit ``temperature`` from the
         # outgoing request" (Claude 4.x on Bedrock, OpenAI o1-series).
@@ -676,12 +718,16 @@ Respond with JSON containing your analysis following the required schema."""
                 details.append(f"ignored {invalid_entries} invalid or duplicate classification(s)")
             if missing:
                 details.append(f"retained {len(missing)} unclassified finding(s)")
-            result.analysis_warnings.append(
+            # Classification completeness is the primary batch integrity
+            # warning; keep it ahead of assessment-schema warnings that may
+            # already have been recorded while parsing the same response.
+            result.analysis_warnings.insert(
+                0,
                 self._batch_warning(
                     code="META_BATCH_INCOMPLETE",
                     message="; ".join(details),
                     indices=expected_indices,
-                )
+                ),
             )
             logger.error(
                 "Meta-analysis batch %d-%d was incomplete: %s",
@@ -1082,15 +1128,23 @@ Respond with a JSON object following the schema in the system prompt."""
         }
         if self.temperature is not None:
             api_params["temperature"] = self.temperature
+        api_params.update(
+            build_litellm_reasoning_params(
+                self.reasoning_effort,
+                model=self.model,
+                provider=self.provider,
+            )
+        )
 
-        if self.api_key:
-            api_params["api_key"] = self.api_key
-
-        if self.base_url:
-            api_params["api_base"] = self.base_url
-
-        if self.api_version:
-            api_params["api_version"] = self.api_version
+        if self.provider_config is not None:
+            api_params.update(self.provider_config.get_request_params())
+        else:
+            if self.api_key:
+                api_params["api_key"] = self.api_key
+            if self.base_url:
+                api_params["api_base"] = self.base_url
+            if self.api_version:
+                api_params["api_version"] = self.api_version
 
         if self.llm_user and supports_openai_user_param(self.model, self.provider):
             api_params["user"] = self.llm_user
@@ -1110,9 +1164,20 @@ Respond with a JSON object following the schema in the system prompt."""
                 response = await acompletion(**api_params, drop_params=True)
                 _add_token_usage(self._llm_usage, _extract_token_usage(response))
                 choice = response.choices[0]
-                if self._is_truncated_choice(choice):
+                if finish_reason := get_truncation_finish_reason(choice):
                     raise MetaAnalysisTruncatedError(
-                        "LLM response reached max_tokens before completing the meta-analysis batch"
+                        (
+                            "Meta-analysis output was truncated: provider "
+                            f"finish_reason={finish_reason!r}, model={self.model!r}, "
+                            f"max_tokens={self.max_tokens}. Increase --llm-max-tokens, "
+                            "the API llm_max_tokens field, "
+                            "SKILL_SCANNER_META_LLM_MAX_TOKENS, or "
+                            "SKILL_SCANNER_LLM_MAX_TOKENS and retry."
+                        ),
+                        finish_reason=finish_reason,
+                        model=self.model,
+                        max_tokens=self.max_tokens,
+                        context="meta-analysis batch",
                     )
                 content: str = choice.message.content or ""
                 return content
@@ -1156,23 +1221,7 @@ Respond with a JSON object following the schema in the system prompt."""
     @staticmethod
     def _is_truncated_choice(choice: Any) -> bool:
         """Return whether a normalized or native finish reason hit an output limit."""
-        reasons = [getattr(choice, "finish_reason", None)]
-        provider_fields = getattr(choice, "provider_specific_fields", None)
-        if isinstance(provider_fields, dict):
-            reasons.append(provider_fields.get("native_finish_reason"))
-
-        # LiteLLM maps Anthropic/Bedrock ``max_tokens`` and Gemini/Vertex
-        # ``MAX_TOKENS`` to ``length``. It also retains the original value in
-        # provider_specific_fields, and OpenAI-compatible routes may return a
-        # raw max-output-token variant without normalization.
-        for reason in reasons:
-            reason = getattr(reason, "value", reason)
-            if not isinstance(reason, str):
-                continue
-            compact = reason.strip().lower().replace("-", "_").replace("_", "")
-            if compact in {"length", "maxtoken", "maxtokens", "maxoutputtoken", "maxoutputtokens"}:
-                return True
-        return False
+        return get_truncation_finish_reason(choice) is not None
 
     def _parse_response(
         self,
@@ -1204,6 +1253,14 @@ Respond with a JSON object following the schema in the system prompt."""
             if not isinstance(json_data.get("overall_risk_assessment", {}), dict):
                 raise ValueError("overall_risk_assessment must be a JSON object")
 
+            raw_assessment = json_data.get("overall_risk_assessment", {})
+            missing_assessment_fields = [
+                field_name for field_name in ("risk_level", "skill_verdict") if field_name not in raw_assessment
+            ]
+            normalized_assessment = self._normalize_overall_risk_assessment(raw_assessment)
+            for field_name in missing_assessment_fields:
+                normalized_assessment[field_name] = "UNKNOWN"
+
             result = MetaAnalysisResult(
                 validated_findings=json_data.get("validated_findings", []),
                 false_positives=json_data.get("false_positives", []),
@@ -1211,10 +1268,21 @@ Respond with a JSON object following the schema in the system prompt."""
                 priority_order=json_data.get("priority_order", []),
                 correlations=json_data.get("correlations", []),
                 recommendations=json_data.get("recommendations", []),
-                overall_risk_assessment=self._normalize_overall_risk_assessment(
-                    json_data.get("overall_risk_assessment", {})
-                ),
+                overall_risk_assessment=normalized_assessment,
             )
+
+            if missing_assessment_fields:
+                missing_fields = ", ".join(missing_assessment_fields)
+                result.analysis_warnings.append(
+                    self._batch_warning(
+                        code="META_RESPONSE_SCHEMA_INCOMPLETE",
+                        message=(
+                            "Meta-analysis response omitted required overall_risk_assessment "
+                            f"field(s): {missing_fields}; missing values were set to UNKNOWN."
+                        ),
+                        indices=original_indices,
+                    )
+                )
 
             # Enrich validated findings with original data
             self._enrich_findings(result, original_findings, original_indices=original_indices)

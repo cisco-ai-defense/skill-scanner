@@ -235,6 +235,46 @@ class TestOverallRiskAssessmentNormalization:
         assert result.overall_risk_assessment["raw_risk_level"] == "none"
         assert result.overall_risk_assessment["skill_verdict"] == "SUSPICIOUS"
 
+    @pytest.mark.parametrize(
+        ("assessment", "missing_fields"),
+        [
+            ({"risk_level": "LOW", "summary": "missing verdict"}, ("skill_verdict",)),
+            ({"skill_verdict": "SAFE", "summary": "missing risk"}, ("risk_level",)),
+            ({"summary": "missing both"}, ("risk_level", "skill_verdict")),
+        ],
+    )
+    def test_parse_response_degrades_missing_required_assessment_fields(self, assessment, missing_fields):
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        analyzer = MetaAnalyzer(model="test-model", api_key="test-key")
+        response = json.dumps(
+            {
+                "overall_risk_assessment": assessment,
+                "validated_findings": [],
+                "false_positives": [],
+                "missed_threats": [],
+                "priority_order": [],
+                "correlations": [],
+                "recommendations": [],
+            }
+        )
+
+        original_finding = Finding(
+            id="finding-0",
+            rule_id="RULE_0",
+            category=ThreatCategory.PROMPT_INJECTION,
+            severity=Severity.HIGH,
+            title="Original finding",
+            description="Retained during schema degradation",
+            analyzer="static",
+        )
+        result = analyzer._parse_response(response, [original_finding], original_indices=[0])
+
+        assert result.analysis_warnings[0]["code"] == "META_RESPONSE_SCHEMA_INCOMPLETE"
+        for missing_field in missing_fields:
+            assert result.overall_risk_assessment[missing_field] == "UNKNOWN"
+            assert missing_field in result.analysis_warnings[0]["message"]
+
 
 class TestMetaAnalyzerInit:
     """Tests for MetaAnalyzer initialization."""
