@@ -20,7 +20,7 @@ All versions from [`pyproject.toml`](https://github.com/cisco-ai-defense/skill-s
 |---------|---------|---------|
 | `click` | >= 8.1.0 | CLI framework |
 | `rich` | >= 13.0.0 | Terminal formatting |
-| `textual` | >= 1.0.0 | Interactive TUI (policy configurator) |
+| `textual` | >= 7.0, < 9 | Interactive TUI (policy configurator) |
 | `tabulate` | >= 0.9.0 | Table output formatting |
 
 ### Analysis and Detection
