@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ...llm_reasoning import build_litellm_reasoning_params, resolve_llm_reasoning_effort
 from ...llm_token_options import resolve_llm_max_tokens
 from ...threats.threats import ThreatMapping
 from ..models import Finding, ScanResult, Severity, Skill, ThreatCategory
@@ -60,7 +61,11 @@ from .llm_request_handler import (
     _resolve_temperature,
     get_truncation_finish_reason,
 )
-from .llm_request_options import resolve_llm_user, supports_openai_user_param
+from .llm_request_options import (
+    normalize_litellm_model_for_provider,
+    resolve_llm_user,
+    supports_openai_user_param,
+)
 
 if TYPE_CHECKING:
     from ...core.scan_policy import LLMAnalysisPolicy, ScanPolicy
@@ -293,6 +298,8 @@ class MetaAnalyzer(BaseAnalyzer):
         aws_profile: str | None = None,
         aws_session_token: str | None = None,
         llm_user: str | None = None,
+        provider: str | None = None,
+        reasoning_effort: str | None = None,
         # Policy (optional – uses generous defaults × meta multiplier)
         policy: ScanPolicy | None = None,
     ):
@@ -319,6 +326,11 @@ class MetaAnalyzer(BaseAnalyzer):
             aws_profile: AWS profile name (for Bedrock)
             aws_session_token: AWS session token (for Bedrock)
             llm_user: Optional raw Chat Completions user field for OpenAI-compatible routes.
+            provider: Optional provider override used for request semantics.
+            reasoning_effort: Optional reasoning-depth control. When omitted,
+                resolves from ``SKILL_SCANNER_META_LLM_REASONING_EFFORT``,
+                then ``SKILL_SCANNER_LLM_REASONING_EFFORT``. Use ``disabled``
+                for explicit provider-aware thinking disablement.
             policy: Scan policy providing LLM context budget thresholds.
                 The meta analyzer applies ``meta_budget_multiplier`` on top of
                 the base limits.  When ``None``, generous defaults are used.
@@ -338,7 +350,7 @@ class MetaAnalyzer(BaseAnalyzer):
 
         # Use SKILL_SCANNER_* env vars only (no provider-specific fallbacks)
         # Priority: meta-specific > scanner-wide
-        raw_provider = os.getenv("SKILL_SCANNER_LLM_PROVIDER")
+        raw_provider = provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER")
         self.provider = raw_provider.strip().lower().replace("_", "-") if raw_provider else None
         self.api_key = (
             api_key
@@ -362,7 +374,9 @@ class MetaAnalyzer(BaseAnalyzer):
             or os.getenv("SKILL_SCANNER_META_LLM_API_VERSION")  # Meta-specific
             or os.getenv("SKILL_SCANNER_LLM_API_VERSION")  # Scanner-wide
         )
+        self.model = normalize_litellm_model_for_provider(self.model, self.provider)
         self.llm_user = resolve_llm_user(llm_user)
+        self.reasoning_effort = resolve_llm_reasoning_effort(reasoning_effort, meta=True)
 
         # AWS Bedrock settings
         self.aws_region = aws_region
@@ -1114,6 +1128,13 @@ Respond with a JSON object following the schema in the system prompt."""
         }
         if self.temperature is not None:
             api_params["temperature"] = self.temperature
+        api_params.update(
+            build_litellm_reasoning_params(
+                self.reasoning_effort,
+                model=self.model,
+                provider=self.provider,
+            )
+        )
 
         if self.provider_config is not None:
             api_params.update(self.provider_config.get_request_params())

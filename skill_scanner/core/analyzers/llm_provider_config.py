@@ -25,7 +25,11 @@ import importlib.util
 import logging
 import os
 
-from .llm_request_options import resolve_llm_user, supports_openai_user_param
+from .llm_request_options import (
+    normalize_litellm_model_for_provider,
+    resolve_llm_user,
+    supports_openai_user_param,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -172,9 +176,7 @@ class ProviderConfig:
 
     def _normalize_openai_compatible_model_name(self, model: str) -> str:
         """Force LiteLLM's OpenAI adapter for arbitrary OpenAI-compatible model names."""
-        if model.lower().startswith("openai/"):
-            return model
-        return f"openai/{model}"
+        return normalize_litellm_model_for_provider(model, "openai-compatible")
 
     def _normalize_orcarouter_model_name(self, model: str) -> str:
         """Force LiteLLM's OpenAI adapter for OrcaRouter models (OpenAI-compatible)."""
