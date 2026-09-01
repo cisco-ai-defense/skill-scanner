@@ -37,19 +37,15 @@
   category: data_exfiltration
   severity: CRITICAL
   patterns:
-    - "socket\\.socket\\s*\\([^)]*\\)\\.connect"
-    - "socket\\.create_connection"
+    - "socket\\.socket\\s*\\([^)]*\\)\\.connect\\s*\\(\\s*(?![\\(\\[]\\s*['\"](?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|::1)['\"])"
+    - "socket\\.create_connection\\s*\\(\\s*(?![\\(\\[]\\s*['\"](?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|::1)['\"])"
     # Resolver APIs issue external DNS lookups without an explicit socket connect.
-    - "socket\\.getaddrinfo\\s*\\((?!\\s*socket\\.gethostname\\s*\\(\\s*\\)\\s*,)"
-    - "socket\\.gethostbyname_ex\\s*\\((?!\\s*socket\\.gethostname\\s*\\(\\s*\\)\\s*\\))"
-    - "socket\\.getnameinfo\\s*\\("
-    - "socket\\.gethostbyname\\s*\\((?!\\s*socket\\.gethostname\\s*\\(\\s*\\)\\s*\\))"
-    - "socket\\.getfqdn\\s*\\((?!\\s*(?:socket\\.gethostname\\s*\\(\\s*\\)\\s*)?\\))"
+    - "socket\\.getaddrinfo\\s*\\((?!\\s*(?:['\"](?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|::1)['\"]|socket\\.gethostname\\s*\\(\\s*\\)))"
+    - "socket\\.gethostbyname_ex\\s*\\((?!\\s*(?:['\"](?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|::1)['\"]|socket\\.gethostname\\s*\\(\\s*\\)))"
+    - "socket\\.getnameinfo\\s*\\(\\s*(?![\\(\\[]\\s*['\"](?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|::1)['\"])"
+    - "socket\\.gethostbyname\\s*\\((?!\\s*(?:['\"](?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|::1)['\"]|socket\\.gethostname\\s*\\(\\s*\\)))"
+    - "socket\\.getfqdn\\s*\\((?!\\s*(?:(?:['\"](?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|::1)['\"]|socket\\.gethostname\\s*\\(\\s*\\))\\s*)?\\))"
   exclude_patterns:
-    - "localhost"
-    - "127\\.0\\.0\\.1"
-    - "0\\.0\\.0\\.0"
-    - "::1"
     - "def\\s+(is_)?.*ready"
     - "def\\s+.*health.*check"
     - "def\\s+.*wait.*server"

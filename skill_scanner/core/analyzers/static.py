@@ -1879,18 +1879,66 @@ class StaticAnalyzer(BaseAnalyzer):
         return findings
 
     @staticmethod
-    def _content_uses_external_socket_api(content: str) -> bool:
-        """Return whether socket calls in *content* can contact a remote host."""
-        external_patterns = (
-            r"socket\.connect",
-            r"socket\.create_connection",
-            r"socket\.getaddrinfo\s*\((?!\s*socket\.gethostname\s*\(\s*\)\s*,)",
-            r"socket\.gethostbyname_ex\s*\((?!\s*socket\.gethostname\s*\(\s*\)\s*\))",
-            r"socket\.getnameinfo\s*\(",
-            r"socket\.gethostbyname\s*\((?!\s*socket\.gethostname\s*\(\s*\)\s*\))",
-            r"socket\.getfqdn\s*\((?!\s*(?:socket\.gethostname\s*\(\s*\)\s*)?\))",
-        )
-        return any(re.search(pattern, content) for pattern in external_patterns)
+    def _socket_target_is_local(node: ast.AST | None) -> bool:
+        """Return whether a socket call target is explicitly local-only."""
+        if isinstance(node, (ast.Tuple, ast.List)) and node.elts:
+            node = node.elts[0]
+
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value.strip().lower().rstrip(".") in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+
+        if isinstance(node, ast.Call):
+            return not node.args and StaticAnalyzer._attribute_path(node.func) == "socket.gethostname"
+
+        return False
+
+    def _socket_call_can_contact_remote(self, node: ast.Call) -> bool:
+        """Classify one supported socket call using its own target argument."""
+        call_path = self._attribute_path(node.func)
+        if (
+            call_path is None
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "connect"
+            and isinstance(node.func.value, ast.Call)
+            and self._attribute_path(node.func.value.func) == "socket.socket"
+        ):
+            call_path = "socket.socket.connect"
+
+        target_apis = {
+            "socket.connect",
+            "socket.socket.connect",
+            "socket.create_connection",
+            "socket.getaddrinfo",
+            "socket.gethostbyname",
+            "socket.gethostbyname_ex",
+            "socket.getnameinfo",
+            "socket.getfqdn",
+        }
+        if call_path not in target_apis:
+            return False
+
+        # getfqdn() without an argument resolves the current host only.
+        if call_path == "socket.getfqdn" and not node.args:
+            return False
+
+        target = node.args[0] if node.args else None
+        return not self._socket_target_is_local(target)
+
+    def _content_uses_external_socket_api(self, content: str) -> bool:
+        """Return whether any individual socket call can contact a remote host."""
+        try:
+            tree = ast.parse(content)
+        except (SyntaxError, ValueError):
+            # Preserve conservative detection for malformed or partial Python.
+            return bool(
+                re.search(
+                    r"socket\.(?:connect|create_connection|getaddrinfo|gethostbyname(?:_ex)?|getnameinfo|getfqdn)\s*\(",
+                    content,
+                )
+                or re.search(r"socket\.socket\s*\([^)]*\)\.connect\s*\(", content)
+            )
+
+        return any(self._socket_call_can_contact_remote(node) for node in ast.walk(tree) if isinstance(node, ast.Call))
 
     def _skill_uses_network(self, skill: Skill) -> bool:
         """Check if skill code uses network libraries for EXTERNAL communication."""
@@ -1904,20 +1952,14 @@ class StaticAnalyzer(BaseAnalyzer):
             "import aiohttp",
         ]
 
-        socket_localhost_indicators = ["localhost", "127.0.0.1", "::1"]
-
         for skill_file in skill.get_scripts():
             content = skill_file.read_content()
 
             if any(indicator in content for indicator in external_network_indicators):
                 return True
 
-            if "import socket" in content:
-                has_socket_connect = self._content_uses_external_socket_api(content)
-                is_localhost_only = any(ind in content for ind in socket_localhost_indicators)
-
-                if has_socket_connect and not is_localhost_only:
-                    return True
+            if "import socket" in content and self._content_uses_external_socket_api(content):
+                return True
 
         return False
 
