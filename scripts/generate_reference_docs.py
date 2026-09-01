@@ -101,7 +101,7 @@ def _render_cli_reference() -> str:
         "| `--use-virustotal` | off | Enable VirusTotal hash lookups |",
         "| `--use-aidefense` | off | Enable Cisco AI Defense analyzer |",
         "| `--use-osv` | off | Enable OSV.dev dependency vulnerability scanning (no API key; requires network) |",
-        "| `--llm-reasoning-effort LEVEL` | provider default | Optional reasoning depth: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |",
+        "| `--llm-reasoning-effort LEVEL` | provider default | Optional reasoning depth: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. |",
         "| `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |",
         "| `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |",
         "| `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |",
@@ -343,7 +343,7 @@ def _render_api_reference() -> str:
             "- API behavior is policy-aware and mirrors CLI analyzer selection flags.",
             "- API keys for VirusTotal and AI Defense are passed via request headers (`X-VirusTotal-Key`, `X-AIDefense-Key`), not in the JSON body.",
             "- Set `SKILL_SCANNER_ALLOWED_ROOTS` to restrict which directories the API can scan.",
-            "- `llm_reasoning_effort` accepts `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; omission preserves the provider default.",
+            "- `llm_reasoning_effort` accepts `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; omission preserves the provider default. Direct Google GenAI SDK requests reject configured controls, while LiteLLM-backed Gemini requests support them.",
             "- All `POST` endpoints accept JSON bodies. File upload uses `multipart/form-data`.",
         ]
     )
@@ -389,9 +389,19 @@ def _collect_env_variables() -> dict[str, set[str]]:
         for var in _extract_python_env_variables(text):
             add(var, rel)
 
-    token_options_source = "skill_scanner/llm_token_options.py"
-    for var in ("SKILL_SCANNER_LLM_MAX_TOKENS", "SKILL_SCANNER_META_LLM_MAX_TOKENS"):
-        add(var, token_options_source)
+    runtime_env_sources = {
+        "skill_scanner/llm_token_options.py": (
+            "SKILL_SCANNER_LLM_MAX_TOKENS",
+            "SKILL_SCANNER_META_LLM_MAX_TOKENS",
+        ),
+        "skill_scanner/llm_reasoning.py": (
+            "SKILL_SCANNER_LLM_REASONING_EFFORT",
+            "SKILL_SCANNER_META_LLM_REASONING_EFFORT",
+        ),
+    }
+    for source, variables in runtime_env_sources.items():
+        for var in variables:
+            add(var, source)
 
     return dict(sorted(env_map.items()))
 
@@ -472,7 +482,8 @@ def _describe_env_var(var: str) -> str:
         ),
         "SKILL_SCANNER_LLM_REASONING_EFFORT": (
             "Optional reasoning-depth control: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or "
-            "`max`. Unset preserves the provider default."
+            "`max`. Unset preserves the provider default. Direct Google GenAI SDK requests reject configured "
+            "controls; LiteLLM-backed Gemini requests support them."
         ),
         "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT": "Skip json_schema and start in plain JSON mode for incompatible proxies.",
         "SKILL_SCANNER_META_LLM_API_KEY": "Meta-analyzer API key override.",
@@ -483,7 +494,8 @@ def _describe_env_var(var: str) -> str:
             "Positive integer meta-analysis output budget; falls back to `SKILL_SCANNER_LLM_MAX_TOKENS`."
         ),
         "SKILL_SCANNER_META_LLM_REASONING_EFFORT": (
-            "Meta-analyzer reasoning-depth override; falls back to `SKILL_SCANNER_LLM_REASONING_EFFORT`."
+            "Meta-analyzer reasoning-depth override; falls back to `SKILL_SCANNER_LLM_REASONING_EFFORT`. "
+            "Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them."
         ),
         "VIRUSTOTAL_API_KEY": "VirusTotal analyzer API key.",
         "VIRUSTOTAL_UPLOAD_FILES": "Enable upload mode for unknown binaries.",

@@ -34,7 +34,7 @@ Flags shared by `scan` and `scan-all`:
 | `--use-virustotal` | off | Enable VirusTotal hash lookups |
 | `--use-aidefense` | off | Enable Cisco AI Defense analyzer |
 | `--use-osv` | off | Enable OSV.dev dependency vulnerability scanning (no API key; requires network) |
-| `--llm-reasoning-effort LEVEL` | provider default | Optional reasoning depth: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |
+| `--llm-reasoning-effort LEVEL` | provider default | Optional reasoning depth: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. |
 | `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |
 | `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |
 | `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |

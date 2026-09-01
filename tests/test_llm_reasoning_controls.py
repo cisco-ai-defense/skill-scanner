@@ -211,6 +211,60 @@ class TestMainLLMRequestPath:
 
 
 class TestMetaAndAlignmentPaths:
+    def test_alignment_client_preserves_legacy_positional_arguments(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from skill_scanner.core.analyzers.behavioral.alignment.alignment_llm_client import (
+            AlignmentLLMClient,
+        )
+
+        monkeypatch.delenv("SKILL_SCANNER_LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("SKILL_SCANNER_LLM_REASONING_EFFORT", raising=False)
+        client = AlignmentLLMClient(
+            "gpt-4o",
+            "test-key",
+            "https://llm.example/v1",
+            "2026-01-01",
+            '{"appkey":"legacy"}',
+            0.25,
+            2048,
+            45,
+        )
+
+        assert client._base_url == "https://llm.example/v1"
+        assert client._api_version == "2026-01-01"
+        assert client._llm_user == '{"appkey":"legacy"}'
+        assert client._temperature == 0.25
+        assert client._max_tokens == 2048
+        assert client._timeout == 45
+
+    def test_alignment_orchestrator_preserves_legacy_positional_arguments(self) -> None:
+        from skill_scanner.core.analyzers.behavioral.alignment.alignment_orchestrator import (
+            AlignmentOrchestrator,
+        )
+
+        with (
+            patch(
+                "skill_scanner.core.analyzers.behavioral.alignment.alignment_orchestrator.AlignmentLLMClient"
+            ) as client_type,
+            patch(
+                "skill_scanner.core.analyzers.behavioral.alignment.alignment_orchestrator.ThreatVulnerabilityClassifier"
+            ),
+        ):
+            AlignmentOrchestrator(
+                "gpt-4o",
+                "test-key",
+                "https://llm.example/v1",
+                0.25,
+                2048,
+                45,
+            )
+
+        assert client_type.call_args.kwargs["temperature"] == 0.25
+        assert client_type.call_args.kwargs["max_tokens"] == 2048
+        assert client_type.call_args.kwargs["timeout"] == 45
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "model,provider,effort,expected",

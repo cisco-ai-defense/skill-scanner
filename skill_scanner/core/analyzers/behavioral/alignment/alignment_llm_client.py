@@ -70,12 +70,13 @@ class AlignmentLLMClient:
         api_key: str | None = None,
         base_url: str | None = None,
         api_version: str | None = None,
-        provider: str | None = None,
         llm_user: str | None = None,
-        reasoning_effort: str | None = None,
         temperature: Any = _TEMPERATURE_UNSET,
         max_tokens: int = 4096,
         timeout: int = 120,
+        *,
+        provider: str | None = None,
+        reasoning_effort: str | None = None,
     ):
         """Initialize the alignment LLM client.
 
@@ -84,10 +85,7 @@ class AlignmentLLMClient:
             api_key: API key (or resolved from environment)
             base_url: Optional base URL for API
             api_version: Optional API version
-            provider: Optional provider override used for request semantics
             llm_user: Optional raw Chat Completions user field for OpenAI-compatible routes
-            reasoning_effort: Optional reasoning-depth control. When omitted,
-                resolves from ``SKILL_SCANNER_LLM_REASONING_EFFORT``.
             temperature: Temperature for responses.  Pass ``None`` to omit
                 ``temperature`` from the request - required for models that
                 reject it (Claude 4.x via Bedrock, OpenAI o1-series).
@@ -95,6 +93,9 @@ class AlignmentLLMClient:
                 (numeric value or ``"none"``).
             max_tokens: Max tokens for responses
             timeout: Request timeout in seconds
+            provider: Optional provider override used for request semantics
+            reasoning_effort: Optional reasoning-depth control. When omitted,
+                resolves from ``SKILL_SCANNER_LLM_REASONING_EFFORT``.
 
         Raises:
             ImportError: If litellm is not available
