@@ -30,6 +30,12 @@ import warnings
 from pathlib import Path
 from typing import Any, TypedDict
 
+from ...llm_reasoning import (
+    build_litellm_reasoning_params,
+    ensure_google_sdk_reasoning_supported,
+    resolve_llm_reasoning_effort,
+)
+from ...llm_token_options import resolve_llm_max_tokens
 from .llm_provider_config import ProviderConfig
 
 
@@ -83,6 +89,73 @@ def _extract_google_sdk_token_usage(response: Any) -> LLMTokenUsage:
     output_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
     total_tokens = int(getattr(usage, "total_token_count", 0) or input_tokens + output_tokens)
     return {"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens}
+
+
+class LLMResponseTruncatedError(RuntimeError):
+    """Raised when a provider reports that an LLM output hit its token limit."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        finish_reason: str,
+        model: str,
+        max_tokens: int,
+        context: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.finish_reason = finish_reason
+        self.model = model
+        self.max_tokens = max_tokens
+        self.context = context
+
+
+_TRUNCATION_FINISH_REASONS = frozenset(
+    {
+        "length",
+        "maxtoken",
+        "maxtokens",
+        "maxoutputtoken",
+        "maxoutputtokens",
+        "maxcompletiontoken",
+        "maxcompletiontokens",
+        "outputtokenlimit",
+        "tokenlimit",
+    }
+)
+
+
+def _normalize_finish_reason(reason: Any) -> str | None:
+    """Normalize string and provider-enum finish reasons for comparison."""
+    if reason is None:
+        return None
+
+    for attr in ("name", "value"):
+        attr_value = getattr(reason, attr, None)
+        if isinstance(attr_value, str):
+            reason = attr_value
+            break
+
+    if not isinstance(reason, str):
+        return None
+    return reason.strip()
+
+
+def get_truncation_finish_reason(choice: Any) -> str | None:
+    """Return the provider finish reason when *choice* hit an output limit."""
+    reasons = [getattr(choice, "finish_reason", None)]
+    provider_fields = getattr(choice, "provider_specific_fields", None)
+    if isinstance(provider_fields, dict):
+        reasons.append(provider_fields.get("native_finish_reason"))
+
+    for reason in reasons:
+        normalized = _normalize_finish_reason(reason)
+        if normalized is None:
+            continue
+        compact = "".join(character for character in normalized.lower() if character.isalnum())
+        if compact in _TRUNCATION_FINISH_REASONS:
+            return normalized
+    return None
 
 
 logger = logging.getLogger(__name__)
@@ -170,11 +243,12 @@ class LLMRequestHandler:
     def __init__(
         self,
         provider_config: ProviderConfig,
-        max_tokens: int = 8192,
+        max_tokens: int | None = None,
         temperature: Any = _TEMPERATURE_UNSET,
         max_retries: int = 3,
         rate_limit_delay: float = 2.0,
         timeout: int = 120,
+        reasoning_effort: str | None = None,
     ):
         """
         Initialize request handler.
@@ -192,13 +266,22 @@ class LLMRequestHandler:
             max_retries: Max retry attempts on rate limits
             rate_limit_delay: Base delay for exponential backoff
             timeout: Request timeout in seconds
+            reasoning_effort: Optional reasoning-depth control. Resolves from
+                ``SKILL_SCANNER_LLM_REASONING_EFFORT`` when omitted. The
+                ``disabled`` value uses provider-aware request semantics.
         """
         self.provider_config = provider_config
-        self.max_tokens = max_tokens
+        self.max_tokens = resolve_llm_max_tokens(max_tokens)
         self.temperature = _resolve_temperature(temperature, "SKILL_SCANNER_LLM_TEMPERATURE", default=0.0)
         self.max_retries = max_retries
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
+        self.reasoning_effort = resolve_llm_reasoning_effort(reasoning_effort)
+        if self.provider_config.use_google_sdk:
+            ensure_google_sdk_reasoning_supported(
+                self.reasoning_effort,
+                model=self.provider_config.model,
+            )
 
         # Load JSON schema for structured outputs
         self.response_schema = self._load_response_schema()
@@ -358,7 +441,7 @@ class LLMRequestHandler:
                     prompt_parts.append(f"User Request:\n{content}\n")
 
             combined_prompt = "\n".join(prompt_parts).strip()
-            return await self._make_google_sdk_request(combined_prompt)
+            return await self._make_google_sdk_request(combined_prompt, context)
         else:
             return await self._make_litellm_request(messages, context)
 
@@ -377,16 +460,27 @@ class LLMRequestHandler:
                 }
                 if self.temperature is not None:
                     request_params["temperature"] = self.temperature
+                request_params.update(
+                    build_litellm_reasoning_params(
+                        self.reasoning_effort,
+                        model=self.provider_config.model,
+                        provider=getattr(self.provider_config, "provider", None),
+                    )
+                )
 
                 response_format = self._build_response_format()
                 if response_format:
                     request_params["response_format"] = response_format
 
                 response = await acompletion(**request_params, drop_params=True)
-                content: str = response.choices[0].message.content or ""
                 self._last_usage = _extract_token_usage(response)
+                choice = response.choices[0]
+                self._raise_if_truncated(choice, context=context)
+                content: str = choice.message.content or ""
                 return content
 
+            except LLMResponseTruncatedError:
+                raise
             except Exception as e:
                 response_format = request_params.get("response_format")
                 if self._should_fallback_to_json_object(e, response_format):
@@ -398,8 +492,10 @@ class LLMRequestHandler:
                     retry_params = dict(request_params)
                     retry_params["response_format"] = {"type": "json_object"}
                     response = await acompletion(**retry_params, drop_params=True)
-                    content: str = response.choices[0].message.content or ""
                     self._last_usage = _extract_token_usage(response)
+                    choice = response.choices[0]
+                    self._raise_if_truncated(choice, context=context)
+                    content: str = choice.message.content or ""
                     return content
 
                 last_exception = e
@@ -430,7 +526,29 @@ class LLMRequestHandler:
             raise last_exception
         raise RuntimeError("All retries exhausted")
 
-    async def _make_google_sdk_request(self, prompt: str) -> str:
+    def _raise_if_truncated(self, choice: Any, *, context: str = "") -> None:
+        """Raise a typed, actionable error for provider-reported truncation."""
+        finish_reason = get_truncation_finish_reason(choice)
+        if finish_reason is None:
+            return
+
+        context_suffix = f" while {context}" if context else ""
+        message = (
+            f"LLM output was truncated{context_suffix}: provider finish_reason={finish_reason!r}, "
+            f"model={self.provider_config.model!r}, max_tokens={self.max_tokens}. Increase "
+            "--llm-max-tokens, the API llm_max_tokens field, or "
+            "SKILL_SCANNER_LLM_MAX_TOKENS and retry."
+        )
+        logger.error(message)
+        raise LLMResponseTruncatedError(
+            message,
+            finish_reason=finish_reason,
+            model=self.provider_config.model,
+            max_tokens=self.max_tokens,
+            context=context,
+        )
+
+    async def _make_google_sdk_request(self, prompt: str, context: str = "") -> str:
         """Make request using Google GenAI SDK (new SDK) with structured outputs."""
         last_exception = None
 
@@ -473,6 +591,13 @@ class LLMRequestHandler:
                 response = await loop.run_in_executor(None, generate)
                 self._last_usage = _extract_google_sdk_token_usage(response)
 
+                # Google exposes MAX_TOKENS on the candidate when available.
+                # Check it before reading response.text, which may itself raise
+                # for incomplete content in some SDK versions.
+                candidates = getattr(response, "candidates", None)
+                if candidates:
+                    self._raise_if_truncated(candidates[0], context=context)
+
                 # Extract text from response (new SDK format)
                 # Response has .text attribute directly
                 if hasattr(response, "text") and response.text:
@@ -492,6 +617,8 @@ class LLMRequestHandler:
                 else:
                     return str(response)
 
+            except LLMResponseTruncatedError:
+                raise
             except Exception as e:
                 last_exception = e
                 error_msg = str(e).lower()

@@ -51,6 +51,7 @@ from typing import Any
 
 from ..models import Finding, Severity, Skill
 from ..rule_registry import PackLoader
+from .llm_provider_config import ProviderConfig
 from .llm_request_handler import (
     LLMTokenUsage,
     _add_token_usage,
@@ -270,7 +271,24 @@ class Adjudicator:
         self.max_retries = max_retries
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
-        self.model = _resolve_model()
+        raw_provider = os.environ.get("SKILL_SCANNER_LLM_PROVIDER")
+        self.provider = raw_provider.strip().lower().replace("_", "-") if raw_provider else None
+        model = _resolve_model()
+        if model is None and self.provider == "orcarouter":
+            model = "orcarouter/anthropic/claude-sonnet-5"
+
+        self.provider_config: ProviderConfig | None = None
+        if model and (self.provider == "orcarouter" or model.lower().startswith("orcarouter/")):
+            self.provider_config = ProviderConfig(
+                model=model,
+                api_key=os.environ.get("SKILL_SCANNER_LLM_API_KEY"),
+                base_url=os.environ.get("SKILL_SCANNER_LLM_BASE_URL"),
+                api_version=os.environ.get("SKILL_SCANNER_LLM_API_VERSION"),
+                provider=self.provider,
+            )
+            self.model = self.provider_config.model
+        else:
+            self.model = model
         self.temperature = _resolve_temperature()
 
         # Lazy-loaded rule registry — only touched if we actually
@@ -354,6 +372,8 @@ class Adjudicator:
         }
         if self.temperature is not None:
             request["temperature"] = self.temperature
+        if self.provider_config is not None:
+            request.update(self.provider_config.get_request_params())
 
         content = ""
         last_exc: Exception | None = None

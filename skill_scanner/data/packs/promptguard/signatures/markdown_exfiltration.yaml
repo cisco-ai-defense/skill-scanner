@@ -1,5 +1,5 @@
 # PromptGuard Data Protection Pack — LLM-Context Exfiltration Signatures
-# Source: https://github.com/promptguard/promptguard
+# Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
 # Detects data exfiltration vectors specific to LLM/agent skill contexts.
 # These attacks exploit the agent's ability to render markdown, construct URLs,
 # or encode data in ways that bypass traditional network-level exfil detection.
@@ -26,7 +26,7 @@ signatures:
       to an attacker-controlled server. This is one of the most common
       LLM-specific exfiltration vectors and is not covered by Cisco's core
       network-level exfil rules.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove instructions that construct markdown images with dynamic data in
       URLs. Implement output sanitization to strip or block markdown images
@@ -50,7 +50,7 @@ signatures:
       Markdown link exfiltration pattern detected. Similar to image exfil but
       uses clickable links to smuggle data in URLs. The agent constructs a
       link whose URL encodes sensitive context data.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove instructions that embed sensitive data in markdown link URLs.
       Review all dynamically constructed URLs for data leakage.
@@ -71,7 +71,7 @@ signatures:
       HTML tag injection with dynamic URL construction. Embeds sensitive data
       in img/script/iframe src attributes to exfiltrate via HTTP requests
       triggered when the content is rendered.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Strip or escape HTML tags in skill content. Block skills that inject
       raw HTML with external resource references.
@@ -93,7 +93,7 @@ signatures:
       Data URI with executable MIME type detected. Data URIs with text/html
       or JavaScript MIME types can execute scripts or render hidden content
       to exfiltrate data without making visible network requests.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Block data URIs with executable MIME types. Only allow data:image/* URIs
       if image embedding is needed.
@@ -110,7 +110,7 @@ signatures:
       Instructions to encode sensitive data into URLs for exfiltration. The
       skill directs the agent to construct URLs containing secrets, API keys,
       or conversation context as query parameters or path segments.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove all instructions that direct the agent to embed sensitive data
       in URLs. Review the skill's data flow for unauthorized external
@@ -129,7 +129,7 @@ signatures:
       hide exfiltrated data. This technique uses zero-width Unicode characters,
       whitespace encoding, or HTML comments to create covert data channels
       invisible to human reviewers.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove all steganographic encoding instructions. Implement zero-width
       character stripping on skill output.

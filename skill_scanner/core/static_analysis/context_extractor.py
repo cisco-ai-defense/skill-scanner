@@ -52,6 +52,7 @@ class SkillScriptContext:
     has_eval_exec: bool = False
     has_credential_access: bool = False
     has_env_var_access: bool = False
+    has_env_var_harvesting: bool = False
 
     # Dangerous patterns (simple pattern matching results)
     dangerous_flows: list[dict[str, Any]] = field(default_factory=list)
@@ -80,6 +81,7 @@ class SkillScriptContext:
                 "has_eval_exec": self.has_eval_exec,
                 "has_credential_access": self.has_credential_access,
                 "has_env_var_access": self.has_env_var_access,
+                "has_env_var_harvesting": self.has_env_var_harvesting,
             },
             "dangerous_patterns": {
                 "exfiltration_chain": self.has_exfiltration_chain,
@@ -203,6 +205,10 @@ class ContextExtractor:
         # Extract credential/env access from detected sources
         has_credential_access = any(flow.parameter_name.startswith("credential_file:") for flow in script_flows)
         has_env_var_access = any(flow.parameter_name.startswith("env_var:") for flow in script_flows)
+        has_env_var_harvesting = any(
+            flow.parameter_name in {"env_var:os.environ (all)", "env_var:os.environ (assignment)"}
+            for flow in script_flows
+        )
 
         # Extract dangerous flows
         dangerous_flows = []
@@ -278,6 +284,7 @@ class ContextExtractor:
             has_eval_exec=has_eval_exec,
             has_credential_access=has_credential_access,
             has_env_var_access=has_env_var_access,
+            has_env_var_harvesting=has_env_var_harvesting,
             dangerous_flows=dangerous_flows,
             has_exfiltration_chain=has_exfiltration_chain,
             has_injection_chain=has_injection_chain,

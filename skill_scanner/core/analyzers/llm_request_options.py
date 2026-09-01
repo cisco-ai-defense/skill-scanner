@@ -22,7 +22,7 @@ import os
 
 LLM_USER_ENV_VAR = "SKILL_SCANNER_LLM_USER"
 
-_OPENAI_USER_PROVIDERS = {"openai", "openai-compatible", "custom-openai"}
+_OPENAI_COMPATIBLE_PROVIDERS = {"openai", "openai-compatible", "custom-openai"}
 _NON_OPENAI_MODEL_PREFIXES = (
     "anthropic/",
     "bedrock/",
@@ -45,6 +45,22 @@ def resolve_llm_user(llm_user: str | None = None) -> str | None:
     return raw_value
 
 
+def normalize_litellm_model_for_provider(model: str, provider: str | None) -> str:
+    """Force OpenAI-compatible routes through LiteLLM's OpenAI adapter.
+
+    A bare downstream model name can otherwise cause LiteLLM to infer a
+    different provider from the name itself. In particular, a gateway model
+    named ``claude-sonnet-5`` would be inferred as native Anthropic, defeating
+    OpenAI-style request semantics such as ``reasoning_effort='none'``.
+    """
+    provider_normalized = (provider or "").strip().lower().replace("_", "-")
+    if provider_normalized not in _OPENAI_COMPATIBLE_PROVIDERS:
+        return model
+    if model.strip().lower().startswith("openai/"):
+        return model
+    return f"openai/{model}"
+
+
 def supports_openai_user_param(model: str | None, provider: str | None = None) -> bool:
     """Return True when the LiteLLM route should receive the OpenAI `user` parameter."""
     model_lower = (model or "").strip().lower()
@@ -52,7 +68,7 @@ def supports_openai_user_param(model: str | None, provider: str | None = None) -
         return False
 
     provider_normalized = (provider or "").strip().lower().replace("_", "-")
-    if provider_normalized in _OPENAI_USER_PROVIDERS:
+    if provider_normalized in _OPENAI_COMPATIBLE_PROVIDERS:
         return True
 
     return model_lower.startswith(("azure/", "openai/", "gpt-"))

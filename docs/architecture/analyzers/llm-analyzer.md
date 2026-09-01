@@ -304,7 +304,16 @@ export AWS_REGION=us-east-1
 - Retries transient failures (`429`/timeouts/network issues) with exponential backoff
 - Supports async execution (`analyze_async`) and optional consensus passes
 - Applies prompt budget gates from policy (`llm_analysis.*`) and emits `LLM_CONTEXT_BUDGET_EXCEEDED` when content is skipped
-- Output token limit is controlled by `llm_analysis.max_output_tokens` in scan policy (default 8192), overridable via `--llm-max-tokens` CLI flag
+- Output token limit precedence is `--llm-max-tokens` / API `llm_max_tokens` → `SKILL_SCANNER_LLM_MAX_TOKENS` → `llm_analysis.max_output_tokens` in the active policy (default 8192). Every configured value must be a positive integer.
+- Provider-reported output truncation (`finish_reason=length`, `max_tokens`, or the Google `MAX_TOKENS` equivalent) fails with `LLMResponseTruncatedError` before partial JSON is parsed. The resulting `LLM_ANALYSIS_FAILED` diagnostic identifies the model, budget, finish reason, and the knobs that can raise the limit.
+- Reasoning effort is optional and unset by default, so existing provider behavior is unchanged. Configure `--llm-reasoning-effort`, API `llm_reasoning_effort`, or `SKILL_SCANNER_LLM_REASONING_EFFORT` with `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`.
+
+### Reasoning Provider Semantics
+
+- `disabled` is an explicit scanner-level semantic. Direct Anthropic, Bedrock Claude, and Vertex Claude routes receive `thinking: {type: "disabled"}`. This matters for [Claude Sonnet 5, where omitting `thinking` enables adaptive thinking](https://platform.claude.com/docs/en/docs/about-claude/models/whats-new-sonnet-5).
+- OpenAI and OpenAI-compatible gateway routes receive `reasoning_effort: "none"`. The gateway/provider remains responsible for honoring that OpenAI-style value.
+- Other effort levels use LiteLLM's normalized `reasoning_effort` field. Supported levels vary by model; `xhigh` and `max` are not universal. `drop_params=True` can remove an unsupported parameter, but cannot make a provider accept an unsupported level.
+- The scanner's optional direct Google GenAI SDK path uses different model-specific thinking controls. A configured `llm_reasoning_effort` fails with a configuration error (CLI exit 1 / API HTTP 400) rather than being silently ignored; use a LiteLLM-backed route or leave the setting unset.
 
 ## Error Handling
 
