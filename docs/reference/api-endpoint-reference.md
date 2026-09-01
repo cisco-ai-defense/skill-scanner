@@ -1,5 +1,5 @@
 <!-- GENERATED FILE. DO NOT EDIT DIRECTLY.
-     Regenerate with: uv run python scripts/generate_reference_docs.py -->
+     Regenerate with: uv run --python 3.12 python scripts/generate_reference_docs.py -->
 
 # API Endpoint Reference
 

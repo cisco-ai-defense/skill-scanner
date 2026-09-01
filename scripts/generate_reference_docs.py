@@ -32,10 +32,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_DIR = ROOT / "docs" / "reference"
+REFERENCE_PYTHON = (3, 12)
 
 GENERATED_BANNER = (
     "<!-- GENERATED FILE. DO NOT EDIT DIRECTLY.\n"
-    "     Regenerate with: uv run python scripts/generate_reference_docs.py -->\n\n"
+    "     Regenerate with: uv run --python 3.12 python scripts/generate_reference_docs.py -->\n\n"
 )
 
 
@@ -738,6 +739,15 @@ def _write_or_check(outputs: dict[Path, str], check: bool) -> int:
 
 
 def main() -> int:
+    if sys.version_info[:2] != REFERENCE_PYTHON:
+        expected = ".".join(str(part) for part in REFERENCE_PYTHON)
+        actual = f"{sys.version_info.major}.{sys.version_info.minor}"
+        print(
+            f"Reference output depends on argparse formatting; use Python {expected} (running {actual}).",
+            file=sys.stderr,
+        )
+        return 2
+
     parser = argparse.ArgumentParser(description="Generate reference docs from source of truth.")
     parser.add_argument("--check", action="store_true", help="Fail if generated outputs differ from committed files")
     args = parser.parse_args()
