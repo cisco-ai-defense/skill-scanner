@@ -79,3 +79,24 @@ def test_quoted_hash_does_not_hide_spoofed_identifier(file_type: str) -> None:
         )
 
     assert _homoglyph_findings(content, file_type)
+
+
+def test_ansi_c_hash_does_not_hide_spoofed_identifier() -> None:
+    """ANSI-C escaped quotes keep literal hashes inside the quoted token."""
+    cyrillic_a = "\u0430"
+    content = "".join(
+        f"label=$'can\\'t # literal'; p{cyrillic_a}yload_{index}=input  # комментарий\n" for index in range(5)
+    )
+
+    assert _homoglyph_findings(content, "bash")
+
+
+def test_multiline_bash_quote_hash_does_not_hide_spoofed_identifier() -> None:
+    """Bash quote state is shared across physical lines in modular checks."""
+    cyrillic_a = "\u0430"
+    content = "".join(
+        f'message_{index}="first line\n# literal"; p{cyrillic_a}yload_{index}=input  # комментарий\n'
+        for index in range(5)
+    )
+
+    assert _homoglyph_findings(content, "bash")
