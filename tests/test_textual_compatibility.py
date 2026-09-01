@@ -18,7 +18,6 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
 
 from skill_scanner.cli.policy_tui import PolicyConfigApp
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -27,9 +26,7 @@ def test_textual_dependency_accepts_supported_seven_and_eight_lines() -> None:
 
     document = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     textual = next(
-        Requirement(value)
-        for value in document["project"]["dependencies"]
-        if Requirement(value).name == "textual"
+        Requirement(value) for value in document["project"]["dependencies"] if Requirement(value).name == "textual"
     )
 
     assert Version("7.0.0") in textual.specifier
