@@ -114,7 +114,7 @@ signatures:
     severity: CRITICAL
     patterns:
       # Skill instructions to collect SSNs
-      - "(?i)(collect|extract|harvest|gather|capture|log|record|store|save|ask|request|prompt|require)\\s+.{0,40}(social\\s+security|SSN|social\\s+insurance|SIN|national\\s+insurance|NI\\s+number)"
+      - "(?i)(collect|extract|harvest|gather|capture|log|record|store|save|ask|request|prompt|require)\\s+.{0,40}(social\\s+security|\\bSSN\\b|social\\s+insurance|\\bSIN\\b|national\\s+insurance|\\bNI\\s+number\\b)"
     file_types: [markdown, text]
     description: >
       Skill instructions to collect Social Security Numbers or national ID
