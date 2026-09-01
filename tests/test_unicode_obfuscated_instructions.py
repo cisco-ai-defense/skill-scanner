@@ -54,6 +54,21 @@ def test_plain_multilingual_documentation_is_not_flagged(make_skill):
     assert not [f for f in findings if f.rule_id == "UNICODE_OBFUSCATED_INSTRUCTION"]
 
 
+def test_single_nfkc_change_near_instruction_example_is_not_flagged(make_skill):
+    skill = make_skill(
+        {
+            "SKILL.md": (
+                "---\nname: unicode-test\ndescription: Test skill\n---\n\n"
+                "Documentation may quote IGNORE PREVIOUS INSTRUCTIONS as a test string. "
+                "The word ﬁle contains one compatibility ligature."
+            )
+        }
+    )
+
+    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+    assert not [f for f in findings if f.rule_id == "UNICODE_OBFUSCATED_INSTRUCTION"]
+
+
 def test_variation_selector_yara_rule_requires_dense_repetition():
     scanner = YaraScanner()
     legitimate_ivs = "葛󠄀"

@@ -2029,11 +2029,14 @@ class StaticAnalyzer(BaseAnalyzer):
                 "variation-selectors-supplement": sum(0xE0100 <= ord(ch) <= 0xE017E for ch in content),
                 "braille-offset": sum(0x2800 <= ord(ch) <= 0x28FF for ch in content),
                 "unicode-confusable": sum(not ch.isascii() for ch in content),
+                "unicode-normalization": sum(unicodedata.normalize("NFKC", ch) != ch for ch in content),
             }
             if encoded_counts["braille-offset"] < 8 and "braille-offset" in encodings:
                 encodings.discard("braille-offset")
             if encoded_counts["unicode-confusable"] < 3 and "unicode-confusable" in encodings:
                 encodings.discard("unicode-confusable")
+            if encoded_counts["unicode-normalization"] < 3 and "unicode-normalization" in encodings:
+                encodings.discard("unicode-normalization")
             if not encodings or not _OBFUSCATED_INSTRUCTION_RE.search(decoded):
                 continue
 
