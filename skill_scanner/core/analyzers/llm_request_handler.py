@@ -30,6 +30,11 @@ import warnings
 from pathlib import Path
 from typing import Any, TypedDict
 
+from ...llm_reasoning import (
+    build_litellm_reasoning_params,
+    ensure_google_sdk_reasoning_supported,
+    resolve_llm_reasoning_effort,
+)
 from ...llm_token_options import resolve_llm_max_tokens
 from .llm_provider_config import ProviderConfig
 
@@ -243,6 +248,7 @@ class LLMRequestHandler:
         max_retries: int = 3,
         rate_limit_delay: float = 2.0,
         timeout: int = 120,
+        reasoning_effort: str | None = None,
     ):
         """
         Initialize request handler.
@@ -260,6 +266,9 @@ class LLMRequestHandler:
             max_retries: Max retry attempts on rate limits
             rate_limit_delay: Base delay for exponential backoff
             timeout: Request timeout in seconds
+            reasoning_effort: Optional reasoning-depth control. Resolves from
+                ``SKILL_SCANNER_LLM_REASONING_EFFORT`` when omitted. The
+                ``disabled`` value uses provider-aware request semantics.
         """
         self.provider_config = provider_config
         self.max_tokens = resolve_llm_max_tokens(max_tokens)
@@ -267,6 +276,12 @@ class LLMRequestHandler:
         self.max_retries = max_retries
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
+        self.reasoning_effort = resolve_llm_reasoning_effort(reasoning_effort)
+        if self.provider_config.use_google_sdk:
+            ensure_google_sdk_reasoning_supported(
+                self.reasoning_effort,
+                model=self.provider_config.model,
+            )
 
         # Load JSON schema for structured outputs
         self.response_schema = self._load_response_schema()
@@ -445,6 +460,13 @@ class LLMRequestHandler:
                 }
                 if self.temperature is not None:
                     request_params["temperature"] = self.temperature
+                request_params.update(
+                    build_litellm_reasoning_params(
+                        self.reasoning_effort,
+                        model=self.provider_config.model,
+                        provider=getattr(self.provider_config, "provider", None),
+                    )
+                )
 
                 response_format = self._build_response_format()
                 if response_format:

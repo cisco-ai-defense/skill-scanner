@@ -96,6 +96,7 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 | Google AI Studio | `gemini/gemini-2.5-flash` | Requires `[google]` extra |
 | Azure OpenAI | `azure/my-deployment-name` | Requires `[azure]` extra |
 | Ollama (local) | `ollama/llama3` | No API key needed |
+| OrcaRouter | `orcarouter/anthropic/claude-sonnet-5` | OpenAI-compatible gateway; default endpoint `https://api.orcarouter.ai/v1` (override with `SKILL_SCANNER_LLM_BASE_URL`) |
 
 For OpenAI and OpenAI-compatible custom endpoints, `SKILL_SCANNER_LLM_USER` can set the raw Chat Completions `user` request field. The value is passed through unchanged and is ignored for non-OpenAI routes.
 
@@ -113,6 +114,7 @@ For OpenAI and OpenAI-compatible custom endpoints, `SKILL_SCANNER_LLM_USER` can 
 | Google AI Studio | API key | `SKILL_SCANNER_LLM_API_KEY` (auto-sets `GEMINI_API_KEY`) |
 | Azure OpenAI | API key + endpoint | `SKILL_SCANNER_LLM_API_KEY`, `SKILL_SCANNER_LLM_BASE_URL`, `SKILL_SCANNER_LLM_API_VERSION` |
 | Ollama | None | — |
+| OrcaRouter | API key | `SKILL_SCANNER_LLM_API_KEY` |
 
 ## Related
 

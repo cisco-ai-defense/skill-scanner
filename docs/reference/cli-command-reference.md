@@ -1,5 +1,5 @@
 <!-- GENERATED FILE. DO NOT EDIT DIRECTLY.
-     Regenerate with: uv run python scripts/generate_reference_docs.py -->
+     Regenerate with: uv run --python 3.12 python scripts/generate_reference_docs.py -->
 
 # CLI Command Reference
 
@@ -33,6 +33,8 @@ Flags shared by `scan` and `scan-all`:
 | `--use-behavioral` | off | Enable the behavioral analyzer |
 | `--use-virustotal` | off | Enable VirusTotal hash lookups |
 | `--use-aidefense` | off | Enable Cisco AI Defense analyzer |
+| `--use-osv` | off | Enable OSV.dev dependency vulnerability scanning (no API key; requires network) |
+| `--llm-reasoning-effort LEVEL` | provider default | Optional reasoning depth: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. |
 | `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |
 | `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |
 | `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |
@@ -108,9 +110,9 @@ usage: cli.py scan [-h] [--format {summary,json,markdown,table,sarif,html}]
                    [--aidefense-api-url AIDEFENSE_API_URL] [--use-osv]
                    [--llm-provider {anthropic,openai,openai-compatible}]
                    [--llm-consensus-runs N] [--llm-max-tokens N]
-                   [--use-trigger] [--enable-meta] [--adjudicate]
-                   [--policy PRESET_OR_PATH] [--lenient]
-                   [--skill-file FILENAME] [--custom-rules PATH]
+                   [--llm-reasoning-effort LEVEL] [--use-trigger]
+                   [--enable-meta] [--adjudicate] [--policy PRESET_OR_PATH]
+                   [--lenient] [--skill-file FILENAME] [--custom-rules PATH]
                    [--rule-packs PACK [PACK ...]] [--taxonomy PATH]
                    [--threat-mapping PATH]
                    skill_directory
@@ -173,6 +175,10 @@ options:
                         cost)
   --llm-max-tokens N    Maximum output tokens for LLM responses (default:
                         8192). Raise if scans produce truncated JSON.
+  --llm-reasoning-effort LEVEL
+                        Optional LLM reasoning effort: disabled, minimal, low,
+                        medium, high, xhigh, or max. Unset preserves the
+                        provider default.
   --use-trigger         Enable trigger specificity analysis
   --enable-meta         Enable meta-analysis FP filtering (2+ analyzers)
   --adjudicate          Enable per-finding adjudicator: for each deterministic
@@ -231,7 +237,8 @@ usage: cli.py scan-all [-h] [--recursive] [--check-overlap]
                        [--aidefense-api-url AIDEFENSE_API_URL] [--use-osv]
                        [--llm-provider {anthropic,openai,openai-compatible}]
                        [--llm-consensus-runs N] [--llm-max-tokens N]
-                       [--use-trigger] [--enable-meta] [--adjudicate]
+                       [--llm-reasoning-effort LEVEL] [--use-trigger]
+                       [--enable-meta] [--adjudicate]
                        [--policy PRESET_OR_PATH] [--lenient]
                        [--skill-file FILENAME] [--custom-rules PATH]
                        [--rule-packs PACK [PACK ...]] [--taxonomy PATH]
@@ -298,6 +305,10 @@ options:
                         cost)
   --llm-max-tokens N    Maximum output tokens for LLM responses (default:
                         8192). Raise if scans produce truncated JSON.
+  --llm-reasoning-effort LEVEL
+                        Optional LLM reasoning effort: disabled, minimal, low,
+                        medium, high, xhigh, or max. Unset preserves the
+                        provider default.
   --use-trigger         Enable trigger specificity analysis
   --enable-meta         Enable meta-analysis FP filtering (2+ analyzers)
   --adjudicate          Enable per-finding adjudicator: for each deterministic
@@ -357,7 +368,8 @@ usage: cli.py scan-repo [-h] [--recursive | --no-recursive | -r]
                         [--aidefense-api-url AIDEFENSE_API_URL] [--use-osv]
                         [--llm-provider {anthropic,openai,openai-compatible}]
                         [--llm-consensus-runs N] [--llm-max-tokens N]
-                        [--use-trigger] [--enable-meta] [--adjudicate]
+                        [--llm-reasoning-effort LEVEL] [--use-trigger]
+                        [--enable-meta] [--adjudicate]
                         [--policy PRESET_OR_PATH] [--lenient]
                         [--skill-file FILENAME] [--custom-rules PATH]
                         [--rule-packs PACK [PACK ...]] [--taxonomy PATH]
@@ -427,6 +439,10 @@ options:
                         cost)
   --llm-max-tokens N    Maximum output tokens for LLM responses (default:
                         8192). Raise if scans produce truncated JSON.
+  --llm-reasoning-effort LEVEL
+                        Optional LLM reasoning effort: disabled, minimal, low,
+                        medium, high, xhigh, or max. Unset preserves the
+                        provider default.
   --use-trigger         Enable trigger specificity analysis
   --enable-meta         Enable meta-analysis FP filtering (2+ analyzers)
   --adjudicate          Enable per-finding adjudicator: for each deterministic
