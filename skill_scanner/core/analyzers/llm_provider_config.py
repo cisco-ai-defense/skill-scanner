@@ -179,7 +179,9 @@ class ProviderConfig:
     def _normalize_orcarouter_model_name(self, model: str) -> str:
         """Force LiteLLM's OpenAI adapter for OrcaRouter models (OpenAI-compatible)."""
         if model.lower().startswith("orcarouter/"):
-            model = model[len("orcarouter/"):]
+            model = model[len("orcarouter/") :]
+        if model.lower().startswith("openai/"):
+            return model
         return f"openai/{model}"
 
     def _resolve_api_key(self, api_key: str | None) -> str | None:

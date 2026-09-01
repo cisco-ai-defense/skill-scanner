@@ -338,17 +338,20 @@ class MetaAnalyzer(BaseAnalyzer):
 
         # Use SKILL_SCANNER_* env vars only (no provider-specific fallbacks)
         # Priority: meta-specific > scanner-wide
+        raw_provider = os.getenv("SKILL_SCANNER_LLM_PROVIDER")
+        self.provider = raw_provider.strip().lower().replace("_", "-") if raw_provider else None
         self.api_key = (
             api_key
             or os.getenv("SKILL_SCANNER_META_LLM_API_KEY")  # Meta-specific
             or os.getenv("SKILL_SCANNER_LLM_API_KEY")  # Scanner-wide
         )
-        self.model = (
-            model
-            or os.getenv("SKILL_SCANNER_META_LLM_MODEL")  # Meta-specific
-            or os.getenv("SKILL_SCANNER_LLM_MODEL")  # Scanner-wide
-            or "claude-3-5-sonnet-20241022"
-        )
+        self.model = model or os.getenv("SKILL_SCANNER_META_LLM_MODEL") or os.getenv("SKILL_SCANNER_LLM_MODEL")
+        if self.model is None:
+            self.model = (
+                "orcarouter/anthropic/claude-sonnet-5"
+                if self.provider == "orcarouter"
+                else "claude-3-5-sonnet-20241022"
+            )
         self.base_url = (
             base_url
             or os.getenv("SKILL_SCANNER_META_LLM_BASE_URL")  # Meta-specific
@@ -359,14 +362,34 @@ class MetaAnalyzer(BaseAnalyzer):
             or os.getenv("SKILL_SCANNER_META_LLM_API_VERSION")  # Meta-specific
             or os.getenv("SKILL_SCANNER_LLM_API_VERSION")  # Scanner-wide
         )
-        self.provider = os.getenv("SKILL_SCANNER_LLM_PROVIDER")
         self.llm_user = resolve_llm_user(llm_user)
 
         # AWS Bedrock settings
         self.aws_region = aws_region
         self.aws_profile = aws_profile
         self.aws_session_token = aws_session_token
-        self.is_bedrock = self.model and "bedrock/" in self.model
+
+        # OrcaRouter uses LiteLLM's OpenAI adapter. Reuse the primary
+        # analyzer's normalization and request-parameter handling so the meta
+        # analyzer receives the same key and default endpoint.
+        self.provider_config: ProviderConfig | None = None
+        if self.provider == "orcarouter" or self.model.lower().startswith("orcarouter/"):
+            self.provider_config = ProviderConfig(
+                model=self.model,
+                api_key=self.api_key,
+                base_url=self.base_url,
+                api_version=self.api_version,
+                provider=self.provider,
+                aws_region=aws_region,
+                aws_profile=aws_profile,
+                aws_session_token=aws_session_token,
+                llm_user=self.llm_user,
+            )
+            self.model = self.provider_config.model
+            self.api_key = self.provider_config.api_key
+            self.provider = self.provider_config.provider
+
+        self.is_bedrock = "bedrock/" in self.model
 
         # Validate configuration
         if not self.api_key and not self.is_bedrock:
@@ -1092,14 +1115,15 @@ Respond with a JSON object following the schema in the system prompt."""
         if self.temperature is not None:
             api_params["temperature"] = self.temperature
 
-        if self.api_key:
-            api_params["api_key"] = self.api_key
-
-        if self.base_url:
-            api_params["api_base"] = self.base_url
-
-        if self.api_version:
-            api_params["api_version"] = self.api_version
+        if self.provider_config is not None:
+            api_params.update(self.provider_config.get_request_params())
+        else:
+            if self.api_key:
+                api_params["api_key"] = self.api_key
+            if self.base_url:
+                api_params["api_base"] = self.base_url
+            if self.api_version:
+                api_params["api_version"] = self.api_version
 
         if self.llm_user and supports_openai_user_param(self.model, self.provider):
             api_params["user"] = self.llm_user

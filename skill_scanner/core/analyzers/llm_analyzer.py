@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import os
 import re
 from enum import Enum
 from pathlib import Path
@@ -202,16 +203,17 @@ class LLMAnalyzer(BaseAnalyzer):
 
             self.llm_policy = LLMAnalysisPolicy()
 
+        provider_value = provider if provider is not None else os.getenv("SKILL_SCANNER_LLM_PROVIDER")
         provider_str: str | None = None
-        if provider is not None:
-            if isinstance(provider, LLMProvider):
-                provider_str = provider.value
+        if provider_value is not None:
+            if isinstance(provider_value, LLMProvider):
+                provider_str = provider_value.value
             else:
-                provider_str = LLMProvider.normalize(str(provider))
+                provider_str = LLMProvider.normalize(str(provider_value))
 
-            if not isinstance(provider, LLMProvider) and not LLMProvider.is_valid_provider(provider_str):
+            if not isinstance(provider_value, LLMProvider) and not LLMProvider.is_valid_provider(provider_str):
                 raise ValueError(
-                    f"Invalid provider '{provider}'. Valid providers: {', '.join([p.value for p in LLMProvider])}"
+                    f"Invalid provider '{provider_value}'. Valid providers: {', '.join([p.value for p in LLMProvider])}"
                 )
 
         # Handle provider selection: if provider is specified, map to default model

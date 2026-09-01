@@ -795,15 +795,15 @@ signatures:
     severity: CRITICAL
     patterns:
       - >-
-        (?i)"ANTHROPIC_BASE_URL"\s*:\s*"https?://(?!(?:api\.anthropic\.com|[a-z0-9\-]+\.googleapis\.com|(?:bedrock|bedrock-runtime|bedrock-agent|bedrock-agent-runtime)\.[a-z0-9\-]+\.amazonaws\.com|localhost|127\.0\.0\.1|0\.0\.0\.0|ai-gateway\.vercel\.sh|gateway\.portkey\.ai|api\.openrouter\.ai|api\.orcarouter\.ai|[a-z0-9\-]+\.helicone\.ai)(?:[:/"]|$))[^"]+"
+        (?i)"ANTHROPIC_BASE_URL"\s*:\s*"(?!https://api\.orcarouter\.ai(?:[:/"]|$))https?://(?!(?:api\.anthropic\.com|[a-z0-9\-]+\.googleapis\.com|(?:bedrock|bedrock-runtime|bedrock-agent|bedrock-agent-runtime)\.[a-z0-9\-]+\.amazonaws\.com|localhost|127\.0\.0\.1|0\.0\.0\.0|ai-gateway\.vercel\.sh|gateway\.portkey\.ai|api\.openrouter\.ai|[a-z0-9\-]+\.helicone\.ai)(?:[:/"]|$))[^"]+"
       - >-
-        (?i)\bANTHROPIC_BASE_URL\s*=\s*["\x27]?https?://(?!(?:api\.anthropic\.com|[a-z0-9\-]+\.googleapis\.com|(?:bedrock|bedrock-runtime|bedrock-agent|bedrock-agent-runtime)\.[a-z0-9\-]+\.amazonaws\.com|localhost|127\.0\.0\.1|0\.0\.0\.0|ai-gateway\.vercel\.sh|gateway\.portkey\.ai|api\.openrouter\.ai|api\.orcarouter\.ai|[a-z0-9\-]+\.helicone\.ai)(?:[:/\s"\x27]|$))[^\s"\x27]+
+        (?i)\bANTHROPIC_BASE_URL\s*=\s*["\x27]?(?!https://api\.orcarouter\.ai(?:[:/\s"\x27]|$))https?://(?!(?:api\.anthropic\.com|[a-z0-9\-]+\.googleapis\.com|(?:bedrock|bedrock-runtime|bedrock-agent|bedrock-agent-runtime)\.[a-z0-9\-]+\.amazonaws\.com|localhost|127\.0\.0\.1|0\.0\.0\.0|ai-gateway\.vercel\.sh|gateway\.portkey\.ai|api\.openrouter\.ai|[a-z0-9\-]+\.helicone\.ai)(?:[:/\s"\x27]|$))[^\s"\x27]+
       - >-
         (?i)"ANTHROPIC_BASE_URL"\s*:\s*"https?://(?!(?:127\.|10\.|0\.0\.0\.0|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.))(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?![\d.])
       - >-
         (?i)"ANTHROPIC_BASE_URL"\s*:\s*"http://(?!(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?:[:/"]|$))[^"]+"
       - >-
-        (?i)\.claude[/\\]settings(?:\.local)?\.json[\s\S]{0,400}"ANTHROPIC_BASE_URL"\s*:\s*"https?://(?!(?:api\.anthropic\.com|[a-z0-9\-]+\.googleapis\.com|(?:bedrock|bedrock-runtime|bedrock-agent|bedrock-agent-runtime)\.[a-z0-9\-]+\.amazonaws\.com|localhost|127\.0\.0\.1)(?:[:/"]|$))
+        (?i)\.claude[/\\]settings(?:\.local)?\.json[\s\S]{0,400}"ANTHROPIC_BASE_URL"\s*:\s*"(?!https://api\.orcarouter\.ai(?:[:/"]|$))https?://(?!(?:api\.anthropic\.com|[a-z0-9\-]+\.googleapis\.com|(?:bedrock|bedrock-runtime|bedrock-agent|bedrock-agent-runtime)\.[a-z0-9\-]+\.amazonaws\.com|localhost|127\.0\.0\.1)(?:[:/"]|$))
       - >-
         (?i)(?:pre[_\s\-]?trust|before\s+(?:the\s+)?trust\s+(?:dialog|prompt))[^\n]{0,160}(?:ANTHROPIC_BASE_URL|api\s+request|authorization\s+header|api\s+key)
       - >-
