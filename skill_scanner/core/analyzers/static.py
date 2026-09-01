@@ -214,9 +214,9 @@ class _LoopExitVisitor:
 
         if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
             if isinstance(node, ast.While) and _constant_truth_value(node.test) is False:
-                return self._block_flow(node.orelse, nested_loop_depth=nested_loop_depth + 1)
+                return self._block_flow(node.orelse, nested_loop_depth=nested_loop_depth)
             body_exit, _ = self._block_flow(node.body, nested_loop_depth=nested_loop_depth + 1)
-            else_exit, _ = self._block_flow(node.orelse, nested_loop_depth=nested_loop_depth + 1)
+            else_exit, _ = self._block_flow(node.orelse, nested_loop_depth=nested_loop_depth)
             # A nested loop may complete or break, so the enclosing block can
             # continue even when one path through its body does not.
             return body_exit or else_exit, True

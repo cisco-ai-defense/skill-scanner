@@ -173,6 +173,34 @@ def poll(client):
     assert "RESOURCE_ABUSE_INFINITE_LOOP" not in _rule_ids(findings)
 
 
+def test_nested_for_else_break_exits_enclosing_infinite_loop() -> None:
+    code = """\
+def consume_all(items):
+    while True:
+        for item in items:
+            consume(item)
+        else:
+            break
+"""
+
+    findings = StaticAnalyzer(use_yara=False).analyze(_python_skill(code))
+    assert "RESOURCE_ABUSE_INFINITE_LOOP" not in _rule_ids(findings)
+
+
+def test_false_nested_while_else_break_exits_enclosing_infinite_loop() -> None:
+    code = """\
+def finish_immediately():
+    while True:
+        while False:
+            perform_work()
+        else:
+            break
+"""
+
+    findings = StaticAnalyzer(use_yara=False).analyze(_python_skill(code))
+    assert "RESOURCE_ABUSE_INFINITE_LOOP" not in _rule_ids(findings)
+
+
 def test_targeted_environment_lookups_are_not_harvesting() -> None:
     code = """\
 import os
