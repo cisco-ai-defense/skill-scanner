@@ -93,6 +93,7 @@ curl -X POST http://localhost:8000/scan-upload \
 | `use_osv` | `bool` |
 | `enable_meta` | `bool` |
 | `llm_consensus_runs` | `int` |
+| `llm_max_tokens` | `int | None` |
 
 ### `ScanResponse`
 
@@ -135,6 +136,7 @@ curl -X POST http://localhost:8000/scan-upload \
 | `use_osv` | `bool` |
 | `enable_meta` | `bool` |
 | `llm_consensus_runs` | `int` |
+| `llm_max_tokens` | `int | None` |
 
 ## Notes
 

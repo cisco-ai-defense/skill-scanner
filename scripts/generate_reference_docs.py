@@ -361,6 +361,7 @@ def _collect_env_variables() -> dict[str, set[str]]:
 
     candidates = [
         ROOT / "skill_scanner" / "config" / "config.py",
+        ROOT / "skill_scanner" / "llm_token_options.py",
         ROOT / "skill_scanner" / "cli" / "cli.py",
         ROOT / "skill_scanner" / "api" / "router.py",
         ROOT / "skill_scanner" / "core" / "analyzers" / "llm_analyzer.py",
@@ -402,11 +403,18 @@ def _describe_env_var(var: str) -> str:
         "SKILL_SCANNER_LLM_BASE_URL": "Optional custom endpoint base URL for provider routing.",
         "SKILL_SCANNER_LLM_API_VERSION": "Optional API version for providers that require one.",
         "SKILL_SCANNER_LLM_USER": "Optional raw Chat Completions user field for OpenAI-compatible routes.",
+        "SKILL_SCANNER_LLM_MAX_TOKENS": (
+            "Positive integer output-token budget. Overrides the active policy's "
+            "`llm_analysis.max_output_tokens` value."
+        ),
         "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT": "Skip json_schema and start in plain JSON mode for incompatible proxies.",
         "SKILL_SCANNER_META_LLM_API_KEY": "Meta-analyzer API key override.",
         "SKILL_SCANNER_META_LLM_MODEL": "Meta-analyzer model override.",
         "SKILL_SCANNER_META_LLM_BASE_URL": "Meta-analyzer base URL override.",
         "SKILL_SCANNER_META_LLM_API_VERSION": "Meta-analyzer API version override.",
+        "SKILL_SCANNER_META_LLM_MAX_TOKENS": (
+            "Positive integer meta-analysis output budget; falls back to `SKILL_SCANNER_LLM_MAX_TOKENS`."
+        ),
         "VIRUSTOTAL_API_KEY": "VirusTotal analyzer API key.",
         "VIRUSTOTAL_UPLOAD_FILES": "Enable upload mode for unknown binaries.",
         "AI_DEFENSE_API_KEY": "Cisco AI Defense analyzer API key.",
@@ -443,6 +451,7 @@ _ENV_VAR_GROUPS: list[tuple[str, str, list[str]]] = [
             "SKILL_SCANNER_LLM_BASE_URL",
             "SKILL_SCANNER_LLM_API_VERSION",
             "SKILL_SCANNER_LLM_USER",
+            "SKILL_SCANNER_LLM_MAX_TOKENS",
             "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT",
         ],
     ),
@@ -454,6 +463,7 @@ _ENV_VAR_GROUPS: list[tuple[str, str, list[str]]] = [
             "SKILL_SCANNER_META_LLM_MODEL",
             "SKILL_SCANNER_META_LLM_BASE_URL",
             "SKILL_SCANNER_META_LLM_API_VERSION",
+            "SKILL_SCANNER_META_LLM_MAX_TOKENS",
         ],
     ),
     (
@@ -504,11 +514,13 @@ _ENV_VAR_EXAMPLES: dict[str, str] = {
     "SKILL_SCANNER_LLM_BASE_URL": "https://api.openai.com/v1",
     "SKILL_SCANNER_LLM_API_VERSION": "2024-02-15-preview",
     "SKILL_SCANNER_LLM_USER": '{"appkey":"your-appkey"}',
+    "SKILL_SCANNER_LLM_MAX_TOKENS": "16384",
     "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT": "true",
     "SKILL_SCANNER_META_LLM_API_KEY": "(falls back to LLM_API_KEY)",
     "SKILL_SCANNER_META_LLM_MODEL": "(falls back to LLM_MODEL)",
     "SKILL_SCANNER_META_LLM_BASE_URL": "(falls back to LLM_BASE_URL)",
     "SKILL_SCANNER_META_LLM_API_VERSION": "(falls back to LLM_API_VERSION)",
+    "SKILL_SCANNER_META_LLM_MAX_TOKENS": "32768",
     "AWS_REGION": "us-east-1",
     "AWS_PROFILE": "my-bedrock-profile",
     "AWS_SESSION_TOKEN": "(temporary STS token)",
@@ -575,6 +587,19 @@ def _render_configuration_reference() -> str:
             example_cell = f"`{example}`" if example else ""
             sections.append(f"| `{var}` | {desc}{req} | {example_cell} |")
         sections.append("")
+
+        if group_title == "Cisco AI Defense":
+            sections.extend(
+                [
+                    "## OSV Dependency Scanning",
+                    "",
+                    "The OSV analyzer queries [OSV.dev](https://osv.dev) for known-vulnerable pinned "
+                    "dependencies. It is an external service that requires **no API key**, only outbound "
+                    "network access to `api.osv.dev`. Enable it with `--use-osv` (or `use_osv` on the API). "
+                    "Skip it in air-gapped environments — with no network it fails open and reports nothing.",
+                    "",
+                ]
+            )
 
     ungrouped = {v: s for v, s in env_map.items() if v not in grouped_vars}
     if ungrouped:

@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ...llm_token_options import resolve_llm_max_tokens
 from ...threats.threats import ThreatMapping
 from ..models import Finding, ScanResult, Severity, Skill, ThreatCategory
 from .base import BaseAnalyzer
@@ -51,11 +52,13 @@ from .llm_provider_config import ProviderConfig
 from .llm_request_handler import (
     _TEMPERATURE_UNSET,
     LLMRequestHandler,
+    LLMResponseTruncatedError,
     LLMTokenUsage,
     _add_token_usage,
     _empty_token_usage,
     _extract_token_usage,
     _resolve_temperature,
+    get_truncation_finish_reason,
 )
 from .llm_request_options import resolve_llm_user, supports_openai_user_param
 
@@ -247,7 +250,7 @@ class MetaAnalysisResult:
         return findings
 
 
-class MetaAnalysisTruncatedError(RuntimeError):
+class MetaAnalysisTruncatedError(LLMResponseTruncatedError):
     """Raised when the provider reports an output-token truncation."""
 
 
@@ -278,7 +281,7 @@ class MetaAnalyzer(BaseAnalyzer):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        max_tokens: int = 8192,
+        max_tokens: int | None = None,
         temperature: Any = _TEMPERATURE_UNSET,
         max_retries: int = 3,
         timeout: int = 180,
@@ -298,7 +301,9 @@ class MetaAnalyzer(BaseAnalyzer):
         Args:
             model: Model identifier (defaults to claude-3-5-sonnet-20241022)
             api_key: API key (if None, reads from environment)
-            max_tokens: Maximum tokens for response
+            max_tokens: Maximum tokens for response. When omitted, resolves
+                from ``SKILL_SCANNER_META_LLM_MAX_TOKENS``, then
+                ``SKILL_SCANNER_LLM_MAX_TOKENS``, and finally 8192.
             temperature: Sampling temperature (low for consistency).  Pass
                 ``None`` to omit the parameter from the request entirely —
                 required for models that reject ``temperature`` (e.g. Claude
@@ -383,7 +388,7 @@ class MetaAnalyzer(BaseAnalyzer):
                     "Set SKILL_SCANNER_META_LLM_API_VERSION environment variable."
                 )
 
-        self.max_tokens = max_tokens
+        self.max_tokens = resolve_llm_max_tokens(max_tokens, meta=True)
         # Resolve temperature: explicit arg > meta-specific env > scanner-wide
         # env > default.  ``None`` here means "omit ``temperature`` from the
         # outgoing request" (Claude 4.x on Bedrock, OpenAI o1-series).
@@ -1110,9 +1115,20 @@ Respond with a JSON object following the schema in the system prompt."""
                 response = await acompletion(**api_params, drop_params=True)
                 _add_token_usage(self._llm_usage, _extract_token_usage(response))
                 choice = response.choices[0]
-                if self._is_truncated_choice(choice):
+                if finish_reason := get_truncation_finish_reason(choice):
                     raise MetaAnalysisTruncatedError(
-                        "LLM response reached max_tokens before completing the meta-analysis batch"
+                        (
+                            "Meta-analysis output was truncated: provider "
+                            f"finish_reason={finish_reason!r}, model={self.model!r}, "
+                            f"max_tokens={self.max_tokens}. Increase --llm-max-tokens, "
+                            "the API llm_max_tokens field, "
+                            "SKILL_SCANNER_META_LLM_MAX_TOKENS, or "
+                            "SKILL_SCANNER_LLM_MAX_TOKENS and retry."
+                        ),
+                        finish_reason=finish_reason,
+                        model=self.model,
+                        max_tokens=self.max_tokens,
+                        context="meta-analysis batch",
                     )
                 content: str = choice.message.content or ""
                 return content
@@ -1156,23 +1172,7 @@ Respond with a JSON object following the schema in the system prompt."""
     @staticmethod
     def _is_truncated_choice(choice: Any) -> bool:
         """Return whether a normalized or native finish reason hit an output limit."""
-        reasons = [getattr(choice, "finish_reason", None)]
-        provider_fields = getattr(choice, "provider_specific_fields", None)
-        if isinstance(provider_fields, dict):
-            reasons.append(provider_fields.get("native_finish_reason"))
-
-        # LiteLLM maps Anthropic/Bedrock ``max_tokens`` and Gemini/Vertex
-        # ``MAX_TOKENS`` to ``length``. It also retains the original value in
-        # provider_specific_fields, and OpenAI-compatible routes may return a
-        # raw max-output-token variant without normalization.
-        for reason in reasons:
-            reason = getattr(reason, "value", reason)
-            if not isinstance(reason, str):
-                continue
-            compact = reason.strip().lower().replace("-", "_").replace("_", "")
-            if compact in {"length", "maxtoken", "maxtokens", "maxoutputtoken", "maxoutputtokens"}:
-                return True
-        return False
+        return get_truncation_finish_reason(choice) is not None
 
     def _parse_response(
         self,

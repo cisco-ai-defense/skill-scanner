@@ -40,6 +40,7 @@ from ..core.reporters.sarif_reporter import SARIFReporter
 from ..core.reporters.table_reporter import TableReporter
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
+from ..llm_token_options import resolve_llm_max_tokens
 
 # Optional LLM analyzer (needed only for LLM_AVAILABLE check)
 LLMAnalyzer: type | None
@@ -75,6 +76,14 @@ logger = logging.getLogger("skill_scanner.cli")
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+
+def _positive_int(value: str) -> int:
+    """Argparse type that rejects zero and negative integer values."""
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
 
 
 def _load_policy(args: argparse.Namespace) -> ScanPolicy:
@@ -192,11 +201,12 @@ def _build_meta_analyzer(
             api_version=meta_api_version,
             policy=policy,
         )
-        effective_max_tokens = (
-            max_tokens if max_tokens is not None else (policy.llm_analysis.max_output_tokens if policy else None)
+        effective_max_tokens = resolve_llm_max_tokens(
+            max_tokens,
+            meta=True,
+            default=policy.llm_analysis.max_output_tokens if policy else 8192,
         )
-        if effective_max_tokens is not None:
-            kwargs["max_tokens"] = effective_max_tokens
+        kwargs["max_tokens"] = effective_max_tokens
         meta = MetaAnalyzer(**kwargs)
         status("Using Meta-Analyzer for false positive filtering and finding prioritization")
         return meta
@@ -969,7 +979,7 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--llm-max-tokens",
-        type=int,
+        type=_positive_int,
         default=None,
         metavar="N",
         help="Maximum output tokens for LLM responses (default: 8192). Raise if scans produce truncated JSON.",

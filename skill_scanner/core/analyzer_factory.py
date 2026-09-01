@@ -31,6 +31,7 @@ import logging
 import os
 from pathlib import Path
 
+from ..llm_token_options import resolve_llm_max_tokens
 from .analyzers.base import BaseAnalyzer
 from .analyzers.bytecode_analyzer import BytecodeAnalyzer
 from .analyzers.pipeline_analyzer import PipelineAnalyzer
@@ -117,8 +118,9 @@ def build_analyzers(
         extra_rules_dirs: Additional signature rule directories from
             community/external packs (e.g. ATR).
         llm_max_tokens: Override the default ``max_tokens`` for the
-            :class:`LLMAnalyzer`.  When *None* the analyzer's own
-            default (8192) is used.
+            :class:`LLMAnalyzer`. When *None*,
+            ``SKILL_SCANNER_LLM_MAX_TOKENS`` takes precedence over the
+            policy's ``llm_analysis.max_output_tokens`` value.
         llm_user: Optional raw Chat Completions user field for
             OpenAI-compatible LLM routes.
 
@@ -153,11 +155,11 @@ def build_analyzers(
             api_version = llm_api_version or os.getenv("SKILL_SCANNER_LLM_API_VERSION")
             provider = llm_provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER")
             extra_kwargs: dict = {}
-            effective_max_tokens = (
-                llm_max_tokens if llm_max_tokens is not None else policy.llm_analysis.max_output_tokens
+            effective_max_tokens = resolve_llm_max_tokens(
+                llm_max_tokens,
+                default=policy.llm_analysis.max_output_tokens,
             )
-            if effective_max_tokens is not None:
-                extra_kwargs["max_tokens"] = effective_max_tokens
+            extra_kwargs["max_tokens"] = effective_max_tokens
             llm = LLMAnalyzer(
                 model=model,
                 api_key=key,

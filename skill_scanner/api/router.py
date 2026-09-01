@@ -47,6 +47,7 @@ from ..core.analyzer_factory import build_analyzers
 from ..core.exceptions import SkillLoadError
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
+from ..llm_token_options import resolve_llm_max_tokens
 
 logger = logging.getLogger("skill_scanner.api")
 
@@ -209,6 +210,11 @@ class ScanRequest(BaseModel):
     use_osv: bool = Field(False, description="Enable OSV.dev dependency vulnerability scanning")
     enable_meta: bool = Field(False, description="Enable meta-analysis for false positive filtering")
     llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
+    llm_max_tokens: int | None = Field(
+        None,
+        gt=0,
+        description="Maximum output tokens for LLM and meta-analysis responses",
+    )
 
 
 class ScanResponse(BaseModel):
@@ -255,6 +261,11 @@ class BatchScanRequest(BaseModel):
     use_osv: bool = False
     enable_meta: bool = Field(False, description="Enable meta-analysis")
     llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
+    llm_max_tokens: int | None = Field(
+        None,
+        gt=0,
+        description="Maximum output tokens for LLM and meta-analysis responses",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +312,7 @@ def _build_analyzers(
     use_trigger: bool = False,
     use_osv: bool = False,
     llm_consensus_runs: int = 1,
+    llm_max_tokens: int | None = None,
 ):
     """Build the analyzer list — delegates to the centralized factory."""
     return build_analyzers(
@@ -318,6 +330,7 @@ def _build_analyzers(
         use_trigger=use_trigger,
         use_osv=use_osv,
         llm_consensus_runs=llm_consensus_runs,
+        llm_max_tokens=llm_max_tokens,
     )
 
 
@@ -431,6 +444,7 @@ async def scan_skill(
             use_trigger=request.use_trigger,
             use_osv=request.use_osv,
             llm_consensus_runs=request.llm_consensus_runs,
+            llm_max_tokens=request.llm_max_tokens,
         )
         scanner = SkillScanner(analyzers=analyzers, policy=policy)
         return scanner.scan_skill(skill_dir)
@@ -451,7 +465,14 @@ async def scan_skill(
             try:
                 from ..core.loader import SkillLoader
 
-                meta_analyzer = MetaAnalyzer(policy=policy)
+                meta_analyzer = MetaAnalyzer(
+                    policy=policy,
+                    max_tokens=resolve_llm_max_tokens(
+                        request.llm_max_tokens,
+                        meta=True,
+                        default=policy.llm_analysis.max_output_tokens if policy else 8192,
+                    ),
+                )
                 loader = SkillLoader()
                 skill = loader.load_skill(skill_dir)
 
@@ -513,6 +534,11 @@ async def scan_uploaded_skill(
     use_osv: bool = Form(False, description="Enable OSV.dev dependency vulnerability scanning"),
     enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
     llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
+    llm_max_tokens: int | None = Form(
+        None,
+        gt=0,
+        description="Maximum output tokens for LLM and meta-analysis responses",
+    ),
 ):
     """Scan an uploaded skill package (ZIP file)."""
     if not file.filename or not file.filename.endswith(".zip"):
@@ -607,6 +633,7 @@ async def scan_uploaded_skill(
             use_osv=use_osv,
             enable_meta=enable_meta,
             llm_consensus_runs=llm_consensus_runs,
+            llm_max_tokens=llm_max_tokens,
         )
 
         return await scan_skill(request, vt_api_key=vt_api_key, aidefense_api_key=aidefense_api_key)
@@ -693,6 +720,7 @@ def run_batch_scan(
             use_trigger=request.use_trigger,
             use_osv=request.use_osv,
             llm_consensus_runs=request.llm_consensus_runs,
+            llm_max_tokens=request.llm_max_tokens,
         )
 
         scanner = SkillScanner(analyzers=analyzers, policy=policy)
@@ -712,7 +740,14 @@ def run_batch_scan(
             import asyncio
 
             async def _run_batch_meta(scanner_ref, report_ref, policy_ref):
-                meta_analyzer = MetaAnalyzer(policy=policy_ref)
+                meta_analyzer = MetaAnalyzer(
+                    policy=policy_ref,
+                    max_tokens=resolve_llm_max_tokens(
+                        request.llm_max_tokens,
+                        meta=True,
+                        default=policy_ref.llm_analysis.max_output_tokens if policy_ref else 8192,
+                    ),
+                )
                 for result in report_ref.scan_results:
                     if result.findings:
                         try:

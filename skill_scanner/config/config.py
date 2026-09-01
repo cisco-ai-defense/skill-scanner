@@ -24,6 +24,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..llm_token_options import resolve_llm_max_tokens
+
 
 @dataclass
 class Config:
@@ -39,7 +41,7 @@ class Config:
     llm_base_url: str | None = None
     llm_api_version: str | None = None
     llm_user: str | None = None
-    llm_max_tokens: int = 8192
+    llm_max_tokens: int | None = None
     llm_temperature: float = 0.0
     llm_rate_limit_delay: float = 2.0
     llm_max_retries: int = 3
@@ -82,6 +84,11 @@ class Config:
         if self.llm_model == "claude-3-5-sonnet-20241022":
             if env_model := os.getenv("SKILL_SCANNER_LLM_MODEL"):
                 self.llm_model = env_model
+
+        # Explicit constructor value > scanner-wide environment > default.
+        # Malformed/non-positive environment values are rejected instead of
+        # silently producing provider errors or zero-length responses.
+        self.llm_max_tokens = resolve_llm_max_tokens(self.llm_max_tokens)
 
         # Optional raw Chat Completions user field for OpenAI-compatible routes
         if self.llm_user is not None and not self.llm_user.strip():
