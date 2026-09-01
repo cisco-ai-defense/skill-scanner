@@ -681,12 +681,16 @@ Respond with JSON containing your analysis following the required schema."""
                 details.append(f"ignored {invalid_entries} invalid or duplicate classification(s)")
             if missing:
                 details.append(f"retained {len(missing)} unclassified finding(s)")
-            result.analysis_warnings.append(
+            # Classification completeness is the primary batch integrity
+            # warning; keep it ahead of assessment-schema warnings that may
+            # already have been recorded while parsing the same response.
+            result.analysis_warnings.insert(
+                0,
                 self._batch_warning(
                     code="META_BATCH_INCOMPLETE",
                     message="; ".join(details),
                     indices=expected_indices,
-                )
+                ),
             )
             logger.error(
                 "Meta-analysis batch %d-%d was incomplete: %s",
@@ -1204,6 +1208,14 @@ Respond with a JSON object following the schema in the system prompt."""
             if not isinstance(json_data.get("overall_risk_assessment", {}), dict):
                 raise ValueError("overall_risk_assessment must be a JSON object")
 
+            raw_assessment = json_data.get("overall_risk_assessment", {})
+            missing_assessment_fields = [
+                field_name for field_name in ("risk_level", "skill_verdict") if field_name not in raw_assessment
+            ]
+            normalized_assessment = self._normalize_overall_risk_assessment(raw_assessment)
+            for field_name in missing_assessment_fields:
+                normalized_assessment[field_name] = "UNKNOWN"
+
             result = MetaAnalysisResult(
                 validated_findings=json_data.get("validated_findings", []),
                 false_positives=json_data.get("false_positives", []),
@@ -1211,10 +1223,21 @@ Respond with a JSON object following the schema in the system prompt."""
                 priority_order=json_data.get("priority_order", []),
                 correlations=json_data.get("correlations", []),
                 recommendations=json_data.get("recommendations", []),
-                overall_risk_assessment=self._normalize_overall_risk_assessment(
-                    json_data.get("overall_risk_assessment", {})
-                ),
+                overall_risk_assessment=normalized_assessment,
             )
+
+            if missing_assessment_fields:
+                missing_fields = ", ".join(missing_assessment_fields)
+                result.analysis_warnings.append(
+                    self._batch_warning(
+                        code="META_RESPONSE_SCHEMA_INCOMPLETE",
+                        message=(
+                            "Meta-analysis response omitted required overall_risk_assessment "
+                            f"field(s): {missing_fields}; missing values were set to UNKNOWN."
+                        ),
+                        indices=original_indices,
+                    )
+                )
 
             # Enrich validated findings with original data
             self._enrich_findings(result, original_findings, original_indices=original_indices)
