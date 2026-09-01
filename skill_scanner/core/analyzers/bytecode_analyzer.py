@@ -14,25 +14,20 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Bytecode integrity verifier.
+"""Bytecode integrity verifier.
 
-Compares .pyc files against their corresponding .py source files using
-Python's standard `ast` module. Detects tampering where bytecode was modified
-after compilation (cf. xz-utils backdoor pattern).
-
-Dependencies: Python stdlib only (ast, marshal, struct).
-Optional: decompyle3 or uncompyle6 for decompiling bytecode without source.
+Compares ``.pyc`` files against their corresponding ``.py`` source files by
+recompiling the visible source and comparing normalized code objects.  This
+keeps integrity verification in the Python standard library and avoids
+depending on decompilers that routinely lag new Python bytecode versions.
 """
 
-import ast
 import hashlib
 import importlib.util
-import io
 import logging
 import marshal
 import struct
-import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -167,33 +162,58 @@ class BytecodeAnalyzer(BaseAnalyzer):
         return None
 
     def _compare_bytecode_to_source(self, pyc_file: SkillFile, py_file: SkillFile) -> list[Finding]:
-        """Compare a .pyc file against its .py source using ast.dump()."""
+        """Compare a ``.pyc`` file against visible source code.
+
+        The source is compiled at each supported optimization level and its
+        semantic code-object fingerprint is compared with the marshalled code
+        object in the bytecode file.  Filename and line-table metadata are
+        intentionally excluded so harmless path, comment, and whitespace
+        differences do not look like tampering.
+        """
         findings: list[Finding] = []
 
-        # Parse the .py source into AST
         source_content = py_file.read_content()
-        if not source_content:
-            return findings
+        if not source_content and py_file.size_bytes:
+            return [
+                self._analysis_unavailable_finding(
+                    pyc_file,
+                    py_file,
+                    "matching source file is non-empty but could not be read as text",
+                )
+            ]
 
         try:
-            source_ast = ast.parse(source_content, filename=py_file.relative_path)
-            source_dump = ast.dump(source_ast, annotate_fields=True, include_attributes=False)
-        except SyntaxError as e:
-            logger.debug("Cannot parse %s: %s", py_file.relative_path, e)
-            return findings
+            pyc_code = self._load_pyc_code(pyc_file.path)
+            pyc_fingerprint = self._code_fingerprint(pyc_code)
+        except Exception as e:
+            logger.debug("Cannot verify bytecode %s: %s", pyc_file.relative_path, e)
+            return [self._analysis_unavailable_finding(pyc_file, py_file, str(e))]
 
-        # Try to load and decompile the .pyc file
-        pyc_ast = self._load_pyc_ast(pyc_file.path)
-        if pyc_ast is None:
-            # Can't decompile - without decompyle3/uncompyle6 this always fires.
-            # Don't emit a finding here; the PYCACHE_FILES_DETECTED and
-            # BYTECODE_NO_SOURCE rules already cover the important cases.
-            # Only BYTECODE_SOURCE_MISMATCH (actual tampering) is worth flagging.
-            return findings
+        source_fingerprints: list[tuple[Any, ...]] = []
+        compile_errors: list[str] = []
 
-        pyc_dump = ast.dump(pyc_ast, annotate_fields=True, include_attributes=False)
+        # ``py_compile.compile(..., cfile=...)`` can produce optimized code
+        # without an ``.opt-N`` filename, so try every interpreter-supported
+        # optimization level rather than trusting the filename alone.
+        for optimize in (0, 1, 2):
+            try:
+                source_code = compile(
+                    source_content,
+                    py_file.relative_path,
+                    "exec",
+                    dont_inherit=True,
+                    optimize=optimize,
+                )
+            except (SyntaxError, ValueError, TypeError) as e:
+                compile_errors.append(str(e))
+                continue
+            source_fingerprints.append(self._code_fingerprint(source_code))
 
-        if source_dump != pyc_dump:
+        if not source_fingerprints:
+            reason = compile_errors[0] if compile_errors else "matching source could not be compiled"
+            return [self._analysis_unavailable_finding(pyc_file, py_file, reason)]
+
+        if pyc_fingerprint not in source_fingerprints:
             findings.append(
                 Finding(
                     id=self._generate_finding_id("BYTECODE_SOURCE_MISMATCH", pyc_file.relative_path),
@@ -218,64 +238,91 @@ class BytecodeAnalyzer(BaseAnalyzer):
 
         return findings
 
-    def _load_pyc_ast(self, pyc_path: Path) -> ast.AST | None:
-        """
-        Try to reconstruct an AST from a .pyc file.
+    @staticmethod
+    def _load_pyc_code(pyc_path: Path) -> types.CodeType:
+        """Load a current-interpreter code object from a validated PYC file."""
+        with open(pyc_path, "rb") as f:
+            header = f.read(16)
+            if len(header) != 16:
+                raise ValueError("truncated Python bytecode header")
 
-        Strategy:
-        1. Use marshal to load the code object
-        2. Use dis to get bytecode instructions
-        3. Try decompyle3/uncompyle6 if available
-        4. Fall back to recompiling source and comparing code objects
+            magic = header[:4]
+            if magic != importlib.util.MAGIC_NUMBER:
+                raise ValueError(
+                    "bytecode targets a different Python version "
+                    f"(magic {magic.hex()}, expected {importlib.util.MAGIC_NUMBER.hex()})"
+                )
 
-        Returns AST if successful, None otherwise.
-        """
-        try:
-            with open(pyc_path, "rb") as f:
-                # Read .pyc header
-                magic = f.read(4)
-                flags = struct.unpack("<I", f.read(4))[0]
+            flags = struct.unpack("<I", header[4:8])[0]
+            if flags & ~0x03:
+                raise ValueError(f"bytecode header contains unsupported flags 0x{flags:x}")
 
-                # Check for PEP 552 hash-based validation
-                if flags & 0x1:
-                    # Hash-based .pyc
-                    f.read(8)  # source hash
-                else:
-                    # Timestamp-based .pyc
-                    f.read(4)  # timestamp
-                    f.read(4)  # source size
+            code = marshal.load(f)
 
-                # Load the code object
-                code = marshal.load(f)
+        if not isinstance(code, types.CodeType):
+            raise TypeError("bytecode payload is not a Python code object")
+        return code
 
-            # Try to decompile using decompyle3
-            try:
-                import decompyle3
+    @classmethod
+    def _code_fingerprint(cls, code: types.CodeType) -> tuple[Any, ...]:
+        """Return execution-relevant code metadata, excluding location data."""
+        return (
+            code.co_name,
+            getattr(code, "co_qualname", code.co_name),
+            code.co_argcount,
+            getattr(code, "co_posonlyargcount", 0),
+            code.co_kwonlyargcount,
+            code.co_nlocals,
+            code.co_stacksize,
+            code.co_flags,
+            code.co_code,
+            tuple(cls._constant_fingerprint(value) for value in code.co_consts),
+            code.co_names,
+            code.co_varnames,
+            code.co_freevars,
+            code.co_cellvars,
+            getattr(code, "co_exceptiontable", b""),
+        )
 
-                output = io.StringIO()
-                decompyle3.deparse_code2str(code, out=output)
-                decompiled_source = output.getvalue()
-                return ast.parse(decompiled_source)
-            except ImportError:
-                pass
-            except Exception:
-                pass
+    @classmethod
+    def _constant_fingerprint(cls, value: Any) -> tuple[Any, ...]:
+        """Normalize constants without relying on code-object identity."""
+        if isinstance(value, types.CodeType):
+            return ("code", cls._code_fingerprint(value))
+        if isinstance(value, tuple):
+            return ("tuple", tuple(cls._constant_fingerprint(item) for item in value))
+        if isinstance(value, frozenset):
+            items = [cls._constant_fingerprint(item) for item in value]
+            return ("frozenset", tuple(sorted(items, key=repr)))
+        if isinstance(value, float):
+            return ("float", value.hex())
+        if isinstance(value, complex):
+            return ("complex", value.real.hex(), value.imag.hex())
+        return (type(value).__module__, type(value).__qualname__, value)
 
-            # Try uncompyle6
-            try:
-                import uncompyle6
-
-                output = io.StringIO()
-                uncompyle6.deparse_code2str(code, out=output)
-                decompiled_source = output.getvalue()
-                return ast.parse(decompiled_source)
-            except ImportError:
-                pass
-            except Exception:
-                pass
-
-            return None
-
-        except Exception as e:
-            logger.debug("Failed to load .pyc %s: %s", pyc_path, e)
-            return None
+    def _analysis_unavailable_finding(
+        self,
+        pyc_file: SkillFile,
+        py_file: SkillFile,
+        reason: str,
+    ) -> Finding:
+        """Create a blocking finding when bytecode integrity cannot be proven."""
+        return Finding(
+            id=self._generate_finding_id("BYTECODE_ANALYSIS_UNAVAILABLE", pyc_file.relative_path),
+            rule_id="BYTECODE_ANALYSIS_UNAVAILABLE",
+            category=ThreatCategory.OBFUSCATION,
+            severity=Severity.HIGH,
+            title="Python bytecode integrity could not be verified",
+            description=(
+                f"Bytecode file {pyc_file.relative_path} has matching source "
+                f"{py_file.relative_path}, but the scanner could not compare them: {reason}. "
+                "Unverifiable bytecode can conceal code that is absent from visible source."
+            ),
+            file_path=pyc_file.relative_path,
+            remediation=(
+                "Remove pre-compiled bytecode and regenerate it from the reviewed source "
+                "using the target Python interpreter."
+            ),
+            analyzer=self.name,
+            metadata={"source_file": py_file.relative_path, "reason": reason},
+        )

@@ -1008,3 +1008,10 @@ rules:
     knobs:
       enabled: true
     description: "Bytecode does not match source code"
+
+  BYTECODE_ANALYSIS_UNAVAILABLE:
+    source: python
+    analyzer: bytecode
+    knobs:
+      enabled: true
+    description: "Bytecode integrity could not be verified against matching source"
