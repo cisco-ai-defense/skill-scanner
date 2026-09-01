@@ -102,6 +102,8 @@ def get_file_type(file_path: Path) -> str:
         ".dylib": "binary",
         ".dll": "binary",
         ".bin": "binary",
+        ".pkl": "binary",
+        ".pickle": "binary",
     }
 
     return type_mapping.get(suffix, "other")

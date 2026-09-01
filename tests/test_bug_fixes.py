@@ -484,3 +484,10 @@ class TestGetFileType:
         from skill_scanner.utils.file_utils import get_file_type
 
         assert get_file_type(Path("data.xyz")) == "other"
+
+    @pytest.mark.parametrize("filename", ["config.pkl", "config.pickle"])
+    def test_get_file_type_detects_pickle_as_binary(self, filename):
+        """Pickle files must be classified as binary before content loading."""
+        from skill_scanner.utils.file_utils import get_file_type
+
+        assert get_file_type(Path(filename)) == "binary"

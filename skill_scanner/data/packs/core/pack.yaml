@@ -608,6 +608,13 @@ rules:
       enabled: true
     description: "Binary file detected in skill package"
 
+  PICKLE_FILE_DETECTED:
+    source: python
+    analyzer: static
+    knobs:
+      enabled: true
+    description: "Executable Python pickle detected"
+
   PYCACHE_FILES_DETECTED:
     source: python
     analyzer: static
