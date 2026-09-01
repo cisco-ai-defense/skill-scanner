@@ -380,24 +380,77 @@ def _collect_env_variables() -> dict[str, set[str]]:
         ROOT / "skill_scanner" / "threats" / "threats.py",
     ]
 
-    env_get_re = re.compile(r'os\.(?:getenv|environ\.get)\(\s*"([A-Z][A-Z0-9_]+)"')
-    env_const_re = re.compile(r'^(_?[A-Z][A-Z0-9_]+)\s*(?::\s*str\s*)?=\s*"([A-Z][A-Z0-9_]+)"', re.MULTILINE)
     for path in candidates:
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8")
         rel = str(path.relative_to(ROOT))
-        for var in env_get_re.findall(text):
+        for var in _extract_python_env_variables(text):
             add(var, rel)
-        for const_name, var_value in env_const_re.findall(text):
-            if re.search(rf"os\.(?:getenv|environ\.get)\(\s*{const_name}", text):
-                add(var_value, rel)
 
     token_options_source = "skill_scanner/llm_token_options.py"
     for var in ("SKILL_SCANNER_LLM_MAX_TOKENS", "SKILL_SCANNER_META_LLM_MAX_TOKENS"):
         add(var, token_options_source)
 
     return dict(sorted(env_map.items()))
+
+
+def _extract_python_env_variables(source: str) -> set[str]:
+    """Return environment names used by executable ``os`` lookup calls.
+
+    Parsing the syntax tree avoids treating examples in comments or docstrings
+    as supported configuration. Module constants passed to the lookup are
+    resolved so helpers such as ``os.getenv(LLM_REASONING_EFFORT_ENV_VAR)``
+    remain discoverable.
+    """
+    tree = ast.parse(source)
+    constants: dict[str, str] = {}
+    env_name_re = re.compile(r"[A-Z][A-Z0-9_]+")
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    constants[target.id] = node.value.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            constants[node.target.id] = node.value.value
+
+    variables: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+
+        function = node.func
+        is_getenv = (
+            isinstance(function, ast.Attribute)
+            and function.attr == "getenv"
+            and isinstance(function.value, ast.Name)
+            and function.value.id == "os"
+        )
+        is_environ_get = (
+            isinstance(function, ast.Attribute)
+            and function.attr == "get"
+            and isinstance(function.value, ast.Attribute)
+            and function.value.attr == "environ"
+            and isinstance(function.value.value, ast.Name)
+            and function.value.value.id == "os"
+        )
+        if not (is_getenv or is_environ_get):
+            continue
+
+        argument = node.args[0]
+        value = argument.value if isinstance(argument, ast.Constant) and isinstance(argument.value, str) else None
+        if isinstance(argument, ast.Name):
+            value = constants.get(argument.id)
+        if value and env_name_re.fullmatch(value):
+            variables.add(value)
+
+    return variables
 
 
 def _describe_env_var(var: str) -> str:
