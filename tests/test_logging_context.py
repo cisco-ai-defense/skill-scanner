@@ -42,7 +42,7 @@ def test_scan_context_prefixes_package_logs_and_restores(caplog) -> None:
     assert contextual.skill_path == "/skills/alpha"
     assert contextual.scan_id == "scan-1"
     assert outside.getMessage() == "Outside scan"
-    assert outside.skill_name is None
+    assert getattr(outside, "skill_name", None) is None
 
 
 def test_nested_context_inherits_request_id_and_restores_parent() -> None:
@@ -96,6 +96,42 @@ def test_context_preserves_printable_unicode(caplog) -> None:
     record = caplog.records[-1]
     assert record.skill_name == "café-技能"
     assert record.getMessage() == "[skill=café-技能] ready"
+
+
+def test_context_percent_signs_preserve_parameterized_logging(caplog) -> None:
+    """Untrusted percent signs do not become message-format placeholders."""
+    logger = logging.getLogger("skill_scanner.tests.percent_context")
+
+    with caplog.at_level(logging.WARNING, logger=logger.name):
+        with scan_log_context(skill_name="progress%s", skill_path=r"C:\Users\%USERNAME%\demo"):
+            logger.warning("failed for %s", "payload")
+
+    record = caplog.records[-1]
+    assert record.skill_name == "progress%s"
+    assert record.skill_path == r"C:\\Users\\%USERNAME%\\demo"
+    assert record.getMessage() == (r"[skill=progress%s path=C:\\Users\\%USERNAME%\\demo] failed for payload")
+
+
+def test_context_factory_does_not_reserve_caller_extra_fields() -> None:
+    """Installing the factory does not break conventional caller-supplied fields."""
+    with scan_log_context(skill_name="factory-install"):
+        pass
+
+    logger = logging.getLogger("skill_scanner.tests.caller_extra")
+    record = logger.makeRecord(
+        logger.name,
+        logging.WARNING,
+        __file__,
+        1,
+        "caller-owned",
+        (),
+        None,
+        extra={"skill_name": "caller", "skill_path": "/caller", "scan_id": "caller-id"},
+    )
+
+    assert record.skill_name == "caller"
+    assert record.skill_path == "/caller"
+    assert record.scan_id == "caller-id"
 
 
 def test_parallel_thread_contexts_do_not_bleed() -> None:

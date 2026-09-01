@@ -75,9 +75,14 @@ def _install_context_record_factory() -> None:
             safe_skill_name = _safe_label(context.skill_name) if context and context.skill_name is not None else None
             safe_skill_path = _safe_label(context.skill_path) if context and context.skill_path is not None else None
             safe_scan_id = _safe_label(context.scan_id) if context and context.scan_id is not None else None
-            record.skill_name = safe_skill_name
-            record.skill_path = safe_skill_path
-            record.scan_id = safe_scan_id
+            # Logger.makeRecord applies caller-supplied ``extra`` only after the
+            # record factory returns.  Do not reserve these public names when no
+            # scan is active, or otherwise-valid ``extra={"skill_name": ...}``
+            # calls would fail with a KeyError.
+            if context:
+                record.skill_name = safe_skill_name
+                record.skill_path = safe_skill_path
+                record.scan_id = safe_scan_id
 
             if (
                 context
@@ -92,7 +97,13 @@ def _install_context_record_factory() -> None:
                 if safe_scan_id:
                     labels.append(f"scan_id={safe_scan_id}")
                 if labels:
-                    record.msg = f"[{' '.join(labels)}] {record.msg}"
+                    prefix = " ".join(labels)
+                    if record.args:
+                        # LogRecord.getMessage() applies %-formatting to the
+                        # entire message.  Escape untrusted percent signs in the
+                        # injected prefix while leaving structured fields intact.
+                        prefix = prefix.replace("%", "%%")
+                    record.msg = f"[{prefix}] {record.msg}"
                     record._skill_scanner_context_applied = True
 
             return record
