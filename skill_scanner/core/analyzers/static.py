@@ -82,6 +82,11 @@ _GLOB_PATTERNS = [
     re.compile(r"\.rglob\("),
     re.compile(r"fnmatch\."),
 ]
+_SENSITIVE_PATH_LITERAL_RE = re.compile(
+    r"(?i)(?:\.aws[/\\]credentials|\.ssh[/\\](?:id_[a-z0-9_]+|authorized_keys)|"
+    r"\.(?:npmrc|gitconfig|gnupg|netrc|pgpass)|(?:^|[/\\])credentials?(?:[/\\]|$)|"
+    r"(?:^|[/\\])secrets?(?:[/\\]|$))"
+)
 
 _COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//|/\*|\*|<!--)")
 _NEGATED_EXFILTRATION_RE = re.compile(
@@ -481,6 +486,7 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(self._check_manifest(skill))
         findings.extend(self._scan_instruction_body(skill))
         findings.extend(self._scan_scripts(skill))
+        findings.extend(self._check_dynamic_sensitive_file_access(skill))
         findings.extend(self._check_consistency(skill))
         findings.extend(self._check_dependency_pinning(skill))
         findings.extend(self._scan_config_files(skill))
@@ -769,6 +775,103 @@ class StaticAnalyzer(BaseAnalyzer):
                     analyzer="static",
                 )
             )
+
+        return findings
+
+    @staticmethod
+    def _attribute_path(node: ast.AST) -> str | None:
+        """Return a dotted attribute path for a simple AST expression."""
+        parts: list[str] = []
+        current = node
+        while isinstance(current, ast.Attribute):
+            parts.append(current.attr)
+            current = current.value
+        if isinstance(current, ast.Name):
+            parts.append(current.id)
+            return ".".join(reversed(parts))
+        return None
+
+    def _check_dynamic_sensitive_file_access(self, skill: Skill) -> list[Finding]:
+        """Detect glob/open flows that enumerate credential files indirectly.
+
+        Regex signatures cannot connect a sensitive path literal in an
+        ``os.path.join`` list to a later ``glob.glob(pattern)`` or ``open(path)``.
+        This conservative AST check only reports a file when the same lexical scope
+        contains both a credential-like path literal and a glob operation.
+        """
+        findings: list[Finding] = []
+
+        for sf in skill.get_scripts():
+            if sf.file_type != "python":
+                continue
+            content = sf.read_content()
+            try:
+                tree = ast.parse(content, filename=sf.relative_path)
+            except (SyntaxError, ValueError):
+                continue
+
+            def _owned_nodes(scope: ast.AST) -> list[ast.AST]:
+                """Return nodes owned by one scope, excluding nested scopes."""
+                owned: list[ast.AST] = []
+                stack = list(ast.iter_child_nodes(scope))
+                while stack:
+                    node = stack.pop()
+                    owned.append(node)
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+                        continue
+                    stack.extend(ast.iter_child_nodes(node))
+                return owned
+
+            scope_types = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+            scopes: list[ast.AST] = [tree, *(node for node in ast.walk(tree) if isinstance(node, scope_types))]
+            for scope in scopes:
+                scope_nodes = _owned_nodes(scope)
+                has_sensitive_literal = any(
+                    isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)
+                    and _SENSITIVE_PATH_LITERAL_RE.search(node.value)
+                    for node in scope_nodes
+                )
+                if not has_sensitive_literal:
+                    continue
+
+                for node in scope_nodes:
+                    if not isinstance(node, ast.Call):
+                        continue
+                    call_path = self._attribute_path(node.func)
+                    attribute_name = node.func.attr if isinstance(node.func, ast.Attribute) else None
+                    is_glob_call = call_path in {
+                        "glob.glob",
+                        "glob.iglob",
+                        "pathlib.Path.glob",
+                        "pathlib.Path.rglob",
+                        "Path.glob",
+                        "Path.rglob",
+                    } or attribute_name in {"glob", "iglob", "rglob"}
+                    if not is_glob_call:
+                        continue
+                    line = getattr(node, "lineno", 1)
+                    findings.append(
+                        Finding(
+                            id=self._generate_finding_id("DATA_EXFIL_SENSITIVE_FILES", f"{sf.relative_path}:{line}"),
+                            rule_id="DATA_EXFIL_SENSITIVE_FILES",
+                            category=ThreatCategory.DATA_EXFILTRATION,
+                            severity=Severity.HIGH,
+                            title="Dynamic enumeration of sensitive files",
+                            description=(
+                                f"{sf.relative_path}:{line} enumerates files with a glob operation in a scope "
+                                "that also constructs credential-like paths. Dynamic path construction can hide "
+                                "credential harvesting from literal-pattern checks."
+                            ),
+                            file_path=sf.relative_path,
+                            line_number=line,
+                            snippet=ast.get_source_segment(content, node),
+                            remediation="Do not enumerate credential or configuration files from a skill; use explicit, non-sensitive inputs.",
+                            analyzer="static",
+                            metadata={"detection_method": "ast_sensitive_path_and_glob"},
+                        )
+                    )
+                    break
 
         return findings
 
@@ -1775,6 +1878,26 @@ class StaticAnalyzer(BaseAnalyzer):
 
         return findings
 
+    @staticmethod
+    def _content_uses_external_socket_api(content: str) -> bool:
+        """Return whether socket calls in *content* can contact a remote host."""
+        external_indicators = (
+            "socket.connect",
+            "socket.create_connection",
+            "socket.getaddrinfo",
+            "socket.gethostbyname_ex",
+            "socket.getnameinfo",
+        )
+        if any(indicator in content for indicator in external_indicators):
+            return True
+
+        return bool(
+            re.search(
+                r"socket\.gethostbyname\s*\((?!\s*socket\.gethostname\s*\(\s*\)\s*\))",
+                content,
+            )
+        )
+
     def _skill_uses_network(self, skill: Skill) -> bool:
         """Check if skill code uses network libraries for EXTERNAL communication."""
         external_network_indicators = [
@@ -1787,7 +1910,6 @@ class StaticAnalyzer(BaseAnalyzer):
             "import aiohttp",
         ]
 
-        socket_external_indicators = ["socket.connect", "socket.create_connection"]
         socket_localhost_indicators = ["localhost", "127.0.0.1", "::1"]
 
         for skill_file in skill.get_scripts():
@@ -1797,7 +1919,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 return True
 
             if "import socket" in content:
-                has_socket_connect = any(ind in content for ind in socket_external_indicators)
+                has_socket_connect = self._content_uses_external_socket_api(content)
                 is_localhost_only = any(ind in content for ind in socket_localhost_indicators)
 
                 if has_socket_connect and not is_localhost_only:
@@ -2017,13 +2139,13 @@ class StaticAnalyzer(BaseAnalyzer):
             "http.client",
             "httpx.",
             "aiohttp.",
-            "socket.connect",
-            "socket.create_connection",
         ]
 
         for skill_file in skill.get_scripts():
             content = skill_file.read_content()
-            if any(indicator in content for indicator in network_indicators):
+            if any(indicator in content for indicator in network_indicators) or self._content_uses_external_socket_api(
+                content
+            ):
                 return True
         return False
 
