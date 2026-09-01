@@ -105,6 +105,8 @@ pip install cisco-ai-skill-scanner[all]
 # For LLM analyzer and Meta-analyzer
 export SKILL_SCANNER_LLM_API_KEY="your_api_key"
 export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"
+# Optional: disabled, minimal, low, medium, high, xhigh, or max
+export SKILL_SCANNER_LLM_REASONING_EFFORT="low"
 
 # For VirusTotal binary scanning
 export VIRUSTOTAL_API_KEY="your_virustotal_api_key"
@@ -254,6 +256,7 @@ if not result.is_safe:
 | `--llm-provider` | LLM provider for CLI routing: `anthropic` or `openai` |
 | `--llm-consensus-runs N` | Run LLM analysis `N` times, keep majority-agreed findings, and retain their highest observed severity |
 | `--llm-max-tokens N` | Maximum output tokens for LLM responses (default: 8192) |
+| `--llm-reasoning-effort LEVEL` | Optional reasoning depth (`disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`); unset preserves the provider default |
 | `--use-virustotal` | Enable VirusTotal binary scanner |
 | `--vt-api-key KEY` | Provide VirusTotal API key directly (optional) |
 | `--vt-upload-files` | Upload unknown binaries to VirusTotal (optional) |

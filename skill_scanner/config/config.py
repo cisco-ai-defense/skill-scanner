@@ -24,6 +24,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..llm_reasoning import resolve_llm_reasoning_effort
 from ..llm_token_options import resolve_llm_max_tokens
 
 
@@ -46,6 +47,7 @@ class Config:
     llm_rate_limit_delay: float = 2.0
     llm_max_retries: int = 3
     llm_timeout: int = 120
+    llm_reasoning_effort: str | None = None
 
     # AWS Bedrock Configuration
     aws_region_name: str = "us-east-1"
@@ -89,6 +91,10 @@ class Config:
         # Malformed/non-positive environment values are rejected instead of
         # silently producing provider errors or zero-length responses.
         self.llm_max_tokens = resolve_llm_max_tokens(self.llm_max_tokens)
+
+        # Explicit constructor value > scanner-wide environment > unset.
+        # Unset deliberately emits no reasoning/thinking request fields.
+        self.llm_reasoning_effort = resolve_llm_reasoning_effort(self.llm_reasoning_effort)
 
         # Optional raw Chat Completions user field for OpenAI-compatible routes
         if self.llm_user is not None and not self.llm_user.strip():

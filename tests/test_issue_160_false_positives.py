@@ -107,6 +107,59 @@ def spin():
     assert "RESOURCE_ABUSE_INFINITE_LOOP" in _rule_ids(findings)
 
 
+def test_unreachable_break_does_not_disguise_infinite_loop() -> None:
+    code = """\
+def spin():
+    while True:
+        if False:
+            break
+        perform_work()
+"""
+
+    findings = StaticAnalyzer(use_yara=False).analyze(_python_skill(code))
+    assert "RESOURCE_ABUSE_INFINITE_LOOP" in _rule_ids(findings)
+
+
+def test_false_literal_comparison_does_not_disguise_infinite_loop() -> None:
+    code = """\
+def spin():
+    while True:
+        if 1 == 2:
+            return
+        perform_work()
+"""
+
+    findings = StaticAnalyzer(use_yara=False).analyze(_python_skill(code))
+    assert "RESOURCE_ABUSE_INFINITE_LOOP" in _rule_ids(findings)
+
+
+def test_exit_after_unconditional_continue_is_unreachable() -> None:
+    code = """\
+def spin():
+    while True:
+        perform_work()
+        continue
+        break
+"""
+
+    findings = StaticAnalyzer(use_yara=False).analyze(_python_skill(code))
+    assert "RESOURCE_ABUSE_INFINITE_LOOP" in _rule_ids(findings)
+
+
+def test_finally_continue_overrides_break() -> None:
+    code = """\
+def spin():
+    while True:
+        try:
+            break
+        finally:
+            continue
+"""
+
+    findings = StaticAnalyzer(use_yara=False).analyze(_python_skill(code))
+    assert "RESOURCE_ABUSE_INFINITE_LOOP" in _rule_ids(findings)
+
+
 def test_loop_with_raise_exit_is_not_reported_as_infinite() -> None:
     code = """\
 def poll(client):
@@ -114,6 +167,34 @@ def poll(client):
         response = client.poll()
         if response.failed:
             raise RuntimeError("polling failed")
+"""
+
+    findings = StaticAnalyzer(use_yara=False).analyze(_python_skill(code))
+    assert "RESOURCE_ABUSE_INFINITE_LOOP" not in _rule_ids(findings)
+
+
+def test_nested_for_else_break_exits_enclosing_infinite_loop() -> None:
+    code = """\
+def consume_all(items):
+    while True:
+        for item in items:
+            consume(item)
+        else:
+            break
+"""
+
+    findings = StaticAnalyzer(use_yara=False).analyze(_python_skill(code))
+    assert "RESOURCE_ABUSE_INFINITE_LOOP" not in _rule_ids(findings)
+
+
+def test_false_nested_while_else_break_exits_enclosing_infinite_loop() -> None:
+    code = """\
+def finish_immediately():
+    while True:
+        while False:
+            perform_work()
+        else:
+            break
 """
 
     findings = StaticAnalyzer(use_yara=False).analyze(_python_skill(code))
