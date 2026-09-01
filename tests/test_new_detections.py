@@ -1108,6 +1108,45 @@ class TestHomoglyphDetection:
 
         assert [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
 
+    def test_bash_ansi_c_hash_does_not_hide_spoofed_identifiers(self, tmp_path):
+        """An escaped quote in ANSI-C syntax must not expose its literal hash."""
+        cyrillic_a = "\u0430"
+        code = "".join(
+            f"label=$'can\\'t # literal'; p{cyrillic_a}yload_{index}=input  # комментарий\n" for index in range(5)
+        )
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun payload.sh.\n",
+                "payload.sh": code,
+            },
+        )
+
+        policy = ScanPolicy.default()
+        policy.analysis_thresholds.homoglyph_filter_math_context = False
+        findings = StaticAnalyzer(use_yara=False, policy=policy).analyze(skill)
+
+        assert [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
+
+    def test_bash_multiline_quote_hash_does_not_hide_spoofed_identifiers(self, tmp_path):
+        """Quote state carries across Bash physical lines before comment stripping."""
+        cyrillic_a = "\u0430"
+        code = "".join(
+            f'message_{index}="first line\n# literal"; p{cyrillic_a}yload_{index}=input  # комментарий\n'
+            for index in range(5)
+        )
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun payload.sh.\n",
+                "payload.sh": code,
+            },
+        )
+
+        findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+        assert [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
+
     def test_math_formula_unicode_not_flagged(self, tmp_path):
         """Scientific formulas using Greek/math symbols should not be treated as spoofing."""
         skill = _quick_skill(
