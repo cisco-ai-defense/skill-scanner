@@ -170,6 +170,46 @@ class TestLLMAnalyzerInitialization:
         assert analyzer.model == "openai/enterprise-model"
         assert analyzer.provider_config.is_openai_compatible
 
+    def test_orcarouter_model_prefix_routes_via_openai_adapter(self):
+        """OrcaRouter model prefix routes through the OpenAI LiteLLM adapter with the default endpoint."""
+        analyzer = LLMAnalyzer(
+            model="orcarouter/anthropic/claude-sonnet-5",
+            api_key="test-key",
+        )
+
+        assert analyzer.model == "openai/anthropic/claude-sonnet-5"
+        assert analyzer.provider_config.is_orcarouter
+        assert analyzer.provider_config.get_request_params() == {
+            "api_key": "test-key",
+            "api_base": "https://api.orcarouter.ai/v1",
+        }
+
+    def test_orcarouter_provider_override_uses_default_endpoint(self):
+        """The explicit orcarouter provider override maps to the OpenAI adapter."""
+        analyzer = LLMAnalyzer(
+            model="anthropic/claude-sonnet-5",
+            provider="orcarouter",
+            api_key="test-key",
+        )
+
+        assert analyzer.model == "openai/anthropic/claude-sonnet-5"
+        assert analyzer.provider_config.is_orcarouter
+        assert analyzer.provider_config.get_request_params()["api_base"] == "https://api.orcarouter.ai/v1"
+
+    def test_orcarouter_custom_base_url_overrides_default_endpoint(self):
+        """An explicit base_url overrides the OrcaRouter default endpoint."""
+        analyzer = LLMAnalyzer(
+            model="orcarouter/anthropic/claude-sonnet-5",
+            api_key="test-key",
+            base_url="https://orca.internal/v1",
+        )
+
+        assert analyzer.model == "openai/anthropic/claude-sonnet-5"
+        assert analyzer.provider_config.get_request_params() == {
+            "api_key": "test-key",
+            "api_base": "https://orca.internal/v1",
+        }
+
 
 class TestPromptLoading:
     """Test prompt loading functionality."""

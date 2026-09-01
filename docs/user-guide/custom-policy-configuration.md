@@ -526,7 +526,7 @@ llm_analysis:
 
 **Impact:**
 - Files or instruction bodies exceeding these limits are skipped entirely (no truncation) and a budget-skip metadata entry is attached to the scan result.
-- `max_output_tokens` controls the output token budget for both the LLM analyzer and meta-analyzer. Raise this if scans produce truncated JSON (`LLM_ANALYSIS_FAILED` findings). The CLI flag `--llm-max-tokens` overrides this value.
+- `max_output_tokens` controls the output token budget for both the LLM analyzer and meta-analyzer. The CLI flag `--llm-max-tokens` and API `llm_max_tokens` field override environment variables; `SKILL_SCANNER_META_LLM_MAX_TOKENS` (meta only) and `SKILL_SCANNER_LLM_MAX_TOKENS` override this policy value. All values must be positive integers. If a provider reports an output limit, the scanner emits an explicit truncation diagnostic instead of treating partial JSON as an ordinary parse error.
 - The meta-analyzer applies `meta_budget_multiplier` on top of the base input limits. With the defaults, the meta-analyzer gets 60K instruction, 45K per file, and 300K total.
 - Increase these values for skills with large codebases or extensive instructions. Decrease them to reduce LLM API costs.
 - `trusted_reference_domains`: LLM findings (transitive trust, supply chain) that reference only URLs or domains in this list are demoted to LOW severity. Use this for your organization's internal infrastructure — Git repositories, package registries, documentation portals, artifact stores — that the LLM would otherwise flag as untrusted external sources. Empty by default (all external references flagged normally).
