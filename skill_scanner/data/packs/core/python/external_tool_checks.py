@@ -8,8 +8,10 @@ Rules: PDF_STRUCTURAL_THREAT, OFFICE_DOCUMENT_THREAT, HOMOGLYPH_ATTACK.
 
 from __future__ import annotations
 
+import io
 import logging
 import re
+import tokenize
 from typing import TYPE_CHECKING
 
 from skill_scanner.core.models import Finding, Severity, ThreatCategory
@@ -21,6 +23,63 @@ if TYPE_CHECKING:
     from skill_scanner.core.scan_policy import ScanPolicy
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_unquoted_hash_comment(line: str, *, require_token_boundary: bool) -> str:
+    """Strip a ``#`` comment while preserving quoted and escaped hashes."""
+    in_single_quote = False
+    in_double_quote = False
+    escaped = False
+
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and not in_single_quote:
+            escaped = True
+            continue
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            continue
+        if char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            continue
+        if char != "#" or in_single_quote or in_double_quote:
+            continue
+
+        if not require_token_boundary or index == 0:
+            return line[:index]
+        if line[index - 1].isspace() or line[index - 1] in ";|&()":
+            return line[:index]
+
+    return line
+
+
+def _strip_python_comments(content: str) -> list[str]:
+    """Return Python source lines with tokenizer-identified comments removed."""
+    lines = content.split("\n")
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(content).readline)
+        for token in tokens:
+            if token.type != tokenize.COMMENT:
+                continue
+            row, column = token.start
+            if 1 <= row <= len(lines):
+                lines[row - 1] = lines[row - 1][:column]
+    except (IndentationError, SyntaxError, tokenize.TokenError):
+        # Homoglyph analysis should remain available for malformed snippets.
+        # This fallback still respects ordinary single/double-quoted hashes.
+        return [_strip_unquoted_hash_comment(line, require_token_boundary=False) for line in content.split("\n")]
+    return lines
+
+
+def _comment_stripped_lines(content: str, file_type: str) -> list[str]:
+    """Strip comments using the lexical rules of the executable file type."""
+    if file_type == "python":
+        return _strip_python_comments(content)
+    if file_type == "bash":
+        return [_strip_unquoted_hash_comment(line, require_token_boundary=True) for line in content.split("\n")]
+    return content.split("\n")
 
 
 # ---------------------------------------------------------------------------
@@ -268,9 +327,11 @@ def check_homoglyph_attacks(skill: Skill, policy: ScanPolicy) -> list[Finding]:
             continue
 
         dangerous_lines: list[tuple[int, str, list[dict]]] = []
+        original_lines = content.split("\n")
+        analysis_lines = _comment_stripped_lines(content, sf.file_type)
 
-        for line_num, line in enumerate(content.split("\n"), 1):
-            stripped = line.strip()
+        for line_num, (line, analysis_line) in enumerate(zip(original_lines, analysis_lines, strict=True), 1):
+            stripped = analysis_line.strip()
             if not stripped or stripped.startswith("#") or stripped.startswith("//"):
                 continue
             if stripped.isascii():
@@ -280,7 +341,7 @@ def check_homoglyph_attacks(skill: Skill, policy: ScanPolicy) -> list[Finding]:
 
             result = confusables.is_dangerous(stripped, preferred_aliases=["LATIN"])
             if result:
-                dangerous_lines.append((line_num, stripped, result))
+                dangerous_lines.append((line_num, line.strip(), result))
 
         min_dangerous_lines = policy.analysis_thresholds.min_dangerous_lines
         if len(dangerous_lines) < min_dangerous_lines:
