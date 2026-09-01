@@ -56,7 +56,7 @@ class PythonParser:
     NETWORK_MODULES = ["requests", "urllib", "http", "socket", "aiohttp"]
     FILE_OPERATIONS = ["open", "read", "write", "Path", "os.remove", "shutil"]
     SUBPROCESS_PATTERNS = ["subprocess", "os.system", "os.popen"]
-    DANGEROUS_FUNCTIONS = ["eval", "exec", "compile", "__import__"]
+    DANGEROUS_FUNCTIONS = {"eval", "exec", "compile", "__import__"}
 
     # Agent tool indicators - map code patterns to agent tools
     TOOL_INDICATORS = {
@@ -268,7 +268,7 @@ class PythonParser:
                         func_info.has_file_operations = True
                     if any(sub in call_name for sub in self.SUBPROCESS_PATTERNS):
                         func_info.has_subprocess = True
-                    if any(danger in call_name for danger in self.DANGEROUS_FUNCTIONS):
+                    if self._is_dangerous_builtin_call(call_name):
                         func_info.has_eval_exec = True
 
             # Extract string literals
@@ -292,6 +292,21 @@ class PythonParser:
                 return f"{node.func.value.id}.{node.func.attr}"
             return node.func.attr
         return None
+
+    @classmethod
+    def _is_dangerous_builtin_call(cls, call_name: str) -> bool:
+        """Return whether *call_name* names a dangerous Python builtin.
+
+        Attribute names such as ``exec_module`` and ``re.compile`` are not the
+        builtins ``exec`` and ``compile``.  Matching exact names avoids
+        conflating those common APIs with dynamic code evaluation while still
+        recognizing an explicit ``builtins.eval(...)`` spelling.
+        """
+        if call_name in cls.DANGEROUS_FUNCTIONS:
+            return True
+        if call_name.startswith("builtins."):
+            return call_name.removeprefix("builtins.") in cls.DANGEROUS_FUNCTIONS
+        return False
 
     def _extract_global_code(self) -> None:
         """Extract code executed at module level (not in functions)."""

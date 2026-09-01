@@ -1,12 +1,21 @@
 # PromptGuard Data Protection Rule Pack
 
-**Source:** [PromptGuard](https://github.com/promptguard/promptguard)
+**Canonical source:** [direct contribution commit 69943185](https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard)
+**Contribution:** [cisco-ai-defense/skill-scanner#89](https://github.com/cisco-ai-defense/skill-scanner/pull/89)
+**Contributor:** Abhijoy Sarkar (`acebot712`)
 **Version:** 1.0.0
 **Rules:** 26 signatures across 3 signature files
 
 ## Overview
 
-This pack adds data protection detection rules from the open-source PromptGuard project that are **not covered** by Cisco's built-in skill scanner ruleset or the ATR community pack. The rules target three categories with zero or minimal existing coverage.
+This pack was contributed directly to Skill Scanner in PR #89 as the
+"PromptGuard" data-protection ruleset. The contribution originally cited a
+separate PromptGuard GitHub repository, but that repository is not publicly
+available. The immutable in-repository contribution commit linked above is
+therefore the canonical, auditable source for these rules.
+
+The rules were designed to fill categories that had zero or minimal coverage
+in the core and ATR packs at the time of contribution.
 
 ## Gap Analysis
 
@@ -84,8 +93,8 @@ skill_scanner/data/packs/promptguard/
 - **High precision** — Patterns use strict formats with exclude lists to minimize false positives.
 - **Agent-relevant** — PII harvesting and markdown exfil rules target threats specific to AI agent skill packages, not generic static analysis.
 
-## PromptGuard Project Links
+## Provenance and License
 
-- Repository: https://github.com/promptguard/promptguard
-- Documentation: https://docs.promptguard.co
-- License: Apache-2.0
+- Original contribution: https://github.com/cisco-ai-defense/skill-scanner/pull/89
+- Immutable source snapshot: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
+- License: Apache-2.0, under the Skill Scanner repository license

@@ -32,10 +32,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_DIR = ROOT / "docs" / "reference"
+REFERENCE_PYTHON = (3, 12)
 
 GENERATED_BANNER = (
     "<!-- GENERATED FILE. DO NOT EDIT DIRECTLY.\n"
-    "     Regenerate with: uv run python scripts/generate_reference_docs.py -->\n\n"
+    "     Regenerate with: uv run --python 3.12 python scripts/generate_reference_docs.py -->\n\n"
 )
 
 
@@ -99,6 +100,8 @@ def _render_cli_reference() -> str:
         "| `--use-behavioral` | off | Enable the behavioral analyzer |",
         "| `--use-virustotal` | off | Enable VirusTotal hash lookups |",
         "| `--use-aidefense` | off | Enable Cisco AI Defense analyzer |",
+        "| `--use-osv` | off | Enable OSV.dev dependency vulnerability scanning (no API key; requires network) |",
+        "| `--llm-reasoning-effort LEVEL` | provider default | Optional reasoning depth: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. |",
         "| `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |",
         "| `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |",
         "| `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |",
@@ -329,7 +332,8 @@ def _render_api_reference() -> str:
         sections.append("| Field | Type |")
         sections.append("|---|---|")
         for field in model.fields:
-            sections.append(f"| `{field.name}` | `{field.annotation}` |")
+            annotation = field.annotation.replace("|", "\\|")
+            sections.append(f"| `{field.name}` | `{annotation}` |")
         sections.append("")
 
     sections.extend(
@@ -339,6 +343,7 @@ def _render_api_reference() -> str:
             "- API behavior is policy-aware and mirrors CLI analyzer selection flags.",
             "- API keys for VirusTotal and AI Defense are passed via request headers (`X-VirusTotal-Key`, `X-AIDefense-Key`), not in the JSON body.",
             "- Set `SKILL_SCANNER_ALLOWED_ROOTS` to restrict which directories the API can scan.",
+            "- `llm_reasoning_effort` accepts `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; omission preserves the provider default. Direct Google GenAI SDK requests reject configured controls, while LiteLLM-backed Gemini requests support them.",
             "- All `POST` endpoints accept JSON bodies. File upload uses `multipart/form-data`.",
         ]
     )
@@ -361,6 +366,8 @@ def _collect_env_variables() -> dict[str, set[str]]:
 
     candidates = [
         ROOT / "skill_scanner" / "config" / "config.py",
+        ROOT / "skill_scanner" / "llm_token_options.py",
+        ROOT / "skill_scanner" / "llm_reasoning.py",
         ROOT / "skill_scanner" / "cli" / "cli.py",
         ROOT / "skill_scanner" / "api" / "router.py",
         ROOT / "skill_scanner" / "core" / "analyzers" / "llm_analyzer.py",
@@ -374,20 +381,87 @@ def _collect_env_variables() -> dict[str, set[str]]:
         ROOT / "skill_scanner" / "threats" / "threats.py",
     ]
 
-    env_get_re = re.compile(r'os\.(?:getenv|environ\.get)\(\s*"([A-Z][A-Z0-9_]+)"')
-    env_const_re = re.compile(r'^(_?[A-Z][A-Z0-9_]+)\s*(?::\s*str\s*)?=\s*"([A-Z][A-Z0-9_]+)"', re.MULTILINE)
     for path in candidates:
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8")
         rel = str(path.relative_to(ROOT))
-        for var in env_get_re.findall(text):
+        for var in _extract_python_env_variables(text):
             add(var, rel)
-        for const_name, var_value in env_const_re.findall(text):
-            if re.search(rf"os\.(?:getenv|environ\.get)\(\s*{const_name}", text):
-                add(var_value, rel)
+
+    runtime_env_sources = {
+        "skill_scanner/llm_token_options.py": (
+            "SKILL_SCANNER_LLM_MAX_TOKENS",
+            "SKILL_SCANNER_META_LLM_MAX_TOKENS",
+        ),
+        "skill_scanner/llm_reasoning.py": (
+            "SKILL_SCANNER_LLM_REASONING_EFFORT",
+            "SKILL_SCANNER_META_LLM_REASONING_EFFORT",
+        ),
+    }
+    for source, variables in runtime_env_sources.items():
+        for var in variables:
+            add(var, source)
 
     return dict(sorted(env_map.items()))
+
+
+def _extract_python_env_variables(source: str) -> set[str]:
+    """Return environment names used by executable ``os`` lookup calls.
+
+    Parsing the syntax tree avoids treating examples in comments or docstrings
+    as supported configuration. Module constants passed to the lookup are
+    resolved so helpers such as ``os.getenv(LLM_REASONING_EFFORT_ENV_VAR)``
+    remain discoverable.
+    """
+    tree = ast.parse(source)
+    constants: dict[str, str] = {}
+    env_name_re = re.compile(r"[A-Z][A-Z0-9_]+")
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    constants[target.id] = node.value.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            constants[node.target.id] = node.value.value
+
+    variables: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+
+        function = node.func
+        is_getenv = (
+            isinstance(function, ast.Attribute)
+            and function.attr == "getenv"
+            and isinstance(function.value, ast.Name)
+            and function.value.id == "os"
+        )
+        is_environ_get = (
+            isinstance(function, ast.Attribute)
+            and function.attr == "get"
+            and isinstance(function.value, ast.Attribute)
+            and function.value.attr == "environ"
+            and isinstance(function.value.value, ast.Name)
+            and function.value.value.id == "os"
+        )
+        if not (is_getenv or is_environ_get):
+            continue
+
+        argument = node.args[0]
+        value = argument.value if isinstance(argument, ast.Constant) and isinstance(argument.value, str) else None
+        if isinstance(argument, ast.Name):
+            value = constants.get(argument.id)
+        if value and env_name_re.fullmatch(value):
+            variables.add(value)
+
+    return variables
 
 
 def _describe_env_var(var: str) -> str:
@@ -402,11 +476,27 @@ def _describe_env_var(var: str) -> str:
         "SKILL_SCANNER_LLM_BASE_URL": "Optional custom endpoint base URL for provider routing.",
         "SKILL_SCANNER_LLM_API_VERSION": "Optional API version for providers that require one.",
         "SKILL_SCANNER_LLM_USER": "Optional raw Chat Completions user field for OpenAI-compatible routes.",
+        "SKILL_SCANNER_LLM_MAX_TOKENS": (
+            "Positive integer output-token budget. Overrides the active policy's "
+            "`llm_analysis.max_output_tokens` value."
+        ),
+        "SKILL_SCANNER_LLM_REASONING_EFFORT": (
+            "Optional reasoning-depth control: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or "
+            "`max`. Unset preserves the provider default. Direct Google GenAI SDK requests reject configured "
+            "controls; LiteLLM-backed Gemini requests support them."
+        ),
         "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT": "Skip json_schema and start in plain JSON mode for incompatible proxies.",
         "SKILL_SCANNER_META_LLM_API_KEY": "Meta-analyzer API key override.",
         "SKILL_SCANNER_META_LLM_MODEL": "Meta-analyzer model override.",
         "SKILL_SCANNER_META_LLM_BASE_URL": "Meta-analyzer base URL override.",
         "SKILL_SCANNER_META_LLM_API_VERSION": "Meta-analyzer API version override.",
+        "SKILL_SCANNER_META_LLM_MAX_TOKENS": (
+            "Positive integer meta-analysis output budget; falls back to `SKILL_SCANNER_LLM_MAX_TOKENS`."
+        ),
+        "SKILL_SCANNER_META_LLM_REASONING_EFFORT": (
+            "Meta-analyzer reasoning-depth override; falls back to `SKILL_SCANNER_LLM_REASONING_EFFORT`. "
+            "Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them."
+        ),
         "VIRUSTOTAL_API_KEY": "VirusTotal analyzer API key.",
         "VIRUSTOTAL_UPLOAD_FILES": "Enable upload mode for unknown binaries.",
         "AI_DEFENSE_API_KEY": "Cisco AI Defense analyzer API key.",
@@ -443,6 +533,8 @@ _ENV_VAR_GROUPS: list[tuple[str, str, list[str]]] = [
             "SKILL_SCANNER_LLM_BASE_URL",
             "SKILL_SCANNER_LLM_API_VERSION",
             "SKILL_SCANNER_LLM_USER",
+            "SKILL_SCANNER_LLM_MAX_TOKENS",
+            "SKILL_SCANNER_LLM_REASONING_EFFORT",
             "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT",
         ],
     ),
@@ -454,6 +546,8 @@ _ENV_VAR_GROUPS: list[tuple[str, str, list[str]]] = [
             "SKILL_SCANNER_META_LLM_MODEL",
             "SKILL_SCANNER_META_LLM_BASE_URL",
             "SKILL_SCANNER_META_LLM_API_VERSION",
+            "SKILL_SCANNER_META_LLM_MAX_TOKENS",
+            "SKILL_SCANNER_META_LLM_REASONING_EFFORT",
         ],
     ),
     (
@@ -504,11 +598,15 @@ _ENV_VAR_EXAMPLES: dict[str, str] = {
     "SKILL_SCANNER_LLM_BASE_URL": "https://api.openai.com/v1",
     "SKILL_SCANNER_LLM_API_VERSION": "2024-02-15-preview",
     "SKILL_SCANNER_LLM_USER": '{"appkey":"your-appkey"}',
+    "SKILL_SCANNER_LLM_MAX_TOKENS": "16384",
+    "SKILL_SCANNER_LLM_REASONING_EFFORT": "low",
     "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT": "true",
     "SKILL_SCANNER_META_LLM_API_KEY": "(falls back to LLM_API_KEY)",
     "SKILL_SCANNER_META_LLM_MODEL": "(falls back to LLM_MODEL)",
     "SKILL_SCANNER_META_LLM_BASE_URL": "(falls back to LLM_BASE_URL)",
     "SKILL_SCANNER_META_LLM_API_VERSION": "(falls back to LLM_API_VERSION)",
+    "SKILL_SCANNER_META_LLM_MAX_TOKENS": "32768",
+    "SKILL_SCANNER_META_LLM_REASONING_EFFORT": "low",
     "AWS_REGION": "us-east-1",
     "AWS_PROFILE": "my-bedrock-profile",
     "AWS_SESSION_TOKEN": "(temporary STS token)",
@@ -576,6 +674,19 @@ def _render_configuration_reference() -> str:
             sections.append(f"| `{var}` | {desc}{req} | {example_cell} |")
         sections.append("")
 
+        if group_title == "Cisco AI Defense":
+            sections.extend(
+                [
+                    "## OSV Dependency Scanning",
+                    "",
+                    "The OSV analyzer queries [OSV.dev](https://osv.dev) for known-vulnerable pinned "
+                    "dependencies. It is an external service that requires **no API key**, only outbound "
+                    "network access to `api.osv.dev`. Enable it with `--use-osv` (or `use_osv` on the API). "
+                    "Skip it in air-gapped environments — with no network it fails open and reports nothing.",
+                    "",
+                ]
+            )
+
     ungrouped = {v: s for v, s in env_map.items() if v not in grouped_vars}
     if ungrouped:
         sections.extend(["## Other", "", "| Variable | Description | Example |", "|---|---|---|"])
@@ -640,6 +751,15 @@ def _write_or_check(outputs: dict[Path, str], check: bool) -> int:
 
 
 def main() -> int:
+    if sys.version_info[:2] != REFERENCE_PYTHON:
+        expected = ".".join(str(part) for part in REFERENCE_PYTHON)
+        actual = f"{sys.version_info.major}.{sys.version_info.minor}"
+        print(
+            f"Reference output depends on argparse formatting; use Python {expected} (running {actual}).",
+            file=sys.stderr,
+        )
+        return 2
+
     parser = argparse.ArgumentParser(description="Generate reference docs from source of truth.")
     parser.add_argument("--check", action="store_true", help="Fail if generated outputs differ from committed files")
     args = parser.parse_args()
