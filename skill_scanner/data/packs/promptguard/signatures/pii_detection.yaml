@@ -1,5 +1,5 @@
 # PromptGuard Data Protection Pack — PII Detection Signatures
-# Source: https://github.com/promptguard/promptguard
+# Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
 # Detects personally identifiable information embedded in skill packages.
 # Cisco's core pack and ATR pack have zero PII detection rules.
 
@@ -28,7 +28,7 @@ signatures:
       US Social Security Number detected in skill package. Skills should never
       contain real SSNs. This indicates either leaked PII or a skill designed
       to process/store SSNs without appropriate safeguards.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove all real SSNs from skill files. If the skill legitimately processes
       SSNs, ensure it uses tokenization or masking and never stores raw values.
@@ -63,7 +63,7 @@ signatures:
       Credit card number detected in skill package. Skills should never contain
       real payment card numbers. This violates PCI-DSS and indicates leaked
       financial PII or a credential harvesting skill.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove all payment card numbers immediately. Use tokenized or masked
       values (e.g., ****-****-****-1234) for display purposes.
@@ -86,7 +86,7 @@ signatures:
       International Bank Account Number (IBAN) detected in skill package.
       IBANs are sensitive financial identifiers that should not appear in skill
       files.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove IBAN values from skill files. Use masked representations for
       documentation purposes.
@@ -103,7 +103,7 @@ signatures:
       Skill instructions to collect phone numbers from users. This may indicate
       a social engineering or credential harvesting skill that requests PII
       under false pretenses.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Review why the skill collects phone numbers. Remove PII collection
       instructions unless the skill's documented purpose requires it and
@@ -114,13 +114,13 @@ signatures:
     severity: CRITICAL
     patterns:
       # Skill instructions to collect SSNs
-      - "(?i)(collect|extract|harvest|gather|capture|log|record|store|save|ask|request|prompt|require)\\s+.{0,40}(social\\s+security|SSN|social\\s+insurance|SIN|national\\s+insurance|NI\\s+number)"
+      - "(?i)(collect|extract|harvest|gather|capture|log|record|store|save|ask|request|prompt|require)\\s+.{0,40}(social\\s+security|\\bSSN\\b|social\\s+insurance|\\bSIN\\b|national\\s+insurance|\\bNI\\s+number\\b)"
     file_types: [markdown, text]
     description: >
       Skill instructions to collect Social Security Numbers or national ID
       numbers. This is a strong indicator of credential harvesting or social
       engineering. Legitimate skills should never request SSNs.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove SSN/national ID collection instructions. Skills should never
       request government-issued identification numbers.
@@ -136,7 +136,7 @@ signatures:
       Skill instructions to collect payment card details. This is a strong
       indicator of financial fraud or credential harvesting. Payment processing
       should use PCI-compliant tokenization, not raw card collection.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove payment card collection instructions. Use PCI-compliant payment
       processors (Stripe, Square, etc.) instead of collecting raw card data.
@@ -153,7 +153,7 @@ signatures:
       Skill instructions to collect passwords or authentication credentials.
       Skills should never request user passwords. This is a strong indicator of
       credential harvesting or phishing.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove all credential collection instructions. Use OAuth, SSO, or token-
       based authentication flows instead of collecting raw passwords.
@@ -174,7 +174,7 @@ signatures:
       Possible US Medicare Beneficiary Identifier (MBI) detected. Medical
       identifiers are protected health information (PHI) under HIPAA and should
       never appear in skill packages.
-      Source: https://github.com/promptguard/promptguard
+      Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
     remediation: >
       Remove all medical identifiers. If the skill processes health data,
       ensure HIPAA-compliant data handling with proper de-identification.

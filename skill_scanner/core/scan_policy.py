@@ -116,7 +116,19 @@ class PipelinePolicy:
     )
     # Commands considered "execution sinks" for fetch+execute detection
     compound_fetch_exec_commands: list[str] = field(
-        default_factory=lambda: ["bash", "sh", "zsh", "source", "python", "python3", "."]
+        default_factory=lambda: [
+            "bash",
+            "sh",
+            "zsh",
+            "powershell",
+            "pwsh",
+            "invoke-expression",
+            "iex",
+            "source",
+            "python",
+            "python3",
+            ".",
+        ]
     )
     # Hint words that suggest data exfiltration in tool-chaining detection
     exfil_hints: list[str] = field(
@@ -602,7 +614,20 @@ class ScanPolicy:
                     "compound_fetch_exec_prefixes", ["sudo", "env", "command", "time", "nohup", "nice"]
                 ),
                 compound_fetch_exec_commands=pl.get(
-                    "compound_fetch_exec_commands", ["bash", "sh", "zsh", "source", "python", "python3", "."]
+                    "compound_fetch_exec_commands",
+                    [
+                        "bash",
+                        "sh",
+                        "zsh",
+                        "powershell",
+                        "pwsh",
+                        "invoke-expression",
+                        "iex",
+                        "source",
+                        "python",
+                        "python3",
+                        ".",
+                    ],
                 ),
                 exfil_hints=pl.get(
                     "exfil_hints", ["send", "upload", "transmit", "webhook", "slack", "exfil", "forward"]
