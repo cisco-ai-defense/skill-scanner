@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..models import Finding, Severity, Skill, SkillFile, ThreatCategory
 from ..scan_policy import ScanPolicy
@@ -106,6 +107,10 @@ _SOURCE_PATTERNS: dict[str, set[TaintType]] = {
     "read": {TaintType.USER_INPUT},
     "curl": {TaintType.NETWORK_DATA},
     "wget": {TaintType.NETWORK_DATA},
+    "invoke-webrequest": {TaintType.NETWORK_DATA},
+    "iwr": {TaintType.NETWORK_DATA},
+    "invoke-restmethod": {TaintType.NETWORK_DATA},
+    "irm": {TaintType.NETWORK_DATA},
     # Archive extraction — produces potentially tainted files
     "unzip": {TaintType.SENSITIVE_DATA},
     "tar": {TaintType.SENSITIVE_DATA},
@@ -163,6 +168,8 @@ _SINK_PATTERNS: dict[str, set[TaintType]] = {
     "perl": {TaintType.CODE_EXECUTION},
     "powershell": {TaintType.CODE_EXECUTION},
     "pwsh": {TaintType.CODE_EXECUTION},
+    "invoke-expression": {TaintType.CODE_EXECUTION},
+    "iex": {TaintType.CODE_EXECUTION},
     "source": {TaintType.CODE_EXECUTION},
     "chmod": {TaintType.CODE_EXECUTION},  # chmod +x enables execution
     "tee": {TaintType.FILESYSTEM_WRITE},
@@ -281,7 +288,10 @@ class PipelineAnalyzer(BaseAnalyzer):
     @staticmethod
     def _normalize_command(command: str) -> str:
         """Return a case-insensitive executable name for POSIX/Windows paths."""
-        token = command.strip().strip("\"'")
+        # PowerShell's backtick escapes the next character, including characters
+        # inside command names (for example ``pw`sh``).  Remove it before
+        # comparing executable names so escaped aliases cannot evade detection.
+        token = command.strip().strip("\"'").replace("`", "")
         name = re.split(r"[\\/]", token)[-1].lower()
         if name.endswith(".exe"):
             name = name[:-4]
@@ -289,10 +299,22 @@ class PipelineAnalyzer(BaseAnalyzer):
 
     @classmethod
     def _strip_powershell_call_operator(cls, tokens: list[str]) -> list[str]:
-        """Discard PowerShell's call operator before a known shell executable."""
-        if len(tokens) >= 2 and tokens[0] == "&" and cls._normalize_command(tokens[1]) in {"powershell", "pwsh"}:
+        """Discard PowerShell's call operator before its executable operand."""
+        if len(tokens) >= 2 and tokens[0] == "&":
             return tokens[1:]
         return tokens
+
+    @staticmethod
+    def _sink_taints(command: str) -> set[TaintType]:
+        """Return sink taints, including directly invoked PowerShell scripts."""
+        if command.endswith((".ps1", ".psm1")):
+            return {TaintType.CODE_EXECUTION}
+        return _SINK_PATTERNS.get(command, set())
+
+    def _matches_benign_pipeline(self, raw: str) -> bool:
+        """Match a benign rule only when it covers the complete pipeline."""
+        candidate = raw.strip()
+        return any(pattern.fullmatch(candidate) for pattern in self.policy._compiled_benign_pipes)
 
     @staticmethod
     def _split_pipeline(raw: str) -> list[str]:
@@ -382,20 +404,39 @@ class PipelineAnalyzer(BaseAnalyzer):
     )
 
     def _is_known_installer(self, raw: str) -> bool:
-        """Check if a curl|sh pipeline uses a well-known installer URL (from policy)."""
-        for domain in self.policy.pipeline.known_installer_domains:
-            if domain in raw:
-                return True
-        return False
+        """Check installer URLs using hostname boundaries and optional path prefixes."""
+        urls = [match.group(0).rstrip(".,;:!?)]}") for match in re.finditer(r"https?://[^\s'\"`|<>]+", raw, re.I)]
+        if not urls:
+            return False
+
+        trusted_locations: list[tuple[str, str]] = []
+        for location in self.policy.pipeline.known_installer_domains:
+            parsed = urlsplit(location if "://" in location else f"//{location}")
+            if parsed.hostname:
+                trusted_locations.append((parsed.hostname.lower().rstrip("."), parsed.path.rstrip("/")))
+
+        def is_trusted(url: str) -> bool:
+            parsed = urlsplit(url)
+            hostname = (parsed.hostname or "").lower().rstrip(".")
+            for trusted_host, trusted_path in trusted_locations:
+                host_matches = hostname == trusted_host or hostname.endswith(f".{trusted_host}")
+                path_matches = (
+                    not trusted_path or parsed.path == trusted_path or parsed.path.startswith(f"{trusted_path}/")
+                )
+                if host_matches and path_matches:
+                    return True
+            return False
+
+        # A mixed trusted/untrusted pipeline must never inherit the trusted URL's
+        # severity demotion.
+        return all(is_trusted(url) for url in urls)
 
     def _is_instructional_skillmd_pipeline(self, chain: PipelineChain) -> bool:
         """Heuristic for installation examples embedded in SKILL.md."""
         if Path(chain.source_file).name != "SKILL.md":
             return False
-        has_remote_source = any(node.command in {"curl", "wget"} for node in chain.nodes)
-        has_execution_sink = any(
-            TaintType.CODE_EXECUTION in _SINK_PATTERNS.get(node.command, set()) for node in chain.nodes
-        )
+        has_remote_source = any(TaintType.NETWORK_DATA in node.output_taints for node in chain.nodes)
+        has_execution_sink = any(TaintType.CODE_EXECUTION in self._sink_taints(node.command) for node in chain.nodes)
         if not has_remote_source or not has_execution_sink:
             return False
         raw = chain.raw.lower()
@@ -417,10 +458,10 @@ class PipelineAnalyzer(BaseAnalyzer):
         if len(chain.nodes) < 2:
             return findings
 
-        # Skip known benign patterns (from policy)
-        for pattern in self.policy._compiled_benign_pipes:
-            if pattern.search(chain.raw):
-                return findings
+        # A benign prefix must not suppress a later execution or exfiltration
+        # sink in the same chain.
+        if self._matches_benign_pipeline(chain.raw):
+            return findings
 
         # Propagate taints through the chain
         current_taints: set[TaintType] = set()
@@ -437,8 +478,8 @@ class PipelineAnalyzer(BaseAnalyzer):
                 current_taints.update(_TRANSFORM_TAINTS[cmd])
 
             # Sink nodes consume tainted data
-            if cmd in _SINK_PATTERNS and current_taints:
-                sink_taints = _SINK_PATTERNS[cmd]
+            sink_taints = self._sink_taints(cmd)
+            if sink_taints and current_taints:
                 combined = current_taints | sink_taints
 
                 # Assess severity based on taint combination
@@ -612,7 +653,10 @@ class PipelineAnalyzer(BaseAnalyzer):
         # extract + execute: unzip/tar then an interpreter
         (
             [
-                re.compile(r"(?:unzip|tar\s+(?:x[a-zA-Z]*|(?:-[a-zA-Z]*x[a-zA-Z]*)))\b"),
+                re.compile(
+                    r"(?:unzip\b|tar\s+(?:x[a-zA-Z]*|(?:-[a-zA-Z]*x[a-zA-Z]*))\b|expand-archive\b)",
+                    re.IGNORECASE,
+                ),
                 re.compile(r"^\s*\S+"),
             ],
             "COMPOUND_EXTRACT_EXECUTE",
@@ -625,7 +669,7 @@ class PipelineAnalyzer(BaseAnalyzer):
         # fetch + execute: the second line is validated by _is_execution_step.
         (
             [
-                re.compile(r"(?:curl|wget)\b"),
+                re.compile(r"(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b", re.IGNORECASE),
                 re.compile(r"^\s*\S+"),
             ],
             "COMPOUND_FETCH_EXECUTE",
@@ -653,35 +697,46 @@ class PipelineAnalyzer(BaseAnalyzer):
 
     def _is_likely_remote_download(self, fetch_line: str) -> bool:
         """Heuristic: line looks like download intent, not API usage."""
-        lower = fetch_line.lower()
-        if not re.search(r"\b(curl|wget)\b", lower):
+        lower = fetch_line.lower().replace("`", "")
+        if not re.search(r"\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b", lower):
             return False
         if any(token in lower for token in ("localhost", "127.0.0.1", "0.0.0.0", "$pikvm_url", "${pikvm_url}")):
             return False
 
         has_download_hint = any(
-            token in lower for token in (" -o ", "--output", ".sh", ".py", ".pl", ".ps1", "install", "setup")
+            token in lower
+            for token in (
+                " -o ",
+                "--output",
+                "-outfile",
+                ".sh",
+                ".py",
+                ".pl",
+                ".ps1",
+                "install",
+                "setup",
+            )
         )
         has_pipe_exec = any(self._is_execution_step(part) for part in self._split_pipeline(fetch_line)[1:])
         return has_download_hint or has_pipe_exec
 
     @staticmethod
     def _is_api_style_fetch(fetch_line: str) -> bool:
-        """Heuristic: curl/wget line is a request call, not payload download."""
-        lower = fetch_line.lower()
-        request_markers = (
-            "-x ",
-            "--request",
-            " -d ",
-            "--data",
-            "--json",
-            " -h ",
-            "--header",
-            "/api/",
-            "-f ",
-            "--form ",
+        """Heuristic: request-only curl usage without an explicit payload output."""
+        lower = fetch_line.lower().replace("`", "")
+        explicit_output = bool(
+            re.search(r"(?:^|\s)(?:-o|--output|-outfile)(?:\s|=)", lower)
+            or re.search(r"\.(?:sh|py|pl|ps1|psm1)(?:[?#\s\"']|$)", lower)
         )
-        return any(marker in lower for marker in request_markers)
+        if explicit_output:
+            return False
+        return bool(
+            re.search(
+                r"(?:^|\s)(?:-x|--request|-d|--data(?:-\w+)?|--json|-h|--header|--form)(?:\s|=)",
+                lower,
+            )
+            or re.search(r"(?:^|\s)-F(?:\s|=)", fetch_line)
+        )
 
     @staticmethod
     def _is_shell_wrapped_fetch(exec_line: str) -> bool:
@@ -701,6 +756,17 @@ class PipelineAnalyzer(BaseAnalyzer):
         i = 0
         while i < len(tokens):
             tok = self._normalize_command(tokens[i])
+            if tok == "cmd":
+                # cmd.exe may add flags before /c or /k.  Unwrap the command
+                # that follows so `cmd /c powershell -File payload.ps1` is
+                # classified by its actual execution sink.
+                j = i + 1
+                while j < len(tokens) and tokens[j].strip("\"'").lower() in {"/a", "/d", "/q", "/s", "/u"}:
+                    j += 1
+                if j < len(tokens) and tokens[j].strip("\"'").lower() in {"/c", "/k"}:
+                    i = j + 1
+                    continue
+                break
             if tok not in prefixes:
                 break
 
@@ -732,7 +798,7 @@ class PipelineAnalyzer(BaseAnalyzer):
             return False
         cmd, _ = invocation
         exec_commands = {self._normalize_command(c) for c in self.policy.pipeline.compound_fetch_exec_commands}
-        return cmd in exec_commands
+        return cmd in exec_commands or cmd.endswith((".ps1", ".psm1"))
 
     def _is_extraction_execution_step(self, exec_line: str) -> bool:
         """Check for execution or executable permission changes after extraction."""
@@ -743,7 +809,7 @@ class PipelineAnalyzer(BaseAnalyzer):
         if cmd == "chmod":
             return "+x" in args
         exec_commands = {self._normalize_command(c) for c in self.policy.pipeline.compound_fetch_exec_commands}
-        return cmd in exec_commands
+        return cmd in exec_commands or cmd.endswith((".ps1", ".psm1"))
 
     def _analyze_compound_sequences(self, skill: Skill) -> list[Finding]:
         """Detect dangerous multi-line command sequences in code blocks and scripts.
@@ -808,13 +874,9 @@ class PipelineAnalyzer(BaseAnalyzer):
                             ):
                                 continue
 
-                    # Check for known benign patterns
-                    is_benign = False
-                    for pat in self.policy._compiled_benign_pipes:
-                        if pat.search(block_text):
-                            is_benign = True
-                            break
-                    if is_benign:
+                    # Benign rules must cover the complete sequence; a benign
+                    # prefix cannot erase a later dangerous execution step.
+                    if self._matches_benign_pipeline(block_text):
                         continue
 
                     # Demote if in documentation file

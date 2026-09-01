@@ -184,6 +184,8 @@ pipeline:
     - "zsh"
     - "powershell"
     - "pwsh"
+    - "invoke-expression"
+    - "iex"
     - "source"
     - "python"
     - "python3"

@@ -122,6 +122,8 @@ class PipelinePolicy:
             "zsh",
             "powershell",
             "pwsh",
+            "invoke-expression",
+            "iex",
             "source",
             "python",
             "python3",
@@ -613,7 +615,19 @@ class ScanPolicy:
                 ),
                 compound_fetch_exec_commands=pl.get(
                     "compound_fetch_exec_commands",
-                    ["bash", "sh", "zsh", "powershell", "pwsh", "source", "python", "python3", "."],
+                    [
+                        "bash",
+                        "sh",
+                        "zsh",
+                        "powershell",
+                        "pwsh",
+                        "invoke-expression",
+                        "iex",
+                        "source",
+                        "python",
+                        "python3",
+                        ".",
+                    ],
                 ),
                 exfil_hints=pl.get(
                     "exfil_hints", ["send", "upload", "transmit", "webhook", "slack", "exfil", "forward"]
