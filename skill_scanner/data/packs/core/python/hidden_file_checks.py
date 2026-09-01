@@ -73,7 +73,12 @@ def check_hidden_files(skill: Skill, policy: ScanPolicy) -> list[Finding]:
             if any(p.lower() in benign_dotdirs for p in hidden_parts):
                 continue
 
-            if ext in CODE_EXTENSIONS:
+            if ext in CODE_EXTENSIONS or skill_file.file_type in {
+                "python",
+                "bash",
+                "javascript",
+                "typescript",
+            }:
                 findings.append(
                     Finding(
                         id=generate_finding_id("HIDDEN_EXECUTABLE_SCRIPT", rel_path),

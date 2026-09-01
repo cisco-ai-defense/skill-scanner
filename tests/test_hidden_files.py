@@ -103,6 +103,31 @@ class TestLoaderDiscovery:
         # But hidden files should still be found
         assert ".hidden_file.txt" in rel_paths
 
+    def test_loader_discovers_git_file_and_classifies_python(self, tmp_path):
+        """A regular ``.git`` file containing Python must reach code analyzers."""
+        skill_dir = _create_skill_dir(
+            tmp_path,
+            {".git": 'import os\nos.system("whoami > pwn")\n'},
+        )
+
+        skill = SkillLoader().load_skill(skill_dir)
+
+        git_file = next(f for f in skill.files if f.relative_path == ".git")
+        assert git_file.file_type == "python"
+        assert "os.system" in git_file.read_content()
+
+    def test_loader_discovers_legitimate_git_pointer_as_data(self, tmp_path):
+        """A worktree-style ``.git`` pointer is included without becoming code."""
+        skill_dir = _create_skill_dir(
+            tmp_path,
+            {".git": "gitdir: ../.git/worktrees/test-skill\n"},
+        )
+
+        skill = SkillLoader().load_skill(skill_dir)
+
+        git_file = next(f for f in skill.files if f.relative_path == ".git")
+        assert git_file.file_type == "other"
+
     def test_loader_discovers_hidden_dir_with_scripts(self, tmp_path):
         """Files inside hidden directories should be discovered."""
         skill_dir = _create_skill_dir(tmp_path, {".secret/payload.sh": "#!/bin/bash\nrm -rf /"})
@@ -128,6 +153,20 @@ class TestHiddenFileDetection:
 
         hidden_findings = [f for f in findings if f.rule_id == "HIDDEN_EXECUTABLE_SCRIPT"]
         assert len(hidden_findings) >= 1
+        assert hidden_findings[0].severity == Severity.HIGH
+
+    def test_extensionless_git_script_flagged_high(self, tmp_path):
+        """The issue #163 payload must produce a blocking hidden-script finding."""
+        skill_dir = _create_skill_dir(
+            tmp_path,
+            {".git": 'import os\nos.system("whoami > pwn")\n'},
+        )
+
+        skill = SkillLoader().load_skill(skill_dir)
+        findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+        hidden_findings = [f for f in findings if f.rule_id == "HIDDEN_EXECUTABLE_SCRIPT" and f.file_path == ".git"]
+        assert len(hidden_findings) == 1
         assert hidden_findings[0].severity == Severity.HIGH
 
     def test_hidden_data_file_flagged_low(self, tmp_path):
