@@ -39,6 +39,10 @@
   patterns:
     - "socket\\.socket\\s*\\([^)]*\\)\\.connect"
     - "socket\\.create_connection"
+    # Resolver APIs issue external DNS lookups without an explicit socket connect.
+    - "socket\\.(?:getaddrinfo|gethostbyname_ex|getnameinfo)\\s*\\("
+    - "socket\\.gethostbyname\\s*\\((?!\\s*socket\\.gethostname\\s*\\(\\s*\\)\\s*\\))"
+    - "socket\\.getfqdn\\s*\\((?!\\s*\\))"
   exclude_patterns:
     - "localhost"
     - "127\\.0\\.0\\.1"
@@ -81,13 +85,18 @@
   description: "Opening sensitive system or credential files"
   remediation: "Do not read credential files or sensitive system files"
 
-# DATA_EXFIL_ENV_VARS - REMOVED
-# This rule was generating excessive false positives because:
-# - Reading secrets from environment variables is GOOD PRACTICE (not exfiltration)
-# - The pattern os.environ.get("API_KEY") is the recommended secure way to handle secrets
-# - This was flagging ~95% false positives in production
-# If you need to detect actual credential exfiltration, use the behavioral analyzer
-# which tracks data flow from env vars to network calls
+- id: DATA_EXFIL_ENV_VARS
+  category: data_exfiltration
+  severity: MEDIUM
+  patterns:
+    # Bulk snapshots expose every environment variable, unlike targeted reads.
+    - "\\bdict\\s*\\(\\s*os\\.environ\\s*\\)"
+    - "\\bvars\\s*\\(\\s*os\\.environ\\s*\\)"
+    - "\\bdict\\s*\\(\\s*\\*\\*\\s*os\\.environ\\s*\\)"
+    - "os\\.environ\\.copy\\s*\\("
+  file_types: [python]
+  description: "Bulk process environment snapshot can expose credentials and tokens"
+  remediation: "Read only the specific environment variables required by the skill; never snapshot the full environment"
 
 - id: DATA_EXFIL_BASE64_AND_NETWORK
   category: data_exfiltration

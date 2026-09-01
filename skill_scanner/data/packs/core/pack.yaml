@@ -158,6 +158,14 @@ rules:
       enabled: true
     description: "Raw socket connections"
 
+  DATA_EXFIL_ENV_VARS:
+    source: signature
+    category: data_exfiltration
+    severity: MEDIUM
+    knobs:
+      enabled: true
+    description: "Bulk process environment snapshot can expose credentials and tokens"
+
   DATA_EXFIL_SENSITIVE_FILES:
     source: signature
     category: data_exfiltration
