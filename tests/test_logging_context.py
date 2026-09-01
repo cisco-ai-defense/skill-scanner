@@ -65,10 +65,37 @@ def test_context_escapes_control_characters(caplog) -> None:
     logger = logging.getLogger("skill_scanner.tests.untrusted_context")
 
     with caplog.at_level(logging.WARNING, logger=logger.name):
-        with scan_log_context(skill_name="line-one\nforged-warning"):
+        with scan_log_context(
+            skill_name="line-one\nforged-warning",
+            skill_path="/skills/\x1b[31mred",
+            scan_id="id\x00\tend",
+        ):
             logger.warning("real warning")
 
-    assert caplog.records[-1].getMessage() == "[skill=line-one\\nforged-warning] real warning"
+    record = caplog.records[-1]
+    assert record.skill_name == "line-one\\nforged-warning"
+    assert record.skill_path == "/skills/\\x1b[31mred"
+    assert record.scan_id == "id\\x00\\tend"
+    assert record.getMessage() == (
+        "[skill=line-one\\nforged-warning path=/skills/\\x1b[31mred scan_id=id\\x00\\tend] real warning"
+    )
+
+    formatted = logging.Formatter("%(skill_name)s|%(skill_path)s|%(scan_id)s|%(message)s").format(record)
+    assert "\n" not in formatted
+    assert "\x1b" not in formatted
+    assert "\x00" not in formatted
+
+
+def test_context_preserves_printable_unicode(caplog) -> None:
+    logger = logging.getLogger("skill_scanner.tests.unicode_context")
+
+    with caplog.at_level(logging.WARNING, logger=logger.name):
+        with scan_log_context(skill_name="café-技能"):
+            logger.warning("ready")
+
+    record = caplog.records[-1]
+    assert record.skill_name == "café-技能"
+    assert record.getMessage() == "[skill=café-技能] ready"
 
 
 def test_parallel_thread_contexts_do_not_bleed() -> None:

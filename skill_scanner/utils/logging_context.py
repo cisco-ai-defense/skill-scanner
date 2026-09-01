@@ -49,8 +49,15 @@ _factory_lock = threading.Lock()
 
 def _safe_label(value: str) -> str:
     """Render an identifier without allowing terminal/log-line injection."""
-
-    return value.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
+    escaped: list[str] = []
+    for char in value:
+        if char == "\\":
+            escaped.append("\\\\")
+        elif char.isprintable():
+            escaped.append(char)
+        else:
+            escaped.append(char.encode("unicode_escape").decode("ascii"))
+    return "".join(escaped)
 
 
 def _install_context_record_factory() -> None:
@@ -65,9 +72,12 @@ def _install_context_record_factory() -> None:
             record = previous_factory(*args, **kwargs)
             context = _current_scan_context.get()
 
-            record.skill_name = context.skill_name if context else None
-            record.skill_path = context.skill_path if context else None
-            record.scan_id = context.scan_id if context else None
+            safe_skill_name = _safe_label(context.skill_name) if context and context.skill_name is not None else None
+            safe_skill_path = _safe_label(context.skill_path) if context and context.skill_path is not None else None
+            safe_scan_id = _safe_label(context.scan_id) if context and context.scan_id is not None else None
+            record.skill_name = safe_skill_name
+            record.skill_path = safe_skill_path
+            record.scan_id = safe_scan_id
 
             if (
                 context
@@ -75,12 +85,12 @@ def _install_context_record_factory() -> None:
                 and not getattr(record, "_skill_scanner_context_applied", False)
             ):
                 labels = []
-                if context.skill_name:
-                    labels.append(f"skill={_safe_label(context.skill_name)}")
-                if context.skill_path:
-                    labels.append(f"path={_safe_label(context.skill_path)}")
-                if context.scan_id:
-                    labels.append(f"scan_id={_safe_label(context.scan_id)}")
+                if safe_skill_name:
+                    labels.append(f"skill={safe_skill_name}")
+                if safe_skill_path:
+                    labels.append(f"path={safe_skill_path}")
+                if safe_scan_id:
+                    labels.append(f"scan_id={safe_scan_id}")
                 if labels:
                     record.msg = f"[{' '.join(labels)}] {record.msg}"
                     record._skill_scanner_context_applied = True
