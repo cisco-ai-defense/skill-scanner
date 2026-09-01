@@ -41,6 +41,7 @@ def _strip_bash_comments(content: str, *, require_token_boundary: bool = True) -
     """Strip Bash comments while carrying quote state across physical lines."""
     stripped_lines: list[str] = []
     quote: str | None = None
+    at_token_start = True
 
     for line in content.split("\n"):
         index = 0
@@ -52,6 +53,9 @@ def _strip_bash_comments(content: str, *, require_token_boundary: bool = True) -
 
             if escaped:
                 escaped = False
+                # Escaped whitespace and metacharacters remain part of the
+                # current word, so a following hash cannot begin a comment.
+                at_token_start = False
                 index += 1
                 continue
 
@@ -83,24 +87,33 @@ def _strip_bash_comments(content: str, *, require_token_boundary: bool = True) -
                 continue
             if char == "$" and index + 1 < len(line) and line[index + 1] in {"'", '"'}:
                 quote = "ansi_c" if line[index + 1] == "'" else "double"
+                at_token_start = False
                 index += 2
                 continue
             if char == "'":
                 quote = "single"
+                at_token_start = False
                 index += 1
                 continue
             if char == '"':
                 quote = "double"
+                at_token_start = False
                 index += 1
                 continue
-            if char == "#" and (
-                not require_token_boundary or index == 0 or line[index - 1].isspace() or line[index - 1] in ";|&()"
-            ):
+            if char == "#" and (not require_token_boundary or at_token_start):
                 comment_index = index
                 break
+            if char.isspace() or char in ";|&()<>":
+                at_token_start = True
+            else:
+                at_token_start = False
             index += 1
 
         stripped_lines.append(line if comment_index is None else line[:comment_index])
+        if comment_index is not None or (quote is None and not escaped):
+            # An unescaped physical newline terminates the current token.  A
+            # trailing backslash or an open quote carries lexical state onward.
+            at_token_start = True
 
     return stripped_lines
 

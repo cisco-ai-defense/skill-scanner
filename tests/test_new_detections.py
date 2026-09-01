@@ -1108,6 +1108,25 @@ class TestHomoglyphDetection:
 
         assert [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
 
+    @pytest.mark.parametrize("escaped_prefix", [r"item\ #tag", r"item\;#tag"])
+    def test_bash_hash_after_escaped_boundary_does_not_hide_spoofed_identifiers(self, tmp_path, escaped_prefix):
+        """Escaped whitespace or operators keep a following hash inside the active word."""
+        cyrillic_a = "\u0430"
+        code = "".join(f"printf %s {escaped_prefix}{index}; p{cyrillic_a}yload_{index}=input\n" for index in range(5))
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun payload.sh.\n",
+                "payload.sh": code,
+            },
+        )
+
+        policy = ScanPolicy.default()
+        policy.analysis_thresholds.homoglyph_filter_math_context = False
+        findings = StaticAnalyzer(use_yara=False, policy=policy).analyze(skill)
+
+        assert [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
+
     def test_bash_ansi_c_hash_does_not_hide_spoofed_identifiers(self, tmp_path):
         """An escaped quote in ANSI-C syntax must not expose its literal hash."""
         cyrillic_a = "\u0430"
