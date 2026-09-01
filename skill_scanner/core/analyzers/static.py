@@ -32,6 +32,7 @@ from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...core.rules.patterns import RuleLoader, SecurityRule
 from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
+from ...core.static_analysis.comment_stripping import comment_stripped_lines
 from ...core.static_analysis.url_classifier import classify_url, extract_urls
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
@@ -42,6 +43,7 @@ except ModuleNotFoundError:  # Python < 3.11
     tomllib = None
 
 logger = logging.getLogger(__name__)
+
 
 # Pre-compiled regex patterns for file operation checks
 _READ_PATTERNS = [
@@ -80,14 +82,176 @@ _GLOB_PATTERNS = [
     re.compile(r"fnmatch\."),
 ]
 
-_EXCEPTION_PATTERNS = [
-    re.compile(r"except\s+(EOFError|StopIteration|KeyboardInterrupt|Exception|BaseException)"),
-    re.compile(r"except\s*:"),
-    re.compile(r"break\s*$", re.MULTILINE),
-    re.compile(r"return\s*$", re.MULTILINE),
-    re.compile(r"sys\.exit\s*\("),
-    re.compile(r"raise\s+StopIteration"),
-]
+_COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//|/\*|\*|<!--)")
+_NEGATED_EXFILTRATION_RE = re.compile(
+    r"\b(?:do\s+not|don't|never|avoid|prevent|block|reject|refus(?:e|es|ed|ing)|rather\s+than)\b"
+    r"[^\n]{0,100}\b(?:exfiltrat(?:e|es|ed|ing|ion)|siphon(?:s|ed|ing)?)\b",
+    re.IGNORECASE,
+)
+_NEGATABLE_EXFIL_IDENTIFIERS = {"$explicit_exfil", "$leak_param", "$credential_theft_actions"}
+
+
+def _constant_truth_value(node: ast.expr) -> bool | None:
+    """Evaluate side-effect-free literal conditions, or return ``None``.
+
+    This deliberately handles only syntax whose value can be established
+    without executing user-controlled code. It keeps unreachable exits such
+    as ``if False: break`` from disguising an infinite loop.
+    """
+    try:
+        return bool(ast.literal_eval(node))
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+        pass
+
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        operand = _constant_truth_value(node.operand)
+        return None if operand is None else not operand
+
+    if isinstance(node, ast.BoolOp):
+        values = [_constant_truth_value(value) for value in node.values]
+        if isinstance(node.op, ast.And):
+            if False in values:
+                return False
+            return True if all(value is True for value in values) else None
+        if isinstance(node.op, ast.Or):
+            if True in values:
+                return True
+            return False if all(value is False for value in values) else None
+
+    if isinstance(node, ast.Compare):
+        try:
+            operands = [ast.literal_eval(node.left), *(ast.literal_eval(item) for item in node.comparators)]
+            comparisons: list[bool] = []
+            for left, operator_node, right in zip(operands[:-1], node.ops, operands[1:], strict=True):
+                if isinstance(operator_node, ast.Eq):
+                    comparisons.append(left == right)
+                elif isinstance(operator_node, ast.NotEq):
+                    comparisons.append(left != right)
+                elif isinstance(operator_node, ast.Lt):
+                    comparisons.append(left < right)
+                elif isinstance(operator_node, ast.LtE):
+                    comparisons.append(left <= right)
+                elif isinstance(operator_node, ast.Gt):
+                    comparisons.append(left > right)
+                elif isinstance(operator_node, ast.GtE):
+                    comparisons.append(left >= right)
+                elif isinstance(operator_node, ast.Is):
+                    comparisons.append(left is right)
+                elif isinstance(operator_node, ast.IsNot):
+                    comparisons.append(left is not right)
+                elif isinstance(operator_node, ast.In):
+                    comparisons.append(left in right)
+                elif isinstance(operator_node, ast.NotIn):
+                    comparisons.append(left not in right)
+                else:
+                    return None
+            return all(comparisons)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+            return None
+
+    return None
+
+
+class _LoopExitVisitor:
+    """Find potentially reachable exits belonging to one enclosing loop."""
+
+    def block_has_exit(self, statements: list[ast.stmt], *, nested_loop_depth: int = 0) -> bool:
+        """Return whether a reachable path through *statements* exits the loop."""
+        has_exit, _ = self._block_flow(statements, nested_loop_depth=nested_loop_depth)
+        return has_exit
+
+    def _block_flow(self, statements: list[ast.stmt], *, nested_loop_depth: int) -> tuple[bool, bool]:
+        has_exit = False
+        falls_through = True
+        for statement in statements:
+            if not falls_through:
+                break
+            statement_exit, falls_through = self._statement_flow(
+                statement,
+                nested_loop_depth=nested_loop_depth,
+            )
+            has_exit = has_exit or statement_exit
+        return has_exit, falls_through
+
+    def _statement_flow(self, node: ast.stmt, *, nested_loop_depth: int) -> tuple[bool, bool]:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            return False, True
+        if isinstance(node, (ast.Return, ast.Raise)):
+            return True, False
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and isinstance(node.value.func.value, ast.Name)
+            and node.value.func.value.id == "sys"
+            and node.value.func.attr == "exit"
+        ):
+            return True, False
+        if isinstance(node, ast.Break):
+            return nested_loop_depth == 0, False
+        if isinstance(node, ast.Continue):
+            return False, False
+
+        if isinstance(node, ast.If):
+            truth_value = _constant_truth_value(node.test)
+            if truth_value is True:
+                return self._block_flow(node.body, nested_loop_depth=nested_loop_depth)
+            if truth_value is False:
+                return self._block_flow(node.orelse, nested_loop_depth=nested_loop_depth)
+
+            body_exit, body_falls_through = self._block_flow(
+                node.body,
+                nested_loop_depth=nested_loop_depth,
+            )
+            if node.orelse:
+                else_exit, else_falls_through = self._block_flow(
+                    node.orelse,
+                    nested_loop_depth=nested_loop_depth,
+                )
+            else:
+                else_exit, else_falls_through = False, True
+            return body_exit or else_exit, body_falls_through or else_falls_through
+
+        if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+            if isinstance(node, ast.While) and _constant_truth_value(node.test) is False:
+                return self._block_flow(node.orelse, nested_loop_depth=nested_loop_depth)
+            body_exit, _ = self._block_flow(node.body, nested_loop_depth=nested_loop_depth + 1)
+            else_exit, _ = self._block_flow(node.orelse, nested_loop_depth=nested_loop_depth)
+            # A nested loop may complete or break, so the enclosing block can
+            # continue even when one path through its body does not.
+            return body_exit or else_exit, True
+
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            return self._block_flow(node.body, nested_loop_depth=nested_loop_depth)
+
+        if isinstance(node, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+            protected_blocks = [node.body, node.orelse, *(handler.body for handler in node.handlers)]
+            protected_exit = any(
+                self._block_flow(block, nested_loop_depth=nested_loop_depth)[0] for block in protected_blocks if block
+            )
+            if not node.finalbody:
+                return protected_exit, True
+
+            final_exit, final_falls_through = self._block_flow(
+                node.finalbody,
+                nested_loop_depth=nested_loop_depth,
+            )
+            if not final_falls_through:
+                # An unconditional continue/exit in finally overrides control
+                # flow from the protected block.
+                return final_exit, False
+            return protected_exit or final_exit, True
+
+        if isinstance(node, ast.Match):
+            case_flows = [
+                self._block_flow(case.body, nested_loop_depth=nested_loop_depth)
+                for case in node.cases
+                if case.guard is None or _constant_truth_value(case.guard) is not False
+            ]
+            return any(flow[0] for flow in case_flows), True
+
+        return False, True
+
 
 _SKILL_NAME_PATTERN = re.compile(r"[a-z0-9-]+")
 _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^\)]+)\)")
@@ -533,22 +697,34 @@ class StaticAnalyzer(BaseAnalyzer):
                 matches = rule.scan_content(content, skill_file.relative_path)
                 for match in matches:
                     if rule.id == "RESOURCE_ABUSE_INFINITE_LOOP" and skill_file.file_type == "python":
-                        if self._is_loop_with_exception_handler(content, match["line_number"]):
+                        if self._python_loop_has_exit(content, match["line_number"]):
                             continue
                     findings.append(self._create_finding_from_match(rule, match))
 
         return findings
 
-    def _is_loop_with_exception_handler(self, content: str, loop_line_num: int) -> bool:
-        """Check if a while True loop has an exception handler in surrounding context."""
-        context_size = self.policy.analysis_thresholds.exception_handler_context_lines
-        lines = content.split("\n")
-        context_lines = lines[loop_line_num - 1 : min(loop_line_num + context_size, len(lines))]
-        context_text = "\n".join(context_lines)
+    @staticmethod
+    def _python_loop_has_exit(content: str, loop_line_num: int) -> bool:
+        """Return whether the matched constant loop has an exit in its body.
 
-        for pattern in _EXCEPTION_PATTERNS:
-            if pattern.search(context_text):
-                return True
+        Regex context cannot reliably associate ``return`` or ``break`` with a
+        particular loop.  The Python AST lets us suppress bounded ``while
+        True``/``while 1`` loops without borrowing exits from a later block or
+        a nested function.  A break belonging to a nested loop is likewise not
+        an exit from the matched outer loop.
+        """
+        try:
+            tree = ast.parse(content)
+        except (SyntaxError, ValueError):
+            return False
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.While) or node.lineno != loop_line_num:
+                continue
+            if not isinstance(node.test, ast.Constant) or node.test.value not in (True, 1):
+                continue
+
+            return _LoopExitVisitor().block_has_exit(node.body)
 
         return False
 
@@ -2341,24 +2517,26 @@ class StaticAnalyzer(BaseAnalyzer):
             dangerous_lines: list[tuple[int, str, list[dict]]] = []
             in_triple_quote_block = False
             triple_quote_delim = ""
+            original_lines = content.split("\n")
+            analysis_lines = comment_stripped_lines(content, sf.file_type)
 
-            for line_num, line in enumerate(content.split("\n"), 1):
+            for line_num, (line, analysis_line) in enumerate(zip(original_lines, analysis_lines, strict=True), 1):
                 # Skip comments and empty lines
-                stripped = line.strip()
-                if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+                stripped = analysis_line.strip()
+                if not stripped or stripped.startswith("//"):
                     continue
 
                 # When benign-context filtering is enabled, skip Python docstring
                 # blocks to avoid flagging multilingual documentation text.
                 if filter_math_context and sf.file_type == "python":
                     if in_triple_quote_block:
-                        if triple_quote_delim and triple_quote_delim in line:
+                        if triple_quote_delim and triple_quote_delim in analysis_line:
                             in_triple_quote_block = False
                             triple_quote_delim = ""
                         continue
-                    if '"""' in line or "'''" in line:
-                        delim = '"""' if '"""' in line else "'''"
-                        if line.count(delim) % 2 == 1:
+                    if '"""' in analysis_line or "'''" in analysis_line:
+                        delim = '"""' if '"""' in analysis_line else "'''"
+                        if analysis_line.count(delim) % 2 == 1:
                             in_triple_quote_block = True
                             triple_quote_delim = delim
                         continue
@@ -2398,7 +2576,7 @@ class StaticAnalyzer(BaseAnalyzer):
                             and (_MATH_OPERATOR_RE.search(stripped) or _GREEK_CHAR_RE.search(stripped))
                         ):
                             continue
-                    dangerous_lines.append((line_num, stripped, result))
+                    dangerous_lines.append((line_num, line.strip(), result))
 
             # Require multiple dangerous lines to reduce single-line i18n FPs.
             # A genuine homoglyph attack typically uses confusables across
@@ -2658,6 +2836,13 @@ class StaticAnalyzer(BaseAnalyzer):
             if string_identifier.startswith("$documentation") or string_identifier.startswith("$safe"):
                 continue
 
+            if (
+                rule_name in {"credential_harvesting_generic", "tool_chaining_abuse_generic"}
+                and string_identifier in _NEGATABLE_EXFIL_IDENTIFIERS
+                and self._is_negated_exfiltration_comment(string_match.get("line_content", ""))
+            ):
+                continue
+
             if rule_name == "code_execution_generic":
                 line_content = string_match.get("line_content", "").lower()
                 matched_data = string_match.get("matched_data", "").lower()
@@ -2798,6 +2983,11 @@ class StaticAnalyzer(BaseAnalyzer):
             )
 
         return findings
+
+    @staticmethod
+    def _is_negated_exfiltration_comment(line: str) -> bool:
+        """Recognize a refusal/negation local to an exfiltration comment."""
+        return bool(_COMMENT_LINE_RE.search(line) and _NEGATED_EXFILTRATION_RE.search(line))
 
     def _map_yara_rule_to_threat(self, rule_name: str, meta: dict[str, Any]) -> tuple:
         """Map YARA rule to ThreatCategory and Severity."""

@@ -89,6 +89,8 @@ export SKILL_SCANNER_LLM_API_KEY="your-api-key"
 export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
 export SKILL_SCANNER_LLM_BASE_URL="https://..."  # For Azure/custom endpoints
 export SKILL_SCANNER_LLM_API_VERSION="2025-01-01-preview"  # For Azure
+export SKILL_SCANNER_LLM_MAX_TOKENS="16384"  # Positive integer
+export SKILL_SCANNER_LLM_REASONING_EFFORT="low"
 ```
 
 **Meta-specific overrides** (optional - use different model/key for meta-analysis):
@@ -97,6 +99,8 @@ export SKILL_SCANNER_META_LLM_API_KEY="different-key"
 export SKILL_SCANNER_META_LLM_MODEL="gpt-4o"
 export SKILL_SCANNER_META_LLM_BASE_URL="https://..."
 export SKILL_SCANNER_META_LLM_API_VERSION="..."
+export SKILL_SCANNER_META_LLM_MAX_TOKENS="32768"
+export SKILL_SCANNER_META_LLM_REASONING_EFFORT="minimal"
 ```
 
 ### Priority Order
@@ -107,6 +111,8 @@ export SKILL_SCANNER_META_LLM_API_VERSION="..."
 | Model | `SKILL_SCANNER_META_LLM_MODEL` → `SKILL_SCANNER_LLM_MODEL` → default |
 | Base URL | `SKILL_SCANNER_META_LLM_BASE_URL` → `SKILL_SCANNER_LLM_BASE_URL` |
 | API Version | `SKILL_SCANNER_META_LLM_API_VERSION` → `SKILL_SCANNER_LLM_API_VERSION` |
+| Max output tokens | CLI/API explicit value → `SKILL_SCANNER_META_LLM_MAX_TOKENS` → `SKILL_SCANNER_LLM_MAX_TOKENS` → policy/default |
+| Reasoning effort | CLI/API explicit value → `SKILL_SCANNER_META_LLM_REASONING_EFFORT` → `SKILL_SCANNER_LLM_REASONING_EFFORT` → provider default |
 
 ### Auth Behavior
 
@@ -220,6 +226,39 @@ Meta-analyzed findings include enriched metadata:
   }
 }
 ```
+
+### Overall Risk Assessment
+
+Each batch response also includes a skill-level assessment, surfaced in `scan_metadata.meta_risk_assessment`:
+
+```json
+{
+  "overall_risk_assessment": {
+    "risk_level": "HIGH",
+    "summary": "Skill exfiltrates AWS credentials to an external endpoint",
+    "top_priority": "Remove the network call in scripts/sync.py",
+    "skill_verdict": "MALICIOUS",
+    "verdict_reasoning": "Clear credential read → external POST chain with no legitimate use case"
+  }
+}
+```
+
+`risk_level` is one of `CRITICAL | HIGH | MEDIUM | LOW | SAFE`; `skill_verdict` is one of `SAFE | SUSPICIOUS | MALICIOUS`. Both are validated against these enums when a batch response is parsed. A differently-cased but otherwise valid value (`"safe"`) is normalized to its canonical uppercase form (`"SAFE"`); only a genuinely off-schema value (`"NONE"`) is collapsed to `"UNKNOWN"`, with the original string preserved under `raw_risk_level`/`raw_skill_verdict` for audit. `UNKNOWN` is reserved for the scanner's own degradation path (below) and is never accepted as a model-supplied verdict — a model that self-reports `"UNKNOWN"` is treated as off-schema and flagged the same way.
+
+When a skill's findings span multiple batches (see [Analyzer Selection Guide](meta-and-external-analyzers.md)), only the single highest-`risk_level` batch's assessment is kept as the skill-level result — other batches' `validated_findings`/`false_positives`/`correlations` are still merged in, but their risk assessments are discarded.
+
+`risk_level` and `skill_verdict` are force-set to `"UNKNOWN"` for the whole skill — regardless of what any individual batch concluded — the moment any batch logs an `analysis_warnings` entry, with the discarded values preserved under `partial_risk_level`/`partial_skill_verdict`. Four distinct situations produce that warning:
+
+| Situation | Where | What's retained |
+|---|---|---|
+| Response hits `max_tokens` and can't be narrowed further (single finding still truncates) | `_analyze_batch` | Batch's findings kept unchanged, `META_BATCH_TRUNCATED` |
+| Response isn't valid JSON after all extraction strategies | `_parse_response` | Batch's findings kept unchanged, `META_BATCH_PARSE_FAILED` |
+| Request fails outright (timeout, non-retryable error, retries exhausted) | `_analyze_batch` | Batch's findings kept unchanged, `META_BATCH_REQUEST_FAILED` |
+| Response *parses fine* but classifies an index invalidly, twice, or not at all | `_normalize_batch_result` | Missing/duplicate indices default to validated (conservative), `META_BATCH_INCOMPLETE` |
+
+The fourth case is the one to watch for: a batch can return syntactically valid JSON and still degrade the skill-level verdict to `UNKNOWN` if it simply fails to account for every finding it was given — no network or parsing failure required.
+
+Neither `risk_level` nor `skill_verdict` feed into `ScanResult.is_safe`, `max_severity`, or `--fail-on-severity` CI gating — they're reporting-layer signals read only by the Markdown and HTML reporters, which fall back to a severity-derived default when meta-analysis hasn't run.
 
 ### Finding Correlation
 
