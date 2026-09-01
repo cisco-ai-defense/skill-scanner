@@ -287,6 +287,13 @@ class PipelineAnalyzer(BaseAnalyzer):
             name = name[:-4]
         return name
 
+    @classmethod
+    def _strip_powershell_call_operator(cls, tokens: list[str]) -> list[str]:
+        """Discard PowerShell's call operator before a known shell executable."""
+        if len(tokens) >= 2 and tokens[0] == "&" and cls._normalize_command(tokens[1]) in {"powershell", "pwsh"}:
+            return tokens[1:]
+        return tokens
+
     @staticmethod
     def _split_pipeline(raw: str) -> list[str]:
         """Split a pipeline string by ``|`` while respecting quotes.
@@ -343,6 +350,7 @@ class PipelineAnalyzer(BaseAnalyzer):
                 continue
 
             tokens = self._tokenize_command(part)
+            tokens = self._strip_powershell_call_operator(tokens)
             if not tokens:
                 continue
 
@@ -605,11 +613,7 @@ class PipelineAnalyzer(BaseAnalyzer):
         (
             [
                 re.compile(r"(?:unzip|tar\s+(?:x[a-zA-Z]*|(?:-[a-zA-Z]*x[a-zA-Z]*)))\b"),
-                re.compile(
-                    r"^\s*(?:sudo|env|command|time|nohup|nice|bash|sh|python3?|"
-                    r"powershell(?:\.exe)?|pwsh(?:\.exe)?|source|chmod\s+\+x|\.)(?:\s|$)",
-                    re.IGNORECASE,
-                ),
+                re.compile(r"^\s*\S+"),
             ],
             "COMPOUND_EXTRACT_EXECUTE",
             Severity.HIGH,
@@ -647,8 +651,7 @@ class PipelineAnalyzer(BaseAnalyzer):
         ),
     ]
 
-    @staticmethod
-    def _is_likely_remote_download(fetch_line: str) -> bool:
+    def _is_likely_remote_download(self, fetch_line: str) -> bool:
         """Heuristic: line looks like download intent, not API usage."""
         lower = fetch_line.lower()
         if not re.search(r"\b(curl|wget)\b", lower):
@@ -659,12 +662,7 @@ class PipelineAnalyzer(BaseAnalyzer):
         has_download_hint = any(
             token in lower for token in (" -o ", "--output", ".sh", ".py", ".pl", ".ps1", "install", "setup")
         )
-        has_pipe_exec = bool(
-            re.search(
-                r"\|\s*(?:[^\s|]*[\\/])?(?:bash|sh|python3?|zsh|powershell|pwsh)(?:\.exe)?\b",
-                lower,
-            )
-        )
+        has_pipe_exec = any(self._is_execution_step(part) for part in self._split_pipeline(fetch_line)[1:])
         return has_download_hint or has_pipe_exec
 
     @staticmethod
@@ -691,14 +689,14 @@ class PipelineAnalyzer(BaseAnalyzer):
         lower = exec_line.lower()
         return bool(re.search(r"\b(curl|wget)\b", lower))
 
-    def _is_execution_step(self, exec_line: str) -> bool:
-        """Check whether a command line performs execution (with optional wrappers)."""
+    def _parse_execution_invocation(self, exec_line: str) -> tuple[str, list[str]] | None:
+        """Return the executable and arguments after supported shell wrappers."""
         tokens = self._tokenize_command(exec_line)
+        tokens = self._strip_powershell_call_operator(tokens)
         if not tokens:
-            return False
+            return None
 
         prefixes = {self._normalize_command(p) for p in self.policy.pipeline.compound_fetch_exec_prefixes}
-        exec_commands = {self._normalize_command(c) for c in self.policy.pipeline.compound_fetch_exec_commands}
 
         i = 0
         while i < len(tokens):
@@ -722,9 +720,29 @@ class PipelineAnalyzer(BaseAnalyzer):
                     i += 1
 
         if i >= len(tokens):
-            return False
+            return None
 
         cmd = self._normalize_command(tokens[i])
+        return cmd, tokens[i + 1 :]
+
+    def _is_execution_step(self, exec_line: str) -> bool:
+        """Check whether a command line performs execution (with optional wrappers)."""
+        invocation = self._parse_execution_invocation(exec_line)
+        if invocation is None:
+            return False
+        cmd, _ = invocation
+        exec_commands = {self._normalize_command(c) for c in self.policy.pipeline.compound_fetch_exec_commands}
+        return cmd in exec_commands
+
+    def _is_extraction_execution_step(self, exec_line: str) -> bool:
+        """Check for execution or executable permission changes after extraction."""
+        invocation = self._parse_execution_invocation(exec_line)
+        if invocation is None:
+            return False
+        cmd, args = invocation
+        if cmd == "chmod":
+            return "+x" in args
+        exec_commands = {self._normalize_command(c) for c in self.policy.pipeline.compound_fetch_exec_commands}
         return cmd in exec_commands
 
     def _analyze_compound_sequences(self, skill: Skill) -> list[Finding]:
@@ -745,22 +763,27 @@ class PipelineAnalyzer(BaseAnalyzer):
                     # Filter obvious FP cases for fetch+execute:
                     # - API request examples (curl -X POST /api/...)
                     # - shell-wrapped curl requests (bash -c 'curl ...')
-                    if rule_id == "COMPOUND_FETCH_EXECUTE" and len(matched_lines) >= 2:
+                    if rule_id in {"COMPOUND_EXTRACT_EXECUTE", "COMPOUND_FETCH_EXECUTE"} and len(matched_lines) >= 2:
                         pipeline_policy = self.policy.pipeline
                         fetch_idx = matched_lines[0]
                         exec_idx = matched_lines[1]
                         fetch_line = block_lines[fetch_idx] if fetch_idx < len(block_lines) else ""
                         exec_line = block_lines[exec_idx] if exec_idx < len(block_lines) else ""
+                        is_execution_step = (
+                            self._is_extraction_execution_step
+                            if rule_id == "COMPOUND_EXTRACT_EXECUTE"
+                            else self._is_execution_step
+                        )
 
                         # If the first matched "execution" line is a wrapper/non-exec
                         # (e.g. env assignments), keep scanning for a real sink.
-                        if not self._is_execution_step(exec_line):
+                        if not is_execution_step(exec_line):
                             found_exec = False
                             for idx in range(fetch_idx + 1, len(block_lines)):
                                 candidate = block_lines[idx]
                                 if not candidate or candidate.startswith("#"):
                                     continue
-                                if self._is_execution_step(candidate):
+                                if is_execution_step(candidate):
                                     exec_idx = idx
                                     exec_line = candidate
                                     matched_lines = [fetch_idx, exec_idx]
@@ -769,17 +792,21 @@ class PipelineAnalyzer(BaseAnalyzer):
                             if not found_exec:
                                 continue
 
-                        if (
-                            pipeline_policy.compound_fetch_require_download_intent
-                            and not self._is_likely_remote_download(fetch_line)
-                        ):
-                            continue
-                        if pipeline_policy.compound_fetch_filter_api_requests and self._is_api_style_fetch(fetch_line):
-                            continue
-                        if pipeline_policy.compound_fetch_filter_shell_wrapped_fetch and self._is_shell_wrapped_fetch(
-                            exec_line
-                        ):
-                            continue
+                        if rule_id == "COMPOUND_FETCH_EXECUTE":
+                            if (
+                                pipeline_policy.compound_fetch_require_download_intent
+                                and not self._is_likely_remote_download(fetch_line)
+                            ):
+                                continue
+                            if pipeline_policy.compound_fetch_filter_api_requests and self._is_api_style_fetch(
+                                fetch_line
+                            ):
+                                continue
+                            if (
+                                pipeline_policy.compound_fetch_filter_shell_wrapped_fetch
+                                and self._is_shell_wrapped_fetch(exec_line)
+                            ):
+                                continue
 
                     # Check for known benign patterns
                     is_benign = False

