@@ -21,8 +21,10 @@ Static pattern analyzer for detecting security vulnerabilities.
 import ast
 import configparser
 import hashlib
+import io
 import logging
 import re
+import tokenize
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -42,6 +44,64 @@ except ModuleNotFoundError:  # Python < 3.11
     tomllib = None
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_unquoted_hash_comment(line: str, *, require_token_boundary: bool) -> str:
+    """Strip a ``#`` comment while preserving quoted and escaped hashes."""
+    in_single_quote = False
+    in_double_quote = False
+    escaped = False
+
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and not in_single_quote:
+            escaped = True
+            continue
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            continue
+        if char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            continue
+        if char != "#" or in_single_quote or in_double_quote:
+            continue
+
+        if not require_token_boundary or index == 0:
+            return line[:index]
+        if line[index - 1].isspace() or line[index - 1] in ";|&()":
+            return line[:index]
+
+    return line
+
+
+def _strip_python_comments(content: str) -> list[str]:
+    """Return Python source lines with tokenizer-identified comments removed."""
+    lines = content.split("\n")
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(content).readline)
+        for token in tokens:
+            if token.type != tokenize.COMMENT:
+                continue
+            row, column = token.start
+            if 1 <= row <= len(lines):
+                lines[row - 1] = lines[row - 1][:column]
+    except (IndentationError, SyntaxError, tokenize.TokenError):
+        # Homoglyph analysis should remain available for malformed snippets.
+        # This fallback still respects ordinary single/double-quoted hashes.
+        return [_strip_unquoted_hash_comment(line, require_token_boundary=False) for line in content.split("\n")]
+    return lines
+
+
+def _comment_stripped_lines(content: str, file_type: str) -> list[str]:
+    """Strip comments using the lexical rules of the executable file type."""
+    if file_type == "python":
+        return _strip_python_comments(content)
+    if file_type == "bash":
+        return [_strip_unquoted_hash_comment(line, require_token_boundary=True) for line in content.split("\n")]
+    return content.split("\n")
+
 
 # Pre-compiled regex patterns for file operation checks
 _READ_PATTERNS = [
@@ -2341,10 +2401,12 @@ class StaticAnalyzer(BaseAnalyzer):
             dangerous_lines: list[tuple[int, str, list[dict]]] = []
             in_triple_quote_block = False
             triple_quote_delim = ""
+            original_lines = content.split("\n")
+            analysis_lines = _comment_stripped_lines(content, sf.file_type)
 
-            for line_num, line in enumerate(content.split("\n"), 1):
+            for line_num, (line, analysis_line) in enumerate(zip(original_lines, analysis_lines, strict=True), 1):
                 # Skip comments and empty lines
-                stripped = line.strip()
+                stripped = analysis_line.strip()
                 if not stripped or stripped.startswith("#") or stripped.startswith("//"):
                     continue
 
@@ -2352,13 +2414,13 @@ class StaticAnalyzer(BaseAnalyzer):
                 # blocks to avoid flagging multilingual documentation text.
                 if filter_math_context and sf.file_type == "python":
                     if in_triple_quote_block:
-                        if triple_quote_delim and triple_quote_delim in line:
+                        if triple_quote_delim and triple_quote_delim in analysis_line:
                             in_triple_quote_block = False
                             triple_quote_delim = ""
                         continue
-                    if '"""' in line or "'''" in line:
-                        delim = '"""' if '"""' in line else "'''"
-                        if line.count(delim) % 2 == 1:
+                    if '"""' in analysis_line or "'''" in analysis_line:
+                        delim = '"""' if '"""' in analysis_line else "'''"
+                        if analysis_line.count(delim) % 2 == 1:
                             in_triple_quote_block = True
                             triple_quote_delim = delim
                         continue
@@ -2398,7 +2460,7 @@ class StaticAnalyzer(BaseAnalyzer):
                             and (_MATH_OPERATOR_RE.search(stripped) or _GREEK_CHAR_RE.search(stripped))
                         ):
                             continue
-                    dangerous_lines.append((line_num, stripped, result))
+                    dangerous_lines.append((line_num, line.strip(), result))
 
             # Require multiple dangerous lines to reduce single-line i18n FPs.
             # A genuine homoglyph attack typically uses confusables across
