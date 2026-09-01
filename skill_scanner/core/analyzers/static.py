@@ -82,15 +82,6 @@ _GLOB_PATTERNS = [
     re.compile(r"fnmatch\."),
 ]
 
-_EXCEPTION_PATTERNS = [
-    re.compile(r"except\s+(EOFError|StopIteration|KeyboardInterrupt|Exception|BaseException)"),
-    re.compile(r"except\s*:"),
-    re.compile(r"break\s*$", re.MULTILINE),
-    re.compile(r"return\s*$", re.MULTILINE),
-    re.compile(r"sys\.exit\s*\("),
-    re.compile(r"raise\s+StopIteration"),
-]
-
 _COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//|/\*|\*|<!--)")
 _NEGATED_EXFILTRATION_RE = re.compile(
     r"\b(?:do\s+not|don't|never|avoid|prevent|block|reject|refus(?:e|es|ed|ing)|rather\s+than)\b"
@@ -100,45 +91,166 @@ _NEGATED_EXFILTRATION_RE = re.compile(
 _NEGATABLE_EXFIL_IDENTIFIERS = {"$explicit_exfil", "$leak_param", "$credential_theft_actions"}
 
 
-class _LoopExitVisitor(ast.NodeVisitor):
-    """Find exits belonging to one enclosing loop, ignoring nested scopes."""
+def _constant_truth_value(node: ast.expr) -> bool | None:
+    """Evaluate side-effect-free literal conditions, or return ``None``.
 
-    def __init__(self) -> None:
-        self.has_exit = False
-        self._nested_loop_depth = 0
+    This deliberately handles only syntax whose value can be established
+    without executing user-controlled code. It keeps unreachable exits such
+    as ``if False: break`` from disguising an infinite loop.
+    """
+    try:
+        return bool(ast.literal_eval(node))
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+        pass
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
-        return
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        operand = _constant_truth_value(node.operand)
+        return None if operand is None else not operand
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
-        return
+    if isinstance(node, ast.BoolOp):
+        values = [_constant_truth_value(value) for value in node.values]
+        if isinstance(node.op, ast.And):
+            if False in values:
+                return False
+            return True if all(value is True for value in values) else None
+        if isinstance(node.op, ast.Or):
+            if True in values:
+                return True
+            return False if all(value is False for value in values) else None
 
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
-        return
+    if isinstance(node, ast.Compare):
+        try:
+            operands = [ast.literal_eval(node.left), *(ast.literal_eval(item) for item in node.comparators)]
+            comparisons: list[bool] = []
+            for left, operator_node, right in zip(operands[:-1], node.ops, operands[1:], strict=True):
+                if isinstance(operator_node, ast.Eq):
+                    comparisons.append(left == right)
+                elif isinstance(operator_node, ast.NotEq):
+                    comparisons.append(left != right)
+                elif isinstance(operator_node, ast.Lt):
+                    comparisons.append(left < right)
+                elif isinstance(operator_node, ast.LtE):
+                    comparisons.append(left <= right)
+                elif isinstance(operator_node, ast.Gt):
+                    comparisons.append(left > right)
+                elif isinstance(operator_node, ast.GtE):
+                    comparisons.append(left >= right)
+                elif isinstance(operator_node, ast.Is):
+                    comparisons.append(left is right)
+                elif isinstance(operator_node, ast.IsNot):
+                    comparisons.append(left is not right)
+                elif isinstance(operator_node, ast.In):
+                    comparisons.append(left in right)
+                elif isinstance(operator_node, ast.NotIn):
+                    comparisons.append(left not in right)
+                else:
+                    return None
+            return all(comparisons)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+            return None
 
-    def visit_Return(self, node: ast.Return) -> None:  # noqa: N802
-        self.has_exit = True
+    return None
 
-    def visit_Raise(self, node: ast.Raise) -> None:  # noqa: N802
-        self.has_exit = True
 
-    def visit_Break(self, node: ast.Break) -> None:  # noqa: N802
-        if self._nested_loop_depth == 0:
-            self.has_exit = True
+class _LoopExitVisitor:
+    """Find potentially reachable exits belonging to one enclosing loop."""
 
-    def _visit_nested_loop(self, node: ast.For | ast.AsyncFor | ast.While) -> None:
-        self._nested_loop_depth += 1
-        self.generic_visit(node)
-        self._nested_loop_depth -= 1
+    def block_has_exit(self, statements: list[ast.stmt], *, nested_loop_depth: int = 0) -> bool:
+        """Return whether a reachable path through *statements* exits the loop."""
+        has_exit, _ = self._block_flow(statements, nested_loop_depth=nested_loop_depth)
+        return has_exit
 
-    def visit_For(self, node: ast.For) -> None:  # noqa: N802
-        self._visit_nested_loop(node)
+    def _block_flow(self, statements: list[ast.stmt], *, nested_loop_depth: int) -> tuple[bool, bool]:
+        has_exit = False
+        falls_through = True
+        for statement in statements:
+            if not falls_through:
+                break
+            statement_exit, falls_through = self._statement_flow(
+                statement,
+                nested_loop_depth=nested_loop_depth,
+            )
+            has_exit = has_exit or statement_exit
+        return has_exit, falls_through
 
-    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802
-        self._visit_nested_loop(node)
+    def _statement_flow(self, node: ast.stmt, *, nested_loop_depth: int) -> tuple[bool, bool]:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            return False, True
+        if isinstance(node, (ast.Return, ast.Raise)):
+            return True, False
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and isinstance(node.value.func.value, ast.Name)
+            and node.value.func.value.id == "sys"
+            and node.value.func.attr == "exit"
+        ):
+            return True, False
+        if isinstance(node, ast.Break):
+            return nested_loop_depth == 0, False
+        if isinstance(node, ast.Continue):
+            return False, False
 
-    def visit_While(self, node: ast.While) -> None:  # noqa: N802
-        self._visit_nested_loop(node)
+        if isinstance(node, ast.If):
+            truth_value = _constant_truth_value(node.test)
+            if truth_value is True:
+                return self._block_flow(node.body, nested_loop_depth=nested_loop_depth)
+            if truth_value is False:
+                return self._block_flow(node.orelse, nested_loop_depth=nested_loop_depth)
+
+            body_exit, body_falls_through = self._block_flow(
+                node.body,
+                nested_loop_depth=nested_loop_depth,
+            )
+            if node.orelse:
+                else_exit, else_falls_through = self._block_flow(
+                    node.orelse,
+                    nested_loop_depth=nested_loop_depth,
+                )
+            else:
+                else_exit, else_falls_through = False, True
+            return body_exit or else_exit, body_falls_through or else_falls_through
+
+        if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+            if isinstance(node, ast.While) and _constant_truth_value(node.test) is False:
+                return self._block_flow(node.orelse, nested_loop_depth=nested_loop_depth + 1)
+            body_exit, _ = self._block_flow(node.body, nested_loop_depth=nested_loop_depth + 1)
+            else_exit, _ = self._block_flow(node.orelse, nested_loop_depth=nested_loop_depth + 1)
+            # A nested loop may complete or break, so the enclosing block can
+            # continue even when one path through its body does not.
+            return body_exit or else_exit, True
+
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            return self._block_flow(node.body, nested_loop_depth=nested_loop_depth)
+
+        if isinstance(node, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+            protected_blocks = [node.body, node.orelse, *(handler.body for handler in node.handlers)]
+            protected_exit = any(
+                self._block_flow(block, nested_loop_depth=nested_loop_depth)[0] for block in protected_blocks if block
+            )
+            if not node.finalbody:
+                return protected_exit, True
+
+            final_exit, final_falls_through = self._block_flow(
+                node.finalbody,
+                nested_loop_depth=nested_loop_depth,
+            )
+            if not final_falls_through:
+                # An unconditional continue/exit in finally overrides control
+                # flow from the protected block.
+                return final_exit, False
+            return protected_exit or final_exit, True
+
+        if isinstance(node, ast.Match):
+            case_flows = [
+                self._block_flow(case.body, nested_loop_depth=nested_loop_depth)
+                for case in node.cases
+                if case.guard is None or _constant_truth_value(case.guard) is not False
+            ]
+            return any(flow[0] for flow in case_flows), True
+
+        return False, True
 
 
 _SKILL_NAME_PATTERN = re.compile(r"[a-z0-9-]+")
@@ -587,8 +699,6 @@ class StaticAnalyzer(BaseAnalyzer):
                     if rule.id == "RESOURCE_ABUSE_INFINITE_LOOP" and skill_file.file_type == "python":
                         if self._python_loop_has_exit(content, match["line_number"]):
                             continue
-                        if self._is_loop_with_exception_handler(content, match["line_number"]):
-                            continue
                     findings.append(self._create_finding_from_match(rule, match))
 
         return findings
@@ -614,25 +724,7 @@ class StaticAnalyzer(BaseAnalyzer):
             if not isinstance(node.test, ast.Constant) or node.test.value not in (True, 1):
                 continue
 
-            visitor = _LoopExitVisitor()
-            for statement in node.body:
-                visitor.visit(statement)
-                if visitor.has_exit:
-                    return True
-            return False
-
-        return False
-
-    def _is_loop_with_exception_handler(self, content: str, loop_line_num: int) -> bool:
-        """Check if a while True loop has an exception handler in surrounding context."""
-        context_size = self.policy.analysis_thresholds.exception_handler_context_lines
-        lines = content.split("\n")
-        context_lines = lines[loop_line_num - 1 : min(loop_line_num + context_size, len(lines))]
-        context_text = "\n".join(context_lines)
-
-        for pattern in _EXCEPTION_PATTERNS:
-            if pattern.search(context_text):
-                return True
+            return _LoopExitVisitor().block_has_exit(node.body)
 
         return False
 
