@@ -30,6 +30,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from ..utils.logging_context import scan_log_context
 from .analyzability import AnalyzabilityReport, compute_analyzability
 from .analyzer_factory import build_core_analyzers
 from .analyzers.base import BaseAnalyzer
@@ -200,6 +201,14 @@ class SkillScanner:
     # ------------------------------------------------------------------
 
     def _scan_single_skill(self, skill: Skill, skill_directory: Path) -> ScanResult:
+        """Run one scan with skill-scoped logging context."""
+        with scan_log_context(
+            skill_name=skill.name,
+            skill_path=str(skill_directory.resolve()),
+        ):
+            return self._scan_single_skill_with_context(skill, skill_directory)
+
+    def _scan_single_skill_with_context(self, skill: Skill, skill_directory: Path) -> ScanResult:
         """Run the full analysis pipeline on a loaded skill.
 
         This is the shared implementation that both ``scan_skill`` and

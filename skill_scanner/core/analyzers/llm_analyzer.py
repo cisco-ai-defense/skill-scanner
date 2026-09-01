@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import os
 import re
 from enum import Enum
 from pathlib import Path
@@ -83,6 +84,7 @@ class LLMProvider(str, Enum):
     - gcp-vertex: Google Cloud Vertex AI
     - ollama: Local Ollama models
     - openrouter: OpenRouter API
+    - orcarouter: OrcaRouter API
     """
 
     OPENAI = "openai"
@@ -94,6 +96,7 @@ class LLMProvider(str, Enum):
     GCP_VERTEX = "gcp-vertex"
     OLLAMA = "ollama"
     OPENROUTER = "openrouter"
+    ORCAROUTER = "orcarouter"
 
     @classmethod
     def normalize(cls, provider: str) -> str:
@@ -142,7 +145,7 @@ class LLMAnalyzer(BaseAnalyzer):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        max_tokens: int = 8192,
+        max_tokens: int | None = None,
         temperature: Any = _TEMPERATURE_UNSET,
         max_retries: int = 3,
         rate_limit_delay: float = 2.0,
@@ -157,6 +160,7 @@ class LLMAnalyzer(BaseAnalyzer):
         # Provider selection (can be enum or string)
         provider: str | None = None,
         llm_user: str | None = None,
+        reasoning_effort: str | None = None,
         # Policy (optional – uses generous defaults when omitted)
         policy: ScanPolicy | None = None,
     ):
@@ -166,7 +170,9 @@ class LLMAnalyzer(BaseAnalyzer):
         Args:
             model: Model identifier (e.g., "claude-3-5-sonnet-20241022", "gpt-4o", "bedrock/anthropic.claude-v2")
             api_key: API key (if None, reads from environment)
-            max_tokens: Maximum tokens for response
+            max_tokens: Maximum tokens for response. When omitted, resolves
+                from ``SKILL_SCANNER_LLM_MAX_TOKENS`` and then defaults to
+                8192. Values must be positive integers.
             temperature: Sampling temperature (0.0 for deterministic). Pass
                 ``None`` to omit the parameter from the request entirely —
                 required for models that reject it (Claude 4.x via Bedrock,
@@ -184,6 +190,9 @@ class LLMAnalyzer(BaseAnalyzer):
             provider: LLM provider name (e.g., "openai", "anthropic", "aws-bedrock", etc.)
                 Can be enum or string (e.g., "openai", "anthropic", "aws-bedrock")
             llm_user: Optional raw Chat Completions user field for OpenAI-compatible routes.
+            reasoning_effort: Optional reasoning-depth control. When omitted,
+                resolves from ``SKILL_SCANNER_LLM_REASONING_EFFORT``. Use
+                ``disabled`` for explicit provider-aware thinking disablement.
             policy: Scan policy providing LLM context budget thresholds.
                 When ``None``, generous defaults from ``LLMAnalysisPolicy()``
                 are used.
@@ -198,16 +207,17 @@ class LLMAnalyzer(BaseAnalyzer):
 
             self.llm_policy = LLMAnalysisPolicy()
 
+        provider_value = provider if provider is not None else os.getenv("SKILL_SCANNER_LLM_PROVIDER")
         provider_str: str | None = None
-        if provider is not None:
-            if isinstance(provider, LLMProvider):
-                provider_str = provider.value
+        if provider_value is not None:
+            if isinstance(provider_value, LLMProvider):
+                provider_str = provider_value.value
             else:
-                provider_str = LLMProvider.normalize(str(provider))
+                provider_str = LLMProvider.normalize(str(provider_value))
 
-            if not isinstance(provider, LLMProvider) and not LLMProvider.is_valid_provider(provider_str):
+            if not isinstance(provider_value, LLMProvider) and not LLMProvider.is_valid_provider(provider_str):
                 raise ValueError(
-                    f"Invalid provider '{provider}'. Valid providers: {', '.join([p.value for p in LLMProvider])}"
+                    f"Invalid provider '{provider_value}'. Valid providers: {', '.join([p.value for p in LLMProvider])}"
                 )
 
         # Handle provider selection: if provider is specified, map to default model
@@ -223,6 +233,7 @@ class LLMAnalyzer(BaseAnalyzer):
                 "gcp-vertex": "vertex_ai/gemini-1.5-pro",
                 "ollama": "ollama/llama2",
                 "openrouter": "openrouter/openai/gpt-4",
+                "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
             }
             model = model_mapping.get(provider_str, "claude-3-5-sonnet-20241022")
         elif model is None:
@@ -250,6 +261,7 @@ class LLMAnalyzer(BaseAnalyzer):
             max_retries=max_retries,
             rate_limit_delay=rate_limit_delay,
             timeout=timeout,
+            reasoning_effort=reasoning_effort,
         )
 
         self.prompt_builder = PromptBuilder()
@@ -262,12 +274,13 @@ class LLMAnalyzer(BaseAnalyzer):
         self.aws_region = self.provider_config.aws_region
         self.aws_profile = self.provider_config.aws_profile
         self.aws_session_token = self.provider_config.aws_session_token
-        self.max_tokens = max_tokens
+        self.max_tokens = self.request_handler.max_tokens
         # Mirror the resolved value (env-overrideable; ``None`` = omit from request).
         self.temperature = self.request_handler.temperature
         self.max_retries = max_retries
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
+        self.reasoning_effort = self.request_handler.reasoning_effort
 
         # Cumulative token usage across all LLM calls in the most recent analyze() run.
         self._llm_usage: LLMTokenUsage = _empty_token_usage()
@@ -500,7 +513,11 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                         "only — LLM-based threat detection was not performed."
                     ),
                     analyzer="llm_analyzer",
-                    metadata={"error": str(e), "llm_model": self.model},
+                    metadata={
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "llm_model": self.model,
+                    },
                 )
             )
             return findings
