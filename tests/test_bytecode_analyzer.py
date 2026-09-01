@@ -151,14 +151,8 @@ class TestBytecodeIntegrity:
         findings = analyzer.analyze(skill)
         assert len(findings) == 0
 
-    def test_tampered_bytecode_no_decompiler(self, tmp_path):
-        """Without decompyle3/uncompyle6, tampered bytecode silently passes.
-
-        This is expected - BYTECODE_SOURCE_MISMATCH only fires when we can
-        actually decompile and compare. The PYCACHE_FILES_DETECTED and
-        BYTECODE_NO_SOURCE rules handle the common cases.
-        When decompilers ARE available, this would produce BYTECODE_SOURCE_MISMATCH.
-        """
+    def test_tampered_bytecode_detected_without_decompiler(self, tmp_path):
+        """Tampered bytecode is detected using only the standard library."""
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
 
@@ -187,11 +181,54 @@ class TestBytecodeIntegrity:
         analyzer = BytecodeAnalyzer()
         findings = analyzer.analyze(skill)
 
-        # Without decompilers, no MISMATCH can be detected
-        # This is a known limitation - the analyzer gracefully degrades
         mismatch = [f for f in findings if f.rule_id == "BYTECODE_SOURCE_MISMATCH"]
-        # May or may not be detected depending on installed packages
-        # We don't assert count here - just verify no crash
+        assert len(mismatch) == 1
+        assert mismatch[0].severity == Severity.CRITICAL
+
+    def test_unsupported_bytecode_is_blocked(self, tmp_path):
+        """Bytecode from another Python version cannot silently pass."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        py_file = skill_dir / "module.py"
+        py_file.write_text("value = 1\n")
+        pyc_file = skill_dir / "module.cpython-999.pyc"
+        pyc_file.write_bytes(b"\x00\x00\x00\x00" + b"\x00" * 20)
+
+        skill = _make_skill(
+            skill_dir,
+            [
+                _make_skill_file(py_file, "module.py", "python"),
+                _make_skill_file(pyc_file, "module.cpython-999.pyc", "binary"),
+            ],
+        )
+
+        findings = BytecodeAnalyzer().analyze(skill)
+        unverifiable = [f for f in findings if f.rule_id == "BYTECODE_UNVERIFIABLE"]
+        assert len(unverifiable) == 1
+        assert unverifiable[0].severity == Severity.HIGH
+
+    @pytest.mark.parametrize("optimization", [1, 2])
+    def test_optimized_bytecode_is_compared_at_matching_level(self, tmp_path, optimization):
+        """PEP 3147 opt-N bytecode is not mistaken for source tampering."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        py_file = skill_dir / "module.py"
+        py_file.write_text('"""Removed by optimize=2."""\nassert True\nvalue = 1\n')
+        pyc_file = skill_dir / f"module.cpython-311.opt-{optimization}.pyc"
+        py_compile.compile(str(py_file), cfile=str(pyc_file), doraise=True, optimize=optimization)
+
+        skill = _make_skill(
+            skill_dir,
+            [
+                _make_skill_file(py_file, "module.py", "python"),
+                _make_skill_file(pyc_file, pyc_file.name, "binary"),
+            ],
+        )
+
+        findings = BytecodeAnalyzer().analyze(skill)
+        assert not [
+            finding for finding in findings if finding.rule_id in {"BYTECODE_SOURCE_MISMATCH", "BYTECODE_UNVERIFIABLE"}
+        ]
 
 
 class TestStemCollisionResolution:

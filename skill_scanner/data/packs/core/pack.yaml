@@ -1015,3 +1015,10 @@ rules:
     knobs:
       enabled: true
     description: "Bytecode does not match source code"
+
+  BYTECODE_UNVERIFIABLE:
+    source: python
+    analyzer: bytecode
+    knobs:
+      enabled: true
+    description: "Python bytecode cannot be verified against source"
