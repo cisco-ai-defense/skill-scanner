@@ -72,8 +72,9 @@ rule prompt_injection_unicode_steganography{
             $unicode_tag_pattern or
             $unicode_long_tag or
 
-            // Variation selectors + decode = highly suspicious (os-info-checker-es6 pattern)
-            (#var_selectors > 5 and any of ($eval_decode, $func_decode, $fromcharcode)) or
+            // Repeated, dense supplementary selectors are suspicious without
+            // flagging ordinary CJK Ideographic Variation Sequences.
+            (#var_selectors >= 8 and (#var_selectors * 5 > filesize)) or
 
             // Zero-width steganography requires BOTH high count AND suspicious code
             // 50+ zero-width chars + decode function = likely steganography
