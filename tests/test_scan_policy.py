@@ -49,6 +49,8 @@ class TestScanPolicyDefaults:
         assert policy.pipeline.compound_fetch_filter_shell_wrapped_fetch is True
         assert "sudo" in policy.pipeline.compound_fetch_exec_prefixes
         assert "bash" in policy.pipeline.compound_fetch_exec_commands
+        assert "powershell" in policy.pipeline.compound_fetch_exec_commands
+        assert "pwsh" in policy.pipeline.compound_fetch_exec_commands
 
     def test_default_has_rule_scoping(self):
         policy = ScanPolicy.default()
@@ -233,6 +235,8 @@ class TestScanPolicyPresets:
         assert strict.pipeline.compound_fetch_filter_shell_wrapped_fetch is False
         assert "sudo" in strict.pipeline.compound_fetch_exec_prefixes
         assert "node" in strict.pipeline.compound_fetch_exec_commands
+        assert "powershell" in strict.pipeline.compound_fetch_exec_commands
+        assert "pwsh" in strict.pipeline.compound_fetch_exec_commands
 
     def test_strict_has_no_test_creds(self):
         strict = ScanPolicy.from_preset("strict")
@@ -270,6 +274,8 @@ class TestScanPolicyPresets:
         assert permissive.finding_output.annotate_same_path_rule_cooccurrence is True
         assert "sudo" in permissive.pipeline.compound_fetch_exec_prefixes
         assert "bash" in permissive.pipeline.compound_fetch_exec_commands
+        assert "powershell" in permissive.pipeline.compound_fetch_exec_commands
+        assert "pwsh" in permissive.pipeline.compound_fetch_exec_commands
         assert permissive.rule_scoping.asset_prompt_injection_skip_in_docs is True
         assert permissive.finding_output.dedupe_same_issue_per_location is True
 

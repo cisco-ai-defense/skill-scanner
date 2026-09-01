@@ -780,8 +780,8 @@ rules:
       compound_fetch_filter_api_requests: true
       compound_fetch_filter_shell_wrapped_fetch: true
       compound_fetch_exec_prefixes: "sudo,env,command,time,nohup,nice"
-      compound_fetch_exec_commands: "bash,sh,zsh,source,python,python3,."
-    description: "Remote fetch followed by execution (curl|sh)"
+      compound_fetch_exec_commands: "bash,sh,zsh,powershell,pwsh,source,python,python3,."
+    description: "Remote fetch followed by interpreter execution"
 
   COMPOUND_LAUNDERING_CHAIN:
     source: python

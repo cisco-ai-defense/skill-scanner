@@ -61,6 +61,8 @@ pipeline:
     - "bash"
     - "sh"
     - "zsh"
+    - "powershell"
+    - "pwsh"
     - "source"
     - "python"
     - "python3"

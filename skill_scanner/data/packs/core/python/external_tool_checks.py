@@ -13,6 +13,7 @@ import re
 from typing import TYPE_CHECKING
 
 from skill_scanner.core.models import Finding, Severity, ThreatCategory
+from skill_scanner.core.static_analysis.comment_stripping import comment_stripped_lines
 
 from ._helpers import generate_finding_id
 
@@ -268,10 +269,12 @@ def check_homoglyph_attacks(skill: Skill, policy: ScanPolicy) -> list[Finding]:
             continue
 
         dangerous_lines: list[tuple[int, str, list[dict]]] = []
+        original_lines = content.split("\n")
+        analysis_lines = comment_stripped_lines(content, sf.file_type)
 
-        for line_num, line in enumerate(content.split("\n"), 1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+        for line_num, (line, analysis_line) in enumerate(zip(original_lines, analysis_lines, strict=True), 1):
+            stripped = analysis_line.strip()
+            if not stripped or stripped.startswith("//"):
                 continue
             if stripped.isascii():
                 continue
@@ -280,7 +283,7 @@ def check_homoglyph_attacks(skill: Skill, policy: ScanPolicy) -> list[Finding]:
 
             result = confusables.is_dangerous(stripped, preferred_aliases=["LATIN"])
             if result:
-                dangerous_lines.append((line_num, stripped, result))
+                dangerous_lines.append((line_num, line.strip(), result))
 
         min_dangerous_lines = policy.analysis_thresholds.min_dangerous_lines
         if len(dangerous_lines) < min_dangerous_lines:

@@ -28,16 +28,43 @@ import frontmatter
 
 from ..utils.file_utils import FileValidationError, get_file_type, read_text_strict
 from .exceptions import SkillLoadError
+from .file_magic import detect_magic
 from .models import Skill, SkillFile, SkillManifest
 
 logger = logging.getLogger(__name__)
 
 _FRONTMATTER_QUOTE_RE = re.compile(r'^(description|name):[^\S\n]+(?!["\'])(.*:.*)$', re.MULTILINE)
 
+_SCRIPT_MAGIC_TYPES = {
+    "code/javascript": "javascript",
+    "code/jsx": "javascript",
+    "code/python": "python",
+    "code/shell": "bash",
+    "code/tsx": "typescript",
+    "code/typescript": "typescript",
+}
+_SCRIPT_MAGIC_MIN_CONFIDENCE = 0.85
+
 
 def _quote_frontmatter_scalar(match: re.Match[str]) -> str:
     """Quote a YAML scalar while preserving literal backslashes and quotes."""
     return f"{match.group(1)}: {json.dumps(match.group(2), ensure_ascii=False)}"
+
+
+def _classify_extensionless_script(path: Path, file_type: str) -> str:
+    """Recognize extensionless source code so analyzers do not skip it.
+
+    Extension-based classification remains authoritative when a suffix exists.
+    For extensionless files, only high-confidence Magika labels that map to a
+    script type supported by :class:`Skill` are accepted.
+    """
+    if file_type != "other" or path.suffix:
+        return file_type
+
+    magic = detect_magic(path)
+    if magic is None or magic.score < _SCRIPT_MAGIC_MIN_CONFIDENCE:
+        return file_type
+    return _SCRIPT_MAGIC_TYPES.get(magic.content_type, file_type)
 
 
 class SkillLoader:
@@ -316,12 +343,14 @@ class SkillLoader:
             # Important: Skills may live under hidden parent directories like `.claude/skills/`.
             # We only want to skip .git *inside* the skill package, not its parents.
             rel_parts = path.relative_to(skill_directory).parts
-            if any(part == ".git" for part in rel_parts):
+            if ".git" in rel_parts[:-1]:
                 continue
 
             relative_path = str(path.relative_to(skill_directory))
             file_type = get_file_type(path)
             size_bytes = path.stat().st_size
+            if size_bytes < self.max_file_size_bytes:
+                file_type = _classify_extensionless_script(path, file_type)
 
             # Read content if not too large and not binary
             content = None

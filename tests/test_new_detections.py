@@ -1027,6 +1027,145 @@ class TestHomoglyphDetection:
         homoglyph_findings = [f for f in findings if f.rule_id == "HOMOGLYPH_ATTACK"]
         assert len(homoglyph_findings) == 0
 
+    def test_cyrillic_python_trailing_comments_not_flagged(self, tmp_path):
+        """Non-ASCII prose in tokenizer-recognized trailing comments is inert."""
+        code = (
+            "COLUMNS = [\n"
+            '    ("calendar_uid", "TEXT"),  # идентификатор календаря в своём источнике\n'
+            '    ("calendar_account", "TEXT"),  # аккаунт Outlook (у Apple пуст)\n'
+            '    ("event_uid", "TEXT"),  # UID из iCalendar; общий для всей серии\n'
+            '    ("recurrence_id", "TEXT"),  # RECURRENCE-ID вхождения; переживает перенос\n'
+            '    ("all_day", "INTEGER"),  # NULL = неизвестно, 0/1 = знание\n'
+            "]\n"
+        )
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun columns.py.\n",
+                "columns.py": code,
+            },
+        )
+
+        findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+        assert not [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
+
+    def test_python_hash_in_string_does_not_hide_spoofed_identifiers(self, tmp_path):
+        """Python tokenization must not mistake a quoted hash for a comment."""
+        cyrillic_a = "\u0430"
+        code = "".join(
+            f'marker = "# value"; p{cyrillic_a}yload_{index} = read_input()  # обычный комментарий\n'
+            for index in range(5)
+        )
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun payload.py.\n",
+                "payload.py": code,
+            },
+        )
+
+        findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+        assert [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
+
+    def test_cyrillic_bash_trailing_comments_not_flagged(self, tmp_path):
+        """Bash comments are stripped only when an unquoted hash starts a token."""
+        code = (
+            'one=("value")  # описание первого значения\n'
+            'two=("value")  # описание второго значения\n'
+            'three=("value")  # описание третьего значения\n'
+            'four=("value")  # описание четвёртого значения\n'
+            'five=("value")  # описание пятого значения\n'
+        )
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun values.sh.\n",
+                "values.sh": code,
+            },
+        )
+
+        findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+        assert not [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
+
+    def test_bash_hash_in_quotes_does_not_hide_spoofed_identifiers(self, tmp_path):
+        """A quoted Bash hash remains code while a later comment is removed."""
+        cyrillic_a = "\u0430"
+        code = "".join(
+            f'echo "# value"; p{cyrillic_a}yload_{index}=input  # обычный комментарий\n' for index in range(5)
+        )
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun payload.sh.\n",
+                "payload.sh": code,
+            },
+        )
+
+        findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+        assert [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
+
+    @pytest.mark.parametrize("escaped_prefix", [r"item\ #tag", r"item\;#tag"])
+    def test_bash_hash_after_escaped_boundary_does_not_hide_spoofed_identifiers(self, tmp_path, escaped_prefix):
+        """Escaped whitespace or operators keep a following hash inside the active word."""
+        cyrillic_a = "\u0430"
+        code = "".join(f"printf %s {escaped_prefix}{index}; p{cyrillic_a}yload_{index}=input\n" for index in range(5))
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun payload.sh.\n",
+                "payload.sh": code,
+            },
+        )
+
+        policy = ScanPolicy.default()
+        policy.analysis_thresholds.homoglyph_filter_math_context = False
+        findings = StaticAnalyzer(use_yara=False, policy=policy).analyze(skill)
+
+        assert [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
+
+    def test_bash_ansi_c_hash_does_not_hide_spoofed_identifiers(self, tmp_path):
+        """An escaped quote in ANSI-C syntax must not expose its literal hash."""
+        cyrillic_a = "\u0430"
+        code = "".join(
+            f"label=$'can\\'t # literal'; p{cyrillic_a}yload_{index}=input  # комментарий\n" for index in range(5)
+        )
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun payload.sh.\n",
+                "payload.sh": code,
+            },
+        )
+
+        policy = ScanPolicy.default()
+        policy.analysis_thresholds.homoglyph_filter_math_context = False
+        findings = StaticAnalyzer(use_yara=False, policy=policy).analyze(skill)
+
+        assert [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
+
+    def test_bash_multiline_quote_hash_does_not_hide_spoofed_identifiers(self, tmp_path):
+        """Quote state carries across Bash physical lines before comment stripping."""
+        cyrillic_a = "\u0430"
+        code = "".join(
+            f'message_{index}="first line\n# literal"; p{cyrillic_a}yload_{index}=input  # комментарий\n'
+            for index in range(5)
+        )
+        skill = _quick_skill(
+            tmp_path,
+            {
+                "SKILL.md": "---\nname: test\ndescription: Test\n---\n\n# Test\nRun payload.sh.\n",
+                "payload.sh": code,
+            },
+        )
+
+        findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+        assert [finding for finding in findings if finding.rule_id == "HOMOGLYPH_ATTACK"]
+
     def test_math_formula_unicode_not_flagged(self, tmp_path):
         """Scientific formulas using Greek/math symbols should not be treated as spoofing."""
         skill = _quick_skill(
