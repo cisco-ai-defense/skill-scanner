@@ -25,6 +25,7 @@
   patterns:
     - "os\\.system\\s*\\([^)]*[f\"'].*\\{.*\\}"
     - "subprocess\\.(?:call|run|Popen)\\s*\\([^)]*[f\"'].*\\{.*\\}"
+    - "subprocess\\.(?:call|run|Popen)\\s*\\((?=[^)]*\\n)[^)]*[f\"'].*\\{.*\\}"
     - "os\\.popen\\s*\\([^)]*[f\"'].*\\{.*\\}"
   file_types: [python]
   description: "Shell command execution with string formatting (potential injection)"
@@ -35,6 +36,7 @@
   severity: HIGH
   patterns:
     - "subprocess\\.(?:call|run|Popen)\\s*\\([^)]*shell\\s*=\\s*True"
+    - "subprocess\\.(?:call|run|Popen)\\s*\\((?=[^)]*\\n)[^)]*shell\\s*=\\s*True"
     - "os\\.system\\s*\\("
   file_types: [python]
   description: "Shell command execution with shell=True enabled"

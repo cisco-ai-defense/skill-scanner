@@ -623,6 +623,13 @@ rules:
       enabled: true
     description: "Executable Python pickle detected"
 
+  UNICODE_OBFUSCATED_INSTRUCTION:
+    source: python
+    analyzer: static
+    knobs:
+      enabled: true
+    description: "Obfuscated prompt-injection instructions detected"
+
   PYCACHE_FILES_DETECTED:
     source: python
     analyzer: static
