@@ -80,20 +80,20 @@ curl -X POST http://localhost:8000/scan-upload \
 | Field | Type |
 |---|---|
 | `skill_directory` | `str` |
-| `policy` | `str | None` |
-| `custom_rules` | `str | None` |
+| `policy` | `str \| None` |
+| `custom_rules` | `str \| None` |
 | `use_llm` | `bool` |
-| `llm_provider` | `str | None` |
+| `llm_provider` | `str \| None` |
 | `use_behavioral` | `bool` |
 | `use_virustotal` | `bool` |
 | `vt_upload_files` | `bool` |
 | `use_aidefense` | `bool` |
-| `aidefense_api_url` | `str | None` |
+| `aidefense_api_url` | `str \| None` |
 | `use_trigger` | `bool` |
 | `use_osv` | `bool` |
 | `enable_meta` | `bool` |
 | `llm_consensus_runs` | `int` |
-| `llm_max_tokens` | `int | None` |
+| `llm_max_tokens` | `int \| None` |
 
 ### `ScanResponse`
 
@@ -107,6 +107,7 @@ curl -X POST http://localhost:8000/scan-upload \
 | `scan_duration_seconds` | `float` |
 | `timestamp` | `str` |
 | `findings` | `list[dict]` |
+| `llm_usage` | `dict[str, int] \| None` |
 
 ### `HealthResponse`
 
@@ -121,22 +122,22 @@ curl -X POST http://localhost:8000/scan-upload \
 | Field | Type |
 |---|---|
 | `skills_directory` | `str` |
-| `policy` | `str | None` |
-| `custom_rules` | `str | None` |
+| `policy` | `str \| None` |
+| `custom_rules` | `str \| None` |
 | `recursive` | `bool` |
 | `check_overlap` | `bool` |
 | `use_llm` | `bool` |
-| `llm_provider` | `str | None` |
+| `llm_provider` | `str \| None` |
 | `use_behavioral` | `bool` |
 | `use_virustotal` | `bool` |
 | `vt_upload_files` | `bool` |
 | `use_aidefense` | `bool` |
-| `aidefense_api_url` | `str | None` |
+| `aidefense_api_url` | `str \| None` |
 | `use_trigger` | `bool` |
 | `use_osv` | `bool` |
 | `enable_meta` | `bool` |
 | `llm_consensus_runs` | `int` |
-| `llm_max_tokens` | `int | None` |
+| `llm_max_tokens` | `int \| None` |
 
 ## Notes
 

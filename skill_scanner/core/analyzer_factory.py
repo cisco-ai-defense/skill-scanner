@@ -145,6 +145,10 @@ def build_analyzers(
             logger.warning("Could not load behavioral analyzer: %s", exc)
 
     if use_llm:
+        effective_max_tokens = resolve_llm_max_tokens(
+            llm_max_tokens,
+            default=policy.llm_analysis.max_output_tokens,
+        )
         try:
             from .analyzers.llm_analyzer import LLMAnalyzer
 
@@ -155,10 +159,6 @@ def build_analyzers(
             api_version = llm_api_version or os.getenv("SKILL_SCANNER_LLM_API_VERSION")
             provider = llm_provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER")
             extra_kwargs: dict = {}
-            effective_max_tokens = resolve_llm_max_tokens(
-                llm_max_tokens,
-                default=policy.llm_analysis.max_output_tokens,
-            )
             extra_kwargs["max_tokens"] = effective_max_tokens
             llm = LLMAnalyzer(
                 model=model,

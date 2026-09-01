@@ -329,7 +329,8 @@ def _render_api_reference() -> str:
         sections.append("| Field | Type |")
         sections.append("|---|---|")
         for field in model.fields:
-            sections.append(f"| `{field.name}` | `{field.annotation}` |")
+            annotation = field.annotation.replace("|", "\\|")
+            sections.append(f"| `{field.name}` | `{annotation}` |")
         sections.append("")
 
     sections.extend(
@@ -387,6 +388,10 @@ def _collect_env_variables() -> dict[str, set[str]]:
         for const_name, var_value in env_const_re.findall(text):
             if re.search(rf"os\.(?:getenv|environ\.get)\(\s*{const_name}", text):
                 add(var_value, rel)
+
+    token_options_source = "skill_scanner/llm_token_options.py"
+    for var in ("SKILL_SCANNER_LLM_MAX_TOKENS", "SKILL_SCANNER_META_LLM_MAX_TOKENS"):
+        add(var, token_options_source)
 
     return dict(sorted(env_map.items()))
 

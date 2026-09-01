@@ -106,6 +106,12 @@ Paths, allowlists, and other advanced settings.
 | `SKILL_SCANNER_TAXONOMY_PATH` | Path to a custom Cisco AI taxonomy YAML file (overridden by `--taxonomy`). | `/path/to/taxonomy.yaml` |
 | `SKILL_SCANNER_THREAT_MAPPING_PATH` | Path to a custom threat mapping YAML file (overridden by `--threat-mapping`). | `/path/to/threats.yaml` |
 
+## Other
+
+| Variable | Description | Example |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Configuration variable discovered in source code. |  |
+
 <details>
 <summary>Source file mapping</summary>
 
@@ -113,6 +119,7 @@ Paths, allowlists, and other advanced settings.
 |---|---|
 | `AI_DEFENSE_API_KEY` | `.env.example`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/aidefense_analyzer.py` |
 | `AI_DEFENSE_API_URL` | `.env.example`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/aidefense_analyzer.py` |
+| `ANTHROPIC_API_KEY` | `skill_scanner/core/analyzers/behavioral_analyzer.py` |
 | `AWS_PROFILE` | `.env.example`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzers/llm_provider_config.py` |
 | `AWS_REGION` | `.env.example`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzers/llm_provider_config.py` |
 | `AWS_SESSION_TOKEN` | `skill_scanner/config/config.py`, `skill_scanner/core/analyzers/llm_provider_config.py` |
@@ -127,14 +134,14 @@ Paths, allowlists, and other advanced settings.
 | `SKILL_SCANNER_LLM_API_VERSION` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_BASE_URL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` | `.env.example` |
-| `SKILL_SCANNER_LLM_MAX_TOKENS` | `.env.example` |
+| `SKILL_SCANNER_LLM_MAX_TOKENS` | `.env.example`, `skill_scanner/llm_token_options.py` |
 | `SKILL_SCANNER_LLM_MODEL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_PROVIDER` | `.env.example`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_USER` | `.env.example`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzers/llm_request_options.py` |
 | `SKILL_SCANNER_META_LLM_API_KEY` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_META_LLM_API_VERSION` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_META_LLM_BASE_URL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
-| `SKILL_SCANNER_META_LLM_MAX_TOKENS` | `.env.example` |
+| `SKILL_SCANNER_META_LLM_MAX_TOKENS` | `.env.example`, `skill_scanner/llm_token_options.py` |
 | `SKILL_SCANNER_META_LLM_MODEL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_TAXONOMY_PATH` | `skill_scanner/threats/cisco_ai_taxonomy.py` |
 | `SKILL_SCANNER_THREAT_MAPPING_PATH` | `skill_scanner/threats/threats.py` |

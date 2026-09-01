@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
+from scripts.generate_reference_docs import _collect_env_variables, _render_api_reference
 from skill_scanner.config.config import Config
 from skill_scanner.core.analyzers.llm_request_handler import (
     LLMRequestHandler,
@@ -96,6 +97,29 @@ class TestMaxTokenResolution:
 
             build_analyzers(policy, use_llm=True, llm_max_tokens=2048)
             assert analyzer_type.call_args.kwargs["max_tokens"] == 2048
+
+    @pytest.mark.parametrize("raw", ["0", "-1", "not-an-int"])
+    def test_factory_does_not_swallow_invalid_environment_value(self, raw: str) -> None:
+        from skill_scanner.core.analyzer_factory import build_analyzers
+
+        with (
+            patch.dict(os.environ, {"SKILL_SCANNER_LLM_MAX_TOKENS": raw}, clear=False),
+            pytest.raises(ValueError, match="SKILL_SCANNER_LLM_MAX_TOKENS must be a positive integer"),
+        ):
+            build_analyzers(ScanPolicy.default(), use_llm=True)
+
+
+class TestGeneratedReferenceDocs:
+    def test_api_union_annotations_escape_markdown_pipes(self) -> None:
+        rendered = _render_api_reference()
+
+        assert "| `llm_max_tokens` | `int \\| None` |" in rendered
+
+    def test_token_environment_variables_map_to_runtime_resolver(self) -> None:
+        env_map = _collect_env_variables()
+
+        assert "skill_scanner/llm_token_options.py" in env_map["SKILL_SCANNER_LLM_MAX_TOKENS"]
+        assert "skill_scanner/llm_token_options.py" in env_map["SKILL_SCANNER_META_LLM_MAX_TOKENS"]
 
 
 class TestAPIMaxTokenControls:
