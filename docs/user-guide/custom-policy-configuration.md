@@ -253,7 +253,7 @@ pipeline:
   compound_fetch_filter_api_requests: true
   compound_fetch_filter_shell_wrapped_fetch: true
   compound_fetch_exec_prefixes: ["sudo", "env", "time"]
-  compound_fetch_exec_commands: ["bash", "sh", "python"]
+  compound_fetch_exec_commands: ["bash", "sh", "powershell", "pwsh", "python"]
 ```
 
 **Impact:**

@@ -74,10 +74,15 @@ class PipelineChain:
     line_number: int = 0
 
 
+_SHELL_CODE_BLOCK_PATTERN = re.compile(
+    r"```(?:bash|sh|shell|zsh|powershell|pwsh|ps1)?[ \t]*\r?\n(.*?)```",
+    re.DOTALL | re.IGNORECASE,
+)
+
 # Patterns for extracting pipelines from text
 _PIPELINE_PATTERNS = [
     # Shell command blocks in markdown
-    re.compile(r"```(?:bash|sh|shell|zsh)?\n(.*?)```", re.DOTALL),
+    _SHELL_CODE_BLOCK_PATTERN,
     # Inline commands with backticks
     re.compile(r"`([^`]*\|[^`]*)`"),
     # Shell-style commands (lines starting with $ or #)
@@ -156,6 +161,8 @@ _SINK_PATTERNS: dict[str, set[TaintType]] = {
     "node": {TaintType.CODE_EXECUTION},
     "ruby": {TaintType.CODE_EXECUTION},
     "perl": {TaintType.CODE_EXECUTION},
+    "powershell": {TaintType.CODE_EXECUTION},
+    "pwsh": {TaintType.CODE_EXECUTION},
     "source": {TaintType.CODE_EXECUTION},
     "chmod": {TaintType.CODE_EXECUTION},  # chmod +x enables execution
     "tee": {TaintType.FILESYSTEM_WRITE},
@@ -198,6 +205,8 @@ class PipelineAnalyzer(BaseAnalyzer):
                 content = sf.read_content()
                 if content:
                     pipelines.extend(self._extract_pipelines(content, sf.relative_path))
+                    if Path(sf.relative_path).suffix.lower() == ".ps1":
+                        pipelines.extend(self._extract_script_pipelines(content, sf.relative_path))
 
         # De-duplicate equivalent pipelines discovered through multiple
         # extraction patterns (e.g., markdown block + shell-line regex).
@@ -248,6 +257,35 @@ class PipelineAnalyzer(BaseAnalyzer):
                             pipelines.append(chain)
 
         return pipelines
+
+    def _extract_script_pipelines(self, content: str, source_file: str) -> list[PipelineChain]:
+        """Extract pipelines from a script whose lines are commands already."""
+        pipelines: list[PipelineChain] = []
+        for line_number, raw in enumerate(content.splitlines(), 1):
+            line = raw.strip()
+            if not line or line.startswith("#") or "|" not in line:
+                continue
+            chain = self._parse_pipeline(line, source_file, line_number)
+            if chain and len(chain.nodes) >= 2:
+                pipelines.append(chain)
+        return pipelines
+
+    @staticmethod
+    def _tokenize_command(command: str) -> list[str]:
+        """Tokenize a command while preserving Windows path separators."""
+        try:
+            return shlex.split(command, posix=False)
+        except ValueError:
+            return command.split()
+
+    @staticmethod
+    def _normalize_command(command: str) -> str:
+        """Return a case-insensitive executable name for POSIX/Windows paths."""
+        token = command.strip().strip("\"'")
+        name = re.split(r"[\\/]", token)[-1].lower()
+        if name.endswith(".exe"):
+            name = name[:-4]
+        return name
 
     @staticmethod
     def _split_pipeline(raw: str) -> list[str]:
@@ -304,11 +342,11 @@ class PipelineAnalyzer(BaseAnalyzer):
             if not part:
                 continue
 
-            tokens = part.split()
+            tokens = self._tokenize_command(part)
             if not tokens:
                 continue
 
-            cmd = tokens[0].split("/")[-1]  # Strip path
+            cmd = self._normalize_command(tokens[0])
             args = tokens[1:]
 
             node = CommandNode(raw=part, command=cmd, arguments=args)
@@ -346,9 +384,13 @@ class PipelineAnalyzer(BaseAnalyzer):
         """Heuristic for installation examples embedded in SKILL.md."""
         if Path(chain.source_file).name != "SKILL.md":
             return False
-        raw = chain.raw.lower()
-        if ("curl" not in raw and "wget" not in raw) or ("| sh" not in raw and "| bash" not in raw):
+        has_remote_source = any(node.command in {"curl", "wget"} for node in chain.nodes)
+        has_execution_sink = any(
+            TaintType.CODE_EXECUTION in _SINK_PATTERNS.get(node.command, set()) for node in chain.nodes
+        )
+        if not has_remote_source or not has_execution_sink:
             return False
+        raw = chain.raw.lower()
         instructional_markers = (
             "install",
             "setup",
@@ -559,11 +601,15 @@ class PipelineAnalyzer(BaseAnalyzer):
             "The find command with -exec executes commands on discovered files. "
             "An attacker can use this to find and execute hidden malicious scripts.",
         ),
-        # extract + execute: unzip/tar then bash/sh/python
+        # extract + execute: unzip/tar then an interpreter
         (
             [
                 re.compile(r"(?:unzip|tar\s+(?:x[a-zA-Z]*|(?:-[a-zA-Z]*x[a-zA-Z]*)))\b"),
-                re.compile(r"^\s*(?:sudo|env|command|time|nohup|nice|bash|sh|python3?|source|chmod\s+\+x|\.)(?:\s|$)"),
+                re.compile(
+                    r"^\s*(?:sudo|env|command|time|nohup|nice|bash|sh|python3?|"
+                    r"powershell(?:\.exe)?|pwsh(?:\.exe)?|source|chmod\s+\+x|\.)(?:\s|$)",
+                    re.IGNORECASE,
+                ),
             ],
             "COMPOUND_EXTRACT_EXECUTE",
             Severity.HIGH,
@@ -572,11 +618,11 @@ class PipelineAnalyzer(BaseAnalyzer):
             "An archive is extracted and its contents are then executed. "
             "This pattern can deliver and run malicious payloads hidden in archives.",
         ),
-        # fetch + execute: curl/wget then bash/sh/python
+        # fetch + execute: the second line is validated by _is_execution_step.
         (
             [
                 re.compile(r"(?:curl|wget)\b"),
-                re.compile(r"^\s*(?:sudo|env|command|time|nohup|nice|bash|sh|python3?|source|\.)(?:\s|$)"),
+                re.compile(r"^\s*\S+"),
             ],
             "COMPOUND_FETCH_EXECUTE",
             Severity.CRITICAL,
@@ -613,7 +659,12 @@ class PipelineAnalyzer(BaseAnalyzer):
         has_download_hint = any(
             token in lower for token in (" -o ", "--output", ".sh", ".py", ".pl", ".ps1", "install", "setup")
         )
-        has_pipe_exec = bool(re.search(r"\|\s*(bash|sh|python3?|zsh)\b", lower))
+        has_pipe_exec = bool(
+            re.search(
+                r"\|\s*(?:[^\s|]*[\\/])?(?:bash|sh|python3?|zsh|powershell|pwsh)(?:\.exe)?\b",
+                lower,
+            )
+        )
         return has_download_hint or has_pipe_exec
 
     @staticmethod
@@ -642,19 +693,16 @@ class PipelineAnalyzer(BaseAnalyzer):
 
     def _is_execution_step(self, exec_line: str) -> bool:
         """Check whether a command line performs execution (with optional wrappers)."""
-        try:
-            tokens = shlex.split(exec_line, posix=True)
-        except ValueError:
-            tokens = exec_line.split()
+        tokens = self._tokenize_command(exec_line)
         if not tokens:
             return False
 
-        prefixes = {p.lower() for p in self.policy.pipeline.compound_fetch_exec_prefixes}
-        exec_commands = {c.lower() for c in self.policy.pipeline.compound_fetch_exec_commands}
+        prefixes = {self._normalize_command(p) for p in self.policy.pipeline.compound_fetch_exec_prefixes}
+        exec_commands = {self._normalize_command(c) for c in self.policy.pipeline.compound_fetch_exec_commands}
 
         i = 0
         while i < len(tokens):
-            tok = Path(tokens[i]).name.lower()
+            tok = self._normalize_command(tokens[i])
             if tok not in prefixes:
                 break
 
@@ -676,7 +724,7 @@ class PipelineAnalyzer(BaseAnalyzer):
         if i >= len(tokens):
             return False
 
-        cmd = Path(tokens[i]).name.lower()
+        cmd = self._normalize_command(tokens[i])
         return cmd in exec_commands
 
     def _analyze_compound_sequences(self, skill: Skill) -> list[Finding]:
@@ -794,7 +842,7 @@ class PipelineAnalyzer(BaseAnalyzer):
         Returns list of (source_file, block_text, base_line_number).
         """
         blocks: list[tuple[str, str, int]] = []
-        code_block_re = re.compile(r"```(?:bash|sh|shell|zsh)?\n(.*?)```", re.DOTALL)
+        code_block_re = _SHELL_CODE_BLOCK_PATTERN
 
         # Extract from SKILL.md instruction body
         for match in code_block_re.finditer(skill.instruction_body):
@@ -807,7 +855,7 @@ class PipelineAnalyzer(BaseAnalyzer):
             content = sf.read_content()
             if not content:
                 continue
-            if sf.file_type == "bash":
+            if sf.file_type == "bash" or Path(sf.relative_path).suffix.lower() == ".ps1":
                 blocks.append((sf.relative_path, content, 1))
             elif sf.file_type == "markdown":
                 for match in code_block_re.finditer(content):
