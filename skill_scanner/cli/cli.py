@@ -40,6 +40,8 @@ from ..core.reporters.sarif_reporter import SARIFReporter
 from ..core.reporters.table_reporter import TableReporter
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
+from ..llm_reasoning import LLM_REASONING_EFFORT_VALUES, ReasoningConfigurationError
+from ..llm_token_options import resolve_llm_max_tokens
 
 # Optional LLM analyzer (needed only for LLM_AVAILABLE check)
 LLMAnalyzer: type | None
@@ -75,6 +77,14 @@ logger = logging.getLogger("skill_scanner.cli")
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+
+def _positive_int(value: str) -> int:
+    """Argparse type that rejects zero and negative integer values."""
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
 
 
 def _load_policy(args: argparse.Namespace) -> ScanPolicy:
@@ -138,6 +148,7 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
         llm_provider=getattr(args, "llm_provider", None),
         llm_consensus_runs=getattr(args, "llm_consensus_runs", 1),
         llm_max_tokens=getattr(args, "llm_max_tokens", None),
+        llm_reasoning_effort=getattr(args, "llm_reasoning_effort", None),
     )
 
     # Emit status messages for the optional analyzers that were activated.
@@ -166,6 +177,7 @@ def _build_meta_analyzer(
     status: Callable[[str], None],
     policy=None,
     max_tokens: int | None = None,
+    reasoning_effort: str | None = None,
 ):
     """Optionally build a MetaAnalyzer if ``--enable-meta`` is set."""
     if not getattr(args, "enable_meta", False):
@@ -190,16 +202,21 @@ def _build_meta_analyzer(
             api_key=meta_api_key,
             base_url=meta_base_url,
             api_version=meta_api_version,
+            provider=getattr(args, "llm_provider", None),
+            reasoning_effort=reasoning_effort,
             policy=policy,
         )
-        effective_max_tokens = (
-            max_tokens if max_tokens is not None else (policy.llm_analysis.max_output_tokens if policy else None)
+        effective_max_tokens = resolve_llm_max_tokens(
+            max_tokens,
+            meta=True,
+            default=policy.llm_analysis.max_output_tokens if policy else 8192,
         )
-        if effective_max_tokens is not None:
-            kwargs["max_tokens"] = effective_max_tokens
+        kwargs["max_tokens"] = effective_max_tokens
         meta = MetaAnalyzer(**kwargs)
         status("Using Meta-Analyzer for false positive filtering and finding prioritization")
         return meta
+    except ReasoningConfigurationError:
+        raise
     except Exception as e:
         logger.warning("Could not initialise Meta-Analyzer: %s", e)
         return None
@@ -395,7 +412,15 @@ def scan_command(args: argparse.Namespace) -> int:
         policy.adjudicator.enabled = True
     analyzers = _build_analyzers(policy, args, status)
     llm_max_tokens = getattr(args, "llm_max_tokens", None)
-    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
+    llm_reasoning_effort = getattr(args, "llm_reasoning_effort", None)
+    meta_analyzer = _build_meta_analyzer(
+        args,
+        len(analyzers),
+        status,
+        policy=policy,
+        max_tokens=llm_max_tokens,
+        reasoning_effort=llm_reasoning_effort,
+    )
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
     lenient = getattr(args, "lenient", False)
@@ -489,7 +514,15 @@ def scan_all_command(args: argparse.Namespace) -> int:
         policy.adjudicator.enabled = True
     analyzers = _build_analyzers(policy, args, status)
     llm_max_tokens = getattr(args, "llm_max_tokens", None)
-    meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
+    llm_reasoning_effort = getattr(args, "llm_reasoning_effort", None)
+    meta_analyzer = _build_meta_analyzer(
+        args,
+        len(analyzers),
+        status,
+        policy=policy,
+        max_tokens=llm_max_tokens,
+        reasoning_effort=llm_reasoning_effort,
+    )
 
     scanner = SkillScanner(analyzers=analyzers, policy=policy)
 
@@ -618,7 +651,15 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                 policy.adjudicator.enabled = True
             analyzers = _build_analyzers(policy, args, status)
             llm_max_tokens = getattr(args, "llm_max_tokens", None)
-            meta_analyzer = _build_meta_analyzer(args, len(analyzers), status, policy=policy, max_tokens=llm_max_tokens)
+            llm_reasoning_effort = getattr(args, "llm_reasoning_effort", None)
+            meta_analyzer = _build_meta_analyzer(
+                args,
+                len(analyzers),
+                status,
+                policy=policy,
+                max_tokens=llm_max_tokens,
+                reasoning_effort=llm_reasoning_effort,
+            )
 
             scanner = SkillScanner(analyzers=analyzers, policy=policy)
 
@@ -969,10 +1010,20 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--llm-max-tokens",
-        type=int,
+        type=_positive_int,
         default=None,
         metavar="N",
         help="Maximum output tokens for LLM responses (default: 8192). Raise if scans produce truncated JSON.",
+    )
+    parser.add_argument(
+        "--llm-reasoning-effort",
+        choices=LLM_REASONING_EFFORT_VALUES,
+        default=None,
+        metavar="LEVEL",
+        help=(
+            "Optional LLM reasoning effort: disabled, minimal, low, medium, high, xhigh, or max. "
+            "Unset preserves the provider default."
+        ),
     )
     parser.add_argument("--use-trigger", action="store_true", help="Enable trigger specificity analysis")
     parser.add_argument("--enable-meta", action="store_true", help="Enable meta-analysis FP filtering (2+ analyzers)")
@@ -1138,7 +1189,11 @@ def main() -> int:
     }
     handler = dispatch.get(args.command)
     if handler:
-        return handler(args)
+        try:
+            return handler(args)
+        except ReasoningConfigurationError as exc:
+            print(f"LLM reasoning configuration error: {exc}", file=sys.stderr)
+            return 1
 
     parser.print_help()
     return 1

@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..models import Finding, Severity, Skill, SkillFile, ThreatCategory
 from ..scan_policy import ScanPolicy
@@ -74,10 +75,15 @@ class PipelineChain:
     line_number: int = 0
 
 
+_SHELL_CODE_BLOCK_PATTERN = re.compile(
+    r"```(?:bash|sh|shell|zsh|powershell|pwsh|ps1)?[ \t]*\r?\n(.*?)```",
+    re.DOTALL | re.IGNORECASE,
+)
+
 # Patterns for extracting pipelines from text
 _PIPELINE_PATTERNS = [
     # Shell command blocks in markdown
-    re.compile(r"```(?:bash|sh|shell|zsh)?\n(.*?)```", re.DOTALL),
+    _SHELL_CODE_BLOCK_PATTERN,
     # Inline commands with backticks
     re.compile(r"`([^`]*\|[^`]*)`"),
     # Shell-style commands (lines starting with $ or #)
@@ -101,6 +107,10 @@ _SOURCE_PATTERNS: dict[str, set[TaintType]] = {
     "read": {TaintType.USER_INPUT},
     "curl": {TaintType.NETWORK_DATA},
     "wget": {TaintType.NETWORK_DATA},
+    "invoke-webrequest": {TaintType.NETWORK_DATA},
+    "iwr": {TaintType.NETWORK_DATA},
+    "invoke-restmethod": {TaintType.NETWORK_DATA},
+    "irm": {TaintType.NETWORK_DATA},
     # Archive extraction — produces potentially tainted files
     "unzip": {TaintType.SENSITIVE_DATA},
     "tar": {TaintType.SENSITIVE_DATA},
@@ -156,6 +166,10 @@ _SINK_PATTERNS: dict[str, set[TaintType]] = {
     "node": {TaintType.CODE_EXECUTION},
     "ruby": {TaintType.CODE_EXECUTION},
     "perl": {TaintType.CODE_EXECUTION},
+    "powershell": {TaintType.CODE_EXECUTION},
+    "pwsh": {TaintType.CODE_EXECUTION},
+    "invoke-expression": {TaintType.CODE_EXECUTION},
+    "iex": {TaintType.CODE_EXECUTION},
     "source": {TaintType.CODE_EXECUTION},
     "chmod": {TaintType.CODE_EXECUTION},  # chmod +x enables execution
     "tee": {TaintType.FILESYSTEM_WRITE},
@@ -198,6 +212,8 @@ class PipelineAnalyzer(BaseAnalyzer):
                 content = sf.read_content()
                 if content:
                     pipelines.extend(self._extract_pipelines(content, sf.relative_path))
+                    if Path(sf.relative_path).suffix.lower() == ".ps1":
+                        pipelines.extend(self._extract_script_pipelines(content, sf.relative_path))
 
         # De-duplicate equivalent pipelines discovered through multiple
         # extraction patterns (e.g., markdown block + shell-line regex).
@@ -248,6 +264,57 @@ class PipelineAnalyzer(BaseAnalyzer):
                             pipelines.append(chain)
 
         return pipelines
+
+    def _extract_script_pipelines(self, content: str, source_file: str) -> list[PipelineChain]:
+        """Extract pipelines from a script whose lines are commands already."""
+        pipelines: list[PipelineChain] = []
+        for line_number, raw in enumerate(content.splitlines(), 1):
+            line = raw.strip()
+            if not line or line.startswith("#") or "|" not in line:
+                continue
+            chain = self._parse_pipeline(line, source_file, line_number)
+            if chain and len(chain.nodes) >= 2:
+                pipelines.append(chain)
+        return pipelines
+
+    @staticmethod
+    def _tokenize_command(command: str) -> list[str]:
+        """Tokenize a command while preserving Windows path separators."""
+        try:
+            return shlex.split(command, posix=False)
+        except ValueError:
+            return command.split()
+
+    @staticmethod
+    def _normalize_command(command: str) -> str:
+        """Return a case-insensitive executable name for POSIX/Windows paths."""
+        # PowerShell's backtick escapes the next character, including characters
+        # inside command names (for example ``pw`sh``).  Remove it before
+        # comparing executable names so escaped aliases cannot evade detection.
+        token = command.strip().strip("\"'").replace("`", "")
+        name = re.split(r"[\\/]", token)[-1].lower()
+        if name.endswith(".exe"):
+            name = name[:-4]
+        return name
+
+    @classmethod
+    def _strip_powershell_call_operator(cls, tokens: list[str]) -> list[str]:
+        """Discard PowerShell's call operator before its executable operand."""
+        if len(tokens) >= 2 and tokens[0] == "&":
+            return tokens[1:]
+        return tokens
+
+    @staticmethod
+    def _sink_taints(command: str) -> set[TaintType]:
+        """Return sink taints, including directly invoked PowerShell scripts."""
+        if command.endswith((".ps1", ".psm1")):
+            return {TaintType.CODE_EXECUTION}
+        return _SINK_PATTERNS.get(command, set())
+
+    def _matches_benign_pipeline(self, raw: str) -> bool:
+        """Match a benign rule only when it covers the complete pipeline."""
+        candidate = raw.strip()
+        return any(pattern.fullmatch(candidate) for pattern in self.policy._compiled_benign_pipes)
 
     @staticmethod
     def _split_pipeline(raw: str) -> list[str]:
@@ -304,11 +371,12 @@ class PipelineAnalyzer(BaseAnalyzer):
             if not part:
                 continue
 
-            tokens = part.split()
+            tokens = self._tokenize_command(part)
+            tokens = self._strip_powershell_call_operator(tokens)
             if not tokens:
                 continue
 
-            cmd = tokens[0].split("/")[-1]  # Strip path
+            cmd = self._normalize_command(tokens[0])
             args = tokens[1:]
 
             node = CommandNode(raw=part, command=cmd, arguments=args)
@@ -336,19 +404,42 @@ class PipelineAnalyzer(BaseAnalyzer):
     )
 
     def _is_known_installer(self, raw: str) -> bool:
-        """Check if a curl|sh pipeline uses a well-known installer URL (from policy)."""
-        for domain in self.policy.pipeline.known_installer_domains:
-            if domain in raw:
-                return True
-        return False
+        """Check installer URLs using hostname boundaries and optional path prefixes."""
+        urls = [match.group(0).rstrip(".,;:!?)]}") for match in re.finditer(r"https?://[^\s'\"`|<>]+", raw, re.I)]
+        if not urls:
+            return False
+
+        trusted_locations: list[tuple[str, str]] = []
+        for location in self.policy.pipeline.known_installer_domains:
+            parsed = urlsplit(location if "://" in location else f"//{location}")
+            if parsed.hostname:
+                trusted_locations.append((parsed.hostname.lower().rstrip("."), parsed.path.rstrip("/")))
+
+        def is_trusted(url: str) -> bool:
+            parsed = urlsplit(url)
+            hostname = (parsed.hostname or "").lower().rstrip(".")
+            for trusted_host, trusted_path in trusted_locations:
+                host_matches = hostname == trusted_host or hostname.endswith(f".{trusted_host}")
+                path_matches = (
+                    not trusted_path or parsed.path == trusted_path or parsed.path.startswith(f"{trusted_path}/")
+                )
+                if host_matches and path_matches:
+                    return True
+            return False
+
+        # A mixed trusted/untrusted pipeline must never inherit the trusted URL's
+        # severity demotion.
+        return all(is_trusted(url) for url in urls)
 
     def _is_instructional_skillmd_pipeline(self, chain: PipelineChain) -> bool:
         """Heuristic for installation examples embedded in SKILL.md."""
         if Path(chain.source_file).name != "SKILL.md":
             return False
-        raw = chain.raw.lower()
-        if ("curl" not in raw and "wget" not in raw) or ("| sh" not in raw and "| bash" not in raw):
+        has_remote_source = any(TaintType.NETWORK_DATA in node.output_taints for node in chain.nodes)
+        has_execution_sink = any(TaintType.CODE_EXECUTION in self._sink_taints(node.command) for node in chain.nodes)
+        if not has_remote_source or not has_execution_sink:
             return False
+        raw = chain.raw.lower()
         instructional_markers = (
             "install",
             "setup",
@@ -367,10 +458,10 @@ class PipelineAnalyzer(BaseAnalyzer):
         if len(chain.nodes) < 2:
             return findings
 
-        # Skip known benign patterns (from policy)
-        for pattern in self.policy._compiled_benign_pipes:
-            if pattern.search(chain.raw):
-                return findings
+        # A benign prefix must not suppress a later execution or exfiltration
+        # sink in the same chain.
+        if self._matches_benign_pipeline(chain.raw):
+            return findings
 
         # Propagate taints through the chain
         current_taints: set[TaintType] = set()
@@ -387,8 +478,8 @@ class PipelineAnalyzer(BaseAnalyzer):
                 current_taints.update(_TRANSFORM_TAINTS[cmd])
 
             # Sink nodes consume tainted data
-            if cmd in _SINK_PATTERNS and current_taints:
-                sink_taints = _SINK_PATTERNS[cmd]
+            sink_taints = self._sink_taints(cmd)
+            if sink_taints and current_taints:
                 combined = current_taints | sink_taints
 
                 # Assess severity based on taint combination
@@ -559,11 +650,14 @@ class PipelineAnalyzer(BaseAnalyzer):
             "The find command with -exec executes commands on discovered files. "
             "An attacker can use this to find and execute hidden malicious scripts.",
         ),
-        # extract + execute: unzip/tar then bash/sh/python
+        # extract + execute: unzip/tar then an interpreter
         (
             [
-                re.compile(r"(?:unzip|tar\s+(?:x[a-zA-Z]*|(?:-[a-zA-Z]*x[a-zA-Z]*)))\b"),
-                re.compile(r"^\s*(?:sudo|env|command|time|nohup|nice|bash|sh|python3?|source|chmod\s+\+x|\.)(?:\s|$)"),
+                re.compile(
+                    r"(?:unzip\b|tar\s+(?:x[a-zA-Z]*|(?:-[a-zA-Z]*x[a-zA-Z]*))\b|expand-archive\b)",
+                    re.IGNORECASE,
+                ),
+                re.compile(r"^\s*\S+"),
             ],
             "COMPOUND_EXTRACT_EXECUTE",
             Severity.HIGH,
@@ -572,11 +666,11 @@ class PipelineAnalyzer(BaseAnalyzer):
             "An archive is extracted and its contents are then executed. "
             "This pattern can deliver and run malicious payloads hidden in archives.",
         ),
-        # fetch + execute: curl/wget then bash/sh/python
+        # fetch + execute: the second line is validated by _is_execution_step.
         (
             [
-                re.compile(r"(?:curl|wget)\b"),
-                re.compile(r"^\s*(?:sudo|env|command|time|nohup|nice|bash|sh|python3?|source|\.)(?:\s|$)"),
+                re.compile(r"(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b", re.IGNORECASE),
+                re.compile(r"^\s*\S+"),
             ],
             "COMPOUND_FETCH_EXECUTE",
             Severity.CRITICAL,
@@ -601,38 +695,48 @@ class PipelineAnalyzer(BaseAnalyzer):
         ),
     ]
 
-    @staticmethod
-    def _is_likely_remote_download(fetch_line: str) -> bool:
+    def _is_likely_remote_download(self, fetch_line: str) -> bool:
         """Heuristic: line looks like download intent, not API usage."""
-        lower = fetch_line.lower()
-        if not re.search(r"\b(curl|wget)\b", lower):
+        lower = fetch_line.lower().replace("`", "")
+        if not re.search(r"\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b", lower):
             return False
         if any(token in lower for token in ("localhost", "127.0.0.1", "0.0.0.0", "$pikvm_url", "${pikvm_url}")):
             return False
 
         has_download_hint = any(
-            token in lower for token in (" -o ", "--output", ".sh", ".py", ".pl", ".ps1", "install", "setup")
+            token in lower
+            for token in (
+                " -o ",
+                "--output",
+                "-outfile",
+                ".sh",
+                ".py",
+                ".pl",
+                ".ps1",
+                "install",
+                "setup",
+            )
         )
-        has_pipe_exec = bool(re.search(r"\|\s*(bash|sh|python3?|zsh)\b", lower))
+        has_pipe_exec = any(self._is_execution_step(part) for part in self._split_pipeline(fetch_line)[1:])
         return has_download_hint or has_pipe_exec
 
     @staticmethod
     def _is_api_style_fetch(fetch_line: str) -> bool:
-        """Heuristic: curl/wget line is a request call, not payload download."""
-        lower = fetch_line.lower()
-        request_markers = (
-            "-x ",
-            "--request",
-            " -d ",
-            "--data",
-            "--json",
-            " -h ",
-            "--header",
-            "/api/",
-            "-f ",
-            "--form ",
+        """Heuristic: request-only curl usage without an explicit payload output."""
+        lower = fetch_line.lower().replace("`", "")
+        explicit_output = bool(
+            re.search(r"(?:^|\s)(?:-o|--output|-outfile)(?:\s|=)", lower)
+            or re.search(r"\.(?:sh|py|pl|ps1|psm1)(?:[?#\s\"']|$)", lower)
         )
-        return any(marker in lower for marker in request_markers)
+        if explicit_output:
+            return False
+        return bool(
+            re.search(
+                r"(?:^|\s)(?:-x|--request|-d|--data(?:-\w+)?|--json|-h|--header|--form)(?:\s|=)",
+                lower,
+            )
+            or re.search(r"(?:^|\s)-F(?:\s|=)", fetch_line)
+        )
 
     @staticmethod
     def _is_shell_wrapped_fetch(exec_line: str) -> bool:
@@ -640,21 +744,29 @@ class PipelineAnalyzer(BaseAnalyzer):
         lower = exec_line.lower()
         return bool(re.search(r"\b(curl|wget)\b", lower))
 
-    def _is_execution_step(self, exec_line: str) -> bool:
-        """Check whether a command line performs execution (with optional wrappers)."""
-        try:
-            tokens = shlex.split(exec_line, posix=True)
-        except ValueError:
-            tokens = exec_line.split()
+    def _parse_execution_invocation(self, exec_line: str) -> tuple[str, list[str]] | None:
+        """Return the executable and arguments after supported shell wrappers."""
+        tokens = self._tokenize_command(exec_line)
+        tokens = self._strip_powershell_call_operator(tokens)
         if not tokens:
-            return False
+            return None
 
-        prefixes = {p.lower() for p in self.policy.pipeline.compound_fetch_exec_prefixes}
-        exec_commands = {c.lower() for c in self.policy.pipeline.compound_fetch_exec_commands}
+        prefixes = {self._normalize_command(p) for p in self.policy.pipeline.compound_fetch_exec_prefixes}
 
         i = 0
         while i < len(tokens):
-            tok = Path(tokens[i]).name.lower()
+            tok = self._normalize_command(tokens[i])
+            if tok == "cmd":
+                # cmd.exe may add flags before /c or /k.  Unwrap the command
+                # that follows so `cmd /c powershell -File payload.ps1` is
+                # classified by its actual execution sink.
+                j = i + 1
+                while j < len(tokens) and tokens[j].strip("\"'").lower() in {"/a", "/d", "/q", "/s", "/u"}:
+                    j += 1
+                if j < len(tokens) and tokens[j].strip("\"'").lower() in {"/c", "/k"}:
+                    i = j + 1
+                    continue
+                break
             if tok not in prefixes:
                 break
 
@@ -674,10 +786,30 @@ class PipelineAnalyzer(BaseAnalyzer):
                     i += 1
 
         if i >= len(tokens):
-            return False
+            return None
 
-        cmd = Path(tokens[i]).name.lower()
-        return cmd in exec_commands
+        cmd = self._normalize_command(tokens[i])
+        return cmd, tokens[i + 1 :]
+
+    def _is_execution_step(self, exec_line: str) -> bool:
+        """Check whether a command line performs execution (with optional wrappers)."""
+        invocation = self._parse_execution_invocation(exec_line)
+        if invocation is None:
+            return False
+        cmd, _ = invocation
+        exec_commands = {self._normalize_command(c) for c in self.policy.pipeline.compound_fetch_exec_commands}
+        return cmd in exec_commands or cmd.endswith((".ps1", ".psm1"))
+
+    def _is_extraction_execution_step(self, exec_line: str) -> bool:
+        """Check for execution or executable permission changes after extraction."""
+        invocation = self._parse_execution_invocation(exec_line)
+        if invocation is None:
+            return False
+        cmd, args = invocation
+        if cmd == "chmod":
+            return "+x" in args
+        exec_commands = {self._normalize_command(c) for c in self.policy.pipeline.compound_fetch_exec_commands}
+        return cmd in exec_commands or cmd.endswith((".ps1", ".psm1"))
 
     def _analyze_compound_sequences(self, skill: Skill) -> list[Finding]:
         """Detect dangerous multi-line command sequences in code blocks and scripts.
@@ -697,22 +829,27 @@ class PipelineAnalyzer(BaseAnalyzer):
                     # Filter obvious FP cases for fetch+execute:
                     # - API request examples (curl -X POST /api/...)
                     # - shell-wrapped curl requests (bash -c 'curl ...')
-                    if rule_id == "COMPOUND_FETCH_EXECUTE" and len(matched_lines) >= 2:
+                    if rule_id in {"COMPOUND_EXTRACT_EXECUTE", "COMPOUND_FETCH_EXECUTE"} and len(matched_lines) >= 2:
                         pipeline_policy = self.policy.pipeline
                         fetch_idx = matched_lines[0]
                         exec_idx = matched_lines[1]
                         fetch_line = block_lines[fetch_idx] if fetch_idx < len(block_lines) else ""
                         exec_line = block_lines[exec_idx] if exec_idx < len(block_lines) else ""
+                        is_execution_step = (
+                            self._is_extraction_execution_step
+                            if rule_id == "COMPOUND_EXTRACT_EXECUTE"
+                            else self._is_execution_step
+                        )
 
                         # If the first matched "execution" line is a wrapper/non-exec
                         # (e.g. env assignments), keep scanning for a real sink.
-                        if not self._is_execution_step(exec_line):
+                        if not is_execution_step(exec_line):
                             found_exec = False
                             for idx in range(fetch_idx + 1, len(block_lines)):
                                 candidate = block_lines[idx]
                                 if not candidate or candidate.startswith("#"):
                                     continue
-                                if self._is_execution_step(candidate):
+                                if is_execution_step(candidate):
                                     exec_idx = idx
                                     exec_line = candidate
                                     matched_lines = [fetch_idx, exec_idx]
@@ -721,25 +858,25 @@ class PipelineAnalyzer(BaseAnalyzer):
                             if not found_exec:
                                 continue
 
-                        if (
-                            pipeline_policy.compound_fetch_require_download_intent
-                            and not self._is_likely_remote_download(fetch_line)
-                        ):
-                            continue
-                        if pipeline_policy.compound_fetch_filter_api_requests and self._is_api_style_fetch(fetch_line):
-                            continue
-                        if pipeline_policy.compound_fetch_filter_shell_wrapped_fetch and self._is_shell_wrapped_fetch(
-                            exec_line
-                        ):
-                            continue
+                        if rule_id == "COMPOUND_FETCH_EXECUTE":
+                            if (
+                                pipeline_policy.compound_fetch_require_download_intent
+                                and not self._is_likely_remote_download(fetch_line)
+                            ):
+                                continue
+                            if pipeline_policy.compound_fetch_filter_api_requests and self._is_api_style_fetch(
+                                fetch_line
+                            ):
+                                continue
+                            if (
+                                pipeline_policy.compound_fetch_filter_shell_wrapped_fetch
+                                and self._is_shell_wrapped_fetch(exec_line)
+                            ):
+                                continue
 
-                    # Check for known benign patterns
-                    is_benign = False
-                    for pat in self.policy._compiled_benign_pipes:
-                        if pat.search(block_text):
-                            is_benign = True
-                            break
-                    if is_benign:
+                    # Benign rules must cover the complete sequence; a benign
+                    # prefix cannot erase a later dangerous execution step.
+                    if self._matches_benign_pipeline(block_text):
                         continue
 
                     # Demote if in documentation file
@@ -794,7 +931,7 @@ class PipelineAnalyzer(BaseAnalyzer):
         Returns list of (source_file, block_text, base_line_number).
         """
         blocks: list[tuple[str, str, int]] = []
-        code_block_re = re.compile(r"```(?:bash|sh|shell|zsh)?\n(.*?)```", re.DOTALL)
+        code_block_re = _SHELL_CODE_BLOCK_PATTERN
 
         # Extract from SKILL.md instruction body
         for match in code_block_re.finditer(skill.instruction_body):
@@ -807,7 +944,7 @@ class PipelineAnalyzer(BaseAnalyzer):
             content = sf.read_content()
             if not content:
                 continue
-            if sf.file_type == "bash":
+            if sf.file_type == "bash" or Path(sf.relative_path).suffix.lower() == ".ps1":
                 blocks.append((sf.relative_path, content, 1))
             elif sf.file_type == "markdown":
                 for match in code_block_re.finditer(content):

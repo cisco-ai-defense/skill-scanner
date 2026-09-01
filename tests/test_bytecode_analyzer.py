@@ -17,6 +17,7 @@
 """Tests for bytecode integrity verifier (Feature #2)."""
 
 import importlib
+import importlib.util
 import py_compile
 from pathlib import Path
 
@@ -131,6 +132,8 @@ class TestBytecodeIntegrity:
 
         mismatch = [f for f in findings if f.rule_id == "BYTECODE_SOURCE_MISMATCH"]
         assert len(mismatch) == 0
+        unavailable = [f for f in findings if f.rule_id == "BYTECODE_ANALYSIS_UNAVAILABLE"]
+        assert len(unavailable) == 0
 
     def test_no_pyc_files_no_findings(self, tmp_path):
         """A skill with no .pyc files should produce no findings."""
@@ -151,14 +154,8 @@ class TestBytecodeIntegrity:
         findings = analyzer.analyze(skill)
         assert len(findings) == 0
 
-    def test_tampered_bytecode_no_decompiler(self, tmp_path):
-        """Without decompyle3/uncompyle6, tampered bytecode silently passes.
-
-        This is expected - BYTECODE_SOURCE_MISMATCH only fires when we can
-        actually decompile and compare. The PYCACHE_FILES_DETECTED and
-        BYTECODE_NO_SOURCE rules handle the common cases.
-        When decompilers ARE available, this would produce BYTECODE_SOURCE_MISMATCH.
-        """
+    def test_tampered_bytecode_detected_without_decompiler(self, tmp_path):
+        """Unchecked-hash bytecode compiled from different source is CRITICAL."""
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
 
@@ -173,6 +170,7 @@ class TestBytecodeIntegrity:
         py_compile.compile(
             str(temp_malicious),
             cfile=str(skill_dir / "module.cpython-311.pyc"),
+            invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
         )
         temp_malicious.unlink()
 
@@ -187,11 +185,80 @@ class TestBytecodeIntegrity:
         analyzer = BytecodeAnalyzer()
         findings = analyzer.analyze(skill)
 
-        # Without decompilers, no MISMATCH can be detected
-        # This is a known limitation - the analyzer gracefully degrades
         mismatch = [f for f in findings if f.rule_id == "BYTECODE_SOURCE_MISMATCH"]
-        # May or may not be detected depending on installed packages
-        # We don't assert count here - just verify no crash
+        assert len(mismatch) == 1
+        assert mismatch[0].severity == Severity.CRITICAL
+
+    @pytest.mark.parametrize("optimize", [0, 1, 2])
+    def test_matching_optimized_bytecode_no_mismatch(self, tmp_path, optimize):
+        """Compiler optimization must not create a false tampering finding."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+
+        py_file = skill_dir / "module.py"
+        py_file.write_text('"module docstring"\nassert True\nVALUE = 42\n')
+        pyc_file = skill_dir / f"module.cpython-311.opt-{optimize}.pyc"
+        py_compile.compile(str(py_file), cfile=str(pyc_file), optimize=optimize)
+
+        skill = _make_skill(
+            skill_dir,
+            [
+                _make_skill_file(py_file, "module.py", "python"),
+                _make_skill_file(pyc_file, pyc_file.name, "binary"),
+            ],
+        )
+
+        findings = BytecodeAnalyzer().analyze(skill)
+        assert not [f for f in findings if f.rule_id in {"BYTECODE_SOURCE_MISMATCH", "BYTECODE_ANALYSIS_UNAVAILABLE"}]
+
+    def test_corrupt_bytecode_fails_closed(self, tmp_path):
+        """Unreadable bytecode with matching source must prevent a SAFE result."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+
+        py_file = skill_dir / "module.py"
+        py_file.write_text("VALUE = 42\n")
+        pyc_file = skill_dir / "module.cpython-311.pyc"
+        pyc_file.write_bytes(importlib.util.MAGIC_NUMBER + b"truncated")
+
+        skill = _make_skill(
+            skill_dir,
+            [
+                _make_skill_file(py_file, "module.py", "python"),
+                _make_skill_file(pyc_file, pyc_file.name, "binary"),
+            ],
+        )
+
+        findings = BytecodeAnalyzer().analyze(skill)
+        unavailable = [f for f in findings if f.rule_id == "BYTECODE_ANALYSIS_UNAVAILABLE"]
+        assert len(unavailable) == 1
+        assert unavailable[0].severity == Severity.HIGH
+
+    def test_foreign_python_bytecode_fails_closed(self, tmp_path):
+        """A PYC for another Python version cannot silently pass verification."""
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+
+        py_file = skill_dir / "module.py"
+        py_file.write_text("VALUE = 42\n")
+        pyc_file = skill_dir / "module.cpython-310.pyc"
+        py_compile.compile(str(py_file), cfile=str(pyc_file))
+        payload = bytearray(pyc_file.read_bytes())
+        payload[:4] = b"\x00\x00\x00\x00"
+        pyc_file.write_bytes(payload)
+
+        skill = _make_skill(
+            skill_dir,
+            [
+                _make_skill_file(py_file, "module.py", "python"),
+                _make_skill_file(pyc_file, pyc_file.name, "binary"),
+            ],
+        )
+
+        findings = BytecodeAnalyzer().analyze(skill)
+        unavailable = [f for f in findings if f.rule_id == "BYTECODE_ANALYSIS_UNAVAILABLE"]
+        assert len(unavailable) == 1
+        assert "different Python version" in unavailable[0].metadata["reason"]
 
 
 class TestStemCollisionResolution:

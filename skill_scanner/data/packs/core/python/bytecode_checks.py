@@ -3,7 +3,8 @@
 
 """Bytecode integrity checks.
 
-Rules: BYTECODE_NO_SOURCE, BYTECODE_SOURCE_MISMATCH.
+Rules: BYTECODE_NO_SOURCE, BYTECODE_SOURCE_MISMATCH,
+BYTECODE_ANALYSIS_UNAVAILABLE.
 
 Note: These rules remain implemented inline in BytecodeAnalyzer because
 they are tightly coupled to the bytecode decompilation/comparison process.
@@ -18,4 +19,5 @@ The actual implementations live in:
 BYTECODE_RULE_IDS = [
     "BYTECODE_NO_SOURCE",
     "BYTECODE_SOURCE_MISMATCH",
+    "BYTECODE_ANALYSIS_UNAVAILABLE",
 ]

@@ -1,5 +1,5 @@
 # PromptGuard Data Protection Rule Pack for Cisco Skill Scanner
-# Source: https://github.com/promptguard/promptguard
+# Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
 # Version: 1.0.0
 # These rules fill detection gaps in Cisco's core ruleset and the ATR pack.
 # Focus areas: PII detection, extended secret providers, LLM-context exfiltration.
@@ -9,18 +9,14 @@ pack:
   name: "PromptGuard Data Protection Rules"
   version: "1.0.0"
   description: >
-    Open-source data protection detection rules from the PromptGuard project.
-    Covers three categories absent from Cisco's core pack and the ATR community
-    pack: (1) PII detection — SSNs, credit cards, IBANs, and credential
-    harvesting instructions with zero coverage today; (2) extended secret
-    providers — OpenAI, Anthropic, Slack, HuggingFace, npm, PyPI, and 6 more
-    providers beyond the 8 in Cisco's core pack; (3) LLM-context exfiltration —
-    markdown image/link exfil, HTML tag injection, data URI smuggling, and
-    invisible payload encoding that bypass network-level detection.
-    26 rules across 3 signature files.
-  author: "PromptGuard"
+    Data protection detection rules contributed directly to Skill Scanner in
+    PR #89 under the PromptGuard pack name. Covers PII detection, extended
+    secret providers, and LLM-context exfiltration with 26 rules across 3
+    signature files. The immutable in-repository contribution is the canonical
+    source because the originally cited external repository is not public.
+  author: "Abhijoy Sarkar (community contribution via PR #89)"
   license: "Apache-2.0"
-  source_url: "https://github.com/promptguard/promptguard"
+  source_url: "https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard"
   signature_files:
     - signatures/pii_detection.yaml
     - signatures/secret_providers.yaml
