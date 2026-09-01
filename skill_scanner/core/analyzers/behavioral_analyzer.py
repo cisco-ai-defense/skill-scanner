@@ -390,8 +390,10 @@ class BehavioralAnalyzer(BaseAnalyzer):
                 )
             )
 
-        # Check for environment variable harvesting (even without immediate network)
-        if context.has_env_var_access:
+        # Reserve "harvesting" for bulk environment collection. Targeted
+        # lookups such as os.environ.get("ANTHROPIC_API_KEY") remain available
+        # to the exfiltration correlation above, but are not bulk harvesting.
+        if context.has_env_var_harvesting:
             findings.append(
                 Finding(
                     id=self._generate_id("ENV_VAR_HARVESTING", context.file_path),

@@ -91,6 +91,56 @@ _EXCEPTION_PATTERNS = [
     re.compile(r"raise\s+StopIteration"),
 ]
 
+_COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//|/\*|\*|<!--)")
+_NEGATED_EXFILTRATION_RE = re.compile(
+    r"\b(?:do\s+not|don't|never|avoid|prevent|block|reject|refus(?:e|es|ed|ing)|rather\s+than)\b"
+    r"[^\n]{0,100}\b(?:exfiltrat(?:e|es|ed|ing|ion)|siphon(?:s|ed|ing)?)\b",
+    re.IGNORECASE,
+)
+_NEGATABLE_EXFIL_IDENTIFIERS = {"$explicit_exfil", "$leak_param", "$credential_theft_actions"}
+
+
+class _LoopExitVisitor(ast.NodeVisitor):
+    """Find exits belonging to one enclosing loop, ignoring nested scopes."""
+
+    def __init__(self) -> None:
+        self.has_exit = False
+        self._nested_loop_depth = 0
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+        return
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
+        return
+
+    def visit_Return(self, node: ast.Return) -> None:  # noqa: N802
+        self.has_exit = True
+
+    def visit_Raise(self, node: ast.Raise) -> None:  # noqa: N802
+        self.has_exit = True
+
+    def visit_Break(self, node: ast.Break) -> None:  # noqa: N802
+        if self._nested_loop_depth == 0:
+            self.has_exit = True
+
+    def _visit_nested_loop(self, node: ast.For | ast.AsyncFor | ast.While) -> None:
+        self._nested_loop_depth += 1
+        self.generic_visit(node)
+        self._nested_loop_depth -= 1
+
+    def visit_For(self, node: ast.For) -> None:  # noqa: N802
+        self._visit_nested_loop(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802
+        self._visit_nested_loop(node)
+
+    def visit_While(self, node: ast.While) -> None:  # noqa: N802
+        self._visit_nested_loop(node)
+
+
 _SKILL_NAME_PATTERN = re.compile(r"[a-z0-9-]+")
 _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^\)]+)\)")
 _PYTHON_IMPORT_PATTERN = re.compile(r"^from\s+\.([A-Za-z0-9_.]*)\s+import", re.MULTILINE)
@@ -535,11 +585,43 @@ class StaticAnalyzer(BaseAnalyzer):
                 matches = rule.scan_content(content, skill_file.relative_path)
                 for match in matches:
                     if rule.id == "RESOURCE_ABUSE_INFINITE_LOOP" and skill_file.file_type == "python":
+                        if self._python_loop_has_exit(content, match["line_number"]):
+                            continue
                         if self._is_loop_with_exception_handler(content, match["line_number"]):
                             continue
                     findings.append(self._create_finding_from_match(rule, match))
 
         return findings
+
+    @staticmethod
+    def _python_loop_has_exit(content: str, loop_line_num: int) -> bool:
+        """Return whether the matched constant loop has an exit in its body.
+
+        Regex context cannot reliably associate ``return`` or ``break`` with a
+        particular loop.  The Python AST lets us suppress bounded ``while
+        True``/``while 1`` loops without borrowing exits from a later block or
+        a nested function.  A break belonging to a nested loop is likewise not
+        an exit from the matched outer loop.
+        """
+        try:
+            tree = ast.parse(content)
+        except (SyntaxError, ValueError):
+            return False
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.While) or node.lineno != loop_line_num:
+                continue
+            if not isinstance(node.test, ast.Constant) or node.test.value not in (True, 1):
+                continue
+
+            visitor = _LoopExitVisitor()
+            for statement in node.body:
+                visitor.visit(statement)
+                if visitor.has_exit:
+                    return True
+            return False
+
+        return False
 
     def _is_loop_with_exception_handler(self, content: str, loop_line_num: int) -> bool:
         """Check if a while True loop has an exception handler in surrounding context."""
@@ -2662,6 +2744,13 @@ class StaticAnalyzer(BaseAnalyzer):
             if string_identifier.startswith("$documentation") or string_identifier.startswith("$safe"):
                 continue
 
+            if (
+                rule_name in {"credential_harvesting_generic", "tool_chaining_abuse_generic"}
+                and string_identifier in _NEGATABLE_EXFIL_IDENTIFIERS
+                and self._is_negated_exfiltration_comment(string_match.get("line_content", ""))
+            ):
+                continue
+
             if rule_name == "code_execution_generic":
                 line_content = string_match.get("line_content", "").lower()
                 matched_data = string_match.get("matched_data", "").lower()
@@ -2802,6 +2891,11 @@ class StaticAnalyzer(BaseAnalyzer):
             )
 
         return findings
+
+    @staticmethod
+    def _is_negated_exfiltration_comment(line: str) -> bool:
+        """Recognize a refusal/negation local to an exfiltration comment."""
+        return bool(_COMMENT_LINE_RE.search(line) and _NEGATED_EXFILTRATION_RE.search(line))
 
     def _map_yara_rule_to_threat(self, rule_name: str, meta: dict[str, Any]) -> tuple:
         """Map YARA rule to ThreatCategory and Severity."""
