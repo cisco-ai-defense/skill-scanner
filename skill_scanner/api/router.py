@@ -48,6 +48,7 @@ from ..core.exceptions import SkillLoadError
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
 from ..llm_token_options import resolve_llm_max_tokens
+from ..utils.logging_context import scan_log_context
 
 logger = logging.getLogger("skill_scanner.api")
 
@@ -428,26 +429,31 @@ async def scan_skill(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    scan_id = str(uuid.uuid4())
+
     def run_scan():
-        analyzers = _build_analyzers(
-            policy,
-            custom_rules=custom_rules_path,
-            use_behavioral=request.use_behavioral,
-            use_llm=request.use_llm,
-            llm_provider=request.llm_provider,
-            use_virustotal=request.use_virustotal,
-            vt_api_key=vt_api_key,
-            vt_upload_files=request.vt_upload_files,
-            use_aidefense=request.use_aidefense,
-            aidefense_api_key=aidefense_api_key,
-            aidefense_api_url=request.aidefense_api_url,
-            use_trigger=request.use_trigger,
-            use_osv=request.use_osv,
-            llm_consensus_runs=request.llm_consensus_runs,
-            llm_max_tokens=request.llm_max_tokens,
-        )
-        scanner = SkillScanner(analyzers=analyzers, policy=policy)
-        return scanner.scan_skill(skill_dir)
+        # Context variables do not automatically cross executor boundaries,
+        # so bind the request id inside the worker thread itself.
+        with scan_log_context(scan_id=scan_id):
+            analyzers = _build_analyzers(
+                policy,
+                custom_rules=custom_rules_path,
+                use_behavioral=request.use_behavioral,
+                use_llm=request.use_llm,
+                llm_provider=request.llm_provider,
+                use_virustotal=request.use_virustotal,
+                vt_api_key=vt_api_key,
+                vt_upload_files=request.vt_upload_files,
+                use_aidefense=request.use_aidefense,
+                aidefense_api_key=aidefense_api_key,
+                aidefense_api_url=request.aidefense_api_url,
+                use_trigger=request.use_trigger,
+                use_osv=request.use_osv,
+                llm_consensus_runs=request.llm_consensus_runs,
+                llm_max_tokens=request.llm_max_tokens,
+            )
+            scanner = SkillScanner(analyzers=analyzers, policy=policy)
+            return scanner.scan_skill(skill_dir)
 
     try:
         loop = asyncio.get_running_loop()
@@ -462,39 +468,43 @@ async def scan_skill(
             and apply_meta_analysis_to_results is not None
             and len(result.findings) > 0
         ):
-            try:
-                from ..core.loader import SkillLoader
+            with scan_log_context(
+                skill_name=result.skill_name,
+                skill_path=str(skill_dir),
+                scan_id=scan_id,
+            ):
+                try:
+                    from ..core.loader import SkillLoader
 
-                meta_analyzer = MetaAnalyzer(
-                    policy=policy,
-                    max_tokens=resolve_llm_max_tokens(
-                        request.llm_max_tokens,
-                        meta=True,
-                        default=policy.llm_analysis.max_output_tokens if policy else 8192,
-                    ),
-                )
-                loader = SkillLoader()
-                skill = loader.load_skill(skill_dir)
+                    meta_analyzer = MetaAnalyzer(
+                        policy=policy,
+                        max_tokens=resolve_llm_max_tokens(
+                            request.llm_max_tokens,
+                            meta=True,
+                            default=policy.llm_analysis.max_output_tokens if policy else 8192,
+                        ),
+                    )
+                    loader = SkillLoader()
+                    skill = loader.load_skill(skill_dir)
 
-                meta_result = await meta_analyzer.analyze_with_findings(
-                    skill=skill,
-                    findings=result.findings,
-                    analyzers_used=result.analyzers_used,
-                )
+                    meta_result = await meta_analyzer.analyze_with_findings(
+                        skill=skill,
+                        findings=result.findings,
+                        analyzers_used=result.analyzers_used,
+                    )
 
-                filtered_findings = apply_meta_analysis_to_results(
-                    original_findings=result.findings,
-                    meta_result=meta_result,
-                    skill=skill,
-                )
-                result.findings = filtered_findings
-                result.analyzers_used.append("meta_analyzer")
-                if merge_meta_analyzer_usage is not None:
-                    merge_meta_analyzer_usage(result, meta_analyzer)
-            except Exception as meta_error:
-                logger.warning("Meta-analysis failed: %s", meta_error)
+                    filtered_findings = apply_meta_analysis_to_results(
+                        original_findings=result.findings,
+                        meta_result=meta_result,
+                        skill=skill,
+                    )
+                    result.findings = filtered_findings
+                    result.analyzers_used.append("meta_analyzer")
+                    if merge_meta_analyzer_usage is not None:
+                        merge_meta_analyzer_usage(result, meta_analyzer)
+                except Exception as meta_error:
+                    logger.warning("Meta-analysis failed: %s", meta_error)
 
-        scan_id = str(uuid.uuid4())
         return ScanResponse(
             scan_id=scan_id,
             skill_name=result.skill_name,
@@ -698,6 +708,17 @@ def run_batch_scan(
     aidefense_api_key: str | None = None,
 ):
     """Background task to run batch scan."""
+    with scan_log_context(scan_id=scan_id):
+        _run_batch_scan(scan_id, request, vt_api_key, aidefense_api_key)
+
+
+def _run_batch_scan(
+    scan_id: str,
+    request: BatchScanRequest,
+    vt_api_key: str | None = None,
+    aidefense_api_key: str | None = None,
+):
+    """Run a batch scan with its request context already bound."""
     try:
         policy = _resolve_policy(request.policy)
 
@@ -750,25 +771,29 @@ def run_batch_scan(
                 )
                 for result in report_ref.scan_results:
                     if result.findings:
-                        try:
-                            skill_dir_path = Path(result.skill_directory)
-                            skill = scanner_ref.loader.load_skill(skill_dir_path)
-                            meta_result = await meta_analyzer.analyze_with_findings(
-                                skill=skill,
-                                findings=result.findings,
-                                analyzers_used=result.analyzers_used,
-                            )
-                            filtered_findings = apply_meta_analysis_to_results(
-                                original_findings=result.findings,
-                                meta_result=meta_result,
-                                skill=skill,
-                            )
-                            result.findings = filtered_findings
-                            result.analyzers_used.append("meta_analyzer")
-                            if merge_meta_analyzer_usage is not None:
-                                merge_meta_analyzer_usage(result, meta_analyzer)
-                        except Exception:
-                            pass
+                        skill_dir_path = Path(result.skill_directory)
+                        with scan_log_context(
+                            skill_name=result.skill_name,
+                            skill_path=str(skill_dir_path.resolve()),
+                        ):
+                            try:
+                                skill = scanner_ref.loader.load_skill(skill_dir_path)
+                                meta_result = await meta_analyzer.analyze_with_findings(
+                                    skill=skill,
+                                    findings=result.findings,
+                                    analyzers_used=result.analyzers_used,
+                                )
+                                filtered_findings = apply_meta_analysis_to_results(
+                                    original_findings=result.findings,
+                                    meta_result=meta_result,
+                                    skill=skill,
+                                )
+                                result.findings = filtered_findings
+                                result.analyzers_used.append("meta_analyzer")
+                                if merge_meta_analyzer_usage is not None:
+                                    merge_meta_analyzer_usage(result, meta_analyzer)
+                            except Exception:
+                                pass
 
             try:
                 asyncio.run(_run_batch_meta(scanner, report, policy))
