@@ -40,9 +40,11 @@
     - "socket\\.socket\\s*\\([^)]*\\)\\.connect"
     - "socket\\.create_connection"
     # Resolver APIs issue external DNS lookups without an explicit socket connect.
-    - "socket\\.(?:getaddrinfo|gethostbyname_ex|getnameinfo)\\s*\\("
+    - "socket\\.getaddrinfo\\s*\\((?!\\s*socket\\.gethostname\\s*\\(\\s*\\)\\s*,)"
+    - "socket\\.gethostbyname_ex\\s*\\((?!\\s*socket\\.gethostname\\s*\\(\\s*\\)\\s*\\))"
+    - "socket\\.getnameinfo\\s*\\("
     - "socket\\.gethostbyname\\s*\\((?!\\s*socket\\.gethostname\\s*\\(\\s*\\)\\s*\\))"
-    - "socket\\.getfqdn\\s*\\((?!\\s*\\))"
+    - "socket\\.getfqdn\\s*\\((?!\\s*(?:socket\\.gethostname\\s*\\(\\s*\\)\\s*)?\\))"
   exclude_patterns:
     - "localhost"
     - "127\\.0\\.0\\.1"

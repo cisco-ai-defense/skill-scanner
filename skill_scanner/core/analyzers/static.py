@@ -822,7 +822,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     stack.extend(ast.iter_child_nodes(node))
                 return owned
 
-            scope_types = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+            scope_types = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
             scopes: list[ast.AST] = [tree, *(node for node in ast.walk(tree) if isinstance(node, scope_types))]
             for scope in scopes:
                 scope_nodes = _owned_nodes(scope)
@@ -1881,22 +1881,16 @@ class StaticAnalyzer(BaseAnalyzer):
     @staticmethod
     def _content_uses_external_socket_api(content: str) -> bool:
         """Return whether socket calls in *content* can contact a remote host."""
-        external_indicators = (
-            "socket.connect",
-            "socket.create_connection",
-            "socket.getaddrinfo",
-            "socket.gethostbyname_ex",
-            "socket.getnameinfo",
+        external_patterns = (
+            r"socket\.connect",
+            r"socket\.create_connection",
+            r"socket\.getaddrinfo\s*\((?!\s*socket\.gethostname\s*\(\s*\)\s*,)",
+            r"socket\.gethostbyname_ex\s*\((?!\s*socket\.gethostname\s*\(\s*\)\s*\))",
+            r"socket\.getnameinfo\s*\(",
+            r"socket\.gethostbyname\s*\((?!\s*socket\.gethostname\s*\(\s*\)\s*\))",
+            r"socket\.getfqdn\s*\((?!\s*(?:socket\.gethostname\s*\(\s*\)\s*)?\))",
         )
-        if any(indicator in content for indicator in external_indicators):
-            return True
-
-        return bool(
-            re.search(
-                r"socket\.gethostbyname\s*\((?!\s*socket\.gethostname\s*\(\s*\)\s*\))",
-                content,
-            )
-        )
+        return any(re.search(pattern, content) for pattern in external_patterns)
 
     def _skill_uses_network(self, skill: Skill) -> bool:
         """Check if skill code uses network libraries for EXTERNAL communication."""
