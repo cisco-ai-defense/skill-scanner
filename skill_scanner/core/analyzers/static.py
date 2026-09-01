@@ -22,6 +22,7 @@ import ast
 import configparser
 import hashlib
 import logging
+import pickletools
 import re
 from pathlib import Path
 from typing import Any
@@ -1377,6 +1378,10 @@ class StaticAnalyzer(BaseAnalyzer):
             if skill_file.file_type != "binary":
                 continue
 
+            if ext in {".pkl", ".pickle"}:
+                findings.append(self._pickle_finding(skill_file))
+                continue
+
             if ext in INERT_EXTENSIONS:
                 continue
 
@@ -1423,6 +1428,144 @@ class StaticAnalyzer(BaseAnalyzer):
             )
 
         return findings
+
+    def _pickle_finding(self, skill_file) -> Finding:
+        """Report serialized Python objects as executable, untrusted content.
+
+        Pickle is not a data-only format: loading a pickle can invoke arbitrary
+        callables encoded by the producer.  Inspect opcodes with ``pickletools``
+        (which never unpickles the object) to distinguish an ordinary serialized
+        object from one that visibly references a code-execution primitive.
+        Even a syntactically valid pickle remains HIGH because static analysis
+        cannot make loading attacker-controlled pickle data safe.
+        """
+        dangerous_globals: list[str] = []
+        executable_opcodes: list[str] = []
+        parse_error: str | None = None
+        inspection_skipped_reason: str | None = None
+        inspection_limit = max(0, self.policy.file_limits.max_loader_file_size_bytes)
+
+        def _record_global(module: str, name: str) -> None:
+            reference = f"{module} {name}"
+            if module in {"builtins", "os", "posix", "nt", "subprocess", "commands"} or name in {
+                "eval",
+                "exec",
+                "system",
+                "popen",
+                "spawn",
+                "Popen",
+            }:
+                dangerous_globals.append(reference)
+
+        if skill_file.size_bytes > inspection_limit:
+            inspection_skipped_reason = "size-limit"
+        else:
+            try:
+                # Bound the actual read as well as checking the loader's size
+                # metadata, so a file replacement race cannot exhaust memory.
+                with skill_file.path.open("rb") as handle:
+                    payload = handle.read(inspection_limit + 1)
+                if len(payload) > inspection_limit:
+                    inspection_skipped_reason = "size-limit"
+                else:
+                    stack: list[object] = []
+                    memo: dict[int, object] = {}
+                    next_memo_index = 0
+                    mark = object()
+                    string_opcodes = {
+                        "STRING",
+                        "BINSTRING",
+                        "SHORT_BINSTRING",
+                        "UNICODE",
+                        "BINUNICODE",
+                        "SHORT_BINUNICODE",
+                        "BINUNICODE8",
+                    }
+
+                    for opcode, argument, _ in pickletools.genops(payload):
+                        opcode_name = opcode.name
+                        if opcode_name in string_opcodes:
+                            if isinstance(argument, bytes):
+                                stack.append(argument.decode("utf-8", errors="replace"))
+                            else:
+                                stack.append(argument if isinstance(argument, str) else None)
+                        elif opcode_name == "MEMOIZE":
+                            memo[next_memo_index] = stack[-1] if stack else None
+                            next_memo_index += 1
+                        elif opcode_name in {"PUT", "BINPUT", "LONG_BINPUT"}:
+                            memo[int(argument)] = stack[-1] if stack else None
+                        elif opcode_name in {"GET", "BINGET", "LONG_BINGET"}:
+                            stack.append(memo.get(int(argument)))
+                        elif opcode_name == "GLOBAL" and isinstance(argument, str):
+                            module, _, name = argument.partition(" ")
+                            _record_global(module, name)
+                            stack.append(None)
+                        elif opcode_name == "STACK_GLOBAL":
+                            executable_opcodes.append(opcode_name)
+                            name = stack.pop() if stack else None
+                            module = stack.pop() if stack else None
+                            if isinstance(module, str) and isinstance(name, str):
+                                _record_global(module, name)
+                            stack.append(None)
+                        elif opcode_name == "REDUCE":
+                            executable_opcodes.append(opcode_name)
+                            if stack:
+                                stack.pop()
+                            if stack:
+                                stack.pop()
+                            stack.append(None)
+                        elif opcode_name == "MARK":
+                            stack.append(mark)
+                        elif opcode_name == "POP":
+                            if stack:
+                                stack.pop()
+                        elif opcode_name == "POP_MARK":
+                            while stack and stack.pop() is not mark:
+                                pass
+                        elif opcode_name == "DUP" and stack:
+                            stack.append(stack[-1])
+            except Exception as exc:  # noqa: BLE001 - malformed untrusted bytes must not abort a scan
+                parse_error = type(exc).__name__
+
+        suspicious = bool(dangerous_globals)
+        details = ""
+        if dangerous_globals:
+            details = f" Detected executable pickle opcode references: {', '.join(sorted(set(dangerous_globals)))}."
+        elif inspection_skipped_reason:
+            details = (
+                f" Opcode inspection was skipped because the file exceeds the {inspection_limit}-byte "
+                "inspection limit; the file must still be treated as untrusted."
+            )
+        elif parse_error:
+            details = f" Opcode inspection failed ({parse_error}); the file must still be treated as untrusted."
+
+        metadata: dict[str, object] = {
+            "opcode_inspection": "pickletools.genops",
+            "dangerous_opcodes": dangerous_globals,
+            "observed_executable_opcodes": sorted(set(executable_opcodes)),
+            "inspection_limit_bytes": inspection_limit,
+        }
+        if inspection_skipped_reason:
+            metadata["inspection_skipped_reason"] = inspection_skipped_reason
+        if parse_error:
+            metadata["parse_error"] = parse_error
+
+        return Finding(
+            id=self._generate_finding_id("PICKLE_FILE_DETECTED", skill_file.relative_path),
+            rule_id="PICKLE_FILE_DETECTED",
+            category=ThreatCategory.COMMAND_INJECTION,
+            severity=Severity.CRITICAL if suspicious else Severity.HIGH,
+            title="Executable Python pickle detected",
+            description=(
+                f"Pickle file found: {skill_file.relative_path}. Python pickle loading can execute "
+                f"arbitrary code supplied by the file producer; do not load it from an untrusted skill."
+                f"{details}"
+            ),
+            file_path=skill_file.relative_path,
+            remediation="Remove pickle files from skills. Use a non-executable data format such as JSON instead.",
+            analyzer="static",
+            metadata=metadata,
+        )
 
     def _check_hidden_files(self, skill: Skill) -> list[Finding]:
         """Check for hidden files (dotfiles) and __pycache__ in skill package."""
