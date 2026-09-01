@@ -53,7 +53,10 @@ dependencies = [
     "PyYAML>=6.0,<7",
     "python-frontmatter>=1.1,<2",
     "rich>=14.0,<15",
-    "textual>=7.0,<8",
+    # Textual 8 remains API-compatible with the policy configurator. Keep the
+    # next-major ceiling while allowing downstream applications that already
+    # use the supported 8.x line to share one runtime environment.
+    "textual>=7.0,<9",
     "tabulate>=0.9,<1",
     "pydantic>=2.10,<3",
     "fastapi>=0.115,<1",

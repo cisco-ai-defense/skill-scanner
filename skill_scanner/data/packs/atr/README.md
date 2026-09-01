@@ -4,7 +4,39 @@
 **ATR Version:** 3.5.6
 **Rules:** 712 signatures across 10 signature files
 **License:** MIT
-**Benchmarks:** 97.2% recall on NVIDIA garak (650 in-the-wild jailbreaks) · 100% recall on 498 labeled SKILL.md samples · 99.7% precision on 850 PINT adversarial samples · OWASP Agentic Top 10: 10/10
+**Benchmarks:** see the [ATR benchmark table](https://github.com/Agent-Threat-Rule/agent-threat-rules#benchmarks),
+which is version-pinned and regenerated from measurement files rather than
+hand-copied. Selected rows:
+
+| Corpus | Samples | Recall | Precision | ATR version |
+|---|---:|---:|---:|---:|
+| NVIDIA garak, in-the-wild jailbreaks | 650 | 92.5% | 100% | 3.5.11 |
+| NVIDIA garak, all 23 probe families | 3,475 | 57.2% | 100% | 3.5.11 |
+| PINT-format (deepset + Lakera Gandalf) | 850 | 60.3% | 100% | 3.5.11 |
+| Labeled SKILL.md, internal | 498 | 100% (hunt) / 0% (enforce) | 97% | 3.5.0 |
+
+**This pack ships ATR 3.5.6; the rows above were measured on 3.5.11 and 3.5.0.**
+Treat them as indicative of the shipped signatures rather than exact. The
+upstream table is the authority and carries the measurement file behind each
+row.
+
+Three caveats belong next to those numbers.
+
+The PINT-format row is **not** a run of Lakera's official PINT benchmark. That
+corpus is private and roughly five times larger. This is a self-built corpus in
+the same format, and 226 of its 272 detections come from a single rule
+(`ATR-2026-00001`), so it measures one rule family rather than overall coverage.
+
+The SKILL.md split is structural, not a tuning gap. ATR's enforce lane loads
+only `maturity: stable`, and all 38 rules carrying `scan_target: skill` are
+currently `maturity: test` — so an enforce-lane deployment loads no
+skill-scanning rule at all and detects 0 of the 32 malicious samples. This pack
+loads the full static ruleset, which is the configuration the 100% figure
+describes.
+
+OWASP Agentic Top 10 coverage (10/10 categories, 1,179 mappings) is a taxonomy
+mapping, not a detection benchmark, and is listed separately upstream for that
+reason.
 
 ## Overview
 
