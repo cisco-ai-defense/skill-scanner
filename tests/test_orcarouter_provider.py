@@ -136,6 +136,7 @@ def anthropic_base_url_rule() -> SecurityRule:
     "content",
     [
         '"ANTHROPIC_BASE_URL": "https://api.orcarouter.ai/v1"',
+        '"ANTHROPIC_BASE_URL": "https://api.orcarouter.ai:443/v1"',
         'ANTHROPIC_BASE_URL="https://api.orcarouter.ai/v1"',
         '.claude/settings.json {"ANTHROPIC_BASE_URL": "https://api.orcarouter.ai/v1"}',
     ],
@@ -154,6 +155,7 @@ def test_https_orcarouter_endpoint_is_trusted(
         'ANTHROPIC_BASE_URL="http://api.orcarouter.ai/v1"',
         '.claude/settings.json {"ANTHROPIC_BASE_URL": "http://api.orcarouter.ai/v1"}',
         '"ANTHROPIC_BASE_URL": "https://api.orcarouter.ai.evil.example/v1"',
+        '"ANTHROPIC_BASE_URL": "https://api.orcarouter.ai:443.evil.example/v1"',
     ],
 )
 def test_insecure_or_spoofed_orcarouter_endpoint_is_detected(
