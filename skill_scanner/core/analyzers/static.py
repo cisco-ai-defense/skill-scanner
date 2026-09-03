@@ -2017,7 +2017,7 @@ class StaticAnalyzer(BaseAnalyzer):
             aliases[match.group(2)] = match.group(1)
 
         findings: list[Finding] = []
-        ast_call_ranges: set[tuple[int, int]] = set()
+        ast_call_starts: set[int] = set()
         line_offsets = [0]
         for line in content.splitlines(keepends=True):
             line_offsets.append(line_offsets[-1] + len(line))
@@ -2044,9 +2044,10 @@ class StaticAnalyzer(BaseAnalyzer):
 
         def has_dynamic_fstring(source: str) -> bool:
             """Return whether source contains an interpolated f-string token."""
-            fstring_depth = 0
             fstring_start = getattr(tokenize, "FSTRING_START", None)
+            fstring_middle = getattr(tokenize, "FSTRING_MIDDLE", None)
             fstring_end = getattr(tokenize, "FSTRING_END", None)
+            in_fstring = False
             try:
                 tokens = tokenize.generate_tokens(io.StringIO(source).readline)
                 for token in tokens:
@@ -2057,23 +2058,29 @@ class StaticAnalyzer(BaseAnalyzer):
                         body = token.string[prefix.end() : -1]
                         if re.search(r"(?<!\{)\{(?!\{)", body):
                             return True
-
-                    # Python 3.12+ tokenizes PEP 701 f-strings into separate
-                    # start/middle/end tokens instead of one STRING token.
+                        continue
                     if fstring_start is not None and token.type == fstring_start:
-                        fstring_depth += 1
+                        in_fstring = True
+                        continue
+                    if not in_fstring:
                         continue
                     if fstring_end is not None and token.type == fstring_end:
-                        fstring_depth = max(0, fstring_depth - 1)
+                        in_fstring = False
                         continue
-                    if fstring_depth and token.type == tokenize.OP and token.string == "{":
+                    if token.type == tokenize.OP and token.string == "{":
+                        return True
+                    if (
+                        fstring_middle is not None
+                        and token.type == fstring_middle
+                        and re.search(r"(?<!\{)\{[^{}]+\}(?!\})", token.string)
+                    ):
                         return True
             except (tokenize.TokenError, IndentationError):
                 return False
             return False
 
-        def has_shell_true_argument(source: str) -> bool:
-            """Return whether a call has a top-level literal ``shell=True``."""
+        def has_top_level_shell_true(source: str) -> bool:
+            """Return whether a call's outer arguments contain literal ``shell=True``."""
             try:
                 expression = ast.parse(source, mode="eval")
             except (SyntaxError, ValueError):
@@ -2085,13 +2092,12 @@ class StaticAnalyzer(BaseAnalyzer):
                 )
 
             open_index = source.find("(")
-            if open_index < 0:
+            if open_index == -1:
                 return False
 
-            depth = 0
+            brackets: list[str] = []
             quote: str | None = None
             escaped = False
-            argument_start = True
             i = open_index + 1
             while i < len(source):
                 char = source[i]
@@ -2101,55 +2107,40 @@ class StaticAnalyzer(BaseAnalyzer):
                     elif char == "\\":
                         escaped = True
                     elif len(quote) == 3 and source.startswith(quote, i):
-                        i += 2
+                        i += len(quote)
                         quote = None
+                        continue
                     elif len(quote) == 1 and char == quote:
                         quote = None
                     i += 1
                     continue
-                if char in "'\"":
-                    quote = char * 3 if source.startswith(char * 3, i) else char
-                    if len(quote) == 3:
-                        i += 2
-                    argument_start = False
-                elif char == "#":
+
+                if char == "#":
                     newline = source.find("\n", i)
-                    i = len(source) if newline < 0 else newline
+                    if newline == -1:
+                        return False
+                    i = newline + 1
                     continue
-                elif char in "([{":
-                    depth += 1
-                    argument_start = False
+                if char in "'\"":
+                    if source.startswith(char * 3, i):
+                        quote = char * 3
+                        i += 3
+                    else:
+                        quote = char
+                        i += 1
+                    continue
+                if char in "([{":
+                    brackets.append(char)
                 elif char in ")]}":
-                    if char == ")" and depth == 0:
-                        break
-                    depth = max(0, depth - 1)
-                    argument_start = False
-                elif depth == 0 and char == ",":
-                    argument_start = True
-                elif depth == 0 and argument_start and char.isspace():
-                    pass
-                elif depth == 0 and argument_start and source.startswith("shell", i):
+                    if not brackets:
+                        return False
+                    brackets.pop()
+                elif not brackets and source.startswith("shell", i):
                     before = source[i - 1] if i else ""
                     after = source[i + len("shell")] if i + len("shell") < len(source) else ""
-                    if (not before or not (before.isalnum() or before == "_")) and (
-                        not after or not (after.isalnum() or after == "_")
-                    ):
-                        value_start = i + len("shell")
-                        while value_start < len(source) and source[value_start].isspace():
-                            value_start += 1
-                        if value_start < len(source) and source[value_start] == "=":
-                            value_start += 1
-                            while value_start < len(source) and source[value_start].isspace():
-                                value_start += 1
-                            if source.startswith("True", value_start):
-                                value_end = value_start + len("True")
-                                if value_end == len(source) or not (
-                                    source[value_end].isalnum() or source[value_end] == "_"
-                                ):
-                                    return True
-                    argument_start = False
-                elif depth == 0:
-                    argument_start = False
+                    if (not (before.isalnum() or before == "_")) and not (after.isalnum() or after == "_"):
+                        if re.match(r"shell\s*=\s*True\s*(?:,|\)|#|$)", source[i:]):
+                            return True
                 i += 1
             return False
 
@@ -2176,6 +2167,11 @@ class StaticAnalyzer(BaseAnalyzer):
                         i += 2
                     else:
                         quote = char
+                elif char == "#":
+                    newline = content.find("\n", i)
+                    if newline == -1:
+                        return None
+                    i = newline
                 elif char == "(":
                     depth += 1
                 elif char == ")":
@@ -2204,11 +2200,10 @@ class StaticAnalyzer(BaseAnalyzer):
                 if node.end_lineno is None or node.end_col_offset is None:
                     continue
                 start = line_offsets[node.lineno - 1] + node.col_offset
-                end = line_offsets[node.end_lineno - 1] + node.end_col_offset
                 matched_text = ast.get_source_segment(content, node)
                 if matched_text is None:
                     matched_text = f"{node.func.value.id}.{method}(...)"
-                ast_call_ranges.add((start, end))
+                ast_call_starts.add(start)
                 if resolved_module == "os":
                     add_match("COMMAND_INJECTION_SHELL_TRUE", start, matched_text, "aliased os.system call")
                 elif any(
@@ -2232,12 +2227,12 @@ class StaticAnalyzer(BaseAnalyzer):
                 if call_end is None:
                     continue
                 start = match.start()
-                if any(start == call_start for call_start, _ in ast_call_ranges):
+                if start in ast_call_starts:
                     continue
                 call_text = content[start:call_end]
                 if module == "os":
                     add_match("COMMAND_INJECTION_SHELL_TRUE", start, call_text, "aliased os.system call")
-                elif has_shell_true_argument(call_text):
+                elif has_top_level_shell_true(call_text):
                     add_match(
                         "COMMAND_INJECTION_SHELL_TRUE", start, call_text, "aliased subprocess call with shell=True"
                     )
