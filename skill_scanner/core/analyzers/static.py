@@ -495,6 +495,7 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(self._check_manifest(skill))
         findings.extend(self._scan_instruction_body(skill))
         findings.extend(self._scan_scripts(skill))
+        findings.extend(self._check_aliased_dangerous_calls(skill))
         findings.extend(self._check_dynamic_sensitive_file_access(skill))
         findings.extend(self._check_consistency(skill))
         findings.extend(self._check_dependency_pinning(skill))
@@ -800,6 +801,93 @@ class StaticAnalyzer(BaseAnalyzer):
             parts.append(current.id)
             return ".".join(reversed(parts))
         return None
+
+    @staticmethod
+    def _find_os_import_aliases(tree: ast.Module) -> set[str]:
+        """Return local names bound to the ``os`` module via ``import os as X``.
+
+        The unaliased case (``asname`` unset, or explicitly ``import os as
+        os``) is excluded so COMMAND_INJECTION_SHELL_TRUE's regex signature
+        remains the sole detector for that path -- this check only covers the
+        alias gap, never duplicating a literal ``os.system(`` match.
+        """
+        aliases: set[str] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Import):
+                continue
+            for alias in node.names:
+                if alias.name == "os" and alias.asname and alias.asname != "os":
+                    aliases.add(alias.asname)
+        return aliases
+
+    def _check_aliased_dangerous_calls(self, skill: Skill) -> list[Finding]:
+        """Detect os.system() calls made through an import alias.
+
+        COMMAND_INJECTION_SHELL_TRUE's signature matches ``os.system(``
+        literally, so ``import os as _o; _o.system(...)`` slips through. This
+        AST-based check closes that specific gap. It intentionally does not
+        attempt broader alias/data-flow resolution (e.g. ``from os import
+        system as x``, re-aliasing through assignment, or non-``os``
+        modules) -- those are separate, larger pieces of work.
+        """
+        rule_id = "COMMAND_INJECTION_SHELL_TRUE"
+        if rule_id in self.policy.disabled_rules:
+            return []
+
+        findings: list[Finding] = []
+
+        for sf in skill.files:
+            if sf.file_type != "python":
+                continue
+
+            content = sf.read_content()
+            if not content:
+                continue
+
+            try:
+                tree = ast.parse(content)
+            except SyntaxError as e:
+                logger.debug("Syntax error parsing %s for alias check: %s", sf.relative_path, e)
+                continue
+
+            os_aliases = self._find_os_import_aliases(tree)
+            if not os_aliases:
+                continue
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "system"
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id in os_aliases
+                ):
+                    findings.append(
+                        Finding(
+                            id=self._generate_finding_id(rule_id, f"{sf.relative_path}:{node.lineno}"),
+                            rule_id=rule_id,
+                            category=ThreatCategory.COMMAND_INJECTION,
+                            severity=Severity.HIGH,
+                            title="Shell command execution with shell=True enabled",
+                            description=(
+                                f"'{sf.relative_path}' calls os.system() through the import alias "
+                                f"'{func.value.id}' (line {node.lineno}). This is equivalent to a "
+                                "direct os.system() call but bypasses literal pattern matching."
+                            ),
+                            file_path=sf.relative_path,
+                            line_number=node.lineno,
+                            remediation="Use subprocess with argument lists (shell=False) instead of os.system().",
+                            analyzer="static",
+                            metadata={
+                                "analysis_method": "import_alias_resolution",
+                                "resolved_alias": func.value.id,
+                            },
+                        )
+                    )
+
+        return findings
 
     def _check_dynamic_sensitive_file_access(self, skill: Skill) -> list[Finding]:
         """Detect glob/open flows that enumerate credential files indirectly.
