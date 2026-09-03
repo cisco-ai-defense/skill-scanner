@@ -356,6 +356,61 @@ def test_primary_contract_accepts_known_id_and_rejects_unknown_id() -> None:
         analyzer._validate_primary_contract(invalid)
 
 
+def _litellm_primary_response(payload: dict[str, object]) -> SimpleNamespace:
+    choice = SimpleNamespace(
+        message=SimpleNamespace(content=json.dumps(payload)),
+        finish_reason="stop",
+        provider_specific_fields={},
+    )
+    return SimpleNamespace(choices=[choice], usage=None)
+
+
+def test_non_ollama_schema_response_rejects_unknown_request_evidence(tmp_path: Path, monkeypatch) -> None:
+    analyzer = LLMAnalyzer(model="gpt-4o", provider="openai", api_key="test-key")
+    known = source_evidence_id("SKILL.md")
+    invalid = deepcopy(_valid_primary(known))
+    invalid["findings"][0]["evidence_ids"] = ["SRC:0000000000000000"]  # type: ignore[index]
+    assert list(Draft202012Validator(analyzer.request_handler.response_schema).iter_errors(invalid)) == []
+
+    completion = AsyncMock(return_value=_litellm_primary_response(invalid))
+    monkeypatch.setattr(llm_request_handler, "acompletion", completion)
+
+    findings = asyncio.run(analyzer.analyze_async(_skill(tmp_path)))
+
+    assert not analyzer.provider_config.is_ollama
+    assert [finding.rule_id for finding in findings] == ["LLM_ANALYSIS_FAILED"]
+    assert findings[0].severity == Severity.INFO
+    assert analyzer.last_error == "Primary finding cites unknown evidence IDs"
+    assert completion.await_count == 1
+    assert completion.await_args.kwargs["response_format"]["type"] == "json_schema"
+
+
+def test_non_ollama_consensus_json_object_fallback_rejects_inconsistent_package_verdict(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    analyzer = LLMAnalyzer(model="gpt-4o", provider="openai", api_key="test-key", max_retries=0)
+    analyzer.consensus_runs = 3
+    invalid = _valid_primary(source_evidence_id("SKILL.md"))
+    invalid["verdict"] = "SAFE"
+    assert list(Draft202012Validator(analyzer.request_handler.response_schema).iter_errors(invalid)) == []
+    schema_error = RuntimeError("Missing required parameter: 'response_format.json_schema'.")
+    provider_response = _litellm_primary_response(invalid)
+    completion = AsyncMock(side_effect=[schema_error, provider_response, provider_response, provider_response])
+    monkeypatch.setattr(llm_request_handler, "acompletion", completion)
+
+    findings = asyncio.run(analyzer.analyze_async(_skill(tmp_path)))
+
+    assert not analyzer.provider_config.is_ollama
+    assert findings == []
+    assert analyzer.last_error is None
+    assert completion.await_count == 4
+    assert completion.await_args_list[0].kwargs["response_format"]["type"] == "json_schema"
+    assert completion.await_args_list[1].kwargs["response_format"]["type"] == "json_object"
+    assert completion.await_args_list[2].kwargs["response_format"]["type"] == "json_object"
+    assert completion.await_args_list[3].kwargs["response_format"]["type"] == "json_object"
+
+
 def test_json_extractors_handle_braces_in_strings_and_provider_prose() -> None:
     response = 'prefix {"overall_assessment":"literal } and { text","findings":[]} trailing'
     assert ResponseParser.parse(response)["overall_assessment"] == "literal } and { text"

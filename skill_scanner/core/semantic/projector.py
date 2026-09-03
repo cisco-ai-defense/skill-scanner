@@ -327,10 +327,11 @@ class ScanFactProjector:
         # The helper requires each top-level typed message to be present even
         # when an expression does not read any of its fields.
         masked.skill.SetInParent()
+        selected_errors = {code for code in base.projection.error_codes if code == "MANIFEST_METADATA_INCOMPLETE"}
 
         if "skill" in required_paths:
             masked.skill.CopyFrom(base.skill)
-            selected_errors = {code for values in prepared.skill_error_codes_by_field.values() for code in values}
+            selected_errors.update(code for values in prepared.skill_error_codes_by_field.values() for code in values)
             selected_errors.update(prepared.reference_error_codes)
         else:
             top_level_fields = {
@@ -355,9 +356,9 @@ class ScanFactProjector:
                     target.CopyFrom(source)
                 else:
                     setattr(masked.skill, name, source)
-            selected_errors = {
+            selected_errors.update(
                 code for name in top_level_fields for code in prepared.skill_error_codes_by_field.get(name, ())
-            }
+            )
             if "reference_edges" in top_level_fields or any(
                 path == "skill.files.referenced" or path.startswith("skill.files.referenced.")
                 for path in required_paths

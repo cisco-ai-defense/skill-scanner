@@ -135,6 +135,9 @@ def test_incomplete_manifest_forces_cel_fail_open_before_runtime(tmp_path: Path)
     class RejectingRuntime:
         runtime_name = "test"
         version = "test"
+        # This is the checked-AST path emitted by cel-go for the candidate-only
+        # expression below. It leaves the projector with no selected skill fields.
+        fact_access_paths = {candidate.rule_id: ("candidate.context_kind",)}
 
         def __init__(self) -> None:
             self.calls = 0
