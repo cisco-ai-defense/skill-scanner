@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ...core.models import Finding, Severity, Skill, ThreatCategory
+from ...threats import cisco_ai_taxonomy
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
 from .llm_prompt_builder import PromptBuilder, source_evidence_id
@@ -76,6 +77,7 @@ _MAX_INVENTORY_PATHS = 64
 _PRIMARY_FINDING_VERDICTS = frozenset({"TRUE_POSITIVE", "CONTEXTUAL_RISK"})
 _PRIMARY_PACKAGE_VERDICTS = frozenset({"SAFE", "SUSPICIOUS", "MALICIOUS"})
 _PRIMARY_CONFIDENCE = frozenset({"HIGH", "MEDIUM", "LOW"})
+_PRIMARY_SEVERITIES = frozenset({"CRITICAL", "HIGH", "MEDIUM", "LOW"})
 
 
 def _finding_evidence_id(finding: Finding) -> str:
@@ -509,11 +511,7 @@ class LLMAnalyzer(BaseAnalyzer):
             List of security findings
         """
         self._llm_usage = _empty_token_usage()
-        self._allowed_evidence_ids = set(self._deterministic_evidence_ids)
-        self._allowed_evidence_ids.add(source_evidence_id("MANIFEST"))
-        self._allowed_evidence_ids.add(source_evidence_id("SKILL.md"))
-        self._allowed_evidence_ids.update(source_evidence_id(file.relative_path) for file in skill.files)
-        self._allowed_evidence_ids.update(source_evidence_id(path) for path in skill.referenced_files)
+        self._allowed_evidence_ids = set()
         findings = []
         budget_skipped: list[dict] = []
 
@@ -545,10 +543,12 @@ class LLMAnalyzer(BaseAnalyzer):
             manifest_text = self.prompt_builder.format_manifest(skill.manifest)
             budget_used += len(manifest_text)
 
+            included_evidence_ids: set[str] = set()
             code_files_text, code_skipped = self.prompt_builder.format_code_files(
                 skill,
                 max_file_chars=lp.max_code_file_chars,
                 max_total_chars=max(0, total_budget - budget_used),
+                included_evidence_ids=included_evidence_ids,
             )
             budget_skipped.extend(code_skipped)
             budget_used += len(code_files_text)
@@ -557,8 +557,16 @@ class LLMAnalyzer(BaseAnalyzer):
                 skill,
                 max_file_chars=lp.max_referenced_file_chars,
                 remaining_budget=max(0, total_budget - budget_used),
+                included_evidence_ids=included_evidence_ids,
             )
             budget_skipped.extend(ref_skipped)
+
+            included_evidence_ids.add(source_evidence_id("MANIFEST"))
+            if instruction_body:
+                included_evidence_ids.add(source_evidence_id("SKILL.md"))
+            if self.enrichment_context:
+                included_evidence_ids.update(self._deterministic_evidence_ids)
+            self._allowed_evidence_ids = included_evidence_ids
 
             # Emit INFO findings for any skipped content
             for item in budget_skipped:
@@ -717,12 +725,28 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
         for item in findings:
             if not isinstance(item, dict) or set(item) != required:
                 raise ValueError("Primary finding has missing or unexpected fields")
+            severity = item.get("severity")
+            if not isinstance(severity, str) or severity not in _PRIMARY_SEVERITIES:
+                raise ValueError("Primary finding severity is invalid")
             if item.get("verdict") not in _PRIMARY_FINDING_VERDICTS:
                 raise ValueError("Primary finding verdict is invalid")
             if item.get("category") not in valid_categories:
                 raise ValueError("Primary finding category is invalid")
             if item.get("confidence") not in _PRIMARY_CONFIDENCE:
                 raise ValueError("Primary finding confidence is invalid")
+            aitech = item.get("aitech")
+            if not isinstance(aitech, str) or aitech not in cisco_ai_taxonomy.VALID_AITECH_CODES:
+                raise ValueError("Primary finding AITech taxonomy code is invalid")
+            aisubtech = item.get("aisubtech")
+            if aisubtech is not None and (
+                not isinstance(aisubtech, str) or aisubtech not in cisco_ai_taxonomy.VALID_AISUBTECH_CODES
+            ):
+                raise ValueError("Primary finding AISubtech taxonomy code is invalid")
+            if not isinstance(item.get("title"), str) or not isinstance(item.get("description"), str):
+                raise ValueError("Primary finding title and description must be strings")
+            for optional_text_field in ("location", "evidence", "remediation"):
+                if item.get(optional_text_field) is not None and not isinstance(item.get(optional_text_field), str):
+                    raise ValueError(f"Primary finding {optional_text_field} must be a string or null")
             evidence_ids = item.get("evidence_ids")
             if (
                 not isinstance(evidence_ids, list)
@@ -803,6 +827,11 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
         threshold = self.consensus_runs / 2
         consensus_findings: list[Finding] = []
         successful_runs = self.consensus_runs - failed_runs
+        if successful_runs <= threshold:
+            raise ValueError(
+                "Consensus analysis did not produce a valid response majority "
+                f"({successful_runs}/{self.consensus_runs} successful runs)"
+            )
         for key in sorted(finding_counts):
             count = finding_counts[key]
             if count > threshold:

@@ -43,7 +43,7 @@ from skill_scanner.core.analyzers.meta_analyzer import (
     meta_contract_repair_policy_identity,
     ollama_meta_response_schema_sha256,
 )
-from skill_scanner.core.models import Finding, Severity, Skill, SkillManifest, ThreatCategory
+from skill_scanner.core.models import Finding, Severity, Skill, SkillFile, SkillManifest, ThreatCategory
 
 
 def _skill(tmp_path: Path) -> Skill:
@@ -356,6 +356,96 @@ def test_primary_contract_accepts_known_id_and_rejects_unknown_id() -> None:
         analyzer._validate_primary_contract(invalid)
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("severity", "INFO", "severity"),
+        ("aitech", "AITech-99.9", "AITech taxonomy"),
+        ("aisubtech", "AISubtech-99.9.9", "AISubtech taxonomy"),
+        ("title", 7, "title and description"),
+    ],
+)
+def test_primary_contract_rejects_invalid_schema_owned_finding_fields(
+    field: str,
+    value: object,
+    error: str,
+) -> None:
+    analyzer = LLMAnalyzer(
+        model="ollama/test",
+        provider="ollama",
+        base_url="http://127.0.0.1:11434",
+    )
+    known = source_evidence_id("SKILL.md")
+    analyzer._allowed_evidence_ids = {known}
+    invalid = deepcopy(_valid_primary(known))
+    invalid["findings"][0][field] = value  # type: ignore[index]
+
+    with pytest.raises(ValueError, match=error):
+        analyzer._validate_primary_contract(invalid)
+
+
+def test_primary_evidence_allowlist_contains_only_artifacts_in_final_prompt(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "budgeted-skill"
+    references_dir = skill_dir / "references"
+    references_dir.mkdir(parents=True)
+    skill_md = skill_dir / "SKILL.md"
+    skill_md.write_text("safe instructions", encoding="utf-8")
+    included_ref = references_dir / "included.md"
+    included_ref.write_text("ref", encoding="utf-8")
+    oversized_ref = references_dir / "oversized.md"
+    oversized_ref.write_text("r" * 9, encoding="utf-8")
+    files = [
+        SkillFile(skill_dir / "included.py", "included.py", "python", content="pass"),
+        SkillFile(skill_dir / "oversized.py", "oversized.py", "python", content="x" * 9),
+        SkillFile(skill_dir / "notes.txt", "notes.txt", "other", content="notes"),
+        SkillFile(included_ref, "references/included.md", "markdown", content="ref"),
+        SkillFile(oversized_ref, "references/oversized.md", "markdown", content="r" * 9),
+    ]
+    skill = Skill(
+        directory=skill_dir,
+        manifest=SkillManifest(name="budgeted", description="budgeted"),
+        skill_md_path=skill_md,
+        instruction_body="safe instructions",
+        files=files,
+        referenced_files=["references/included.md", "references/oversized.md"],
+    )
+    analyzer = LLMAnalyzer(
+        model="ollama/test",
+        provider="ollama",
+        base_url="http://127.0.0.1:11434",
+    )
+    analyzer.llm_policy.max_code_file_chars = 8
+    analyzer.llm_policy.max_referenced_file_chars = 8
+    analyzer.request_handler.make_request = AsyncMock(  # type: ignore[method-assign]
+        return_value=json.dumps(
+            {"findings": [], "overall_assessment": "Safe.", "verdict": "SAFE", "primary_threats": []}
+        )
+    )
+
+    findings = asyncio.run(analyzer.analyze_async(skill))
+
+    assert not any(finding.rule_id == "LLM_ANALYSIS_FAILED" for finding in findings)
+    included_script_id = source_evidence_id("included.py")
+    expected = {
+        source_evidence_id("MANIFEST"),
+        source_evidence_id("SKILL.md"),
+        included_script_id,
+        source_evidence_id("references/included.md"),
+    }
+    assert analyzer._allowed_evidence_ids == expected
+    messages = analyzer.request_handler.make_request.await_args.args[0]
+    prompt = messages[1]["content"]
+    assert f"evidence_id={included_script_id}" in prompt
+    assert f"evidence_id={source_evidence_id('references/included.md')}" in prompt
+    assert f"evidence_id={source_evidence_id('oversized.py')}" not in prompt
+    assert f"evidence_id={source_evidence_id('notes.txt')}" not in prompt
+    assert f"evidence_id={source_evidence_id('references/oversized.md')}" not in prompt
+    analyzer._validate_primary_contract(_valid_primary(included_script_id))
+    for omitted_path in ("oversized.py", "notes.txt", "references/oversized.md"):
+        with pytest.raises(ValueError, match="unknown evidence"):
+            analyzer._validate_primary_contract(_valid_primary(source_evidence_id(omitted_path)))
+
+
 def _litellm_primary_response(payload: dict[str, object]) -> SimpleNamespace:
     choice = SimpleNamespace(
         message=SimpleNamespace(content=json.dumps(payload)),
@@ -385,15 +475,18 @@ def test_non_ollama_schema_response_rejects_unknown_request_evidence(tmp_path: P
     assert completion.await_args.kwargs["response_format"]["type"] == "json_schema"
 
 
-def test_non_ollama_consensus_json_object_fallback_rejects_inconsistent_package_verdict(
+@pytest.mark.parametrize(("field", "value"), [("severity", "INFO"), ("aitech", "AITech-99.9")])
+def test_non_ollama_consensus_json_object_fallback_rejects_invalid_schema_fields(
     tmp_path: Path,
     monkeypatch,
+    field: str,
+    value: object,
 ) -> None:
     analyzer = LLMAnalyzer(model="gpt-4o", provider="openai", api_key="test-key", max_retries=0)
     analyzer.consensus_runs = 3
     invalid = _valid_primary(source_evidence_id("SKILL.md"))
-    invalid["verdict"] = "SAFE"
-    assert list(Draft202012Validator(analyzer.request_handler.response_schema).iter_errors(invalid)) == []
+    invalid["findings"][0][field] = value  # type: ignore[index]
+    assert list(Draft202012Validator(analyzer.request_handler.response_schema).iter_errors(invalid))
     schema_error = RuntimeError("Missing required parameter: 'response_format.json_schema'.")
     provider_response = _litellm_primary_response(invalid)
     completion = AsyncMock(side_effect=[schema_error, provider_response, provider_response, provider_response])
@@ -402,8 +495,9 @@ def test_non_ollama_consensus_json_object_fallback_rejects_inconsistent_package_
     findings = asyncio.run(analyzer.analyze_async(_skill(tmp_path)))
 
     assert not analyzer.provider_config.is_ollama
-    assert findings == []
-    assert analyzer.last_error is None
+    assert [finding.rule_id for finding in findings] == ["LLM_ANALYSIS_FAILED"]
+    assert findings[0].severity == Severity.INFO
+    assert analyzer.last_error == "Consensus analysis did not produce a valid response majority (0/3 successful runs)"
     assert completion.await_count == 4
     assert completion.await_args_list[0].kwargs["response_format"]["type"] == "json_schema"
     assert completion.await_args_list[1].kwargs["response_format"]["type"] == "json_object"

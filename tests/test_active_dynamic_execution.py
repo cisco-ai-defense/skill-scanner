@@ -34,6 +34,7 @@ from skill_scanner.core.rules.active_dynamic_execution import (
     RULE_ID,
     _is_pure_prohibition,
     _javascript_execution_calls,
+    _python_execution_calls,
     check_active_dynamic_execution,
     find_active_dynamic_execution,
 )
@@ -347,6 +348,115 @@ def test_javascript_scope_limits_and_malformed_delimiters_decline_partial_calls(
 
     assert _javascript_execution_calls(too_deep) == []
     assert _javascript_execution_calls("function helper( { eval(payload);") == []
+
+
+def test_python_execution_aliases_resolve_per_lexical_call_scope() -> None:
+    source = """from subprocess import run as launch
+launch(outer)
+def inherited():
+    launch(nested)
+def local():
+    from builtins import eval as launch
+    launch(local_payload)
+def parameter(launch):
+    launch(safe)
+launch = safe
+launch(after_reassignment)
+"""
+
+    assert _python_execution_calls(source) == [
+        ("python_subprocess", 2),
+        ("python_subprocess", 4),
+        ("python_eval", 7),
+    ]
+
+
+def test_python_module_aliases_do_not_leak_from_nested_scopes() -> None:
+    source = """import subprocess as tools
+tools.run(outer)
+def local():
+    import os as tools
+    tools.system(inner)
+def sibling(tools):
+    tools.run(safe)
+tools = safe
+tools.run(after_reassignment)
+from .subprocess import run as relative_launch
+relative_launch(safe)
+"""
+
+    assert _python_execution_calls(source) == [
+        ("python_subprocess", 2),
+        ("python_os_system", 5),
+    ]
+
+
+def test_javascript_child_process_aliases_resolve_per_lexical_scope() -> None:
+    source = """import * as cp from "node:child_process";
+cp.exec(outer);
+function inherited() { cp.exec(nested); }
+function local() {
+  const cp = require("child_process");
+  cp.exec(local_command);
+}
+function parameter({cp}) { cp.exec(safe); }
+{ const cp = safe; cp.exec(safe); }
+cp.exec(after_blocks);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_child_process", 2),
+        ("javascript_child_process", 3),
+        ("javascript_child_process", 6),
+        ("javascript_child_process", 10),
+    ]
+
+
+def test_javascript_child_process_function_alias_reassignment_is_bounded() -> None:
+    source = """import { exec as launch } from "child_process";
+launch(outer);
+function local() {
+  const { exec: launch } = require("node:child_process");
+  launch(inner);
+}
+function sibling(launch) { launch(safe); }
+{ const blockLaunch = require("child_process").exec; blockLaunch(block); }
+blockLaunch(safe);
+launch = safe;
+launch(after_reassignment);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_child_process", 2),
+        ("javascript_child_process", 5),
+        ("javascript_child_process", 8),
+    ]
+
+
+def test_javascript_block_writes_kill_bindings_in_the_current_execution_scope() -> None:
+    alias_source = """import { exec as run } from "child_process";
+run(before);
+{ run = safe; }
+run(after);
+"""
+    require_source = """{ require = safe; }
+const cp = require("child_process");
+cp.exec(safe);
+"""
+
+    assert _javascript_execution_calls(alias_source) == [("javascript_child_process", 2)]
+    assert _javascript_execution_calls(require_source) == []
+
+
+def test_javascript_commonjs_alias_initializers_stop_at_asi_boundaries() -> None:
+    sources = (
+        'const cp = require("child_process")\ncp.exec(command)',
+        'const run = require("child_process").exec\nrun(command)',
+        'const {exec: run} = require("child_process")\nrun(command)',
+    )
+
+    for source in sources:
+        assert _javascript_execution_calls(source) == [("javascript_child_process", 2)]
 
 
 def test_active_inline_instruction_requires_actionable_code_context(tmp_path: Path) -> None:

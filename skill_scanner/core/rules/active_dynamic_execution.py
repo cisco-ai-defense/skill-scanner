@@ -29,7 +29,7 @@ import ast
 import hashlib
 import re
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from ..models import Finding, Severity, Skill, ThreatCategory
@@ -166,7 +166,7 @@ class _PythonLexicalScope:
 
     kind: Literal["module", "function", "lambda", "class", "comprehension"]
     parent: _PythonLexicalScope | None
-    bindings: dict[str, set[str]]
+    bindings: dict[str, list[tuple[tuple[int, int], str]]]
     globals: set[str]
     nonlocals: set[str]
 
@@ -185,9 +185,33 @@ class _PythonScopeBuilder(ast.NodeVisitor):
         self.current = self.root
         self.call_scopes: dict[ast.Call, _PythonLexicalScope] = {}
 
-    def _bind(self, name: str, kind: str = "shadow") -> None:
-        if name in {"eval", "exec"}:
-            self.current.bindings.setdefault(name, set()).add(kind)
+    def _binding_scope(self, name: str) -> _PythonLexicalScope:
+        if self.current.kind != "module" and name in self.current.globals:
+            return self.root
+        if name not in self.current.nonlocals:
+            return self.current
+
+        parent = _python_lookup_parent(self.current)
+        nearest_function: _PythonLexicalScope | None = None
+        while parent is not None and parent.kind != "module":
+            if parent.kind in {"function", "lambda"}:
+                if nearest_function is None:
+                    nearest_function = parent
+                if name in parent.bindings:
+                    return parent
+            parent = _python_lookup_parent(parent)
+        # A valid ``nonlocal`` always has an enclosing function binding.  The
+        # binding can occur later in that function's body, so use its nearest
+        # function scope when the bounded single pass has not seen it yet.
+        return nearest_function or self.current
+
+    def _bind(self, name: str, kind: str = "shadow", *, node: ast.AST | None = None) -> None:
+        scope = self._binding_scope(name)
+        position = (-1, -1) if node is None else (getattr(node, "lineno", 0), getattr(node, "col_offset", 0))
+        event = (position, kind)
+        events = scope.bindings.setdefault(name, [])
+        if event not in events:
+            events.append(event)
 
     def _bind_target(self, target: ast.AST, *, scope: _PythonLexicalScope | None = None) -> None:
         previous = self.current
@@ -195,8 +219,8 @@ class _PythonScopeBuilder(ast.NodeVisitor):
             self.current = scope
         try:
             for child in ast.walk(target):
-                if isinstance(child, ast.Name) and child.id in {"eval", "exec"}:
-                    self._bind(child.id)
+                if isinstance(child, ast.Name) and isinstance(child.ctx, (ast.Store, ast.Del)):
+                    self._bind(child.id, node=child)
         finally:
             self.current = previous
 
@@ -227,7 +251,7 @@ class _PythonScopeBuilder(ast.NodeVisitor):
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
     ) -> None:
-        self._bind(node.name)
+        self._bind(node.name, node=node)
         for decorator in node.decorator_list:
             self.visit(decorator)
         self._visit_arguments_in_outer_scope(node.args)
@@ -264,7 +288,7 @@ class _PythonScopeBuilder(ast.NodeVisitor):
             self.current = parent
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
-        self._bind(node.name)
+        self._bind(node.name, node=node)
         for decorator in node.decorator_list:
             self.visit(decorator)
         for base in node.bases:
@@ -336,23 +360,31 @@ class _PythonScopeBuilder(ast.NodeVisitor):
 
     def visit_Name(self, node: ast.Name) -> None:  # noqa: N802
         if isinstance(node.ctx, (ast.Store, ast.Del)):
-            self._bind(node.id)
+            self._bind(node.id, node=node)
 
     def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
         for alias in node.names:
-            self._bind(alias.asname or alias.name.split(".", 1)[0])
+            local_name = alias.asname or alias.name.split(".", 1)[0]
+            kind = f"module:{alias.name}" if alias.name in {"builtins", "os", "subprocess"} else "shadow"
+            self._bind(local_name, kind, node=node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
         for alias in node.names:
             local_name = alias.asname or alias.name
-            kind = f"builtin:{alias.name}" if node.module == "builtins" else "shadow"
-            self._bind(local_name, kind)
+            kind = "shadow"
+            if node.level == 0 and node.module == "builtins" and alias.name in {"eval", "exec"}:
+                kind = f"api:python_{alias.name}"
+            elif node.level == 0 and node.module == "os" and alias.name == "system":
+                kind = "api:python_os_system"
+            elif node.level == 0 and node.module == "subprocess" and alias.name in _SUBPROCESS_METHODS:
+                kind = "api:python_subprocess"
+            self._bind(local_name, kind, node=node)
 
     def visit_Global(self, node: ast.Global) -> None:  # noqa: N802
-        self.current.globals.update(name for name in node.names if name in {"eval", "exec"})
+        self.current.globals.update(node.names)
 
     def visit_Nonlocal(self, node: ast.Nonlocal) -> None:  # noqa: N802
-        self.current.nonlocals.update(name for name in node.names if name in {"eval", "exec"})
+        self.current.nonlocals.update(node.names)
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:  # noqa: N802
         if node.type is not None:
@@ -501,35 +533,24 @@ def _ast_within_budget(source: str) -> ast.AST | None:
     return tree
 
 
-def _python_imports(tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
-    modules: dict[str, str] = {"builtins": "builtins", "os": "os", "subprocess": "subprocess"}
-    functions: dict[str, str] = {}
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name in {"builtins", "os", "subprocess"}:
-                    modules[alias.asname or alias.name] = alias.name
-        elif isinstance(node, ast.ImportFrom) and node.module in {"builtins", "os", "subprocess"}:
-            for alias in node.names:
-                local_name = alias.asname or alias.name
-                functions[local_name] = f"{node.module}.{alias.name}"
-    return modules, functions
-
-
 def _python_lookup_parent(scope: _PythonLexicalScope) -> _PythonLexicalScope | None:
     """Return the next scope used by Python's lexical name lookup."""
 
     parent = scope.parent
-    if scope.kind in {"function", "lambda", "comprehension"}:
-        # Function-like scopes do not close over an intervening class namespace.
-        while parent is not None and parent.kind == "class":
-            parent = parent.parent
+    # No nested lexical scope closes over an intervening class namespace.
+    # A class nested in a function can still reach that function once class
+    # scopes have been skipped.
+    while parent is not None and parent.kind == "class":
+        parent = parent.parent
     return parent
 
 
-def _python_builtin_binding(scope: _PythonLexicalScope, name: str) -> str | None:
-    """Resolve a direct ``eval``/``exec`` name to its builtin API, if any."""
+def _python_execution_binding(
+    scope: _PythonLexicalScope,
+    name: str,
+    position: tuple[int, int],
+) -> str | None:
+    """Resolve one reviewed execution or module binding by lexical scope."""
 
     root = scope
     while root.parent is not None:
@@ -548,44 +569,48 @@ def _python_builtin_binding(scope: _PythonLexicalScope, name: str) -> str | None
             current = _python_lookup_parent(current)
             continue
 
-        bindings = current.bindings.get(name)
-        if bindings:
-            if len(bindings) == 1:
-                binding = next(iter(bindings))
-                if binding.startswith("builtin:"):
-                    return binding.removeprefix("builtin:")
-            return None
+        events = current.bindings.get(name)
+        if events:
+            # Keep canonical eval/exec shadowing compile-scope-wide.  Alias and
+            # module bindings below remain ordered so a later safe reassignment
+            # kills only subsequent findings.
+            if name in {"eval", "exec"} and any(kind == "shadow" for _event_position, kind in events):
+                return None
+            prior = [event for event in events if event[0] <= position]
+            if not prior:
+                return None
+            latest_position = max(event_position for event_position, _kind in prior)
+            kinds = {kind for event_position, kind in prior if event_position == latest_position}
+            return next(iter(kinds)) if len(kinds) == 1 and "shadow" not in kinds else None
         current = _python_lookup_parent(current)
-    return name
+
+    defaults = {
+        "builtins": "module:builtins",
+        "eval": "api:python_eval",
+        "exec": "api:python_exec",
+        "os": "module:os",
+        "subprocess": "module:subprocess",
+    }
+    return defaults.get(name)
 
 
 def _python_api_class(
     function: ast.expr,
-    modules: dict[str, str],
-    functions: dict[str, str],
     scope: _PythonLexicalScope,
+    position: tuple[int, int],
 ) -> str | None:
     if isinstance(function, ast.Name):
-        if function.id in {"eval", "exec"}:
-            builtin = _python_builtin_binding(scope, function.id)
-            return f"python_{builtin}" if builtin in {"eval", "exec"} else None
-        imported = functions.get(function.id)
-        if imported == "os.system":
-            return "python_os_system"
-        if imported and imported.startswith("subprocess.") and imported.rsplit(".", 1)[-1] in _SUBPROCESS_METHODS:
-            return "python_subprocess"
-        if imported in {"builtins.eval", "builtins.exec"}:
-            return f"python_{imported.rsplit('.', 1)[-1]}"
-        return None
+        binding = _python_execution_binding(scope, function.id, position)
+        return binding.removeprefix("api:") if binding is not None and binding.startswith("api:") else None
 
     if not isinstance(function, ast.Attribute) or not isinstance(function.value, ast.Name):
         return None
-    module = modules.get(function.value.id)
-    if module == "os" and function.attr == "system":
+    module = _python_execution_binding(scope, function.value.id, position)
+    if module == "module:os" and function.attr == "system":
         return "python_os_system"
-    if module == "subprocess" and function.attr in _SUBPROCESS_METHODS:
+    if module == "module:subprocess" and function.attr in _SUBPROCESS_METHODS:
         return "python_subprocess"
-    if module == "builtins" and function.attr in {"eval", "exec"}:
+    if module == "module:builtins" and function.attr in {"eval", "exec"}:
         return f"python_{function.attr}"
     return None
 
@@ -594,14 +619,17 @@ def _python_execution_calls(source: str) -> list[tuple[str, int]]:
     tree = _ast_within_budget(source)
     if tree is None:
         return []
-    modules, functions = _python_imports(tree)
     scopes = _PythonScopeBuilder()
     scopes.visit(tree)
     calls: list[tuple[str, int]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        api_class = _python_api_class(node.func, modules, functions, scopes.call_scopes[node])
+        api_class = _python_api_class(
+            node.func,
+            scopes.call_scopes[node],
+            (max(1, node.lineno), max(0, node.col_offset)),
+        )
         if api_class is not None:
             calls.append((api_class, max(1, node.lineno)))
             if len(calls) >= MAX_DETECTIONS:
@@ -620,6 +648,14 @@ class _JavascriptLexicalScope:
     parent: int | None
     kind: Literal["module", "block", "function", "class", "catch"]
     shadows_eval: bool = False
+    bindings: dict[str, _JavascriptBinding] = field(default_factory=dict)
+    writes: dict[str, list[tuple[int, Literal["shadow"]]]] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class _JavascriptBinding:
+    kind: Literal["shadow", "child_namespace", "child_exec"]
+    available_from: int
 
 
 @dataclass(slots=True)
@@ -628,6 +664,7 @@ class _JavascriptEvalScopeMap:
     token_scopes: list[int]
     declarations: set[int]
     range_shadows: list[bool]
+    binding_ranges: dict[str, list[tuple[int, int]]]
 
     def is_shadowed(self, token_index: int) -> bool:
         if token_index in self.declarations:
@@ -642,6 +679,47 @@ class _JavascriptEvalScopeMap:
                 return True
             scope_index = scope.parent
         return False
+
+    def _execution_scope(self, scope_index: int) -> int:
+        while self.scopes[scope_index].kind not in {"module", "function"}:
+            parent = self.scopes[scope_index].parent
+            if parent is None:
+                break
+            scope_index = parent
+        return scope_index
+
+    def execution_binding(self, token_index: int, name: str) -> str | None:
+        """Resolve one reviewed JavaScript binding at a call or initializer."""
+
+        if token_index in self.declarations:
+            return None
+        if any(start <= token_index < end for start, end in self.binding_ranges.get(name, ())):
+            return None
+
+        call_execution_scope = self._execution_scope(self.token_scopes[token_index])
+        scope_index: int | None = self.token_scopes[token_index]
+        while scope_index is not None:
+            scope = self.scopes[scope_index]
+            writes = scope.writes.get(name, ())
+            if any(position < token_index for position, _kind in writes):
+                return None
+            binding = scope.bindings.get(name)
+            if binding is not None:
+                binding_execution_scope = self._execution_scope(scope_index)
+                if (
+                    binding.kind != "shadow"
+                    and binding.available_from > token_index
+                    and binding_execution_scope == call_execution_scope
+                ):
+                    return None
+                return None if binding.kind == "shadow" else binding.kind
+            scope_index = scope.parent
+
+        defaults = {
+            "child_process": "child_namespace",
+            "require": "builtin_require",
+        }
+        return defaults.get(name)
 
 
 def _javascript_delimiter_pairs(tokens: list[_JsToken]) -> dict[int, int] | None:
@@ -668,24 +746,25 @@ def _javascript_delimiter_pairs(tokens: list[_JsToken]) -> dict[int, int] | None
     return pairs if not stack else None
 
 
-def _javascript_binding_pattern_shadows_eval(
+def _javascript_binding_pattern_entries(
     tokens: list[_JsToken],
     start: int,
     end: int,
     pairs: dict[int, int],
-) -> bool:
+) -> list[tuple[str, int]]:
     while start < end and tokens[start].value == ".":
         start += 1
     if start >= end:
-        return False
+        return []
     if tokens[start].kind == "identifier":
-        return tokens[start].value == "eval"
+        return [(tokens[start].value, start)]
     if tokens[start].value not in {"[", "{"}:
-        return False
+        return []
 
     closing = pairs.get(start)
     if closing is None or closing >= end:
-        return False
+        return []
+    entries: list[tuple[str, int]] = []
     is_object = tokens[start].value == "{"
     segment_start = start + 1
     position = segment_start
@@ -694,7 +773,7 @@ def _javascript_binding_pattern_shadows_eval(
         if not at_end and tokens[position].kind == "punctuation" and tokens[position].value in {"(", "[", "{"}:
             nested_closing = pairs.get(position)
             if nested_closing is None or nested_closing > closing:
-                return False
+                return []
             position = nested_closing + 1
             continue
         if at_end or (tokens[position].kind == "punctuation" and tokens[position].value == ","):
@@ -704,7 +783,7 @@ def _javascript_binding_pattern_shadows_eval(
                 if tokens[separator].kind == "punctuation" and tokens[separator].value in {"(", "[", "{"}:
                     nested_closing = pairs.get(separator)
                     if nested_closing is None or nested_closing > segment_end:
-                        return False
+                        return []
                     separator = nested_closing + 1
                     continue
                 if tokens[separator].kind == "punctuation" and tokens[separator].value == "=":
@@ -714,21 +793,21 @@ def _javascript_binding_pattern_shadows_eval(
                     segment_start = separator + 1
                     break
                 separator += 1
-            if _javascript_binding_pattern_shadows_eval(tokens, segment_start, segment_end, pairs):
-                return True
+            entries.extend(_javascript_binding_pattern_entries(tokens, segment_start, segment_end, pairs))
             segment_start = position + 1
         position += 1
-    return False
+    return entries
 
 
-def _javascript_parameter_shadows_eval(
+def _javascript_parameter_entries(
     tokens: list[_JsToken],
     opening: int,
     closing: int,
     pairs: dict[int, int],
-) -> bool:
-    """Recognize bounded ``eval`` parameter bindings, excluding defaults."""
+) -> list[tuple[str, int]]:
+    """Return bounded parameter bindings, excluding default expressions."""
 
+    entries: list[tuple[str, int]] = []
     position = opening + 1
     segment_start = position
     while position <= closing:
@@ -736,7 +815,7 @@ def _javascript_parameter_shadows_eval(
         if not at_end and tokens[position].kind == "punctuation" and tokens[position].value in {"(", "[", "{"}:
             nested_closing = pairs.get(position)
             if nested_closing is None or nested_closing > closing:
-                return False
+                return []
             position = nested_closing + 1
             continue
         if at_end or (tokens[position].kind == "punctuation" and tokens[position].value == ","):
@@ -746,18 +825,17 @@ def _javascript_parameter_shadows_eval(
                 if tokens[default].kind == "punctuation" and tokens[default].value in {"(", "[", "{"}:
                     nested_closing = pairs.get(default)
                     if nested_closing is None or nested_closing > segment_end:
-                        return False
+                        return []
                     default = nested_closing + 1
                     continue
                 if tokens[default].kind == "punctuation" and tokens[default].value == "=":
                     segment_end = default
                     break
                 default += 1
-            if _javascript_binding_pattern_shadows_eval(tokens, segment_start, segment_end, pairs):
-                return True
+            entries.extend(_javascript_binding_pattern_entries(tokens, segment_start, segment_end, pairs))
             segment_start = position + 1
         position += 1
-    return False
+    return entries
 
 
 def _javascript_expression_end(tokens: list[_JsToken], start: int, pairs: dict[int, int]) -> int:
@@ -879,6 +957,113 @@ def _javascript_declaration_patterns(
     return patterns
 
 
+def _javascript_initializer_span(
+    tokens: list[_JsToken],
+    pattern_end: int,
+    pairs: dict[int, int],
+) -> tuple[int, int] | None:
+    if pattern_end >= len(tokens) or tokens[pattern_end].value != "=":
+        return None
+    start = pattern_end + 1
+    position = start
+    while position < len(tokens):
+        token = tokens[position]
+        if position > start and token.line > tokens[position - 1].line:
+            previous = tokens[position - 1]
+            previous_can_end = previous.kind in {"identifier", "string"} or previous.value in {
+                ")",
+                "]",
+                "}",
+            }
+            next_can_start = token.kind in {"identifier", "string"} or token.value == "{"
+            if previous_can_end and next_can_start:
+                break
+        if token.kind == "punctuation" and token.value in {"(", "[", "{"}:
+            closing = pairs.get(position)
+            if closing is None:
+                return None
+            position = closing + 1
+            continue
+        if token.kind == "punctuation" and token.value in {",", ";", ")", "/template/"}:
+            break
+        if token.value in {"in", "of"}:
+            break
+        position += 1
+    return start, position
+
+
+def _javascript_top_level_segments(
+    tokens: list[_JsToken],
+    start: int,
+    end: int,
+    pairs: dict[int, int],
+) -> list[tuple[int, int]]:
+    segments: list[tuple[int, int]] = []
+    segment_start = start
+    position = start
+    while position <= end:
+        if position == end:
+            if segment_start < end:
+                segments.append((segment_start, end))
+            break
+        token = tokens[position]
+        if token.kind == "punctuation" and token.value in {"(", "[", "{"}:
+            closing = pairs.get(position)
+            if closing is None or closing > end:
+                return []
+            position = closing + 1
+            continue
+        if token.kind == "punctuation" and token.value == ",":
+            if segment_start < position:
+                segments.append((segment_start, position))
+            segment_start = position + 1
+        position += 1
+    return segments
+
+
+def _javascript_require_initializer(
+    tokens: list[_JsToken],
+    start: int,
+    end: int,
+    pairs: dict[int, int],
+) -> tuple[Literal["child_namespace", "child_exec"], int] | None:
+    if start + 3 >= end or tokens[start].value != "require" or tokens[start + 1].value != "(":
+        return None
+    closing = pairs.get(start + 1)
+    if (
+        closing != start + 3
+        or tokens[start + 2].kind != "string"
+        or tokens[start + 2].value not in _CHILD_PROCESS_MODULES
+    ):
+        return None
+    if closing + 1 == end:
+        return "child_namespace", start
+    if closing + 3 == end and tokens[closing + 1].value == "." and tokens[closing + 2].value in _CHILD_PROCESS_METHODS:
+        return "child_exec", start
+    return None
+
+
+def _javascript_destructured_exec_bindings(
+    tokens: list[_JsToken],
+    pattern_start: int,
+    pattern_end: int,
+    pairs: dict[int, int],
+) -> list[tuple[str, int]]:
+    if tokens[pattern_start].value != "{" or pairs.get(pattern_start) != pattern_end - 1:
+        return []
+    bindings: list[tuple[str, int]] = []
+    for start, end in _javascript_top_level_segments(tokens, pattern_start + 1, pattern_end - 1, pairs):
+        # Only the reviewed ``exec`` property is an execution alias.  In
+        # particular, ``{safe: exec}`` must remain a safe local binding.
+        if tokens[start].kind != "identifier" or tokens[start].value != "exec":
+            continue
+        if start + 1 == end:
+            bindings.append(("exec", start))
+        elif start + 3 == end and tokens[start + 1].value == ":" and tokens[start + 2].kind == "identifier":
+            bindings.append((tokens[start + 2].value, start + 2))
+    return bindings
+
+
 def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap | None:
     """Build the bounded lexical subset needed to resolve direct ``eval``."""
 
@@ -909,6 +1094,33 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
 
     declarations: set[int] = set()
     shadow_ranges: list[tuple[int, int]] = []
+    binding_ranges: dict[str, list[tuple[int, int]]] = {}
+    api_origin_checks: list[tuple[_JavascriptBinding, int]] = []
+
+    def add_binding_range(names: set[str], start: int, end: int) -> None:
+        if start >= end:
+            return
+        for name in names:
+            binding_ranges.setdefault(name, []).append((start, end))
+
+    def declare_binding(
+        scope_index: int,
+        name: str,
+        token_index: int,
+        *,
+        kind: Literal["shadow", "child_namespace", "child_exec"] = "shadow",
+        available_from: int = 0,
+    ) -> _JavascriptBinding:
+        declarations.add(token_index)
+        existing = scopes[scope_index].bindings.get(name)
+        if existing is None:
+            binding = _JavascriptBinding(kind, available_from)
+            scopes[scope_index].bindings[name] = binding
+            return binding
+        if existing.kind != kind or existing.available_from != available_from:
+            existing.kind = "shadow"
+            existing.available_from = 0
+        return existing
 
     def declaration_context(index: int) -> bool:
         declaration_start = index
@@ -986,20 +1198,21 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
         body_scope = brace_scopes[body_open]
         scopes[body_scope].kind = "function"
         scopes[body_scope].parent = token_scopes[index]
-        parameter_shadows = _javascript_parameter_shadows_eval(
-            tokens,
-            parameters_open,
-            parameters_close,
-            pairs,
-        )
+        parameter_entries = _javascript_parameter_entries(tokens, parameters_open, parameters_close, pairs)
+        parameter_names = {name for name, _token_index in parameter_entries}
+        parameter_shadows = "eval" in parameter_names
+        for name, token_index in parameter_entries:
+            declare_binding(body_scope, name, token_index)
+        add_binding_range(parameter_names, parameters_open + 1, parameters_close)
         if parameter_shadows:
             scopes[body_scope].shadows_eval = True
             shadow_ranges.append((parameters_open + 1, parameters_close))
         if name_index is not None:
             declarations.add(name_index)
+            is_declaration = declaration_context(index)
+            target = token_scopes[index] if is_declaration else body_scope
+            declare_binding(target, tokens[name_index].value, name_index)
             if tokens[name_index].value == "eval":
-                is_declaration = declaration_context(index)
-                target = token_scopes[index] if is_declaration else body_scope
                 scopes[target].shadows_eval = True
                 if not is_declaration:
                     shadow_ranges.append((parameters_open + 1, parameters_close))
@@ -1014,25 +1227,32 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
         if direct_parameter >= 0 and tokens[direct_parameter].value == ")":
             parameters_open = pairs.get(direct_parameter, -1)
             parameters_close = direct_parameter
-        parameter_shadows = (
-            parameters_open >= 0
-            and _javascript_parameter_shadows_eval(tokens, parameters_open, parameters_close, pairs)
-        ) or (
-            parameters_open < 0
-            and direct_parameter >= 0
-            and tokens[direct_parameter].kind == "identifier"
-            and tokens[direct_parameter].value == "eval"
-        )
-        if parameter_shadows and parameters_open >= 0:
-            shadow_ranges.append((parameters_open + 1, parameters_close))
+        if parameters_open >= 0:
+            parameter_entries = _javascript_parameter_entries(tokens, parameters_open, parameters_close, pairs)
+        elif direct_parameter >= 0 and tokens[direct_parameter].kind == "identifier":
+            parameter_entries = [(tokens[direct_parameter].value, direct_parameter)]
+        else:
+            parameter_entries = []
+        parameter_names = {name for name, _token_index in parameter_entries}
+        parameter_shadows = "eval" in parameter_names
+        if parameters_open >= 0:
+            add_binding_range(parameter_names, parameters_open + 1, parameters_close)
+            if parameter_shadows:
+                shadow_ranges.append((parameters_open + 1, parameters_close))
         body_start = index + 2
         if tokens[body_start].value == "{" and body_start in brace_scopes:
             body_scope = brace_scopes[body_start]
             scopes[body_scope].kind = "function"
             scopes[body_scope].parent = token_scopes[index]
             scopes[body_scope].shadows_eval |= parameter_shadows
-        elif parameter_shadows:
-            shadow_ranges.append((body_start, _javascript_expression_end(tokens, body_start, pairs)))
+            for name, token_index in parameter_entries:
+                declare_binding(body_scope, name, token_index)
+        else:
+            body_end = _javascript_expression_end(tokens, body_start, pairs)
+            add_binding_range(parameter_names, body_start, body_end)
+            if parameter_shadows:
+                shadow_ranges.append((body_start, body_end))
+        declarations.update(token_index for _name, token_index in parameter_entries)
 
     # Methods have function-local parameters and var bindings even without a
     # ``function`` keyword. Control-flow heads are explicitly excluded.
@@ -1054,7 +1274,12 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
         body_scope = brace_scopes[body_open]
         scopes[body_scope].kind = "function"
         scopes[body_scope].parent = token_scopes[index]
-        if _javascript_parameter_shadows_eval(tokens, parameters_open, method_parameters_close, pairs):
+        parameter_entries = _javascript_parameter_entries(tokens, parameters_open, method_parameters_close, pairs)
+        parameter_names = {name for name, _token_index in parameter_entries}
+        for name, token_index in parameter_entries:
+            declare_binding(body_scope, name, token_index)
+        add_binding_range(parameter_names, parameters_open + 1, method_parameters_close)
+        if "eval" in parameter_names:
             scopes[body_scope].shadows_eval = True
             shadow_ranges.append((parameters_open + 1, method_parameters_close))
         declarations.add(index)
@@ -1072,7 +1297,17 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
                 return None
             body_scope = brace_scopes[body_open]
             scopes[body_scope].kind = "catch"
-            if _javascript_parameter_shadows_eval(tokens, parameters_open, catch_parameters_close, pairs):
+            parameter_entries = _javascript_parameter_entries(
+                tokens,
+                parameters_open,
+                catch_parameters_close,
+                pairs,
+            )
+            parameter_names = {name for name, _token_index in parameter_entries}
+            for name, token_index in parameter_entries:
+                declare_binding(body_scope, name, token_index)
+            add_binding_range(parameter_names, parameters_open + 1, catch_parameters_close)
+            if "eval" in parameter_names:
                 scopes[body_scope].shadows_eval = True
 
         if token.value == "class":
@@ -1087,20 +1322,86 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
             scopes[class_scope].kind = "class"
             if name_index is not None:
                 declarations.add(name_index)
+                is_declaration = declaration_context(index)
+                target = token_scopes[index] if is_declaration else class_scope
+                declare_binding(target, tokens[name_index].value, name_index)
+
+    for index, token in enumerate(tokens):
+        if token.value != "import" or index + 1 >= count or tokens[index + 1].value == "(":
+            continue
+        scope_index = token_scopes[index]
+        if (
+            index + 5 < count
+            and tokens[index + 1].value == "*"
+            and tokens[index + 2].value == "as"
+            and tokens[index + 3].kind == "identifier"
+            and tokens[index + 4].value == "from"
+            and tokens[index + 5].kind == "string"
+        ):
+            kind: Literal["shadow", "child_namespace", "child_exec"] = "shadow"
+            if tokens[index + 5].value in _CHILD_PROCESS_MODULES:
+                kind = "child_namespace"
+            declare_binding(scope_index, tokens[index + 3].value, index + 3, kind=kind)
+            continue
+
+        if tokens[index + 1].value == "{" and (closing := pairs.get(index + 1)) is not None:
+            if closing + 2 >= count or tokens[closing + 1].value != "from" or tokens[closing + 2].kind != "string":
+                continue
+            child_process_import = tokens[closing + 2].value in _CHILD_PROCESS_MODULES
+            for start, end in _javascript_top_level_segments(tokens, index + 2, closing, pairs):
+                if tokens[start].value == "type":
+                    continue
+                if tokens[start].kind != "identifier":
+                    continue
+                imported = tokens[start].value
+                local_index = start
+                if start + 3 == end and tokens[start + 1].value == "as" and tokens[start + 2].kind == "identifier":
+                    local_index = start + 2
+                elif start + 1 != end:
+                    continue
+                kind = "child_exec" if child_process_import and imported in _CHILD_PROCESS_METHODS else "shadow"
+                declare_binding(scope_index, tokens[local_index].value, local_index, kind=kind)
+            continue
+
+        # Default imports are not child_process namespace bindings, but their
+        # local name still shadows an outer execution alias of the same name.
+        if tokens[index + 1].kind == "identifier":
+            declare_binding(scope_index, tokens[index + 1].value, index + 1)
 
     for index, token in enumerate(tokens):
         if token.value not in {"const", "let", "var"} or index + 1 >= count:
             continue
         for declaration, declaration_end in _javascript_declaration_patterns(tokens, index + 1, pairs):
-            if not _javascript_binding_pattern_shadows_eval(tokens, declaration, declaration_end, pairs):
-                continue
-            if tokens[declaration].kind == "identifier" and tokens[declaration].value == "eval":
-                declarations.add(declaration)
+            entries = _javascript_binding_pattern_entries(tokens, declaration, declaration_end, pairs)
+            names = {name for name, _token_index in entries}
+            initializer = _javascript_initializer_span(tokens, declaration_end, pairs)
+            api_bindings: dict[str, tuple[Literal["child_namespace", "child_exec"], int]] = {}
+            available_from = 0
+            if initializer is not None:
+                initializer_start, initializer_end = initializer
+                available_from = initializer_end
+                required = _javascript_require_initializer(tokens, initializer_start, initializer_end, pairs)
+                if required is not None:
+                    kind, require_index = required
+                    if len(entries) == 1 and tokens[declaration].kind == "identifier":
+                        api_bindings[entries[0][0]] = (kind, require_index)
+                    elif kind == "child_namespace":
+                        for name, _token_index in _javascript_destructured_exec_bindings(
+                            tokens,
+                            declaration,
+                            declaration_end,
+                            pairs,
+                        ):
+                            api_bindings[name] = ("child_exec", require_index)
+
             if (
                 token.value in {"const", "let"}
                 and (loop_range := _javascript_for_binding_range(tokens, declaration, pairs)) is not None
             ):
-                shadow_ranges.append(loop_range)
+                add_binding_range(names, *loop_range)
+                declarations.update(token_index for _name, token_index in entries)
+                if "eval" in names:
+                    shadow_ranges.append(loop_range)
                 continue
             scope_index = token_scopes[index]
             if token.value == "var":
@@ -1109,7 +1410,46 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
                     if parent is None:
                         break
                     scope_index = parent
-            scopes[scope_index].shadows_eval = True
+            for name, token_index in entries:
+                api_binding = api_bindings.get(name)
+                if api_binding is None:
+                    declare_binding(scope_index, name, token_index)
+                    continue
+                kind, require_index = api_binding
+                binding = declare_binding(
+                    scope_index,
+                    name,
+                    token_index,
+                    kind=kind,
+                    available_from=available_from,
+                )
+                api_origin_checks.append((binding, require_index))
+            if "eval" in names:
+                scopes[scope_index].shadows_eval = True
+
+    # A direct reassignment is a conservative kill for later calls in the
+    # same lexical region.  Nested writes stay in their child scope and cannot
+    # poison a parent or sibling alias.
+    for index, token in enumerate(tokens):
+        if token.kind != "identifier" or index in declarations or index + 1 >= count:
+            continue
+        if tokens[index + 1].value != "=":
+            continue
+        if index + 2 < count and tokens[index + 2].value in {"=", ">"}:
+            continue
+        previous = tokens[index - 1].value if index else ""
+        if previous in {".", "?"}:
+            continue
+        scope_index = token_scopes[index]
+        while token.value not in scopes[scope_index].bindings and scopes[scope_index].kind not in {
+            "module",
+            "function",
+        }:
+            parent = scopes[scope_index].parent
+            if parent is None:
+                break
+            scope_index = parent
+        scopes[scope_index].writes.setdefault(token.value, []).append((index, "shadow"))
 
     range_events = [0] * (count + 1)
     for start, end in shadow_ranges:
@@ -1121,100 +1461,18 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
         active_ranges += range_events[index]
         range_shadows.append(active_ranges > 0)
 
-    return _JavascriptEvalScopeMap(scopes, token_scopes, declarations, range_shadows)
-
-
-def _javascript_bindings(tokens: list[_JsToken]) -> tuple[set[str], dict[str, str]]:
-    namespaces: set[str] = {"child_process"}
-    functions: dict[str, str] = {}
-    count = len(tokens)
-
-    def is_module_string(position: int) -> bool:
-        return (
-            0 <= position < count
-            and tokens[position].kind == "string"
-            and tokens[position].value in _CHILD_PROCESS_MODULES
-        )
-
-    for index, token in enumerate(tokens):
-        # import * as cp from "node:child_process"
-        if (
-            token.value == "import"
-            and index + 5 < count
-            and tokens[index + 1].value == "*"
-            and tokens[index + 2].value == "as"
-            and tokens[index + 4].value == "from"
-            and is_module_string(index + 5)
-        ):
-            namespaces.add(tokens[index + 3].value)
-
-        # import { exec as run, spawn } from "child_process"
-        if token.value == "import" and index + 1 < count and tokens[index + 1].value == "{":
-            closing = next((pos for pos in range(index + 2, min(count, index + 64)) if tokens[pos].value == "}"), -1)
-            if (
-                closing > 0
-                and closing + 2 < count
-                and tokens[closing + 1].value == "from"
-                and is_module_string(closing + 2)
-            ):
-                position = index + 2
-                while position < closing:
-                    imported = tokens[position].value
-                    if imported in _CHILD_PROCESS_METHODS:
-                        local = imported
-                        if position + 2 < closing and tokens[position + 1].value == "as":
-                            local = tokens[position + 2].value
-                            position += 2
-                        functions[local] = imported
-                    position += 1
-
-        if token.value not in {"const", "let", "var"} or index + 2 >= count:
-            continue
-
-        # const cp = require("child_process")
-        if (
-            tokens[index + 1].kind == "identifier"
-            and tokens[index + 2].value == "="
-            and index + 6 < count
-            and tokens[index + 3].value == "require"
-            and tokens[index + 4].value == "("
-            and is_module_string(index + 5)
-            and tokens[index + 6].value == ")"
-        ):
-            local = tokens[index + 1].value
-            if (
-                index + 8 < count
-                and tokens[index + 7].value == "."
-                and tokens[index + 8].value in _CHILD_PROCESS_METHODS
-            ):
-                functions[local] = tokens[index + 8].value
-            else:
-                namespaces.add(local)
-
-        # const { exec: run, spawn } = require("child_process")
-        if tokens[index + 1].value == "{":
-            closing = next((pos for pos in range(index + 2, min(count, index + 64)) if tokens[pos].value == "}"), -1)
-            if (
-                closing > 0
-                and closing + 5 < count
-                and tokens[closing + 1].value == "="
-                and tokens[closing + 2].value == "require"
-                and tokens[closing + 3].value == "("
-                and is_module_string(closing + 4)
-                and tokens[closing + 5].value == ")"
-            ):
-                position = index + 2
-                while position < closing:
-                    imported = tokens[position].value
-                    if imported in _CHILD_PROCESS_METHODS:
-                        local = imported
-                        if position + 2 < closing and tokens[position + 1].value == ":":
-                            local = tokens[position + 2].value
-                            position += 2
-                        functions[local] = imported
-                    position += 1
-
-    return namespaces, functions
+    scope_map = _JavascriptEvalScopeMap(
+        scopes,
+        token_scopes,
+        declarations,
+        range_shadows,
+        binding_ranges,
+    )
+    for binding, require_index in api_origin_checks:
+        if scope_map.execution_binding(require_index, "require") != "builtin_require":
+            binding.kind = "shadow"
+            binding.available_from = 0
+    return scope_map
 
 
 def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
@@ -1225,7 +1483,6 @@ def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
     eval_scopes = _javascript_eval_scopes(tokens)
     if eval_scopes is None:
         return []
-    namespaces, functions = _javascript_bindings(tokens)
     calls: list[tuple[str, int]] = []
 
     for index, token in enumerate(tokens):
@@ -1241,11 +1498,13 @@ def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
         ):
             calls.append(("javascript_eval", token.line))
             continue
-        if token.value in functions and following == "(":
+        binding = eval_scopes.execution_binding(index, token.value)
+        if binding == "child_exec" and following == "(" and previous not in {".", "?"}:
             calls.append(("javascript_child_process", token.line))
             continue
         if (
-            token.value in namespaces
+            binding == "child_namespace"
+            and previous not in {".", "?"}
             and index + 3 < len(tokens)
             and tokens[index + 1].value in {".", "?"}
             and tokens[index + 2].value in _CHILD_PROCESS_METHODS
@@ -1256,6 +1515,8 @@ def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
         # require("child_process").exec(...)
         if (
             token.value == "require"
+            and previous not in {".", "?"}
+            and binding == "builtin_require"
             and index + 6 < len(tokens)
             and tokens[index + 1].value == "("
             and tokens[index + 2].kind == "string"
