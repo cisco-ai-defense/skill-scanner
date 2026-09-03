@@ -47,6 +47,25 @@ def test_nested_aliased_subprocess_shell_is_detected(make_skill):
     assert any(f.rule_id == "COMMAND_INJECTION_SHELL_TRUE" for f in findings)
 
 
+def test_aliased_subprocess_check_true_is_not_shell_true(make_skill):
+    """Unrelated boolean keywords must not be mistaken for shell=True."""
+    skill = make_skill({"scripts/run.py": ("import subprocess as sp\nsp.run(command, check=True)\n")})
+
+    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+    assert not any(f.rule_id == "COMMAND_INJECTION_SHELL_TRUE" for f in findings)
+
+
+def test_embedded_aliased_call_with_triple_quoted_argument_is_detected(make_skill):
+    """Balanced scanning must close triple-quoted call arguments correctly."""
+    embedded = 'import subprocess as sp; sp.run("""build_command(user_input)""", shell=True)'
+    skill = make_skill({"scripts/run.py": (f"import subprocess\nsubprocess.run(['python', '-c', {embedded!r}])\n")})
+
+    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+    assert any(f.rule_id == "COMMAND_INJECTION_SHELL_TRUE" for f in findings)
+
+
 @pytest.mark.parametrize("command", ["sp.run('{user_input}', shell=True)", "sp.run(f'{user_input}', shell=True)"])
 def test_aliased_dynamic_detection_requires_fstring(make_skill, command):
     """Braces in ordinary strings must not be treated as f-string interpolation."""

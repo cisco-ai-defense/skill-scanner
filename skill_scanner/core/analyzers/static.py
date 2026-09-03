@@ -813,10 +813,10 @@ class StaticAnalyzer(BaseAnalyzer):
                         escaped = False
                     elif char == "\\":
                         escaped = True
-                    elif content.startswith(quote * 3, i):
+                    elif len(quote) == 3 and content.startswith(quote, i):
                         i += 2
                         quote = None
-                    elif char == quote:
+                    elif len(quote) == 1 and char == quote:
                         quote = None
                 elif char in "'\"":
                     if content.startswith(char * 3, i):
@@ -860,7 +860,8 @@ class StaticAnalyzer(BaseAnalyzer):
                 if resolved_module == "os":
                     add_match("COMMAND_INJECTION_SHELL_TRUE", start, matched_text, "aliased os.system call")
                 elif any(
-                    isinstance(keyword.value, ast.Constant) and keyword.value.value is True for keyword in node.keywords
+                    keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True
+                    for keyword in node.keywords
                 ):
                     add_match(
                         "COMMAND_INJECTION_SHELL_TRUE", start, matched_text, "aliased subprocess call with shell=True"
