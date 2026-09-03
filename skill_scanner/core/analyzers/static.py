@@ -718,6 +718,84 @@ class StaticAnalyzer(BaseAnalyzer):
                             continue
                     findings.append(self._create_finding_from_match(rule, match))
 
+            if skill_file.file_type == "python":
+                findings.extend(self._scan_python_import_aliases(content, skill_file.relative_path))
+
+        return findings
+
+    def _scan_python_import_aliases(self, content: str, file_path: str) -> list[Finding]:
+        """Apply command-injection signatures to aliased Python modules.
+
+        The signature scanner intentionally operates on source text, which also
+        catches Python snippets embedded in ``subprocess.run`` command strings.
+        Resolve module aliases from both the AST and textual snippets so the
+        same behavior is preserved for ``import os as alias`` inside a command
+        payload as well as normal Python code.
+        """
+        aliases: dict[str, str] = {}
+        try:
+            tree = ast.parse(content, filename=file_path)
+        except (SyntaxError, ValueError):
+            tree = None
+
+        if tree is not None:
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Import):
+                    continue
+                for imported in node.names:
+                    module = imported.name.split(".", 1)[0]
+                    if module in {"os", "subprocess"}:
+                        aliases[imported.asname or module] = module
+
+        # Command payloads can contain a complete Python snippet as a string,
+        # which is not represented in the outer AST.  Keep this deliberately
+        # narrow and require an explicit aliased import before matching calls.
+        for match in re.finditer(r"\bimport\s+(os|subprocess)\s+as\s+([A-Za-z_]\w*)\b", content):
+            aliases[match.group(2)] = match.group(1)
+
+        findings: list[Finding] = []
+
+        def add_matches(rule_id: str, pattern: re.Pattern[str]) -> None:
+            rule = self.rule_loader.rules_by_id.get(rule_id)
+            if rule is None:
+                return
+            for match in pattern.finditer(content):
+                line_number = content.count("\n", 0, match.start()) + 1
+                line = content.splitlines()[line_number - 1].strip() if content.splitlines() else ""
+                findings.append(
+                    self._create_finding_from_match(
+                        rule,
+                        {
+                            "line_number": line_number,
+                            "line_content": line,
+                            "matched_pattern": pattern.pattern,
+                            "matched_text": match.group(0),
+                            "file_path": file_path,
+                        },
+                    )
+                )
+
+        for alias, module in aliases.items():
+            escaped_alias = re.escape(alias)
+            if module == "os":
+                add_matches("COMMAND_INJECTION_SHELL_TRUE", re.compile(rf"\b{escaped_alias}\.system\s*\("))
+                add_matches(
+                    "COMMAND_INJECTION_OS_SYSTEM",
+                    re.compile(rf"\b{escaped_alias}\.system\s*\([^)]*[f\"'].*\{{.*\}}", re.DOTALL),
+                )
+            else:
+                add_matches(
+                    "COMMAND_INJECTION_SHELL_TRUE",
+                    re.compile(rf"\b{escaped_alias}\.(?:call|run|Popen)\s*\([^)]*shell\s*=\s*True", re.DOTALL),
+                )
+                add_matches(
+                    "COMMAND_INJECTION_OS_SYSTEM",
+                    re.compile(
+                        rf"\b{escaped_alias}\.(?:call|run|Popen)\s*\([^)]*[f\"'].*\{{.*\}}",
+                        re.DOTALL,
+                    ),
+                )
+
         return findings
 
     @staticmethod
