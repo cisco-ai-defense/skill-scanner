@@ -3,7 +3,11 @@
 > [!TIP]
 > **TL;DR**
 >
-> Scans run in two phases: deterministic analyzers first (static, bytecode, pipeline, behavioral, VirusTotal, AI Defense, trigger), then LLM analyzers enriched with Phase 1 context. Post-processing applies policy overrides, analyzability scoring, and deduplication before producing the final report.
+> Scans run deterministic analyzers first (static, bytecode, pipeline,
+> correlation, behavioral, VirusTotal, AI Defense, trigger), apply bounded CEL
+> decisions to typed facts, and only then run optional LLM analyzers with Phase
+> 1 context. Post-processing applies policy overrides, analyzability scoring,
+> and deduplication before producing the final report.
 
 This page describes the execution pipeline inside `SkillScanner`.
 
@@ -22,10 +26,15 @@ flowchart TD
         P1_STATIC["Static Analyzer"]
         P1_BYTECODE["Bytecode Analyzer"]
         P1_PIPELINE["Pipeline Analyzer"]
+        P1_CORRELATION["Correlation Analyzer"]
         P1_BEHAVIORAL["Behavioral Analyzer"]
         P1_VT["VirusTotal Analyzer"]
         P1_AID["AI Defense Analyzer"]
         P1_TRIGGER["Trigger Analyzer"]
+    end
+
+    subgraph decision [Phase 1.5: Typed CEL Decision Layer]
+        FACTS["Project bounded ScanFacts v1"] --> CEL["CEL keep / would-suppress / suppress / fallback"]
     end
 
     subgraph phase2 [Phase 2: LLM Analyzers with Enrichment]
@@ -50,7 +59,8 @@ flowchart TD
     end
 
     load --> phase1
-    phase1 --> phase2
+    phase1 --> decision
+    decision --> phase2
     phase2 --> postproc
     postproc --> output
 ```
@@ -78,6 +88,7 @@ All non-LLM analyzers run in this phase. This includes both core analyzers (enab
 - Static analyzer
 - Bytecode analyzer
 - Pipeline analyzer
+- Correlation analyzer (disabled by the permissive preset)
 
 **Optional analyzers** (added by `build_analyzers` when flags are set):
 - Behavioral analyzer
@@ -89,7 +100,20 @@ During Phase 1, the scanner also collects:
 - **Validated binary files** from the VirusTotal analyzer (used to suppress duplicate findings later)
 - **Unreferenced scripts** from the static analyzer (passed as enrichment context to LLM analyzers)
 
-## Stage 3: Phase 2 Analyzers (LLM with Enrichment)
+## Stage 3: Typed CEL Decision Layer
+
+After exact candidate deduplication and finding-contract validation, the
+scanner projects bounded analyzer-owned facts into
+`skill_scanner.semantic.v1.ScanFacts`. CEL can gate only an existing candidate;
+it cannot create findings or change rule ID, category, or severity. Incomplete
+projections and runtime errors fail open.
+
+Balanced/default and strict policies run CEL in `shadow`; permissive runs it
+`off`. Every bundled gate currently has per-rule `rollout: shadow`, so no
+bundled finding is suppressed until a rule is separately qualified and
+promoted. See [CEL Decision Layer](cel-decision-layer.md).
+
+## Stage 4: Phase 2 Analyzers (LLM with Enrichment)
 
 LLM and meta analyzers are deferred to Phase 2 so they can receive enrichment context built from Phase 1 results. An analyzer is deferred if its name is `llm_analyzer` or `meta_analyzer`.
 
@@ -102,7 +126,7 @@ This context is passed via `set_enrichment_context()`, giving the LLM a structur
 
 After LLM analysis, the scanner captures the skill-level LLM assessment and primary threats for inclusion in scan metadata.
 
-## Stage 4: Post-Processing
+## Stage 5: Post-Processing
 
 Between analysis and reporting, the scanner runs a series of normalization and policy enforcement steps:
 
@@ -115,12 +139,12 @@ Between analysis and reporting, the scanner runs a series of normalization and p
 7. **Co-occurrence metadata** -- Same-path rule co-occurrence annotations are attached (policy-controlled via `finding_output`)
 8. **Policy fingerprint** -- Traceability metadata (policy hash, LLM assessment if available) is attached to findings
 
-## Stage 5: Cleanup and Result
+## Stage 6: Cleanup and Result
 
 - Temporary extraction directories are always cleaned up, even if an analyzer raises an exception
 - A `ScanResult` is built with findings, timing, analyzer names, analyzability score/details, and scan metadata
 
-## Stage 6: Reporting
+## Stage 7: Reporting
 
 The `ScanResult` (or `Report` for multi-skill scans) is passed to a reporter:
 
@@ -146,9 +170,9 @@ These are controlled by the `--check-overlap` flag in `scan-all`.
 
 | Source | Controls |
 |---|---|
-| CLI flags | Analyzer toggles, output format, policy preset, custom rules path |
+| CLI flags | Analyzer toggles, output format, policy preset, rule-pack paths, and CEL mode |
 | API request body | Same as CLI, plus upload and batch parameters |
-| Policy preset/YAML | Thresholds, disabled rules, severity overrides, analyzer toggles |
+| Policy preset/YAML | Thresholds, disabled rules, severity overrides, analyzer toggles, and CEL mode |
 | Environment variables | LLM provider credentials, VirusTotal API key, AI Defense URL/key, custom taxonomy paths |
 
 ## Related Pages

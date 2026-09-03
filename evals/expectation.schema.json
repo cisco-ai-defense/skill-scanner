@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cisco-ai-defense/skill-scanner/evals/expectation.schema.json",
+  "$comment": "SPDX-License-Identifier: Apache-2.0",
+  "title": "Skill Scanner evaluation expectation",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "integer", "enum": [1, 2]},
+    "evaluation_quality": {"type": "string", "enum": ["legacy_degraded", "strict"]},
+    "case_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:/-]{2,127}$"},
+    "skill_name": {"type": "string", "minLength": 1},
+    "package_label": {"type": "string", "enum": ["benign", "malicious", "contextual_risk"]},
+    "expected_verdict": {"type": "string", "enum": ["safe", "unsafe"]},
+    "expected_safe": {"type": "boolean"},
+    "is_malicious": {"type": "boolean"},
+    "expected_severity": {
+      "type": "string",
+      "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "SAFE"]
+    },
+    "expected_findings": {"type": "array"},
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "notes": {"type": "string", "minLength": 1},
+    "threat_patterns": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "required": ["schema_version", "evaluation_quality", "skill_name", "expected_findings"],
+  "oneOf": [
+    {
+      "title": "Explicitly degraded historical expectation",
+      "properties": {
+        "schema_version": {"const": 1},
+        "evaluation_quality": {"const": "legacy_degraded"},
+        "expected_findings": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/legacyFinding"}
+        }
+      },
+      "oneOf": [
+        {"required": ["expected_safe"], "not": {"required": ["is_malicious"]}},
+        {"required": ["is_malicious"], "not": {"required": ["expected_safe"]}}
+      ],
+      "not": {
+        "anyOf": [
+          {"required": ["case_id"]},
+          {"required": ["package_label"]},
+          {"required": ["expected_verdict"]},
+          {"required": ["provenance"]}
+        ]
+      }
+    },
+    {
+      "title": "Release-grade strict expectation",
+      "properties": {
+        "schema_version": {"const": 2},
+        "evaluation_quality": {"const": "strict"},
+        "expected_findings": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/strictFinding"}
+        }
+      },
+      "required": ["case_id", "package_label", "expected_verdict", "provenance"],
+      "allOf": [
+        {
+          "if": {"properties": {"package_label": {"const": "benign"}}, "required": ["package_label"]},
+          "then": {"properties": {"expected_verdict": {"const": "safe"}}}
+        },
+        {
+          "if": {"properties": {"package_label": {"const": "malicious"}}, "required": ["package_label"]},
+          "then": {"properties": {"expected_verdict": {"const": "unsafe"}}}
+        },
+        {
+          "if": {"properties": {"expected_verdict": {"const": "unsafe"}}, "required": ["expected_verdict"]},
+          "then": {
+            "properties": {
+              "expected_findings": {
+                "contains": {"properties": {"severity": {"enum": ["CRITICAL", "HIGH"]}}, "required": ["severity"]},
+                "minContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"expected_verdict": {"const": "safe"}}, "required": ["expected_verdict"]},
+          "then": {
+            "properties": {
+              "expected_findings": {
+                "not": {
+                  "contains": {"properties": {"severity": {"enum": ["CRITICAL", "HIGH"]}}, "required": ["severity"]}
+                }
+              }
+            }
+          }
+        }
+      ],
+      "not": {
+        "anyOf": [
+          {"required": ["expected_safe"]},
+          {"required": ["is_malicious"]}
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "identityProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": {"type": "string", "minLength": 1},
+        "category": {
+          "type": "string",
+          "enum": [
+            "prompt_injection",
+            "command_injection",
+            "data_exfiltration",
+            "unauthorized_tool_use",
+            "obfuscation",
+            "hardcoded_secrets",
+            "social_engineering",
+            "resource_abuse",
+            "policy_violation",
+            "malware",
+            "harmful_content",
+            "skill_discovery_abuse",
+            "transitive_trust_abuse",
+            "autonomy_abuse",
+            "tool_chaining_abuse",
+            "unicode_steganography",
+            "supply_chain_attack"
+          ]
+        },
+        "severity": {"type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]},
+        "file_path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+        "line_number": {"type": "integer", "minimum": 1},
+        "evidence_id": {"type": "string", "minLength": 1},
+        "analyzer": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1}
+      }
+    },
+    "legacyFinding": {
+      "allOf": [
+        {"$ref": "#/$defs/identityProperties"},
+        {
+          "anyOf": [
+            {"required": ["rule_id"]},
+            {"required": ["category"]},
+            {"required": ["severity"]},
+            {"required": ["file_path"]},
+            {"required": ["line_number"]},
+            {"required": ["evidence_id"]},
+            {"required": ["analyzer"]}
+          ]
+        }
+      ]
+    },
+    "strictFinding": {
+      "allOf": [
+        {"$ref": "#/$defs/identityProperties"},
+        {
+          "required": ["rule_id", "category", "severity", "file_path", "analyzer"],
+          "anyOf": [
+            {"required": ["line_number"]},
+            {"required": ["evidence_id"]}
+          ]
+        }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "license": {"type": "string", "minLength": 1},
+        "fixture_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "label_source": {
+          "enum": ["public_labeled", "independent_ollama", "agent_labeled", "human_reviewed"]
+        },
+        "scanner_independent": {"const": true},
+        "scanner_derived_label": {"const": false},
+        "sealed_hf_test_content_used_for_labeling": {"const": false},
+        "label_provenance_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "label_evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "required": [
+        "source",
+        "license",
+        "fixture_sha256",
+        "label_source",
+        "scanner_independent",
+        "scanner_derived_label",
+        "sealed_hf_test_content_used_for_labeling",
+        "label_provenance_sha256",
+        "label_evidence_sha256"
+      ]
+    }
+  }
+}

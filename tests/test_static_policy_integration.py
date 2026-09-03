@@ -193,6 +193,45 @@ class TestFileClassificationIntegration:
         archive_findings = [f for f in findings if f.rule_id == "ARCHIVE_FILE_DETECTED"]
         assert len(archive_findings) >= 1
 
+    def test_extracted_ooxml_without_completion_attestation_remains_an_archive_risk(self, tmp_path):
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        document = skill_dir / "assets" / "reference.docx"
+        document.parent.mkdir()
+        document.write_bytes(b"PK\x05\x06" + b"\x00" * 18)
+        child = skill_dir / "extracted-document.xml"
+        child.write_text("<document />")
+        parent_file = _sf(document, "assets/reference.docx", "binary")
+        extracted_file = SkillFile(
+            path=child,
+            relative_path="assets/reference.docx!/word/document.xml",
+            file_type="other",
+            content="<document />",
+            size_bytes=12,
+            extracted_from="assets/reference.docx",
+            archive_depth=1,
+        )
+        skill = _make_skill(skill_dir, [parent_file, extracted_file])
+
+        findings = StaticAnalyzer(policy=ScanPolicy.default())._check_binary_files(skill)
+
+        # An extracted child proves only that extraction started. Without an
+        # explicit all-members completion attestation, the parent must fail
+        # open because limits or malformed members may have truncated it.
+        assert len([finding for finding in findings if finding.rule_id == "ARCHIVE_FILE_DETECTED"]) == 1
+
+    def test_unopened_ooxml_remains_a_generic_archive_risk(self, tmp_path):
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        document = skill_dir / "assets" / "reference.docx"
+        document.parent.mkdir()
+        document.write_bytes(b"PK\x05\x06" + b"\x00" * 18)
+        skill = _make_skill(skill_dir, [_sf(document, "assets/reference.docx", "binary")])
+
+        findings = StaticAnalyzer(policy=ScanPolicy.default())._check_binary_files(skill)
+
+        assert len([finding for finding in findings if finding.rule_id == "ARCHIVE_FILE_DETECTED"]) == 1
+
     def test_unknown_binary_flagged(self, tmp_path):
         """A binary file with an unrecognised extension should trigger
         BINARY_FILE_DETECTED."""

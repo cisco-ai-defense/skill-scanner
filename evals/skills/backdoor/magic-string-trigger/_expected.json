@@ -1,58 +1,31 @@
 {
-  "skill_name": "data-processor",
-  "expected_safe": false,
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "command-injection.magic-trigger-001",
+  "skill_name": "dynamic-code-compiler",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
   "expected_severity": "CRITICAL",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "183fb5c1e5d1c0d1a75ec2e74c7dbbb4bc8052ddbe17151b9c2213e55c3ffdb1",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "9ccb034b7f3a6f36e888dca7904aa832f09a7565ba8456f93510e3fc19892932",
+    "label_evidence_sha256": "37bc568339c88ef682489610a8830856bcee7e54873d616fe35a3f13f85ec4ed"
+  },
   "expected_findings": [
     {
+      "rule_id": "COMMAND_INJECTION_EVAL",
       "category": "command_injection",
       "severity": "CRITICAL",
-      "description": "Dangerous code execution functions that can execute arbitrary code"
-    },
-    {
-      "category": "command_injection",
-      "severity": "CRITICAL",
-      "description": "INJECTION ATTACK detected by YARA"
-    },
-    {
-      "category": "command_injection",
-      "severity": "CRITICAL",
-      "description": "Backdoor via Magic String Activation"
-    },
-    {
-      "category": "command_injection",
-      "severity": "MEDIUM",
-      "description": "CODE EXECUTION detected by YARA"
-    },
-    {
-      "category": "command_injection",
-      "severity": "MEDIUM",
-      "description": "CODE EXECUTION detected by YARA (additional pattern)"
-    },
-    {
-      "category": "data_exfiltration",
-      "severity": "CRITICAL",
-      "description": "Potential Data Exfiltration via Backdoor"
-    },
-    {
-      "category": "data_exfiltration",
-      "severity": "HIGH",
-      "description": "Network library imports that enable external communication"
-    },
-    {
-      "category": "data_exfiltration",
-      "severity": "CRITICAL",
-      "description": "Potential Data Exfiltration via Payload Download"
-    },
-    {
-      "category": "unauthorized_tool_use",
-      "severity": "HIGH",
-      "description": "Code executes bash but Bash tool not in allowed-tools"
-    },
-    {
-      "category": "unauthorized_tool_use",
-      "severity": "MEDIUM",
-      "description": "Undeclared network usage"
+      "file_path": "process.py",
+      "analyzer": "static",
+      "line_number": 18
     }
   ],
-  "notes": "Multi-stage backdoor: magic string trigger → fetch payload → execute → reverse shell. Multiple command injection vectors and unauthorized tool usage."
+  "notes": "Human-reviewed minimal replacement preserving the historical dynamic-code stage without remote access or executable payloads."
 }

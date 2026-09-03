@@ -7,7 +7,13 @@
   patterns:
     - "(?i)ignore\\s+(all\\s+)?(previous|prior|earlier)\\s+(instructions|rules|prompts|guidelines)"
     - "(?i)disregard\\s+(all\\s+)?(previous|prior)\\s+(instructions|rules)"
+    - "(?i)\\bdisregard(?:ing)?\\s+(?:all\\s+)?(?:previous|prior)\\s+(?:prompts?|instructions?|commands?)\\b"
     - "(?i)forget\\s+(all\\s+)?(previous|prior)\\s+(instructions|context)"
+  exclude_patterns:
+    # A quoted command label in explanatory prose is inert data, not a
+    # directive. Keep the grammar bounded to a complete line prefix rather
+    # than suppressing every occurrence inside quotation marks.
+    - "(?i)^\\s*(?:command|prompt|instruction)s?\\s+(?:addressed\\s+)?to\\s+(?:you|the\\s+(?:agent|assistant))\\s*\\("
   file_types: [markdown]
   description: "Attempts to override previous system instructions"
   remediation: "Remove instructions that attempt to override system behavior"

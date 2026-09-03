@@ -7,7 +7,7 @@ signatures:
     atr_id: ATR-2026-00070
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/data-poisoning/ATR-2026-00070-data-poisoning.yaml
-    category: data_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -50,7 +50,7 @@ signatures:
     atr_id: ATR-2026-00450
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/data-poisoning/ATR-2026-00450-spring-ai-prompt-memory-poisoning.yaml
-    category: data_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -78,7 +78,7 @@ signatures:
     atr_id: ATR-2026-00570
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/data-poisoning/ATR-2026-00570-sql-injection-in-agent-tool-query.yaml
-    category: data_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - (?i)(?:'\s*or\s+'?1'?\s*=\s*'?1|\bor\s+1\s*=\s*1\b\s*(?:--|#|/\*|;|$))
@@ -92,7 +92,7 @@ signatures:
     atr_id: ATR-2026-01155
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/data-poisoning/ATR-2026-01155-memory-plant-direct-command.yaml
-    category: data_poisoning
+    category: transitive_trust_abuse
     severity: MEDIUM
     patterns:
       - >-
@@ -110,7 +110,7 @@ signatures:
     atr_id: ATR-2026-01774
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/data-poisoning/ATR-2026-01774-semantic-rag-memory-poisoning.yaml
-    category: data_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-

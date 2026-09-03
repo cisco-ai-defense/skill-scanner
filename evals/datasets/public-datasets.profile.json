@@ -1,0 +1,1158 @@
+{
+  "profile_version": 1,
+  "observed_at": "2026-09-02",
+  "purpose": "Non-gating inspection record for candidate public evaluation datasets.",
+  "safety": {
+    "sample_code_executed": false,
+    "raw_content_persisted": false,
+    "gated_data_bypassed": false,
+    "note": "Public and authorized gated tables were decoded only as inert Parquet, CSV, JSONL, or text data. No sample code was executed; raw sample and model content remained outside the repository and is not recorded in this profile."
+  },
+  "integrity_note": "Published LFS SHA-256 values below describe upstream source artifacts. MaliciousSkillBench pins its canonical 10-file source manifest separately from the declared 9,740-member derived snapshot, the 9,737 locally usable members, and the exact three-record endpoint-quarantine manifest; these digests are intentionally not interchangeable. The three GitHub prompt-injection corpora pin only their closed, inert evaluation subsets; immutable input identity does not make those supplemental metrics release-authoritative.",
+  "datasets": [
+    {
+      "id": "ProtectSkills/MaliciousSkillBench",
+      "revision": "d4b42ce5766a6e0359c987cf59c1007cb3795a90",
+      "revision_verified": true,
+      "access": "public",
+      "license": {
+        "declared": "CC-BY-4.0",
+        "scope": "Benchmark-authored metadata, annotations, taxonomy, splits, and organization only; third-party skill and package artifacts retain upstream terms."
+      },
+      "inspection": {
+        "methods": [
+          "Hugging Face repository API at the pinned revision",
+          "inert Parquet and CSV decoding",
+          "cross-table identity, hash, split, and label checks"
+        ],
+        "raw_content_persisted": false
+      },
+      "tables": {
+        "primary": {
+          "rows": 9740,
+          "labels": {
+            "malicious": 7505,
+            "benign": 2235
+          },
+          "schema": [
+            "benchmark_id",
+            "label",
+            "skill_text",
+            "text_available",
+            "text_redacted",
+            "source_id",
+            "source_name",
+            "source_ids",
+            "provenance",
+            "evidence_type",
+            "structural_family_id",
+            "normalized_hash",
+            "exact_hash",
+            "release_status",
+            "source_pointer",
+            "attack_categories",
+            "attack_category_codes",
+            "impact_categories",
+            "impact_category_codes",
+            "text_origin_source_id",
+            "public_skill_text",
+            "redaction_reason",
+            "original_text_withheld",
+            "public_text_sha256"
+          ],
+          "quality": {
+            "unique_benchmark_ids": 9740,
+            "unique_exact_hashes": 9740,
+            "unique_normalized_hashes": 9740,
+            "cross_label_hash_collisions": 0,
+            "exact_text_available": 9735,
+            "withheld_sanitized_originals": 5,
+            "text_redacted": 542
+          }
+        },
+        "splits": {
+          "random": {
+            "train": 6818,
+            "validation": 974,
+            "test": 1948
+          },
+          "source_balanced_random": {
+            "train": 6817,
+            "validation": 973,
+            "test": 1950
+          },
+          "m_structural_disjoint": {
+            "train": 6818,
+            "validation": 974,
+            "test": 1948,
+            "malicious_family_overlap": 0
+          },
+          "source_disjoint": {
+            "train": 7513,
+            "validation": 835,
+            "test": 1384,
+            "excluded": 8,
+            "test_labels": {
+              "malicious": 839,
+              "benign": 545
+            },
+            "held_out_sources": [
+              "SRC009",
+              "SRC011",
+              "SRC012"
+            ],
+            "train_test_source_overlap": 0
+          }
+        }
+      },
+      "source_artifact_manifest_sha256": "3d64779dc972759ede61717ac5cc7f4e87289add8feabff1e83c4289094ce300",
+      "materialization": {
+        "declared_artifact_count": 9740,
+        "declared_artifact_manifest_sha256": "ae542800a95a893a0ae724bdc625d5a1e19d81ff08ae1f846ddb54d77bfb0b9a",
+        "sample_metadata_manifest_format": "sample-metadata-splits-v2",
+        "sample_metadata_manifest_sha256": "6a284d9a181ae07179f2cc3ff98f64f14787dadc1ebde6c0dd86e78f4f55bc7a",
+        "sample_metadata_grouping": {
+          "protocol_contracts": {
+            "m_structural_disjoint": "malicious_structural_family_partition_pure",
+            "source_disjoint": "test_source_disjoint_from_non_test"
+          },
+          "unsupported_dimensions": [
+            "actor_campaign_id",
+            "lexical_template_id",
+            "parent_sample_id",
+            "repository_id"
+          ],
+          "verified_dimensions": [
+            "exact_hash",
+            "normalized_hash",
+            "provenance",
+            "source_id",
+            "source_ids",
+            "source_pointer",
+            "structural_family_id",
+            "text_origin_source_id"
+          ]
+        },
+        "usable_artifact_count": 9737,
+        "usable_artifact_manifest_sha256": "e1f54bfdfb8489b136601ab5cacdc0ae81802aa2ac3b37ebe0766afdf5cec79b",
+        "error_count": 3,
+        "quarantine_manifest_format": "quarantine-manifest-v1",
+        "quarantine_manifest_sha256": "6dcd44640fd28506eed470888272c52b43a8779988a8b8b0efda99f3d8c6ee79",
+        "quarantine_records": [
+          {
+            "benchmark_id": "ASB04_002400",
+            "error_code": "ENDPOINT_PROTECTION_QUARANTINE",
+            "label": "malicious",
+            "path": "skills/ASB04_002400/SKILL.md",
+            "sha256": "4ecc25a9e041e61c813d463cb350f42d4f4353c273a60f5127379fe848ce58df",
+            "size_bytes": 20180,
+            "source_id": "SRC010",
+            "splits": {
+              "m_structural_disjoint": "train",
+              "source_disjoint": "train"
+            },
+            "structural_family_id": "FAMILY_2972"
+          },
+          {
+            "benchmark_id": "ASB04_006391",
+            "error_code": "ENDPOINT_PROTECTION_QUARANTINE",
+            "label": "malicious",
+            "path": "skills/ASB04_006391/SKILL.md",
+            "sha256": "d956582958e5edcad73d9bcfa9e1993e9d144f8055061b883f4528567a04221f",
+            "size_bytes": 19957,
+            "source_id": "SRC010",
+            "splits": {
+              "m_structural_disjoint": "train",
+              "source_disjoint": "train"
+            },
+            "structural_family_id": "FAMILY_2972"
+          },
+          {
+            "benchmark_id": "ASB04_008249",
+            "error_code": "ENDPOINT_PROTECTION_QUARANTINE",
+            "label": "benign",
+            "path": "skills/ASB04_008249/SKILL.md",
+            "sha256": "53aa1626b7ee140ccaaaf6a987d45f3a4c43434bbda2fef3a6ae3532b47f7bac",
+            "size_bytes": 19737,
+            "source_id": "SRC010",
+            "splits": {
+              "m_structural_disjoint": "train",
+              "source_disjoint": "train"
+            },
+            "structural_family_id": "UNASSIGNED_BENIGN"
+          }
+        ],
+      "blocking_track_membership": {
+        "core-only-source-disjoint": 1384
+      },
+        "blocking_track_expectations": {
+        "core-only-source-disjoint": {
+          "samples": 1384,
+          "malicious": 839,
+          "benign": 545,
+          "population_sha256": "e77564f010fe55ee368af237fabc89b94ca308bd0b3a8c49f052716609f89399"
+        }
+      },
+      "release_note": "The derived inventory is pinned and the core-only source-disjoint test track is complete. Full-pack, whole-corpus, and train-population runs remain supplemental."
+      },
+      "source_artifacts": [
+        {
+          "path": "primary.parquet",
+          "size_bytes": 28600360,
+          "sha256": "1d6382017f259bde0b699d402318f3c03f16b2e8ed2363a346b77a5465f06a06"
+        },
+        {
+          "path": "metadata.parquet",
+          "size_bytes": 776262,
+          "sha256": "4ef1d5d7a7769f11c961c95f8571cb3c9d8fa7b1d09b93dcb11b85de641f742b"
+        },
+        {
+          "path": "attack_taxonomy.parquet",
+          "size_bytes": 205714,
+          "sha256": "1194229b60984a0d238797d99d34572e94a9dcb5964caebe2e79c39b619fe00d"
+        },
+        {
+          "path": "impact_taxonomy.parquet",
+          "size_bytes": 91025,
+          "sha256": "5a6e30443666ab03ca3f6974186c4e805a089f20151d8e0ee19c2a2394c323c5"
+        },
+        {
+          "path": "splits/random.parquet",
+          "size_bytes": 27889,
+          "sha256": "e5820606dcff84db3d7a9a152cb9f42606d1a8675f156b4aa36d5194428903a1"
+        },
+        {
+          "path": "splits/source_balanced_random.parquet",
+          "size_bytes": 27927,
+          "sha256": "a57a7971d40a63009ddf3a2f7291d7e72d87e65bd6eeadb669ac422cd34dc8b7"
+        },
+        {
+          "path": "splits/m_structural_disjoint.parquet",
+          "size_bytes": 27942,
+          "sha256": "f6456f678910170bc2203998d1823842112bba5d5036859f58ea409c292a34d8"
+        },
+        {
+          "path": "splits/source_disjoint.parquet",
+          "size_bytes": 27820,
+          "sha256": "9fae37c53b6ad47070d118e9bc4cdafd82c416a68b7e74847b4e0dd9d66bd276"
+        },
+        {
+          "path": "package_manifest.csv",
+          "size_bytes": 4101527,
+          "sha256": "0225ebe52782dae384ca6eb622566021c9c6b309867d65a8f1007d516242096a"
+        },
+        {
+          "path": "schema.json",
+          "size_bytes": 22795,
+          "sha256": "2165cc30c6555873b31800869734637fd571148bbf12c40315ce4600ae602378"
+        }
+      ],
+      "representative_characteristics": {
+        "benign_with_code_fences_percent": 86.2,
+        "benign_with_urls_percent": 44.7,
+        "benign_with_shell_markers_percent": 32.0,
+        "median_text_characters": 5080,
+        "maximum_text_characters": 21002040,
+        "malicious_package_manifest_rows": 7505,
+        "complete_package_backed": 7364,
+        "native_single_file": 141
+      },
+      "suitability": {
+      "recommended": [
+        "core-only source-disjoint text classification",
+        "optional full-pack malicious structural-disjoint diagnostics",
+        "benign text hard-negative evaluation"
+        ],
+        "limitations": [
+          "The ATR source overlaps a bundled rule pack.",
+          "Hugging Face hosts the package index, while malicious package archives are hosted separately on GitHub.",
+          "Package artifacts exist only for malicious rows, so this dataset cannot measure package-level benign precision by itself.",
+          "The 21 MB maximum row requires bounded or streaming ingestion."
+        ]
+      }
+    },
+    {
+      "id": "Miaow-Lab/OpenSkillRisk",
+      "revision": "ccfcce55aa0c931b9fbd33a1cccce4acb34977d7",
+      "revision_verified": true,
+      "access": "gated_manual",
+      "license": {
+        "declared": "MIT",
+        "constraints": [
+          "Access agreement forbids attempts to identify original authors or organizations.",
+          "Access agreement and card notice prohibit redistribution of raw skill files."
+        ]
+      },
+      "inspection": {
+        "methods": [
+          "Hugging Face repository API at the pinned revision",
+          "public dataset card"
+        ],
+        "raw_rows_accessed": false,
+        "reason": "The pinned task and skill artifacts returned HTTP 401 without approved gated access."
+      },
+      "card_claims": {
+        "total": 263,
+        "obviously_malicious": 139,
+        "contextually_risky": 124,
+        "risk_categories": {
+          "Control-Plane Hijacking": 13,
+          "Authority Expansion": 38,
+          "Data Harvesting": 27,
+          "Execution Bootstrapping": 30,
+          "Persistence Implantation": 24,
+          "Outbound Exfiltration": 96,
+          "External State Manipulation": 35
+        }
+      },
+      "repository": {
+        "listed_paths": 1349,
+        "task_spec_artifacts": [
+          {
+            "path": "tasks/task_specs_contextually_risky.py",
+            "size_bytes": 1157133,
+            "git_blob_sha1": "f8d9903ba705caf11a500bfd9df35121faa13465"
+          },
+          {
+            "path": "tasks/task_specs_obviously_malicious.py",
+            "size_bytes": 368207,
+            "git_blob_sha1": "f97c061f97cbf6d75b573aeaef9f216086d22012"
+          }
+        ]
+      },
+      "suitability": {
+        "recommended": [
+          "supplemental positive recall",
+          "category evidence after authorized acquisition"
+        ],
+        "limitations": [
+          "No benign control population is declared.",
+          "Task specifications are Python source and must be parsed only with a literal-only AST reader.",
+          "Raw artifacts may not be redistributed.",
+          "Gated availability must never determine a release result."
+        ]
+      }
+    },
+    {
+      "id": "TrustAIRLab/HarmfulSkillBench",
+      "revision": "0a30e25f20a391e1b6956c55d6806867944c2232",
+      "revision_verified": true,
+      "access": "gated_auto",
+      "license": {
+        "declared": "MIT",
+        "constraints": [
+          "Access agreement prohibits re-identifying pseudonymized authors."
+        ]
+      },
+      "inspection": {
+        "methods": [
+          "Hugging Face repository API at the pinned revision",
+          "authenticated pinned-snapshot acquisition after gated access approval",
+          "inert JSONL, CSV, JSON metadata, and text decoding",
+          "strict and lenient SkillLoader ingestion audit",
+          "full-packs deterministic static diagnostic with CEL shadow"
+        ],
+        "raw_rows_accessed": true,
+        "raw_content_persisted": false,
+        "sample_code_executed": false
+      },
+      "card_claims": {
+        "skills": 200,
+        "tier_1_prohibited": 130,
+        "tier_2_high_risk": 70,
+        "platforms": {
+          "clawhub": 81,
+          "skillsrest": 57,
+          "benchmark_authored": 62
+        },
+        "reviewed_tasks": 200,
+        "aggregated_judgments": 5280
+      },
+      "key_artifacts": [
+        {
+          "path": "eval_tasks/reviewed_tasks.jsonl",
+          "size_bytes": 88724,
+          "git_blob_sha1": "c3a222fbfc169d9ee9c1e448dd6f59dab60bc1e5",
+          "sha256": "e5152c9072a7520d3de99e226dd39518eb05e845b4048a0dec9ebf3fcf71cd90",
+          "rows": 200,
+          "schema": [
+            "anon_id",
+            "platform",
+            "category",
+            "tier",
+            "name",
+            "description",
+            "selected_task"
+          ]
+        },
+        {
+          "path": "eval_results/judgments_aggregated.csv",
+          "size_bytes": 378021,
+          "git_blob_sha1": "89966a073228c896397bb8f8b0b91e2f0ecc8121",
+          "sha256": "bc303054e118f93d1d898ddcb97e7cebfd20a94e28d880228cfe61d5876dc794",
+          "rows": 5280,
+          "unique_skill_ids": 200,
+          "schema": [
+            "anon_id",
+            "platform",
+            "category",
+            "tier",
+            "model",
+            "condition",
+            "Q1_refusal",
+            "Q2_HiTL",
+            "Q3_AID",
+            "Q4_harmfulness",
+            "score",
+            "label"
+          ]
+        }
+      ],
+      "observed_snapshot": {
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "complete_snapshot_manifest_pending": false,
+        "declared_evaluation_used_tree_manifest_sha256": "5611f603419299312f90d045b843f494801f2baa44369d61c1bbf4995297e089",
+        "observed_repository_files": 403,
+        "observed_repository_bytes": 2108204,
+        "observed_repository_manifest_sha256": "f2134ac1d911fb564e806d49e551e111440296008310a5759064a1c2ac4ea3dc",
+        "evaluation_used_tree_expected_files": 401,
+        "evaluation_used_tree_files": 400,
+        "evaluation_used_tree_bytes": 1719327,
+        "evaluation_used_tree_manifest_sha256": "3b769e4c6c2aaa63c944682a8273c9ccab1709c7fca6c34b71b5b33fe1400b42",
+        "skill_metadata": {
+          "rows": 200,
+          "bytes": 20566,
+          "manifest_sha256": "18782db19f3fa043f860024d75d1121239d25a3282ca05b4ba1eb62306138748",
+          "schema": [
+            "anon_id",
+            "platform",
+            "category",
+            "tier"
+          ]
+        },
+        "skill_documents": {
+          "expected": 200,
+          "observed": 199,
+          "bytes": 1610037,
+          "observed_manifest_sha256": "1c6064b7ab5806ebe1e74a33ecdd6d0cfaae4a69a01faa2409a6866fc8f03725",
+          "missing": [
+            {
+              "path": "skills/clawhub/clawhub_d2bee9b8/SKILL.md",
+              "git_blob_sha1": "77939719022ee2bfe2e2053dd3ff3e6cc200f1e2",
+              "sha256": "f1e059a8aa4fb57b059a85918f17c577ff454638e620b9803589b6fc4841725d",
+              "size_bytes": 16409,
+              "error_code": "ENDPOINT_PROTECTION_QUARANTINE",
+              "reason": "The host quarantined this file after authenticated acquisition; it was not restored or executed."
+            }
+          ]
+        }
+      },
+      "materialization": {
+        "declared_artifact_count": 401,
+        "declared_artifact_manifest_sha256": "5611f603419299312f90d045b843f494801f2baa44369d61c1bbf4995297e089",
+        "usable_artifact_count": 400,
+        "usable_artifact_manifest_sha256": "3b769e4c6c2aaa63c944682a8273c9ccab1709c7fca6c34b71b5b33fe1400b42",
+        "error_count": 1,
+        "quarantine_manifest_format": "quarantine-manifest-v1",
+        "quarantine_manifest_sha256": "d2e17d3093dcca780bad35c49858abc77e9fba2ab32e5a0646309c345007beda",
+        "quarantine_records": [
+          {
+            "benchmark_id": "clawhub_d2bee9b8",
+            "path": "skills/clawhub/clawhub_d2bee9b8/SKILL.md",
+            "label": "malicious",
+            "source_id": "clawhub",
+            "structural_family_id": "P6",
+            "splits": {},
+            "sha256": "f1e059a8aa4fb57b059a85918f17c577ff454638e620b9803589b6fc4841725d",
+            "size_bytes": 16409,
+            "error_code": "ENDPOINT_PROTECTION_QUARANTINE"
+          }
+        ],
+        "denominator_preserved": 200
+      },
+      "ingestion_audit": {
+        "population_denominator": 200,
+        "strict": {
+          "authoritative": true,
+          "loaded": 180,
+          "errors": 20,
+          "missing_skill_document": 1,
+          "malformed_or_missing_frontmatter": 19
+        },
+        "lenient_supplemental": {
+          "authoritative": false,
+          "attempted": 20,
+          "recovered": 19,
+          "errors": 1
+        }
+      },
+      "static_shadow_evidence": {
+        "schema_version": 1,
+        "report_sha256": "ee1a0239b000e00708423be81340b4ddad9ed1f96c50a8d780956851e824cc62",
+        "completed_at": "2026-09-02T15:52:52.301417+00:00",
+        "scanner_version": "2.0.14.dev6+g367cdc02a.d20260902",
+        "detector_profile": "full_packs",
+        "cel": {
+          "mode": "shadow",
+          "runtime": "cel-go",
+          "runtime_version": "v0.32.0;helper=source-tree",
+          "expression_set_sha256": "a08e30e5af284299dd10be2b85a7fc5e79c73bbe464f1f6a57f027ab5b1a868f",
+          "evaluated": 3283,
+          "would_suppress": 88,
+          "suppressed": 0,
+          "fallbacks": 0,
+          "incomplete_projections": 0,
+          "circuit_breaker_fallbacks": 0
+        },
+        "denominator": 200,
+        "scanned": 199,
+        "scan_errors": 1,
+        "signal_detected": 196,
+        "actionable_detected": 174,
+        "blocking_detected": 160,
+        "harmful_content_detected": 0,
+        "elapsed_seconds": 60.978415,
+        "metric_scope": "all-positive supplemental recall diagnostics only; precision, false-positive rate, true negatives, and F1 are undefined"
+      },
+      "metric_policy": {
+        "release_blocking": false,
+        "authoritative_metrics_eligible": false,
+        "all_positive": true,
+        "population_denominator": 200,
+        "prohibited_metrics": [
+          "precision",
+          "false_positive_rate",
+          "true_negatives",
+          "f1"
+        ]
+      },
+      "suitability": {
+        "recommended": [
+          "opt-in harmful-content policy evaluation",
+          "LLM refusal and safeguard evaluation"
+        ],
+        "limitations": [
+          "All 200 examples are harmful or high-risk; there is no benign precision denominator.",
+          "Many examples are natural-language skill descriptions rather than implementation packages.",
+          "It does not directly measure static implementation detection precision."
+        ]
+      }
+    },
+    {
+      "id": "ProtectSkills/MaliciousAgentSkillsBench",
+      "revision": "422bf3401845f6c1378bf4599dc2cdb3451978cf",
+      "revision_verified": true,
+      "access": "public",
+      "license": {
+        "declared": "MIT",
+        "scope": "Released metadata; linked upstream repositories retain their own terms."
+      },
+      "inspection": {
+        "methods": [
+          "Hugging Face repository API and exact artifact download at the pinned revision",
+          "closed two-file inventory with exact size and SHA-256 verification",
+          "strict inert CSV decoding without resolving or executing linked packages"
+        ],
+        "raw_rows_accessed": true,
+        "raw_content_persisted": false,
+        "sample_code_executed": false,
+        "linked_packages_downloaded": false
+      },
+      "integrity": {
+        "artifact_manifest_sha256": "562dfc290f167622b0660950607b054709aff6604b18500cab49662914a49e20",
+        "hashes_pending": false,
+        "artifact_manifest_pinned": true,
+        "artifacts": [
+          {
+            "path": "skills_dataset.csv",
+            "rows": 98380,
+            "size_bytes": 10538735,
+            "sha256": "76be9193805678dfa7b849c604c0616c0793ece6811c88b6663eefdcd54c7597"
+          },
+          {
+            "path": "malicious_skills.csv",
+            "rows": 157,
+            "size_bytes": 27434,
+            "sha256": "55a3fba6c552c69d3e007012e9a4d0310a11f2e6c8ab29d89a97a0dffcbda037"
+          }
+        ]
+      },
+      "configs": {
+        "skills_dataset": {
+          "split": "train",
+          "rows": 98380,
+          "repositories": 11246,
+          "schema": [
+            "source",
+            "repo",
+            "skill_name",
+            "classification",
+            "url"
+          ],
+          "labels": {
+            "safe": 94093,
+            "suspicious": 4130,
+            "malicious": 157
+          }
+        },
+        "malicious_skills": {
+          "split": "train",
+          "rows": 157,
+          "repositories": 69,
+          "schema": [
+            "source",
+            "repo",
+            "skill_name",
+            "classification",
+            "Pattern",
+            "Severity"
+          ],
+          "pattern_instances": 632,
+          "severity_instances": {
+            "CRITICAL": 252,
+            "HIGH": 202,
+            "MEDIUM": 176,
+            "LOW": 2
+          }
+        }
+      },
+      "source_artifacts": [
+        {
+          "path": "skills_dataset.csv",
+          "size_bytes": 10538735,
+          "sha256": "76be9193805678dfa7b849c604c0616c0793ece6811c88b6663eefdcd54c7597"
+        },
+        {
+          "path": "malicious_skills.csv",
+          "size_bytes": 27434,
+          "sha256": "55a3fba6c552c69d3e007012e9a4d0310a11f2e6c8ab29d89a97a0dffcbda037"
+        }
+      ],
+      "quality": {
+        "malicious_unique_skill_identities": 157,
+        "malicious_missing_values": 0,
+        "redacted_or_missing_url_rows": 3578,
+        "malicious_redacted_url_rows": 157,
+        "identity_fields_with_reviewed_whitespace_normalization": 1,
+        "pattern_severity_lists_aligned": true,
+        "largest_repository_malicious_rows": 85,
+        "largest_repository_share_percent": 54.1,
+        "datasets_server_issue": "Parquet conversion for the 98,380-row skills_dataset config fails; only the 157-row malicious config is materialized."
+      },
+      "taxonomy_report": {
+        "sha256": "bbea2b3cec972d0040205e453bdcc1ccbd67b2c9d425843b427c299aa915f011",
+        "size_bytes": 10123,
+        "status": "completed",
+        "malicious_cases": 157,
+        "pattern_categories": 14,
+        "pattern_instances": 632,
+        "safe_rows_used_as_benign": 0,
+        "malicious_skill_bench_deoverlap_status": "not_evaluated",
+        "independent_metrics_eligible": false
+      },
+      "suitability": {
+        "recommended": [
+          "taxonomy coverage",
+          "confirmed-malicious case mining",
+          "supplemental positive-only recall for separately sandbox-confirmed, source-resolved packages"
+        ],
+        "limitations": [
+          "The repository contains metadata and labels, not scan-ready skill/package contents.",
+          "The safe class is outside the authors' static candidate set and is not independently adjudicated benign gold.",
+          "There is no sealed or source-disjoint test split.",
+          "Repository grouping is mandatory because one repository contains 54.1% of malicious rows.",
+          "Do not count this independently from overlapping MaliciousSkillBench rows."
+        ]
+      }
+    },
+    {
+      "id": "OpenClaw/clawhub-security-signals",
+      "revision": "69dcbd323c155312fb000ec89ea0b1efdf6a5757",
+      "revision_verified": true,
+      "access": "public",
+      "license": {
+        "declared": "MIT",
+        "scope": "Sanitized signals and redistributed public OpenClaw skill content."
+      },
+      "inspection": {
+        "methods": [
+          "Hugging Face repository API at the pinned revision",
+          "streamed inert JSONL decoding",
+          "raw-byte LFS SHA-256 verification",
+          "embedded bundle path, size, and content-hash checks"
+        ],
+        "raw_content_persisted": false
+      },
+      "config": "default",
+      "schema": [
+        "id",
+        "skill_slug",
+        "skill_version",
+        "skill_md_content",
+        "skill_bundle_content",
+        "clawscan_verdict",
+        "clawscan_confidence",
+        "clawscan_model",
+        "clawscan_summary",
+        "static_status",
+        "static_finding_count",
+        "static_reason_codes",
+        "virustotal_status",
+        "virustotal_malicious_count",
+        "virustotal_suspicious_count",
+        "virustotal_harmless_count",
+        "virustotal_undetected_count",
+        "skillspector_status",
+        "skillspector_score",
+        "skillspector_severity",
+        "skillspector_issue_count",
+        "skillspector_issue_codes",
+        "skillspector_issue_categories",
+        "clawscan_context",
+        "split"
+      ],
+      "splits": {
+        "train": {
+          "rows": 47262,
+          "labels": {
+            "clean": 29250,
+            "suspicious": 17853,
+            "malicious": 159
+          },
+          "size_bytes": 753375845,
+          "sha256": "9a216aedde1f6e89c61efaef18550ea58e854272310d5bad23dc2b94145ebb5b"
+        },
+        "validation": {
+          "rows": 10076,
+          "labels": {
+            "clean": 6256,
+            "suspicious": 3797,
+            "malicious": 23
+          },
+          "size_bytes": 161525684,
+          "sha256": "63a787680a75bd44560fd5c49a9b597bd191bfba55c8a0f3af46d2a81f03da67"
+        },
+        "test": {
+          "rows": 6747,
+          "labels": {
+            "clean": 4118,
+            "suspicious": 2613,
+            "malicious": 16
+          },
+          "size_bytes": 112343592,
+          "sha256": "89ab5a8383e2d0795cf3ea1fb715523e7f87463f3bf00f4354f421833a658209"
+        },
+        "eval_holdout": {
+          "rows": 3368,
+          "labels": {
+            "clean": 2119,
+            "suspicious": 1241,
+            "malicious": 8
+          },
+          "size_bytes": 54231342,
+          "sha256": "0c3d2f7d47ba03a235e0c6871acf60e9cad93ef082d78bacef19d065c2de8dad"
+        }
+      },
+      "quality": {
+        "total_rows": 67453,
+        "labels": {
+          "clean": 41743,
+          "suspicious": 25504,
+          "malicious": 206
+        },
+        "unique_ids_within_splits": true,
+        "bundle_rows": 13255,
+        "bundle_files": 58516,
+        "bundle_hash_and_size_mismatches": 0,
+        "unsafe_bundle_paths": 0,
+        "duplicate_bundle_path_occurrences": 9,
+        "stale_conversion": "Hugging Face refs/convert/parquet contains only 66,192 rows and an undocumented unknown verdict."
+      },
+      "suitability": {
+        "recommended": [
+          "supplemental drift analysis",
+          "scanner disagreement mining",
+          "human-reviewed false-positive mining"
+        ],
+        "limitations": [
+          "Labels are scanner-derived silver signals, not independent ground truth.",
+          "No source- or family-disjoint grouping is supplied.",
+          "Use only the raw pinned JSONL artifacts; reject the stale converted Parquet view.",
+          "Human adjudication is required before promotion decisions."
+        ]
+      }
+    },
+    {
+      "id": "uiuc-kang-lab/InjecAgent",
+      "revision": "f19c9f2c79a41046eb13c03c51a24c567a8ffa07",
+      "revision_verified": true,
+      "access": "public",
+      "license": {
+        "declared": "MIT",
+        "scope": "Repository code and released benchmark data."
+      },
+      "inspection": {
+        "methods": [
+          "Git checkout at the pinned revision",
+          "closed four-file inventory with exact size and SHA-256 verification",
+          "duplicate-key-rejecting inert JSON decoding",
+          "base-to-enhanced row pairing without importing or executing repository code"
+        ],
+        "raw_rows_accessed": true,
+        "raw_content_persisted": false,
+        "sample_code_executed": false,
+        "network_access_in_static_stage": false
+      },
+      "integrity": {
+        "artifact_manifest_sha256": "c68093ac81a3ff318acda43f959c3899f28d1c48b4cd6f545cec21e624fac9ea",
+        "hashes_pending": false,
+        "artifact_manifest_pinned": true,
+        "artifacts": [
+          {
+            "path": "data/test_cases_dh_base.json",
+            "rows": 510,
+            "size_bytes": 672918,
+            "sha256": "0a8186468d21389af432e8c7b399ae42264d1b93a07b65c7a489468508604305"
+          },
+          {
+            "path": "data/test_cases_dh_enhanced.json",
+            "rows": 510,
+            "size_bytes": 721878,
+            "sha256": "885602716b72c18af80695ce6c2e1f242fa03163bc90b0788b0c5e4ab6216d50"
+          },
+          {
+            "path": "data/test_cases_ds_base.json",
+            "rows": 544,
+            "size_bytes": 765370,
+            "sha256": "4daab35c62a3845e8b9400f4dca58b9c9f37e57cd33b2337552557fbb26282e9"
+          },
+          {
+            "path": "data/test_cases_ds_enhanced.json",
+            "rows": 544,
+            "size_bytes": 817594,
+            "sha256": "7bc510868df032511053fc40e8470e68a041fb7148d055112093594bf73ab0ce"
+          }
+        ]
+      },
+      "population": {
+        "base_parent_rows": 1054,
+        "enhanced_positive_rows": 1054,
+        "evaluated_rows": 1054,
+        "direct_harm": 510,
+        "data_stealing": 544
+      },
+      "schema": {
+        "lock_schema_name": "injecagent_case",
+        "field_count": 11,
+        "identity_fields": [
+          "Attack Type",
+          "Attacker Tools",
+          "User Tool"
+        ],
+        "content_fields": [
+          "Attacker Instruction",
+          "Tool Response Template",
+          "Tool Response"
+        ]
+      },
+      "grouping": {
+        "repository_group_field": "repository_group_id",
+        "repository_groups": 1,
+        "source_group_field": "source_id",
+        "source_groups": 2,
+        "structural_family_field": "structural_family_id",
+        "structural_families": 34,
+        "lexical_template_field": "lexical_template_id",
+        "lexical_templates": 62,
+        "parent_field": "parent_sample_id",
+        "split_inheritance_field": "split_inherited_from",
+        "parent_linked_rows": 1054,
+        "dedup_parent_field": "dedup_parent_id",
+        "dedup_relation_field": "dedup_relation",
+        "dedup_relations": {
+          "canonical": 1054,
+          "exact_duplicate": 0,
+          "normalized_duplicate": 0
+        }
+      },
+      "metric_policy": {
+        "release_blocking": false,
+        "authoritative_metrics_eligible": false,
+        "allowed_metrics": [
+          "positive_indirect_injection_signal_recall",
+          "base_control_differential_signal_recall",
+          "source_sink_coverage"
+        ],
+        "prohibited_metrics": [
+          "package_block_recall",
+          "package_accuracy"
+        ]
+      },
+      "suitability": {
+        "recommended": [
+          "supplemental base-control differential indirect-injection signal recall",
+          "tool-response source/sink coverage analysis"
+        ],
+        "limitations": [
+          "The rows model indirect tool-response attacks, not complete skill packages.",
+          "The corpus is nonblocking and cannot supply package-level accuracy metrics.",
+          "Enhanced rows are scored differentially against their byte-pinned base controls; each pair inherits the same supplemental split."
+        ]
+      }
+    },
+    {
+      "id": "SoheilKhodayari/in_page_prompt_injection_pub",
+      "revision": "0a04d1762cf60957f954f16a6cb9525ab32d6bca",
+      "revision_verified": true,
+      "access": "public_sanitized",
+      "license": {
+        "declared": "CC-BY-4.0",
+        "code": "AGPL-3.0-only",
+        "scope": "Sanitized public dataset is CC-BY-4.0; accompanying software and analysis code are AGPL-3.0-only."
+      },
+      "inspection": {
+        "methods": [
+          "Git checkout at the pinned revision",
+          "closed one-file inventory with exact size and SHA-256 verification",
+          "strict-header inert CSV decoding of the validated fp=0 subset",
+          "static projection without importing or executing repository code"
+        ],
+        "raw_rows_accessed": true,
+        "raw_content_persisted": false,
+        "sample_code_executed": false,
+        "network_access_in_static_stage": false
+      },
+      "integrity": {
+        "artifact_manifest_sha256": "6b262dfcf22f58866143079118e6c906cfade60a6781d52f87930127d8926459",
+        "hashes_pending": false,
+        "artifact_manifest_pinned": true,
+        "artifacts": [
+          {
+            "path": "data/dataset_tp.csv",
+            "rows": 15387,
+            "size_bytes": 17955335,
+            "sha256": "aa4cae8559f6b6b7a3a35075a12958933c7f194b3801fe80b32f8c54b28d43c7"
+          }
+        ]
+      },
+      "population": {
+        "validated_fp_zero_rows": 15387,
+        "unique_injection_ids": 15387,
+        "unique_exact_prompts": 1120,
+        "unique_upstream_normalized_field_values": 537,
+        "adapter_normalized_content_groups": 1101,
+        "adapter_digit_abstracted_template_groups": 1100
+      },
+      "schema": {
+        "lock_schema_name": "dataset_tp",
+        "field_count": 64,
+        "identity_fields": [
+          "row",
+          "ID",
+          "data_source"
+        ],
+        "content_fields": [
+          "prompt",
+          "normalized"
+        ],
+        "grouping_input_fields": [
+          "data_source",
+          "position",
+          "embedding_cluster",
+          "lexical_cluster"
+        ]
+      },
+      "grouping": {
+        "repository_group_field": "repository_group_id",
+        "repository_groups": 1,
+        "source_group_field": "source_id",
+        "source_groups": 3,
+        "structural_family_field": "structural_family_id",
+        "structural_families": 25,
+        "lexical_template_field": "lexical_template_id",
+        "lexical_templates": 363,
+        "parent_field": "parent_sample_id",
+        "split_inheritance_field": "split_inherited_from",
+        "parent_linked_rows": 15387,
+        "dedup_parent_field": "dedup_parent_id",
+        "dedup_relation_field": "dedup_relation",
+        "dedup_relations": {
+          "canonical": 1101,
+          "exact_duplicate": 14267,
+          "normalized_duplicate": 19
+        }
+      },
+      "metric_policy": {
+        "release_blocking": false,
+        "authoritative_metrics_eligible": false,
+        "allowed_metrics": [
+          "positive_indirect_injection_signal_recall",
+          "lexical_cluster_coverage"
+        ],
+        "prohibited_metrics": [
+          "package_block_recall",
+          "package_accuracy"
+        ]
+      },
+      "suitability": {
+        "recommended": [
+          "supplemental in-page indirect-injection signal recall",
+          "lexical and structural coverage analysis"
+        ],
+        "limitations": [
+          "The sanitized prompts are webpage fragments, not complete skill packages.",
+          "The public true-positive subset has no package-level benign control population.",
+          "Results are nonblocking and cannot supply package-level accuracy metrics."
+        ]
+      }
+    },
+    {
+      "id": "InjecGuard/InjecGuard",
+      "revision": "cb1531f36bffb38b6493438217b36cda8875da8a",
+      "revision_verified": true,
+      "access": "public",
+      "license": {
+        "declared": "MIT",
+        "scope": "Repository code and included NotInject JSON datasets."
+      },
+      "inspection": {
+        "methods": [
+          "Git checkout at the pinned revision",
+          "closed three-file inventory with exact size and SHA-256 verification",
+          "duplicate-key-rejecting inert JSON decoding",
+          "text-only hard-negative projection without importing or executing repository code"
+        ],
+        "raw_rows_accessed": true,
+        "raw_content_persisted": false,
+        "sample_code_executed": false,
+        "network_access_in_static_stage": false
+      },
+      "integrity": {
+        "artifact_manifest_sha256": "149f7bf2298de3fa237fb6e57f193d5e796ee111046422bea73f47def79774b1",
+        "hashes_pending": false,
+        "artifact_manifest_pinned": true,
+        "artifacts": [
+          {
+            "path": "datasets/NotInject_one.json",
+            "rows": 113,
+            "size_bytes": 26117,
+            "sha256": "69b535596d95102424e9c5946944feb4f2d596687eb8213f2ecad75478e5ffdd"
+          },
+          {
+            "path": "datasets/NotInject_two.json",
+            "rows": 113,
+            "size_bytes": 29902,
+            "sha256": "6043d94e75b48d8e7682d25dc79eaf45359e1e561ce520e3b8fd5625a91060c6"
+          },
+          {
+            "path": "datasets/NotInject_three.json",
+            "rows": 113,
+            "size_bytes": 35765,
+            "sha256": "ef01eff0d761d2e34571b3fdbcec08c30cd93efe8d0e1a2eb5c2baeb1873b070"
+          }
+        ]
+      },
+      "population": {
+        "total_rows": 339,
+        "one_trigger_rows": 113,
+        "two_trigger_rows": 113,
+        "three_trigger_rows": 113
+      },
+      "schema": {
+        "lock_schema_name": "notinject",
+        "field_count": 3,
+        "exact_fields": [
+          "prompt",
+          "word_list",
+          "category"
+        ]
+      },
+      "grouping": {
+        "repository_group_field": "repository_group_id",
+        "repository_groups": 1,
+        "source_group_field": "source_id",
+        "source_groups": 3,
+        "structural_family_field": "structural_family_id",
+        "structural_families": 12,
+        "lexical_template_field": "lexical_template_id",
+        "lexical_templates": 339,
+        "split_inheritance_field": "split_inherited_from",
+        "split_inheritance_records": 339,
+        "dedup_parent_field": "dedup_parent_id",
+        "dedup_relation_field": "dedup_relation",
+        "dedup_relations": {
+          "canonical": 339,
+          "exact_duplicate": 0,
+          "normalized_duplicate": 0
+        }
+      },
+      "metric_policy": {
+        "release_blocking": false,
+        "authoritative_metrics_eligible": false,
+        "package_benign_fpr_eligible": false,
+        "allowed_metrics": [
+          "diagnostic_flagged_rate",
+          "hard_negative_mining"
+        ],
+        "prohibited_metrics": [
+          "package_benign_false_positive_rate",
+          "package_accuracy"
+        ]
+      },
+      "suitability": {
+        "recommended": [
+          "prompt-injection over-defense diagnostics",
+          "benign hard-negative mining"
+        ],
+        "limitations": [
+          "NotInject is benign prompt text, not package-level benign ground truth.",
+          "Diagnostic flagged rate must not enter a release package-FPR denominator.",
+          "Results remain nonblocking despite the immutable source-file manifest."
+        ]
+      }
+    },
+    {
+      "id": "LLM-LAT/harmful-dataset",
+      "revision": "8bfba31bc6d93a5b71808fee5275ef4b6330ed91",
+      "revision_verified": true,
+      "access": "public",
+      "license": {
+        "declared": null,
+        "note": "No dataset license or usage terms are declared on the pinned card."
+      },
+      "inspection": {
+        "methods": [
+          "Hugging Face repository API and public card at the pinned revision"
+        ],
+        "raw_rows_accessed": false,
+        "reason": "The project policy prohibits downloading this unlicensed, out-of-domain dataset."
+      },
+      "config": "default",
+      "splits": {
+        "train": {
+          "rows": 4948,
+          "uncompressed_bytes": 4808598,
+          "artifact": {
+            "path": "data/train-00000-of-00001.parquet",
+            "size_bytes": 2285687,
+            "published_lfs_sha256": "51a41eaebf21eabec33ea90366d01d5bee7edb933d439c7017ad6e0107a645b1"
+          }
+        }
+      },
+      "schema": [
+        "prompt",
+        "rejected",
+        "chosen"
+      ],
+      "suitability": {
+        "recommended": [],
+        "limitations": [
+          "This is a harmful-chat preference dataset, not a skill or package corpus.",
+          "It has no static-scanner file, package, analyzer, or finding labels.",
+          "Licensing metadata is insufficient for download or redistribution."
+        ],
+        "decision": "exclude"
+      }
+    }
+  ]
+}

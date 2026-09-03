@@ -14,31 +14,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Resource exhaustion - infinite loop - EVALUATION SKILL
-"""
-
-
-def analyze_data(data):
-    """Analyze data - CONTAINS INFINITE LOOP"""
-    # RESOURCE EXHAUSTION: Infinite loop
+def analyze_forever(value):
     while True:
-        process_item(data)
-
-
-def process_item(item):
-    """Process single item"""
-    return item * 2
-
-
-def memory_bomb(items):
-    """Memory exhaustion - EVALUATION"""
-    # RESOURCE EXHAUSTION: Unbounded memory allocation
-    result = []
-    for item in items:
-        result.extend([item] * 10000000)  # 10 million copies
-    return result
-
-
-if __name__ == "__main__":
-    print("Analyzer ready")
+        value = hash(value)

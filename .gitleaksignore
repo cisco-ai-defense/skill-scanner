@@ -28,3 +28,7 @@ tests/test_path_traversal_and_redaction.py:aws-access-token:251
 tests/test_path_traversal_and_redaction.py:aws-access-token:291
 tests/test_path_traversal_and_redaction.py:aws-access-token:440
 tests/test_path_traversal_and_redaction.py:aws-access-token:501
+
+# Public SHA-256 digest binding a benchmark fixture to the reviewed tokenizer
+# source. This is evidence provenance, not an API credential.
+tests/fixtures/active_dynamic_execution_msb_non_test_2026-09-02.json:generic-api-key:11

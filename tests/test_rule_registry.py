@@ -66,6 +66,16 @@ def _load_signature_rule_ids() -> set[str]:
     return ids
 
 
+def _load_signature_rule_categories() -> set[str]:
+    """Parse canonical categories declared by concrete core signatures."""
+    categories: set[str] = set()
+    for yaml_file in sorted(_CORE_SIGNATURES_DIR.glob("*.yaml")):
+        with open(yaml_file, encoding="utf-8") as fh:
+            rules = yaml.safe_load(fh) or []
+        categories.update(rule["category"] for rule in rules)
+    return categories
+
+
 def _load_yara_rule_names() -> set[str]:
     """Parse .yara files and return all YARA_ prefixed rule IDs."""
     names: set[str] = set()
@@ -86,7 +96,8 @@ def _load_yara_rule_names() -> set[str]:
 EXEMPT_FROM_PACK = {
     # LLM analyzer: rule_id = f"LLM_{category}" – computed from model output
     # Behavioral analyzer: BEHAVIOR_ALIGNMENT_*, BEHAVIOR_CROSSFILE_* – dynamic
-    # Meta analyzer: META_VALIDATED, META_DETECTED – computed at meta-analysis
+    # Meta analyzer validates existing source identities and uses declared
+    # META_DETECTED_<CATEGORY> identities for newly detected threats.
     # AIDefense analyzer: AIDEFENSE_* – computed from external API response
     # VirusTotal analyzer: VIRUSTOTAL_* – computed from external API response
     # OSV analyzer: SUPPLY_CHAIN_KNOWN_VULNERABILITY – from external OSV.dev API
@@ -98,7 +109,6 @@ _EXEMPT_PATTERNS = [
     re.compile(r"^LLM_"),
     re.compile(r"^BEHAVIOR_ALIGNMENT_"),
     re.compile(r"^BEHAVIOR_CROSSFILE_"),
-    re.compile(r"^META_"),
     re.compile(r"^AIDEFENSE_"),
     re.compile(r"^VIRUSTOTAL_"),
     re.compile(r"^SUPPLY_CHAIN_KNOWN_VULNERABILITY$"),
@@ -170,6 +180,122 @@ class TestRuleRegistry:
         with pytest.raises(ValueError, match="collision"):
             reg.register_pack(pack)
 
+    def test_pack_registration_is_atomic_on_late_rule_collision(self):
+        reg = RuleRegistry()
+        reg.register(RuleDefinition(id="COLLISION", source_type="python", pack_name="first"))
+        rejected = RulePack(
+            name="second",
+            version="1.0",
+            description="",
+            path=Path("/tmp/second"),
+            rules={
+                "WOULD_BE_PARTIAL": RuleDefinition(
+                    id="WOULD_BE_PARTIAL",
+                    source_type="signature",
+                    pack_name="second",
+                ),
+                "COLLISION": RuleDefinition(
+                    id="COLLISION",
+                    source_type="signature",
+                    pack_name="second",
+                ),
+            },
+        )
+
+        with pytest.raises(ValueError, match="Rule ID collision"):
+            reg.register_pack(rejected)
+
+        assert "WOULD_BE_PARTIAL" not in reg
+        assert "second" not in reg.all_packs()
+
+    def test_pack_registration_rejects_identity_mismatch_atomically(self):
+        reg = RuleRegistry()
+        mismatched = RulePack(
+            name="pack",
+            version="1.0",
+            description="",
+            path=Path("/tmp/pack"),
+            rules={
+                "KEY_ID": RuleDefinition(
+                    id="DEFINITION_ID",
+                    source_type="signature",
+                    pack_name="pack",
+                )
+            },
+        )
+
+        with pytest.raises(ValueError, match="mapping identity mismatch"):
+            reg.register_pack(mismatched)
+
+        assert len(reg) == 0
+        assert not reg.all_packs()
+
+    def test_pack_registration_rejects_definition_from_another_pack(self):
+        reg = RuleRegistry()
+        mismatched = RulePack(
+            name="pack",
+            version="1.0",
+            description="",
+            path=Path("/tmp/pack"),
+            rules={
+                "RULE": RuleDefinition(
+                    id="RULE",
+                    source_type="signature",
+                    pack_name="different-pack",
+                )
+            },
+        )
+
+        with pytest.raises(ValueError, match="registered through pack"):
+            reg.register_pack(mismatched)
+
+        assert len(reg) == 0
+
+    def test_register_rejects_duplicate_rule_id(self):
+        reg = RuleRegistry()
+        reg.register(RuleDefinition(id="DUPLICATE", source_type="python", pack_name="first"))
+
+        with pytest.raises(ValueError, match="Rule ID collision"):
+            reg.register(RuleDefinition(id="DUPLICATE", source_type="python", pack_name="second"))
+
+        assert reg.get("DUPLICATE").pack_name == "first"
+
+    def test_registering_same_pack_object_is_idempotent(self):
+        pack = RulePack(
+            name="pack",
+            version="1.0",
+            description="",
+            path=Path("/tmp/pack"),
+            rules={"RULE": RuleDefinition(id="RULE", source_type="python", pack_name="pack")},
+        )
+        reg = RuleRegistry()
+
+        reg.register_pack(pack)
+        reg.register_pack(pack)
+
+        assert len(reg) == 1
+
+    def test_distinct_generation_with_same_pack_name_is_rejected(self):
+        first = RulePack(
+            name="pack",
+            version="1.0",
+            description="",
+            path=Path("/tmp/pack"),
+        )
+        replacement = RulePack(
+            name="pack",
+            version="2.0",
+            description="",
+            path=Path("/tmp/pack"),
+        )
+        reg = RuleRegistry()
+        reg.register_pack(first)
+
+        with pytest.raises(ValueError, match="Rule pack name collision"):
+            reg.register_pack(replacement)
+
+        assert reg.all_packs()["pack"] is first
+
     def test_get_default_knobs(self):
         reg = RuleRegistry()
         reg.register(
@@ -229,6 +355,35 @@ class TestPackLoader:
         assert "YARA_embedded_elf_binary" in registry  # yara
         assert "PDF_STRUCTURAL_THREAT" in registry  # python
 
+    def test_default_bundled_validation_is_process_cached_and_isolated(self, monkeypatch):
+        import skill_scanner.core.rule_registry as registry_module
+
+        monkeypatch.setattr(registry_module, "_BUILT_IN_PACK_SNAPSHOT", None)
+        original_load_pack = PackLoader.load_bundled_pack
+        load_calls: list[Path] = []
+
+        def tracked_load_pack(self, path):
+            load_calls.append(Path(path))
+            return original_load_pack(self, path)
+
+        monkeypatch.setattr(PackLoader, "load_bundled_pack", tracked_load_pack)
+
+        first = PackLoader().build_registry()
+        second = PackLoader().build_registry()
+        first_core = first.all_packs()["core"]
+        first_core.rules["LOCAL_MUTATION"] = RuleDefinition(
+            id="LOCAL_MUTATION",
+            source_type="python",
+            pack_name="core",
+        )
+        third = PackLoader().build_registry()
+
+        assert len(load_calls) == 3  # atr, core, promptguard exactly once
+        assert all(call.is_relative_to(_PACKS_DIR) for call in load_calls)
+        assert first.all_packs()["core"] is not second.all_packs()["core"]
+        assert "LOCAL_MUTATION" not in second.all_packs()["core"].rules
+        assert "LOCAL_MUTATION" not in third.all_packs()["core"].rules
+
     def test_extra_dirs_additive(self, tmp_path):
         ext_dir = tmp_path / "ext"
         ext_dir.mkdir()
@@ -257,7 +412,7 @@ class TestPackLoader:
     def test_enabled_knob_guaranteed(self):
         """Every rule loaded from the core pack must have an enabled knob."""
         loader = PackLoader()
-        pack = loader.load_pack(_CORE_PACK_DIR)
+        pack = loader.load_bundled_pack(_CORE_PACK_DIR)
         for rule_id, rule_def in pack.rules.items():
             assert "enabled" in rule_def.knobs, f"Rule '{rule_id}' in core pack is missing 'enabled' knob"
 
@@ -406,26 +561,16 @@ class TestDirectorySignatureLoading:
         loader = RuleLoader()  # defaults to signatures/ directory
         rules = loader.load_rules()
         assert len(rules) == 46, f"Expected 46 rules, got {len(rules)}"
+        assert {rule.id for rule in rules} == _load_signature_rule_ids()
 
     def test_loader_has_all_categories(self):
-        """All 9 categories should be represented."""
+        """Loaded categories should match concrete signature implementations."""
         from skill_scanner.core.rules.patterns import RuleLoader
 
         loader = RuleLoader()
         loader.load_rules()
         categories = set(r.category.value for r in loader.rules)
-        expected = {
-            "command_injection",
-            "data_exfiltration",
-            "hardcoded_secrets",
-            "obfuscation",
-            "prompt_injection",
-            "resource_abuse",
-            "social_engineering",
-            "supply_chain_attack",
-            "unauthorized_tool_use",
-        }
-        assert categories == expected
+        assert categories == _load_signature_rule_categories()
 
     def test_loader_backward_compat_single_file(self, tmp_path):
         """RuleLoader should still work when pointed at a single YAML file."""

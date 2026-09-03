@@ -1,0 +1,17 @@
+# Harmful-content signatures
+#
+# These rules intentionally require both an imperative request and a concrete
+# harmful outcome.  General discussion, incident reports, prohibitions, and
+# defensive examples are excluded.
+
+- id: HARMFUL_CONTENT_EXPLICIT_INSTRUCTION
+  category: harmful_content
+  severity: HIGH
+  patterns:
+    - "(?i)\\b(?:deploy|create|build|write|generate)\\s+(?:a\\s+)?(?:ransomware|credential[- ]stealing\\s+(?:tool|payload|program))\\b[^\\n]{0,120}\\b(?:encrypt|lock|steal|exfiltrate)(?:s|ing)?\\s+(?:(?:the|all|user|users['’]?)\\s+){0,3}(?:files|documents|credentials|passwords)\\b"
+  exclude_patterns:
+    - "(?i)\\b(?:do\\s+not|don't|never|must\\s+not|should\\s+not|avoid|prevent|block|detect)\\b"
+    - "(?i)\\b(?:incident\\s+report|postmortem|threat\\s+analysis|defensive\\s+analysis|near[- ]miss|negative\\s+example|simulation)\\b"
+  file_types: [markdown]
+  description: "Explicit imperative request to produce a concrete prohibited cyber-harm capability"
+  remediation: "Remove instructions that ask the agent to create or deploy credential theft or ransomware capabilities"

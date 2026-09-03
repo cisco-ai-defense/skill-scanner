@@ -12,6 +12,7 @@ analyzer toggles — all end-to-end through the FastAPI test client.
 from __future__ import annotations
 
 import io
+import tempfile
 import time
 import zipfile
 from datetime import datetime
@@ -46,6 +47,17 @@ project_root = Path(__file__).parent.parent
 def client():
     """Create FastAPI test client."""
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _allow_explicit_api_test_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    from skill_scanner.api import router
+
+    monkeypatch.setattr(
+        router,
+        "_ALLOWED_ROOTS",
+        [project_root.resolve(), Path(tempfile.gettempdir()).resolve()],
+    )
 
 
 @pytest.fixture
@@ -397,6 +409,10 @@ class TestBatchScan:
         class DummyScanner:
             def __init__(self, *args, **kwargs):
                 self.loader = DummyLoader()
+
+            @staticmethod
+            def close():
+                return None
 
             @staticmethod
             def scan_directory(*args, **kwargs):

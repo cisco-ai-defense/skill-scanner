@@ -108,6 +108,17 @@ class TestScanRepoCommand:
         assert code == 1, f"Expected exit 1 for invalid repo, got {code}.\nstderr: {stderr}"
         assert stderr.strip(), "Expected an error message on stderr"
 
+    def test_scan_repo_invalid_credential_url_does_not_echo_password(self):
+        """Rejected URL userinfo is redacted before the error reaches stderr."""
+        password = "repo-" + "password-123456789"
+
+        stdout, stderr, code = _invoke_scan_repo(f"https://user:{password}@github.com/owner/repo")
+
+        assert code == 1, f"Expected exit 1 for credential URL, got {code}.\nstderr: {stderr}"
+        assert stdout == ""
+        assert password not in stderr
+        assert "https://user:<redacted>@github.com/owner/repo" in stderr
+
     def test_scan_repo_clone_failure(self):
         """When clone_repo raises RepoFetchError, scan-repo exits 1."""
         with patch("skill_scanner.core.repo_fetcher.clone_repo", _fake_clone_raises):

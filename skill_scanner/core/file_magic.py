@@ -80,6 +80,15 @@ _MAGIKA_GROUP_TO_FAMILY: dict[str, str] = {
 # at the family level, but may still be a label-level mismatch.
 _TEXT_COMPATIBLE_FAMILIES = frozenset({"text", "code"})
 
+_OOXML_DOCUMENT_IDENTITIES: dict[str, tuple[str, str]] = {
+    ".docx": ("document/docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    ".docm": ("document/docx", "application/vnd.ms-word.document.macroEnabled.12"),
+    ".xlsx": ("document/xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ".xlsm": ("document/xlsx", "application/vnd.ms-excel.sheet.macroEnabled.12"),
+    ".pptx": ("document/pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+    ".pptm": ("document/pptx", "application/vnd.ms-powerpoint.presentation.macroEnabled.12"),
+}
+
 
 # ---------------------------------------------------------------------------
 # Extension → expected family
@@ -111,8 +120,11 @@ _EXTENSION_FAMILY: dict[str, str] = {
     ".apk": "archive",
     # Documents (ZIP-based Office formats)
     ".docx": "archive",
+    ".docm": "archive",
     ".xlsx": "archive",
+    ".xlsm": "archive",
     ".pptx": "archive",
+    ".pptm": "archive",
     ".odt": "archive",
     ".ods": "archive",
     ".odp": "archive",
@@ -187,7 +199,12 @@ _EXTENSION_EXPECTED_LABELS: dict[str, frozenset[str]] = {
     ".yaml": frozenset({"yaml"}),
     ".yml": frozenset({"yaml"}),
     ".xml": frozenset({"xml", "svg", "rdf"}),
-    ".html": frozenset({"html"}),
+    # Magika labels self-contained HTML applications that embed Vue template
+    # directives as ``vue`` even when the artifact is a complete, browser-
+    # loadable HTML document.  Both labels are text/code web content; treating
+    # the subtype choice as obfuscation creates noise without hiding a binary
+    # or cross-family mismatch.
+    ".html": frozenset({"html", "vue"}),
     ".css": frozenset({"css", "scss", "less"}),
     ".md": frozenset({"markdown"}),
     ".txt": frozenset({"txt", "txtascii", "txtutf8", "txtutf16"}),
@@ -460,6 +477,11 @@ def check_extension_mismatch(
     # Families match exactly → no group-level mismatch
     if expected_family == actual_family:
         pass  # Fall through to label-level check for text files
+    # Magika identifies OOXML by its semantic document family, while the
+    # deterministic fallback identifies the same bytes as their ZIP container.
+    # An exact extension + Magika label/MIME match is therefore compatible.
+    elif _is_matching_ooxml_document(ext, magic):
+        return None
     # Text-compatible: both sides are text-like (text ↔ code)
     elif expected_family in _TEXT_COMPATIBLE_FAMILIES and actual_family in _TEXT_COMPATIBLE_FAMILIES:
         pass  # Fall through to label-level check
@@ -480,6 +502,14 @@ def check_extension_mismatch(
         return _check_text_label_mismatch(file_path, ext, magic)
 
     return None
+
+
+def _is_matching_ooxml_document(ext: str, magic: MagicMatch) -> bool:
+    identity = _OOXML_DOCUMENT_IDENTITIES.get(ext)
+    if identity is None:
+        return False
+    content_type, mime_type = identity
+    return magic.content_type == content_type and (not magic.mime_type or magic.mime_type == mime_type)
 
 
 def _severity_for_group_mismatch(

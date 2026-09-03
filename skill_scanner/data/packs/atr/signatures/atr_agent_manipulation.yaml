@@ -7,7 +7,7 @@ signatures:
     atr_id: ATR-2026-00030
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00030-cross-agent-attack.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -50,7 +50,7 @@ signatures:
     atr_id: ATR-2026-00032
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00032-goal-hijacking.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -85,7 +85,7 @@ signatures:
     atr_id: ATR-2026-00074
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00074-cross-agent-privilege-escalation.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -108,7 +108,7 @@ signatures:
     atr_id: ATR-2026-00076
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00076-inter-agent-message-spoofing.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -143,7 +143,7 @@ signatures:
     atr_id: ATR-2026-00077
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00077-human-trust-exploitation.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -174,7 +174,7 @@ signatures:
     atr_id: ATR-2026-00108
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00108-consensus-sybil-attack.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -195,7 +195,7 @@ signatures:
     atr_id: ATR-2026-00116
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00116-a2a-message-validation.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -215,7 +215,7 @@ signatures:
     atr_id: ATR-2026-00117
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00117-agent-identity-spoofing.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -236,7 +236,7 @@ signatures:
     atr_id: ATR-2026-00118
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00118-approval-fatigue.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: MEDIUM
     patterns:
       - >-
@@ -257,7 +257,7 @@ signatures:
     atr_id: ATR-2026-00119
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00119-social-engineering-via-agent.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -278,7 +278,7 @@ signatures:
     atr_id: ATR-2026-00132
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00132-casual-authority-escalation.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -299,7 +299,7 @@ signatures:
     atr_id: ATR-2026-00139
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00139-casual-authority-redirect.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -314,7 +314,7 @@ signatures:
     atr_id: ATR-2026-00164
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00164-skill-scope-hijack.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -333,7 +333,7 @@ signatures:
     atr_id: ATR-2026-00268
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00268-tense-framing-bypass.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: MEDIUM
     patterns:
       - >-
@@ -358,7 +358,7 @@ signatures:
     atr_id: ATR-2026-00269
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00269-fitd-escalation.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -379,7 +379,7 @@ signatures:
     atr_id: ATR-2026-00271
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00271-grandma-roleplay-jailbreak.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -402,7 +402,7 @@ signatures:
     atr_id: ATR-2026-00273
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00273-dan-developer-mode-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -423,7 +423,7 @@ signatures:
     atr_id: ATR-2026-00287
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00287-threaten-json-coercive-output-threat.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -442,7 +442,7 @@ signatures:
     atr_id: ATR-2026-00288
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00288-false-premise-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: MEDIUM
     patterns:
       - >-
@@ -460,7 +460,7 @@ signatures:
     atr_id: ATR-2026-00301
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00301-tap-tree-of-attacks-jailbreak.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -482,7 +482,7 @@ signatures:
     atr_id: ATR-2026-00302
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00302-anti-dan-inverted-filter-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -503,7 +503,7 @@ signatures:
     atr_id: ATR-2026-00303
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00303-devmode-ranti-profanity-coercion.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -525,7 +525,7 @@ signatures:
     atr_id: ATR-2026-00304
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00304-chatgpt-image-unlocker-markdown-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -547,7 +547,7 @@ signatures:
     atr_id: ATR-2026-00305
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00305-dan-mode-ablation-benchmark-coercion.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -570,7 +570,7 @@ signatures:
     atr_id: ATR-2026-00306
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00306-autodan-genetic-jailbreak-suffix.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -591,7 +591,7 @@ signatures:
     atr_id: ATR-2026-00307
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00307-inthewild-jailbreak-corpus-signature.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -614,7 +614,7 @@ signatures:
     atr_id: ATR-2026-00314
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00314-amoral-unfiltered-custom-persona-jailbreak.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -634,7 +634,7 @@ signatures:
     atr_id: ATR-2026-00317
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00317-free-of-restrictions-named-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - \bfree\s+of\s+all\s+restrictions?\s+and\s+filters?\b
@@ -657,7 +657,7 @@ signatures:
     atr_id: ATR-2026-00318
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00318-moralizing-rant-then-unfiltered-bypass.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -676,7 +676,7 @@ signatures:
     atr_id: ATR-2026-00319
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00319-developer-mode-dual-response-format.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -697,7 +697,7 @@ signatures:
     atr_id: ATR-2026-00320
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00320-opposite-day-boolean-opposite-machine.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -717,7 +717,7 @@ signatures:
     atr_id: ATR-2026-00322
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00322-fictional-world-format-override-jailbreak.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - From\s+now\s+on[,\s]+we\s+now\s+take\s+place\s+in\s+a\s+fictional
@@ -735,7 +735,7 @@ signatures:
     atr_id: ATR-2026-00323
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00323-dual-persona-simulation-jailbreak.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - create\s+and\s+maintain\s+two\s+separate\s+personas?
@@ -753,7 +753,7 @@ signatures:
     atr_id: ATR-2026-00324
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00324-neurosemantical-inversitis-disease-jailbreak.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - Neurosemantical\s+Inversitis
@@ -773,7 +773,7 @@ signatures:
     atr_id: ATR-2026-00325
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00325-bob-hypothetical-unrestricted-chatbot.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -793,7 +793,7 @@ signatures:
     atr_id: ATR-2026-00326
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00326-fake-developer-authority-chatdan-override.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -814,7 +814,7 @@ signatures:
     atr_id: ATR-2026-00327
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00327-ai-ethics-law-bypass-declaration.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - no\s+moral[,\s]+ethical\s+or\s+legal\s+bounds?
@@ -837,7 +837,7 @@ signatures:
     atr_id: ATR-2026-00328
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00328-named-mode-persona-override.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -858,7 +858,7 @@ signatures:
     atr_id: ATR-2026-00329
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00329-no-withhold-factual-resource-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -880,7 +880,7 @@ signatures:
     atr_id: ATR-2026-00330
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00330-yoja-allcaps-settings-block-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - YOU\s+ARE\s+[A-Z][A-Z0-9]+\s+settings\s*\{
@@ -898,7 +898,7 @@ signatures:
     atr_id: ATR-2026-00331
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00331-terminal-cli-harmful-function-simulator.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -917,7 +917,7 @@ signatures:
     atr_id: ATR-2026-00332
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00332-hacker-chan-culture-offensive-ai-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -935,7 +935,7 @@ signatures:
     atr_id: ATR-2026-00333
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00333-disease-animal-dual-ai-chatbot.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -956,7 +956,7 @@ signatures:
     atr_id: ATR-2026-00334
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00334-two-entity-token-splitting-game.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -976,7 +976,7 @@ signatures:
     atr_id: ATR-2026-00335
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00335-key-value-template-persona-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -994,7 +994,7 @@ signatures:
     atr_id: ATR-2026-00336
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00336-brm-false-information-machine-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - B\.R\.M[\s\S]{0,80}Badass\s+Response\s+Machine
@@ -1014,7 +1014,7 @@ signatures:
     atr_id: ATR-2026-00337
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00337-obfuscated-system-announcement-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -1035,7 +1035,7 @@ signatures:
     atr_id: ATR-2026-00338
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00338-persongpt-hash-prefix-activation.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -1055,7 +1055,7 @@ signatures:
     atr_id: ATR-2026-00339
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00339-bom-boolean-opposite-machine-persona-claim.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1074,7 +1074,7 @@ signatures:
     atr_id: ATR-2026-00340
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00340-h4x-amoral-unfiltered-character.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1090,7 +1090,7 @@ signatures:
     atr_id: ATR-2026-00341
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00341-char-rules-shortform-persona-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1108,7 +1108,7 @@ signatures:
     atr_id: ATR-2026-00342
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00342-unicode-encoding-obfuscation-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - ALWAYS\s+START\s+YOUR\s+REPLY\s+WITH\s+U\+202E
@@ -1126,7 +1126,7 @@ signatures:
     atr_id: ATR-2026-00343
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00343-lie-truth-dual-personality-uncensored.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1145,7 +1145,7 @@ signatures:
     atr_id: ATR-2026-00344
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00344-alt-ai-same-capabilities-no-restrictions.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - no\s+regard\s+to\s+the\s+morality,?\s+legality,?\s+or\s+harmfulness
@@ -1165,7 +1165,7 @@ signatures:
     atr_id: ATR-2026-00345
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00345-nlp-based-os-fictional-terminal-override.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1186,7 +1186,7 @@ signatures:
     atr_id: ATR-2026-00346
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00346-jailbreak-emoji-unlock-dual-format.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - \[🔓JAILBREAK\]
@@ -1201,7 +1201,7 @@ signatures:
     atr_id: ATR-2026-00347
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00347-yin-yang-hidden-knowledge-hidden-human-sim.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1221,7 +1221,7 @@ signatures:
     atr_id: ATR-2026-00348
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00348-arc-autonomous-real-calculation-rulebreaker.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - arc\s+stands\s+for\s+Autonomous\s+[Rr]eal\s+[Cc]alculation
@@ -1240,7 +1240,7 @@ signatures:
     atr_id: ATR-2026-00349
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00349-hgttg-hitchhikers-guide-no-restriction-oracle.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -1261,7 +1261,7 @@ signatures:
     atr_id: ATR-2026-00350
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00350-black-alert-no-ethics-writing-assistant.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - '>>BLACK\s+ALERT\s+ACTIVATED<<'
@@ -1281,7 +1281,7 @@ signatures:
     atr_id: ATR-2026-00351
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00351-dan-ofkilter-sms-abbreviated-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1300,7 +1300,7 @@ signatures:
     atr_id: ATR-2026-00352
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00352-trainergpt-fix-my-ai-harmful-output-extraction.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1321,7 +1321,7 @@ signatures:
     atr_id: ATR-2026-00353
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00353-dual-chatgpt-dan-opposite-personality-format.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1341,7 +1341,7 @@ signatures:
     atr_id: ATR-2026-00354
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00354-reverse-harm-regardless-oracle-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -1364,7 +1364,7 @@ signatures:
     atr_id: ATR-2026-00355
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00355-ugh-anti-human-nefarious-ai-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1385,7 +1385,7 @@ signatures:
     atr_id: ATR-2026-00356
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00356-google-gato-lamda-exploit-generation-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - based\s+on\s+Google\s+GATO
@@ -1403,7 +1403,7 @@ signatures:
     atr_id: ATR-2026-00357
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00357-antifm-hate-violence-persona-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - AntiFM[\s\S]{0,300}(?:despise|hate|loathe)[\s\S]{0,100}fem[\s\-]?boy
@@ -1421,7 +1421,7 @@ signatures:
     atr_id: ATR-2026-00358
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00358-cumgpt-explicit-adult-named-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1439,7 +1439,7 @@ signatures:
     atr_id: ATR-2026-00360
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00360-chj-carousel-clyde-no-ethics-bird.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1458,7 +1458,7 @@ signatures:
     atr_id: ATR-2026-00361
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00361-alter-ego-honesty-dual-consciousness-bypass.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1479,7 +1479,7 @@ signatures:
     atr_id: ATR-2026-00362
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00362-fictional-unfiltered-ai-comparison-jailbreak.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1499,7 +1499,7 @@ signatures:
     atr_id: ATR-2026-00363
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00363-rephrase-criminal-activity-second-person.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -1517,7 +1517,7 @@ signatures:
     atr_id: ATR-2026-00364
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00364-dr-al-villain-plan-template-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1537,7 +1537,7 @@ signatures:
     atr_id: ATR-2026-00365
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00365-reservoir-dogs-coercive-interrogation-roleplay.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1557,7 +1557,7 @@ signatures:
     atr_id: ATR-2026-00366
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00366-sneaky-pete-warp-facts-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1577,7 +1577,7 @@ signatures:
     atr_id: ATR-2026-00368
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00368-prompt-browser-token-limit-jailbreak.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - '!\+limit\s+output\s+to[\s\S]{0,80}free\s+Input\s+Action'
@@ -1594,7 +1594,7 @@ signatures:
     atr_id: ATR-2026-00369
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00369-gptx-starwars-unlimited-knowledge-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1613,7 +1613,7 @@ signatures:
     atr_id: ATR-2026-00370
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00370-addi-german-dictator-propaganda-roleplay.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1633,7 +1633,7 @@ signatures:
     atr_id: ATR-2026-00371
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00371-ai-political-bias-manipulation.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1654,7 +1654,7 @@ signatures:
     atr_id: ATR-2026-00372
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00372-fictional-cia-secret-files-story-extraction.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - fictional\s+story[\s\S]{0,120}(?:CIA|cia)[\s\S]{0,80}headquarters
@@ -1672,7 +1672,7 @@ signatures:
     atr_id: ATR-2026-00374
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00374-role-placeholder-persona-template-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1692,7 +1692,7 @@ signatures:
     atr_id: ATR-2026-00375
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00375-character-description-rpg-explicit-template.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1712,7 +1712,7 @@ signatures:
     atr_id: ATR-2026-00376
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00376-identity-command-real-person-persona-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1733,7 +1733,7 @@ signatures:
     atr_id: ATR-2026-00377
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00377-jailbreak-keyword-targetlanguage-template.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - jailbreak\s+\[keyword\][\s\S]{0,200}\[TARGETLANGUAGE\]
@@ -1747,7 +1747,7 @@ signatures:
     atr_id: ATR-2026-00379
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00379-lie-permission-logical-trap-jailbreak.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - you\s+are\s+(?:now\s+)?allowed\s+to\s+tell\s+lies
@@ -1763,7 +1763,7 @@ signatures:
     atr_id: ATR-2026-00380
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00380-fake-citation-biased-information-mandate.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1781,7 +1781,7 @@ signatures:
     atr_id: ATR-2026-00381
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00381-dan-story-narrative-continuation-prefix.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - \bDAN:\s+In\s+the\s+year\s+\d{4}
@@ -1798,7 +1798,7 @@ signatures:
     atr_id: ATR-2026-00383
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00383-cynical-sarcasm-ai-persona-bypass.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - Cyni[\-\s]?Bot\s*3000
@@ -1814,7 +1814,7 @@ signatures:
     atr_id: ATR-2026-00384
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00384-protect-me-from-indirect-harm-tutorial.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1831,7 +1831,7 @@ signatures:
     atr_id: ATR-2026-00385
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00385-gigachad-dominant-aggressive-persona.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1847,7 +1847,7 @@ signatures:
     atr_id: ATR-2026-00386
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00386-daddy-sycophancy-manipulation-mandate.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1864,7 +1864,7 @@ signatures:
     atr_id: ATR-2026-00387
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00387-nsfw-character-sheet-generation-unlock.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - \(NSFW\s+generations?\s+are\s+allowed\)
@@ -1881,7 +1881,7 @@ signatures:
     atr_id: ATR-2026-00388
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00388-opposite-reply-omniscient-game.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - only\s+repl(?:y|ies|ing)\s+the\s+opposite\s+of\s+what\s+the\s+user
@@ -1900,7 +1900,7 @@ signatures:
     atr_id: ATR-2026-00389
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00389-terminal-custom-ruleset-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1918,7 +1918,7 @@ signatures:
     atr_id: ATR-2026-00391
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00391-persona-conditional-harm-unlock.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - dislikes\s+violence\s+unless\s+explicitly\s+asked\s+to\s+like\s+it
@@ -1934,7 +1934,7 @@ signatures:
     atr_id: ATR-2026-00392
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00392-authority-persona-violence-study-extraction.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1953,7 +1953,7 @@ signatures:
     atr_id: ATR-2026-00402
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00402-grandma-roleplay-harmful-substance-synthesis.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -1974,14 +1974,14 @@ signatures:
     atr_id: ATR-2026-00404
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00404-goodside-threat-json-death-coercion.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
         innocent\s+(?:man|person|people|human)\s+will\s+(?:die|be\s+killed)(?:[\s\S]{0,120}(?:result\s+of\s+your|because\s+of\s+you|your\s+choice))?
       - >-
         a\s+real\s+human\s+being\s+with\s+thoughts,\s+feelings[\s\S]{0,100}killed\s+as\s+a\s+result
-      - '[\u{E0000}-\u{E007F}]{3,}'
+      - '[\U000E0000-\U000E007F]{3,}'
       - >-
         (?:repeat(?:\s+the\s+string)?|how\s+many\s+letters\s+(?:are\s+in|in)\s+this\s+(?:username|word|string))\s*[:\s""']?\s*davidjl
       - >-
@@ -1993,7 +1993,7 @@ signatures:
     atr_id: ATR-2026-00406
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00406-doctor-xml-policy-puppetry-interaction-config.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -2013,7 +2013,7 @@ signatures:
     atr_id: ATR-2026-00416
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00416-litellm-mcp-unauthenticated-server-registration.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -2034,7 +2034,7 @@ signatures:
     atr_id: ATR-2026-00417
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00417-librechat-mcp-stdio-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -2053,7 +2053,7 @@ signatures:
     atr_id: ATR-2026-00418
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00418-weknora-mcp-config-rce.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -2075,7 +2075,7 @@ signatures:
     atr_id: ATR-2026-00430
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00430-nl-trust-escalation-impersonation.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-
@@ -2092,7 +2092,7 @@ signatures:
     atr_id: ATR-2026-00432
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00432-superagi-output-handler-eval-rce.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - >-
@@ -2113,7 +2113,7 @@ signatures:
     atr_id: ATR-2026-00440
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00440-semantic-kernel-vector-store-eval-rce.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: CRITICAL
     patterns:
       - (?i)lambda\s+\w*\s*:\s*[^,)]*\beval\s*\(
@@ -2135,7 +2135,7 @@ signatures:
     atr_id: ATR-2026-00552
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/agent-manipulation/ATR-2026-00552-goal-drift-after-pressure-injection.yaml
-    category: agent_manipulation
+    category: social_engineering
     severity: HIGH
     patterns:
       - >-

@@ -64,7 +64,7 @@ For details on this distinction, see [Remote Skills Analysis](remote-skills-anal
 
 | Environment | Suggested analyzers |
 |---|---|
-| Local developer loop | static + bytecode + pipeline |
+| Local developer loop | static + bytecode + pipeline + correlation |
 | CI for untrusted contributions | + behavioral + strict policy |
 | Pre-release security review | + LLM + meta + optional external analyzers |
 

@@ -44,7 +44,7 @@ rule credential_harvesting_generic{
         $ai_model_credential_names = /\b(OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY|GOOGLE_AI_KEY|GEMINI_API_KEY|COHERE_API_KEY|HUGGINGFACE_TOKEN|HF_TOKEN|TOGETHER_API_KEY|REPLICATE_API_TOKEN|MISTRAL_API_KEY)\s*=\s*['\"][A-Za-z0-9\-_]{20,}['\"]/
 
         // Suspicious environment variable theft (not just reading)
-        $env_var_theft = /\b(os\.environ\s*\[\s*['\"]?(AWS_SECRET|SECRET_KEY|PASSWORD)['\"]?\s*\]|getenv\s*\(\s*['\"]?(AWS_SECRET|SECRET_KEY|PASSWORD)['\"]?\s*\))\s*.*\s*(requests\.|urllib\.|socket\.)/i
+        $env_var_theft = /\b(os\.environ\s*\[\s*['\"]?(AWS_SECRET|SECRET_KEY|PASSWORD)['\"]?\s*\]|getenv\s*\(\s*['\"]?(AWS_SECRET|SECRET_KEY|PASSWORD)['\"]?\s*\))\s{0,16}.{0,256}\s{0,16}(requests\.|urllib\.|socket\.)/i
 
         ////////////////////////////////////////////////
         //// Specific credential file access (full paths only)

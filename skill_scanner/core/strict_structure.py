@@ -113,7 +113,7 @@ class SkillValidator:
     ALLOWED_SUBDIRS = frozenset({"scripts", "references", "assets"})
     NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?!-))*[a-z0-9]$|^[a-z0-9]$")
 
-    def validate(self, path: Path) -> ValidationResult:
+    def validate(self, path: str | Path) -> ValidationResult:
         """Validate a skill directory against the Agent Skills specification.
 
         Args:

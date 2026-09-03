@@ -1,7 +1,7 @@
 # Skill Scanner
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![CPython 3.11–3.14](https://img.shields.io/badge/CPython-3.11--3.14-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://img.shields.io/pypi/v/cisco-ai-skill-scanner.svg)](https://pypi.org/project/cisco-ai-skill-scanner/)
 [![CI](https://github.com/cisco-ai-defense/skill-scanner/actions/workflows/python-tests.yml/badge.svg)](https://github.com/cisco-ai-defense/skill-scanner/actions/workflows/python-tests.yml)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white)](https://discord.com/invite/nKWtDcXxtx)
@@ -9,7 +9,7 @@
 [![AI Security Framework](https://img.shields.io/badge/AI%20Security-Framework-orange)](https://learn-cloudsecurity.cisco.com/ai-security-framework)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/cisco-ai-defense/skill-scanner)
 
-A best-effort security scanner for AI Agent Skills that detects prompt injection, data exfiltration, and malicious code patterns. Combines **pattern-based detection** (YAML + YARA), **LLM-as-a-judge**, and **behavioral dataflow analysis** to maximize detection coverage of probable threats while minimizing false positives.
+A best-effort security scanner for AI Agent Skills that detects prompt injection, data exfiltration, and malicious code patterns. It combines **pattern-based detection** (YAML + YARA-X), **AST and dataflow analysis**, an optional **LLM-as-a-judge**, and a bounded **CEL decision layer** over typed detector facts.
 
 > **Important:** This scanner provides best-effort detection, not comprehensive or complete coverage. A scan that returns no findings does not guarantee that a skill is free of all threats. See [Scope and Limitations](#scope-and-limitations) below.
 
@@ -20,7 +20,8 @@ Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agen
 ## Highlights
 
 - **Multi-Engine Detection** - Static analysis, behavioral dataflow, LLM semantic analysis, and cloud-based scanning for layered, best-effort coverage
-- **False Positive Filtering** - Meta-analyzer significantly reduces noise while preserving detection capability
+- **Typed CEL Decisions** - The core scanner uses the official `cel-go` v0.32.0 runtime to correlate bounded facts after deterministic detection and before optional LLM analysis
+- **Finding Review** - The optional Meta-analyzer correlates, prioritizes, and can filter findings; paired accuracy validation remains pending
 - **CI/CD Ready** - SARIF output for GitHub Code Scanning, [reusable GitHub Actions workflow](docs/github-actions.md), exit codes for build failures
 - **Pre-commit Hook** - [Standard pre-commit framework](https://pre-commit.com/) integration to scan skills before every commit
 - **Extensible** - Plugin architecture for custom analyzers
@@ -36,9 +37,35 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 **Key limitations:**
 
 - **No findings ≠ no risk.** A scan that returns "No findings" indicates that no known threat patterns were detected. It does not guarantee that a skill is secure, benign, or free of vulnerabilities.
-- **Coverage is inherently incomplete.** The scanner combines signature-based detection, LLM-based semantic analysis, behavioral dataflow analysis, optional cloud services, and configurable rule packs. While this approach improve coverage, no automated tool can detect every technique, especially novel or zero-day attacks.
-- **False positives and false negatives can occur.** Consensus modes and meta-analysis reduce noise, but no configuration eliminates all incorrect classifications. Tune the [scan policy](docs/user-guide/custom-policy-configuration.md) to your risk tolerance.
+- **Coverage is inherently incomplete.** The scanner combines signature-based detection, LLM-based semantic analysis, behavioral dataflow analysis, optional cloud services, and configurable rule packs. While this approach improves coverage, no automated tool can detect every technique, especially novel or zero-day attacks.
+- **False positives and false negatives can occur.** Consensus modes and meta-analysis can help review findings, but no configuration eliminates all incorrect classifications. Tune the [scan policy](docs/user-guide/custom-policy-configuration.md) to your risk tolerance.
 - **Human review remains essential.** Automated scanning is one component of a defense-in-depth strategy. High-risk or production deployments should pair scanner results with manual code review and/or  threat modeling.
+
+### Current modernization evidence
+
+The final core + CEL development benchmark contains 5,256 malicious and 1,338
+benign MaliciousSkillBench packages. Compared with `origin/main`, the current
+scanner raised F1 from 32.92% to 47.73% and recall from 19.88% to 31.43%, while
+reducing benign false-positive rate from 3.59% to 1.05%. Precision is 99.16%.
+Five CEL-shadow runs were exact and deterministic; CEL evaluated 154 candidates
+without proposing a suppression or falling back.
+
+The locked source-disjoint split is weaker: TP=65, FP=42, TN=503, and FN=774,
+for 60.75% precision, 7.75% recall, 13.74% F1, and 7.71% FPR. This improves F1
+over `origin/main` (7.40%) but regresses FPR (3.67%), so it **does not pass the
+promotion gate**. Every bundled CEL rule therefore remains in `shadow`; this
+change does not promote any CEL suppression.
+
+Compatibility and supplemental checks found identical CEL-OFF/CEL-SHADOW
+findings on 111 official Codex, Claude Code, and Cursor skills (30 MEDIUM+ and
+8 HIGH/CRITICAL packages), with five stable runs. The NotInject hard-negative
+set had 0/339 actionable matches. HarmfulSkillBench had 7/200 actionable and
+6/200 HIGH+ packages with one quarantined sample, while OpenSkillRisk had
+76/263 actionable packages with two host quarantines. The latter two are
+positive-only recall diagnostics and cannot measure precision or FPR. Optional
+ATR results are outside this release scope. See [Detection Evaluation and
+Rollout](docs/development/detection-evaluation-rollout.md) for methodology,
+provenance, confidence intervals, and limitations.
 
 ---
 
@@ -48,6 +75,7 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 |-------|-------------|
 | [Quick Start](docs/getting-started/quick-start.md) | Get started in 5 minutes |
 | [Architecture](docs/architecture/index.md) | System design and components |
+| [CEL Decision Layer](docs/architecture/cel-decision-layer.md) | Typed facts, safety bounds, rollout modes, and telemetry |
 | [Threat Taxonomy](docs/architecture/threat-taxonomy.md) | Complete AITech threat taxonomy with examples |
 | [LLM Analyzer](docs/architecture/analyzers/llm-analyzer.md) | LLM configuration and usage |
 | [Meta-Analyzer](docs/architecture/analyzers/meta-analyzer.md) | False positive filtering and prioritization |
@@ -63,7 +91,15 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 
 ## Installation
 
-**Prerequisites:** Python 3.10+ and [uv](https://docs.astral.sh/uv/) (recommended) or pip
+**Prerequisites for this checkout and a release containing these changes:**
+CPython 3.11–3.14 and [uv](https://docs.astral.sh/uv/) (recommended) or pip
+
+A release containing this branch's CEL changes will include the required helper
+in its wheels; there is no separate CEL extra. That release is configured for
+CPython 3.11–3.14, while source installs additionally require Go 1.27.1+ to
+build the helper. Until it is published, the package currently served by PyPI
+may have a different compatibility contract. See [Installation and
+Configuration](docs/user-guide/installation-and-configuration.md) for details.
 
 ```bash
 # Using uv (recommended)
@@ -128,7 +164,7 @@ The wizard walks you through selecting a scan target, analyzers, policy, and out
 ### CLI Usage
 
 ```bash
-# Scan a single skill (core analyzers: static + bytecode + pipeline)
+# Scan a single skill (core analyzers: static + bytecode + pipeline + correlation)
 skill-scanner scan /path/to/skill
 
 # Scan with behavioral analyzer (dataflow analysis)
@@ -185,6 +221,9 @@ skill-scanner scan /path/to/skill --use-virustotal --vt-upload-files
 # Use a scan policy preset (strict, balanced, permissive)
 skill-scanner scan /path/to/skill --policy strict
 
+# Inspect CEL decisions without suppressing findings
+skill-scanner scan /path/to/skill --cel-mode shadow --format json
+
 # Use a custom org policy file
 skill-scanner scan /path/to/skill --policy my_org_policy.yaml
 
@@ -238,6 +277,7 @@ if not result.is_safe:
 | **Static** | YAML + YARA patterns | All files | None |
 | **Bytecode** | .pyc integrity verification | Python bytecode | None |
 | **Pipeline** | Command taint analysis | Shell pipelines | None |
+| **Correlation** | Bounded structured source/sink correlation | Python, JavaScript, TypeScript, and package facts | None |
 | **Behavioral** | AST dataflow analysis | Python files | None |
 | **LLM** | Semantic analysis | SKILL.md + scripts | API key |
 | **Meta** | False positive filtering | All findings | API key |
@@ -272,6 +312,8 @@ if not result.is_safe:
 | `--fail-on-findings` | Exit with error if HIGH/CRITICAL found (shorthand for `--fail-on-severity high`) |
 | `--fail-on-severity LEVEL` | Exit with error if findings at or above LEVEL exist (critical, high, medium, low, info) |
 | `--custom-rules PATH` | Use custom YARA rules from directory |
+| `--trusted-rule-pack PATH` | Load an administrator-trusted schema-v2 signature/YARA/CEL pack (repeatable) |
+| `--cel-mode MODE` | Set the CEL decision layer to `off`, `shadow`, or `enforce` |
 | `--taxonomy PATH` | Load custom taxonomy profile (JSON/YAML) for this run |
 | `--threat-mapping PATH` | Load custom scanner threat mapping profile (JSON) for this run |
 | `--lenient` | Tolerate malformed skills (coerce bad fields, fill defaults) instead of failing. When `SKILL.md` is absent, falls back to scanning `.md` files in the directory |
@@ -287,7 +329,13 @@ if not result.is_safe:
 | `generate-policy` | Generate a scan policy YAML for customisation |
 | `configure-policy` | Interactive TUI to build/edit a custom scan policy (`--input` supported) |
 | `list-analyzers` | Show available analyzers |
-| `validate-rules` | Validate rule signatures (`--rules-file` supported) |
+| `validate-rules` | Validate bundled rules plus optional `--rules-file` signatures and repeatable `--trusted-rule-pack` v2 packs |
+
+Balanced (the default) and strict policies use CEL `shadow`; permissive uses
+CEL `off`. Every bundled CEL rule currently has `rollout: shadow`, so even a
+global `--cel-mode enforce` retains findings until an individual rule is
+qualified and promoted. The ATR pack remains opt-in through
+`--rule-packs atr` and is not part of the current core + CEL release gate.
 
 ---
 

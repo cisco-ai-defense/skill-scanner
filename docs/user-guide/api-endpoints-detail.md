@@ -107,6 +107,11 @@ Content-Type: application/json
 
 For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, configure `SKILL_SCANNER_LLM_MODEL`/provider environment variables instead of relying on the `llm_provider` shortcut.
 
+Path access is deny-by-default: with `SKILL_SCANNER_ALLOWED_ROOTS` unset, the
+API can access only its process-private `0700` upload root. The operator must
+explicitly allow roots containing `skill_directory`, `skills_directory`, policy
+files, or custom-rule directories before starting the server.
+
 **Response:**
 
 ```json

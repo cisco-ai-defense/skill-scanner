@@ -21,11 +21,14 @@ Ensures all --format options produce valid, parseable output.
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from skill_scanner.core.scan_policy import ScanPolicy
 
 
 @pytest.fixture
@@ -51,6 +54,7 @@ def run_cli(args: list[str], timeout: int = 60) -> tuple[str, str, int]:
         text=True,
         timeout=timeout,
         cwd=Path(__file__).parent.parent,
+        env={**os.environ, "LITELLM_LOCAL_MODEL_COST_MAP": "True"},
     )
     return result.stdout, result.stderr, result.returncode
 
@@ -140,6 +144,25 @@ class TestJSONFormat:
         # Should still be valid JSON
         data = json.loads(stdout)
         assert "skill_name" in data
+
+    def test_oversized_manifest_is_a_json_block_verdict_not_a_cli_error(self, tmp_path: Path):
+        skill = tmp_path / "oversized"
+        skill.mkdir()
+        (skill / "SKILL.md").write_bytes(b"x" * 129)
+        policy = ScanPolicy.default()
+        policy.file_limits.max_loader_file_size_bytes = 128
+        policy_path = tmp_path / "policy.yaml"
+        policy.to_yaml(policy_path)
+
+        stdout, stderr, code = run_cli(["scan", str(skill), "--policy", str(policy_path), "--format", "json"])
+
+        assert code == 0, stderr
+        data = json.loads(stdout)
+        assert data["is_safe"] is False
+        assert data["max_severity"] == "HIGH"
+        assert [finding["rule_id"] for finding in data["findings"]] == ["SKILL_LOAD_REJECTED_LIMIT"]
+        assert data["scan_metadata"]["loader"]["content_scanned"] is False
+        assert data["scan_metadata"]["cel"]["evaluated"] == 0
 
     def test_json_format_with_behavioral(self, safe_skill_dir):
         """Test JSON format with behavioral analyzer enabled."""

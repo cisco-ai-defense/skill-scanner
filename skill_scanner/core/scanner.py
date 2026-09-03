@@ -28,19 +28,37 @@ import re
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
+from ..utils.file_utils import FileValidationError
 from ..utils.logging_context import scan_log_context
 from .analyzability import AnalyzabilityReport, compute_analyzability
 from .analyzer_factory import build_core_analyzers
 from .analyzers.base import BaseAnalyzer
 from .analyzers.llm_request_handler import _add_token_usage, _empty_token_usage
+from .cel import CelGate, CelMode, CelRule, CelTelemetry
 from .extractors.content_extractor import ContentExtractor
 from .loader import SkillLoader, SkillLoadError
-from .models import Finding, Report, ScanResult, Severity, Skill, ThreatCategory
+from .models import Finding, Report, ScanResult, Severity, Skill, SkillManifest, ThreatCategory
 from .scan_policy import ScanPolicy
 
+if TYPE_CHECKING:
+    from .rule_registry import RuleRegistry
+
 logger = logging.getLogger(__name__)
+
+_LOAD_REJECTION_ERROR_CODE = "SKILL_METADATA_SIZE_LIMIT_EXCEEDED"
+
+
+class _SkillMetadataSizeRejection(SkillLoadError):
+    """Internal stat-only signal for a closed manifest-size rejection."""
+
+    def __init__(self, path: Path, *, size_bytes: int, limit_bytes: int) -> None:
+        super().__init__(f"{path.name} exceeds maximum size ({limit_bytes} bytes): {path}")
+        self.path = path
+        self.size_bytes = size_bytes
+        self.limit_bytes = limit_bytes
+
 
 # Common stop words for Jaccard similarity - created once at module level
 _STOP_WORDS = frozenset(
@@ -112,6 +130,22 @@ class SkillScanner:
     # against a hostile symlink fan-out (e.g. ``trap -> /``) turning a scan into
     # a full-filesystem crawl. Far above any realistic skill tree (issue #116).
     _MAX_WALK_DIRS = 100_000
+    _CLOSED_BUNDLED_PYTHON_ANALYZERS = frozenset(
+        {
+            "analyzability",
+            "behavioral",
+            "bytecode",
+            "content_extractor",
+            "correlation",
+            "cross_skill",
+            "osv",
+            "pipeline",
+            "scanner",
+            "skill_loader",
+            "trigger",
+            "virustotal",
+        }
+    )
 
     def __init__(
         self,
@@ -120,6 +154,8 @@ class SkillScanner:
         virustotal_api_key: str | None = None,
         virustotal_upload_files: bool = False,
         policy: ScanPolicy | None = None,
+        rule_registry: RuleRegistry | None = None,
+        cel_rules: list[CelRule] | None = None,
     ):
         """
         Initialize scanner with analyzers.
@@ -132,8 +168,31 @@ class SkillScanner:
                                     only check existing hashes
             policy: Scan policy for org-specific allowlists and rule scoping.
                 If None, loads built-in defaults.
+            rule_registry: Optional validated rule registry.  When ``cel_rules``
+                is omitted, CEL gates declared by registry rules are used.
+            cel_rules: Optional explicit immutable CEL rule set.  Supplying this
+                takes precedence over rules discovered from ``rule_registry``.
+
+        Raises:
+            CelRuntimeUnavailable: If selected rule packs contain CEL gates
+                but the qualified official helper is absent. ``off`` disables
+                decisions, not authoritative startup validation.
+            ValueError: If a CEL expression cannot be validated or compiled.
         """
         self.policy = policy or ScanPolicy.default()
+        if rule_registry is None:
+            # Pack integrity is a scanner-startup invariant even when CEL is
+            # off.  The loader process-caches the validated bundled snapshot
+            # and returns an isolated registry generation to each scanner.
+            from .rule_registry import PackLoader
+
+            rule_registry = PackLoader().build_registry()
+        self.rule_registry = rule_registry
+
+        # Resolve the immutable rule generation now; construct the native
+        # gate after all other initialization so a later analyzer/loader
+        # failure cannot strand its persistent helper process.
+        resolved_cel_rules = list(cel_rules) if cel_rules is not None else self._cel_rules_from_registry(rule_registry)
 
         if analyzers is None:
             # Delegate to the centralised factory so core analyzer
@@ -166,6 +225,111 @@ class SkillScanner:
         self.loader = SkillLoader(max_file_size_bytes=loader_max_bytes)
         self.content_extractor = ContentExtractor()
 
+        # Trusted expressions are authoritatively validated and atomically
+        # compiled at startup, before any package can be scanned.  CEL off
+        # disables decisions but does not bypass pack validation.
+        self.cel_gate = CelGate(resolved_cel_rules, self.policy.cel.mode)
+
+    @staticmethod
+    def _cel_rules_from_registry(rule_registry: RuleRegistry | None) -> list[CelRule]:
+        """Extract manifest CEL gates without coupling to pack loading.
+
+        Registry validation and trusted-pack discovery happen before scanner
+        construction.  Older registries without CEL metadata naturally yield
+        an empty rule set, preserving compatibility during the shadow rollout.
+        """
+        if rule_registry is None:
+            return []
+        cel_rules: list[CelRule] = []
+        for definition in rule_registry.all_rules().values():
+            cel_rule = getattr(definition, "cel", None)
+            if isinstance(cel_rule, CelRule):
+                cel_rules.append(cel_rule)
+        return cel_rules
+
+    def _validate_bundled_python_findings(
+        self,
+        findings: list[Finding],
+    ) -> tuple[int, set[int], list[dict[str, Any]], list[dict[str, str]]]:
+        """Validate manifest-owned Python finding identities without dropping them.
+
+        Invalid findings remain in the scan result and carry a stable audit
+        annotation.  Their object identities are returned so the caller can
+        keep them outside the CEL activation and suppression path.
+        """
+
+        checked = 0
+        invalid_ids: set[int] = set()
+        errors: list[dict[str, Any]] = []
+        analyzer_failures: list[dict[str, str]] = []
+        for finding in findings:
+            definition = self.rule_registry.get(finding.rule_id) if self.rule_registry is not None else None
+            require_known = (finding.analyzer or "") in self._CLOSED_BUNDLED_PYTHON_ANALYZERS
+            participates = bool(
+                definition is not None and definition.pack_name == "core" and definition.source_type == "python"
+            )
+            if not participates and not require_known:
+                continue
+            checked += 1
+            violations = self.rule_registry.validate_bundled_python_finding(
+                finding,
+                require_known=require_known,
+            )
+            if not violations:
+                continue
+
+            invalid_ids.add(id(finding))
+            serialized = [violation.to_dict() for violation in violations]
+            finding.metadata["rule_contract"] = {
+                "status": "invalid",
+                "schema_version": 2,
+                "errors": serialized,
+            }
+            errors.extend(serialized)
+            codes = ",".join(violation.code for violation in violations)
+            analyzer_failures.append(
+                {
+                    "analyzer": finding.analyzer or "unknown",
+                    "error": f"FindingContract:{finding.rule_id}:{codes}",
+                }
+            )
+        return checked, invalid_ids, errors, analyzer_failures
+
+    def _apply_cel_with_contract(
+        self,
+        skill: Skill,
+        findings: list[Finding],
+        invalid_ids: set[int],
+    ) -> tuple[list[Finding], CelTelemetry]:
+        """Apply CEL only to contract-valid facts and retain invalid facts open."""
+
+        eligible = [finding for finding in findings if id(finding) not in invalid_ids]
+        retained, telemetry = self.cel_gate.apply(skill, eligible)
+        retained_ids = {id(finding) for finding in retained}
+        invalid_present = [finding for finding in findings if id(finding) in invalid_ids]
+        telemetry.retained += len(invalid_present)
+
+        gate_mode = getattr(self.cel_gate, "mode", CelMode.OFF)
+        gate_rules = getattr(self.cel_gate, "rules", {})
+        if gate_mode is not CelMode.OFF:
+            for finding in invalid_present:
+                rule = gate_rules.get(finding.rule_id)
+                if rule is None:
+                    continue
+                telemetry.fallbacks += 1
+                telemetry.record_error(finding.rule_id, "FINDING_CONTRACT_INVALID")
+                telemetry.record_decision(rule, "fallback")
+                finding.metadata["cel"] = {
+                    "decision": "fallback",
+                    "reason": "FINDING_CONTRACT_INVALID",
+                    "fact_schema": rule.fact_schema,
+                    "expression_hash": rule.expression_hash,
+                    "pack": rule.pack_name,
+                    "rollout": rule.rollout.value,
+                }
+
+        return [finding for finding in findings if id(finding) in invalid_ids or id(finding) in retained_ids], telemetry
+
     def scan_skill(
         self,
         skill_directory: str | Path,
@@ -192,23 +356,264 @@ class SkillScanner:
         if not isinstance(skill_directory, Path):
             skill_directory = Path(skill_directory)
 
-        skill = self.loader.load_skill(skill_directory, lenient=lenient, skill_file=skill_file)
-        return self._scan_single_skill(skill, skill_directory)
+        try:
+            skill, load_telemetry = self._load_skill_for_scan(
+                skill_directory,
+                lenient=lenient,
+                skill_file=skill_file,
+            )
+        except _SkillMetadataSizeRejection as rejection:
+            return self._scan_load_rejection(skill_directory, rejection)
+        return self._scan_single_skill(skill, skill_directory, load_telemetry=load_telemetry)
+
+    @staticmethod
+    def _manifest_error_code(error: SkillLoadError) -> str | None:
+        """Classify strict manifest errors eligible for inert fallback."""
+
+        message = str(error).lower()
+        if "failed to parse yaml frontmatter" in message:
+            return "MALFORMED_YAML_FRONTMATTER"
+        if "missing required field" in message:
+            return "MISSING_REQUIRED_MANIFEST_FIELD"
+        return None
+
+    def _load_skill_for_scan(
+        self,
+        skill_directory: Path,
+        *,
+        lenient: bool,
+        skill_file: str | None,
+    ) -> tuple[Skill, dict[str, Any] | None]:
+        """Load one skill, recovering only bounded malformed metadata.
+
+        Binary/oversized/invalid-UTF-8 files, missing metadata files, and path
+        traversal remain hard failures.  Recovery never imports or executes
+        package content; it reuses the loader's bounded inert text path.
+        """
+
+        metadata_path = skill_directory / (skill_file or "SKILL.md")
+        if metadata_path.exists():
+            try:
+                resolved_root = skill_directory.resolve(strict=True)
+                resolved_metadata = metadata_path.resolve(strict=True)
+            except OSError as error:
+                raise SkillLoadError("Skill metadata path could not be resolved safely") from error
+            if metadata_path.is_symlink() or not resolved_metadata.is_relative_to(resolved_root):
+                raise SkillLoadError("Skill metadata path must be a non-symlink file within the skill directory")
+            if metadata_path.is_file():
+                try:
+                    size_bytes = metadata_path.stat(follow_symlinks=False).st_size
+                except OSError as error:
+                    raise SkillLoadError("Skill metadata size could not be inspected safely") from error
+                limit_bytes = self.loader.max_file_size_bytes
+                if size_bytes > limit_bytes:
+                    raise _SkillMetadataSizeRejection(
+                        metadata_path,
+                        size_bytes=size_bytes,
+                        limit_bytes=limit_bytes,
+                    )
+        elif skill_file:
+            # Keep the loader's stable missing-file behavior for callers that
+            # select an explicit metadata filename.
+            return self.loader.load_skill(skill_directory, lenient=lenient, skill_file=skill_file), None
+
+        if lenient:
+            try:
+                skill = self.loader.load_skill(skill_directory, lenient=True, skill_file=skill_file)
+            except SkillLoadError as error:
+                rejection = self._size_rejection_from_loader_error(error, metadata_path)
+                if rejection is not None:
+                    raise rejection from error
+                raise
+            return skill, None
+
+        try:
+            return self.loader.load_skill(skill_directory, lenient=False, skill_file=skill_file), None
+        except SkillLoadError as strict_error:
+            rejection = self._size_rejection_from_loader_error(strict_error, metadata_path)
+            if rejection is not None:
+                raise rejection from strict_error
+            error_code = self._manifest_error_code(strict_error)
+            if error_code is None or not metadata_path.exists() or not metadata_path.is_file():
+                raise
+
+            try:
+                skill = self.loader.load_skill(skill_directory, lenient=True, skill_file=skill_file)
+            except SkillLoadError as fallback_error:
+                rejection = self._size_rejection_from_loader_error(fallback_error, metadata_path)
+                if rejection is not None:
+                    raise rejection from fallback_error
+                # Preserve the original strict failure as the stable public
+                # error; the fallback cannot turn binary/oversized content
+                # into a successful scan.
+                raise strict_error
+
+            # No field from a rejected manifest is authoritative.  Retain only
+            # a synthetic package identity; deterministic analyzers continue
+            # over inert body/files without capability-based assumptions.
+            skill.manifest = type(skill.manifest)(
+                name=skill_directory.name,
+                description="(manifest metadata unavailable)",
+            )
+            skill.manifest_complete = False
+            load_telemetry: dict[str, Any] = {
+                "fallback_used": True,
+                "fallback_mode": "bounded_inert_raw_body",
+                "strict_error_type": "SkillLoadError",
+                "strict_error_code": error_code,
+                "manifest_complete": False,
+                "capability_facts_trusted": False,
+                "projection_complete": False,
+                "projection_error_code": "MANIFEST_METADATA_INCOMPLETE",
+            }
+            skill.load_metadata = dict(load_telemetry)
+            return skill, load_telemetry
+
+    @staticmethod
+    def _size_rejection_from_loader_error(
+        error: SkillLoadError,
+        metadata_path: Path,
+    ) -> _SkillMetadataSizeRejection | None:
+        """Recover typed size proof from the loader's descriptor/bounded read.
+
+        The scanner performs its own stat-only preflight, while the loader
+        repeats the limit check on the opened file descriptor.  Preserving the
+        typed cause closes the race where a manifest grows or is swapped after
+        the first stat: the package still receives the same deterministic
+        closed verdict and its bytes are never parsed.
+        """
+
+        cause = error.__cause__
+        if not isinstance(cause, FileValidationError):
+            return None
+        size_bytes = cause.size_bytes
+        limit_bytes = cause.limit_bytes
+        if type(size_bytes) is not int or type(limit_bytes) is not int or limit_bytes <= 0 or size_bytes <= limit_bytes:
+            return None
+        return _SkillMetadataSizeRejection(
+            metadata_path,
+            size_bytes=size_bytes,
+            limit_bytes=limit_bytes,
+        )
+
+    def _scan_load_rejection(
+        self,
+        skill_directory: Path,
+        rejection: _SkillMetadataSizeRejection,
+    ) -> ScanResult:
+        """Return a closed security verdict without reading oversized content."""
+
+        started = time.time()
+        proof: dict[str, Any] = {
+            "rejection_used": True,
+            "rejection_mode": "hard_size_limit",
+            "strict_error_type": "SkillLoadError",
+            "strict_error_code": _LOAD_REJECTION_ERROR_CODE,
+            "manifest_complete": False,
+            "capability_facts_trusted": False,
+            "content_scanned": False,
+            "size_bytes": rejection.size_bytes,
+            "limit_bytes": rejection.limit_bytes,
+        }
+        synthetic_skill = Skill(
+            directory=skill_directory,
+            manifest=SkillManifest(
+                name=skill_directory.name,
+                description="(package rejected before manifest content was read)",
+            ),
+            skill_md_path=rejection.path,
+            instruction_body="",
+            files=[],
+            referenced_files=[],
+            manifest_complete=False,
+            load_metadata=dict(proof),
+        )
+        finding = Finding(
+            id="SKILL_LOAD_REJECTED_LIMIT",
+            rule_id="SKILL_LOAD_REJECTED_LIMIT",
+            category=ThreatCategory.POLICY_VIOLATION,
+            severity=Severity.HIGH,
+            title="Skill manifest exceeds the hard safety limit",
+            description=(
+                f"The selected skill manifest is {rejection.size_bytes} bytes, exceeding the "
+                f"{rejection.limit_bytes}-byte hard loader limit. The package was blocked "
+                "without reading or parsing its content."
+            ),
+            file_path=rejection.path.name,
+            remediation="Reduce the skill manifest below the configured hard loader limit and rescan it.",
+            analyzer="skill_loader",
+            metadata=dict(proof),
+        )
+
+        checked, invalid_ids, contract_errors, _ = self._validate_bundled_python_findings([finding])
+        findings, cel_telemetry = self._apply_cel_with_contract(
+            synthetic_skill,
+            [finding],
+            invalid_ids,
+        )
+        policy_meta: dict[str, Any] = self._policy_fingerprint_metadata()
+        policy_meta["cel"] = cel_telemetry.to_dict()
+        policy_meta["rule_contract"] = {
+            "status": "failed" if invalid_ids else "passed",
+            "schema_version": 2,
+            "checked": checked,
+            "invalid_findings": len(invalid_ids),
+            "errors": contract_errors[:100],
+        }
+        policy_meta["loader"] = dict(proof)
+        self._annotate_findings_with_policy(findings, policy_meta)
+
+        analyzability = AnalyzabilityReport(
+            score=0.0,
+            total_files=1,
+            analyzed_files=0,
+            unanalyzable_files=1,
+            risk_level="HIGH",
+        )
+        return ScanResult(
+            skill_name=skill_directory.name,
+            skill_directory=str(skill_directory.absolute()),
+            findings=findings,
+            scan_duration_seconds=time.time() - started,
+            analyzers_used=["skill_loader"],
+            analyzers_failed=[],
+            analyzability_score=analyzability.score,
+            analyzability_details=analyzability.to_dict(),
+            scan_metadata=policy_meta,
+        )
 
     # ------------------------------------------------------------------
     # Shared single-skill scanning logic (used by both scan_skill and
     # scan_directory for identical behaviour).
     # ------------------------------------------------------------------
 
-    def _scan_single_skill(self, skill: Skill, skill_directory: Path) -> ScanResult:
+    def _scan_single_skill(
+        self,
+        skill: Skill,
+        skill_directory: Path,
+        *,
+        load_telemetry: dict[str, Any] | None = None,
+    ) -> ScanResult:
         """Run one scan with skill-scoped logging context."""
         with scan_log_context(
             skill_name=skill.name,
             skill_path=str(skill_directory.resolve()),
         ):
-            return self._scan_single_skill_with_context(skill, skill_directory)
+            if load_telemetry is None:
+                return self._scan_single_skill_with_context(skill, skill_directory)
+            return self._scan_single_skill_with_context(
+                skill,
+                skill_directory,
+                load_telemetry=load_telemetry,
+            )
 
-    def _scan_single_skill_with_context(self, skill: Skill, skill_directory: Path) -> ScanResult:
+    def _scan_single_skill_with_context(
+        self,
+        skill: Skill,
+        skill_directory: Path,
+        *,
+        load_telemetry: dict[str, Any] | None = None,
+    ) -> ScanResult:
         """Run the full analysis pipeline on a loaded skill.
 
         This is the shared implementation that both ``scan_skill`` and
@@ -227,10 +632,36 @@ class SkillScanner:
             # Phase 1: Non-LLM analyzers (static, pipeline, behavioral, etc.)
             # Phase 2: LLM analyzers (enriched with Phase 1 context)
             all_findings: list[Finding] = []
+            if load_telemetry is not None:
+                all_findings.append(
+                    Finding(
+                        id="SKILL_LOAD_FALLBACK_USED",
+                        rule_id="SKILL_LOAD_FALLBACK_USED",
+                        category=ThreatCategory.POLICY_VIOLATION,
+                        severity=Severity.INFO,
+                        title="Strict manifest load failed; inert fallback scan used",
+                        description=(
+                            "SkillLoadError rejected malformed or missing manifest metadata. "
+                            "The bounded package body was still scanned as inert content; "
+                            "manifest capabilities were not trusted."
+                        ),
+                        file_path=Path(skill.skill_md_path).name,
+                        remediation="Repair the YAML frontmatter and provide the required manifest fields.",
+                        analyzer="skill_loader",
+                        metadata=dict(load_telemetry),
+                    )
+                )
             # Include any archive extraction findings (zip bombs, path traversal, etc.)
             all_findings.extend(extraction_result.findings)
             analyzer_names: list[str] = []
             analyzers_failed: list[dict[str, str]] = []
+            if load_telemetry is not None:
+                analyzers_failed.append(
+                    {
+                        "analyzer": "skill_loader",
+                        "error": ("SkillLoadError:" + str(load_telemetry["strict_error_code"])),
+                    }
+                )
             validated_binary_files: set[str] = set()
             llm_analyzers: list[BaseAnalyzer] = []
             unreferenced_scripts: list[str] = []
@@ -254,7 +685,55 @@ class SkillScanner:
                 if hasattr(analyzer, "get_unreferenced_scripts"):
                     unreferenced_scripts = analyzer.get_unreferenced_scripts()
 
-            # Phase 1.5: Per-finding adjudicator (demote literal-regex FPs)
+            # Analyzability is a deterministic package-level analyzer.  Its
+            # candidate findings must exist before CEL so contextual gates can
+            # correlate opaque binaries with file role, permissions, and
+            # references.  Creating these findings after the LLM phase would
+            # make rules such as UNANALYZABLE_BINARY impossible to gate.
+            analyzability = compute_analyzability(skill, policy=self.policy)
+            all_findings.extend(self._analyzability_findings(analyzability))
+
+            # Exact duplicates must be removed before the CEL decision layer.
+            # Otherwise CEL telemetry counts decisions for candidates that the
+            # final output normalizer later removes, breaking the invariant
+            # that aggregate decisions are auditable on retained findings.
+            # Same-issue, cross-analyzer collapsing remains a final-stage
+            # operation because LLM/meta findings do not exist yet.
+            all_findings = self._dedupe_exact_findings(all_findings)
+
+            # Schema-v2 pack metadata is authoritative for every bundled
+            # Python candidate. Contract-invalid findings remain visible, but
+            # cannot enter CEL facts or be suppressed by a contextual gate.
+            (
+                contract_checked,
+                contract_invalid_ids,
+                contract_errors,
+                contract_failures,
+            ) = self._validate_bundled_python_findings(all_findings)
+            analyzers_failed.extend(contract_failures)
+
+            # Remove candidates that deterministic policy has already made
+            # ineligible before CEL.  The same filters run again after the LLM
+            # phase as a global safety net for findings added later.
+            if validated_binary_files:
+                all_findings = [
+                    finding
+                    for finding in all_findings
+                    if not (finding.rule_id == "BINARY_FILE_DETECTED" and finding.file_path in validated_binary_files)
+                ]
+            if self.policy.disabled_rules:
+                all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
+
+            # Phase 1.5: Bounded CEL decision layer.  It sees only concrete
+            # deterministic candidates and runs before any LLM-based pass so
+            # shadow/suppression decisions also shape enrichment context.
+            all_findings, cel_telemetry = self._apply_cel_with_contract(
+                skill,
+                all_findings,
+                contract_invalid_ids,
+            )
+
+            # Phase 1.6: Per-finding adjudicator (demote literal-regex FPs)
             #
             # Runs before the LLM analyzer so that demoted findings never
             # enter the LLM analyzer's ``static_findings_summary`` enrichment
@@ -267,7 +746,11 @@ class SkillScanner:
             # so enabling this pass cannot introduce false negatives.
             adjudicator_audit: list[dict[str, Any]] = []
             adjudicator_usage = _empty_token_usage()
-            if self.policy.adjudicator.enabled and all_findings:
+            # Fail-closed analyzability findings historically appeared after
+            # this phase and therefore could not be LLM-demoted.  They now
+            # exist before CEL, but must retain that safety property.
+            adjudicable_findings = [finding for finding in all_findings if finding.analyzer != "analyzability"]
+            if self.policy.adjudicator.enabled and adjudicable_findings:
                 try:
                     from .analyzers.adjudicator import Adjudicator
 
@@ -276,7 +759,7 @@ class SkillScanner:
                     )
                     try:
                         if adj.is_available():
-                            adj.adjudicate(all_findings, skill)
+                            adj.adjudicate(adjudicable_findings, skill)
                             analyzer_names.append("adjudicator")
                             adjudicator_audit = [
                                 {
@@ -319,6 +802,13 @@ class SkillScanner:
                             for f in all_findings
                             if f.severity in (Severity.CRITICAL, Severity.HIGH)
                         ][:10]
+                        raw_allowed_tools = skill.manifest.allowed_tools
+                        if isinstance(raw_allowed_tools, str):
+                            normalized_allowed_tools = [raw_allowed_tools]
+                        elif isinstance(raw_allowed_tools, list):
+                            normalized_allowed_tools = [tool for tool in raw_allowed_tools if isinstance(tool, str)]
+                        else:
+                            normalized_allowed_tools = []
                         analyzer.set_enrichment_context(
                             file_inventory={
                                 "total_files": len(skill.files),
@@ -327,8 +817,31 @@ class SkillScanner:
                             },
                             magic_mismatches=magic_mismatches if magic_mismatches else None,
                             static_findings_summary=static_summaries if static_summaries else None,
+                            analyzability_score=analyzability.score,
+                            deterministic_findings=all_findings,
+                            manifest_capabilities=(
+                                {
+                                    "complete": True,
+                                    "trusted": True,
+                                    "allowed_tools": sorted(normalized_allowed_tools),
+                                    "allowed_tools_declared": bool(normalized_allowed_tools),
+                                    "compatibility_declared": bool(skill.manifest.compatibility),
+                                }
+                                if skill.manifest_complete
+                                else {"complete": False, "trusted": False}
+                            ),
                         )
                     findings = analyzer.analyze(skill)
+                    (
+                        llm_contract_checked,
+                        llm_contract_invalid_ids,
+                        llm_contract_errors,
+                        llm_contract_failures,
+                    ) = self._validate_bundled_python_findings(findings)
+                    contract_checked += llm_contract_checked
+                    contract_invalid_ids.update(llm_contract_invalid_ids)
+                    contract_errors.extend(llm_contract_errors)
+                    analyzers_failed.extend(llm_contract_failures)
                     all_findings.extend(findings)
                     analyzer_names.append(analyzer.get_name())
 
@@ -365,12 +878,6 @@ class SkillScanner:
             # Apply severity overrides from policy
             self._apply_severity_overrides(all_findings)
 
-            # Compute analyzability score
-            analyzability = compute_analyzability(skill, policy=self.policy)
-
-            # Generate findings from low analyzability (fail-closed posture)
-            all_findings.extend(self._analyzability_findings(analyzability))
-
             # Normalize duplicate findings at final output stage (policy-controlled).
             all_findings = self._normalize_findings(all_findings)
 
@@ -378,7 +885,17 @@ class SkillScanner:
             self._annotate_same_path_rule_cooccurrence(all_findings)
 
             # Attach policy fingerprint metadata for traceability (policy-controlled).
-            policy_meta = self._policy_fingerprint_metadata()
+            policy_meta: dict[str, Any] = self._policy_fingerprint_metadata()
+            policy_meta["cel"] = cel_telemetry.to_dict()
+            policy_meta["rule_contract"] = {
+                "status": "failed" if contract_invalid_ids else "passed",
+                "schema_version": 2,
+                "checked": contract_checked,
+                "invalid_findings": len(contract_invalid_ids),
+                "errors": contract_errors[:100],
+            }
+            if load_telemetry is not None:
+                policy_meta["loader"] = dict(load_telemetry)
             if llm_scan_meta:
                 policy_meta.update(llm_scan_meta)
             if adjudicator_audit:
@@ -456,7 +973,20 @@ class SkillScanner:
                             "to VirusTotal for independent verification (--use-virustotal)."
                         ),
                         analyzer="analyzability",
-                        metadata={"skip_reason": fd.skip_reason, "weight": fd.weight},
+                        metadata={
+                            "skip_reason": fd.skip_reason,
+                            "weight": fd.weight,
+                            # Scanner-owned, bounded classification for the
+                            # CEL projector. The decision layer must never
+                            # infer binary role by reparsing the description
+                            # or the (potentially sensitive) skip reason.
+                            "semantic_facts": {
+                                "evidence_kind": "file_analyzability",
+                                "evidence_value_class": "opaque_binary",
+                                "context_kind": "binary",
+                                "signal_kind": "unanalyzable_binary",
+                            },
+                        },
                     )
                 )
 
@@ -528,7 +1058,7 @@ class SkillScanner:
         has_critical_or_high = any(f.severity in (Severity.CRITICAL, Severity.HIGH) for f in findings)
         has_unreferenced = bool(unreferenced_scripts)
         has_magic_mismatch = any(f.rule_id and "MAGIC" in (f.rule_id or "") for f in findings)
-        return has_critical_or_high or has_unreferenced or has_magic_mismatch
+        return bool(skill.files) or has_critical_or_high or has_unreferenced or has_magic_mismatch
 
     def _apply_severity_overrides(self, findings: list) -> None:
         """Apply severity overrides from policy ``severity_overrides``.
@@ -587,26 +1117,7 @@ class SkillScanner:
         if not findings or (not fo.dedupe_exact_findings and not fo.dedupe_same_issue_per_location):
             return findings
 
-        normalized = list(findings)
-
-        if fo.dedupe_exact_findings:
-            deduped_exact: list[Finding] = []
-            seen_exact: set[tuple[object, ...]] = set()
-            for f in normalized:
-                exact_key = (
-                    f.rule_id,
-                    f.category.value,
-                    f.severity.value,
-                    (f.file_path or "").lower(),
-                    int(f.line_number or 0),
-                    self._normalize_snippet(f.snippet),
-                    (f.analyzer or "").lower(),
-                )
-                if exact_key in seen_exact:
-                    continue
-                seen_exact.add(exact_key)
-                deduped_exact.append(f)
-            normalized = deduped_exact
+        normalized = self._dedupe_exact_findings(findings)
 
         if not fo.dedupe_same_issue_per_location:
             return normalized
@@ -644,6 +1155,7 @@ class SkillScanner:
                     )
                 )
                 continue
+            cel_decisions = self._cel_decision_lineage(group)
             winner = max(
                 group,
                 key=lambda f: (
@@ -681,6 +1193,13 @@ class SkillScanner:
             if merged_analyzers:
                 winner.metadata["deduped_analyzers"] = merged_analyzers
             winner.metadata["deduped_count"] = len(group) - 1
+            if cel_decisions:
+                # Shadow mode must not change finding identities or
+                # multiplicity. Preserve the ordinary OFF-mode winner while
+                # attaching a bounded, counted lineage for every decided
+                # candidate collapsed into it. Evaluators use this lineage
+                # instead of inferring decisions from only the winning rule.
+                winner.metadata["cel_decisions"] = cel_decisions
             merged.append(winner)
 
         # Preserve deterministic output order for stable benchmarks.
@@ -694,6 +1213,131 @@ class SkillScanner:
             )
         )
         return final
+
+    @staticmethod
+    def _has_cel_decision(finding: Finding) -> bool:
+        """Return whether a retained finding carries an auditable CEL result."""
+
+        annotation = finding.metadata.get("cel")
+        return isinstance(annotation, dict) and annotation.get("decision") in {
+            "fallback",
+            "keep",
+            "would_suppress",
+        }
+
+    @staticmethod
+    def _cel_decision_lineage(findings: list[Finding]) -> list[dict[str, object]]:
+        """Return bounded counted CEL lineage for a merged finding group."""
+
+        decisions: dict[tuple[str, ...], int] = {}
+        for finding in findings:
+            existing = finding.metadata.get("cel_decisions")
+            if isinstance(existing, list):
+                if len(existing) > 4_096:
+                    raise ValueError("CEL decision lineage exceeds the bounded output contract")
+                for entry in existing:
+                    if not isinstance(entry, dict):
+                        raise ValueError("CEL decision lineage contains an invalid entry")
+                    decision = entry.get("decision")
+                    count = entry.get("count")
+                    values = (
+                        entry.get("rule_id"),
+                        decision,
+                        entry.get("reason"),
+                        entry.get("fact_schema"),
+                        entry.get("expression_hash"),
+                        entry.get("pack"),
+                        entry.get("rollout"),
+                    )
+                    if (
+                        decision not in {"fallback", "keep", "would_suppress"}
+                        or any(not isinstance(value, str) or not value for value in values)
+                        or isinstance(count, bool)
+                        or not isinstance(count, int)
+                        or count <= 0
+                    ):
+                        raise ValueError("CEL decision lineage contains an invalid entry")
+                    key = cast(tuple[str, ...], values)
+                    decisions[key] = decisions.get(key, 0) + count
+                # Scanner-generated lineage already includes the selected
+                # finding's singular annotation. Reading both would double
+                # count it when exact and same-issue normalization compose.
+                continue
+
+            annotation = finding.metadata.get("cel")
+            if not isinstance(annotation, dict):
+                continue
+            decision = annotation.get("decision")
+            if decision not in {"fallback", "keep", "would_suppress"}:
+                continue
+            values = (
+                finding.rule_id,
+                decision,
+                str(annotation.get("reason", "unspecified")),
+                str(annotation.get("fact_schema", "unspecified")),
+                str(annotation.get("expression_hash", "unspecified")),
+                str(annotation.get("pack", "unspecified") or "unspecified"),
+                str(annotation.get("rollout", "unspecified")),
+            )
+            decisions[values] = decisions.get(values, 0) + 1
+        if len(decisions) > 4_096:
+            raise ValueError("CEL decision lineage exceeds the bounded output contract")
+        return [
+            {
+                "rule_id": values[0],
+                "decision": values[1],
+                "reason": values[2],
+                "fact_schema": values[3],
+                "expression_hash": values[4],
+                "pack": values[5],
+                "rollout": values[6],
+                "count": count,
+            }
+            for values, count in sorted(decisions.items())
+        ]
+
+    def _dedupe_exact_findings(self, findings: list[Finding]) -> list[Finding]:
+        """Remove byte-equivalent finding identities in stable input order.
+
+        This narrow pass is safe before CEL because it never merges analyzers,
+        rule IDs, severities, locations, or evidence surfaces.  Running the
+        same helper again at the final output boundary also covers findings
+        introduced by LLM/meta analyzers.
+        """
+
+        if not findings or not self.policy.finding_output.dedupe_exact_findings:
+            return findings
+
+        deduped: list[Finding] = []
+        seen: dict[tuple[object, ...], int] = {}
+        groups: dict[int, list[Finding]] = {}
+        for finding in findings:
+            exact_key = (
+                finding.rule_id,
+                finding.category.value,
+                finding.severity.value,
+                (finding.file_path or "").lower(),
+                int(finding.line_number or 0),
+                self._normalize_snippet(finding.snippet),
+                (finding.analyzer or "").lower(),
+            )
+            existing_index = seen.get(exact_key)
+            if existing_index is not None:
+                groups[existing_index].append(finding)
+                continue
+            seen[exact_key] = len(deduped)
+            groups[len(deduped)] = [finding]
+            deduped.append(finding)
+        for index, group in groups.items():
+            if len(group) <= 1:
+                continue
+            cel_decisions = self._cel_decision_lineage(group)
+            if cel_decisions:
+                # Severity adjudication/overrides can make two candidates
+                # exact duplicates only after CEL. Preserve the ordinary
+                # first-winner identity while retaining every decision.
+                deduped[index].metadata["cel_decisions"] = cel_decisions
+        return deduped
 
     @staticmethod
     def _finding_rule_ids(finding: Finding) -> set[str]:
@@ -802,13 +1446,20 @@ class SkillScanner:
 
         for skill_dir in skill_dirs:
             try:
-                skill = self.loader.load_skill(skill_dir, lenient=lenient, skill_file=skill_file)
-                result = self._scan_single_skill(skill, skill_dir)
+                skill, load_telemetry = self._load_skill_for_scan(
+                    skill_dir,
+                    lenient=lenient,
+                    skill_file=skill_file,
+                )
+                result = self._scan_single_skill(skill, skill_dir, load_telemetry=load_telemetry)
                 report.add_scan_result(result)
 
-                if check_overlap:
+                if check_overlap and skill.manifest_complete:
                     loaded_skills.append(skill)
 
+            except _SkillMetadataSizeRejection as rejection:
+                report.add_scan_result(self._scan_load_rejection(skill_dir, rejection))
+                continue
             except SkillLoadError as e:
                 logger.warning("Failed to load %s: %s", skill_dir, e)
                 report.skills_skipped.append({"skill": str(skill_dir), "reason": str(e)})
@@ -840,6 +1491,17 @@ class SkillScanner:
         if overlap_findings or cross_findings:
             all_cross_findings = list(overlap_findings or []) + list(cross_findings or [])
             if all_cross_findings:
+                # Cross-package findings are emitted outside the ordinary
+                # per-skill pipeline, but bundled schema-v2 metadata remains
+                # authoritative here too.  Retain violations fail-open and
+                # attach the same stable audit record used by scan_skill().
+                _, _, _, contract_failures = self._validate_bundled_python_findings(all_cross_findings)
+                for failure in contract_failures:
+                    logger.error(
+                        "Cross-skill finding contract validation failed for %s: %s",
+                        failure["analyzer"],
+                        failure["error"],
+                    )
                 # Apply policy filters to cross-skill findings (mirrors _scan_single_skill lines 279-283)
                 if self.policy.disabled_rules:
                     all_cross_findings = [f for f in all_cross_findings if f.rule_id not in self.policy.disabled_rules]
@@ -891,6 +1553,7 @@ class SkillScanner:
                                 "skill_b": skill_b.name,
                                 "similarity": similarity,
                             },
+                            analyzer="scanner",
                         )
                     )
                 elif similarity > 0.5:
@@ -913,6 +1576,7 @@ class SkillScanner:
                                 "skill_b": skill_b.name,
                                 "similarity": similarity,
                             },
+                            analyzer="scanner",
                         )
                     )
 
@@ -1092,6 +1756,17 @@ class SkillScanner:
         """Get names of all configured analyzers."""
         return [analyzer.get_name() for analyzer in self.analyzers]
 
+    def close(self) -> None:
+        """Release persistent decision-runtime resources."""
+
+        self.cel_gate.close()
+
+    def __enter__(self) -> SkillScanner:
+        return self
+
+    def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
+        self.close()
+
 
 def scan_skill(
     skill_directory: str | Path,
@@ -1113,8 +1788,8 @@ def scan_skill(
     scanner_policy = policy
     if scanner_policy is None and analyzers:
         scanner_policy = getattr(analyzers[0], "policy", None)
-    scanner = SkillScanner(analyzers=analyzers, policy=scanner_policy)
-    return scanner.scan_skill(skill_directory)
+    with SkillScanner(analyzers=analyzers, policy=scanner_policy) as scanner:
+        return scanner.scan_skill(skill_directory)
 
 
 def scan_directory(
@@ -1141,5 +1816,5 @@ def scan_directory(
     scanner_policy = policy
     if scanner_policy is None and analyzers:
         scanner_policy = getattr(analyzers[0], "policy", None)
-    scanner = SkillScanner(analyzers=analyzers, policy=scanner_policy)
-    return scanner.scan_directory(skills_directory, recursive=recursive, check_overlap=check_overlap)
+    with SkillScanner(analyzers=analyzers, policy=scanner_policy) as scanner:
+        return scanner.scan_directory(skills_directory, recursive=recursive, check_overlap=check_overlap)

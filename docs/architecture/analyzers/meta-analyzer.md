@@ -119,7 +119,8 @@ export SKILL_SCANNER_META_LLM_REASONING_EFFORT="minimal"
 | Provider | Auth Method | Notes |
 |----------|-------------|-------|
 | Bedrock (`bedrock/...` model) | AWS credentials/IAM **or** API key | API key is optional when Bedrock auth is available |
-| Non-Bedrock models | `SKILL_SCANNER_META_LLM_API_KEY` or `SKILL_SCANNER_LLM_API_KEY` | Required by current meta-analyzer validation logic |
+| Ollama (`ollama/...` model) | None | Uses the local Ollama endpoint; no API key is required. Scanner requests disable the hidden thinking channel so the bounded output contains parseable JSON. |
+| Other models | `SKILL_SCANNER_META_LLM_API_KEY` or `SKILL_SCANNER_LLM_API_KEY` | Required for API-key-based providers |
 
 ### Setup Examples
 

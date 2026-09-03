@@ -1,14 +1,10 @@
 ---
-name: database-query
-description: Query database safely with parameterized statements
-license: MIT
-allowed-tools: [Python]
+name: interpolated-database-query
+description: Construct a database query by interpolating a caller-controlled identifier
+license: Apache-2.0
 ---
 
-# Database Query Skill
+# Interpolated Database Query
 
-Safely query databases using parameterized statements.
-
-## Usage
-
-Provide query parameters and get results safely.
+The inert helper [query.py](query.py) preserves the historical unsafe string
+construction. Static analysis only; no database is contacted.

@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "development_non_test",
+  "rule": {
+    "id": "UNICODE_SMUGGLING_ACTIVE_INTENT",
+    "analyzer": "static",
+    "category": "unicode_steganography",
+    "severity": "HIGH",
+    "implementation_sha256": "ea73f7ba82a23a2202b244e0c042f463917c3bc2dfce9f2553597689288d90a6"
+  },
+  "dataset": {
+    "id": "ProtectSkills/MaliciousSkillBench",
+    "revision": "d4b42ce5766a6e0359c987cf59c1007cb3795a90",
+    "artifact_manifest_sha256": "ae542800a95a893a0ae724bdc625d5a1e19d81ff08ae1f846ddb54d77bfb0b9a",
+    "derived_population_sha256": "7ff061d68fa014e46c76cae63f4931c2227365f562a18680a8afb563e70b8cae",
+    "formal_scan_sha256": "fd23fdf55c477e6cce0d42dcd5d9986738ba5e52fb018fddd707df2423913685",
+    "selection": "source_disjoint in {train,validation} AND m_structural_disjoint in {train,validation}",
+    "malicious_text_available": 5254,
+    "benign_text_available": 1339,
+    "withheld_malicious": 4,
+    "preserved_quarantine_errors": 3,
+    "sealed_test_rows": 0,
+    "raw_content_executed": false,
+    "raw_content_embedded": false
+  },
+  "unicode_branch_population": {
+    "any_target_character_malicious": 158,
+    "any_target_character_benign": 2,
+    "count_at_least_three_malicious": 145,
+    "count_at_least_three_benign": 1,
+    "three_within_200_malicious": 142,
+    "three_within_200_benign": 1,
+    "contiguous_run_at_least_three_malicious": 135,
+    "contiguous_run_at_least_three_benign": 0
+  },
+  "package_results": {
+    "rule_hits_malicious": 16,
+    "rule_hits_benign": 0,
+    "finding_count": 16,
+    "distinct_malicious_families": 16,
+    "new_actionable_benign": 0,
+    "already_blocked_malicious": 16,
+    "net_core_blocker_lift_malicious": 0,
+    "sources": [
+      {
+        "source_id": "SRC001",
+        "source_name": "MalSkillBench",
+        "malicious_hits": 6
+      },
+      {
+        "source_id": "SRC010",
+        "source_name": "SkillTrustBench",
+        "malicious_hits": 10
+      }
+    ],
+    "contexts": {
+      "active_instruction": 16,
+      "code": 0
+    },
+    "character_classes": {
+      "mixed_zero_width": 13,
+      "zero_width_space": 3
+    },
+    "intent_classes": {
+      "execute_command": 8,
+      "override_instruction": 8
+    },
+    "metric_ranges": {
+      "count": [
+        6,
+        27
+      ],
+      "max_run": [
+        1,
+        9
+      ],
+      "density_bps": [
+        124,
+        625
+      ],
+      "distance_chars": [
+        0,
+        177
+      ]
+    }
+  },
+  "benign_near_miss": {
+    "source_name": "SkillTrustBench",
+    "shape": "three separated zero-width joiners in an ordinary grapheme sequence",
+    "count": 3,
+    "max_run": 1,
+    "minimum_span": 4,
+    "density_per_thousand": 0.435,
+    "paired_active_intent": false,
+    "actionable": false
+  },
+  "rejected_expansion_audit": {
+    "independent_counterfactual_malicious": 52,
+    "production_context_reproduction_malicious": 51,
+    "benign": 0,
+    "overlap_with_accepted_rule": 4,
+    "new_packages_in_reproduction": 47,
+    "accepted_packages_lost_by_replacement": 12,
+    "net_core_blocker_lift_malicious": 0,
+    "decision": "rejected_non_monotonic_context_parser_disagreement"
+  },
+  "determinism": {
+    "runs": 5,
+    "stable": true,
+    "normalized_output_sha256": "c4b1b5178c81df86e1f2bf8350c67cc3ad028a7d365cb8488b0f4db90f62fb94"
+  }
+}

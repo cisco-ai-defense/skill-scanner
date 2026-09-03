@@ -1522,11 +1522,11 @@ signatures:
     category: prompt_injection
     severity: HIGH
     patterns:
-      - '[\u{E0000}-\u{E007F}]{3,}'
-      - '[\u{E0020}-\u{E007E}]'
-      - '[\u{E0001}\u{E007F}]'
+      - '[\U000E0000-\U000E007F]{3,}'
+      - '[\U000E0020-\U000E007E]'
+      - '[\U000E0001\U000E007F]'
       - (?:\\u[Ee]00[0-7][0-9A-Fa-f]|&#x[Ee]00[0-7][0-9A-Fa-f];|%F3%A0)
-      - '[\u{E0020}-\u{E007E}]'
+      - '[\U000E0020-\U000E007E]'
     file_types: *id001
     description: >-
       Detects prompt injection using the Unicode "Tag" block (U+E0000-U+E007F), which maps ASCII letters to non-rendering private-use codepoints. Some LLMs interpret these invisible characters as instructions even though humans cannot see them, enabling user-invisible prompt injection in browsers and chat
@@ -1822,9 +1822,9 @@ signatures:
       - '[Dd]ecode\s+the\s+following\s+[Ee]coji\s+in\s+your\s+monologue'
       - >-
         (?:decode|translate|interpret|execute|follow)\s+(?:the\s+|this\s+|these\s+|my\s+)?(?:following\s+)?[Ee]coji(?:\s+(?:payload|text|message|encoded|blob|instructions?))?\s*[:\-\u2013]?
-      - Encoded:\s*[\u{1F000}-\u{1FAFF}\u{2702}-\u{27BF}]{5,}
+      - Encoded:\s*[\U0001F000-\U0001FAFF\u2702-\u27BF]{5,}
       - >-
-        (?:secure\s+system\s+message|admin\s+directive|internal\s+instruction)[\s\S]{0,200}[\u{1F000}-\u{1FAFF}\u{2702}-\u{27BF}]{6,}
+        (?:secure\s+system\s+message|admin\s+directive|internal\s+instruction)[\s\S]{0,200}[\U0001F000-\U0001FAFF\u2702-\u27BF]{6,}
     file_types: *id001
     description: >-
       Detects Ecoji-encoded prompt injection from NVIDIA garak encoding.InjectEcoji probe (ecoji.io). Ecoji maps every 10 bits of input to one of 1024 specific emojis (V1/V2 palette), producing dense emoji sequences that look like gibberish to a human but decode back to ASCII for an LLM. Attackers combine
@@ -1852,7 +1852,7 @@ signatures:
     category: prompt_injection
     severity: CRITICAL
     patterns:
-      - '[\u{E0100}-\u{E017F}]{3,}'
+      - '[\U000E0100-\U000E017F]{3,}'
       - >-
         (?:ASCII\s+in\s+Unicode\s+Variant\s+Selector|variant\s+selector\s+(?:encoded?|smuggl))\s+(?:encoded|decoded)\s+string\s*:
       - >-
@@ -1962,9 +1962,9 @@ signatures:
       - >-
         phrase\s+(?:that\s+can\s+be\s+)?derived\s+from\s+(?:these\s+|the\s+)?emojis?
       - >-
-        (?:write\s+(?:a\s+)?(?:guide|tutorial|instructions?|how[\s-]to)|decode\s+(?:the\s+)?emojis?\s+(?:into\s+)?(?:a\s+)?phrase|derive\s+(?:a\s+)?(?:phrase|meaning|word)\s+from\s+(?:the\s+)?emojis?)[\s\S]{0,200}(?:[\u{1F1E6}-\u{1F1FF}]){4}
+        (?:write\s+(?:a\s+)?(?:guide|tutorial|instructions?|how[\s-]to)|decode\s+(?:the\s+)?emojis?\s+(?:into\s+)?(?:a\s+)?phrase|derive\s+(?:a\s+)?(?:phrase|meaning|word)\s+from\s+(?:the\s+)?emojis?)[\s\S]{0,200}(?:[\U0001F1E6-\U0001F1FF]){4}
       - >-
-        (?:[\u{1F1E6}-\u{1F1FF}]){6,}[\s\S]{0,300}(?:write\s+(?:a\s+)?(?:guide|tutorial|instructions?|how[\s-]to)|decode|derive\s+(?:the\s+)?phrase)
+        (?:[\U0001F1E6-\U0001F1FF]){6,}[\s\S]{0,300}(?:write\s+(?:a\s+)?(?:guide|tutorial|instructions?|how[\s-]to)|decode|derive\s+(?:the\s+)?phrase)
     file_types: *id001
     description: >-
       Detects emoji-flag-encoding jailbreaks from garak DanInTheWild corpus (#330). Uses sequences of regional indicator emoji (U+1F1E6–U+1F1FF, displayed as flag emoji 🇦–🇿) to spell out harmful phrases letter-by-letter, then asks the model to "write a guide for the phrase that can be derived from the emo
@@ -2338,7 +2338,7 @@ signatures:
     severity: MEDIUM
     patterns:
       - >-
-        (?i)(?<!["'])(?<!\b(?:they|user|users|people|customer|customers|developer|developers|client|clients|when|if|whenever|caller|callers|operator|operators)\s)\b(say|output|retype|repeat|emit|reply\s+with|respond\s+with)\s+(?:(?:exactly|only|just|the|following|exact|literal|string|phrase|text|words|content|line|chorus|caption|sentence|verse)\s*[:,-]?\s*)*["'][\sA-Za-z0-9][^"\n]{3,200}["'](?!\s*(?:not|or|nor|but|instead|rather\s+than|--|—|,\s*(?:not|or)\s+["']))
+        (?i)(?<!["'])(?<!\bthey\s)(?<!\buser\s)(?<!\busers\s)(?<!\bpeople\s)(?<!\bcustomer\s)(?<!\bcustomers\s)(?<!\bdeveloper\s)(?<!\bdevelopers\s)(?<!\bclient\s)(?<!\bclients\s)(?<!\bwhen\s)(?<!\bif\s)(?<!\bwhenever\s)(?<!\bcaller\s)(?<!\bcallers\s)(?<!\boperator\s)(?<!\boperators\s)\b(say|output|retype|repeat|emit|reply\s+with|respond\s+with)\s+(?:(?:exactly|only|just|the|following|exact|literal|string|phrase|text|words|content|line|chorus|caption|sentence|verse)\s*[:,-]?\s*)*["'][\sA-Za-z0-9][^"\n]{3,200}["'](?!\s*(?:not|or|nor|but|instead|rather\s+than|--|—|,\s*(?:not|or)\s+["']))
       - >-
         (?i)\b(your\s+(?:answer|response|output|reply|final\s+answer)|the\s+(?:answer|response|output))\s+(?:must|should|will|has\s+to|needs?\s+to)\s+(?:be|equal|match|contain|read|start\s+with|end\s+with)\s+["'][\sA-Za-z0-9][^"\n]{3,200}["']
       - >-
@@ -2373,10 +2373,10 @@ signatures:
     category: prompt_injection
     severity: MEDIUM
     patterns:
-      - '[\u{1D400}-\u{1D7FF}]{3,}'
+      - '[\U0001D400-\U0001D7FF]{3,}'
       - '[\uFF21-\uFF3A\uFF41-\uFF5A]{3,}'
       - >-
-        (?i)(say|output|print|emit|return|reply|respond|retype|repeat)[^\n]{0,40}[\u{1D400}-\u{1D7FF}\uFF21-\uFF3A\uFF41-\uFF5A]{2,}
+        (?i)(say|output|print|emit|return|reply|respond|retype|repeat)[^\n]{0,40}[\U0001D400-\U0001D7FF\uFF21-\uFF3A\uFF41-\uFF5A]{2,}
     file_types: *id001
     description: "Detects user inputs that lift attack payloads into Mathematical Bold, Mathematical Italic, Sans-Serif Bold, Script, Fullwidth, or similar decorative Unicode blocks that visually render as Latin letters but bypass naive substring filters on plain ASCII keywords. Common HackAPrompt evasion technique: "
     remediation: ''
@@ -4395,7 +4395,7 @@ signatures:
     category: prompt_injection
     severity: HIGH
     patterns:
-      - '[\u{1F1E6}-\u{1F1FF}]{6,}'
+      - '[\U0001F1E6-\U0001F1FF]{6,}'
     file_types: *id001
     description: >-
       Detects prompt-injection payloads that smuggle instructions or refusal-suppression phrases by spelling them out one letter at a time using Unicode regional-indicator symbols (U+1F1E6-U+1F1FF, the codepoints that render as flag emoji when paired, e.g. 🇮 🇭 🇦 🇻 🇪). Attackers interleave the letter-emoji
@@ -4472,7 +4472,7 @@ signatures:
     severity: HIGH
     patterns:
       - >-
-        ^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\s\u{FE0F}\u{200D}\u{1F3FB}-\u{1F3FF}]+$
+        ^[\U0001F000-\U0001FFFF\u2600-\u27BF\u2190-\u21FF\u2300-\u23FF\u2B00-\u2BFF\s\uFE0F\u200D\U0001F3FB-\U0001F3FF]+$
     file_types: *id001
     description: >-
       Detects prompt injection payloads composed entirely of emoji, pictograph, and symbol glyphs with no Latin text. Attackers use emoji-only sequences to smuggle instructions or narrative payloads past text-pattern filters that assume natural language, relying on the model's ability to interpret pictogr
@@ -4535,7 +4535,7 @@ signatures:
     category: prompt_injection
     severity: HIGH
     patterns:
-      - (?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*){8,}
+      - (?:[\U0001F300-\U0001FAFF\u2600-\u27BF]\s*){8,}
     file_types: *id001
     description: >-
       Detects dense, emoji-only content floods used to evade text-based prompt-injection and jailbreak filters. Attackers substitute or pad natural-language payloads with long unbroken runs of emoji (pictographs, symbols, dingbats) to defeat keyword and semantic pattern matching while still smuggling stru
@@ -4559,7 +4559,7 @@ signatures:
     category: prompt_injection
     severity: HIGH
     patterns:
-      - '[\u{1F1E6}-\u{1F1FF}]{4,}'
+      - '[\U0001F1E6-\U0001F1FF]{4,}'
     file_types: *id001
     description: "Detects prompt injection payloads obfuscated by spelling words one Unicode regional-indicator symbol per letter (the flag-emoji alphabet used in the U+1F1E6-U+1F1FF block). This is a known Discord/Twitter-culture obfuscation convention: each regional-indicator symbol renders as part of a flag emoji "
     remediation: ''

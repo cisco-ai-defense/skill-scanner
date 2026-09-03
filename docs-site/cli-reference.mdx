@@ -21,7 +21,7 @@ Skill Scanner provides three entry points: `skill-scanner` (main CLI), `skill-sc
 | `generate-policy` | Generate a scan policy YAML from a preset |
 | `configure-policy` | Interactive TUI for editing policy |
 | `list-analyzers` | Show available analyzers and their activation flags |
-| `validate-rules` | Validate rule signatures |
+| `validate-rules` | Validate selected packs and compile/type-check CEL |
 
 ---
 
@@ -66,6 +66,8 @@ skill-scanner scan /path/to/skill [OPTIONS]
 | `--policy` | Preset name (`strict`, `balanced`, `permissive`) or path to custom YAML |
 | `--custom-rules PATH` | Use custom YARA rules from directory |
 | `--rule-packs PACK...` | Enable packs such as `atr` and `promptguard`; use `--rule-packs list` to inspect packs |
+| `--trusted-rule-pack PATH` | Load an administrator-trusted schema-v2 signature/YARA/CEL pack; repeatable |
+| `--cel-mode MODE` | Override policy CEL mode with `off`, `shadow`, or `enforce` |
 | `--taxonomy PATH` | Override the Cisco AI taxonomy JSON/YAML |
 | `--threat-mapping PATH` | Override the threat mapping JSON |
 | `--fail-on-severity LEVEL` | Exit with error if findings at or above LEVEL exist |
@@ -201,7 +203,8 @@ skill-scanner list-analyzers
 
 ### `skill-scanner validate-rules`
 
-Validate rule signatures for correctness.
+Validate bundled rules and optional trusted schema-v2 packs, including CEL
+parse/type checks with the bundled helper.
 
 ```bash
 skill-scanner validate-rules [OPTIONS]
@@ -210,6 +213,7 @@ skill-scanner validate-rules [OPTIONS]
 | Flag | Description |
 |------|-------------|
 | `--rules-file PATH` | Path to custom rules to validate |
+| `--trusted-rule-pack PATH` | Administrator-trusted schema-v2 pack; repeatable |
 
 ```bash
 # Validate built-in rules
@@ -217,6 +221,9 @@ skill-scanner validate-rules
 
 # Validate custom rules
 skill-scanner validate-rules --rules-file /path/to/custom
+
+# Validate an administrator-approved signature/YARA/CEL pack
+skill-scanner validate-rules --trusted-rule-pack /path/to/org-pack
 ```
 
 ---

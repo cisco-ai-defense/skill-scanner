@@ -33,7 +33,7 @@ def collect():
     assert len(direct_matches) == 1
 
     findings = analyzer.analyze(skill)
-    matches = [f for f in findings if f.rule_id == "DATA_EXFIL_SENSITIVE_FILES"]
+    matches = [f for f in findings if f.rule_id == "DATA_EXFIL_SENSITIVE_FILE_GLOB"]
     assert matches
     assert any(f.metadata.get("detection_method") == "ast_sensitive_path_and_glob" for f in matches)
     assert matches[0].severity == Severity.HIGH
@@ -73,7 +73,7 @@ class CredentialSnapshot:
 
     matches = StaticAnalyzer(use_yara=False)._check_dynamic_sensitive_file_access(skill)
     assert len(matches) == 1
-    assert matches[0].rule_id == "DATA_EXFIL_SENSITIVE_FILES"
+    assert matches[0].rule_id == "DATA_EXFIL_SENSITIVE_FILE_GLOB"
 
 
 @pytest.mark.parametrize("method", ["glob", "rglob"])
@@ -92,7 +92,7 @@ def collect(home):
 
     matches = StaticAnalyzer(use_yara=False)._check_dynamic_sensitive_file_access(skill)
     assert len(matches) == 1
-    assert matches[0].rule_id == "DATA_EXFIL_SENSITIVE_FILES"
+    assert matches[0].rule_id == "DATA_EXFIL_SENSITIVE_FILE_GLOB"
 
 
 def test_bulk_environment_snapshot_is_detected(make_skill):

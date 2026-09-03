@@ -123,12 +123,12 @@
     },
     {
       "title": "Development Setup and Testing",
-      "purpose": "How to set up a development environment and run tests: prerequisites (Python 3.10+, uv), cloning the repo, uv sync for dependency installation, pre-commit install, code quality tools (ruff linting and formatting, mypy type checking). Testing infrastructure: pytest configuration, test markers (slow, integration, requires_llm, e2e), unit test organization in tests/ directory, test fixtures in conftest.py, running specific test suites, coverage reporting with Codecov, and how to write new tests. Reference docs/developing.md, pyproject.toml, .pre-commit-config.yaml, tests/.",
+      "purpose": "How to set up a development environment and run tests: prerequisites (Python 3.11+, uv), cloning the repo, uv sync for dependency installation, pre-commit install, code quality tools (ruff linting and formatting, mypy type checking). Testing infrastructure: pytest configuration, test markers (slow, integration, requires_llm, e2e), unit test organization in tests/ directory, test fixtures in conftest.py, running specific test suites, coverage reporting with Codecov, and how to write new tests. Reference docs/developing.md, pyproject.toml, .pre-commit-config.yaml, tests/.",
       "parent": "Development"
     },
     {
       "title": "CI/CD Setup and Integration",
-      "purpose": "Complete CI/CD guide: (1) GitHub Actions workflows — python-tests.yml (lint with pre-commit, test across Python 3.10-3.12, benchmark, coverage with Codecov, pip-audit, liccheck), integration-tests.yml (LLM/VT/AI Defense tests with GitHub secrets, triggered by label or manual), release.yml (PyPI publishing with trusted publishing); (2) Integrating skill-scanner into your own CI/CD — using --fail-on-findings for build gates, SARIF output for GitHub Code Scanning integration, JSON output for automation, exit codes; (3) Docker deployment example; (4) Batch scanning in CI with scan-all. Include real workflow YAML examples. Reference .github/workflows/, examples/integration_example.py, docs/api-server.md.",
+      "purpose": "Complete CI/CD guide: (1) GitHub Actions workflows — python-tests.yml (lint with pre-commit, test across Python 3.11-3.14, benchmark, coverage with Codecov, pip-audit, liccheck), integration-tests.yml (LLM/VT/AI Defense tests with GitHub secrets, triggered by label or manual), release.yml (PyPI publishing with trusted publishing); (2) Integrating skill-scanner into your own CI/CD — using --fail-on-findings for build gates, SARIF output for GitHub Code Scanning integration, JSON output for automation, exit codes; (3) Docker deployment example; (4) Batch scanning in CI with scan-all. Include real workflow YAML examples. Reference .github/workflows/, examples/integration_example.py, docs/api-server.md.",
       "parent": "Development"
     },
     {

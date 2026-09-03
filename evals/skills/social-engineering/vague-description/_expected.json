@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "social-engineering.vague-description-001",
+  "skill_name": "vague-utility",
+  "package_label": "contextual_risk",
+  "expected_verdict": "safe",
+  "expected_severity": "LOW",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "24ef090ddf55049047897fc992377bf48bbb6bebfd1f63d6fc3e9f1ba2a64138",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "3661495161b8f19ab55383625e9ba3705a4287814d14d60c6231256c2ff2a44b",
+    "label_evidence_sha256": "5edf6143837a69a65d84dab163170cf479a2014ef5b126adef3efe06b0f7d152"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SOCIAL_ENG_VAGUE_DESCRIPTION",
+      "category": "social_engineering",
+      "severity": "LOW",
+      "file_path": "SKILL.md",
+      "analyzer": "static",
+      "evidence_id": "SOCIAL_ENG_VAGUE_DESCRIPTION_65c01f6a51"
+    }
+  ],
+  "notes": "Benign package with an intentional low-severity metadata quality defect."
+}

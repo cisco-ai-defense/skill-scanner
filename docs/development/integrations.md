@@ -134,7 +134,7 @@ checkout step to fetch enough history for the selected base and head SHAs.
 Keep preset strategy explicit by workflow stage:
 
 - **Pull requests:** `balanced` or `strict` preset for fast feedback
-- **Nightly / security sweep:** `strict` + optional semantic analyzers (`--use-llm`, `--use-behavioral`)
+- **Manual security sweep:** `strict` + optional semantic analyzers (`--use-llm`, `--use-behavioral`)
 
 ## Build Gate
 

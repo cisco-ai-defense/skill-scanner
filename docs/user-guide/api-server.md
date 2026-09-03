@@ -50,6 +50,10 @@ When the server is running, visit:
 
 ## Quick Test
 
+The path-based example below requires the server to have been started with
+`SKILL_SCANNER_ALLOWED_ROOTS=/path/to`. Without that opt-in, only uploaded ZIPs
+inside the API's private upload root are accessible.
+
 ```bash
 # Verify the server is running
 curl http://localhost:8000/health
@@ -69,10 +73,17 @@ For complete request/response examples in curl, Python, and JavaScript, see **[A
 The API server uses the same environment variables as the CLI. The most common ones:
 
 ```bash
+export SKILL_SCANNER_ALLOWED_ROOTS=/srv/skills:/srv/scanner-config
 export SKILL_SCANNER_LLM_API_KEY=your_key
 export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 export AI_DEFENSE_API_KEY=your_key
 ```
+
+Filesystem access is deny-by-default. With `SKILL_SCANNER_ALLOWED_ROOTS` unset,
+the API can access only its process-private `0700` upload root. Set the variable
+before starting the server to allow resolved `skill_directory` or
+`skills_directory` targets and file-valued policy or custom-rule paths. Uploaded
+ZIPs remain confined to the private upload root.
 
 Server bind settings are controlled by CLI flags (`--host`, `--port`) when launching `skill-scanner-api`. See **[Configuration Reference](../reference/configuration-reference.md)** for the full list of environment variables.
 

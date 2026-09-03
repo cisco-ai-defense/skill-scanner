@@ -11,6 +11,50 @@
             "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
             "description": "Severity level of the security finding"
           },
+          "verdict": {
+            "type": "string",
+            "enum": ["TRUE_POSITIVE", "CONTEXTUAL_RISK"],
+            "description": "Whether evidence confirms the behavior or only establishes a contextual risk"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "prompt_injection",
+              "command_injection",
+              "data_exfiltration",
+              "unauthorized_tool_use",
+              "obfuscation",
+              "hardcoded_secrets",
+              "social_engineering",
+              "resource_abuse",
+              "policy_violation",
+              "malware",
+              "harmful_content",
+              "skill_discovery_abuse",
+              "transitive_trust_abuse",
+              "autonomy_abuse",
+              "tool_chaining_abuse",
+              "unicode_steganography",
+              "supply_chain_attack"
+            ],
+            "description": "Exact Skill Scanner threat category"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["HIGH", "MEDIUM", "LOW"],
+            "description": "Confidence supported by the cited evidence"
+          },
+          "evidence_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^(SRC|DET):[a-f0-9]{16}$"
+            },
+            "description": "One or more exact evidence IDs copied from the prompt"
+          },
           "aitech": {
             "type": "string",
             "enum": [
@@ -20,6 +64,7 @@
               "AITech-8.2",
               "AITech-9.1",
               "AITech-9.2",
+              "AITech-9.3",
               "AITech-12.1",
               "AITech-13.1",
               "AITech-15.1"
@@ -51,13 +96,18 @@
             "description": "Recommended remediation steps"
           }
         },
-        "required": ["severity", "aitech", "aisubtech", "title", "description", "location", "evidence", "remediation"],
+        "required": ["severity", "verdict", "category", "confidence", "evidence_ids", "aitech", "aisubtech", "title", "description", "location", "evidence", "remediation"],
         "additionalProperties": false
       }
     },
     "overall_assessment": {
       "type": "string",
       "description": "Summary assessment of the skill's security posture"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["SAFE", "SUSPICIOUS", "MALICIOUS"],
+      "description": "Package-level verdict"
     },
     "primary_threats": {
       "type": "array",
@@ -67,6 +117,6 @@
       "description": "List of primary threat types identified (empty if safe)"
     }
   },
-  "required": ["findings", "overall_assessment", "primary_threats"],
+  "required": ["findings", "overall_assessment", "verdict", "primary_threats"],
   "additionalProperties": false
 }

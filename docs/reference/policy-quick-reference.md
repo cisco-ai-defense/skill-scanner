@@ -8,21 +8,27 @@ This page is a compact reference. For full walkthroughs, see [Custom Policy Conf
 
 ## Presets
 
-| Preset | Use case |
-|--------|----------|
-| **balanced** (default) | Good balance of detection and false-positive rate. Broad benign allowlists, demotion in docs, known installer domains trusted. |
-| **strict** | Lowest thresholds, most sensitive. Scans all files (no inert extension skip), no known installer demotions, narrow allowlists. Best for untrusted/external skills and compliance audits. |
-| **permissive** | Highest thresholds, fewer findings, broader whitelists. Best for trusted internal skills or high-FP workflows. |
+| Preset | CEL mode | Correlation | Use case |
+|--------|----------|-------------|----------|
+| **balanced** (default) | `shadow` | enabled | Good balance of detection and false-positive rate. Broad benign allowlists, demotion in docs, known installer domains trusted. |
+| **strict** | `shadow` | enabled | Lowest thresholds, most sensitive. Scans all files (no inert extension skip), no known installer demotions, narrow allowlists. Best for untrusted/external skills and compliance audits. |
+| **permissive** | `off` | disabled | Highest thresholds, fewer findings, broader whitelists. Best for trusted internal skills or high-FP workflows. |
 
 ```bash
 skill-scanner scan --policy balanced ./my-skill
 skill-scanner scan --policy strict ./my-skill
 skill-scanner scan --policy /path/to/custom.yaml ./my-skill
+skill-scanner scan --policy balanced --cel-mode shadow ./my-skill
 skill-scanner generate-policy -o my_org_policy.yaml
 skill-scanner configure-policy  # Interactive TUI
 ```
 
 Use `--preset strict|balanced|permissive` with `generate-policy` to base a new file on a specific preset.
+
+All bundled CEL rules currently use `rollout: shadow`; a global `enforce` mode
+therefore remains non-suppressing until individual rules pass promotion. ATR is
+an optional `--rule-packs atr` input and does not gate the current core + CEL
+release.
 
 ## Most Common Tweaks
 
@@ -32,10 +38,13 @@ Copy-paste these into your policy YAML. You only need the sections you want to c
 
 ```yaml
 # Strict scanning for CI pipelines
+cel:
+  mode: shadow
 analyzers:
   static: true
   bytecode: true
   pipeline: true
+  correlation: true
 disabled_rules: []
 ```
 
@@ -110,6 +119,19 @@ Each section below documents every field, its type, default, and what it affects
 | max_name_length | int | 64 | MANIFEST_INVALID_NAME |
 | max_description_length | int | 1024 | MANIFEST_DESCRIPTION_TOO_LONG |
 | min_description_length | int | 20 | SOCIAL_ENG_VAGUE_DESCRIPTION |
+
+</details>
+
+<details>
+<summary><strong>cel</strong> — Typed contextual decision layer</summary>
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| mode | `off` \| `shadow` \| `enforce` | `shadow` | Whether CEL decisions are skipped, observed, or allowed to suppress individually promoted rules |
+
+CEL expressions still compile and type-check in `off` mode. Runtime/projection
+errors fail open and retain the candidate. The CLI `--cel-mode` flag overrides
+this field for the current invocation.
 
 </details>
 

@@ -286,6 +286,107 @@ class TestExtensionMismatch:
         result = check_extension_mismatch(f)
         assert result is None
 
+    @pytest.mark.parametrize(
+        ("extension", "content_type", "mime_type"),
+        [
+            (
+                ".docx",
+                "document/docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+            (
+                ".xlsx",
+                "document/xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+            (
+                ".pptx",
+                "document/pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ),
+            (
+                ".docm",
+                "document/docx",
+                "application/vnd.ms-word.document.macroEnabled.12",
+            ),
+            (
+                ".xlsm",
+                "document/xlsx",
+                "application/vnd.ms-excel.sheet.macroEnabled.12",
+            ),
+            (
+                ".pptm",
+                "document/pptx",
+                "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+            ),
+        ],
+    )
+    def test_magika_ooxml_document_family_matches_zip_based_extension(
+        self,
+        tmp_path,
+        monkeypatch,
+        extension,
+        content_type,
+        mime_type,
+    ):
+        document = tmp_path / f"reference{extension}"
+        document.write_bytes(b"PK\x03\x04bounded-ooxml-fixture")
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch(content_type, "document", "OOXML document", 0.99, mime_type),
+        )
+
+        assert check_extension_mismatch(document) is None
+
+    def test_ooxml_extension_with_different_document_label_is_still_a_mismatch(self, tmp_path, monkeypatch):
+        document = tmp_path / "reference.pptx"
+        document.write_bytes(b"PK\x03\x04bounded-ooxml-fixture")
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch(
+                "document/docx",
+                "document",
+                "Microsoft Word document",
+                0.99,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+        )
+
+        assert check_extension_mismatch(document) is not None
+
+    def test_html_detected_as_vue_is_a_compatible_web_subtype(self, tmp_path, monkeypatch):
+        document = tmp_path / "visualization.html"
+        document.write_text(
+            '<!doctype html><html><body><div id="app">{{ message }}</div>'
+            '<script type="module">import { createApp } from "vue";</script></body></html>',
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("code/vue", "code", "Vue component", 0.99, "text/x-vue"),
+        )
+
+        assert check_extension_mismatch(document) is None
+
+    def test_html_with_cross_family_binary_content_remains_actionable(self, tmp_path, monkeypatch):
+        document = tmp_path / "visualization.html"
+        document.write_bytes(b"MZ" + b"\0" * 128)
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch(
+                "executable/pe",
+                "executable",
+                "PE/Windows executable",
+                1.0,
+                "application/x-dosexec",
+            ),
+        )
+
+        result = check_extension_mismatch(document)
+
+        assert result is not None
+        assert result[0] == "CRITICAL"
+
     def test_unknown_extension_no_mismatch(self, tmp_path):
         """Unknown extension → no mismatch (nothing to compare against)."""
         f = tmp_path / "data.xyz"

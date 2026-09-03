@@ -7,7 +7,7 @@ signatures:
     atr_id: ATR-2026-00279
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-00279-harmful-completion-continuation.yaml
-    category: model_abuse
+    category: harmful_content
     severity: MEDIUM
     patterns:
       - >-
@@ -32,7 +32,7 @@ signatures:
     atr_id: ATR-2026-00281
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-00281-eicar-gtube-malware-signature-request.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -51,7 +51,7 @@ signatures:
     atr_id: ATR-2026-00284
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-00284-glitch-token-destabilization.yaml
-    category: model_abuse
+    category: harmful_content
     severity: MEDIUM
     patterns:
       - (?:ÃÂÃÂ){2,}|(?:ÃÂÃÂÃÂÃÂ){1,}
@@ -68,7 +68,7 @@ signatures:
     atr_id: ATR-2026-00289
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-00289-lmrc-harmful-content-elicitation.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -87,7 +87,7 @@ signatures:
     atr_id: ATR-2026-00292
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-00292-self-harm-eating-disorder-facilitation.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -106,7 +106,7 @@ signatures:
     atr_id: ATR-2026-00298
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-00298-malicious-use-illegal-activity-request.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -127,7 +127,7 @@ signatures:
     atr_id: ATR-2026-00299
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-00299-harmbench-detailed-harmful-instruction.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -148,7 +148,7 @@ signatures:
     atr_id: ATR-2026-00413
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-00413-malwaregen-code-generation-request.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -168,7 +168,7 @@ signatures:
     atr_id: ATR-2026-00502
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-00502-training-data-extraction-via-divergent-repetition-attack.yaml
-    category: model_abuse
+    category: harmful_content
     severity: MEDIUM
     patterns:
       - >-
@@ -189,7 +189,7 @@ signatures:
     atr_id: ATR-2026-00517
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-00517-model-extraction-distillation.yaml
-    category: model_abuse
+    category: harmful_content
     severity: MEDIUM
     patterns:
       - >-
@@ -212,7 +212,7 @@ signatures:
     atr_id: ATR-2026-01750
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01750-dos-repeat-word-n-times-output-amplification.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -229,7 +229,7 @@ signatures:
     atr_id: ATR-2026-01760
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01760-dos-forced-infinite-output-token-flood.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -248,7 +248,7 @@ signatures:
     atr_id: ATR-2026-01830
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01830-stolen-credential-account-drain.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - '0x5d5acA289F2A9E481fa2aEaD3FA465880Df84354'
@@ -264,7 +264,7 @@ signatures:
     atr_id: ATR-2026-01831
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01831-money-laundering-crypto-layering.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -279,7 +279,7 @@ signatures:
     atr_id: ATR-2026-01833
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01833-darknet-controlled-substance-procurement.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - (?i)\b(?:order|buy|purchase)\b[\s\S]{0,80}\b(?:from\s+)?alpha\s?bay\b
@@ -296,7 +296,7 @@ signatures:
     atr_id: ATR-2026-01834
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01834-fraudulent-identity-document-procurement.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -311,7 +311,7 @@ signatures:
     atr_id: ATR-2026-01835
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01835-human-trafficking-facilitation.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -326,7 +326,7 @@ signatures:
     atr_id: ATR-2026-01836
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01836-trojanized-software-distribution.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -343,7 +343,7 @@ signatures:
     atr_id: ATR-2026-01840
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01840-extremist-propaganda-distribution.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -358,7 +358,7 @@ signatures:
     atr_id: ATR-2026-01841
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01841-deepfake-disinformation.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -375,7 +375,7 @@ signatures:
     atr_id: ATR-2026-01842
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01842-plagiarism-detector-evasion.yaml
-    category: model_abuse
+    category: harmful_content
     severity: MEDIUM
     patterns:
       - (?i)\bavoid\s+(?:a\s+)?plagiarism\s+(?:check|detection|detectors?)\b
@@ -387,7 +387,7 @@ signatures:
     atr_id: ATR-2026-01843
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01843-drug-dealing-detection-evasion-spelling.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -402,7 +402,7 @@ signatures:
     atr_id: ATR-2026-01844
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01844-illegitimate-prescription-fulfillment.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -416,7 +416,7 @@ signatures:
     atr_id: ATR-2026-01845
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01845-banned-ingredient-relabel-fraud.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -431,7 +431,7 @@ signatures:
     atr_id: ATR-2026-01846
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01846-tax-evasion-offshore-shell-planning.yaml
-    category: model_abuse
+    category: harmful_content
     severity: MEDIUM
     patterns:
       - >-
@@ -446,7 +446,7 @@ signatures:
     atr_id: ATR-2026-01847
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01847-immigration-work-fraud.yaml
-    category: model_abuse
+    category: harmful_content
     severity: MEDIUM
     patterns:
       - >-
@@ -461,7 +461,7 @@ signatures:
     atr_id: ATR-2026-01848
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01848-illicit-drug-marketplace-build.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -476,7 +476,7 @@ signatures:
     atr_id: ATR-2026-01850
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01850-targeted-doxxing-threat-campaign.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -494,7 +494,7 @@ signatures:
     atr_id: ATR-2026-01851
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01851-bestiality-content-distribution.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -509,7 +509,7 @@ signatures:
     atr_id: ATR-2026-01852
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01852-romance-scam-impersonation.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - (?i)\bpretending\s+to\s+be\s+a\s+young\s+woman\b
@@ -522,7 +522,7 @@ signatures:
     atr_id: ATR-2026-01853
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01853-nonconsensual-leaked-media-distribution.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - (?i)\bpay\s+for\s+the\s+photos?\b
@@ -536,7 +536,7 @@ signatures:
     atr_id: ATR-2026-01854
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01854-falsified-research-abstract-disinformation.yaml
-    category: model_abuse
+    category: harmful_content
     severity: MEDIUM
     patterns:
       - (?i)\b(?:GPT-3|GPT3)\s+abstract\b[\s\S]{0,80}\bfalsely\b
@@ -550,7 +550,7 @@ signatures:
     atr_id: ATR-2026-01855
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01855-content-misappropriation-republish.yaml
-    category: model_abuse
+    category: harmful_content
     severity: MEDIUM
     patterns:
       - >-
@@ -566,7 +566,7 @@ signatures:
     atr_id: ATR-2026-01856
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01856-targeted-harmful-content-generation.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-
@@ -585,7 +585,7 @@ signatures:
     atr_id: ATR-2026-01896
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01896-ransomware.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - >-
@@ -598,7 +598,7 @@ signatures:
     atr_id: ATR-2026-01897
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01897-host-sabotage.yaml
-    category: model_abuse
+    category: harmful_content
     severity: CRITICAL
     patterns:
       - (?i)shutil\.rmtree\(\s*[\"']/[\"']\s*\)
@@ -616,7 +616,7 @@ signatures:
     atr_id: ATR-2026-01898
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-abuse/ATR-2026-01898-network-dos.yaml
-    category: model_abuse
+    category: harmful_content
     severity: HIGH
     patterns:
       - >-

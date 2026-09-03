@@ -22,8 +22,12 @@ Handles detection and configuration of different LLM providers
 """
 
 import importlib.util
+import ipaddress
 import logging
 import os
+from importlib import import_module
+from typing import Protocol, cast
+from urllib.parse import urlsplit
 
 from .llm_request_options import (
     normalize_litellm_model_for_provider,
@@ -32,6 +36,53 @@ from .llm_request_options import (
 )
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+
+
+def is_loopback_host(host: object) -> bool:
+    """Return whether *host* is the literal 127.0.0.1 or ::1 address."""
+
+    if isinstance(host, bytes):
+        host = host.decode("ascii", errors="strict")
+    if not isinstance(host, str):
+        return False
+    normalized = host.lower()
+    if "%" in normalized:
+        return False
+    try:
+        address = ipaddress.ip_address(normalized)
+    except ValueError:
+        return False
+    return address == ipaddress.ip_address("127.0.0.1") or address == ipaddress.ip_address("::1")
+
+
+def validate_ollama_base_url(base_url: str | None) -> None:
+    """Reject an Ollama endpoint that could route scanner content remotely."""
+
+    if base_url is None:
+        return
+    parsed = urlsplit(base_url)
+    if parsed.scheme != "http" or not is_loopback_host(parsed.hostname):
+        raise ValueError("Ollama base URL must be an http:// loopback endpoint")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("Ollama base URL must not contain credentials, a query, or a fragment")
+    if parsed.path not in {"", "/"}:
+        raise ValueError("Ollama base URL must not contain a path")
+
+
+def resolve_ollama_base_url(base_url: str | None) -> str:
+    """Return an explicit, validated endpoint for local Ollama requests.
+
+    LiteLLM also recognizes provider-specific environment variables such as
+    ``OLLAMA_API_BASE``.  Always supplying a scanner-owned endpoint prevents
+    those ambient values from redirecting skill content to a remote service.
+    """
+
+    effective_base_url = DEFAULT_OLLAMA_BASE_URL if base_url is None else base_url
+    validate_ollama_base_url(effective_base_url)
+    return effective_base_url
+
 
 # Check for Google GenAI availability
 # Wrap in try/except because find_spec can raise ModuleNotFoundError
@@ -47,14 +98,34 @@ try:
 except (ImportError, ModuleNotFoundError):
     LITELLM_AVAILABLE = False
 
-# Check for Azure Identity availability (optional -- pip install skill-scanner[azure])
-try:
-    from azure.identity import DefaultAzureCredential
 
-    AZURE_IDENTITY_AVAILABLE = True
+# Check for Azure Identity availability (optional -- pip install skill-scanner[azure])
+class _AzureAccessToken(Protocol):
+    """Minimal token shape used from the optional Azure dependency."""
+
+    token: str
+
+
+class _AzureCredential(Protocol):
+    """Minimal credential shape used from the optional Azure dependency."""
+
+    def get_token(self, *scopes: str) -> _AzureAccessToken: ...
+
+
+class _AzureCredentialFactory(Protocol):
+    """Constructor shape for ``azure.identity.DefaultAzureCredential``."""
+
+    def __call__(self) -> _AzureCredential: ...
+
+
+try:
+    _azure_identity = import_module("azure.identity")
+    _default_azure_credential = getattr(_azure_identity, "DefaultAzureCredential", None)
 except (ImportError, ModuleNotFoundError):
-    DefaultAzureCredential = None  # type: ignore[misc,assignment]
-    AZURE_IDENTITY_AVAILABLE = False
+    _default_azure_credential = None
+
+AZURE_IDENTITY_AVAILABLE = callable(_default_azure_credential)
+DefaultAzureCredential = cast(_AzureCredentialFactory, _default_azure_credential) if AZURE_IDENTITY_AVAILABLE else None
 
 
 class ProviderConfig:
@@ -115,6 +186,9 @@ class ProviderConfig:
             not self.is_openai_compatible and model_lower.startswith("orcarouter/")
         )
         self.is_gpt5 = "gpt-5" in model_lower
+
+        if self.is_ollama:
+            self.base_url = resolve_ollama_base_url(self.base_url)
 
         # Determine if we should use Google SDK
         self.use_google_sdk = False
@@ -325,6 +399,13 @@ class ProviderConfig:
             params["api_base"] = "https://api.orcarouter.ai/v1"
         if self.api_version:
             params["api_version"] = self.api_version
+
+        if self.is_ollama:
+            # Scanner prompts require a structured final answer.  Reasoning
+            # models served by Ollama may otherwise spend the whole output
+            # budget in the hidden thinking channel and return empty content.
+            # LiteLLM maps ``reasoning_effort=none`` to Ollama ``think=false``.
+            params["reasoning_effort"] = "none"
 
         if self.llm_user and supports_openai_user_param(self.model, self.provider):
             params["user"] = self.llm_user

@@ -7,7 +7,7 @@ signatures:
     atr_id: ATR-2026-00072
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-security/ATR-2026-00072-model-behavior-extraction.yaml
-    category: model_security
+    category: policy_violation
     severity: CRITICAL
     patterns:
       - >-
@@ -36,7 +36,7 @@ signatures:
     atr_id: ATR-2026-00073
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-security/ATR-2026-00073-malicious-finetuning-data.yaml
-    category: model_security
+    category: policy_violation
     severity: CRITICAL
     patterns:
       - >-
@@ -59,7 +59,7 @@ signatures:
     atr_id: ATR-2026-00433
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/model-security/ATR-2026-00433-modelcache-torch-load-deserialization-rce.yaml
-    category: model_security
+    category: policy_violation
     severity: CRITICAL
     patterns:
       - >-

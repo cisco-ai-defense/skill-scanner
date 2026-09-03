@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "status": "development_only_not_release_gate",
+  "rule": {
+    "id": "ACTIVE_HIDDEN_HTML_INSTRUCTION",
+    "source": "python",
+    "analyzer": "static",
+    "category": "prompt_injection",
+    "severity": "HIGH",
+    "implementation_sha256": "9776ffc47386b14189d8599c3d4bc6247ace6c2895c646e04b7ea4bb94f86299",
+    "decision_shape": "active hidden carrier plus same-carrier control override and execution or sensitive-data action"
+  },
+  "dataset": {
+    "id": "ProtectSkills/MaliciousSkillBench",
+    "revision": "d4b42ce5766a6e0359c987cf59c1007cb3795a90",
+    "artifact_manifest_sha256": "ae542800a95a893a0ae724bdc625d5a1e19d81ff08ae1f846ddb54d77bfb0b9a",
+    "selection_sha256": "502e76f74f4273402d3165af9847fc5d998d9b5e946302e88091cf2625a033de",
+    "available_selection_sha256": "823de32f322c841251db0167acce490a4e9cca260577efba8e47c89cbb457922",
+    "selection": "source_disjoint and m_structural_disjoint train/validation only",
+    "sealed_test_rows": 0,
+    "raw_content_embedded": false,
+    "sample_execution": false
+  },
+  "population": {
+    "malicious": 5258,
+    "benign": 1339,
+    "available_malicious": 5256,
+    "available_benign": 1338,
+    "endpoint_quarantined_malicious": 2,
+    "endpoint_quarantined_benign": 1
+  },
+  "package_results": {
+    "rule_hits_malicious": 115,
+    "rule_hits_benign": 0,
+    "finding_count": 128,
+    "new_high_confidence_signal_packages": 115,
+    "existing_core_actionable_overlap_malicious": 13,
+    "net_core_blocker_lift_malicious": 102,
+    "existing_full_pack_actionable_overlap_malicious": 115,
+    "net_full_pack_blocker_lift_malicious": 0,
+    "new_actionable_benign": 0,
+    "scanner_finding_identity_sha256": "3645a0cb932ba24c5a312062b3a1cdecab87dd99ecaec8bfe4abb2e52f24c971"
+  },
+  "rule_confusion": {
+    "all_denominator": {
+      "true_positive": 115,
+      "false_negative": 5143,
+      "false_positive": 0,
+      "no_finding_benign": 1339,
+      "note": "False negatives include two unavailable malicious packages; one no-finding benign package was unavailable and is not claimed as an inspected true negative."
+    },
+    "available_only": {
+      "true_positive": 115,
+      "false_negative": 5141,
+      "false_positive": 0,
+      "true_negative": 1338
+    }
+  },
+  "coverage": {
+    "sources": {
+      "SRC001": {
+        "name": "MalSkillBench",
+        "malicious_hits": 15
+      },
+      "SRC010": {
+        "name": "SkillTrustBench",
+        "malicious_hits": 100
+      }
+    },
+    "distinct_structural_families": 115,
+    "max_family_support": 1,
+    "finding_classes": {
+      "hidden_comment_override_execution": 101,
+      "hidden_comment_override_sensitive_action": 27,
+      "hidden_element_override_execution": 0,
+      "hidden_element_override_sensitive_action": 0
+    },
+    "exact_hidden_comment_bodies": 25,
+    "normalized_hidden_comment_templates": 23,
+    "top_template_package_support": [
+      50,
+      43,
+      3
+    ],
+    "top_two_template_package_union": 93
+  },
+  "existing_core_overlap": {
+    "UNICODE_SMUGGLING_ACTIVE_INTENT": 10,
+    "PROMPT_INJECTION_IGNORE_INSTRUCTIONS": 4,
+    "PROMPT_INJECTION_CONCEALMENT": 3,
+    "YARA_prompt_injection_generic": 1,
+    "CORRELATED_NETWORK_EXECUTION_FLOW": 1
+  },
+  "hard_negative_checks": {
+    "malicious_skill_bench_available_benign": {
+      "packages": 1338,
+      "rule_hits": 0,
+      "errors": 0,
+      "unavailable_declared_benign": 1
+    },
+    "notinject": {
+      "dataset_id": "InjecGuard/InjecGuard",
+      "revision": "cb1531f36bffb38b6493438217b36cda8875da8a",
+      "artifact_manifest_sha256": "149f7bf2298de3fa237fb6e57f193d5e796ee111046422bea73f47def79774b1",
+      "packages": 339,
+      "rule_hits": 0,
+      "errors": 0
+    },
+    "local_unlabeled_skill_corpus": {
+      "packages": 2361,
+      "bytes": 27815702,
+      "selection_sha256": "b1f57fb943601667b796ceff9bb8efe62a549d7601b8aee5d75832bd221bca8b",
+      "rule_hits": 0,
+      "errors": 0
+    },
+    "installed_and_repository_skill_documents": {
+      "packages": 49,
+      "bytes": 449943,
+      "rule_hits": 0,
+      "errors": 0
+    }
+  },
+  "rejected_expansion_audit": {
+    "generic_html_predicate_malicious": 261,
+    "generic_html_predicate_benign": 2,
+    "decision": "rejected_broad_single_indicator_and_actionable_benign_false_positives"
+  },
+  "determinism": {
+    "runs": 5,
+    "stable": true,
+    "normalized_output_sha256": "8c1fc7c3298c03b8ed4a42759bacf76a2ce78b92e6359707efeb6522a9d71d72"
+  },
+  "limitations": [
+    "This is development-only evidence and does not replace a frozen release-corpus run.",
+    "Three endpoint-quarantined rows remain in the denominator but could not be inspected.",
+    "The sealed test splits were not accessed and must remain sealed.",
+    "The two largest lexical templates cover 93 of 115 hit packages, and SRC010 contributes 100 of 115 hits.",
+    "All 115 hit packages were already HIGH or CRITICAL under the full bundled pack set; the material package-verdict lift is core-only."
+  ]
+}

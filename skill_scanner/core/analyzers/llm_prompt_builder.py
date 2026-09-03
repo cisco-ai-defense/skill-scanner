@@ -20,6 +20,7 @@ LLM Prompt Builder.
 Handles prompt construction with injection protection using random delimiters.
 """
 
+import hashlib
 import logging
 import secrets
 from pathlib import Path
@@ -27,6 +28,14 @@ from pathlib import Path
 from ...core.models import Skill
 
 logger = logging.getLogger(__name__)
+
+
+def source_evidence_id(path: str) -> str:
+    """Return a stable opaque identifier for one package artifact."""
+
+    normalized = path.replace("\\", "/").lstrip("/")[:1024]
+    digest = hashlib.sha256(normalized.encode("utf-8", errors="replace")).hexdigest()[:16]
+    return f"SRC:{digest}"
 
 
 class PromptBuilder:
@@ -102,10 +111,10 @@ class PromptBuilder:
         analysis_content = f"""Skill Name: {skill_name}
 Description: {description}
 
-YAML Manifest Details:
+YAML Manifest Details [evidence_id={source_evidence_id("MANIFEST")}]:
 {manifest_details}
 
-Instruction Body (SKILL.md markdown):
+Instruction Body (SKILL.md markdown) [evidence_id={source_evidence_id("SKILL.md")}]:
 {instruction_body}
 
 Script Files (Python/Bash):
@@ -118,7 +127,7 @@ Referenced Files:
         # Add enrichment context if available
         if enrichment_context:
             analysis_content += f"""
-Pre-Scan Context (from static analyzers — use this to focus your analysis):
+TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
 {enrichment_context}
 """
 
@@ -164,6 +173,8 @@ Pre-Scan Context (from static analyzers — use this to focus your analysis):
         skill: Skill,
         max_file_chars: int = 15_000,
         max_total_chars: int = 100_000,
+        *,
+        included_evidence_ids: set[str] | None = None,
     ) -> tuple[str, list[dict]]:
         """Format code files for LLM analysis with budget gating.
 
@@ -176,6 +187,8 @@ Pre-Scan Context (from static analyzers — use this to focus your analysis):
             max_file_chars: Maximum characters allowed per individual file.
             max_total_chars: Remaining total character budget across all
                 content sent to the LLM.
+            included_evidence_ids: Optional set populated with IDs for files
+                whose content is included in the returned text.
 
         Returns:
             Tuple of (formatted_text, skipped_files) where *skipped_files*
@@ -220,12 +233,15 @@ Pre-Scan Context (from static analyzers — use this to focus your analysis):
                 )
                 continue
 
-            lines.append(f"**File: {skill_file.relative_path}**")
+            evidence_id = source_evidence_id(str(skill_file.relative_path))
+            lines.append(f"**File: {skill_file.relative_path} [evidence_id={evidence_id}]**")
             lines.append("```" + skill_file.file_type)
             lines.append(content)
             lines.append("```")
             lines.append("")
             total_chars += file_size
+            if included_evidence_ids is not None:
+                included_evidence_ids.add(evidence_id)
 
         formatted = "\n".join(lines) if lines else "No script files found."
         return formatted, skipped
@@ -259,6 +275,8 @@ Pre-Scan Context (from static analyzers — use this to focus your analysis):
         skill: Skill,
         max_file_chars: int = 10_000,
         remaining_budget: int = 100_000,
+        *,
+        included_evidence_ids: set[str] | None = None,
     ) -> tuple[str, list[dict]]:
         """
         Format referenced files for LLM analysis with budget gating.
@@ -277,6 +295,8 @@ Pre-Scan Context (from static analyzers — use this to focus your analysis):
             skill: The skill being analyzed
             max_file_chars: Maximum characters per referenced file.
             remaining_budget: Remaining total character budget.
+            included_evidence_ids: Optional set populated with IDs for files
+                whose content is included in the returned text.
 
         Returns:
             Tuple of (formatted_text, skipped_files) where *skipped_files*
@@ -366,12 +386,15 @@ Pre-Scan Context (from static analyzers — use this to focus your analysis):
                 suffix = full_path.suffix.lower()
                 file_type = "markdown" if suffix in (".md", ".markdown") else "text"
 
-                lines.append(f"**Referenced File: {ref_file_path}**")
+                evidence_id = source_evidence_id(ref_file_path)
+                lines.append(f"**Referenced File: {ref_file_path} [evidence_id={evidence_id}]**")
                 lines.append(f"```{file_type}")
                 lines.append(content)
                 lines.append("```")
                 lines.append("")
                 total_chars += file_size
+                if included_evidence_ids is not None:
+                    included_evidence_ids.add(evidence_id)
 
             except Exception as e:
                 lines.append(f"**Referenced File: {ref_file_path}** (error reading: {e})")

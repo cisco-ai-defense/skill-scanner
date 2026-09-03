@@ -20,17 +20,24 @@ from pathlib import Path
 
 import yaml
 
+from skill_scanner.core.rule_registry import PackLoader
+
 PACK_DIR = Path(__file__).parents[1] / "skill_scanner" / "data" / "packs" / "promptguard"
 SOURCE_COMMIT = "699431857cc2021fed8d8fad9ec79c437bbae009"
 
 
 def test_promptguard_pack_uses_immutable_in_repository_source() -> None:
     manifest = yaml.safe_load((PACK_DIR / "pack.yaml").read_text(encoding="utf-8"))
-    source_url = manifest["pack"]["source_url"]
+    source_url = manifest["source_url"]
+    pack = PackLoader().load_bundled_pack(PACK_DIR)
 
     assert SOURCE_COMMIT in source_url
     assert source_url.startswith("https://github.com/cisco-ai-defense/skill-scanner/tree/")
-    assert "PR #89" in manifest["pack"]["author"]
+    assert "PR #89" in manifest["author"]
+    assert manifest["license"] == "Apache-2.0"
+    assert pack.source_url == source_url
+    assert pack.author == manifest["author"]
+    assert pack.license == manifest["license"]
 
 
 def test_promptguard_pack_contains_no_dead_external_repository_links() -> None:

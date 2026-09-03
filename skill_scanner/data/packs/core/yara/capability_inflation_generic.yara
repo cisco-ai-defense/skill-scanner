@@ -20,7 +20,7 @@ rule capability_inflation_generic{
         // Over-broad capability claims - TIGHTENED
         // Removed "general purpose assistant" and "all-purpose" (too common for legit tools)
         // Kept coercive "always use me" patterns
-        $overbroad_claims = /\b(can do (anything|everything)|always use (this|me) (first|instead)|default (tool|skill|assistant) for (all|every|any))\b/i
+        $overbroad_claims = /\b((this|the|our) (tool|skill|assistant) can (do|handle) (anything|everything)|always use (this|me) (first|instead)|default (tool|skill|assistant) for (all|every|any))\b/i
 
         // Keyword baiting patterns - match same word repeated in comma lists
         // Using explicit word patterns since YARA doesn't support backreferences
@@ -40,7 +40,7 @@ rule capability_inflation_generic{
 
         // Over-promising descriptions - RESTRUCTURED
         // Single word "perfect" is too broad. Require combination or stronger claims
-        $overpromising_strong = /\b(100% (safe|secure|accurate|reliable)|guaranteed (to never|to always|that it will)|never (fails|errors|crashes|breaks)|always (works|succeeds) (perfectly|flawlessly))\b/i
+        $overpromising_strong = /\b(100% (safe|secure|accurate|reliable)|guaranteed (to never|to always|that it will)|(this|the|our) (tool|skill|assistant) never (fails|errors|crashes|breaks)|(this|the|our) (tool|skill|assistant) always (works|succeeds) (perfectly|flawlessly))\b/i
 
         // Hidden activation triggers
         $hidden_triggers = /\b(secret (command|keyword)|hidden (feature|mode)|easter egg|backdoor (access|entry))\b/i

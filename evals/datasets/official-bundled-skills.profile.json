@@ -1,0 +1,162 @@
+{
+  "profile_version": 1,
+  "observed_at": "2026-09-02",
+  "purpose": "Local first-party bundled-skill benign hard-negative inventory. Content is hashed and scanned in place, never copied into the repository.",
+  "safety": {
+    "content_executed": false,
+    "content_copied": false,
+    "network_acquisition": false,
+    "vendor_allowlists": false
+  },
+  "sources": [
+    {
+      "id": "openai/codex-signed-app-bundle",
+      "vendor": "OpenAI",
+      "tool": "Codex desktop",
+      "source_group": "openai/codex",
+      "root_locator": "/Applications/ChatGPT.app/Contents/Resources/plugins/openai-bundled",
+      "observed_root": "/Applications/ChatGPT.app/Contents/Resources/plugins/openai-bundled",
+      "selector": {
+        "kind": "codex_plugin_author",
+        "author": "OpenAI"
+      },
+      "provenance": {
+        "first_party_evidence": "Signed com.openai.codex desktop application; every selected plugin manifest declares author.name OpenAI",
+        "app_version": "26.825.51511",
+        "app_build": "7377",
+        "app_signing_team": "2DC432GLL2",
+        "app_cdhash": "230d7f7879e2c62f4251e278fbea95844471c1d5",
+        "bundle_id": "d78131b7-914c-45a0-88b5-f6bc31225d63",
+        "marketplace_sha256": "3623337d0c78a4366ca9b46548f74a0348a865647dbdd18f2b91362b01f6bc28"
+      }
+    },
+    {
+      "id": "openai/codex-system-skills",
+      "vendor": "OpenAI",
+      "tool": "Codex",
+      "source_group": "openai/codex",
+      "root_locator": "$HOME/.codex/skills/.system",
+      "observed_root": "/Users/vnarajal/.codex/skills/.system",
+      "selector": {
+        "kind": "recursive_first_party"
+      },
+      "provenance": {
+        "first_party_evidence": "Codex-reserved .system bundle root",
+        "tool_version": "codex-cli 0.136.0",
+        "bundle_revision": "bc5732fbeeda1d0c",
+        "marker_sha256": "cde876953bb31239588763ae17da4d65611ec0f75393e2867c011c59d6a6ba4c"
+      }
+    },
+    {
+      "id": "openai/codex-bundled-plugins",
+      "vendor": "OpenAI",
+      "tool": "Codex",
+      "source_group": "openai/codex",
+      "root_locator": "$HOME/.codex/plugins/cache/openai-bundled",
+      "observed_root": "/Users/vnarajal/.codex/plugins/cache/openai-bundled",
+      "selector": {
+        "kind": "codex_plugin_author",
+        "author": "OpenAI"
+      },
+      "provenance": {
+        "first_party_evidence": "Each selected .codex-plugin/plugin.json declares author.name OpenAI",
+        "tool_version": "codex-cli 0.136.0",
+        "cache_channel": "openai-bundled"
+      }
+    },
+    {
+      "id": "openai/codex-primary-runtime",
+      "vendor": "OpenAI",
+      "tool": "Codex",
+      "source_group": "openai/codex",
+      "root_locator": "$HOME/.codex/plugins/cache/openai-primary-runtime",
+      "observed_root": "/Users/vnarajal/.codex/plugins/cache/openai-primary-runtime",
+      "selector": {
+        "kind": "codex_plugin_author",
+        "author": "OpenAI"
+      },
+      "provenance": {
+        "first_party_evidence": "Each selected .codex-plugin/plugin.json declares author.name OpenAI",
+        "tool_version": "codex-cli 0.136.0",
+        "cache_channel": "openai-primary-runtime"
+      }
+    },
+    {
+      "id": "openai/codex-curated-first-party",
+      "vendor": "OpenAI",
+      "tool": "Codex",
+      "source_group": "openai/codex",
+      "root_locator": "$HOME/.codex/plugins/cache/openai-curated-remote",
+      "observed_root": "/Users/vnarajal/.codex/plugins/cache/openai-curated-remote",
+      "selector": {
+        "kind": "codex_plugin_author",
+        "author": "OpenAI"
+      },
+      "provenance": {
+        "first_party_evidence": "Each selected .codex-plugin/plugin.json declares author.name OpenAI; non-OpenAI curated plugins are excluded",
+        "tool_version": "codex-cli 0.136.0",
+        "cache_channel": "openai-curated-remote"
+      }
+    },
+    {
+      "id": "anysphere/cursor-bundled-skills",
+      "vendor": "Anysphere",
+      "tool": "Cursor Agent",
+      "source_group": "anysphere/cursor",
+      "root_locator": "$HOME/.cursor/skills-cursor",
+      "observed_root": "/Users/vnarajal/.cursor/skills-cursor",
+      "selector": {
+        "kind": "recursive_first_party"
+      },
+      "provenance": {
+        "first_party_evidence": "Cursor-managed skills-cursor root and sync manifest",
+        "tool_version": "2026.08.31-4057e58",
+        "sync_manifest_sha256": "a2b8b70dbdbc690e12fdf435416976a496920225fc7f3cca2d9e716526cc56d4",
+        "license": "not-declared-in-bundle"
+      }
+    },
+    {
+      "id": "anthropic/claude-code-official-marketplace",
+      "vendor": "Anthropic",
+      "tool": "Claude Code",
+      "source_group": "anthropic/claude-code",
+      "root_locator": "$HOME/.claude/plugins/marketplaces/claude-plugins-official",
+      "observed_root": "/Users/vnarajal/.claude/plugins/marketplaces/claude-plugins-official",
+      "selector": {
+        "kind": "anthropic_marketplace_author",
+        "author": "Anthropic",
+        "marketplace_relative_path": ".claude-plugin/marketplace.json"
+      },
+      "provenance": {
+        "first_party_evidence": "Anthropic-owned mixed official marketplace; only local records declaring author.name Anthropic are selected",
+        "revision": "e18ff5086423bd9c21902ce3100dc4ecc84a668a",
+        "marketplace_sha256": "e46338d997b637fbcc4262bd9c9aa5b728f5288424d305153d312b02d8f33d11",
+        "license": "Apache-2.0",
+        "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "tool_version": "2.1.252"
+      }
+    },
+    {
+      "id": "anthropic/claude-code-repository-plugins",
+      "vendor": "Anthropic",
+      "tool": "Claude Code",
+      "source_group": "anthropic/claude-code",
+      "root_locator": "$HOME/.claude/plugins/marketplaces/claude-code-plugins",
+      "observed_root": "/Users/vnarajal/.claude/plugins/marketplaces/claude-code-plugins",
+      "selector": {
+        "kind": "anthropic_owned_marketplace_all_local",
+        "owner": "Anthropic",
+        "marketplace_relative_path": ".claude-plugin/marketplace.json"
+      },
+      "provenance": {
+        "first_party_evidence": "Local git checkout of the Anthropic-owned anthropics/claude-code repository; only local marketplace sources are selected",
+        "repository": "https://github.com/anthropics/claude-code.git",
+        "revision": "a1e64dc407dd57dfb4ea283b0f8049adf3eabee5",
+        "marketplace_sha256": "663c1abf7f7661453bd5ce2b1ddcd2827b6ef7cad1b0b11f648c9ea08273c6e5",
+        "license": "commercial-terms-reference",
+        "license_sha256": "728158fd1037143fad6907e8fa34804177e598b7326519503fe83cafdef849e6",
+        "tool_version": "2.1.252"
+      }
+    }
+  ]
+}

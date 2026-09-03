@@ -5,6 +5,8 @@ __pycache__/
 *.so
 .Python
 build/
+# Locally bootstrapped CEL helper; release wheels build a fresh verified copy.
+skill_scanner/core/cel/_bin/
 # Auto-generated version file (hatch-vcs)
 skill_scanner/_version.py
 develop-eggs/

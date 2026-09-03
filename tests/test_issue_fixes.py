@@ -172,7 +172,7 @@ class TestLLMAnalyzerFailureSignal:
         assert len(failure_findings) == 1
         assert failure_findings[0].severity == Severity.INFO
         assert "connection refused" in failure_findings[0].description
-        assert failure_findings[0].analyzer == "llm_analyzer"
+        assert failure_findings[0].analyzer == "llm"
         assert analyzer.last_error == "connection refused"
 
     @pytest.mark.asyncio
@@ -187,7 +187,14 @@ class TestLLMAnalyzerFailureSignal:
             analyzer.request_handler,
             "make_request",
             new_callable=AsyncMock,
-            return_value=json.dumps({"findings": [], "overall_assessment": "Safe", "primary_threats": []}),
+            return_value=json.dumps(
+                {
+                    "findings": [],
+                    "overall_assessment": "Safe",
+                    "verdict": "SAFE",
+                    "primary_threats": [],
+                }
+            ),
         ):
             await analyzer.analyze_async(skill)
 

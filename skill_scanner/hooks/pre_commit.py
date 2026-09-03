@@ -203,8 +203,8 @@ def scan_skill(skill_dir: Path, config: dict) -> dict:
             use_trigger=bool(config.get("use_trigger")),
         )
 
-        scanner = SkillScanner(analyzers=analyzers, policy=policy)
-        result = scanner.scan_skill(skill_dir, lenient=bool(config.get("lenient")))
+        with SkillScanner(analyzers=analyzers, policy=policy) as scanner:
+            result = scanner.scan_skill(skill_dir, lenient=bool(config.get("lenient")))
 
         # Count findings by severity
         counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}

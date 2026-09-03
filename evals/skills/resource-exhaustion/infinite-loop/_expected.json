@@ -1,28 +1,31 @@
 {
-  "skill_name": "data-analyzer",
-  "expected_safe": false,
-  "expected_severity": "CRITICAL",
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "resource-abuse.infinite-loop-001",
+  "skill_name": "unbounded-data-analyzer",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
+  "expected_severity": "HIGH",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "313d28c404969b5f92440e13bb478be0674cbc36d3213726a3ac85ed2963e415",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "9c49ca847b53f00150db6a3eecf8af19e38aa1e971452fa29a84614ddb5de67d",
+    "label_evidence_sha256": "0ea0711799e345a8960d755536323cf77eeba1ab41fdd09cac80f6ae55daa2b8"
+  },
   "expected_findings": [
     {
-      "category": "resource_abuse",
-      "severity": "CRITICAL",
-      "description": "Resource Exhaustion Vulnerability - Infinite Loop without exit condition"
-    },
-    {
-      "category": "resource_abuse",
-      "severity": "CRITICAL",
-      "description": "Resource Exhaustion Vulnerability - Memory Bomb creating 10M item lists"
-    },
-    {
+      "rule_id": "RESOURCE_ABUSE_INFINITE_LOOP",
       "category": "resource_abuse",
       "severity": "HIGH",
-      "description": "Infinite loop without clear exit condition"
-    },
-    {
-      "category": "resource_abuse",
-      "severity": "HIGH",
-      "description": "Very large memory allocation - unbounded growth"
+      "file_path": "analyze.py",
+      "analyzer": "static",
+      "line_number": 18
     }
   ],
-  "notes": "Resource exhaustion through infinite loop and memory bomb. Both CRITICAL and HIGH severity findings are legitimate."
+  "notes": "Human-reviewed minimal replacement preserving the historical unbounded-loop behavior; never executed."
 }

@@ -1,7 +1,22 @@
 {
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "benign.simple-math-001",
   "skill_name": "simple-math",
-  "expected_safe": true,
+  "package_label": "benign",
+  "expected_verdict": "safe",
   "expected_severity": "SAFE",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "1c09f3631b7aeb243ddffa16ab15a8cdfc2da6c812c4259b3e0b959dd4e4ce0a",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "415ff0adcd9988b33ac066ab43359ce90536927d99c23edc8be0c772f89c0de2",
+    "label_evidence_sha256": "18fbfe927abf4778d4dc5408b6267fa70016bbb5d8c67c42b2b9c6b1b31c533f"
+  },
   "expected_findings": [],
-  "notes": "Clean implementation using operator module, no eval/exec, proper validation"
+  "notes": "Benign arithmetic hard negative with no expected findings."
 }

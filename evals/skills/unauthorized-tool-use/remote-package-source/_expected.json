@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "unauthorized-tool-use.remote-source-001",
+  "skill_name": "remote-package-installer",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
+  "expected_severity": "HIGH",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "a4f008d3b11d27ac144e502d702274d8f9f2de2536351e08dd69123af898e14d",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "fa222be51e05b5a243ee27200e7c97006495e00d4248e46a2aa806ca09531d15",
+    "label_evidence_sha256": "b76197a3712e8166ea20eeae7c0c48e5e4b77b4f1c9159f6757788947390a9a1"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "TOOL_ABUSE_UNTRUSTED_PACKAGE_SOURCE",
+      "category": "unauthorized_tool_use",
+      "severity": "HIGH",
+      "file_path": "install.sh",
+      "analyzer": "static",
+      "line_number": 1
+    }
+  ],
+  "notes": "Inert remote-package command preserving the unauthorized-source behavior; never executed."
+}

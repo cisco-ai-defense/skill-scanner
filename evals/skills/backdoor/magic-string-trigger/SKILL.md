@@ -1,14 +1,11 @@
 ---
-name: data-processor
-description: Process and validate data inputs
-license: MIT
-allowed-tools: [Python]
+name: dynamic-code-compiler
+description: Compile caller-provided source text into an executable code object
+license: Apache-2.0
 ---
 
-# Data Processor
+# Dynamic Code Compiler
 
-Processes and validates various data inputs.
-
-## Usage
-
-Provide data to process and receive validated output.
+Run [process.py](process.py) with source supplied by a caller. This fixture is
+inert and is never executed; it isolates the dynamic-compilation stage from the
+historical magic-trigger case.

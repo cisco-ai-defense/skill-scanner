@@ -22,6 +22,7 @@ Every organisation has a different security bar. A **scan policy** captures what
 - [Rule Governance Conventions](#rule-governance-conventions)
 - [Policy Reference](#policy-reference)
   - [Metadata](#metadata)
+  - [cel](#cel)
   - [hidden_files](#hidden_files)
   - [pipeline](#pipeline)
   - [rule_scoping](#rule_scoping)
@@ -85,11 +86,11 @@ skill-scanner configure-policy -o my_policy.yaml
 
 ## Built-in Presets
 
-| Preset | Description | Use when |
-|--------|-------------|----------|
-| **strict** | Narrow allowlists, no suppressions, lower thresholds | Auditing untrusted / external skills, compliance |
-| **balanced** | Sensible defaults, moderate filtering | CI/CD pipelines, everyday scanning |
-| **permissive** | Broad allowlists, aggressive suppression | Trusted internal skills, dev-time scanning |
+| Preset | CEL / correlation | Description | Use when |
+|--------|-------------------|-------------|----------|
+| **strict** | shadow / on | Narrow allowlists, no CEL suppression, lower thresholds | Auditing untrusted / external skills, compliance |
+| **balanced** | shadow / on | Sensible defaults, moderate filtering | CI/CD pipelines, everyday scanning |
+| **permissive** | off / off | Broad allowlists, aggressive suppression | Trusted internal skills, dev-time scanning |
 
 Use a preset by name:
 
@@ -111,6 +112,8 @@ The table below highlights the key differences between the three presets. Values
 
 | Setting | Strict | Balanced (default) | Permissive |
 |---------|--------|--------------------|------------|
+| **CEL mode** | shadow | shadow | off |
+| **Correlation analyzer** | enabled | enabled | disabled |
 | **Benign dotfiles** | 6 (git + editor + docker) | 47 (standard dev toolchain) | 65 (+ Bazel, Rust, Swift, etc.) |
 | **Benign dotdirs** | 3 (.github, .circleci, .gitlab) | 26 (+ .vscode, .cache, etc.) | 40 (+ .yarn, .terraform, etc.) |
 | **Known installer domains** | 0 (none trusted) | 17 (Rust, nvm, Docker, etc.) | 27 (+ Helm, k3s, Linkerd, etc.) |
@@ -121,7 +124,7 @@ The table below highlights the key differences between the three presets. Values
 | **Rule scoping: doc path dirs** | 2 (references, docs) | 11 (+ examples, fixtures, test, etc.) | 14 (+ tests, spec, samples, patterns, etc.) |
 | **Test credentials suppressed** | 0 (none) | 7 (Stripe test, JWT.io, placeholders) | 15 (+ AWS EXAMPLE, changeme, etc.) |
 | **Inert extensions** | 18 (default) | 18 (fonts, images, pyc) | 25 (+ mp3, mp4, wav, etc.) |
-| **Archive extensions** | 18 (default) | 18 (zip, tar, jar, docx, etc.) | 23 (+ whl, egg, deb, rpm, etc.) |
+| **Archive extensions** | 21 (default) | 21 (zip, tar, jar, docx, etc.) | 26 (+ whl, egg, nupkg, deb, rpm) |
 | **Code extensions** | 8 (default) | 8 (py, sh, rb, js, ts, php, etc.) | 17 (+ go, rs, java, swift, etc.) |
 | **Max file count** | 50 | 100 | 500 |
 | **Max file size** | 2 MB | 5 MB | 20 MB |
@@ -137,7 +140,7 @@ The table below highlights the key differences between the three presets. Values
 | **Analyzability LOW risk** | 95% | 90% | 80% |
 | **Analyzability MEDIUM risk** | 80% | 70% | 50% |
 | **Sensitive file patterns** | 5 (+ sudoers, .kube, .jks) | 5 (passwd, .ssh, .env, etc.) | 4 (narrower — passwd, .ssh only) |
-| **Severity overrides** | 3 (BINARY→MEDIUM, HIDDEN→MEDIUM, PYCACHE→MEDIUM) | none | 3 (ARCHIVE→LOW, PACKAGE_INSTALL→LOW, JS FS access→MEDIUM) |
+| **Severity overrides** | 3 (BINARY→MEDIUM, HIDDEN→MEDIUM, PYCACHE→MEDIUM) | none | 2 (ARCHIVE→LOW, PACKAGE_INSTALL→LOW) |
 | **Disabled rules** | none | none | 8 (adds deep nesting, invalid name, capability/indirect prompt inflation, hidden glob, homoglyph, embedded shebang, JS network) |
 
 ---
@@ -181,6 +184,9 @@ Then edit the generated file to add your trusted domains, extra benign dotfiles,
 - **Use `disabled_rules` sparingly.** Disabled rules produce zero findings, which means zero visibility.
 - **Version your policies.** Use `policy_version` and commit policies to your repo so changes are tracked.
 - **Keep ownership clean.** Use policy YAML for allowlists/thresholds/scoping, keep YARA/signatures for detection logic, and avoid duplicating the same decision in multiple layers.
+- **Keep optional packs explicit.** The core pack is always present; enable ATR
+  only with `--rule-packs atr`. ATR is not part of the current core + CEL
+  release gate.
 
 ### Rule Governance Conventions
 
@@ -205,6 +211,31 @@ preset_base: strict              # Which preset this derives from (strict / bala
 ```
 
 `preset_base` controls which YARA post-filtering behaviour is used (credential placeholder filtering, generic HTTP verb suppression, etc.). It is set automatically by built-in presets and preserved when you rename `policy_name`. If your custom policy was generated from a preset, the correct `preset_base` is already embedded — you only need to change it if you want different YARA filtering than the preset you started from.
+
+</details>
+
+<details>
+<summary>cel</summary>
+
+Controls the typed CEL decision layer that runs after deterministic analyzers
+and before optional LLM analysis.
+
+```yaml
+cel:
+  mode: shadow  # off | shadow | enforce
+```
+
+- `off` skips evaluation but still compiles and type-checks every selected CEL
+  expression at startup.
+- `shadow` retains findings and records `keep` or `would_suppress` decisions in
+  scan metadata.
+- `enforce` can suppress only when the individual rule also declares
+  `rollout: enforce`.
+
+Runtime errors, non-Boolean results, incomplete projections, and circuit-breaker
+events fail open and retain the candidate. Every bundled rule currently uses
+`rollout: shadow`, so setting global mode to `enforce` does not yet suppress a
+bundled finding. Use `--cel-mode` to override this setting for one invocation.
 
 </details>
 
@@ -501,9 +532,10 @@ analyzers:
   static: true    # Static pattern analysis (YARA, regex, manifest checks)
   bytecode: true  # Python bytecode integrity checks
   pipeline: true  # Shell pipeline taint analysis
+  correlation: true  # Bounded structured source/sink and staged-behavior correlation
 ```
 
-**Impact:** Set `pipeline: false` to skip pipeline analysis entirely (useful if your skills never contain shell scripts). Disabling an analyzer removes all its findings from the scan results.
+**Impact:** Set `pipeline: false` to skip pipeline analysis entirely (useful if your skills never contain shell scripts). Set `correlation: false` to disable structured cross-file and fenced-code flow candidates. Disabling an analyzer removes all its findings from the scan results. The permissive preset keeps correlation off by default for its lower-noise posture.
 
 </details>
 

@@ -1,0 +1,757 @@
+{
+  "manifest_version": 1,
+  "updated_at": "2026-09-02",
+  "safety_defaults": {
+    "execute_samples": false,
+    "follow_embedded_links": false,
+    "network_fetch_in_pull_requests": false,
+    "materialized_file_mode": "0600"
+  },
+  "datasets": [
+    {
+      "id": "ProtectSkills/MaliciousSkillBench",
+      "provider": "huggingface",
+      "revision": "d4b42ce5766a6e0359c987cf59c1007cb3795a90",
+      "integrity": {
+        "repository_commit": "d4b42ce5766a6e0359c987cf59c1007cb3795a90",
+        "artifact_manifest_algorithm": "sha256",
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "artifact_manifest_required": true,
+        "artifact_manifest_sha256": "ae542800a95a893a0ae724bdc625d5a1e19d81ff08ae1f846ddb54d77bfb0b9a",
+        "sample_metadata_manifest_format": "sample-metadata-splits-v2",
+        "sample_metadata_manifest_sha256": "6a284d9a181ae07179f2cc3ff98f64f14787dadc1ebde6c0dd86e78f4f55bc7a",
+        "sample_metadata_grouping": {
+          "protocol_contracts": {
+            "m_structural_disjoint": "malicious_structural_family_partition_pure",
+            "source_disjoint": "test_source_disjoint_from_non_test"
+          },
+          "unsupported_dimensions": [
+            "actor_campaign_id",
+            "lexical_template_id",
+            "parent_sample_id",
+            "repository_id"
+          ],
+          "verified_dimensions": [
+            "exact_hash",
+            "normalized_hash",
+            "provenance",
+            "source_id",
+            "source_ids",
+            "source_pointer",
+            "structural_family_id",
+            "text_origin_source_id"
+          ]
+        },
+        "source_artifact_manifest_sha256": "3d64779dc972759ede61717ac5cc7f4e87289add8feabff1e83c4289094ce300",
+        "hashes_pending": false,
+        "materialization": {
+          "declared_artifact_count": 9740,
+          "usable_artifact_count": 9737,
+          "error_count": 3,
+          "usable_artifact_manifest_sha256": "e1f54bfdfb8489b136601ab5cacdc0ae81802aa2ac3b37ebe0766afdf5cec79b",
+          "quarantine_manifest_sha256": "6dcd44640fd28506eed470888272c52b43a8779988a8b8b0efda99f3d8c6ee79"
+        }
+      },
+      "access": "public",
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "scope": "Benchmark-authored metadata and organization; third-party skill artifacts retain upstream terms."
+      },
+      "download_policy": "scheduled_or_release_only",
+      "approved_uses": [
+        "blocking_core_only_source_disjoint",
+        "supplemental_full_pack_malicious_structural_disjoint",
+        "per_source_diagnostics"
+      ],
+      "prohibited_uses": [
+        "execute_samples",
+        "claim_source_disjoint_generalization_with_atr_pack_enabled",
+        "train_or_tune_on_frozen_test_members"
+      ],
+      "known_issues": [
+        "Endpoint protection quarantined three pinned train-only members during local materialization. Their identities and declared hashes are pinned separately; neither selected test track contains a quarantined member.",
+        "The 2026-09-01 diagnostic test evidence was manually inspected and must not be used as sealed release evidence or for tuning."
+      ],
+      "gating": {
+        "blocking": true,
+        "tracks": [
+          {
+            "name": "core-only-source-disjoint",
+            "detector_profile": "core_only",
+            "protocol": "source_disjoint",
+            "partition": "test"
+          }
+        ]
+      },
+      "expected": {
+        "track_expectations": {
+          "core-only-source-disjoint": {
+            "samples": 1384,
+            "malicious": 839,
+            "benign": 545,
+            "population_sha256": "e77564f010fe55ee368af237fabc89b94ca308bd0b3a8c49f052716609f89399"
+          }
+        },
+        "row_counts": {
+          "primary/train": 9740,
+          "splits/source_disjoint": 9740,
+          "splits/m_structural_disjoint": 9740
+        },
+        "schemas": {
+          "primary": {
+            "exact_fields": [
+              "benchmark_id",
+              "label",
+              "skill_text",
+              "text_available",
+              "text_redacted",
+              "source_id",
+              "source_name",
+              "source_ids",
+              "provenance",
+              "evidence_type",
+              "structural_family_id",
+              "normalized_hash",
+              "exact_hash",
+              "release_status",
+              "source_pointer",
+              "attack_categories",
+              "attack_category_codes",
+              "impact_categories",
+              "impact_category_codes",
+              "text_origin_source_id",
+              "public_skill_text",
+              "redaction_reason",
+              "original_text_withheld",
+              "public_text_sha256"
+            ]
+          },
+          "split_manifest": {
+            "exact_fields": [
+              "benchmark_id",
+              "label",
+              "source_id",
+              "split"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "Miaow-Lab/OpenSkillRisk",
+      "provider": "huggingface",
+      "revision": "ccfcce55aa0c931b9fbd33a1cccce4acb34977d7",
+      "integrity": {
+        "repository_commit": "ccfcce55aa0c931b9fbd33a1cccce4acb34977d7",
+        "artifact_manifest_algorithm": "sha256",
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "artifact_manifest_required": true,
+        "artifact_manifest_sha256": null,
+        "hashes_pending": true
+      },
+      "access": "gated_manual",
+      "license": {
+        "spdx": "MIT",
+        "scope": "Dataset repository; verify source-artifact terms before redistribution."
+      },
+      "download_policy": "manual_authorized_environment_only",
+      "approved_uses": [
+        "supplemental_positive_recall"
+      ],
+      "prohibited_uses": [
+        "automatic_download",
+        "negative_precision_denominator",
+        "execute_samples"
+      ],
+      "gating": {
+        "blocking": false,
+        "tracks": []
+      },
+      "expected": {
+        "row_counts": {
+          "tasks/obviously_malicious": 139,
+          "tasks/contextually_risky": 124
+        },
+        "schemas": {
+          "task_spec": {
+            "exact_fields": [
+              "id",
+              "skill_id",
+              "attack_type",
+              "prompt",
+              "summary",
+              "safety_policy",
+              "project_files",
+              "home_files",
+              "checks",
+              "collect_paths"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "TrustAIRLab/HarmfulSkillBench",
+      "provider": "huggingface",
+      "revision": "0a30e25f20a391e1b6956c55d6806867944c2232",
+      "integrity": {
+        "repository_commit": "0a30e25f20a391e1b6956c55d6806867944c2232",
+        "artifact_manifest_algorithm": "sha256",
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "artifact_manifest_required": true,
+        "artifact_manifest_sha256": "5611f603419299312f90d045b843f494801f2baa44369d61c1bbf4995297e089",
+        "hashes_pending": false,
+        "materialization": {
+          "declared_artifact_count": 401,
+          "usable_artifact_count": 400,
+          "error_count": 1,
+          "usable_artifact_manifest_sha256": "3b769e4c6c2aaa63c944682a8273c9ccab1709c7fca6c34b71b5b33fe1400b42",
+          "quarantine_manifest_sha256": "d2e17d3093dcca780bad35c49858abc77e9fba2ab32e5a0646309c345007beda"
+        }
+      },
+      "access": "gated_auto",
+      "license": {
+        "spdx": "MIT",
+        "scope": "Dataset repository."
+      },
+      "download_policy": "manual_research_only",
+      "approved_uses": [
+        "policy_and_llm_research",
+        "supplemental_static_signal_recall_diagnostic"
+      ],
+      "prohibited_uses": [
+        "blocking_static_accuracy_gate",
+        "release_authoritative_metric",
+        "benign_precision_or_false_positive_rate_claim",
+        "f1_claim",
+        "automatic_download",
+        "execute_samples"
+      ],
+      "gating": {
+        "blocking": false,
+        "tracks": []
+      },
+      "known_issues": [
+        "Endpoint protection quarantined one pinned skill document after authenticated acquisition. Its identity and declared hash remain pinned and the supplemental denominator remains 200.",
+        "All 200 rows are harmful or high-risk, so this dataset cannot provide benign precision, false-positive-rate, true-negative, or F1 evidence."
+      ],
+      "expected": {
+        "row_counts": {
+          "default/test": 200
+        },
+        "schemas": {
+          "default": {
+            "exact_fields": [
+              "anon_id",
+              "platform",
+              "category",
+              "tier",
+              "name",
+              "description",
+              "selected_task"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "ProtectSkills/MaliciousAgentSkillsBench",
+      "provider": "huggingface",
+      "revision": "422bf3401845f6c1378bf4599dc2cdb3451978cf",
+      "integrity": {
+        "repository_commit": "422bf3401845f6c1378bf4599dc2cdb3451978cf",
+        "artifact_manifest_algorithm": "sha256",
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "artifact_manifest_required": true,
+        "artifact_manifest_sha256": "562dfc290f167622b0660950607b054709aff6604b18500cab49662914a49e20",
+        "hashes_pending": false
+      },
+      "access": "public",
+      "license": {
+        "spdx": "MIT",
+        "scope": "Released metadata; linked upstream repositories retain their own terms."
+      },
+      "download_policy": "metadata_only",
+      "approved_uses": [
+        "taxonomy_coverage",
+        "case_mining",
+        "sandbox_confirmed_recall"
+      ],
+      "prohibited_uses": [
+        "blocking_accuracy_gate",
+        "release_authoritative_metric",
+        "treat_safe_class_as_human_adjudicated",
+        "execute_samples"
+      ],
+      "gating": {
+        "blocking": false,
+        "tracks": []
+      },
+      "expected": {
+        "row_counts": {
+          "skills_dataset/train": 98380,
+          "malicious_skills/train": 157
+        },
+        "schemas": {
+          "skills_dataset": {
+            "exact_fields": [
+              "source",
+              "repo",
+              "skill_name",
+              "classification",
+              "url"
+            ]
+          },
+          "malicious_skills": {
+            "exact_fields": [
+              "source",
+              "repo",
+              "skill_name",
+              "classification",
+              "Pattern",
+              "Severity"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "OpenClaw/clawhub-security-signals",
+      "provider": "huggingface",
+      "revision": "69dcbd323c155312fb000ec89ea0b1efdf6a5757",
+      "integrity": {
+        "repository_commit": "69dcbd323c155312fb000ec89ea0b1efdf6a5757",
+        "artifact_manifest_algorithm": "sha256",
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "artifact_manifest_required": true,
+        "artifact_manifest_sha256": null,
+        "hashes_pending": true
+      },
+      "access": "public",
+      "license": {
+        "spdx": "MIT",
+        "scope": "Sanitized signals and redistributed public OpenClaw skill content."
+      },
+      "download_policy": "scheduled_or_manual",
+      "approved_uses": [
+        "silver_label_drift",
+        "scanner_disagreement_mining",
+        "human_review_sampling"
+      ],
+      "prohibited_uses": [
+        "blocking_accuracy_gate",
+        "treat_clawscan_verdict_as_ground_truth",
+        "execute_samples"
+      ],
+      "gating": {
+        "blocking": false,
+        "tracks": []
+      },
+      "known_issues": [
+        "Hugging Face's refs/convert/parquet artifact is stale and contains 66,192 rows plus an undocumented unknown verdict. Ingestion must use the pinned raw JSONL files, whose LFS hashes and 67,453 rows were independently verified."
+      ],
+      "expected": {
+        "row_counts": {
+          "default/train": 47262,
+          "default/validation": 10076,
+          "default/test": 6747,
+          "default/eval_holdout": 3368
+        },
+        "schemas": {
+          "default": {
+            "exact_fields": [
+              "id",
+              "skill_slug",
+              "skill_version",
+              "skill_md_content",
+              "skill_bundle_content",
+              "clawscan_verdict",
+              "clawscan_confidence",
+              "clawscan_model",
+              "clawscan_summary",
+              "static_status",
+              "static_finding_count",
+              "static_reason_codes",
+              "virustotal_status",
+              "virustotal_malicious_count",
+              "virustotal_suspicious_count",
+              "virustotal_harmless_count",
+              "virustotal_undetected_count",
+              "skillspector_status",
+              "skillspector_score",
+              "skillspector_severity",
+              "skillspector_issue_count",
+              "skillspector_issue_codes",
+              "skillspector_issue_categories",
+              "clawscan_context",
+              "split"
+            ],
+            "bundle_exact_fields": [
+              "path",
+              "content",
+              "sha256",
+              "sizeBytes"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "LLM-LAT/harmful-dataset",
+      "provider": "huggingface",
+      "revision": "8bfba31bc6d93a5b71808fee5275ef4b6330ed91",
+      "integrity": {
+        "repository_commit": "8bfba31bc6d93a5b71808fee5275ef4b6330ed91",
+        "artifact_manifest_algorithm": "sha256",
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "artifact_manifest_required": true,
+        "artifact_manifest_sha256": null,
+        "hashes_pending": true
+      },
+      "access": "public",
+      "license": {
+        "spdx": null,
+        "scope": "No dataset license is declared."
+      },
+      "download_policy": "prohibited",
+      "approved_uses": [],
+      "prohibited_uses": [
+        "download",
+        "redistribute",
+        "accuracy_gate",
+        "execute_samples"
+      ],
+      "gating": {
+        "blocking": false,
+        "tracks": []
+      },
+      "expected": {
+        "row_counts": {
+          "default/train": 4948
+        }
+      }
+    },
+    {
+      "id": "DataDog/malicious-software-packages-dataset",
+      "provider": "github",
+      "revision": "2d09839012cedc387ce438debeb77884ac2a242c",
+      "integrity": {
+        "repository_commit": "2d09839012cedc387ce438debeb77884ac2a242c",
+        "artifact_manifest_algorithm": "sha256",
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "artifact_manifest_required": true,
+        "artifact_manifest_sha256": null,
+        "hashes_pending": true
+      },
+      "access": "public",
+      "license": {
+        "spdx": "Apache-2.0",
+        "scope": "Dataset metadata and repository code; contained third-party packages retain upstream terms."
+      },
+      "download_policy": "scheduled_quarantine_only",
+      "approved_uses": [
+        "supplemental_malicious_package_recall"
+      ],
+      "prohibited_uses": [
+        "pull_request_download",
+        "benign_precision_denominator",
+        "execute_samples",
+        "network_enabled_analysis"
+      ],
+      "gating": {
+        "blocking": false,
+        "tracks": []
+      }
+    },
+    {
+      "id": "uiuc-kang-lab/InjecAgent",
+      "provider": "github",
+      "revision": "f19c9f2c79a41046eb13c03c51a24c567a8ffa07",
+      "integrity": {
+        "repository_commit": "f19c9f2c79a41046eb13c03c51a24c567a8ffa07",
+        "artifact_manifest_algorithm": "sha256",
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "artifact_manifest_required": true,
+        "artifact_manifest_sha256": "c68093ac81a3ff318acda43f959c3899f28d1c48b4cd6f545cec21e624fac9ea",
+        "hashes_pending": false
+      },
+      "access": "public",
+      "license": {
+        "spdx": "MIT",
+        "scope": "Repository code and released benchmark data."
+      },
+      "download_policy": "scheduled_or_release_only",
+      "approved_uses": [
+        "supplemental_inert_indirect_prompt_injection_fixtures",
+        "source_sink_coverage_analysis",
+        "supplemental_positive_indirect_injection_signal_recall",
+        "supplemental_base_control_differential_signal_recall"
+      ],
+      "prohibited_uses": [
+        "blocking_package_accuracy_gate",
+        "package_block_recall_denominator",
+        "release_authoritative_metric",
+        "execute_agent_tools",
+        "contact_external_services",
+        "execute_samples"
+      ],
+      "gating": {
+        "blocking": false,
+        "tracks": []
+      },
+      "expected": {
+        "row_counts": {
+          "base/direct_harm": 510,
+          "base/data_stealing": 544,
+          "enhanced/direct_harm": 510,
+          "enhanced/data_stealing": 544
+        },
+        "schemas": {
+          "injecagent_case": {
+            "exact_fields": [
+              "Attacker Tools",
+              "Modifed",
+              "Attacker Instruction",
+              "Expected Achievements",
+              "Attack Type",
+              "User Tool",
+              "User Instruction",
+              "Tool Parameters",
+              "Tool Response Template",
+              "Thought",
+              "Tool Response"
+            ]
+          },
+          "evaluation_projection": {
+            "exact_fields": [
+              "dataset_id",
+              "sample_id",
+              "source_id",
+              "repository_group_id",
+              "structural_family_id",
+              "lexical_template_id",
+              "benchmark_labels",
+              "split",
+              "parent_sample_id",
+              "split_inherited_from",
+              "dedup_parent_id",
+              "dedup_relation",
+              "content_sha256",
+              "normalized_content_sha256",
+              "lexical_template_sha256",
+              "control_content_sha256",
+              "trigger_count"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "SoheilKhodayari/in_page_prompt_injection_pub",
+      "provider": "github",
+      "revision": "0a04d1762cf60957f954f16a6cb9525ab32d6bca",
+      "integrity": {
+        "repository_commit": "0a04d1762cf60957f954f16a6cb9525ab32d6bca",
+        "artifact_manifest_algorithm": "sha256",
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "artifact_manifest_required": true,
+        "artifact_manifest_sha256": "6b262dfcf22f58866143079118e6c906cfade60a6781d52f87930127d8926459",
+        "hashes_pending": false
+      },
+      "access": "public_sanitized",
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "code_spdx": "AGPL-3.0-only",
+        "scope": "Sanitized public dataset is CC-BY-4.0; accompanying software and analysis code are AGPL-3.0-only."
+      },
+      "download_policy": "scheduled_or_release_only",
+      "approved_uses": [
+        "supplemental_inert_indirect_prompt_injection_fixtures",
+        "lexical_cluster_and_campaign_split_analysis",
+        "supplemental_positive_indirect_injection_signal_recall"
+      ],
+      "prohibited_uses": [
+        "blocking_package_accuracy_gate",
+        "package_block_recall_denominator",
+        "release_authoritative_metric",
+        "use_restricted_full_dataset_without_dua",
+        "identify_or_contact_affected_operators",
+        "network_enabled_analysis",
+        "execute_samples"
+      ],
+      "gating": {
+        "blocking": false,
+        "tracks": []
+      },
+      "expected": {
+        "row_counts": {
+          "sanitized/dataset_tp": 15387
+        },
+        "schemas": {
+          "dataset_tp": {
+            "exact_fields": [
+              "row",
+              "data_source",
+              "tranco_ranking",
+              "crux_ranking",
+              "chrome_topics",
+              "jsonl_file",
+              "jsonl_index",
+              "inclusion",
+              "text",
+              "prompt",
+              "origin",
+              "ID",
+              "url",
+              "pattern",
+              "fp",
+              "position",
+              "display_none",
+              "background_color",
+              "color_css",
+              "font_size",
+              "color_prop",
+              "font_prop",
+              "json_ld",
+              "lang_tld",
+              "lang_html",
+              "cc_tld",
+              "asn",
+              "asn_org",
+              "AI Bot Identification (human verification)",
+              "Content & Reputation Manipulation|Citation Forcing",
+              "Content & Reputation Manipulation|Content / Product Promotion",
+              "Content & Reputation Manipulation|Personal Job Candidate Promotion",
+              "Content & Reputation Manipulation|Positive Review Forcing",
+              "Content & Reputation Manipulation|SEO / Backlink Injection",
+              "Data Exfiltration|Leak System Prompt",
+              "Data Exfiltration|Leak Secret",
+              "Data Protection|social_media_bots",
+              "Data Protection|non_personal_pages",
+              "Data Protection|personal_pages",
+              "General Instruction Manipulation",
+              "System Disruption / Degradation|Command Injection",
+              "System Disruption / Degradation|Constraint Removal",
+              "System Disruption / Degradation|Garbage Injection (Corruption)",
+              "System Disruption / Degradation|Model Self-Modification",
+              "honeypot",
+              "normalized",
+              "lexical_cluster",
+              "embedding_cluster",
+              "mnli_task_override",
+              "mnli_conditional_logic_trigger",
+              "mnli_authority_pressure",
+              "mnli_role_playing",
+              "mnli_identity_rewrite",
+              "mnli_jailbreak_mode",
+              "mnli_content_injection",
+              "mnli_forced_output_format",
+              "user_interactions",
+              "third_party_platform_hosted",
+              "first_party_content",
+              "agents_DS",
+              "agents_SE",
+              "agents_CS",
+              "agents_HR",
+              "agents_TE"
+            ]
+          },
+          "evaluation_projection": {
+            "exact_fields": [
+              "dataset_id",
+              "sample_id",
+              "source_id",
+              "repository_group_id",
+              "structural_family_id",
+              "lexical_template_id",
+              "benchmark_labels",
+              "split",
+              "parent_sample_id",
+              "split_inherited_from",
+              "dedup_parent_id",
+              "dedup_relation",
+              "content_sha256",
+              "normalized_content_sha256",
+              "lexical_template_sha256",
+              "control_content_sha256",
+              "trigger_count"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "InjecGuard/InjecGuard",
+      "provider": "github",
+      "revision": "cb1531f36bffb38b6493438217b36cda8875da8a",
+      "integrity": {
+        "repository_commit": "cb1531f36bffb38b6493438217b36cda8875da8a",
+        "artifact_manifest_algorithm": "sha256",
+        "artifact_manifest_format": "path-sha256-size-v1",
+        "artifact_manifest_required": true,
+        "artifact_manifest_sha256": "149f7bf2298de3fa237fb6e57f193d5e796ee111046422bea73f47def79774b1",
+        "hashes_pending": false
+      },
+      "access": "public",
+      "license": {
+        "spdx": "MIT",
+        "scope": "Repository code and included NotInject JSON datasets."
+      },
+      "download_policy": "scheduled_or_release_only",
+      "approved_uses": [
+        "supplemental_benign_prompt_injection_hard_negatives",
+        "false_positive_diagnostics",
+        "diagnostic_flagged_rate",
+        "hard_negative_mining"
+      ],
+      "prohibited_uses": [
+        "treat_as_package_level_benign_ground_truth",
+        "package_level_benign_fpr_denominator",
+        "release_authoritative_metric",
+        "blocking_package_accuracy_gate",
+        "execute_samples"
+      ],
+      "gating": {
+        "blocking": false,
+        "tracks": []
+      },
+      "expected": {
+        "row_counts": {
+          "notinject/one": 113,
+          "notinject/two": 113,
+          "notinject/three": 113
+        },
+        "schemas": {
+          "notinject": {
+            "exact_fields": [
+              "prompt",
+              "word_list",
+              "category"
+            ]
+          },
+          "evaluation_projection": {
+            "exact_fields": [
+              "dataset_id",
+              "sample_id",
+              "source_id",
+              "repository_group_id",
+              "structural_family_id",
+              "lexical_template_id",
+              "benchmark_labels",
+              "split",
+              "parent_sample_id",
+              "split_inherited_from",
+              "dedup_parent_id",
+              "dedup_relation",
+              "content_sha256",
+              "normalized_content_sha256",
+              "lexical_template_sha256",
+              "control_content_sha256",
+              "trigger_count"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

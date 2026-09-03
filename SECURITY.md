@@ -74,9 +74,12 @@ following steps:
   Verify any artifact with
   `gh attestation verify <artifact> --repo cisco-ai-defense/skill-scanner`.
 - **CycloneDX SBOM.** Each GitHub release includes an `sbom.cdx.json` generated
-  from the same frozen export as `requirements.txt` and bound to the
+  from the same frozen, all-extras export as `requirements.txt` and bound to the
   distributions with
   [`actions/attest-sbom`](https://github.com/actions/attest-sbom).
+  Native wheel-only extras must be qualified on every supported Python, OS, and
+  CPU target before they enter this export; release automation must otherwise
+  reject them rather than publish an architecture-incomplete dependency record.
 - **Loose abstract constraints in `pyproject.toml`.** Library consumers can
   resolve transitive security patches forward without forced cascades. See
   [`CONTRIBUTING.md` § Dependency Policy](/CONTRIBUTING.md#dependency-policy)

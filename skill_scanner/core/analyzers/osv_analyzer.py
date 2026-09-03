@@ -32,6 +32,7 @@ import ast
 import configparser
 import logging
 import re
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -39,11 +40,6 @@ import httpx
 
 from ..models import Finding, Severity, ThreatCategory
 from .base import BaseAnalyzer
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    tomllib = None
 
 if TYPE_CHECKING:
     from ..models import Skill
@@ -68,12 +64,10 @@ def _first_line_containing(content: str, needle: str) -> int | None:
 
 
 def _safe_toml(content: str) -> dict | None:
-    """Parse TOML, returning None when unavailable (py<3.11) or malformed."""
-    if tomllib is None:
-        return None
+    """Parse TOML, returning ``None`` when content is malformed."""
     try:
         return tomllib.loads(content)
-    except Exception:  # noqa: BLE001 - malformed manifest, treat as no data
+    except tomllib.TOMLDecodeError:
         return None
 
 
@@ -244,7 +238,10 @@ class OSVAnalyzer(BaseAnalyzer):
             declared = metadata.get("dependencies")
             if isinstance(declared, list):
                 for declared_dep in declared:
-                    entries.append((str(skill.skill_md_path), None, str(declared_dep)))
+                    # Manifest metadata is sourced from the package's
+                    # instruction file.  Findings and CEL facts use stable,
+                    # package-relative paths rather than absolute host paths.
+                    entries.append(("SKILL.md", None, str(declared_dep)))
         return entries
 
     @staticmethod
@@ -279,7 +276,7 @@ class OSVAnalyzer(BaseAnalyzer):
     def _create_finding(
         self, name: str, version: str, vulns: list[dict], source: str, line_number: int | None
     ) -> Finding:
-        vuln_ids = [v.get("id") for v in vulns if v.get("id")]
+        vuln_ids = [vuln_id for v in vulns if isinstance((vuln_id := v.get("id")), str) and vuln_id]
         references = [f"https://osv.dev/vulnerability/{vuln_id}" for vuln_id in vuln_ids]
         ids_display = ", ".join(vuln_ids) if vuln_ids else "unknown"
         return Finding(
@@ -303,5 +300,13 @@ class OSVAnalyzer(BaseAnalyzer):
                 "ecosystem": self.ecosystem,
                 "vulnerability_ids": vuln_ids,
                 "references": references,
+                "semantic_facts": {
+                    "evidence_kind": "dependency_advisory",
+                    "context_kind": "manifest" if source == "SKILL.md" else "dependency_file",
+                    "evidence_value_class": "known_vulnerable_dependency",
+                    "evidence_count": len(vuln_ids),
+                    "signal_kind": "known_vulnerability",
+                    "signals": [],
+                },
             },
         )

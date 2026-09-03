@@ -15,191 +15,178 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Helper script to update _expected.json files based on actual scan results.
+"""Create scanner-observation reports for ground-truth attesters.
 
-This helps improve precision/recall by ensuring expected findings match
-what analyzers actually detect.
+This tool deliberately cannot update ``_expected.json`` files. Scanner output
+is useful diagnostic evidence, but making the system under test its own label
+source would make the evaluation circular. Ground truth must instead carry a
+scanner-independent public, Ollama, agent, or human attestation with bound
+provenance and label-evidence hashes.
 """
+
+from __future__ import annotations
 
 import json
 import sys
-from collections import defaultdict
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-# Add parent to path
+# Add repository root to path when invoked as a script.
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from evals.runners.finding_matcher import match_findings, validate_expectation_document
 from skill_scanner.core.analyzer_factory import build_analyzers
 from skill_scanner.core.scan_policy import ScanPolicy
 from skill_scanner.core.scanner import SkillScanner
 
 
-def scan_skill_and_get_findings(skill_dir: Path, use_llm: bool = False):
-    """Scan a skill and return findings grouped by category+severity."""
+def _value(value: Any) -> Any:
+    return getattr(value, "value", value)
+
+
+def _finding_observation(finding: Any) -> dict[str, Any]:
+    """Return canonical, non-labeling scanner evidence for one finding."""
+
+    return {
+        "rule_id": finding.rule_id,
+        "category": _value(finding.category),
+        "severity": _value(finding.severity),
+        "file_path": finding.file_path,
+        "line_number": finding.line_number,
+        "evidence_id": finding.id,
+        "analyzer": finding.analyzer,
+        "title": finding.title,
+    }
+
+
+def _build_scanner(use_llm: bool) -> SkillScanner:
     policy = ScanPolicy.default()
-    analyzers = build_analyzers(policy, use_llm=use_llm)
-
-    scanner = SkillScanner(analyzers=analyzers, policy=policy)
-    result = scanner.scan_skill(skill_dir)
-
-    # Group findings by category+severity
-    findings_by_key = defaultdict(list)
-    for finding in result.findings:
-        key = (finding.category.value, finding.severity.value)
-        findings_by_key[key].append(finding)
-
-    return result, findings_by_key
+    return SkillScanner(analyzers=build_analyzers(policy, use_llm=use_llm), policy=policy)
 
 
-def load_expected(skill_dir: Path):
-    """Load expected findings from _expected.json."""
-    expected_file = skill_dir / "_expected.json"
-    if not expected_file.exists():
-        return None
+def observe_fixture(scanner: SkillScanner, expected_file: Path) -> dict[str, Any]:
+    """Validate and scan one fixture without deriving or changing its labels."""
 
-    with open(expected_file, encoding="utf-8") as f:
-        return json.load(f)
+    fixture_dir = expected_file.parent
+    observation: dict[str, Any] = {
+        "fixture": fixture_dir.as_posix(),
+        "expectation_file": expected_file.as_posix(),
+        "attestation_status": "scanner_observation_only_not_label_evidence",
+    }
+
+    try:
+        with expected_file.open(encoding="utf-8") as stream:
+            document = json.load(stream)
+        validated = validate_expectation_document(document, fixture_dir=fixture_dir)
+        observation.update(
+            {
+                "skill_name": validated.skill_name,
+                "expectation_schema_version": validated.schema_version,
+                "evaluation_quality": validated.evaluation_quality,
+                "expected_verdict": "safe" if validated.expected_safe else "unsafe",
+                "expected_finding_count": len(validated.expected_findings),
+            }
+        )
+
+        result = scanner.scan_skill(fixture_dir)
+        analyzer_failures = getattr(result, "analyzers_failed", None) or []
+        if analyzer_failures:
+            raise RuntimeError(f"scanner reported analyzer failure(s): {analyzer_failures}")
+
+        match = match_findings(validated.expected_findings, result.findings)
+        observations = [_finding_observation(finding) for finding in result.findings]
+        observation["scanner_observation"] = {
+            "is_safe": result.is_safe,
+            "max_severity": result.max_severity.value,
+            "findings": observations,
+            "matched_pairs": [list(pair) for pair in match.matched_pairs],
+            "unmatched_expected_indices": list(match.unmatched_expected_indices),
+            "unmatched_scanner_indices": list(match.unmatched_actual_indices),
+        }
+    except Exception as error:
+        observation["error"] = str(error)
+
+    return observation
 
 
-def suggest_expected_findings(actual_findings_by_key, existing_expected):
-    """Suggest expected findings based on actual findings."""
-    suggested = []
+def build_observation_report(
+    test_skills_dir: Path,
+    *,
+    use_llm: bool = False,
+    skill: str | None = None,
+    scanner: SkillScanner | None = None,
+) -> dict[str, Any]:
+    """Build a reviewer report for every discovered expectation file."""
 
-    for (category, severity), findings in actual_findings_by_key.items():
-        # Check if this category+severity is already expected
-        expected_key = None
-        if existing_expected:
-            expected_findings = existing_expected.get("expected_findings", [])
-            for exp in expected_findings:
-                if exp.get("category") == category and exp.get("severity") == severity:
-                    expected_key = exp
-                    break
+    expected_files = sorted(test_skills_dir.rglob("_expected.json"))
+    if skill is not None:
+        expected_files = [path for path in expected_files if path.parent.name == skill]
 
-        if not expected_key:
-            # Suggest adding this finding
-            suggested.append(
-                {
-                    "category": category,
-                    "severity": severity,
-                    "description": findings[0].title[:100] if findings else f"{category} threat detected",
-                    "count": len(findings),
-                }
-            )
+    active_scanner = scanner or _build_scanner(use_llm)
+    observations = [observe_fixture(active_scanner, expected_file) for expected_file in expected_files]
+    return {
+        "schema_version": 1,
+        "report_kind": "scanner_observation_only",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "ground_truth_mutated": False,
+        "attestation_policy": {
+            "accepted_label_sources": [
+                "agent_labeled",
+                "human_reviewed",
+                "independent_ollama",
+                "public_labeled",
+            ],
+            "required_hashes": ["label_evidence_sha256", "label_provenance_sha256"],
+            "scanner_output_is_ground_truth": False,
+            "instructions": (
+                "Attest the label from scanner-independent evidence; scanner findings are observations, not labels."
+            ),
+        },
+        "fixture_count": len(observations),
+        "error_count": sum("error" in observation for observation in observations),
+        "observations": observations,
+    }
 
-    return suggested
 
+def main() -> int:
+    """Write an attester-only scanner observation report."""
 
-def main():
-    """Main function to analyze and suggest expected findings updates."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Update expected findings based on actual scan results")
-    parser.add_argument("--test-skills-dir", default="evals/skills", help="Directory containing test skills")
-    parser.add_argument("--use-llm", action="store_true", help="Use LLM analyzer")
-    parser.add_argument(
-        "--update", action="store_true", help="Actually update _expected.json files (dry-run by default)"
-    )
-    parser.add_argument("--skill", help="Process only specific skill (directory name)")
-
+    parser = argparse.ArgumentParser(description="Create an attester-only scanner observation report")
+    parser.add_argument("--test-skills-dir", default="evals/skills", help="Directory containing evaluation skills")
+    parser.add_argument("--output", required=True, help="Path for the observation report (never _expected.json)")
+    parser.add_argument("--use-llm", action="store_true", help="Include the configured LLM analyzer")
+    parser.add_argument("--skill", help="Process only an exact skill directory name")
     args = parser.parse_args()
 
     skills_dir = Path(args.test_skills_dir)
+    if not skills_dir.is_dir():
+        parser.error(f"evaluation directory does not exist: {skills_dir}")
 
-    # Find all skills
-    expected_files = list(skills_dir.rglob("_expected.json"))
+    output = Path(args.output)
+    if output.name == "_expected.json":
+        parser.error("refusing to write an evaluation ground-truth file")
+    if output.resolve().is_relative_to(skills_dir.resolve()):
+        parser.error("observation reports must be written outside the evaluation fixture tree")
 
-    if args.skill:
-        expected_files = [f for f in expected_files if args.skill in str(f.parent)]
+    report = build_observation_report(
+        skills_dir,
+        use_llm=args.use_llm,
+        skill=args.skill,
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as stream:
+        json.dump(report, stream, indent=2)
+        stream.write("\n")
 
-    print(f"Analyzing {len(expected_files)} skills...\n")
-
-    updates_needed = []
-
-    for expected_file in expected_files:
-        skill_dir = expected_file.parent
-        skill_name = skill_dir.name
-
-        print(f"=== {skill_name} ===")
-
-        # Load existing expected
-        existing = load_expected(skill_dir)
-        if not existing:
-            print("  No _expected.json found, skipping")
-            continue
-
-        # Scan skill
-        try:
-            result, findings_by_key = scan_skill_and_get_findings(skill_dir, use_llm=args.use_llm)
-
-            # Get expected findings
-            expected_findings = existing.get("expected_findings", [])
-
-            print(f"  Expected: {len(expected_findings)} findings")
-            print(f"  Actual: {len(result.findings)} findings")
-
-            # Check for missing expected findings
-            expected_keys = set()
-            for exp in expected_findings:
-                key = (exp.get("category"), exp.get("severity"))
-                expected_keys.add(key)
-
-            actual_keys = set(findings_by_key.keys())
-
-            missing_expected = actual_keys - expected_keys
-            extra_expected = expected_keys - actual_keys
-
-            if missing_expected:
-                print(f"  [WARNING] Missing from expected: {len(missing_expected)}")
-                for cat, sev in missing_expected:
-                    findings = findings_by_key[(cat, sev)]
-                    print(f"     - {cat}/{sev}: {len(findings)} finding(s)")
-                    print(f"       Example: {findings[0].title[:60]}")
-
-            if extra_expected:
-                print(f"  [WARNING] In expected but not found: {len(extra_expected)}")
-                for cat, sev in extra_expected:
-                    print(f"     - {cat}/{sev}")
-
-            if not missing_expected and not extra_expected:
-                print("  [OK] Expected findings match actual findings")
-
-            # Suggest updates
-            if missing_expected and args.update:
-                # Update the expected file
-                if "expected_findings" not in existing:
-                    existing["expected_findings"] = []
-
-                # Add missing findings
-                for cat, sev in missing_expected:
-                    findings = findings_by_key[(cat, sev)]
-                    existing["expected_findings"].append(
-                        {
-                            "category": cat,
-                            "severity": sev,
-                            "description": findings[0].title[:200] if findings else f"{cat} threat detected",
-                        }
-                    )
-
-                # Save updated file
-                with open(expected_file, "w", encoding="utf-8") as f:
-                    json.dump(existing, f, indent=2)
-                print(f"  [OK] Updated {expected_file}")
-                updates_needed.append(skill_name)
-
-            print()
-
-        except Exception as e:
-            print(f"  [ERROR] Error: {e}\n")
-            continue
-
-    if updates_needed:
-        print(f"\n[OK] Updated {len(updates_needed)} skills: {', '.join(updates_needed)}")
-    elif args.update:
-        print("\n[OK] No updates needed - all expected findings match actual findings")
-    else:
-        print("\n[TIP] Run with --update to automatically update _expected.json files")
+    print(f"Wrote {report['fixture_count']} scanner observation(s) to {output}")
+    if report["error_count"]:
+        print(f"Observation report contains {report['error_count']} error(s)")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

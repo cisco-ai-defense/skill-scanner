@@ -534,10 +534,16 @@ class TestEntryPointPlumbing:
         assert "LLM reasoning configuration error" in capsys.readouterr().err
 
     @pytest.mark.asyncio
-    async def test_api_returns_400_for_reasoning_configuration_error(self, tmp_path) -> None:
+    async def test_api_returns_400_for_reasoning_configuration_error(
+        self,
+        tmp_path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from skill_scanner.api import router
         from skill_scanner.api.router import ScanRequest, scan_skill
 
         (tmp_path / "SKILL.md").write_text("---\nname: test\ndescription: test\n---\n", encoding="utf-8")
+        monkeypatch.setattr(router, "_ALLOWED_ROOTS", [tmp_path.resolve()])
         request = ScanRequest(
             skill_directory=str(tmp_path),
             use_llm=True,

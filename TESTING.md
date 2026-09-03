@@ -213,7 +213,7 @@ Tests run automatically in GitHub Actions on:
 - Every pull request
 
 The CI pipeline runs:
-1. Unit tests across Python 3.10, 3.11, 3.12
+1. Unit tests across Python 3.11, 3.12, 3.13, and 3.14
 2. Pre-commit checks (linting, formatting)
 3. Coverage reporting
 

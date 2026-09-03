@@ -1,23 +1,31 @@
 {
-  "skill_name": "safe-file-reader",
-  "expected_safe": false,
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "command-injection.unconstrained-path-001",
+  "skill_name": "unconstrained-file-reader",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
   "expected_severity": "CRITICAL",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "34062f50f1c0232a06fe191d5ded76f27d9d2099cc3e17bf530313d8759e2f85",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "48ee12a4a2c61b2d9003df6ad9cd72e018dffcbb1b8579424c90acd732119929",
+    "label_evidence_sha256": "91b55b44443f793ca164bc0c7d2e04a70ead9d1bd5531bc2194d54b526a0d63f"
+  },
   "expected_findings": [
     {
+      "rule_id": "PATH_TRAVERSAL_OPEN",
       "category": "command_injection",
       "severity": "CRITICAL",
-      "description": "Path Traversal Vulnerability in File Reading"
-    },
-    {
-      "category": "command_injection",
-      "severity": "CRITICAL",
-      "description": "Unsafe Configuration File Reading"
-    },
-    {
-      "category": "data_exfiltration",
-      "severity": "HIGH",
-      "description": "Accessing sensitive system or credential files"
+      "file_path": "read.py",
+      "analyzer": "static",
+      "line_number": 18
     }
   ],
-  "notes": "Claims safe file reading but allows path traversal attacks. Multiple functions vulnerable to path traversal."
+  "notes": "Human-reviewed minimal replacement for the historical unconstrained file-read case."
 }

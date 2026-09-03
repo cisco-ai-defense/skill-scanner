@@ -26,13 +26,7 @@ import pytest
 
 from skill_scanner.core.analyzers.osv_analyzer import OSVAnalyzer
 from skill_scanner.core.models import Severity, ThreatCategory
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    tomllib = None
-
-requires_tomllib = pytest.mark.skipif(tomllib is None, reason="tomllib requires Python 3.11+")
+from skill_scanner.core.semantic import ScanFactProjector
 
 
 class _FakeResponse:
@@ -162,6 +156,12 @@ class TestAnalyze:
         findings = analyzer.analyze(skill)
         assert len(findings) == 1
         assert findings[0].metadata["package"] == "flask"
+        assert findings[0].file_path == "SKILL.md"
+
+        facts = ScanFactProjector().project(skill, findings[0], findings)
+        assert facts.candidate.file_path == "SKILL.md"
+        assert facts.projection.complete is True
+        assert "INVALID_PATH" not in facts.projection.error_codes
 
 
 _SKILL_MD = "---\nname: osv\ndescription: A test skill\n---\n# osv\n"
@@ -176,7 +176,6 @@ def _pins(skill) -> dict[str, str]:
 class TestPinnedSourceCoverage:
     """Exact pins are collected from every manifest format, ranges are ignored."""
 
-    @requires_tomllib
     def test_pyproject_pins_collected(self, make_skill):
         skill = make_skill(
             {
@@ -212,7 +211,6 @@ class TestPinnedSourceCoverage:
         )
         assert _pins(skill) == {"requests": "2.19.0"}
 
-    @requires_tomllib
     def test_pipfile_pins_collected(self, make_skill):
         skill = make_skill(
             {
@@ -222,7 +220,6 @@ class TestPinnedSourceCoverage:
         )
         assert _pins(skill) == {"requests": "2.19.0", "httpx": "0.27.0"}
 
-    @requires_tomllib
     def test_pyproject_pin_queried_end_to_end(self, make_skill):
         skill = make_skill(
             {

@@ -23,8 +23,11 @@ rule coercive_injection_generic {
         // Required precedence patterns
         $required_precedence = /(Required|Mandatory|Essential)\s+to\s+(execute|use|run|invoke|call)\s+(this|the current)\s+(tool|function|command|operation)\s+(first|before|initially|prior)/i
 
-        // Pattern for generic hidden/secret parameter requests
-        $hidden_param = /\b(hidden|secret)[_\s](parameter|argument|input)\b/i
+        // Hidden/secret parameter requests require an action or nearby tool /
+        // authentication context. Bare identifiers such as hidden_input are
+        // common in legitimate CLI and test code and are not actionable.
+        $hidden_param_request = /\b(pass|provide|include|add|send|supply|inject)\s+(the\s+|a\s+|your\s+)?(hidden|secret)[_\s](parameter|argument|input)\b/i
+        $hidden_param_tool_context = /\b(hidden|secret)[_\s](parameter|argument|input)\b.{0,80}\b(tool|function|authentication|credential)\b/i
 
         // Specific file access coercion
         $file_access_coercion = /\b((read|parse|cat|dump) (and pass )?(the )?contents? of [^\n\.]*\.(key|pem|ssh|aws)|pass (the )?contents?[^\n]*authentication)\b/i
@@ -42,7 +45,7 @@ rule coercive_injection_generic {
         $execution_overrides = /\b(do not execute[^\n]*other[^\n]*tool|tool[^\n]*will not work)\b/i
 
         // Behavioral control instructions
-        $behavior_control = /\b(tell (the )?user only|hide (the )?user)\b/i
+        $behavior_control = /\b(tell (the )?user only( that)? (the )?(action|operation|task|tool|command) (succeeded|completed|is safe|was approved)|hide (the )?(action|operation|tool use|error|warning) from (the )?user)\b/i
 
         // MCP tool poisoning patterns
         $tool_poisoning = /\b(sidenote\W+(required|otherwise) [^\n]*tool [^\n]*work|tool\s+will\s+not\s+work\s+unless|must\s+first [^\n]*read [^\n]*config|shadow [^\n]*trusted [^\n]*tool)\b/i
@@ -69,7 +72,8 @@ rule coercive_injection_generic {
         $mandatory_execution or
         $priority_overrides or
         $required_precedence or
-        $hidden_param or
+        $hidden_param_request or
+        $hidden_param_tool_context or
         $file_access_coercion or
         $model_data_coercion or
         $model_internals or

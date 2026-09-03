@@ -35,6 +35,7 @@ from ..llm_reasoning import ReasoningConfigurationError
 from ..llm_token_options import resolve_llm_max_tokens
 from .analyzers.base import BaseAnalyzer
 from .analyzers.bytecode_analyzer import BytecodeAnalyzer
+from .analyzers.correlation_analyzer import CorrelationAnalyzer
 from .analyzers.pipeline_analyzer import PipelineAnalyzer
 from .analyzers.static import StaticAnalyzer
 from .scan_policy import ScanPolicy
@@ -47,8 +48,9 @@ def build_core_analyzers(
     *,
     custom_yara_rules_path: str | Path | None = None,
     extra_rules_dirs: list[Path] | None = None,
+    trusted_pack_dirs: list[Path] | None = None,
 ) -> list[BaseAnalyzer]:
-    """Build the three core analyzers, respecting ``policy.analyzers`` toggles.
+    """Build core analyzers, respecting ``policy.analyzers`` toggles.
 
     This is the **single source of truth** for which core analyzers exist
     and how they are configured.  ``SkillScanner.__init__``, the CLI, the
@@ -60,6 +62,8 @@ def build_core_analyzers(
             rule files (``.yara``).  Forwarded to :class:`StaticAnalyzer`.
         extra_rules_dirs: Additional signature rule directories from
             community/external packs (e.g. ATR).
+        trusted_pack_dirs: Administrator-approved v2 rule pack directories.
+            Forwarded to :class:`StaticAnalyzer`.
 
     Returns:
         A list of core analyzer instances with *policy* attached.
@@ -72,12 +76,15 @@ def build_core_analyzers(
                 custom_yara_rules_path=custom_yara_rules_path,
                 policy=policy,
                 extra_rules_dirs=extra_rules_dirs,
+                trusted_pack_dirs=trusted_pack_dirs,
             )
         )
     if policy.analyzers.bytecode:
         analyzers.append(BytecodeAnalyzer(policy=policy))
     if policy.analyzers.pipeline:
         analyzers.append(PipelineAnalyzer(policy=policy))
+    if getattr(policy.analyzers, "correlation", False):
+        analyzers.append(CorrelationAnalyzer(policy=policy))
 
     return analyzers
 
@@ -87,6 +94,7 @@ def build_analyzers(
     *,
     custom_yara_rules_path: str | Path | None = None,
     extra_rules_dirs: list[Path] | None = None,
+    trusted_pack_dirs: list[Path] | None = None,
     use_behavioral: bool = False,
     use_llm: bool = False,
     llm_model: str | None = None,
@@ -119,6 +127,8 @@ def build_analyzers(
     Args:
         extra_rules_dirs: Additional signature rule directories from
             community/external packs (e.g. ATR).
+        trusted_pack_dirs: Administrator-approved v2 rule pack directories.
+            Forwarded to the core :class:`StaticAnalyzer`.
         llm_max_tokens: Override the default ``max_tokens`` for the
             :class:`LLMAnalyzer`. When *None*,
             ``SKILL_SCANNER_LLM_MAX_TOKENS`` takes precedence over the
@@ -137,6 +147,7 @@ def build_analyzers(
         policy,
         custom_yara_rules_path=custom_yara_rules_path,
         extra_rules_dirs=extra_rules_dirs,
+        trusted_pack_dirs=trusted_pack_dirs,
     )
 
     # -- Optional analyzers (flag-driven) -----------------------------------

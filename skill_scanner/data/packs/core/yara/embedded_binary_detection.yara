@@ -29,6 +29,7 @@ rule embedded_elf_binary
         description = "Detects ELF executable headers embedded in skill package files"
         classification = "SUPPLY CHAIN ATTACK"
         threat_type = "supply_chain_attack"
+        category = "supply_chain_attack"
         severity = "HIGH"
 
     strings:
@@ -45,14 +46,16 @@ rule embedded_pe_executable
         description = "Detects PE (Windows) executable headers embedded in skill package files"
         classification = "SUPPLY CHAIN ATTACK"
         threat_type = "supply_chain_attack"
+        category = "supply_chain_attack"
         severity = "HIGH"
 
     strings:
-        $mz_header = { 4D 5A }  // MZ header
         $pe_sig = "PE\x00\x00"
 
     condition:
-        $mz_header at 0 and $pe_sig
+        // Use a direct header check instead of a two-byte pattern, which has
+        // no useful YARA atom and would otherwise be verified too broadly.
+        uint16(0) == 0x5A4D and $pe_sig
 }
 
 rule embedded_macho_binary
@@ -62,15 +65,30 @@ rule embedded_macho_binary
         description = "Detects Mach-O (macOS) executable headers embedded in skill package files"
         classification = "SUPPLY CHAIN ATTACK"
         threat_type = "supply_chain_attack"
+        category = "supply_chain_attack"
         severity = "HIGH"
 
     strings:
         $macho_32 = { CE FA ED FE }  // 32-bit Mach-O
         $macho_64 = { CF FA ED FE }  // 64-bit Mach-O
+        $macho_32_be = { FE ED FA CE }  // 32-bit Mach-O, big-endian
+        $macho_64_be = { FE ED FA CF }  // 64-bit Mach-O, big-endian
         $macho_fat = { CA FE BA BE }  // Universal/fat binary
+        $macho_fat_swapped = { BE BA FE CA }  // Universal/fat, swapped endian
+        $macho_fat64 = { CA FE BA BF }  // 64-bit universal/fat binary
+        $macho_fat64_swapped = { BF BA FE CA }  // 64-bit universal/fat, swapped endian
 
     condition:
-        ($macho_32 at 0) or ($macho_64 at 0) or ($macho_fat at 0)
+        ($macho_32 at 0) or
+        ($macho_64 at 0) or
+        ($macho_32_be at 0) or
+        ($macho_64_be at 0) or
+        // Java class files share CAFEBABE. Their minor/major version fields
+        // occupy bytes 4-7; valid class major versions start at 45.
+        ($macho_fat at 0 and not (uint16be(4) == 0 and uint16be(6) >= 45 and uint16be(6) <= 100)) or
+        ($macho_fat_swapped at 0) or
+        ($macho_fat64 at 0) or
+        ($macho_fat64_swapped at 0)
 }
 
 rule embedded_shebang_in_binary
@@ -80,6 +98,7 @@ rule embedded_shebang_in_binary
         description = "Detects shebang script headers embedded within binary content"
         classification = "SUPPLY CHAIN ATTACK"
         threat_type = "supply_chain_attack"
+        category = "supply_chain_attack"
         severity = "MEDIUM"
 
     strings:

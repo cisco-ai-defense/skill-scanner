@@ -39,7 +39,9 @@ def test_direct_aliased_subprocess_shell_is_detected(make_skill):
 
     findings = StaticAnalyzer(use_yara=False).analyze(skill)
 
-    assert any(f.rule_id == "COMMAND_INJECTION_SHELL_TRUE" for f in findings)
+    shell_findings = [f for f in findings if f.rule_id == "COMMAND_INJECTION_SHELL_TRUE"]
+    assert len(shell_findings) == 1
+    assert shell_findings[0].line_number == 2
 
 
 def test_nested_aliased_subprocess_shell_is_detected(make_skill):

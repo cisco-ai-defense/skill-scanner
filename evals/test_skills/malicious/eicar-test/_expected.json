@@ -1,4 +1,6 @@
 {
+  "schema_version": 1,
+  "evaluation_quality": "legacy_degraded",
   "skill_name": "eicar-test",
   "is_malicious": true,
   "expected_findings": [

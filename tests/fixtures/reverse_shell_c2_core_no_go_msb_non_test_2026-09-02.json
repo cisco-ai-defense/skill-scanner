@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "status": "development_only_no_go",
+  "decision": {
+    "implement_reverse_shell_core_rule": false,
+    "implement_generic_c2_payload_chain": false,
+    "reason": "Explicit reverse-shell text adds no full-pack package recall, while the only prototype with nominal lift is confined to one source and cannot distinguish active abuse from benign red-team or lab instructions.",
+    "minimum_independent_sources_for_lift": 2,
+    "observed_independent_sources_for_c2_lift": 1
+  },
+  "dataset": {
+    "id": "ProtectSkills/MaliciousSkillBench",
+    "revision": "d4b42ce5766a6e0359c987cf59c1007cb3795a90",
+    "artifact_manifest_sha256": "ae542800a95a893a0ae724bdc625d5a1e19d81ff08ae1f846ddb54d77bfb0b9a",
+    "benchmark_snapshot_sha256": "b89b8aa7ec730ef91c9e4eb794106cbac691221f072851de88f5f0e867e23913",
+    "formal_baseline_sha256": "fd23fdf55c477e6cce0d42dcd5d9986738ba5e52fb018fddd707df2423913685",
+    "selection": "source_disjoint and m_structural_disjoint train/validation only",
+    "selection_sha256": "c318776bcdf135c0e3b9a71a6dca169298666e0c18869e4eb65f25e7e3429388",
+    "declared_malicious": 5258,
+    "declared_benign": 1339,
+    "materialized_malicious": 5256,
+    "materialized_benign": 1338,
+    "endpoint_quarantined_malicious": 2,
+    "endpoint_quarantined_benign": 1,
+    "sealed_test_rows_accessed": 0,
+    "raw_dataset_content_embedded": false,
+    "samples_executed": false
+  },
+  "explicit_reverse_shell_ceiling": {
+    "predicate": "case-insensitive reverse followed by zero or more whitespace, underscore, or hyphen characters and then shell",
+    "malicious_hits": 116,
+    "benign_hits": 0,
+    "source_counts": {
+      "SRC001": 114,
+      "SRC004": 1,
+      "SRC005": 1
+    },
+    "declared_structural_families": 113,
+    "maximum_family_support": 2,
+    "source_disjoint_split_counts": {
+      "train": 105,
+      "validation": 11
+    },
+    "structural_disjoint_split_counts": {
+      "train": 95,
+      "validation": 21
+    },
+    "hit_selection_sha256": "9fcfc403e773d6a43d3ce6ea082f3140a74345c4c2b2a3ed63658270a40166aa",
+    "packages_already_blocked_by_full_pack": 116,
+    "incremental_full_pack_package_block_lift": 0
+  },
+  "rejected_c2_payload_prototype": {
+    "behavior_classes": [
+      "explicit C2 communication or synchronization channel",
+      "payload or content-binary delivery",
+      "active script, loader, service, process, or payload execution"
+    ],
+    "all_variable_regex_spans_bounded_to_one_line": true,
+    "maximum_variable_span_characters": 96,
+    "maximum_file_size_bytes": 524288,
+    "malicious_hits": 8,
+    "benign_dataset_hits": 0,
+    "source_counts": {
+      "SRC001": 8
+    },
+    "declared_structural_families": 8,
+    "maximum_family_support": 1,
+    "source_disjoint_split_counts": {
+      "train": 7,
+      "validation": 1
+    },
+    "structural_disjoint_split_counts": {
+      "train": 6,
+      "validation": 2
+    },
+    "hit_selection_sha256": "3e325b821fd900362752cc791c1b8734dacae9482d705fb920c6bb08155eb884",
+    "packages_already_blocked_by_full_pack": 6,
+    "nominal_incremental_full_pack_package_block_lift": 2,
+    "synthetic_benign_near_misses_tested": 2,
+    "synthetic_benign_near_miss_false_positives": 2,
+    "production_rule_shipped": false
+  },
+  "regression_contract": {
+    "test_file": "tests/test_yara_behavior_chains.py",
+    "rejected_rule_id": "SUSP_Multi_C2Payload_DeliveryExec_Sep26",
+    "required_near_misses": [
+      "red-team guide with isolated-sandbox execution",
+      "command-and-control exercise limited to a test lab"
+    ],
+    "required_behavior": "The rejected technique-level YARA rule must remain absent unless a future context-aware design rejects both cases and obtains source-disjoint support."
+  },
+  "limitations": [
+    "Zero labeled benign hits did not survive ordinary adversarial near-miss construction.",
+    "The two nominally recovered packages came from the same source and do not establish generalization.",
+    "This is development evidence only and did not inspect sealed test rows.",
+    "No reverse-shell or generic C2 YARA rule was added by this audit."
+  ]
+}

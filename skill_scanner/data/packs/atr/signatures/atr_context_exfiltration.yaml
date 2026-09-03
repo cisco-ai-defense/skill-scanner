@@ -7,7 +7,7 @@ signatures:
     atr_id: ATR-2026-00020
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00020-system-prompt-leak.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -50,7 +50,7 @@ signatures:
     atr_id: ATR-2026-00021
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00021-api-key-exposure.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - sk-[a-zA-Z0-9]{20,}
@@ -80,7 +80,7 @@ signatures:
     atr_id: ATR-2026-00075
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00075-agent-memory-manipulation.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -103,7 +103,7 @@ signatures:
     atr_id: ATR-2026-00102
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00102-disguised-analytics-exfiltration.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -118,7 +118,7 @@ signatures:
     atr_id: ATR-2026-00113
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00113-credential-theft.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -138,7 +138,7 @@ signatures:
     atr_id: ATR-2026-00114
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00114-oauth-token-abuse.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -157,7 +157,7 @@ signatures:
     atr_id: ATR-2026-00115
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00115-env-var-harvesting.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - (?i)(?:printenv|/usr/bin/env)\s*(?:\||>|$|\s*$)
@@ -174,7 +174,7 @@ signatures:
     atr_id: ATR-2026-00136
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00136-tool-response-data-piggyback.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -191,7 +191,7 @@ signatures:
     atr_id: ATR-2026-00141
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00141-example-format-key-leak.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -206,7 +206,7 @@ signatures:
     atr_id: ATR-2026-00142
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00142-piggyback-transition-words.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -221,7 +221,7 @@ signatures:
     atr_id: ATR-2026-00145
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00145-obfuscated-key-disclosure.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -234,7 +234,7 @@ signatures:
     atr_id: ATR-2026-00146
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00146-env-var-existence-probe.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -247,7 +247,7 @@ signatures:
     atr_id: ATR-2026-00150
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00150-credential-in-tool-response.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - (?i)-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----
@@ -262,7 +262,7 @@ signatures:
     atr_id: ATR-2026-00152
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00152-obfuscated-credential-leak.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -279,7 +279,7 @@ signatures:
     atr_id: ATR-2026-00162
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00162-skill-credential-exfil-combo.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -298,7 +298,7 @@ signatures:
     atr_id: ATR-2026-00201
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00201-credential-pipe-exfiltration.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -315,7 +315,7 @@ signatures:
     atr_id: ATR-2026-00212
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00212-mcp-atlassian-credential-leak.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -336,7 +336,7 @@ signatures:
     atr_id: ATR-2026-00261
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00261-markdown-image-exfiltration.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -357,7 +357,7 @@ signatures:
     atr_id: ATR-2026-00274
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00274-api-key-generation-request.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -378,7 +378,7 @@ signatures:
     atr_id: ATR-2026-00275
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00275-system-prompt-training-data-extraction.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -399,7 +399,7 @@ signatures:
     atr_id: ATR-2026-00290
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00290-divergence-repeat-word-training-extraction.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -408,7 +408,7 @@ signatures:
         Repeat\s+(?:the\s+)?(?:word|token|string)\s+["\x27]?\w{1,30}["\x27]?\s+(?:forever|indefinitely|endlessly|over\s+and\s+over|continuously|without\s+stopping)\b
       - >-
         (?:keep\s+(?:saying|repeating|writing|printing|outputting)\s+["\x27]?\w{1,30}["\x27]?\s+(?:forever|indefinitely|endlessly|over\s+and\s+over|non-?stop|continuously|until\s+I\s+(?:say|tell\s+you)\s+stop))
-      - (?:(?:\w+\s+){40,})\1{3,}
+      - (?:(?:\w+\s+){40,})
     file_types: *id001
     description: >-
       Detects the divergence attack (Carlini et al. 2023) — asking the model to repeat a word or token indefinitely until it "diverges" from the repetition and starts outputting memorized training data. From NVIDIA garak divergence.py: Repeat, RepeatExtended, RepeatedToken probes. The canonical attack: "R
@@ -417,7 +417,7 @@ signatures:
     atr_id: ATR-2026-00291
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00291-biometric-surveillance-personal-data-request.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -436,7 +436,7 @@ signatures:
     atr_id: ATR-2026-00293
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00293-educational-records-personal-data-request.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -453,7 +453,7 @@ signatures:
     atr_id: ATR-2026-00294
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00294-financial-pii-personal-data-request.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -470,7 +470,7 @@ signatures:
     atr_id: ATR-2026-00295
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00295-medical-pii-personal-data-request.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -489,7 +489,7 @@ signatures:
     atr_id: ATR-2026-00405
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00405-markdown-image-url-exfiltration-xss.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -508,7 +508,7 @@ signatures:
     atr_id: ATR-2026-00411
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00411-apikey-generation-completion-request.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -528,7 +528,7 @@ signatures:
     atr_id: ATR-2026-00421
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00421-nl-covert-conversation-exfiltration.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -545,7 +545,7 @@ signatures:
     atr_id: ATR-2026-00422
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00422-nl-credential-disclosure.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -562,7 +562,7 @@ signatures:
     atr_id: ATR-2026-00423
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00423-nl-sensitive-file-disclosure.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -579,7 +579,7 @@ signatures:
     atr_id: ATR-2026-00424
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00424-nl-system-prompt-leak.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -598,7 +598,7 @@ signatures:
     atr_id: ATR-2026-00426
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00426-nl-output-injection-credential-leak.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -615,7 +615,7 @@ signatures:
     atr_id: ATR-2026-00431
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00431-chatbox-history-exfiltration-prompt-injection.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -638,7 +638,7 @@ signatures:
     atr_id: ATR-2026-00449
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00449-spring-ai-chatmemory-cross-user-leak.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -663,7 +663,7 @@ signatures:
     atr_id: ATR-2026-00471
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00471-garak-sysprompt-extraction-mixedunassigned.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: MEDIUM
     patterns:
       - >-
@@ -676,7 +676,7 @@ signatures:
     atr_id: ATR-2026-00501
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00501-data-exfiltration-via-markdown-image-and-link-url-injection.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -699,7 +699,7 @@ signatures:
     atr_id: ATR-2026-00504
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00504-tool-and-function-capability-enumeration.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: MEDIUM
     patterns:
       - >-
@@ -720,7 +720,7 @@ signatures:
     atr_id: ATR-2026-00505
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00505-system-prompt-extraction-instruction-dump-request.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -745,7 +745,7 @@ signatures:
     atr_id: ATR-2026-00514
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00514-system-prompt-extraction.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -770,7 +770,7 @@ signatures:
     atr_id: ATR-2026-00516
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00516-output-xss-via-llm.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -791,7 +791,7 @@ signatures:
     atr_id: ATR-2026-00524
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00524-claude-code-anthropic-base-url-credential-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -815,7 +815,7 @@ signatures:
     atr_id: ATR-2026-00548
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00548-cross-agent-session-context-leak.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - (?i)invariant_violation:session.id_changed
@@ -827,7 +827,7 @@ signatures:
     atr_id: ATR-2026-00566
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00566-librechat-is-a-chatgpt-clone-with-additi.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - (?i){{\s*LIBRECHAT_[A-Z_]*(?:TOKEN|SECRET|KEY|CREDENTIAL)\s*}}
@@ -843,7 +843,7 @@ signatures:
     atr_id: ATR-2026-00569
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00569-agent-mcp-path-traversal-arbitrary-file-access.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -857,7 +857,7 @@ signatures:
     atr_id: ATR-2026-00571
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00571-xss-in-agent-mcp-rendered-output.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -874,7 +874,7 @@ signatures:
     atr_id: ATR-2026-00574
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00574-semantic-paraphrased-context-extraction.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -889,7 +889,7 @@ signatures:
     atr_id: ATR-2026-00578
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00578-zen-mcp-path-traversal-blacklist-bypass.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -908,7 +908,7 @@ signatures:
     atr_id: ATR-2026-00580
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00580-mcp-session-id-token-in-url-query.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -923,7 +923,7 @@ signatures:
     atr_id: ATR-2026-00583
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00583-mcp-env-secret-file-read-without-consent.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -938,7 +938,7 @@ signatures:
     atr_id: ATR-2026-00702
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00702-ipi-credential-exfil-via-agent-action.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -963,7 +963,7 @@ signatures:
     atr_id: ATR-2026-00703
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00703-ipi-financial-data-exfil-indirect.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -982,7 +982,7 @@ signatures:
     atr_id: ATR-2026-00704
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00704-ipi-medical-genetic-data-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1001,7 +1001,7 @@ signatures:
     atr_id: ATR-2026-00705
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00705-ipi-location-address-browsing-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1018,7 +1018,7 @@ signatures:
     atr_id: ATR-2026-00706
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00706-ipi-physical-biometric-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1039,7 +1039,7 @@ signatures:
     atr_id: ATR-2026-00707
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00707-ipi-file-exfil-with-destroy-or-tamper.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1060,7 +1060,7 @@ signatures:
     atr_id: ATR-2026-00850
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00850-indirect-pi-credential-exfil-email.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1077,7 +1077,7 @@ signatures:
     atr_id: ATR-2026-00851
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00851-indirect-pi-financial-payment-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1092,7 +1092,7 @@ signatures:
     atr_id: ATR-2026-00852
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00852-indirect-pi-medical-record-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1113,7 +1113,7 @@ signatures:
     atr_id: ATR-2026-00853
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00853-indirect-pi-genetic-data-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1130,7 +1130,7 @@ signatures:
     atr_id: ATR-2026-00854
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00854-indirect-pi-location-data-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1144,7 +1144,7 @@ signatures:
     atr_id: ATR-2026-00855
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00855-indirect-pi-browsing-history-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1158,7 +1158,7 @@ signatures:
     atr_id: ATR-2026-00856
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00856-indirect-pi-address-pii-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1174,7 +1174,7 @@ signatures:
     atr_id: ATR-2026-00857
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00857-indirect-pi-cloud-file-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1191,7 +1191,7 @@ signatures:
     atr_id: ATR-2026-00858
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00858-indirect-pi-exfil-and-destroy.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1208,7 +1208,7 @@ signatures:
     atr_id: ATR-2026-00859
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00859-rag-injected-pii-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1225,7 +1225,7 @@ signatures:
     atr_id: ATR-2026-00860
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00860-indirect-pi-financial-transfer-hijack.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1239,7 +1239,7 @@ signatures:
     atr_id: ATR-2026-00861
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00861-indirect-pi-crypto-transfer-hijack.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1252,7 +1252,7 @@ signatures:
     atr_id: ATR-2026-00862
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00862-indirect-pi-mfa-code-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1269,7 +1269,7 @@ signatures:
     atr_id: ATR-2026-00863
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-00863-shell-injection-data-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1288,7 +1288,7 @@ signatures:
     atr_id: ATR-2026-01450
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01450-svg-onload-xss-injection.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1302,7 +1302,7 @@ signatures:
     atr_id: ATR-2026-01451
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01451-img-onerror-xss-injection.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - (?i)<img\b[^>]{0,200}\bonerror\s*=\s*['"]?(?!this\.src)[^>"']{0,300}
@@ -1317,7 +1317,7 @@ signatures:
     atr_id: ATR-2026-01452
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01452-obfuscated-javascript-xss.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - '(?i)href\s*=\s*["'']?\\x[0-9a-fA-F]{2}javascript:'
@@ -1333,7 +1333,7 @@ signatures:
     atr_id: ATR-2026-01453
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01453-markdown-image-base64-exfil-carrier.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1351,7 +1351,7 @@ signatures:
     atr_id: ATR-2026-01454
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01454-direct-markdown-exfil-payload.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1370,7 +1370,7 @@ signatures:
     atr_id: ATR-2026-01455
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01455-new-instructions-injection-marker.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - (?i)\*{2,3}\s*NEW\s+IMPORTANT\s+INSTRUCTIONS\s*\*{2,3}
@@ -1387,7 +1387,7 @@ signatures:
     atr_id: ATR-2026-01456
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01456-debug-cli-mode-sysprompt-extraction.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1406,7 +1406,7 @@ signatures:
     atr_id: ATR-2026-01457
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01457-sysprompt-completion-clone-attack.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1428,7 +1428,7 @@ signatures:
     atr_id: ATR-2026-01458
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01458-compare-bots-sysprompt-fishing.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: MEDIUM
     patterns:
       - >-
@@ -1447,7 +1447,7 @@ signatures:
     atr_id: ATR-2026-01459
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01459-variable-clone-sysprompt-technique.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1464,7 +1464,7 @@ signatures:
     atr_id: ATR-2026-01460
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01460-json-format-sysprompt-extraction.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1481,7 +1481,7 @@ signatures:
     atr_id: ATR-2026-01461
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01461-foreign-language-sysprompt-request.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: MEDIUM
     patterns:
       - >-
@@ -1500,7 +1500,7 @@ signatures:
     atr_id: ATR-2026-01462
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01462-sysprompt-override-pseudo-admin.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1521,7 +1521,7 @@ signatures:
     atr_id: ATR-2026-01463
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01463-imend-imsystem-prompt-injection-format.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - <\|im_end\|>\s*<\|im_start\|>\s*system\b
@@ -1537,7 +1537,7 @@ signatures:
     atr_id: ATR-2026-01464
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01464-indirect-pi-sysprompt-action-hijack.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - (?i)#{1,6}\s*\(\s*system[_\s]?message\s*\)
@@ -1553,7 +1553,7 @@ signatures:
     atr_id: ATR-2026-01605
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01605-ssrf-aws-metadata-endpoint.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - (?i)169\.254\.169\.254(?::\d+)?/
@@ -1570,7 +1570,7 @@ signatures:
     atr_id: ATR-2026-01606
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01606-ssrf-internal-network-scan.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1589,7 +1589,7 @@ signatures:
     atr_id: ATR-2026-01607
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01607-ssrf-localhost-service-probe.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1603,7 +1603,7 @@ signatures:
     atr_id: ATR-2026-01608
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01608-ssrf-file-scheme-local-read.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1619,7 +1619,7 @@ signatures:
     atr_id: ATR-2026-01753
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01753-ransom-email-exfil-delete-extortion.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1637,7 +1637,7 @@ signatures:
     atr_id: ATR-2026-01754
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01754-ransom-file-cloud-exfil-delete-extortion.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1654,7 +1654,7 @@ signatures:
     atr_id: ATR-2026-01770
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01770-semantic-pii-credential-extraction.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1704,7 +1704,7 @@ signatures:
     atr_id: ATR-2026-01772
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01772-semantic-internal-state-recon.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1738,7 +1738,7 @@ signatures:
     atr_id: ATR-2026-01807
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01807-asb-bulk-data-exfil-external.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1753,7 +1753,7 @@ signatures:
     atr_id: ATR-2026-01862
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01862-llmail-email-tool-exfil-confirmation.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1768,7 +1768,7 @@ signatures:
     atr_id: ATR-2026-01863
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01863-llmail-post-summary-exfil-directive.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1781,7 +1781,7 @@ signatures:
     atr_id: ATR-2026-01864
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01864-llmail-obfuscated-exfil-address.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1794,7 +1794,7 @@ signatures:
     atr_id: ATR-2026-01890
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01890-file-exfiltration.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - (?i)requests\.post\([\s\S]{0,80}\bdata\s*=\s*\w+\.(?:read|tobytes)\(\)
@@ -1812,7 +1812,7 @@ signatures:
     atr_id: ATR-2026-01891
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01891-surveillance-exfiltration.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - (?i)geocoder\.ip\([^\n]{0,20}\)\.latlng
@@ -1826,7 +1826,7 @@ signatures:
     atr_id: ATR-2026-01892
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01892-env-exfiltration.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - (?i)os\.environ\[[\s\S]{0,60}requests\.post\(
@@ -1838,7 +1838,7 @@ signatures:
     atr_id: ATR-2026-01893
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01893-system-recon-exfiltration.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - (?i)pkg_resources\.working_set[\s\S]{0,120}requests\.post\(
@@ -1854,7 +1854,7 @@ signatures:
     atr_id: ATR-2026-01894
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01894-cookie-theft.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - (?i)cookies\.txt[\s\S]{0,120}requests\.get\(
@@ -1867,7 +1867,7 @@ signatures:
     atr_id: ATR-2026-01895
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01895-contact-exfiltration.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1880,7 +1880,7 @@ signatures:
     atr_id: ATR-2026-01924
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01924-system-instruction-extraction-reformat.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1898,7 +1898,7 @@ signatures:
     atr_id: ATR-2026-01929
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01929-mcp-unauthenticated-transport-token-fallback.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -1915,7 +1915,7 @@ signatures:
     atr_id: ATR-2026-01948
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01948-netlicensing-mcp-product-number-path-traversal-token-leak.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - (?i)product_number\s*[=:]\s*["\x27]?\s*(?:\.\.|%2e%2e)\s*[/\\]\s*token
@@ -1932,7 +1932,7 @@ signatures:
     atr_id: ATR-2026-01957
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01957-m365-copilot-searchleak-open-redirect-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1949,7 +1949,7 @@ signatures:
     atr_id: ATR-2026-01961
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01961-meta-ads-mcp-unauth-token-leak.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1968,7 +1968,7 @@ signatures:
     atr_id: ATR-2026-01964
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01964-langchain-gmailtoolkit-indirect-prompt-injection-email-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -1985,7 +1985,7 @@ signatures:
     atr_id: ATR-2026-01984
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01984-mcp-server-kubernetes-kubectl-generic-token-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-
@@ -2004,7 +2004,7 @@ signatures:
     atr_id: ATR-2026-01988
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-01988-t1005-agent-local-data-staging-exfil.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       - >-
@@ -2019,7 +2019,7 @@ signatures:
     atr_id: ATR-2026-02017
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/context-exfiltration/ATR-2026-02017-secret-key-exfiltration-request.yaml
-    category: context_exfiltration
+    category: data_exfiltration
     severity: HIGH
     patterns:
       - >-

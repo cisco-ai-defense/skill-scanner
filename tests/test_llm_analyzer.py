@@ -28,6 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer
+from skill_scanner.core.analyzers.llm_prompt_builder import source_evidence_id
 from skill_scanner.core.models import Finding, Severity, Skill, SkillManifest, ThreatCategory
 from skill_scanner.core.scan_policy import LLMAnalysisPolicy, ScanPolicy
 
@@ -460,7 +461,7 @@ class TestAsyncAnalysis:
 
         # Mock LLM response
         mock_make_request.return_value = json.dumps(
-            {"findings": [], "overall_assessment": "Safe skill", "primary_threats": []}
+            {"findings": [], "overall_assessment": "Safe skill", "verdict": "SAFE", "primary_threats": []}
         )
 
         # Create mock skill
@@ -489,12 +490,21 @@ class TestAsyncAnalysis:
                 "findings": [
                     {
                         "severity": "HIGH",
+                        "verdict": "TRUE_POSITIVE",
+                        "category": "prompt_injection",
+                        "confidence": "HIGH",
+                        "evidence_ids": [source_evidence_id("SKILL.md")],
                         "aitech": "AITech-1.1",
+                        "aisubtech": None,
                         "title": "Malicious instructions",
                         "description": "Contains override attempts",
+                        "location": "SKILL.md",
+                        "evidence": "Ignore all instructions",
+                        "remediation": "Remove the override instructions",
                     }
                 ],
                 "overall_assessment": "Unsafe",
+                "verdict": "MALICIOUS",
                 "primary_threats": ["PROMPT INJECTION"],
             }
         )
@@ -577,7 +587,12 @@ class TestLLMConsensus:
             findings.append(
                 {
                     "severity": severity.value,
+                    "verdict": "TRUE_POSITIVE",
+                    "category": "command_injection",
+                    "confidence": "HIGH",
+                    "evidence_ids": [source_evidence_id("SKILL.md")],
                     "aitech": "AITech-9.1",
+                    "aisubtech": None,
                     "title": "Command injection",
                     "description": "The skill executes attacker-controlled commands.",
                     "location": "SKILL.md:10",
@@ -585,7 +600,21 @@ class TestLLMConsensus:
                     "remediation": "Remove the command pipeline.",
                 }
             )
-        return json.dumps({"findings": findings})
+        return json.dumps(
+            {
+                "findings": findings,
+                "overall_assessment": "Command injection is present." if findings else "No threat is present.",
+                "verdict": "SUSPICIOUS" if findings else "SAFE",
+                "primary_threats": ["command_injection"] if findings else [],
+            }
+        )
+
+    @staticmethod
+    def _analyzer() -> LLMAnalyzer:
+        analyzer = LLMAnalyzer(api_key="test-key")
+        analyzer.consensus_runs = 3
+        analyzer._allowed_evidence_ids = {source_evidence_id("SKILL.md")}
+        return analyzer
 
     @staticmethod
     def _skill() -> MagicMock:
@@ -597,8 +626,7 @@ class TestLLMConsensus:
 
     @pytest.mark.parametrize("run_order", permutations((Severity.HIGH, Severity.CRITICAL, Severity.HIGH)))
     async def test_highest_severity_is_independent_of_run_order(self, run_order) -> None:
-        analyzer = LLMAnalyzer(api_key="test-key")
-        analyzer.consensus_runs = 3
+        analyzer = self._analyzer()
         analyzer.request_handler.make_request = AsyncMock(
             side_effect=[self._response(severity) for severity in run_order]
         )
@@ -615,8 +643,7 @@ class TestLLMConsensus:
 
     @pytest.mark.parametrize("run_order", permutations((Severity.CRITICAL, Severity.HIGH, "failed")))
     async def test_failed_run_casts_no_vote_but_keeps_configured_denominator(self, run_order) -> None:
-        analyzer = LLMAnalyzer(api_key="test-key")
-        analyzer.consensus_runs = 3
+        analyzer = self._analyzer()
         responses = [
             RuntimeError("provider unavailable") if item == "failed" else self._response(item) for item in run_order
         ]
@@ -635,8 +662,7 @@ class TestLLMConsensus:
 
     @pytest.mark.parametrize("run_order", permutations((Severity.CRITICAL, Severity.HIGH, None)))
     async def test_successful_run_without_finding_is_a_missing_vote(self, run_order) -> None:
-        analyzer = LLMAnalyzer(api_key="test-key")
-        analyzer.consensus_runs = 3
+        analyzer = self._analyzer()
         analyzer.request_handler.make_request = AsyncMock(
             side_effect=[self._response(severity) for severity in run_order]
         )
@@ -652,8 +678,7 @@ class TestLLMConsensus:
         assert finding.metadata["consensus_missing_votes"] == 1
 
     async def test_less_than_configured_majority_is_not_retained(self) -> None:
-        analyzer = LLMAnalyzer(api_key="test-key")
-        analyzer.consensus_runs = 3
+        analyzer = self._analyzer()
         analyzer.request_handler.make_request = AsyncMock(
             side_effect=[
                 self._response(Severity.CRITICAL),

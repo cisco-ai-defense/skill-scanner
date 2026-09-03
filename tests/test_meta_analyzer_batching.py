@@ -24,24 +24,26 @@ import pytest
 from skill_scanner.core.analyzers.meta_analyzer import (
     MetaAnalysisTruncatedError,
     MetaAnalyzer,
+    _meta_evidence_id,
     apply_meta_analysis_to_results,
 )
 from skill_scanner.core.models import Finding, Severity, Skill, ThreatCategory
 
 
+def _finding(index: int) -> Finding:
+    return Finding(
+        id=f"finding-{index}",
+        rule_id="TEST_RULE",
+        category=ThreatCategory.POLICY_VIOLATION,
+        severity=Severity.HIGH,
+        title=f"Finding {index}",
+        description="Potentially unsafe behavior",
+        analyzer="static",
+    )
+
+
 def _findings(count: int) -> list[Finding]:
-    return [
-        Finding(
-            id=f"finding-{index}",
-            rule_id="TEST_RULE",
-            category=ThreatCategory.POLICY_VIOLATION,
-            severity=Severity.HIGH,
-            title=f"Finding {index}",
-            description="Potentially unsafe behavior",
-            analyzer="static",
-        )
-        for index in range(count)
-    ]
+    return [_finding(index) for index in range(count)]
 
 
 def _skill() -> MagicMock:
@@ -61,8 +63,15 @@ def _classification(indices: list[int], *, alternate_false_positives: bool = Fal
     validated = []
     false_positives = []
     for index in indices:
+        evidence_ids = [_meta_evidence_id(_finding(index))]
         if alternate_false_positives and index % 2:
-            false_positives.append({"_index": index, "false_positive_reason": "Benign fixture"})
+            false_positives.append(
+                {
+                    "_index": index,
+                    "false_positive_reason": "Benign fixture",
+                    "evidence_ids": evidence_ids,
+                }
+            )
         else:
             validated.append(
                 {
@@ -71,6 +80,8 @@ def _classification(indices: list[int], *, alternate_false_positives: bool = Fal
                     "confidence_reason": "Test classification",
                     "exploitability": "Low",
                     "impact": "Low",
+                    "evidence_ids": evidence_ids,
+                    "chain": None,
                 }
             )
     return json.dumps(
@@ -78,12 +89,15 @@ def _classification(indices: list[int], *, alternate_false_positives: bool = Fal
             "overall_risk_assessment": {
                 "risk_level": "MEDIUM",
                 "summary": "Test assessment",
+                "top_priority": "Review the retained findings.",
                 "skill_verdict": "SUSPICIOUS",
+                "verdict_reasoning": "The supplied evidence supports the classifications.",
+                "meta_delta": "FALSE_POSITIVE_SUPPRESSED" if false_positives else "NONE_SUPPORTED",
             },
             "validated_findings": validated,
             "false_positives": false_positives,
             "missed_threats": [],
-            "priority_order": [item["_index"] for item in validated],
+            "priority_order": indices,
             "correlations": [],
             "recommendations": [],
         }
@@ -233,26 +247,23 @@ async def test_provider_token_limit_finish_reasons_trigger_bisection(
 
 
 @pytest.mark.asyncio
-async def test_incomplete_batch_is_filled_once_without_duplicate_indices() -> None:
+async def test_parseable_index_only_batch_is_retained_as_degraded() -> None:
     analyzer = MetaAnalyzer(model="test-model", api_key="test-key", max_tokens=320)
     analyzer._build_skill_context = MagicMock(return_value=("bounded context", []))
     findings = _findings(3)
 
-    # Index 0 is duplicated, index 1 is absent, and index 99 is outside the batch.
-    response = json.dumps(
-        {
-            "validated_findings": [{"_index": 0}, {"_index": 0}, {"_index": 99}],
-            "false_positives": [{"_index": 0}, {"_index": 2}],
-            "priority_order": [0, 0, 99],
-        }
-    )
-    analyzer._make_llm_request = AsyncMock(return_value=response)
+    response = json.loads(_classification([0, 1, 2]))
+    response["validated_findings"] = []
+    response["false_positives"] = [{"_index": index} for index in range(3)]
+    response["overall_risk_assessment"]["meta_delta"] = "FALSE_POSITIVE_SUPPRESSED"
+    analyzer._make_llm_request = AsyncMock(return_value=json.dumps(response))
 
     result = await analyzer.analyze_with_findings(_skill(), findings, ["static"])
 
     classified_indices = [item["_index"] for item in result.validated_findings + result.false_positives]
     assert sorted(classified_indices) == [0, 1, 2]
     assert len(classified_indices) == len(set(classified_indices))
-    assert next(item for item in result.validated_findings if item["_index"] == 1)["meta_analysis_degraded"] is True
-    assert result.analysis_warnings[0]["code"] == "META_BATCH_INCOMPLETE"
+    assert result.false_positives == []
+    assert all(item["meta_analysis_degraded"] is True for item in result.validated_findings)
+    assert result.analysis_warnings[0]["code"] == "META_BATCH_PARSE_FAILED"
     assert analyzer._make_llm_request.await_count == 1

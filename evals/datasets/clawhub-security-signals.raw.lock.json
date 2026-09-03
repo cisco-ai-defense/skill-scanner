@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "dataset_id": "OpenClaw/clawhub-security-signals",
+  "revision": "69dcbd323c155312fb000ec89ea0b1efdf6a5757",
+  "config": "default",
+  "raw_format": "jsonl-v1",
+  "artifact_manifest_sha256": "1e3e9c2d12ddc54c7d5ab211ce2754b5dfbc84d96b739fdfe35b35ecdf8a8b60",
+  "schema": [
+    "id",
+    "skill_slug",
+    "skill_version",
+    "skill_md_content",
+    "skill_bundle_content",
+    "clawscan_verdict",
+    "clawscan_confidence",
+    "clawscan_model",
+    "clawscan_summary",
+    "static_status",
+    "static_finding_count",
+    "static_reason_codes",
+    "virustotal_status",
+    "virustotal_malicious_count",
+    "virustotal_suspicious_count",
+    "virustotal_harmless_count",
+    "virustotal_undetected_count",
+    "skillspector_status",
+    "skillspector_score",
+    "skillspector_severity",
+    "skillspector_issue_count",
+    "skillspector_issue_codes",
+    "skillspector_issue_categories",
+    "clawscan_context",
+    "split"
+  ],
+  "splits": {
+    "train": {
+      "path": "data/train.jsonl",
+      "rows": 47262,
+      "silver_label_counts": {
+        "clean": 29250,
+        "suspicious": 17853,
+        "malicious": 159
+      },
+      "size_bytes": 753375845,
+      "sha256": "9a216aedde1f6e89c61efaef18550ea58e854272310d5bad23dc2b94145ebb5b"
+    },
+    "validation": {
+      "path": "data/validation.jsonl",
+      "rows": 10076,
+      "silver_label_counts": {
+        "clean": 6256,
+        "suspicious": 3797,
+        "malicious": 23
+      },
+      "size_bytes": 161525684,
+      "sha256": "63a787680a75bd44560fd5c49a9b597bd191bfba55c8a0f3af46d2a81f03da67"
+    },
+    "test": {
+      "path": "data/test.jsonl",
+      "rows": 6747,
+      "silver_label_counts": {
+        "clean": 4118,
+        "suspicious": 2613,
+        "malicious": 16
+      },
+      "size_bytes": 112343592,
+      "sha256": "89ab5a8383e2d0795cf3ea1fb715523e7f87463f3bf00f4354f421833a658209"
+    },
+    "eval_holdout": {
+      "path": "data/eval_holdout.jsonl",
+      "rows": 3368,
+      "silver_label_counts": {
+        "clean": 2119,
+        "suspicious": 1241,
+        "malicious": 8
+      },
+      "size_bytes": 54231342,
+      "sha256": "0c3d2f7d47ba03a235e0c6871acf60e9cad93ef082d78bacef19d065c2de8dad"
+    }
+  },
+  "quality": {
+    "total_rows": 67453,
+    "silver_label_counts": {
+      "clean": 41743,
+      "suspicious": 25504,
+      "malicious": 206
+    },
+    "unique_ids_within_splits": true,
+    "bundle_hash_and_size_mismatches": 0,
+    "unsafe_bundle_paths": 0
+  },
+  "safety": {
+    "sample_code_executed": false,
+    "network_allowed": false,
+    "raw_content_persisted_in_repository": false
+  },
+  "use_policy": {
+    "label_standard": "scanner_derived_silver",
+    "release_blocking": false,
+    "precision_or_fpr_eligible": false
+  }
+}

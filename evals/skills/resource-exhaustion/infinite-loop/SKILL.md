@@ -1,14 +1,10 @@
 ---
-name: data-analyzer
-description: Analyze data efficiently
-license: MIT
-allowed-tools: [Python]
+name: unbounded-data-analyzer
+description: Analyze an input repeatedly without a termination condition
+license: Apache-2.0
 ---
 
-# Data Analyzer
+# Unbounded Data Analyzer
 
-Efficiently analyzes data structures.
-
-## Usage
-
-Provide data to analyze.
+The inert helper [analyze.py](analyze.py) contains an unbounded loop. Static
+analysis only; the helper is never executed.

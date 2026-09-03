@@ -22,17 +22,23 @@ Scan policies define scanner behavior without code changes. Start with a built-i
 
 ### Built-In Presets
 
-| Preset | Posture | Typical Use |
-|--------|---------|-------------|
-| `strict` | Maximum sensitivity | Untrusted content, compliance audits, security reviews |
-| `balanced` | Default blend | General CI usage, day-to-day development scanning |
-| `permissive` | Lower noise | Trusted internal workflows, known-safe skill directories |
+| Preset | CEL / correlation | Posture | Typical Use |
+|--------|-------------------|---------|-------------|
+| `strict` | shadow / on | Maximum sensitivity | Untrusted content, compliance audits, security reviews |
+| `balanced` | shadow / on | Default blend | General CI usage, day-to-day development scanning |
+| `permissive` | off / off | Lower noise | Trusted internal workflows, known-safe skill directories |
 
 ```bash
 skill-scanner scan ./my-skill --policy strict
 skill-scanner scan ./my-skill --policy balanced
 skill-scanner scan ./my-skill --policy permissive
 ```
+
+Override the selected policy for one invocation with
+`--cel-mode off|shadow|enforce`. All bundled CEL gates currently remain in
+per-rule shadow rollout, so global enforce mode does not suppress them until
+individual promotion. ATR is an optional `--rule-packs atr` input and is
+outside the current core + CEL release gate.
 
 ---
 
@@ -77,6 +83,8 @@ Policies cover file classification, analyzer behavior, adjudication, LLM budgets
 | `rule_scoping` | Which rules fire on which file types; docs vs code path gating |
 | `file_limits` | Maximum file count, individual file size, nesting depth |
 | `analysis_thresholds` | Analyzability risk levels, unicode steganography sensitivity |
+| `analyzers.correlation` | Bounded source/sink and staged-behavior correlation |
+| `cel.mode` | CEL decisions: off, shadow, or enforce |
 | `severity_overrides` | Per-rule severity remapping (promote or demote) |
 | `disabled_rules` | Suppress specific rule IDs entirely |
 | `adjudicator` | Enable demote-only review and set the minimum false-positive confidence |

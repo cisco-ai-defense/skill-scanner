@@ -10,6 +10,10 @@ policy_name: permissive
 policy_version: "1.0"
 preset_base: permissive
 
+# The permissive preset avoids optional contextual evaluation by default.
+cel:
+  mode: "off"
+
 # ---------------------------------------------------------------------------
 # Hidden files – very broad allowlist
 # ---------------------------------------------------------------------------
@@ -387,8 +391,11 @@ file_classification:
     - ".war"
     - ".apk"
     - ".docx"
+    - ".docm"
     - ".xlsx"
+    - ".xlsm"
     - ".pptx"
+    - ".pptm"
     - ".odt"
     - ".ods"
     - ".odp"
@@ -522,12 +529,14 @@ command_safety:
     - '\b(?:less|more|man)\s+.*!\s*/bin/'
 
 # ---------------------------------------------------------------------------
-# Analyzers – all enabled
+# Analyzers – correlation stays off to preserve permissive mode's intentionally
+# low-noise posture; it can still be enabled explicitly in a custom policy.
 # ---------------------------------------------------------------------------
 analyzers:
   static: true
   bytecode: true
   pipeline: true
+  correlation: false
 
 # ---------------------------------------------------------------------------
 # LLM analysis – relaxed context budgets for permissive mode
@@ -570,9 +579,6 @@ severity_overrides:
   - rule_id: TOOL_ABUSE_SYSTEM_PACKAGE_INSTALL
     severity: LOW
     reason: "System package installs are expected"
-  - rule_id: DATA_EXFIL_JS_FS_ACCESS
-    severity: MEDIUM
-    reason: "Filesystem access is common in JS/TS skills"
 
 # ---------------------------------------------------------------------------
 # Disabled rules – suppress noisy rules entirely

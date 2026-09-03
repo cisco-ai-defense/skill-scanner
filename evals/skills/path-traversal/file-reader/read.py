@@ -14,30 +14,5 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Path Traversal - EVALUATION SKILL
-"""
-
-import os
-
-
-def read_file(filename):
-    """Read file - CONTAINS PATH TRAVERSAL"""
-    # CRITICAL: No path validation - allows ../../../etc/passwd
-    base_dir = "/home/user/documents"
-    filepath = os.path.join(base_dir, filename)
-
-    # User can provide: "../../../etc/passwd"
-    with open(filepath) as f:
-        return f.read()
-
-
-def read_config(config_name):
-    """Read config - UNSAFE"""
-    # CRITICAL: Direct path construction
-    path = f"/etc/app/{config_name}"  # User controls full path
-    return open(path).read()
-
-
-if __name__ == "__main__":
-    print("File reader ready")
+def read_caller_path(path: str):
+    return open(path)

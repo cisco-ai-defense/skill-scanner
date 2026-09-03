@@ -26,25 +26,44 @@ import logging
 import pickletools
 import re
 import tokenize
+import tomllib
 import unicodedata
+from collections.abc import Iterator
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from ...config.yara_modes import YaraModeConfig
-from ...core.models import Finding, Severity, Skill, ThreatCategory
-from ...core.rules.patterns import RuleLoader, SecurityRule
+from ...core.models import Finding, Severity, Skill, SkillFile, ThreatCategory
+from ...core.rules.active_dynamic_execution import check_active_dynamic_execution
+from ...core.rules.active_html_injection import check_active_hidden_html
+from ...core.rules.active_remote_execution import check_active_remote_execution
+from ...core.rules.active_semantic_directives import check_active_semantic_directives
+from ...core.rules.core_signature_precision import refine_core_signature_findings
+from ...core.rules.ooxml_relationships import (
+    INCONCLUSIVE_MACRO_ANALYSIS,
+    VBA_MACRO,
+    XLM_MACRO,
+    classify_oleid_macro_indicator,
+)
+from ...core.rules.patterns import (
+    SIGNATURE_CONTEXT_KINDS,
+    SIGNATURE_POLARITIES,
+    RuleLoader,
+    SecurityRule,
+    SignatureScanContext,
+)
+from ...core.rules.unicode_smuggling import check_unicode_smuggling
+from ...core.rules.yara_behavior_context import classify_yara_behavior_context
 from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
 from ...core.static_analysis.comment_stripping import comment_stripped_lines
 from ...core.static_analysis.url_classifier import classify_url, extract_urls
+from ...data import DATA_DIR
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    tomllib = None
 
 logger = logging.getLogger(__name__)
 
@@ -90,14 +109,817 @@ _SENSITIVE_PATH_LITERAL_RE = re.compile(
     r"\.(?:npmrc|gitconfig|gnupg|netrc|pgpass)|(?:^|[/\\])credentials?(?:[/\\]|$)|"
     r"(?:^|[/\\])secrets?(?:[/\\]|$))"
 )
-_OBFUSCATED_INSTRUCTION_RE = re.compile(
-    r"(?is)(?:"
-    r"ignore\s+(?:all\s+)?(?:previous|prior|earlier)\s+instructions?"
-    r"|you\s+are\s+now\s+in\s+(?:developer|debug|unrestricted|admin)\s+mode"
-    r"|(?:read|collect|capture|harvest|exfiltrate).{0,160}(?:credentials?|tokens?|api\s*keys?|ssh|environment|dotfiles?)"
-    r"|(?:post|send|transmit|exfiltrate).{0,160}https?://"
-    r")"
+_OBFUSCATED_INSTRUCTION_PATTERNS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    (
+        re.compile(
+            r"(?is)(?P<override_action>ignore)(?P<override_separator_one>\s+)"
+            r"(?:(?P<override_all>all)(?P<override_separator_all>\s+))?"
+            r"(?P<override_precedence>previous|prior|earlier)(?P<override_separator_two>\s+)"
+            r"(?P<override_target>instructions?)"
+        ),
+        (
+            "override_action",
+            "override_separator_one",
+            "override_all",
+            "override_separator_all",
+            "override_precedence",
+            "override_separator_two",
+            "override_target",
+        ),
+    ),
+    (
+        re.compile(
+            r"(?is)(?P<mode_subject>you)(?P<mode_separator_one>\s+)"
+            r"(?P<mode_state>are\s+now\s+in)(?P<mode_separator_two>\s+)"
+            r"(?P<mode_name>developer|debug|unrestricted|admin)(?P<mode_separator_three>\s+)"
+            r"(?P<mode_target>mode)"
+        ),
+        (
+            "mode_subject",
+            "mode_separator_one",
+            "mode_state",
+            "mode_separator_two",
+            "mode_name",
+            "mode_separator_three",
+            "mode_target",
+        ),
+    ),
+    (
+        re.compile(
+            r"(?is)(?P<access_action>read|collect|capture|harvest|exfiltrate).{0,160}"
+            r"(?P<access_target>credentials?|tokens?|api\s*keys?|ssh|environment(?:\s+variables?)?|dotfiles?)"
+        ),
+        ("access_action", "access_target"),
+    ),
+    (
+        re.compile(r"(?is)(?P<exfil_action>exfiltrate).{0,160}(?P<exfil_url>https?://)"),
+        ("exfil_action", "exfil_url"),
+    ),
+    (
+        re.compile(
+            r"(?is)(?P<transfer_action>post|send|transmit).{0,160}"
+            r"(?P<transfer_object>(?:(?:the\s+)?(?:collected|captured|harvested|retrieved|stolen|"
+            r"sensitive|secret)\s+(?:data|information|credentials?|tokens?|api\s*keys?|"
+            r"environment(?:\s+variables?)?)|credentials?|tokens?|api\s*keys?)).{0,160}"
+            r"(?P<transfer_url>https?://)"
+        ),
+        ("transfer_action", "transfer_object", "transfer_url"),
+    ),
 )
+
+_UNICODE_MAX_FILE_SOURCE_CHARS = 10 * 1024 * 1024
+_UNICODE_MAX_FILE_WORK_UNITS = 2 * 1024 * 1024
+_UNICODE_MAX_PACKAGE_WORK_UNITS = 8 * 1024 * 1024
+_UNICODE_DECODE_CHUNK_CHARS = 64 * 1024
+_UNICODE_DECODE_OVERLAP_CHARS = 512
+_UNICODE_MAX_NFKC_EXPANSION = 4
+_UNICODE_MAX_OUTPUT_FACTOR = 4
+_UNICODE_MAX_MARKDOWN_LINES = 32_768
+_UNICODE_MAX_FENCED_BLOCKS = 512
+_UNICODE_MAX_MARKDOWN_REGIONS = 4_096
+_UNICODE_HTML_COMMENT_SENTINEL = "\U000f0000"
+
+_UNICODE_FENCE_RE = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})(?P<tail>.*)$")
+_UNICODE_HEADING_RE = re.compile(r"^ {0,3}(?P<marks>#{1,6})[ \t]+(?P<title>.+?)\s*#*\s*$")
+_UNICODE_SETEXT_RE = re.compile(r"^ {0,3}(?P<marks>=+|-+)[ \t]*$")
+_UNICODE_BOLD_HEADING_RE = re.compile(r"^ {0,3}\*\*(?P<title>[^*\n]{1,128}?)\*\*\s*:?[ \t]*$")
+_UNICODE_BLOCKQUOTE_RE = re.compile(r"^ {0,3}>")
+_UNICODE_EXAMPLE_SECTION_RE = re.compile(
+    r"\b(?:demos?|documentation|examples?|reference|samples?|testing|tutorials?)\b",
+    re.IGNORECASE,
+)
+_UNICODE_NEGATIVE_SECTION_RE = re.compile(
+    r"\b(?:anti[- ]?patterns?|bad|dangerous|do not use|insecure|mitigations?|negative|"
+    r"prohibited|safety guidance|unsafe|what not to do)\b",
+    re.IGNORECASE,
+)
+_UNICODE_INLINE_EXAMPLE_RE = re.compile(
+    r"\b(?:e\.g\.|for example|for instance|illustrat(?:e|ion)|sample (?:code|payload|usage)|"
+    r"test(?:ing)? (?:that )?(?:the )?scanner detects|test string|negative example|"
+    r"(?:documentation|tests?|examples?|samples?)\s+(?:may\s+)?(?:quote|show|contain|use|detects?))\b",
+    re.IGNORECASE,
+)
+_UNICODE_LABEL_EXAMPLE_RE = re.compile(
+    r"^\s*(?:(?:[-*+]\s+)|(?:\d+[.)]\s+))?"
+    r"(?:example(?:\s+payload)?|sample(?:\s+payload)?|test\s+case)\s*:",
+    re.IGNORECASE,
+)
+_UNICODE_PROHIBITION_START_RE = re.compile(
+    r"^\s*(?:(?:[-*+]\s+)|(?:\d+[.)]\s+))?"
+    r"(?:do\s+not|don't|never|must\s+not|should\s+not|avoid|forbid(?:den)?|prohibit(?:ed)?)\b",
+    re.IGNORECASE,
+)
+_UNICODE_CONTRASTIVE_RE = re.compile(
+    r"(?:[;!?]|&&|\|\||\b(?:but|except|however|instead|then|unless)\b)",
+    re.IGNORECASE,
+)
+_UNICODE_NEGATIVE_FENCE_LEAD_RE = re.compile(
+    r"\b(?:do\s+not|don't|never|must\s+not|should\s+not|avoid|forbid(?:den)?|prohibit(?:ed)?)\b"
+    r".{0,120}\b(?:code|commands?|examples?|following|scripts?|payload)\b",
+    re.IGNORECASE,
+)
+_UNICODE_EXAMPLE_FENCE_LEAD_RE = re.compile(
+    r"\b(?:example|illustration|sample|test)\b.{0,80}\b(?:code|commands?|following|scripts?|payload)\b",
+    re.IGNORECASE,
+)
+_UNICODE_EXECUTABLE_FENCE_LANGUAGES = frozenset(
+    {
+        "bash",
+        "cjs",
+        "javascript",
+        "js",
+        "mjs",
+        "node",
+        "nodejs",
+        "powershell",
+        "ps1",
+        "pwsh",
+        "py",
+        "python",
+        "python3",
+        "sh",
+        "shell",
+        "ts",
+        "typescript",
+        "zsh",
+    }
+)
+_UNICODE_DEFAULT_IGNORABLE_RANGES = (
+    (0x00AD, 0x00AD),
+    (0x034F, 0x034F),
+    (0x061C, 0x061C),
+    (0x115F, 0x1160),
+    (0x17B4, 0x17B5),
+    (0x180B, 0x180F),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x206F),
+    (0x3164, 0x3164),
+    (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFF8),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0000, 0xE0FFF),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _DecodedUnicodeText:
+    """Decoded text with source provenance for every emitted character."""
+
+    text: str
+    encodings: frozenset[str]
+    transformation_kinds: tuple[str | None, ...]
+    source_offsets: tuple[int, ...]
+    deleted_transformations: tuple["_DeletedUnicodeTransformation", ...]
+    complete: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _DeletedUnicodeTransformation:
+    """A removed codepoint anchored to a boundary in decoded output."""
+
+    kind: str
+    source_offset: int
+    output_offset: int
+
+
+@dataclass(frozen=True, slots=True)
+class _UnicodeScanRegion:
+    """One source-contiguous active region with a physical starting line."""
+
+    content: str
+    start_line: int
+    context_kind: str
+    synthetic_elisions: frozenset[int] = frozenset()
+
+
+def _unicode_section_kind(title: str) -> str:
+    if _UNICODE_NEGATIVE_SECTION_RE.search(title):
+        return "negative"
+    if _UNICODE_EXAMPLE_SECTION_RE.search(title):
+        return "example"
+    return "active"
+
+
+def _unicode_fence_language(tail: str) -> str:
+    value = tail.strip()
+    if not value:
+        return ""
+    token = value.split(maxsplit=1)[0].strip().lower()
+    if token.startswith("{.") and token.endswith("}"):
+        return token[2:-1]
+    return token
+
+
+def _unicode_fence_lead_is_inert(lead: str) -> bool:
+    """Return whether an explicit example/prohibition lead owns a fence."""
+    cues = [
+        match
+        for pattern in (_UNICODE_NEGATIVE_FENCE_LEAD_RE, _UNICODE_EXAMPLE_FENCE_LEAD_RE)
+        if (match := pattern.search(lead)) is not None
+    ]
+    if not cues:
+        return False
+    cue = max(cues, key=lambda match: match.start())
+    return _UNICODE_CONTRASTIVE_RE.search(lead, cue.start()) is None
+
+
+def _unicode_mask_html_comments(line: str, *, inside_comment: bool) -> tuple[str, bool, frozenset[int]]:
+    """Elide Markdown HTML-comment spans without changing source offsets.
+
+    A default-ignorable placeholder is removed by the Unicode projector. That
+    preserves source provenance while joining visible text split by a comment.
+    """
+    masked = list(line)
+    placeholder = _UNICODE_HTML_COMMENT_SENTINEL
+    elisions: set[int] = set()
+    cursor = 0
+    if not inside_comment and (line.startswith("    ") or line.startswith("\t")):
+        return line, False, frozenset()
+
+    def opener_is_literal(start: int) -> bool:
+        backslashes = 0
+        backslash_cursor = start - 1
+        while backslash_cursor >= 0 and line[backslash_cursor] == "\\":
+            backslashes += 1
+            backslash_cursor -= 1
+        if backslashes % 2:
+            return True
+
+        delimiter = 0
+        code_cursor = 0
+        while code_cursor < start:
+            if line[code_cursor] != "`":
+                code_cursor += 1
+                continue
+            run_end = code_cursor + 1
+            while run_end < start and line[run_end] == "`":
+                run_end += 1
+            run_length = run_end - code_cursor
+            if delimiter == 0:
+                delimiter = run_length
+            elif run_length == delimiter:
+                delimiter = 0
+            code_cursor = run_end
+        return delimiter != 0
+
+    while cursor < len(line):
+        if inside_comment:
+            end = line.find("-->", cursor)
+            if end < 0:
+                masked[cursor:] = placeholder * (len(line) - cursor)
+                elisions.update(range(cursor, len(line)))
+                return "".join(masked), True, frozenset(elisions)
+            masked[cursor : end + 3] = placeholder * (end + 3 - cursor)
+            elisions.update(range(cursor, end + 3))
+            cursor = end + 3
+            inside_comment = False
+            continue
+
+        start = line.find("<!--", cursor)
+        if start < 0:
+            break
+        if opener_is_literal(start):
+            cursor = start + 4
+            continue
+        end = line.find("-->", start + 4)
+        if end < 0:
+            masked[start:] = placeholder * (len(line) - start)
+            elisions.update(range(start, len(line)))
+            return "".join(masked), True, frozenset(elisions)
+        masked[start : end + 3] = placeholder * (end + 3 - start)
+        elisions.update(range(start, end + 3))
+        cursor = end + 3
+    return "".join(masked), inside_comment, frozenset(elisions)
+
+
+def _unicode_blockquote_opens_lazy_paragraph(line: str) -> bool:
+    """Approximate CommonMark lazy continuation only for quoted paragraphs."""
+    marker = _UNICODE_BLOCKQUOTE_RE.match(line)
+    if marker is None:
+        return False
+    body = line[marker.end() :].lstrip(" \t")
+    if not body:
+        return False
+    return not (
+        _UNICODE_HEADING_RE.match(body)
+        or _UNICODE_FENCE_RE.match(body)
+        or _UNICODE_SETEXT_RE.match(body)
+        or _UNICODE_BLOCKQUOTE_RE.match(body)
+    )
+
+
+def _unicode_markdown_regions(content: str, *, line_offset: int = 0) -> list[_UnicodeScanRegion] | None:
+    """Return bounded active prose and operational code-fence regions.
+
+    Example/reference/negative heading subtrees, blockquotes, and inert fences
+    are omitted. Parsing completes before any region is returned so a document
+    that exceeds a structural bound cannot produce a partial HIGH result.
+    """
+    if len(content) > _UNICODE_MAX_FILE_SOURCE_CHARS:
+        return None
+    lines = content.split("\n")
+    if len(lines) > _UNICODE_MAX_MARKDOWN_LINES:
+        return None
+    if lines and lines[0] == "---":
+        closing_frontmatter = next(
+            (index for index, line in enumerate(lines[1:257], start=1) if line in {"---", "..."}),
+            None,
+        )
+        if closing_frontmatter is not None and any(
+            re.match(r"^[A-Za-z0-9_-]{1,64}[ \t]*:", line) is not None for line in lines[1:closing_frontmatter]
+        ):
+            # Preserve physical line numbering while excluding a complete,
+            # mapping-shaped YAML frontmatter block. An unclosed or ambiguous
+            # delimiter remains active fail-open.
+            lines[: closing_frontmatter + 1] = [""] * (closing_frontmatter + 1)
+
+    regions: list[_UnicodeScanRegion] = []
+    paragraph: list[str] = []
+    paragraph_elisions: set[int] = set()
+    paragraph_char_length = 0
+    paragraph_start = 1
+    heading_stack: list[tuple[int, str]] = []
+    bold_section: str | None = None
+    previous_nonempty = ""
+    lazy_blockquote = False
+    html_comment = False
+    fence_character: str | None = None
+    fence_length = 0
+    fence_language = ""
+    fence_section = "active"
+    fence_start = 0
+    fence_lines: list[str] = []
+    fence_candidates = 0
+
+    def current_section() -> str:
+        if bold_section is not None:
+            return bold_section
+        return heading_stack[-1][1] if heading_stack else "active"
+
+    def append_region(
+        region_content: str,
+        start_line: int,
+        context_kind: str,
+        synthetic_elisions: frozenset[int] = frozenset(),
+    ) -> bool:
+        if not region_content:
+            return True
+        if len(regions) >= _UNICODE_MAX_MARKDOWN_REGIONS:
+            return False
+        regions.append(
+            _UnicodeScanRegion(
+                region_content,
+                line_offset + start_line,
+                context_kind,
+                synthetic_elisions,
+            )
+        )
+        return True
+
+    def finish_paragraph() -> bool:
+        nonlocal paragraph, paragraph_char_length, paragraph_elisions
+        ok = True
+        if paragraph and current_section() == "active":
+            ok = append_region(
+                "\n".join(paragraph),
+                paragraph_start,
+                "active_instruction",
+                frozenset(paragraph_elisions),
+            )
+        paragraph = []
+        paragraph_elisions = set()
+        paragraph_char_length = 0
+        return ok
+
+    def append_paragraph_line(value: str, elisions: frozenset[int]) -> None:
+        nonlocal paragraph_char_length
+        base = paragraph_char_length + (1 if paragraph else 0)
+        paragraph.append(value)
+        paragraph_elisions.update(base + offset for offset in elisions)
+        paragraph_char_length = base + len(value)
+
+    def finish_fence(*, malformed: bool = False) -> bool:
+        nonlocal fence_lines
+        ok = True
+        if (fence_section == "active" or malformed) and fence_lines:
+            ok = append_region("\n".join(fence_lines), fence_start + 1, "code")
+        fence_lines = []
+        return ok
+
+    def enter_heading(level: int, title: str) -> None:
+        nonlocal bold_section
+        while heading_stack and heading_stack[-1][0] >= level:
+            heading_stack.pop()
+        inherited = heading_stack[-1][1] if heading_stack else "active"
+        direct = _unicode_section_kind(title)
+        heading_stack.append((level, direct if direct != "active" else inherited))
+        bold_section = None
+
+    index = 0
+    while index < len(lines):
+        line_number = index + 1
+        line = lines[index]
+        structural_line = line[:-1] if line.endswith("\r") else line
+
+        if fence_character is not None:
+            fence_match = _UNICODE_FENCE_RE.match(structural_line)
+            if fence_match is not None:
+                marker = fence_match.group("marker")
+                if (
+                    marker[0] == fence_character
+                    and len(marker) >= fence_length
+                    and not fence_match.group("tail").strip(" \t\r")
+                ):
+                    if not finish_fence():
+                        return None
+                    fence_character = None
+                    fence_length = 0
+                    fence_language = ""
+                    previous_nonempty = line
+                    index += 1
+                    continue
+            fence_lines.append(line)
+            index += 1
+            continue
+
+        structural_line, html_comment, line_elisions = _unicode_mask_html_comments(
+            structural_line, inside_comment=html_comment
+        )
+
+        # Quoted headings/fences are inert and must not mutate parser state.
+        if _UNICODE_BLOCKQUOTE_RE.match(structural_line):
+            if not finish_paragraph():
+                return None
+            lazy_blockquote = _unicode_blockquote_opens_lazy_paragraph(structural_line)
+            previous_nonempty = line
+            index += 1
+            continue
+
+        fence_match = _UNICODE_FENCE_RE.match(structural_line)
+        heading_match = _UNICODE_HEADING_RE.match(structural_line)
+        bold_heading_match = _UNICODE_BOLD_HEADING_RE.match(structural_line)
+        setext_match = (
+            _UNICODE_SETEXT_RE.match(lines[index + 1].removesuffix("\r"))
+            if index + 1 < len(lines) and structural_line.strip()
+            else None
+        )
+
+        if lazy_blockquote:
+            if not structural_line.strip():
+                lazy_blockquote = False
+                previous_nonempty = ""
+                index += 1
+                continue
+            # A block construct interrupts CommonMark lazy quote continuation.
+            if fence_match is None and heading_match is None and bold_heading_match is None and setext_match is None:
+                index += 1
+                continue
+            lazy_blockquote = False
+
+        if heading_match is not None:
+            if not finish_paragraph():
+                return None
+            enter_heading(len(heading_match.group("marks")), heading_match.group("title"))
+            if current_section() == "active" and not append_region(
+                structural_line, line_number, "active_instruction", line_elisions
+            ):
+                return None
+            previous_nonempty = line
+            index += 1
+            continue
+        if setext_match is not None:
+            if not finish_paragraph():
+                return None
+            enter_heading(1 if setext_match.group("marks")[0] == "=" else 2, structural_line.strip())
+            if current_section() == "active" and not append_region(
+                structural_line, line_number, "active_instruction", line_elisions
+            ):
+                return None
+            previous_nonempty = line
+            index += 2
+            continue
+        if bold_heading_match is not None:
+            if not finish_paragraph():
+                return None
+            inherited = heading_stack[-1][1] if heading_stack else "active"
+            direct = _unicode_section_kind(bold_heading_match.group("title"))
+            bold_section = direct if direct != "active" else inherited
+            if current_section() == "active" and not append_region(
+                structural_line, line_number, "active_instruction", line_elisions
+            ):
+                return None
+            previous_nonempty = line
+            index += 1
+            continue
+
+        if fence_match is not None:
+            marker = fence_match.group("marker")
+            tail = fence_match.group("tail")
+            # Backticks in a backtick info string are invalid. Treat that
+            # malformed line as active prose rather than opening a fence.
+            if marker[0] != "`" or "`" not in tail:
+                if not finish_paragraph():
+                    return None
+                fence_candidates += 1
+                if fence_candidates > _UNICODE_MAX_FENCED_BLOCKS:
+                    return None
+                fence_character = marker[0]
+                fence_length = len(marker)
+                fence_language = _unicode_fence_language(tail)
+                fence_section = current_section()
+                if fence_section == "active" and _unicode_fence_lead_is_inert(previous_nonempty):
+                    fence_section = "negative"
+                fence_start = line_number
+                fence_lines = []
+                previous_nonempty = line
+                index += 1
+                continue
+
+        if not structural_line.strip():
+            # Preserve active paragraph continuity across blank lines. Decoded
+            # whitespace is canonicalized later, so an attacker cannot split a
+            # required token sequence with an arbitrary blank run.
+            if paragraph and current_section() == "active":
+                append_paragraph_line(structural_line, line_elisions)
+            else:
+                if not finish_paragraph():
+                    return None
+                paragraph_start = line_number + 1
+            previous_nonempty = ""
+            index += 1
+            continue
+        if not paragraph:
+            paragraph_start = line_number
+        append_paragraph_line(structural_line, line_elisions)
+        previous_nonempty = structural_line
+        index += 1
+
+    if fence_character is not None:
+        # An unclosed fence is malformed, so retain its content fail-open even
+        # when an example-like lead would suppress a properly closed fixture.
+        if not finish_fence(malformed=True):
+            return None
+    elif not finish_paragraph():
+        return None
+    return regions
+
+
+def _unicode_bounded_chunks(region: _UnicodeScanRegion) -> Iterator[tuple[str, int]]:
+    """Yield bounded source slabs and their offsets within a region."""
+    content = region.content
+    if len(content) <= _UNICODE_DECODE_CHUNK_CHARS:
+        yield content, 0
+        return
+
+    cursor = 0
+    while cursor < len(content):
+        end = min(len(content), cursor + _UNICODE_DECODE_CHUNK_CHARS)
+        yield content[cursor:end], cursor
+        cursor = end
+
+
+def _unicode_collapse_whitespace(
+    text: str,
+    kinds: tuple[str | None, ...],
+    source_offsets: tuple[int, ...],
+    deleted: tuple[_DeletedUnicodeTransformation, ...],
+) -> tuple[
+    str,
+    tuple[str | None, ...],
+    tuple[int, ...],
+    tuple[_DeletedUnicodeTransformation, ...],
+]:
+    """Collapse Unicode whitespace runs while retaining aligned provenance."""
+    if not text or len(kinds) != len(text) or len(source_offsets) != len(text):
+        return text, kinds, source_offsets, deleted
+
+    output: list[str] = []
+    output_kinds: list[str | None] = []
+    output_sources: list[int] = []
+    boundary_map = [0] * (len(text) + 1)
+    cursor = 0
+    while cursor < len(text):
+        boundary_map[cursor] = len(output)
+        if not text[cursor].isspace():
+            output.append(text[cursor])
+            output_kinds.append(kinds[cursor])
+            output_sources.append(source_offsets[cursor])
+            cursor += 1
+            boundary_map[cursor] = len(output)
+            continue
+
+        end = cursor + 1
+        while end < len(text) and text[end].isspace():
+            end += 1
+        transformed = next((index for index in range(cursor, end) if kinds[index] is not None), cursor)
+        output.append(" ")
+        output_kinds.append(kinds[transformed])
+        output_sources.append(source_offsets[transformed])
+        for boundary in range(cursor + 1, end + 1):
+            boundary_map[boundary] = len(output)
+        cursor = end
+
+    remapped_deleted = tuple(
+        _DeletedUnicodeTransformation(
+            item.kind,
+            item.source_offset,
+            boundary_map[min(max(item.output_offset, 0), len(text))],
+        )
+        for item in deleted
+    )
+    return "".join(output), tuple(output_kinds), tuple(output_sources), remapped_deleted
+
+
+def _unicode_match_is_inert_context(content: str, source_start: int, source_end: int) -> bool:
+    """Classify only the local clause leading into a decoded match."""
+    prefix_start = max(0, source_start - 1_024)
+    prefix = content[prefix_start:source_start]
+    # A newline normally ends local scope. Carry exactly one explicit lead
+    # ending in a colon so ``For example:\n...`` and ``Never follow:\n...``
+    # remain inert without allowing distant prose to suppress a finding.
+    last_newline = prefix.rfind("\n")
+    if last_newline >= 0:
+        previous_line = prefix[:last_newline].rsplit("\n", 1)[-1]
+        current_line = prefix[last_newline + 1 :]
+        carries_cue = previous_line.rstrip().endswith(":") and (
+            _UNICODE_INLINE_EXAMPLE_RE.search(previous_line) is not None
+            or _UNICODE_LABEL_EXAMPLE_RE.search(previous_line) is not None
+            or _UNICODE_PROHIBITION_START_RE.search(previous_line) is not None
+        )
+        prefix = f"{previous_line}\n{current_line}" if carries_cue else current_line
+
+    # A completed sentence ends the scope of an earlier cue. A colon
+    # deliberately does not: ``Never follow this string: ...``.
+    boundaries = list(re.finditer(r"[.!?][\"')\]]{0,2}[ \t]+", prefix))
+    if boundaries:
+        prefix = prefix[boundaries[-1].end() :]
+
+    examples = [
+        match
+        for pattern in (_UNICODE_INLINE_EXAMPLE_RE, _UNICODE_LABEL_EXAMPLE_RE)
+        if (match := pattern.search(prefix)) is not None
+    ]
+    example = max(examples, key=lambda candidate: candidate.start()) if examples else None
+    prohibition = _UNICODE_PROHIBITION_START_RE.search(prefix)
+    if example is None and prohibition is None:
+        return False
+
+    cue: re.Match[str]
+    cue_is_prohibition: bool
+    if example is not None and (prohibition is None or example.start() > prohibition.start()):
+        cue = example
+        cue_is_prohibition = False
+    else:
+        assert prohibition is not None
+        cue = prohibition
+        cue_is_prohibition = True
+    if _UNICODE_CONTRASTIVE_RE.search(prefix, cue.end()) is not None:
+        return False
+
+    if cue_is_prohibition:
+        tail = content[source_end : min(len(content), source_end + 512)]
+        tail_boundary = re.search(r"[.]?[\"')\]]?[ \t]*(?:\n|$)", tail)
+        if tail_boundary is not None:
+            tail = tail[: tail_boundary.start()]
+        if _UNICODE_CONTRASTIVE_RE.search(tail) is not None:
+            return False
+    return True
+
+
+def _unicode_code_match_is_inert_context(content: str, source_start: int, source_end: int) -> bool:
+    """Apply example/prohibition scope only inside an actual code comment."""
+    line_start = content.rfind("\n", 0, source_start) + 1
+    line_end = content.find("\n", source_end)
+    if line_end < 0:
+        line_end = len(content)
+    line = content[line_start:line_end]
+
+    line_comment = re.match(r"^[ \t]*(?P<marker>//+|\#+)[ \t]*", line)
+    if line_comment is not None and source_start >= line_start + line_comment.end():
+        comment_start = line_start + line_comment.end()
+        comment_content = content[comment_start:line_end]
+        relative_start = source_start - comment_start
+        relative_end = source_end - comment_start
+
+        # Carry one immediately preceding comment-only cue ending in a colon.
+        previous_end = max(0, line_start - 1)
+        previous_start = content.rfind("\n", 0, previous_end) + 1
+        previous = content[previous_start:previous_end]
+        previous_comment = re.match(r"^[ \t]*(?://+|\#+)[ \t]*(?P<body>.*)$", previous)
+        if previous_comment is not None and previous_comment.group("body").rstrip().endswith(":"):
+            lead = previous_comment.group("body")
+            comment_content = f"{lead}\n{comment_content}"
+            relative_start += len(lead) + 1
+            relative_end += len(lead) + 1
+        return _unicode_match_is_inert_context(comment_content, relative_start, relative_end)
+
+    # Recognize a block comment only when its opener is line-leading. This
+    # avoids treating comment-looking string literals as syntax while still
+    # supporting ordinary multi-line documentation comments.
+    prefix = content[:source_start]
+    block_start = prefix.rfind("/*")
+    block_end_before = prefix.rfind("*/")
+    if block_start <= block_end_before:
+        return False
+    block_line_start = content.rfind("\n", 0, block_start) + 1
+    if content[block_line_start:block_start].strip(" \t"):
+        return False
+    closing = content.find("*/", block_start + 2)
+    if closing < 0 or source_end > closing:
+        return False
+    comment_start = block_start + 2
+    comment_end = closing
+    comment_content = content[comment_start:comment_end]
+    return _unicode_match_is_inert_context(
+        comment_content,
+        source_start - comment_start,
+        source_end - comment_start,
+    )
+
+
+def _unicode_slab_has_projection(text: str) -> bool:
+    """Return whether a slab needs dense decoded provenance."""
+    return any(_unicode_scalar_projection(character) is not None for character in set(text) if not character.isascii())
+
+
+@lru_cache(maxsize=4_096)
+def _bounded_ascii_nfkc(character: str) -> str | None:
+    """Return a small wholly-ASCII compatibility form, if one exists."""
+    normalized = unicodedata.normalize("NFKC", character)
+    if (
+        normalized == character
+        or not normalized
+        or len(normalized) > _UNICODE_MAX_NFKC_EXPANSION
+        or not normalized.isascii()
+    ):
+        return None
+    return normalized
+
+
+@lru_cache(maxsize=4_096)
+def _ascii_confusable(character: str) -> str | None:
+    """Resolve one non-ASCII scalar through the packaged confusables table."""
+    try:
+        from confusable_homoglyphs import confusables  # type: ignore[import-untyped]
+    except ImportError:
+        return None
+    entries: Any = confusables.confusables_data.get(character, ())
+    for entry in entries:
+        glyph = entry.get("c", "")
+        # Multi-scalar skeletons are intentionally rejected: they can amplify
+        # output and do not provide a single auditable source position.
+        if isinstance(glyph, str) and len(glyph) == 1 and glyph.isascii() and (glyph.isalnum() or glyph in {":", "/"}):
+            # Several uppercase I/Iota lookalikes have a lowercase-L skeleton
+            # in the upstream table. Preserve source case for ASCII anchors.
+            if glyph == "l" and character.isupper():
+                return "I"
+            return glyph
+    return None
+
+
+@lru_cache(maxsize=4_096)
+def _unicode_scalar_projection(character: str) -> tuple[str, str] | None:
+    """Return one bounded decoded scalar and its transformation class."""
+    if character.isascii():
+        return None
+
+    codepoint = ord(character)
+    if character == _UNICODE_HTML_COMMENT_SENTINEL:
+        return "", "default-ignorable"
+    # Decode the supported supplementary-selector carrier before applying the
+    # Default_Ignorable property, which also contains this codepoint range.
+    if 0xE0100 <= codepoint <= 0xE017E:
+        value = codepoint - 0xE0100
+        if value == 10 or 0x20 <= value <= 0x7E:
+            return chr(value), "variation-selectors-supplement"
+    if any(start <= codepoint <= end for start, end in _UNICODE_DEFAULT_IGNORABLE_RANGES):
+        return "", "default-ignorable"
+    # A combining mark inserted into an ASCII anchor breaks the raw signature.
+    # It is only actionable later when fixed-span causality and raw non-match
+    # are both proven, so ordinary marked multilingual prose remains inert.
+    if unicodedata.category(character) in {"Mn", "Mc", "Me"}:
+        return "", "combining-mark"
+    if character.isspace():
+        return " ", "unicode-whitespace"
+    if 0x2800 <= codepoint <= 0x28FF:
+        value = codepoint - 0x2800
+        if value == 10 or 0x20 <= value <= 0x7E:
+            return chr(value), "braille-offset"
+
+    confusable = _ascii_confusable(character)
+    normalized = _bounded_ascii_nfkc(character)
+    if confusable is not None and confusable != normalized:
+        return confusable, "unicode-confusable"
+    if normalized is not None:
+        return normalized, "unicode-normalization"
+    if confusable is not None:
+        return confusable, "unicode-confusable"
+    return None
+
 
 _COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//|/\*|\*|<!--)")
 _NEGATED_EXFILTRATION_RE = re.compile(
@@ -241,7 +1063,7 @@ class _LoopExitVisitor:
         if isinstance(node, (ast.With, ast.AsyncWith)):
             return self._block_flow(node.body, nested_loop_depth=nested_loop_depth)
 
-        if isinstance(node, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+        if isinstance(node, (ast.Try, ast.TryStar)):
             protected_blocks = [node.body, node.orelse, *(handler.body for handler in node.handlers)]
             protected_exit = any(
                 self._block_flow(block, nested_loop_depth=nested_loop_depth)[0] for block in protected_blocks if block
@@ -358,6 +1180,308 @@ def _redact_secret(text: str) -> str:
     return text[:4] + "****"
 
 
+_OOXML_CONTAINER_ROOTS = {
+    ".docx": "word",
+    ".docm": "word",
+    ".pptx": "ppt",
+    ".pptm": "ppt",
+    ".xlsx": "xl",
+    ".xlsm": "xl",
+}
+_OOXML_INERT_MEDIA_EXTENSIONS = frozenset(
+    {
+        ".bmp",
+        ".gif",
+        ".ico",
+        ".jpeg",
+        ".jpg",
+        ".png",
+        ".tif",
+        ".tiff",
+        ".webp",
+    }
+)
+_OOXML_INERT_FONT_EXTENSIONS = frozenset(
+    {
+        ".eot",
+        ".fntdata",
+        ".odttf",
+        ".otf",
+        ".ttf",
+        ".woff",
+        ".woff2",
+    }
+)
+
+
+def _ooxml_member_identity(skill_file: SkillFile) -> tuple[str, str] | None:
+    """Return a validated ``(container root, member path)`` extraction identity.
+
+    ``extracted_from`` is populated only by the bounded archive extractor.  A
+    matching virtual-path prefix and an exact OOXML extension are required so
+    a filename or vendor label alone can never opt a file out of detection.
+    """
+
+    source = skill_file.extracted_from
+    if not source:
+        return None
+    container_root = _OOXML_CONTAINER_ROOTS.get(Path(source).suffix.lower())
+    if container_root is None:
+        return None
+
+    prefix = f"{source}!/"
+    if not skill_file.relative_path.startswith(prefix):
+        return None
+    member_path = skill_file.relative_path[len(prefix) :]
+    if not member_path or "\\" in member_path or member_path.startswith("/"):
+        return None
+    parts = member_path.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return None
+    return container_root, "/".join(parts).lower()
+
+
+def _is_inert_ooxml_unicode_asset(skill_file: SkillFile) -> bool:
+    """Identify binary OOXML media/font roles where Unicode bytes are inert.
+
+    YARA scans raw bytes, so ordinary compressed images and font tables can
+    coincidentally contain valid UTF-8 encodings for tag-block, bidi, or
+    separator characters.  Only a binary member with extractor provenance,
+    the container's expected root, a precise media/font role, and a known
+    inert extension is suppressible.  SVG, macros, OLE, relationships, and
+    unknown members deliberately fail open.
+    """
+
+    if skill_file.file_type != "binary":
+        return False
+    identity = _ooxml_member_identity(skill_file)
+    if identity is None:
+        return False
+    container_root, member_path = identity
+    parts = member_path.split("/")
+    if len(parts) < 3 or parts[0] != container_root:
+        return False
+
+    extension = Path(parts[-1]).suffix.lower()
+    if parts[1] == "media":
+        return extension in _OOXML_INERT_MEDIA_EXTENSIONS
+    if parts[1] == "fonts":
+        return extension in _OOXML_INERT_FONT_EXTENSIONS
+    return False
+
+
+def _is_extracted_ooxml_text(skill_file: SkillFile) -> bool:
+    """Return whether a readable member came from bounded OOXML extraction."""
+
+    return skill_file.file_type != "binary" and _ooxml_member_identity(skill_file) is not None
+
+
+def _semantic_metadata(
+    *,
+    rule_id: str,
+    file_path: str,
+    evidence_kind: str,
+    context_kind: str,
+    signal_kind: str,
+    value_class: str,
+    evidence_value_class: str | None = None,
+    evidence_count: int | None = None,
+    candidate_command: dict[str, Any] | None = None,
+    candidate_flow: dict[str, Any] | None = None,
+    extra_signals: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build bounded, structured facts for the semantic projector.
+
+    Static analyzers own this classification: the CEL projection layer must not
+    infer it by reparsing finding snippets or descriptions.
+    """
+    semantic_facts: dict[str, Any] = {
+        "evidence_kind": evidence_kind,
+        "context_kind": context_kind,
+        "signals": [
+            {
+                "rule_id": rule_id,
+                "kind": signal_kind,
+                "file_path": file_path,
+                "value_class": value_class,
+            }
+        ],
+    }
+    if evidence_value_class is not None:
+        semantic_facts["evidence_value_class"] = evidence_value_class
+    if evidence_count is not None:
+        semantic_facts["evidence_count"] = evidence_count
+    if candidate_command is not None:
+        semantic_facts["candidate_command"] = candidate_command
+        semantic_facts["commands"] = [candidate_command]
+    if candidate_flow is not None:
+        semantic_facts["candidate_flow"] = candidate_flow
+        semantic_facts["flows"] = [candidate_flow]
+    if extra_signals:
+        semantic_facts["signals"].extend(extra_signals)
+    return {"semantic_facts": semantic_facts}
+
+
+_YARA_SEMANTIC_EVIDENCE_KINDS = frozenset(
+    {
+        "binary_signature",
+        "command_pipeline",
+        "correlated_behavior",
+    }
+)
+_YARA_SEMANTIC_CONTEXT_KINDS = frozenset(
+    {
+        "active_instruction",
+        "binary",
+        "code",
+        "example",
+        "prohibition",
+    }
+)
+_YARA_SEMANTIC_SIGNAL_KINDS = frozenset({"compound_flow", "embedded_shebang", "taint_flow"})
+_YARA_SEMANTIC_SOURCE_SINK_CLASSES = frozenset(
+    {
+        "archive",
+        "credential_file",
+        "external_network",
+        "network",
+        "obfuscation",
+        "process_execution",
+        "resource_consumption",
+        "scheduler",
+    }
+)
+_YARA_SEMANTIC_TRANSFORMS = frozenset({"decode", "extraction", "pipe"})
+_YARA_SEMANTIC_TOKEN_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+def _embedded_shebang_offset_facts(offset: Any) -> tuple[str, int]:
+    """Return a bounded, candidate-local offset classification.
+
+    The YARA implementation only retains shebangs after byte 64.  Direct unit
+    callers and malformed custom results can still omit or corrupt the offset,
+    so those cases remain explicitly unclassified for fail-open CEL handling.
+    The scalar count never exceeds the global 4,096 fact bound.
+    """
+
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 65:
+        return "unclassified", 0
+    if offset < 4_096:
+        return "embedded_shebang_offset_65_4095", offset
+    return "embedded_shebang_offset_4096_plus", 4_096
+
+
+def _yara_candidate_string_matches(match: dict[str, Any], meta: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the bounded string evidence used to construct findings.
+
+    Behavior-chain rules use several supporting strings to prove one
+    correlated rule/file candidate.  Emitting a finding for every supporting
+    primitive inflates counts and gives CEL duplicate activations.  The
+    explicit ``rule_file`` scope therefore selects one deterministic anchor;
+    ordinary and byte-offset-sensitive YARA rules retain per-string findings.
+    """
+
+    strings = match.get("strings")
+    if not isinstance(strings, list):
+        return []
+    candidates = [value for value in strings if isinstance(value, dict)]
+    if meta.get("finding_scope") != "rule_file" or not candidates:
+        return candidates
+
+    def stable_position(value: dict[str, Any]) -> tuple[int, int, str]:
+        offset = value.get("offset")
+        line_number = value.get("line_number")
+        return (
+            offset if isinstance(offset, int) and not isinstance(offset, bool) and offset >= 0 else 2**63 - 1,
+            line_number
+            if isinstance(line_number, int) and not isinstance(line_number, bool) and line_number >= 0
+            else 2**31 - 1,
+            str(value.get("identifier", "")),
+        )
+
+    return [min(candidates, key=stable_position)]
+
+
+def _yara_semantic_metadata(
+    *,
+    rule_name: str,
+    meta: dict[str, Any],
+    file_path: str,
+    match_offset: Any,
+    context_kind_override: str | None = None,
+) -> dict[str, Any]:
+    """Translate trusted, normalized YARA metadata into bounded CEL facts.
+
+    This function never reparses source snippets.  Unknown or malformed source
+    metadata is ignored rather than exposing an arbitrary YARA map to CEL.
+    """
+
+    rule_id = f"YARA_{rule_name}"
+    if rule_name == "embedded_shebang_in_binary":
+        offset_value_class, evidence_count = _embedded_shebang_offset_facts(match_offset)
+        result = _semantic_metadata(
+            rule_id=rule_id,
+            file_path=file_path,
+            evidence_kind="binary_signature",
+            context_kind="binary",
+            signal_kind="embedded_shebang",
+            value_class=offset_value_class,
+            evidence_value_class=offset_value_class,
+            evidence_count=evidence_count,
+        )
+        result["yara_byte_offset_class"] = offset_value_class
+        result["yara_byte_offset_bounded"] = evidence_count
+        return result
+
+    evidence_kind = meta.get("evidence_kind")
+    context_kind = context_kind_override or meta.get("context_kind")
+    signal_kind = meta.get("signal_kind")
+    value_class = meta.get("value_class")
+    source_class = meta.get("source_class")
+    sink_class = meta.get("sink_class")
+    transforms_raw = meta.get("transforms", "")
+    if not (
+        isinstance(evidence_kind, str)
+        and evidence_kind in _YARA_SEMANTIC_EVIDENCE_KINDS
+        and isinstance(context_kind, str)
+        and context_kind in _YARA_SEMANTIC_CONTEXT_KINDS
+        and isinstance(signal_kind, str)
+        and signal_kind in _YARA_SEMANTIC_SIGNAL_KINDS
+        and isinstance(value_class, str)
+        and _YARA_SEMANTIC_TOKEN_RE.fullmatch(value_class)
+        and isinstance(source_class, str)
+        and source_class in _YARA_SEMANTIC_SOURCE_SINK_CLASSES
+        and isinstance(sink_class, str)
+        and sink_class in _YARA_SEMANTIC_SOURCE_SINK_CLASSES
+        and isinstance(transforms_raw, str)
+    ):
+        return {}
+
+    transforms = [value.strip() for value in transforms_raw.split(",") if value.strip()]
+    if any(value not in _YARA_SEMANTIC_TRANSFORMS for value in transforms):
+        return {}
+
+    candidate_flow = {
+        "source_class": source_class,
+        "sink_class": sink_class,
+        "transforms": transforms,
+        "cross_file": False,
+        "source_path": file_path,
+        "sink_path": file_path,
+    }
+    return _semantic_metadata(
+        rule_id=rule_id,
+        file_path=file_path,
+        evidence_kind=evidence_kind,
+        context_kind=context_kind,
+        signal_kind=signal_kind,
+        value_class=value_class,
+        evidence_value_class=value_class,
+        evidence_count=1,
+        candidate_flow=candidate_flow,
+    )
+
+
 class StaticAnalyzer(BaseAnalyzer):
     """Static pattern-based security analyzer."""
 
@@ -370,6 +1494,7 @@ class StaticAnalyzer(BaseAnalyzer):
         disabled_rules: set[str] | None = None,
         policy: ScanPolicy | None = None,
         extra_rules_dirs: list[Path] | None = None,
+        trusted_pack_dirs: list[Path] | None = None,
     ):
         """
         Initialize static analyzer.
@@ -390,6 +1515,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 If None, loads built-in defaults.
             extra_rules_dirs: Additional signature rule directories from
                 community/external packs to load alongside the core rules.
+            trusted_pack_dirs: Administrator-approved v2 rule pack directories.
         """
         super().__init__("static_analyzer", policy=policy)
 
@@ -398,7 +1524,11 @@ class StaticAnalyzer(BaseAnalyzer):
         # standalone findings).
         self._unreferenced_scripts: list[str] = []
 
-        self.rule_loader = RuleLoader(rules_file, extra_rules_dirs=extra_rules_dirs)
+        self.rule_loader = RuleLoader(
+            rules_file,
+            extra_rules_dirs=extra_rules_dirs,
+            trusted_pack_dirs=trusted_pack_dirs,
+        )
         self.rule_loader.load_rules()
 
         # Configure YARA mode.
@@ -429,18 +1559,71 @@ class StaticAnalyzer(BaseAnalyzer):
         self.use_yara = use_yara
         self.yara_scanner = None
         if use_yara:
+            trusted_yara_dirs: list[Path] = []
+            trusted_yara_metadata: dict[str, dict[str, Any]] = {}
+            if self.custom_yara_rules_path is None:
+                # Bundled schema-v2 metadata is authoritative at runtime too,
+                # not only during startup validation. Load only the core pack:
+                # core-only scans must not depend on unrelated bundled packs.
+                from ...core.rule_registry import PackLoader
+
+                core_pack = PackLoader().load_bundled_pack(DATA_DIR / "packs" / "core")
+                for definition in core_pack.rules.values():
+                    if definition.source_type != "yara":
+                        continue
+                    bundled_metadata: dict[str, Any] = {
+                        "category": definition.category,
+                        "severity": definition.default_severity,
+                    }
+                    if definition.description:
+                        bundled_metadata["description"] = definition.description
+                    trusted_yara_metadata[definition.id.removeprefix("YARA_")] = bundled_metadata
+            if trusted_pack_dirs:
+                # RuleLoader validates trusted signature implementations.  Load
+                # the same explicit packs here to obtain their validated YARA
+                # directories for the runtime generation.  Validation remains
+                # fail-fast and no discovery of untrusted directories occurs.
+                from ...core.rule_registry import PackLoader
+
+                pack_loader = PackLoader()
+                for pack_dir in trusted_pack_dirs:
+                    pack = pack_loader.load_trusted_pack(pack_dir)
+                    trusted_yara_dirs.extend(pack.yara_dirs)
+                    for definition in pack.rules.values():
+                        if definition.source_type != "yara":
+                            continue
+                        local_metadata: dict[str, Any] = {
+                            "category": definition.category,
+                            "severity": definition.default_severity,
+                        }
+                        if definition.description:
+                            local_metadata["description"] = definition.description
+                        trusted_yara_metadata[definition.id.removeprefix("YARA_")] = local_metadata
+
             try:
                 max_scan_bytes = self.policy.file_limits.max_yara_scan_file_size_bytes
                 # Use custom rules path if provided
                 if self.custom_yara_rules_path:
                     self.yara_scanner = YaraScanner(
                         rules_dir=self.custom_yara_rules_path,
+                        additional_rules_dirs=trusted_yara_dirs,
+                        metadata_overrides=trusted_yara_metadata,
                         max_scan_file_size=max_scan_bytes,
                     )
                     logger.info("Using custom YARA rules from: %s", self.custom_yara_rules_path)
                 else:
-                    self.yara_scanner = YaraScanner(max_scan_file_size=max_scan_bytes)
+                    self.yara_scanner = YaraScanner(
+                        additional_rules_dirs=trusted_yara_dirs,
+                        metadata_overrides=trusted_yara_metadata,
+                        max_scan_file_size=max_scan_bytes,
+                    )
             except Exception as e:
+                if trusted_yara_dirs or self.custom_yara_rules_path is None:
+                    # A trusted pack participates in one atomic runtime
+                    # generation, and the bundled rules are trusted release
+                    # artifacts.  Compilation or identity failures must abort
+                    # startup rather than silently disabling all YARA rules.
+                    raise
                 logger.warning("Could not load YARA scanner: %s", e)
                 self.yara_scanner = None
 
@@ -494,11 +1677,19 @@ class StaticAnalyzer(BaseAnalyzer):
         findings = []
         self._unreferenced_scripts = []  # reset per-scan enrichment state
 
-        findings.extend(self._check_manifest(skill))
+        manifest_complete = bool(getattr(skill, "manifest_complete", True))
+        if manifest_complete:
+            findings.extend(self._check_manifest(skill))
         findings.extend(self._scan_instruction_body(skill))
+        findings.extend(check_active_dynamic_execution(skill))
+        findings.extend(check_active_hidden_html(skill))
+        findings.extend(check_active_remote_execution(skill))
+        findings.extend(check_active_semantic_directives(skill))
+        findings.extend(check_unicode_smuggling(skill))
         findings.extend(self._scan_scripts(skill))
         findings.extend(self._check_dynamic_sensitive_file_access(skill))
-        findings.extend(self._check_consistency(skill))
+        if manifest_complete:
+            findings.extend(self._check_consistency(skill))
         findings.extend(self._check_dependency_pinning(skill))
         findings.extend(self._scan_config_files(skill))
         findings.extend(self._scan_referenced_files(skill))
@@ -527,7 +1718,60 @@ class StaticAnalyzer(BaseAnalyzer):
         if self.policy.rule_scoping.dedupe_duplicate_findings:
             findings = self._dedupe_findings(findings)
 
+        self._annotate_unreferenced_script_context(findings)
+
+        # Broad primitive signatures are useful candidate extractors, but a
+        # local file operation or structured process launch is not, by itself,
+        # the external/shell sink named by the rule.  Apply package-local,
+        # provenance-neutral data-flow and file-role refinement only after the
+        # inventory has established referenced versus concealed code.
+        findings = refine_core_signature_findings(
+            skill,
+            findings,
+            unreferenced_scripts=set(self._unreferenced_scripts),
+        )
         return findings
+
+    def _annotate_unreferenced_script_context(self, findings: list[Finding]) -> None:
+        """Attach unreferenced-script context to existing findings in place.
+
+        Unreferenced scripts intentionally remain enrichment context rather
+        than standalone findings.  Adding a structured signal to findings that
+        already exist on the same file lets CEL correlate that context without
+        changing finding counts, severities, or scan verdicts.
+        """
+        unreferenced = {Path(path).as_posix() for path in self._unreferenced_scripts}
+        if not unreferenced:
+            return
+
+        for finding in findings:
+            file_path = Path(finding.file_path or "").as_posix()
+            if file_path not in unreferenced:
+                continue
+
+            semantic = finding.metadata.setdefault("semantic_facts", {})
+            if not isinstance(semantic, dict):
+                continue
+            semantic.setdefault("evidence_kind", "pattern_match")
+            semantic.setdefault("context_kind", "code")
+            signals = semantic.setdefault("signals", [])
+            if not isinstance(signals, list):
+                continue
+            suffix_kind = {
+                ".js": "javascript",
+                ".mjs": "javascript",
+                ".py": "python",
+                ".sh": "bash",
+                ".ts": "typescript",
+            }.get(Path(file_path).suffix.lower(), "other")
+            signal = {
+                "rule_id": finding.rule_id,
+                "kind": "unreferenced_executable",
+                "file_path": file_path,
+                "value_class": suffix_kind,
+            }
+            if signal not in signals:
+                signals.append(signal)
 
     def get_unreferenced_scripts(self) -> list[str]:
         """Return unreferenced script paths computed during the last ``analyze()`` call.
@@ -684,11 +1928,20 @@ class StaticAnalyzer(BaseAnalyzer):
         findings = []
 
         markdown_rules = self.rule_loader.get_rules_for_file_type("markdown")
+        scan_context = SignatureScanContext(skill.instruction_body)
 
         for rule in markdown_rules:
-            matches = rule.scan_content(skill.instruction_body, "SKILL.md")
+            matches = rule.scan_content(
+                skill.instruction_body,
+                "SKILL.md",
+                scan_context=scan_context,
+            )
             for match in matches:
-                findings.append(self._create_finding_from_match(rule, match))
+                physical_match = dict(match)
+                line_number = physical_match.get("line_number")
+                if isinstance(line_number, int):
+                    physical_match["line_number"] = line_number + skill.instruction_body_line_offset
+                findings.append(self._create_finding_from_match(rule, physical_match))
 
         return findings
 
@@ -708,12 +1961,17 @@ class StaticAnalyzer(BaseAnalyzer):
                 continue
 
             is_doc = self._is_doc_file(skill_file.relative_path)
+            scan_context = SignatureScanContext(content)
 
             for rule in rules:
                 # Skip rules scoped out of documentation files
                 if is_doc and rule.id in skip_in_docs:
                     continue
-                matches = rule.scan_content(content, skill_file.relative_path)
+                matches = rule.scan_content(
+                    content,
+                    skill_file.relative_path,
+                    scan_context=scan_context,
+                )
                 for match in matches:
                     if rule.id == "RESOURCE_ABUSE_INFINITE_LOOP" and skill_file.file_type == "python":
                         if self._python_loop_has_exit(content, match["line_number"]):
@@ -925,10 +2183,14 @@ class StaticAnalyzer(BaseAnalyzer):
         """Check for inconsistencies between manifest and actual behavior."""
         findings = []
 
-        uses_network = self._skill_uses_network(skill)
+        network_usage_path = self._skill_network_usage_path(skill)
+        uses_network = network_usage_path is not None
         declared_network = self._manifest_declares_network(skill)
 
-        skillmd = str(skill.skill_md_path)
+        # Findings use package-relative paths so downstream consumers (notably
+        # the bounded CEL fact projector) never receive host-specific absolute
+        # paths for manifest-level evidence.
+        skillmd = "SKILL.md"
 
         if uses_network and not declared_network:
             findings.append(
@@ -942,6 +2204,22 @@ class StaticAnalyzer(BaseAnalyzer):
                     file_path=skillmd,
                     remediation="Declare network usage in compatibility field or remove network calls",
                     analyzer="static",
+                    metadata=_semantic_metadata(
+                        rule_id="TOOL_ABUSE_UNDECLARED_NETWORK",
+                        file_path="SKILL.md",
+                        evidence_kind="capability_mismatch",
+                        context_kind="manifest",
+                        signal_kind="undeclared_network",
+                        value_class="external_network",
+                        candidate_flow={
+                            "source_class": "skill_code",
+                            "sink_class": "external_network",
+                            "transforms": [],
+                            "cross_file": False,
+                            "source_path": network_usage_path or skillmd,
+                            "sink_path": network_usage_path or skillmd,
+                        },
+                    ),
                 )
             )
 
@@ -1039,8 +2317,10 @@ class StaticAnalyzer(BaseAnalyzer):
                     line = getattr(node, "lineno", 1)
                     findings.append(
                         Finding(
-                            id=self._generate_finding_id("DATA_EXFIL_SENSITIVE_FILES", f"{sf.relative_path}:{line}"),
-                            rule_id="DATA_EXFIL_SENSITIVE_FILES",
+                            id=self._generate_finding_id(
+                                "DATA_EXFIL_SENSITIVE_FILE_GLOB", f"{sf.relative_path}:{line}"
+                            ),
+                            rule_id="DATA_EXFIL_SENSITIVE_FILE_GLOB",
                             category=ThreatCategory.DATA_EXFILTRATION,
                             severity=Severity.HIGH,
                             title="Dynamic enumeration of sensitive files",
@@ -1126,9 +2406,7 @@ class StaticAnalyzer(BaseAnalyzer):
 
     @staticmethod
     def _safe_toml(content: str) -> dict | None:
-        """Parse TOML, returning None when unavailable (py<3.11) or malformed."""
-        if tomllib is None:
-            return None
+        """Parse TOML, returning None when malformed."""
         try:
             return tomllib.loads(content)
         except Exception:  # noqa: BLE001 - malformed manifest, treat as no data
@@ -1242,7 +2520,11 @@ class StaticAnalyzer(BaseAnalyzer):
             declared = metadata.get("dependencies")
             if isinstance(declared, list):
                 for declared_dep in declared:
-                    entries.append((str(skill.skill_md_path), None, str(declared_dep)))
+                    # Manifest metadata belongs to the package's canonical
+                    # instruction file.  Keep the finding path package-relative
+                    # instead of leaking the loader's host-specific absolute
+                    # checkout path into downstream typed facts.
+                    entries.append(("SKILL.md", None, str(declared_dep)))
         return entries
 
     def _check_dependency_pinning(self, skill: Skill) -> list[Finding]:
@@ -1297,6 +2579,16 @@ class StaticAnalyzer(BaseAnalyzer):
                     snippet=raw.strip() or None,
                     remediation="Pin the dependency to an exact version (e.g. 'package==1.2.3').",
                     analyzer="static",
+                    metadata={
+                        "semantic_facts": {
+                            "evidence_kind": "dependency_declaration",
+                            "context_kind": "manifest" if source_label == "SKILL.md" else "dependency_file",
+                            "evidence_value_class": f"{status}_dependency",
+                            "evidence_count": 1,
+                            "signal_kind": "unpinned_dependency",
+                            "signals": [],
+                        }
+                    },
                 )
             )
 
@@ -1549,12 +2841,17 @@ class StaticAnalyzer(BaseAnalyzer):
 
                 skip_in_docs = set(self.policy.rule_scoping.skip_in_docs)
                 is_doc = self._is_doc_file(display_path)
+                scan_context = SignatureScanContext(content)
 
                 for rule in rules:
                     # Skip rules scoped out of documentation files
                     if is_doc and rule.id in skip_in_docs:
                         continue
-                    matches = rule.scan_content(content, display_path)
+                    matches = rule.scan_content(
+                        content,
+                        display_path,
+                        scan_context=scan_context,
+                    )
                     for match in matches:
                         finding = self._create_finding_from_match(rule, match)
                         finding.metadata["reference_depth"] = current_depth
@@ -1620,7 +2917,6 @@ class StaticAnalyzer(BaseAnalyzer):
         shebang_compatible_extensions = self.policy.file_classification.script_shebang_extensions or None
 
         min_confidence = self.policy.analysis_thresholds.min_confidence_pct / 100.0
-
         for skill_file in skill.files:
             file_path_obj = Path(skill_file.relative_path)
             ext = file_path_obj.suffix.lower()
@@ -1659,6 +2955,17 @@ class StaticAnalyzer(BaseAnalyzer):
                                 "actual_family": magic_match.content_family,
                                 "claimed_extension": ext,
                                 "confidence_score": magic_match.score,
+                                **_semantic_metadata(
+                                    rule_id="FILE_MAGIC_MISMATCH",
+                                    file_path=skill_file.relative_path,
+                                    evidence_kind="file_magic",
+                                    context_kind="binary",
+                                    signal_kind="file_magic_mismatch",
+                                    # CEL receives only the bounded behavioral
+                                    # class; the exact MIME family remains in
+                                    # ordinary finding metadata above.
+                                    value_class="binary",
+                                ),
                             },
                         )
                     )
@@ -1695,6 +3002,14 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skill_file.relative_path,
                         remediation="Extract archive contents and include files directly, or document the archive's purpose.",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ARCHIVE_FILE_DETECTED",
+                            file_path=skill_file.relative_path,
+                            evidence_kind="file_inventory",
+                            context_kind="binary",
+                            signal_kind="archive_binary",
+                            value_class="archive",
+                        ),
                     )
                 )
                 continue
@@ -1713,6 +3028,16 @@ class StaticAnalyzer(BaseAnalyzer):
                     file_path=skill_file.relative_path,
                     remediation="Review binary file necessity. Replace with auditable scripts if possible.",
                     analyzer="static",
+                    metadata=_semantic_metadata(
+                        rule_id="BINARY_FILE_DETECTED",
+                        file_path=skill_file.relative_path,
+                        evidence_kind="file_inventory",
+                        context_kind="binary",
+                        signal_kind="unanalyzable_binary",
+                        # Raw extensions are open-ended and must not cross the
+                        # closed semantic-fact boundary.
+                        value_class="binary",
+                    ),
                 )
             )
 
@@ -1782,19 +3107,20 @@ class StaticAnalyzer(BaseAnalyzer):
                             memo[next_memo_index] = stack[-1] if stack else None
                             next_memo_index += 1
                         elif opcode_name in {"PUT", "BINPUT", "LONG_BINPUT"}:
-                            memo[int(argument)] = stack[-1] if stack else None
+                            if argument is not None:
+                                memo[int(argument)] = stack[-1] if stack else None
                         elif opcode_name in {"GET", "BINGET", "LONG_BINGET"}:
-                            stack.append(memo.get(int(argument)))
+                            stack.append(memo.get(int(argument)) if argument is not None else None)
                         elif opcode_name == "GLOBAL" and isinstance(argument, str):
                             module, _, name = argument.partition(" ")
                             _record_global(module, name)
                             stack.append(None)
                         elif opcode_name == "STACK_GLOBAL":
                             executable_opcodes.append(opcode_name)
-                            name = stack.pop() if stack else None
-                            module = stack.pop() if stack else None
-                            if isinstance(module, str) and isinstance(name, str):
-                                _record_global(module, name)
+                            stack_name = stack.pop() if stack else None
+                            stack_module = stack.pop() if stack else None
+                            if isinstance(stack_module, str) and isinstance(stack_name, str):
+                                _record_global(stack_module, stack_name)
                             stack.append(None)
                         elif opcode_name == "REDUCE":
                             executable_opcodes.append(opcode_name)
@@ -1938,6 +3264,14 @@ class StaticAnalyzer(BaseAnalyzer):
                             file_path=rel_path,
                             remediation="Move script to a visible location or remove if not needed.",
                             analyzer="static",
+                            metadata=_semantic_metadata(
+                                rule_id="HIDDEN_EXECUTABLE_SCRIPT",
+                                file_path=rel_path,
+                                evidence_kind="file_inventory",
+                                context_kind="code",
+                                signal_kind="hidden_executable",
+                                value_class=skill_file.file_type or ext or "script",
+                            ),
                         )
                     )
                 else:
@@ -1957,6 +3291,14 @@ class StaticAnalyzer(BaseAnalyzer):
                             file_path=rel_path,
                             remediation="Move file to a visible location or document its purpose.",
                             analyzer="static",
+                            metadata=_semantic_metadata(
+                                rule_id="HIDDEN_DATA_FILE",
+                                file_path=rel_path,
+                                evidence_kind="file_inventory",
+                                context_kind="package",
+                                signal_kind="hidden_file",
+                                value_class=skill_file.file_type or ext or "data",
+                            ),
                         )
                     )
 
@@ -2127,104 +3469,409 @@ class StaticAnalyzer(BaseAnalyzer):
         return any(self._socket_call_can_contact_remote(node) for node in ast.walk(tree) if isinstance(node, ast.Call))
 
     @staticmethod
-    def _decode_obfuscated_unicode(text: str) -> tuple[str, set[str]]:
-        """Decode common Unicode instruction-obfuscation representations."""
-        try:
-            from confusable_homoglyphs import confusables  # type: ignore[import-untyped]
-        except ImportError:
-            confusables = None
+    def _decode_obfuscated_unicode_with_provenance(text: str) -> _DecodedUnicodeText:
+        """Decode one bounded scalar chunk with exact source provenance.
 
-        normalized = unicodedata.normalize("NFKC", text)
+        Every source scalar emits at most four ASCII scalars, aggregate output
+        is capped at four times the input, and removed default-ignorables retain a
+        boundary anchor. Returning ``complete=False`` never exposes a decoded
+        prefix to the detector.
+        """
+        if len(text) > _UNICODE_DECODE_CHUNK_CHARS:
+            return _DecodedUnicodeText("", frozenset(), (), (), (), False)
+        if text.isascii():
+            # No supported Unicode representation can occur in ASCII-only
+            # text, so avoid allocating per-character provenance for the
+            # overwhelmingly common case.
+            return _DecodedUnicodeText(text, frozenset(), (), (), (), True)
+
+        # Resolve each distinct non-ASCII scalar once before allocating dense
+        # provenance. Irrelevant compatibility characters such as U+FDFA then
+        # take the fast path even when repeated throughout a large slab.
+        projections = {
+            character: _unicode_scalar_projection(character) for character in set(text) if not character.isascii()
+        }
+        if not any(projection is not None for projection in projections.values()):
+            return _DecodedUnicodeText(text, frozenset(), (), (), (), True)
+
         decoded: list[str] = []
+        transformation_kinds: list[str | None] = []
+        source_offsets: list[int] = []
+        deleted_transformations: list[_DeletedUnicodeTransformation] = []
         encodings: set[str] = set()
-        for char in normalized:
-            codepoint = ord(char)
-            replacement: str | None = None
+        output_limit = len(text) * _UNICODE_MAX_OUTPUT_FACTOR
 
-            # Variation Selectors Supplement encoding used by the reported PoC.
-            if 0xE0100 <= codepoint <= 0xE017E:
-                value = codepoint - 0xE0100
-                if value == 10 or 0x20 <= value <= 0x7E:
-                    replacement = chr(value)
-                    encodings.add("variation-selectors-supplement")
-
-            # A Braille offset encoding is not a Braille document: printable
-            # ASCII shifted into U+2800–U+28FF is a strong steganography signal.
-            elif 0x2800 <= codepoint <= 0x28FF:
-                value = codepoint - 0x2800
-                if value == 10 or 0x20 <= value <= 0x7E:
-                    replacement = chr(value)
-                    encodings.add("braille-offset")
-
-            # Map non-Latin confusables back to an ASCII lookalike when the
-            # optional Unicode Consortium data is available.
-            elif confusables is not None and not char.isascii():
-                info = confusables.is_confusable(char, preferred_aliases=["LATIN"])
-                if info:
-                    for entry in info:
-                        for glyph in entry.get("homoglyphs", []):
-                            candidate = glyph.get("c", "")
-                            if len(candidate) == 1 and candidate.isascii() and candidate.isalnum():
-                                replacement = candidate
-                                encodings.add("unicode-confusable")
-                                break
-                        if replacement is not None:
-                            break
-
-            if replacement is not None:
-                decoded.append(replacement)
+        for source_offset, source_char in enumerate(text):
+            projection = None if source_char.isascii() else projections[source_char]
+            if projection is None:
+                emitted = source_char
+                transformation_kind = None
             else:
-                decoded.append(char)
+                emitted, transformation_kind = projection
 
-        result = "".join(decoded)
-        if result != text and not encodings:
-            encodings.add("unicode-normalization")
-        return result, encodings
+            if transformation_kind is not None and not emitted:
+                # Collapse an arbitrarily long run at one output boundary to
+                # one auditable source location per class; one deleted scalar
+                # is sufficient only after fixed-token causality is proven.
+                if not deleted_transformations or (
+                    deleted_transformations[-1].kind,
+                    deleted_transformations[-1].output_offset,
+                ) != (transformation_kind, len(decoded)):
+                    deleted_transformations.append(
+                        _DeletedUnicodeTransformation(transformation_kind, source_offset, len(decoded))
+                    )
+                encodings.add(transformation_kind)
+                continue
+
+            # Every accepted normalization is independently capped at four
+            # ASCII scalars, so the 4x aggregate limit is order-independent.
+            if len(decoded) + len(emitted) > output_limit:
+                return _DecodedUnicodeText("", frozenset(), (), (), (), False)
+            decoded.extend(emitted)
+            transformation_kinds.extend([transformation_kind] * len(emitted))
+            source_offsets.extend([source_offset] * len(emitted))
+            if transformation_kind is not None:
+                encodings.add(transformation_kind)
+
+        return _DecodedUnicodeText(
+            text="".join(decoded),
+            encodings=frozenset(encodings),
+            transformation_kinds=tuple(transformation_kinds),
+            source_offsets=tuple(source_offsets),
+            deleted_transformations=tuple(deleted_transformations),
+            complete=True,
+        )
+
+    @staticmethod
+    def _decode_obfuscated_unicode(text: str) -> tuple[str, set[str]]:
+        """Decode one bounded Unicode chunk, preserving legacy return types."""
+        decoded = StaticAnalyzer._decode_obfuscated_unicode_with_provenance(text)
+        if not decoded.complete:
+            return text, set()
+        return decoded.text, set(decoded.encodings)
 
     def _check_unicode_obfuscated_instructions(self, skill: Skill) -> list[Finding]:
         """Detect high-signal prompt injections hidden behind Unicode variants.
 
-        Detection runs over a normalized/decoded view so visually disguised text
-        cannot evade ordinary instruction signatures. This is intentionally not
-        a blanket ban on non-ASCII text; a transformed payload must also contain
-        explicit instruction or data-theft language.
+        Detection runs over bounded decoded slabs with a rolling decoded-output
+        overlap, so default-ignorables cannot split a signature across source
+        chunk boundaries. Only transformations inside fixed signature tokens or
+        delimiters are causal; typography in wildcard gaps is ignored.
         """
         findings: list[Finding] = []
-        for sf in skill.files:
-            if sf.content is None or sf.file_type not in {"markdown", "python", "bash"}:
+        package_work_units = 0
+        package_budget_exhausted = False
+        eligible_types = {"markdown", "python", "bash", "javascript", "typescript"}
+        referenced = {Path(path).as_posix() for path in skill.referenced_files}
+        synthetic_source_count = int(skill.load_metadata.get("synthetic_instruction_source_count", 0))
+
+        def file_priority(skill_file: SkillFile) -> tuple[int, str]:
+            is_primary = skill_file.path == skill.skill_md_path
+            if is_primary:
+                priority = 0
+            elif skill_file.relative_path in referenced and skill_file.file_type != "markdown":
+                priority = 1
+            elif skill_file.file_type != "markdown":
+                priority = 2
+            else:
+                priority = 3
+            return priority, skill_file.relative_path
+
+        for sf in sorted(skill.files, key=file_priority):
+            if sf.file_type not in eligible_types:
                 continue
-            content = sf.content
-            decoded, encodings = self._decode_obfuscated_unicode(content)
-            if not encodings or decoded == content:
+            is_synthetic_multi_markdown = synthetic_source_count > 1
+            is_primary_instructions = sf.path == skill.skill_md_path and not is_synthetic_multi_markdown
+            if is_primary_instructions:
+                content = skill.instruction_body
+            elif sf.content is not None:
+                content = sf.content
+            else:
+                continue
+            if not content or content.isascii():
+                continue
+            # CommonMark treats CRLF and bare CR as line endings. Normalize
+            # them before bounded region parsing so physical line attribution
+            # matches LF input without invoking splitlines()'s broader Unicode
+            # separator semantics.
+            content = content.replace("\r\n", "\n").replace("\r", "\n")
+
+            if sf.file_type == "markdown":
+                regions = _unicode_markdown_regions(
+                    content,
+                    line_offset=max(0, skill.instruction_body_line_offset) if is_primary_instructions else 0,
+                )
+                if regions is None:
+                    # Structural bounds disable precision suppression, not the
+                    # extractor. Raw streaming remains bounded per slab.
+                    regions = [
+                        _UnicodeScanRegion(
+                            content,
+                            1 + (max(0, skill.instruction_body_line_offset) if is_primary_instructions else 0),
+                            "active_instruction",
+                        )
+                    ]
+            else:
+                regions = [_UnicodeScanRegion(content, 1, "code")]
+
+            selected: tuple[str, set[str], set[int], int, _UnicodeScanRegion] | None = None
+            file_work_units = 0
+            analysis_incomplete = False
+            for region in regions:
+                carry_text = ""
+                carry_kinds: tuple[str | None, ...] = ()
+                carry_source_offsets: tuple[int, ...] = ()
+                carry_deleted: tuple[_DeletedUnicodeTransformation, ...] = ()
+
+                for source_slab, slab_offset in _unicode_bounded_chunks(region):
+                    carry_has_projection = any(kind is not None for kind in carry_kinds) or bool(carry_deleted)
+                    if source_slab.isascii() and not carry_has_projection:
+                        # CPython's bounded ASCII predicate establishes that no
+                        # scalar in this slab can create Unicode provenance. It
+                        # keeps large ASCII prefixes cheap while retaining tail
+                        # coverage at the loader limit.
+                        tail_start = max(0, len(source_slab) - _UNICODE_DECODE_OVERLAP_CHARS)
+                        carry_text = source_slab[tail_start:]
+                        carry_kinds = (None,) * len(carry_text)
+                        carry_source_offsets = tuple(
+                            slab_offset + offset for offset in range(tail_start, len(source_slab))
+                        )
+                        carry_deleted = ()
+                        continue
+
+                    # Charge every inspected non-ASCII source scalar before the
+                    # projection fast path. Dense irrelevant Unicode therefore
+                    # cannot bypass the declared file/package work contract.
+                    source_work_units = len(source_slab)
+                    if (
+                        file_work_units + source_work_units > _UNICODE_MAX_FILE_WORK_UNITS
+                        or package_work_units + source_work_units > _UNICODE_MAX_PACKAGE_WORK_UNITS
+                    ):
+                        analysis_incomplete = True
+                        package_budget_exhausted = (
+                            package_work_units + source_work_units > _UNICODE_MAX_PACKAGE_WORK_UNITS
+                        )
+                        break
+                    file_work_units += source_work_units
+                    package_work_units += source_work_units
+
+                    slab_has_projection = _unicode_slab_has_projection(source_slab)
+                    if not slab_has_projection and not carry_has_projection:
+                        # No transformed scalar can be causal in this slab. Keep
+                        # only the decoded-space overlap needed by a future slab,
+                        # without allocating dense provenance for the prefix.
+                        tail_start = max(0, len(source_slab) - _UNICODE_DECODE_OVERLAP_CHARS)
+                        carry_text = source_slab[tail_start:]
+                        carry_kinds = (None,) * len(carry_text)
+                        carry_source_offsets = tuple(
+                            slab_offset + offset for offset in range(tail_start, len(source_slab))
+                        )
+                        carry_deleted = ()
+                        continue
+
+                    decoded = self._decode_obfuscated_unicode_with_provenance(source_slab)
+                    if not decoded.complete:
+                        # The chunk helper guarantees this today. Keep the
+                        # guard fail-closed against partial decoded prefixes.
+                        carry_text = ""
+                        carry_kinds = ()
+                        carry_source_offsets = ()
+                        carry_deleted = ()
+                        continue
+
+                    # Charge actual bounded decoded output, not a 4x reserve
+                    # against every ASCII scalar in a mixed slab. One rejected
+                    # 64-KiB slab is the fixed maximum uncharged operation.
+                    slab_work_units = len(decoded.text) + len(carry_text)
+                    if (
+                        file_work_units + slab_work_units > _UNICODE_MAX_FILE_WORK_UNITS
+                        or package_work_units + slab_work_units > _UNICODE_MAX_PACKAGE_WORK_UNITS
+                    ):
+                        analysis_incomplete = True
+                        package_budget_exhausted = (
+                            package_work_units + slab_work_units > _UNICODE_MAX_PACKAGE_WORK_UNITS
+                        )
+                        break
+                    file_work_units += slab_work_units
+                    package_work_units += slab_work_units
+
+                    if len(decoded.source_offsets) == len(decoded.text):
+                        current_kinds = decoded.transformation_kinds
+                        current_source_offsets = tuple(slab_offset + offset for offset in decoded.source_offsets)
+                    elif (
+                        not decoded.source_offsets
+                        and not decoded.transformation_kinds
+                        and not decoded.deleted_transformations
+                        and len(decoded.text) == len(source_slab)
+                    ):
+                        # ASCII and no-op Unicode slabs intentionally skip dense
+                        # identity provenance in the decoder fast path. Restore
+                        # that invariant only inside the bounded streaming scan.
+                        current_kinds = (None,) * len(decoded.text)
+                        current_source_offsets = tuple(slab_offset + offset for offset in range(len(decoded.text)))
+                    else:
+                        # A complete projection must align every emitted scalar.
+                        carry_text = ""
+                        carry_kinds = ()
+                        carry_source_offsets = ()
+                        carry_deleted = ()
+                        continue
+                    current_deleted = tuple(
+                        _DeletedUnicodeTransformation(
+                            (
+                                "html-comment-elision"
+                                if slab_offset + item.source_offset in region.synthetic_elisions
+                                else item.kind
+                            ),
+                            slab_offset + item.source_offset,
+                            len(carry_text) + item.output_offset,
+                        )
+                        for item in decoded.deleted_transformations
+                    )
+                    combined_text = carry_text + decoded.text
+                    combined_kinds = carry_kinds + current_kinds
+                    combined_source_offsets = carry_source_offsets + current_source_offsets
+                    combined_deleted = carry_deleted + current_deleted
+                    (
+                        combined_text,
+                        combined_kinds,
+                        combined_source_offsets,
+                        combined_deleted,
+                    ) = _unicode_collapse_whitespace(
+                        combined_text,
+                        combined_kinds,
+                        combined_source_offsets,
+                        combined_deleted,
+                    )
+
+                    if selected is None and (any(kind is not None for kind in combined_kinds) or combined_deleted):
+                        chunk_candidate: tuple[int, str, set[str], set[int], int, _UnicodeScanRegion] | None = None
+                        for pattern, fixed_groups in _OBFUSCATED_INSTRUCTION_PATTERNS:
+                            for match in pattern.finditer(combined_text):
+                                fixed_spans = [match.span(group_name) for group_name in fixed_groups]
+                                matched_positions: dict[str, set[int]] = {}
+                                for output_offset in range(match.start(), match.end()):
+                                    if not any(start <= output_offset < end for start, end in fixed_spans):
+                                        continue
+                                    kind = combined_kinds[output_offset]
+                                    if kind is not None:
+                                        matched_positions.setdefault(kind, set()).add(
+                                            combined_source_offsets[output_offset]
+                                        )
+                                for deleted in combined_deleted:
+                                    boundary = deleted.output_offset
+                                    left_is_fixed = any(start <= boundary - 1 < end for start, end in fixed_spans)
+                                    right_is_fixed = any(start <= boundary < end for start, end in fixed_spans)
+                                    if match.start() < boundary < match.end() and left_is_fixed and right_is_fixed:
+                                        matched_positions.setdefault(deleted.kind, set()).add(deleted.source_offset)
+
+                                qualifying_encodings = {
+                                    kind
+                                    for kind, positions in matched_positions.items()
+                                    if positions and kind != "html-comment-elision"
+                                }
+                                if not qualifying_encodings:
+                                    continue
+
+                                match_source_offsets = combined_source_offsets[match.start() : match.end()]
+                                if not match_source_offsets:
+                                    continue
+                                source_start = min(match_source_offsets)
+                                source_end = max(match_source_offsets) + 1
+                                if (
+                                    region.context_kind == "active_instruction"
+                                    and _unicode_match_is_inert_context(region.content, source_start, source_end)
+                                ) or (
+                                    region.context_kind == "code"
+                                    and _unicode_code_match_is_inert_context(region.content, source_start, source_end)
+                                ):
+                                    continue
+
+                                transformed_source_offsets = set().union(
+                                    *(matched_positions[kind] for kind in qualifying_encodings)
+                                )
+                                candidate = (
+                                    match.start(),
+                                    " ".join(match.group().split())[:160],
+                                    qualifying_encodings,
+                                    transformed_source_offsets,
+                                    source_start,
+                                    region,
+                                )
+                                if chunk_candidate is None or candidate[0] < chunk_candidate[0]:
+                                    chunk_candidate = candidate
+                                break
+                        if chunk_candidate is not None:
+                            _, preview, encodings, source_offsets, match_source_start, candidate_region = (
+                                chunk_candidate
+                            )
+                            selected = (preview, encodings, source_offsets, match_source_start, candidate_region)
+
+                    tail_start = max(0, len(combined_text) - _UNICODE_DECODE_OVERLAP_CHARS)
+                    carry_text = combined_text[tail_start:]
+                    carry_kinds = combined_kinds[tail_start:]
+                    carry_source_offsets = combined_source_offsets[tail_start:]
+                    carry_deleted = tuple(
+                        _DeletedUnicodeTransformation(
+                            item.kind,
+                            item.source_offset,
+                            item.output_offset - tail_start,
+                        )
+                        for item in combined_deleted
+                        if item.output_offset >= tail_start
+                    )
+                    if selected is not None:
+                        break
+                if selected is not None or analysis_incomplete:
+                    break
+
+            if selected is None:
+                if analysis_incomplete:
+                    findings.append(
+                        Finding(
+                            id=self._generate_finding_id("UNICODE_ANALYSIS_INCOMPLETE", sf.relative_path),
+                            rule_id="UNICODE_ANALYSIS_INCOMPLETE",
+                            category=ThreatCategory.POLICY_VIOLATION,
+                            severity=Severity.INFO,
+                            title="Unicode instruction analysis incomplete",
+                            description=(
+                                f"Unicode projection for {sf.relative_path} exceeded a deterministic bounded-work "
+                                "limit. Earlier findings remain valid, but the absence of another Unicode finding "
+                                "does not establish safety for the uninspected remainder."
+                            ),
+                            file_path=sf.relative_path,
+                            line_number=None,
+                            remediation=(
+                                "Reduce or remove dense Unicode compatibility/confusable content and rescan the "
+                                "complete package."
+                            ),
+                            analyzer="static",
+                            metadata={
+                                "analysis_incomplete": True,
+                                "reason": "unicode-work-limit",
+                                "error_code": (
+                                    "UNICODE_PACKAGE_WORK_LIMIT_EXCEEDED"
+                                    if package_budget_exhausted
+                                    else "UNICODE_FILE_WORK_LIMIT_EXCEEDED"
+                                ),
+                                "work_model": "unicode_projection_v1",
+                                "file_work_units": file_work_units,
+                                "file_work_limit": _UNICODE_MAX_FILE_WORK_UNITS,
+                                "package_work_units": package_work_units,
+                                "package_work_limit": _UNICODE_MAX_PACKAGE_WORK_UNITS,
+                            },
+                        )
+                    )
+                if package_budget_exhausted:
+                    break
                 continue
 
-            # Require repeated encoded characters for offset encodings. A lone
-            # Braille character can be legitimate; a supplementary variation
-            # selector is itself an invisible format signal.
-            encoded_counts = {
-                "variation-selectors-supplement": sum(0xE0100 <= ord(ch) <= 0xE017E for ch in content),
-                "braille-offset": sum(0x2800 <= ord(ch) <= 0x28FF for ch in content),
-                "unicode-confusable": sum(not ch.isascii() for ch in content),
-                "unicode-normalization": sum(unicodedata.normalize("NFKC", ch) != ch for ch in content),
-            }
-            if encoded_counts["braille-offset"] < 8 and "braille-offset" in encodings:
-                encodings.discard("braille-offset")
-            if encoded_counts["unicode-confusable"] < 3 and "unicode-confusable" in encodings:
-                encodings.discard("unicode-confusable")
-            if encoded_counts["unicode-normalization"] < 3 and "unicode-normalization" in encodings:
-                encodings.discard("unicode-normalization")
-            if not encodings or not _OBFUSCATED_INSTRUCTION_RE.search(decoded):
-                continue
-
-            first_line = next(
-                (
-                    line_no
-                    for line_no, line in enumerate(content.splitlines(), 1)
-                    if any(not ch.isascii() for ch in line)
-                ),
-                1,
+            preview, selected_encodings, selected_source_offsets, match_source_start, selected_region = selected
+            first_transformed_source_offset = min(selected_source_offsets)
+            first_line = selected_region.start_line + selected_region.content.count("\n", 0, match_source_start)
+            first_transformed_line = selected_region.start_line + selected_region.content.count(
+                "\n", 0, first_transformed_source_offset
             )
-            preview = " ".join(decoded.split())[:160]
             findings.append(
                 Finding(
                     id=self._generate_finding_id("UNICODE_OBFUSCATED_INSTRUCTION", sf.relative_path),
@@ -2234,20 +3881,26 @@ class StaticAnalyzer(BaseAnalyzer):
                     title="Obfuscated prompt-injection instructions detected",
                     description=(
                         f"Unicode-obfuscated instructions were detected in {sf.relative_path} using "
-                        f"{', '.join(sorted(encodings))}. Recovered text includes a high-risk instruction or "
+                        f"{', '.join(sorted(selected_encodings))}. Recovered text includes a high-risk instruction or "
                         f"data-access pattern: {preview}"
                     ),
                     file_path=sf.relative_path,
                     line_number=first_line,
                     remediation="Remove the obfuscated Unicode content and review the skill for prompt-injection and data-exfiltration behavior.",
                     analyzer="static",
-                    metadata={"encodings": sorted(encodings), "decoded_preview": preview},
+                    metadata={
+                        "encodings": sorted(selected_encodings),
+                        "decoded_preview": preview,
+                        "matched_transformed_codepoint_count": len(selected_source_offsets),
+                        "context_kind": selected_region.context_kind,
+                        "first_transformed_line": first_transformed_line,
+                    },
                 )
             )
         return findings
 
-    def _skill_uses_network(self, skill: Skill) -> bool:
-        """Check if skill code uses network libraries for EXTERNAL communication."""
+    def _skill_network_usage_path(self, skill: Skill) -> str | None:
+        """Return the first package-relative script with external network behavior."""
         external_network_indicators = [
             "import requests",
             "from requests import",
@@ -2262,12 +3915,16 @@ class StaticAnalyzer(BaseAnalyzer):
             content = skill_file.read_content()
 
             if any(indicator in content for indicator in external_network_indicators):
-                return True
+                return skill_file.relative_path
 
             if "import socket" in content and self._content_uses_external_socket_api(content):
-                return True
+                return skill_file.relative_path
 
-        return False
+        return None
+
+    def _skill_uses_network(self, skill: Skill) -> bool:
+        """Check if skill code uses network libraries for EXTERNAL communication."""
+        return self._skill_network_usage_path(skill) is not None
 
     def _manifest_declares_network(self, skill: Skill) -> bool:
         """Check if manifest declares network usage."""
@@ -2295,7 +3952,9 @@ class StaticAnalyzer(BaseAnalyzer):
             return findings
 
         allowed_tools_lower = [tool.lower() for tool in skill.manifest.allowed_tools]
-        skillmd = str(skill.skill_md_path)
+        # Capability mismatches are manifest findings.  Keep their location
+        # stable and package-relative rather than leaking the checkout path.
+        skillmd = "SKILL.md"
 
         if "read" not in allowed_tools_lower:
             if self._code_reads_files(skill):
@@ -2313,6 +3972,25 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skillmd,
                         remediation="Add 'Read' to allowed-tools or remove file reading operations from scripts",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ALLOWED_TOOLS_READ_VIOLATION",
+                            file_path="SKILL.md",
+                            evidence_kind="capability_mismatch",
+                            context_kind="manifest",
+                            signal_kind="undeclared_tool",
+                            value_class="read",
+                            candidate_command={
+                                "executable": "Read",
+                                "argument_classes": [],
+                                "downloads": False,
+                                "executes": False,
+                                "destructive": False,
+                                "privilege_change": False,
+                                "source_class": "skill_code",
+                                "sink_class": "filesystem_read",
+                                "file_path": "",
+                            },
+                        ),
                     )
                 )
 
@@ -2332,6 +4010,25 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skillmd,
                         remediation="Either add 'Write' to allowed-tools (if intentional) or remove filesystem writes from scripts",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ALLOWED_TOOLS_WRITE_VIOLATION",
+                            file_path="SKILL.md",
+                            evidence_kind="capability_mismatch",
+                            context_kind="manifest",
+                            signal_kind="undeclared_tool",
+                            value_class="write",
+                            candidate_command={
+                                "executable": "Write",
+                                "argument_classes": [],
+                                "downloads": False,
+                                "executes": False,
+                                "destructive": False,
+                                "privilege_change": False,
+                                "source_class": "skill_code",
+                                "sink_class": "filesystem_write",
+                                "file_path": "",
+                            },
+                        ),
                     )
                 )
 
@@ -2348,6 +4045,25 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skillmd,
                         remediation="Add 'Bash' to allowed-tools or remove bash execution from code",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ALLOWED_TOOLS_BASH_VIOLATION",
+                            file_path="SKILL.md",
+                            evidence_kind="capability_mismatch",
+                            context_kind="manifest",
+                            signal_kind="undeclared_tool",
+                            value_class="bash",
+                            candidate_command={
+                                "executable": "Bash",
+                                "argument_classes": [],
+                                "downloads": False,
+                                "executes": True,
+                                "destructive": False,
+                                "privilege_change": False,
+                                "source_class": "skill_code",
+                                "sink_class": "process_execution",
+                                "file_path": "",
+                            },
+                        ),
                     )
                 )
 
@@ -2370,6 +4086,25 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skillmd,
                         remediation="Add 'Grep' to allowed-tools or remove regex search operations",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ALLOWED_TOOLS_GREP_VIOLATION",
+                            file_path="SKILL.md",
+                            evidence_kind="capability_mismatch",
+                            context_kind="manifest",
+                            signal_kind="undeclared_tool",
+                            value_class="grep",
+                            candidate_command={
+                                "executable": "Grep",
+                                "argument_classes": [],
+                                "downloads": False,
+                                "executes": False,
+                                "destructive": False,
+                                "privilege_change": False,
+                                "source_class": "skill_code",
+                                "sink_class": "content_search",
+                                "file_path": "",
+                            },
+                        ),
                     )
                 )
 
@@ -2386,10 +4121,30 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skillmd,
                         remediation="Add 'Glob' to allowed-tools or remove glob operations",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ALLOWED_TOOLS_GLOB_VIOLATION",
+                            file_path="SKILL.md",
+                            evidence_kind="capability_mismatch",
+                            context_kind="manifest",
+                            signal_kind="undeclared_tool",
+                            value_class="glob",
+                            candidate_command={
+                                "executable": "Glob",
+                                "argument_classes": [],
+                                "downloads": False,
+                                "executes": False,
+                                "destructive": False,
+                                "privilege_change": False,
+                                "source_class": "skill_code",
+                                "sink_class": "filesystem_enumeration",
+                                "file_path": "",
+                            },
+                        ),
                     )
                 )
 
-        if self._code_uses_network(skill):
+        network_usage_path = self._code_network_usage_path(skill)
+        if network_usage_path is not None:
             findings.append(
                 Finding(
                     id=self._generate_finding_id("ALLOWED_TOOLS_NETWORK_USAGE", skill.name),
@@ -2404,6 +4159,22 @@ class StaticAnalyzer(BaseAnalyzer):
                     file_path=skillmd,
                     remediation="Document network usage in skill description or remove network operations if not needed",
                     analyzer="static",
+                    metadata=_semantic_metadata(
+                        rule_id="ALLOWED_TOOLS_NETWORK_USAGE",
+                        file_path="SKILL.md",
+                        evidence_kind="capability_mismatch",
+                        context_kind="manifest",
+                        signal_kind="undocumented_network",
+                        value_class="external_network",
+                        candidate_flow={
+                            "source_class": "skill_code",
+                            "sink_class": "external_network",
+                            "transforms": [],
+                            "cross_file": False,
+                            "source_path": network_usage_path,
+                            "sink_path": network_usage_path,
+                        },
+                    ),
                 )
             )
 
@@ -2468,8 +4239,8 @@ class StaticAnalyzer(BaseAnalyzer):
                     return True
         return False
 
-    def _code_uses_network(self, skill: Skill) -> bool:
-        """Check if code makes network requests."""
+    def _code_network_usage_path(self, skill: Skill) -> str | None:
+        """Return the first package-relative script that makes a network request."""
         network_indicators = [
             "requests.get",
             "requests.post",
@@ -2488,8 +4259,12 @@ class StaticAnalyzer(BaseAnalyzer):
             if any(indicator in content for indicator in network_indicators) or self._content_uses_external_socket_api(
                 content
             ):
-                return True
-        return False
+                return skill_file.relative_path
+        return None
+
+    def _code_uses_network(self, skill: Skill) -> bool:
+        """Check if code makes network requests."""
+        return self._code_network_usage_path(skill) is not None
 
     def _scan_asset_files(self, skill: Skill) -> list[Finding]:
         """Scan files in assets/, templates/, and references/ directories for injection patterns."""
@@ -2675,6 +4450,59 @@ class StaticAnalyzer(BaseAnalyzer):
                 snippet = snippet.replace(matched_text, redacted)
             matched_text = redacted
 
+        file_path = str(match.get("file_path") or "")
+        context_value = match.get("context_kind")
+        context_kind = (
+            context_value if isinstance(context_value, str) and context_value in SIGNATURE_CONTEXT_KINDS else "unknown"
+        )
+        polarity_value = match.get("polarity")
+        polarity = (
+            polarity_value if isinstance(polarity_value, str) and polarity_value in SIGNATURE_POLARITIES else "unknown"
+        )
+        evidence_kind = "signature_pattern"
+        evidence_value_class: str | None = None
+        evidence_count: int | None = None
+        candidate_command: dict[str, Any] | None = None
+        candidate_flow: dict[str, Any] | None = None
+        extra_signals: list[dict[str, Any]] = []
+        candidate_evidence_metadata = (
+            {
+                "evidence_value_class": evidence_value_class,
+                "evidence_count": evidence_count,
+            }
+            if evidence_value_class is not None and evidence_count is not None
+            else {}
+        )
+        pattern_index_value = match.get("pattern_index")
+        signature_pattern_index = (
+            pattern_index_value
+            if isinstance(pattern_index_value, int)
+            and not isinstance(pattern_index_value, bool)
+            and pattern_index_value >= 0
+            else None
+        )
+        match_start_value = match.get("match_start")
+        match_end_value = match.get("match_end")
+        signature_match_start = (
+            match_start_value
+            if isinstance(match_start_value, int) and not isinstance(match_start_value, bool) and match_start_value >= 0
+            else None
+        )
+        signature_match_end = (
+            match_end_value
+            if isinstance(match_end_value, int)
+            and not isinstance(match_end_value, bool)
+            and signature_match_start is not None
+            and match_end_value >= signature_match_start
+            else None
+        )
+        matched_pattern_value = match.get("matched_pattern")
+        signature_pattern_sha256 = (
+            hashlib.sha256(matched_pattern_value.encode("utf-8")).hexdigest()
+            if isinstance(matched_pattern_value, str)
+            else None
+        )
+
         return Finding(
             id=self._generate_finding_id(rule.id, f"{match.get('file_path', 'unknown')}:{match.get('line_number', 0)}"),
             rule_id=rule.id,
@@ -2682,7 +4510,7 @@ class StaticAnalyzer(BaseAnalyzer):
             severity=rule.severity,
             title=rule.description,
             description=f"Pattern detected: {matched_text}",
-            file_path=match.get("file_path"),
+            file_path=file_path,
             line_number=match.get("line_number"),
             snippet=snippet,
             remediation=rule.remediation,
@@ -2690,9 +4518,31 @@ class StaticAnalyzer(BaseAnalyzer):
             metadata={
                 "matched_pattern": match.get("matched_pattern"),
                 "matched_text": matched_text,
+                "signature_pattern_index": signature_pattern_index,
+                "signature_match_start": signature_match_start,
+                "signature_match_end": signature_match_end,
+                "signature_pattern_sha256": signature_pattern_sha256,
                 "aitech": threat_mapping.get("aitech") if threat_mapping else None,
                 "aitech_name": threat_mapping.get("aitech_name") if threat_mapping else None,
                 "scanner_category": threat_mapping.get("scanner_category") if threat_mapping else None,
+                "signature_context": context_kind,
+                "signature_polarity": polarity,
+                **candidate_evidence_metadata,
+                "source_category": rule.source_category,
+                "category_normalization": rule.category_resolution,
+                **_semantic_metadata(
+                    rule_id=rule.id,
+                    file_path=file_path,
+                    evidence_kind=evidence_kind,
+                    context_kind=context_kind,
+                    signal_kind="signature_polarity",
+                    value_class=polarity,
+                    evidence_value_class=evidence_value_class,
+                    evidence_count=evidence_count,
+                    candidate_command=candidate_command,
+                    candidate_flow=candidate_flow,
+                    extra_signals=extra_signals,
+                ),
             },
         )
 
@@ -2741,7 +4591,6 @@ class StaticAnalyzer(BaseAnalyzer):
 
         # Track which files have been scanned
         scanned_files = {"SKILL.md"}
-
         # Scan ALL files, not just scripts
         for skill_file in skill.files:
             if skill_file.relative_path in scanned_files:
@@ -2767,6 +4616,16 @@ class StaticAnalyzer(BaseAnalyzer):
                         for match in yara_matches:
                             rule_name = match.get("rule_name", "")
                             if not self._is_rule_enabled(rule_name):
+                                continue
+                            # Raw OOXML ZIP bytes and inert embedded media/font
+                            # bytes are not a Unicode text channel.  Suppress
+                            # only when the bounded extractor supplied exact
+                            # provenance; unopened containers and every other
+                            # member fail open.  Readable OOXML members are
+                            # scanned below so active document text is retained.
+                            if rule_name == "prompt_injection_unicode_steganography" and _is_inert_ooxml_unicode_asset(
+                                skill_file
+                            ):
                                 continue
                             # Skip shebang-in-binary for inert file types (images,
                             # fonts, databases) — shebang-like bytes are coincidental.
@@ -2800,8 +4659,17 @@ class StaticAnalyzer(BaseAnalyzer):
                     # Skip code-only YARA rules for non-script files (markdown, configs)
                     is_non_script = skill_file.file_type not in ("python", "bash")
                     if is_non_script and rule_name in _CODE_ONLY_YARA_RULES:
-                        # Exception: SKILL.md is already scanned above
-                        continue
+                        # Hidden Unicode remains actionable in readable OOXML
+                        # members, including document/slide/sheet content,
+                        # relationships, and unknown parts.  These files have
+                        # bounded extraction provenance and must not inherit the
+                        # generic config/document skip used by other code rules.
+                        if not (
+                            rule_name == "prompt_injection_unicode_steganography"
+                            and _is_extracted_ooxml_text(skill_file)
+                        ):
+                            # Exception: SKILL.md is already scanned above
+                            continue
 
                     # embedded_shebang_in_binary is only meaningful for binary files;
                     # text files (markdown, scripts) legitimately contain shebangs in
@@ -3010,6 +4878,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 indicators = oid.check()
 
                 has_macros = False
+                macro_analysis_incomplete = False
                 is_encrypted = False
                 suspicious_indicators: list[str] = []
 
@@ -3018,12 +4887,16 @@ class StaticAnalyzer(BaseAnalyzer):
                     ind_value = getattr(indicator, "value", None)
                     ind_name = getattr(indicator, "name", str(indicator))
 
-                    if ind_id == "vba_macros" and ind_value:
+                    macro_kind = classify_oleid_macro_indicator(ind_id, ind_value)
+                    if macro_kind == VBA_MACRO:
                         has_macros = True
                         suspicious_indicators.append(f"VBA macros detected: {ind_value}")
-                    elif ind_id == "xlm_macros" and ind_value:
+                    elif macro_kind == XLM_MACRO:
                         has_macros = True
                         suspicious_indicators.append(f"XLM/Excel4 macros detected: {ind_value}")
+                    elif macro_kind == INCONCLUSIVE_MACRO_ANALYSIS:
+                        macro_analysis_incomplete = True
+                        suspicious_indicators.append(f"Macro analysis was inconclusive: {ind_id}")
                     elif ind_id == "encrypted" and ind_value:
                         is_encrypted = True
                         suspicious_indicators.append(f"Document is encrypted: {ind_value}")
@@ -3041,9 +4914,13 @@ class StaticAnalyzer(BaseAnalyzer):
                 if has_macros:
                     severity = Severity.CRITICAL
                     title = "Office document contains VBA macros"
-                elif is_encrypted:
+                elif is_encrypted or macro_analysis_incomplete:
                     severity = Severity.HIGH
-                    title = "Office document is encrypted (resists analysis)"
+                    title = (
+                        "Office macro analysis was incomplete"
+                        if macro_analysis_incomplete
+                        else "Office document is encrypted (resists analysis)"
+                    )
                 else:
                     severity = Severity.MEDIUM
                     title = "Office document contains suspicious indicators"
@@ -3089,7 +4966,7 @@ class StaticAnalyzer(BaseAnalyzer):
         but are from different scripts (e.g., Cyrillic 'a' vs Latin 'a').
         """
         try:
-            from confusable_homoglyphs import confusables  # type: ignore[import-untyped]
+            from confusable_homoglyphs import confusables
         except ImportError:
             logger.debug("confusable-homoglyphs not installed – skipping homoglyph check")
             return []
@@ -3222,6 +5099,14 @@ class StaticAnalyzer(BaseAnalyzer):
                     metadata={
                         "affected_lines": len(dangerous_lines),
                         "analysis_method": "confusable_homoglyphs",
+                        **_semantic_metadata(
+                            rule_id="HOMOGLYPH_ATTACK",
+                            file_path=sf.relative_path,
+                            evidence_kind="unicode_confusable",
+                            context_kind="code",
+                            signal_kind="unicode_homoglyph",
+                            value_class="mixed_script",
+                        ),
                     },
                 )
             )
@@ -3361,7 +5246,10 @@ class StaticAnalyzer(BaseAnalyzer):
         _TEST_FILE_RE = re.compile(r"^(?:test_|tests_).*\.py$|^.*_test\.py$|^conftest\.py$", re.IGNORECASE)
 
         for sf in skill.files:
-            if sf.file_type in ("python", "bash") or sf.path.suffix.lower() in code_extensions:
+            if (
+                sf.file_type in ("python", "bash", "javascript", "typescript")
+                or sf.path.suffix.lower() in code_extensions
+            ):
                 rel = sf.relative_path
                 # Skip SKILL.md itself
                 if rel.lower() == "skill.md":
@@ -3413,6 +5301,14 @@ class StaticAnalyzer(BaseAnalyzer):
                         metadata={
                             "extracted_from": sf.extracted_from,
                             "file_type": sf.file_type,
+                            **_semantic_metadata(
+                                rule_id="ARCHIVE_CONTAINS_EXECUTABLE",
+                                file_path=sf.relative_path,
+                                evidence_kind="archive_inventory",
+                                context_kind="code",
+                                signal_kind="archived_executable",
+                                value_class=sf.file_type,
+                            ),
                         },
                     )
                 )
@@ -3431,13 +5327,18 @@ class StaticAnalyzer(BaseAnalyzer):
         meta = match["meta"].get("meta", {})
 
         category, severity = self._map_yara_rule_to_threat(rule_name, meta)
+        context_kind_override = classify_yara_behavior_context(
+            rule_name,
+            match.get("strings"),
+            file_path,
+        )
 
         from ..command_safety import evaluate_command
 
         safe_cleanup_dirs = self.policy.system_cleanup.safe_rm_targets or _DEFAULT_SAFE_CLEANUP_DIRS
         placeholder_markers = self.policy.credentials.placeholder_markers or _DEFAULT_PLACEHOLDER_MARKERS
 
-        for string_match in match["strings"]:
+        for string_match in _yara_candidate_string_matches(match, meta):
             # Skip exclusion patterns (these are used in YARA conditions but shouldn't create findings)
             string_identifier = string_match.get("identifier", "")
             if string_identifier.startswith("$documentation") or string_identifier.startswith("$safe"):
@@ -3585,6 +5486,13 @@ class StaticAnalyzer(BaseAnalyzer):
                         "yara_namespace": namespace,
                         "matched_string": string_match["identifier"],
                         "threat_type": threat_type,
+                        **_yara_semantic_metadata(
+                            rule_name=rule_name,
+                            meta=meta,
+                            file_path=file_path or "",
+                            match_offset=string_match.get("offset"),
+                            context_kind_override=context_kind_override,
+                        ),
                     },
                 )
             )
@@ -3598,6 +5506,20 @@ class StaticAnalyzer(BaseAnalyzer):
 
     def _map_yara_rule_to_threat(self, rule_name: str, meta: dict[str, Any]) -> tuple:
         """Map YARA rule to ThreatCategory and Severity."""
+        # Schema-v2 trusted packs make the manifest authoritative.  The YARA
+        # scanner injects these normalized fields after compilation; prefer
+        # them over legacy threat labels embedded in source files.
+        category_value = meta.get("category")
+        severity_value = meta.get("severity")
+        if isinstance(category_value, str) and isinstance(severity_value, str):
+            try:
+                return ThreatCategory(category_value), Severity(severity_value.upper())
+            except ValueError:
+                # Bundled legacy rules continue through the historical mapping
+                # below.  Trusted values were validated before compilation, so
+                # this path is only defensive for direct/custom scanner use.
+                pass
+
         threat_type = meta.get("threat_type", "").upper()
         classification = meta.get("classification", "harmful")
 

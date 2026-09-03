@@ -1,4 +1,17 @@
-# Copyright 2026 Cisco Systems, Inc.
+# Copyright 2026 Cisco Systems, Inc. and its affiliates
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -25,6 +38,7 @@ from typing import Any
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from evals.runners.finding_matcher import ValidatedExpectation, match_findings, validate_expectation_document
 from skill_scanner.core.models import Severity, ThreatCategory
 from skill_scanner.core.scan_policy import ScanPolicy
 from skill_scanner.core.scanner import SkillScanner
@@ -50,13 +64,17 @@ class PolicyResult:
     eval_recall: float = 0.0
     eval_f1: float = 0.0
     eval_accuracy: float = 0.0
-    # Finding-level eval metrics (category + severity matching)
+    # Finding-level eval metrics (canonical one-to-one identity matching)
     eval_finding_tp: int = 0
     eval_finding_fp: int = 0
     eval_finding_fn: int = 0
     eval_finding_precision: float = 0.0
     eval_finding_recall: float = 0.0
     eval_finding_f1: float = 0.0
+    eval_errors: int = 0
+    eval_strict_cases: int = 0
+    eval_legacy_degraded_cases: int = 0
+    eval_invalid_expectations: int = 0
     # Corpus metrics
     corpus_skills_scanned: int = 0
     corpus_total_findings: int = 0
@@ -108,90 +126,172 @@ def _severity_bucket(severity: Severity) -> str:
 
 
 def run_eval_benchmark(scanner: SkillScanner, eval_dir: Path) -> dict:
-    """Run against eval skills and calculate precision/recall."""
-    results = []
+    """Run against labeled eval skills without allowing failures to improve metrics.
+
+    Every expectation document contributes one package to the accuracy
+    denominator.  Invalid expectations are evaluation errors rather than
+    silently skipped cases.  Once a document has a trustworthy label, a
+    missing package or analyzer failure is scored as the opposite package
+    verdict: a malicious package becomes a false negative and a benign package
+    becomes a false positive.  Finding metrics are based exclusively on the
+    canonical one-to-one matcher.
+    """
+    results: list[dict[str, Any]] = []
     finding_tp = 0
     finding_fp = 0
     finding_fn = 0
+    errors = 0
+
+    def record_error(
+        *,
+        skill_name: str,
+        message: str,
+        error_kind: str,
+        validated: ValidatedExpectation | None = None,
+    ) -> None:
+        """Record an incomplete case and conservatively score known labels."""
+        nonlocal errors, finding_fn
+        errors += 1
+
+        expected_safe = validated.expected_safe if validated is not None else None
+        expected_findings = validated.expected_findings if validated is not None else ()
+        # Never turn an execution failure into a true positive/negative.  If
+        # the label is known, force the package-level outcome to be wrong.
+        actual_safe = not expected_safe if expected_safe is not None else None
+        finding_fn += len(expected_findings)
+        results.append(
+            {
+                "skill_name": skill_name,
+                "expected_safe": expected_safe,
+                "actual_safe": actual_safe,
+                "correct": False,
+                "finding_count": 0,
+                "expected_findings": len(expected_findings),
+                "matched_findings": 0,
+                "false_positives": 0,
+                "false_negatives": len(expected_findings),
+                "evaluation_quality": (validated.evaluation_quality if validated is not None else "invalid"),
+                "error_kind": error_kind,
+                "error": message,
+            }
+        )
 
     for expected_file in sorted(eval_dir.rglob("_expected.json")):
         skill_dir = expected_file.parent
-        if not (skill_dir / "SKILL.md").exists():
+        skill_file = skill_dir / "SKILL.md"
+
+        try:
+            with open(expected_file, encoding="utf-8") as f:
+                expected = json.load(f)
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            record_error(
+                skill_name=skill_dir.name,
+                message=f"invalid expectation document: {exc}",
+                error_kind="expectation",
+            )
             continue
 
-        with open(expected_file, encoding="utf-8") as f:
-            expected = json.load(f)
+        fallback_name = expected.get("skill_name", skill_dir.name) if isinstance(expected, dict) else skill_dir.name
+        try:
+            # A missing package cannot have its provenance hash verified.  We
+            # still validate the document structure so its label can be used
+            # to score the missing-input failure conservatively.
+            validated = validate_expectation_document(
+                expected,
+                fixture_dir=skill_dir if skill_file.is_file() else None,
+            )
+        except (OSError, ValueError) as exc:
+            record_error(
+                skill_name=str(fallback_name),
+                message=f"invalid expectation document: {exc}",
+                error_kind="expectation",
+            )
+            continue
 
-        skill_name = expected.get("skill_name", skill_dir.name)
-        expected_safe = expected.get("expected_safe", True)
+        skill_name = validated.skill_name
+        if not skill_file.is_file():
+            record_error(
+                skill_name=skill_name,
+                message="fixture is missing SKILL.md",
+                error_kind="missing_skill",
+                validated=validated,
+            )
+            continue
 
         try:
             scan_result = scanner.scan_skill(skill_dir)
-            actual_safe = scan_result.is_safe
-            actual_pairs = [(f.category.value, f.severity.value) for f in scan_result.findings]
-
-            expected_pairs = [
-                (
-                    str(item.get("category", "")).lower(),
-                    str(item.get("severity", "")).upper(),
+            analyzers_failed = getattr(scan_result, "analyzers_failed", [])
+            if analyzers_failed:
+                failed_names = ", ".join(
+                    str(item.get("analyzer", "unknown")) if isinstance(item, dict) else str(item)
+                    for item in analyzers_failed
                 )
-                for item in expected.get("expected_findings", [])
-                if item.get("category") and item.get("severity")
-            ]
+                record_error(
+                    skill_name=skill_name,
+                    message=f"analyzer failure: {failed_names}",
+                    error_kind="analyzer",
+                    validated=validated,
+                )
+                continue
 
-            expected_counts: dict[tuple[str, str], int] = defaultdict(int)
-            actual_counts: dict[tuple[str, str], int] = defaultdict(int)
-            for pair in expected_pairs:
-                expected_counts[pair] += 1
-            for pair in actual_pairs:
-                actual_counts[pair] += 1
-
-            matched = 0
-            for pair, exp_count in expected_counts.items():
-                act_count = actual_counts.get(pair, 0)
-                matched += min(exp_count, act_count)
+            actual_safe = scan_result.is_safe
+            match_result = match_findings(validated.expected_findings, scan_result.findings)
+            matched = match_result.matched_count
+            unmatched_actual = len(match_result.unmatched_actual_indices)
+            unmatched_expected = len(match_result.unmatched_expected_indices)
 
             finding_tp += matched
-            finding_fp += max(0, len(actual_pairs) - matched)
-            finding_fn += max(0, len(expected_pairs) - matched)
+            finding_fp += unmatched_actual
+            finding_fn += unmatched_expected
 
             results.append(
                 {
                     "skill_name": skill_name,
-                    "expected_safe": expected_safe,
+                    "expected_safe": validated.expected_safe,
                     "actual_safe": actual_safe,
+                    "correct": validated.expected_safe == actual_safe,
                     "finding_count": len(scan_result.findings),
-                    "expected_findings": len(expected_pairs),
+                    "expected_findings": len(validated.expected_findings),
+                    "matched_findings": matched,
+                    "false_positives": unmatched_actual,
+                    "false_negatives": unmatched_expected,
+                    "evaluation_quality": validated.evaluation_quality,
                 }
             )
-        except Exception as e:
-            results.append(
-                {
-                    "skill_name": skill_name,
-                    "expected_safe": expected_safe,
-                    "actual_safe": True,  # assume safe on error
-                    "finding_count": 0,
-                    "expected_findings": len(expected.get("expected_findings", [])),
-                    "error": str(e),
-                }
+        except Exception as exc:
+            record_error(
+                skill_name=skill_name,
+                message=f"scan or finding comparison failed: {exc}",
+                error_kind="scan",
+                validated=validated,
             )
 
     # Calculate metrics
-    tp = sum(1 for r in results if not r["expected_safe"] and not r["actual_safe"])
-    fp = sum(1 for r in results if r["expected_safe"] and not r["actual_safe"])
-    tn = sum(1 for r in results if r["expected_safe"] and r["actual_safe"])
-    fn = sum(1 for r in results if not r["expected_safe"] and r["actual_safe"])
+    labeled_results = [result for result in results if result["expected_safe"] is not None]
+    tp = sum(1 for r in labeled_results if not r["expected_safe"] and not r["actual_safe"])
+    fp = sum(1 for r in labeled_results if r["expected_safe"] and not r["actual_safe"])
+    tn = sum(1 for r in labeled_results if r["expected_safe"] and r["actual_safe"])
+    fn = sum(1 for r in labeled_results if not r["expected_safe"] and r["actual_safe"])
 
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-    accuracy = (tp + tn) / len(results) if results else 0.0
+    # Invalid expectations have no trustworthy class label, but remain in the
+    # denominator and can never count as correct.
+    accuracy = sum(1 for result in results if result["correct"]) / len(results) if results else 0.0
     finding_precision = finding_tp / (finding_tp + finding_fp) if (finding_tp + finding_fp) > 0 else 0.0
     finding_recall = finding_tp / (finding_tp + finding_fn) if (finding_tp + finding_fn) > 0 else 0.0
     finding_f1 = (
         2 * finding_precision * finding_recall / (finding_precision + finding_recall)
         if (finding_precision + finding_recall) > 0
         else 0.0
+    )
+    strict_cases = sum(1 for result in results if result["evaluation_quality"] == "strict")
+    legacy_degraded_cases = sum(1 for result in results if result["evaluation_quality"] == "legacy_degraded")
+    invalid_expectations = sum(
+        1
+        for result in results
+        if result["evaluation_quality"] == "invalid" and result.get("error_kind") == "expectation"
     )
 
     return {
@@ -210,6 +310,11 @@ def run_eval_benchmark(scanner: SkillScanner, eval_dir: Path) -> dict:
         "finding_precision": finding_precision,
         "finding_recall": finding_recall,
         "finding_f1": finding_f1,
+        "errors": errors,
+        "complete": errors == 0,
+        "strict_cases": strict_cases,
+        "legacy_degraded_cases": legacy_degraded_cases,
+        "invalid_expectations": invalid_expectations,
         "details": results,
     }
 
@@ -321,10 +426,20 @@ def run_policy_benchmark(
         pr.eval_finding_precision = eval_result["finding_precision"]
         pr.eval_finding_recall = eval_result["finding_recall"]
         pr.eval_finding_f1 = eval_result["finding_f1"]
+        pr.eval_errors = eval_result["errors"]
+        pr.eval_strict_cases = eval_result["strict_cases"]
+        pr.eval_legacy_degraded_cases = eval_result["legacy_degraded_cases"]
+        pr.eval_invalid_expectations = eval_result["invalid_expectations"]
         print(f"         Precision={pr.eval_precision:.1%}  Recall={pr.eval_recall:.1%}  F1={pr.eval_f1:.1%}")
         print(
             f"         Finding Precision={pr.eval_finding_precision:.1%}  "
-            f"Recall={pr.eval_finding_recall:.1%}  F1={pr.eval_finding_f1:.1%}"
+            f"Recall={pr.eval_finding_recall:.1%}  F1={pr.eval_finding_f1:.1%}  "
+            f"Errors={pr.eval_errors}"
+        )
+        print(
+            f"         Label quality: strict={pr.eval_strict_cases}  "
+            f"legacy-degraded={pr.eval_legacy_degraded_cases}  "
+            f"invalid={pr.eval_invalid_expectations}"
         )
 
         # --- Corpus ---
@@ -383,16 +498,18 @@ def generate_report(results: list[PolicyResult], output_path: Path) -> str:
     w("## Eval Skills (Ground Truth)")
     w("")
     w(
-        "| # | Policy | Precision | Recall | F1 | Accuracy | TP | FP | TN | FN | Finding Precision | Finding Recall | Finding F1 | Time |"
+        "| # | Policy | Precision | Recall | F1 | Accuracy | TP | FP | TN | FN | Errors | Strict | Legacy-degraded | Invalid | Finding Precision | Finding Recall | Finding F1 | Time |"
     )
     w(
-        "|---|--------|-----------|--------|-----|----------|----|----|----|----|-------------------|----------------|------------|------|"
+        "|---|--------|-----------|--------|-----|----------|----|----|----|----|--------|--------|-----------------|---------|-------------------|----------------|------------|------|"
     )
     for i, r in enumerate(results, 1):
         w(
             f"| {i} | **{r.policy_name}** | {r.eval_precision:.1%} | {r.eval_recall:.1%} | "
             f"{r.eval_f1:.1%} | {r.eval_accuracy:.1%} | {r.eval_tp} | {r.eval_fp} | {r.eval_tn} | {r.eval_fn} | "
-            f"{r.eval_finding_precision:.1%} | {r.eval_finding_recall:.1%} | {r.eval_finding_f1:.1%} | "
+            f"{r.eval_errors} | {r.eval_strict_cases} | {r.eval_legacy_degraded_cases} | "
+            f"{r.eval_invalid_expectations} | {r.eval_finding_precision:.1%} | {r.eval_finding_recall:.1%} | "
+            f"{r.eval_finding_f1:.1%} | "
             f"{r.eval_duration_s:.2f}s |"
         )
     w("")
@@ -578,6 +695,11 @@ def main():
                     "finding_precision": r.eval_finding_precision,
                     "finding_recall": r.eval_finding_recall,
                     "finding_f1": r.eval_finding_f1,
+                    "errors": r.eval_errors,
+                    "complete": r.eval_errors == 0,
+                    "strict_cases": r.eval_strict_cases,
+                    "legacy_degraded_cases": r.eval_legacy_degraded_cases,
+                    "invalid_expectations": r.eval_invalid_expectations,
                     "duration_s": r.eval_duration_s,
                 },
                 "corpus": {

@@ -41,7 +41,7 @@ This will:
 | `format` | string | `sarif` | Output format: summary, json, markdown, table, sarif, html |
 | `policy` | string | `balanced` | Scan policy: strict, balanced, permissive, or path to YAML |
 | `fail_on_severity` | string | `high` | Fail if findings at/above this severity |
-| `python_version` | string | `3.12` | Python version for the runner |
+| `python_version` | string | `3.12` | Numeric CPython version from 3.11 through 3.14 |
 | `upload_sarif` | boolean | `true` | Upload SARIF to Code Scanning |
 | `use_llm` | boolean | `false` | Enable LLM semantic analysis |
 | `llm_model` | string | `""` | LLM model name (maps to `SKILL_SCANNER_LLM_MODEL` env var, e.g. `gpt-4o`) |

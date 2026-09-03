@@ -86,8 +86,11 @@ class TestMetaAnalysisResult:
         result = MetaAnalysisResult(
             validated_findings=[
                 {
+                    "_index": 0,
+                    "_source_identity_bound": True,
                     "id": "test_1",
                     "rule_id": "TEST_RULE",
+                    "analyzer": "static",
                     "category": "prompt_injection",
                     "severity": "HIGH",
                     "title": "Test Finding",
@@ -118,6 +121,7 @@ class TestMetaAnalysisResult:
             missed_threats=[
                 {
                     "aitech": "AITech-1.1",
+                    "category": "malware",
                     "severity": "HIGH",
                     "title": "Missed Prompt Injection",
                     "description": "Detected by meta-analysis",
@@ -133,6 +137,125 @@ class TestMetaAnalysisResult:
         assert findings[0].title == "Missed Prompt Injection"
         assert findings[0].analyzer == "meta"
         assert findings[0].metadata.get("meta_detected") is True
+        assert findings[0].rule_id == "META_DETECTED_PROMPT_INJECTION"
+        assert findings[0].category is ThreatCategory.PROMPT_INJECTION
+        assert findings[0].metadata["model_category"] == "malware"
+        assert findings[0].metadata["canonical_category"] == "prompt_injection"
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            {
+                "_index": 0,
+                "_source_identity_bound": True,
+                "analyzer": "static",
+                "category": "policy_violation",
+                "severity": "MEDIUM",
+            },
+            {
+                "_index": 0,
+                "_source_identity_bound": True,
+                "rule_id": "TEST_RULE",
+                "category": "policy_violation",
+                "severity": "MEDIUM",
+            },
+            {
+                "_index": 0,
+                "rule_id": "TEST_RULE",
+                "analyzer": "static",
+                "category": "policy_violation",
+                "severity": "MEDIUM",
+            },
+        ],
+    )
+    def test_validated_finding_without_bound_source_identity_is_rejected(self, entry: dict[str, object]):
+        """Meta validation may not invent a generic replacement identity."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisResult
+
+        skill = MagicMock(spec=Skill)
+        skill.name = "test-skill"
+        result = MetaAnalysisResult(validated_findings=[entry])
+
+        assert result.get_validated_findings(skill) == []
+
+    def test_safe_missed_threat_is_rejected(self):
+        """SAFE is an overall verdict, not a newly detected threat."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisResult
+
+        skill = MagicMock(spec=Skill)
+        skill.name = "test-skill"
+        result = MetaAnalysisResult(
+            missed_threats=[
+                {
+                    "severity": "SAFE",
+                    "category": "policy_violation",
+                    "title": "Not a threat",
+                }
+            ]
+        )
+
+        assert result.get_missed_threats(skill) == []
+
+    @pytest.mark.parametrize("category", list(ThreatCategory))
+    def test_category_specific_missed_identity_matches_manifest(self, category: ThreatCategory):
+        """Every canonical missed-threat category has one strict pack identity."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisResult
+        from skill_scanner.core.python_rule_inventory import meta_detected_rule_id
+        from skill_scanner.core.rule_registry import PackLoader
+
+        skill = MagicMock(spec=Skill)
+        skill.name = "test-skill"
+        result = MetaAnalysisResult(
+            missed_threats=[
+                {
+                    "severity": "INFO",
+                    "category": category.value,
+                    "title": "Bounded missed threat",
+                    "description": "Inert test evidence",
+                }
+            ]
+        )
+
+        finding = result.get_missed_threats(skill)[0]
+        assert finding.rule_id == meta_detected_rule_id(category)
+        assert finding.category is category
+        assert PackLoader().build_registry().validate_bundled_python_finding(finding, require_known=True) == ()
+
+    def test_enrichment_overwrites_untrusted_identity_with_known_source(self):
+        """Validated copies are bound to their original detector identity."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisResult, MetaAnalyzer
+
+        original = Finding(
+            id="source-id",
+            rule_id="SOURCE_RULE",
+            category=ThreatCategory.PROMPT_INJECTION,
+            severity=Severity.HIGH,
+            title="Source title",
+            description="Source description",
+            analyzer="static",
+        )
+        result = MetaAnalysisResult(
+            validated_findings=[
+                {
+                    "_index": 0,
+                    "id": "model-id",
+                    "rule_id": "MODEL_RULE",
+                    "category": "malware",
+                    "severity": "CRITICAL",
+                    "analyzer": "meta",
+                }
+            ]
+        )
+
+        MetaAnalyzer._enrich_findings(MetaAnalyzer.__new__(MetaAnalyzer), result, [original])
+
+        enriched = result.validated_findings[0]
+        assert enriched["id"] == original.id
+        assert enriched["rule_id"] == original.rule_id
+        assert enriched["category"] == original.category.value
+        assert enriched["severity"] == original.severity.value
+        assert enriched["analyzer"] == original.analyzer
+        assert enriched["_source_identity_bound"] is True
 
 
 class TestOverallRiskAssessmentNormalization:
@@ -208,9 +331,9 @@ class TestOverallRiskAssessmentNormalization:
         assert normalized["skill_verdict"] == "UNKNOWN"
         assert normalized["raw_skill_verdict"] == "   "
 
-    def test_parse_response_applies_normalization(self):
-        """The normalization runs on every parsed batch response, not just in isolation."""
-        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+    def test_parse_response_rejects_off_schema_assessment(self):
+        """Provider output must satisfy the strict assessment contract before normalization."""
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisParseError, MetaAnalyzer
 
         analyzer = MetaAnalyzer(model="test-model", api_key="test-key")
         response = json.dumps(
@@ -229,11 +352,8 @@ class TestOverallRiskAssessmentNormalization:
             }
         )
 
-        result = analyzer._parse_response(response, [], original_indices=[])
-
-        assert result.overall_risk_assessment["risk_level"] == "UNKNOWN"
-        assert result.overall_risk_assessment["raw_risk_level"] == "none"
-        assert result.overall_risk_assessment["skill_verdict"] == "SUSPICIOUS"
+        with pytest.raises(MetaAnalysisParseError, match="missing or unexpected fields"):
+            analyzer._parse_response(response, [], original_indices=[], fallback_on_error=False)
 
     @pytest.mark.parametrize(
         ("assessment", "missing_fields"),
@@ -243,8 +363,8 @@ class TestOverallRiskAssessmentNormalization:
             ({"summary": "missing both"}, ("risk_level", "skill_verdict")),
         ],
     )
-    def test_parse_response_degrades_missing_required_assessment_fields(self, assessment, missing_fields):
-        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+    def test_parse_response_rejects_missing_required_assessment_fields(self, assessment, missing_fields):
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisParseError, MetaAnalyzer
 
         analyzer = MetaAnalyzer(model="test-model", api_key="test-key")
         response = json.dumps(
@@ -259,21 +379,9 @@ class TestOverallRiskAssessmentNormalization:
             }
         )
 
-        original_finding = Finding(
-            id="finding-0",
-            rule_id="RULE_0",
-            category=ThreatCategory.PROMPT_INJECTION,
-            severity=Severity.HIGH,
-            title="Original finding",
-            description="Retained during schema degradation",
-            analyzer="static",
-        )
-        result = analyzer._parse_response(response, [original_finding], original_indices=[0])
-
-        assert result.analysis_warnings[0]["code"] == "META_RESPONSE_SCHEMA_INCOMPLETE"
-        for missing_field in missing_fields:
-            assert result.overall_risk_assessment[missing_field] == "UNKNOWN"
-            assert missing_field in result.analysis_warnings[0]["message"]
+        assert missing_fields
+        with pytest.raises(MetaAnalysisParseError, match="missing or unexpected fields"):
+            analyzer._parse_response(response, [], original_indices=[], fallback_on_error=False)
 
 
 class TestMetaAnalyzerInit:
@@ -423,7 +531,7 @@ class TestApplyMetaAnalysis:
         skill = MagicMock(spec=Skill)
         skill.name = "test-skill"
 
-        original_findings = []
+        original_findings: list[Finding] = []
 
         meta_result = MetaAnalysisResult(
             validated_findings=[],

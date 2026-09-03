@@ -10,13 +10,18 @@ order: 2
 
 | Dependency | Version | Notes |
 |------------|---------|-------|
-| **Python** | 3.10–3.13 | Required for the CLI and all analyzers |
+| **Python** | CPython 3.11–3.14 | Required for the CLI and all analyzers |
 | **uv** | Latest | Recommended package manager ([install](https://docs.astral.sh/uv/)) |
 | **pip** | Latest | Alternative to uv |
 
 <Callout type="tip">
-  No other dependencies are required for core scanning. LLM, VirusTotal, and AI Defense analyzers need API keys configured as environment variables.
+  Published wheels include the required CEL helper. LLM, VirusTotal, and AI Defense analyzers need API keys configured as environment variables.
 </Callout>
+
+Published wheels support glibc Linux x86-64/ARM64, macOS x86-64/ARM64, and
+Windows x86-64. The CEL helper supports macOS 13+, while the complete scanner
+currently requires macOS 14+ because of the YARA-X wheel floor. Alpine/musl,
+PyPy, Windows ARM, Python 3.10, and Python 3.15+ are unsupported.
 
 ---
 
@@ -52,10 +57,19 @@ pip install cisco-ai-skill-scanner[all]
 
 Use this if you want to contribute or run the latest development version:
 
+Source builds require Go 1.27.1+ and compile the pinned official `cel-go`
+v0.32.0 helper for the host.
+
 ```bash
 git clone https://github.com/cisco-ai-defense/skill-scanner
 cd skill-scanner
 uv sync --all-extras
+```
+
+To rebuild the helper explicitly:
+
+```bash
+uv run python scripts/build_cel_helper.py --in-place
 ```
 
 Run commands with `uv run skill-scanner` when using a source install.
@@ -67,6 +81,7 @@ Run commands with `uv run skill-scanner` when using a source install.
 ```bash
 skill-scanner --help
 skill-scanner list-analyzers
+skill-scanner validate-rules
 ```
 
 GitHub release artifacts are published with build-provenance attestations and an SBOM. For controlled environments, verify the release attestation before installing a downloaded artifact and retain the SBOM with your software inventory.

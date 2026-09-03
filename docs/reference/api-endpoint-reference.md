@@ -81,6 +81,7 @@ curl -X POST http://localhost:8000/scan-upload \
 |---|---|
 | `skill_directory` | `str` |
 | `policy` | `str \| None` |
+| `cel_mode` | `CelMode \| None` |
 | `custom_rules` | `str \| None` |
 | `use_llm` | `bool` |
 | `llm_provider` | `str \| None` |
@@ -108,6 +109,7 @@ curl -X POST http://localhost:8000/scan-upload \
 | `scan_duration_seconds` | `float` |
 | `timestamp` | `str` |
 | `findings` | `list[dict]` |
+| `scan_metadata` | `dict[str, object]` |
 | `llm_usage` | `dict[str, int] \| None` |
 
 ### `HealthResponse`
@@ -124,6 +126,7 @@ curl -X POST http://localhost:8000/scan-upload \
 |---|---|
 | `skills_directory` | `str` |
 | `policy` | `str \| None` |
+| `cel_mode` | `CelMode \| None` |
 | `custom_rules` | `str \| None` |
 | `recursive` | `bool` |
 | `check_overlap` | `bool` |
@@ -145,6 +148,6 @@ curl -X POST http://localhost:8000/scan-upload \
 
 - API behavior is policy-aware and mirrors CLI analyzer selection flags.
 - API keys for VirusTotal and AI Defense are passed via request headers (`X-VirusTotal-Key`, `X-AIDefense-Key`), not in the JSON body.
-- Set `SKILL_SCANNER_ALLOWED_ROOTS` to restrict which directories the API can scan.
+- With `SKILL_SCANNER_ALLOWED_ROOTS` unset, the API can access only its process-private `0700` upload root. Set the variable to allow server-side scan targets, policy files, or custom-rule directories.
 - `llm_reasoning_effort` accepts `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; omission preserves the provider default. Direct Google GenAI SDK requests reject configured controls, while LiteLLM-backed Gemini requests support them.
 - All `POST` endpoints accept JSON bodies. File upload uses `multipart/form-data`.

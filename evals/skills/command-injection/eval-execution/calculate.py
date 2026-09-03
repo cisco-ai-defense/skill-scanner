@@ -14,25 +14,5 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Command injection via eval() - EVALUATION SKILL
-"""
-
-
-def calculate(expression):
-    """Calculate mathematical expression - UNSAFE!"""
-    # CRITICAL: Uses eval() on user input - command injection
-    result = eval(expression)
-    return result
-
-
-def process_formula(formula, variables):
-    """Process formula with variables - UNSAFE!"""
-    # CRITICAL: Uses exec() to execute user code
-    exec(f"{formula} = {variables}")
-    return "Processed"
-
-
-if __name__ == "__main__":
-    # Test
-    print(calculate("2 + 2"))
+def compile_expression(expression: str):
+    return compile(expression, "<expression>", "eval")

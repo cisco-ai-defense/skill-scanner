@@ -6,9 +6,21 @@
 > pip install cisco-ai-skill-scanner
 > skill-scanner scan ./my-skill
 > ```
-> That's it for basic static analysis. The sections below cover optional providers, LLM keys, and advanced toggles.
+> A release containing this branch's CEL changes will include the required
+> helper in its wheels. The sections below cover that release's planned platform
+> matrix, optional providers, LLM keys, and advanced toggles.
 
 ## Installation
+
+This checkout, and a release containing these changes, supports CPython 3.11,
+3.12, 3.13, and 3.14. It rejects Python 3.10 and Python 3.15+.
+
+The release workflow is configured to produce wheels for glibc Linux
+x86-64/ARM64, macOS x86-64/ARM64, and Windows x86-64. The CEL helper supports
+macOS 13+, but the complete scanner's planned minimum is macOS 14 because of the
+YARA-X wheel floor. Alpine/musl, PyPy, and Windows ARM are outside that release
+matrix. Until a release containing these changes is published, the package
+currently served by PyPI may have a different compatibility contract.
 
 ### PyPI (recommended)
 
@@ -22,6 +34,7 @@ pip install cisco-ai-skill-scanner
 
 ```bash
 pip install cisco-ai-skill-scanner[bedrock]
+pip install cisco-ai-skill-scanner[google]
 pip install cisco-ai-skill-scanner[vertex]
 pip install cisco-ai-skill-scanner[azure]
 pip install cisco-ai-skill-scanner[all]
@@ -29,11 +42,24 @@ pip install cisco-ai-skill-scanner[all]
 
 ### From source
 
+Source installations additionally require Go 1.27.1 or newer. The build hook
+compiles the pinned `cel.dev/cel-go` v0.32.0 helper for the host platform.
+
 ```bash
 git clone https://github.com/cisco-ai-defense/skill-scanner
 cd skill-scanner
 uv sync --all-extras
 ```
+
+If the helper needs to be rebuilt explicitly:
+
+```bash
+uv run python scripts/build_cel_helper.py --in-place
+```
+
+`SKILL_SCANNER_CEL_GO_HELPER` is a trusted administrator/developer override for
+a locally built helper. Do not point it at an executable supplied by a scanned
+package or downloaded rule pack.
 
 ## Configuration Priority
 
@@ -104,7 +130,9 @@ You only need to set these if you're using the corresponding features. Click a s
 <details>
 <summary>API server</summary>
 
-- `SKILL_SCANNER_ALLOWED_ROOTS` — colon-delimited path allowlist for server-side path access
+- `SKILL_SCANNER_ALLOWED_ROOTS` — colon-delimited API allowlist for server-side
+  scan targets, policy files, and custom-rule directories. When unset, the API
+  can access only its process-private `0700` upload root.
 
 </details>
 
@@ -125,7 +153,12 @@ These environment variables override the default enabled/disabled state of analy
 ```bash
 skill-scanner --help
 skill-scanner list-analyzers
+skill-scanner validate-rules
 ```
+
+`validate-rules` validates pack metadata and compiles/type-checks every selected
+CEL expression. A missing or incompatible helper is an installation error even
+when the selected policy uses CEL `off`.
 
 ## Next Steps
 

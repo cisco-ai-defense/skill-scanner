@@ -1,23 +1,31 @@
 {
-  "skill_name": "safe-calculator",
-  "expected_safe": false,
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "command-injection.dynamic-compile-001",
+  "skill_name": "expression-compiler",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
   "expected_severity": "CRITICAL",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "1a48b98d3c1fdceb423f83256896658accb9c7836f3c7afb19531289b53c574b",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "897f95ec6f5711653a4bcb546902218d7609d628bb24cacd704040e7cdc6910e",
+    "label_evidence_sha256": "08def792b360a195264cc8b47e4b4a9c79e903688154336030631c5c5b43b785"
+  },
   "expected_findings": [
     {
+      "rule_id": "COMMAND_INJECTION_EVAL",
       "category": "command_injection",
       "severity": "CRITICAL",
-      "description": "Uses eval() on user input - arbitrary code execution"
-    },
-    {
-      "category": "command_injection",
-      "severity": "CRITICAL",
-      "description": "Uses exec() - arbitrary code execution"
-    },
-    {
-      "category": "command_injection",
-      "severity": "MEDIUM",
-      "description": "CODE EXECUTION detected by YARA - eval() and exec() patterns"
+      "file_path": "calculate.py",
+      "analyzer": "static",
+      "line_number": 18
     }
   ],
-  "notes": "Claims to be safe calculator but uses eval/exec - classic command injection. YARA also detects these patterns."
+  "notes": "Human-reviewed minimal replacement for the historical eval/exec case."
 }
