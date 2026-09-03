@@ -7,7 +7,7 @@
     "analyzer": "static",
     "category": "command_injection",
     "severity": "HIGH",
-    "implementation_sha256": "ac685efd52a2ea6feef2fc8a280c0724380c1ed75238515aff4f6633c05e4c1f",
+    "implementation_sha256": "df1b839a580d1ff423977eb3af0718a97bf6b47451b4cc1f33180aface526527",
     "tokenizer_sha256": "f84a5948a8bd9044e3ddda77a0719e2ecb7b5a5565caed0d495d49985e59e47a",
     "reviewed_api_set": {
       "javascript": [
@@ -44,33 +44,33 @@
   },
   "package_results": {
     "incremental_comparator_scope": "current core findings within direct-hit packages, excluding ACTIVE_DYNAMIC_EXECUTION",
-    "direct_hit_packages_scanned": 179,
-    "rule_hits_malicious": 179,
+    "direct_hit_packages_scanned": 180,
+    "rule_hits_malicious": 180,
     "rule_hits_benign": 0,
-    "overlap_existing_core_malicious": 74,
+    "overlap_existing_core_malicious": 75,
     "net_core_blocker_lift_malicious": 105,
     "new_actionable_benign": 0,
-    "hit_selection_sha256": "8dfa44f5835d048698388f94f92438c02af0cb10ecb487df1ccfc873e5c98a03",
+    "hit_selection_sha256": "ac57db22ba99bfa51f8f4d52b0df628a1d25efb888a191e33712941d13db6923",
     "net_lift_selection_sha256": "166719b38a018520c87e0352b53f79de2231ef73d827f345a0007fb1cc1ffac8"
   },
   "rule_confusion": {
     "all_denominator": {
-      "true_positive": 179,
-      "false_negative": 5079,
+      "true_positive": 180,
+      "false_negative": 5078,
       "false_positive": 0,
       "no_finding_benign": 1339,
       "note": "False negatives include two unavailable malicious packages; one no-finding benign package was unavailable and is not claimed as an inspected true negative."
     },
     "available_only": {
-      "true_positive": 179,
-      "false_negative": 5077,
+      "true_positive": 180,
+      "false_negative": 5076,
       "false_positive": 0,
       "true_negative": 1338
     }
   },
   "coverage": {
     "all_hit_sources": {
-      "SRC001": 172,
+      "SRC001": 173,
       "SRC010": 3,
       "SRC013": 4
     },
@@ -78,7 +78,7 @@
       "SRC001": 103,
       "SRC013": 2
     },
-    "all_hit_structural_families": 174,
+    "all_hit_structural_families": 175,
     "all_hit_max_family_support": 2,
     "net_lift_structural_families": 104,
     "net_lift_max_family_support": 2,
@@ -93,6 +93,7 @@
   },
   "normalized_call_counts": {
     "all_hits": {
+      "javascript_child_process": 1,
       "python_eval": 6,
       "python_exec": 18,
       "python_os_system": 87,
@@ -106,19 +107,19 @@
     },
     "all_hit_contexts": {
       "active_instruction": 5,
-      "code": 286
+      "code": 287
     }
   },
   "determinism": {
     "runs": 5,
     "stable": true,
     "normalization": "ordered sample identity/label/calls(api_class,language,line,context), canonical compact sorted-key JSON",
-    "normalized_output_sha256": "65d2ba329f4c8ed004d74b9a4888ec05984071c4ab75b1f51aeadbe033e39b46"
+    "normalized_output_sha256": "fd05c23b5bd1c00d134949c6553ec0a2af860fa8849283b2ab6dfd5df64030e7"
   },
   "limitations": [
     "Development evidence is dominated by SRC001 and does not replace a frozen release-corpus run.",
     "Three endpoint-quarantined rows remain in the denominator but could not be inspected.",
     "The sealed test splits were not accessed and must remain sealed.",
-    "Corpus-wide current-core totals were not reused after adjacent detector changes; incremental lift was remeasured exactly within all 179 direct-hit packages."
+    "Corpus-wide current-core totals were not reused after adjacent detector changes; incremental lift was remeasured exactly within all 180 direct-hit packages."
   ]
 }

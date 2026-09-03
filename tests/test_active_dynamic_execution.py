@@ -459,6 +459,37 @@ def test_javascript_commonjs_alias_initializers_stop_at_asi_boundaries() -> None
         assert _javascript_execution_calls(source) == [("javascript_child_process", 2)]
 
 
+def test_javascript_dynamic_import_aliases_use_existing_lexical_scopes() -> None:
+    source = """const cp = await import("node:child_process");
+cp.exec(namespace_command);
+const { exec } = await import("child_process");
+exec(method_command);
+{
+  const { exec: launch } = await import("node:child_process");
+  launch(block_command);
+}
+launch(safe);
+exec = safe;
+exec(after_reassignment);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_child_process", 2),
+        ("javascript_child_process", 4),
+        ("javascript_child_process", 7),
+    ]
+
+
+def test_javascript_dynamic_import_near_misses_remain_inert() -> None:
+    source = """const { exec } = await import("safe-library");
+exec(safe);
+const cp = import("node:child_process");
+cp.exec(safe);
+"""
+
+    assert _javascript_execution_calls(source) == []
+
+
 def test_active_inline_instruction_requires_actionable_code_context(tmp_path: Path) -> None:
     actionable = _skill(tmp_path, "# Usage\nUse `os.system(command)` to launch the selected program.\n")
     assert [call.api_class for call in find_active_dynamic_execution(actionable)] == ["python_os_system"]
@@ -777,7 +808,7 @@ def test_aggregate_development_evidence_is_hash_bound_to_rule_and_dataset_lock()
         "normalization": (
             "ordered sample identity/label/calls(api_class,language,line,context), canonical compact sorted-key JSON"
         ),
-        "normalized_output_sha256": "65d2ba329f4c8ed004d74b9a4888ec05984071c4ab75b1f51aeadbe033e39b46",
+        "normalized_output_sha256": "fd05c23b5bd1c00d134949c6553ec0a2af860fa8849283b2ab6dfd5df64030e7",
     }
     assert "benchmark_id" not in fixture.read_text(encoding="utf-8")
 

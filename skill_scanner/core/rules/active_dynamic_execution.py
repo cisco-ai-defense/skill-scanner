@@ -1043,6 +1043,27 @@ def _javascript_require_initializer(
     return None
 
 
+def _javascript_dynamic_import_initializer(
+    tokens: list[_JsToken],
+    start: int,
+    end: int,
+    pairs: dict[int, int],
+) -> Literal["child_namespace"] | None:
+    """Recognize one awaited dynamic import of the reviewed Node module."""
+
+    if (
+        start + 5 != end
+        or tokens[start].value != "await"
+        or tokens[start + 1].value != "import"
+        or tokens[start + 2].value != "("
+        or pairs.get(start + 2) != start + 4
+        or tokens[start + 3].kind != "string"
+        or tokens[start + 3].value not in _CHILD_PROCESS_MODULES
+    ):
+        return None
+    return "child_namespace"
+
+
 def _javascript_destructured_exec_bindings(
     tokens: list[_JsToken],
     pattern_start: int,
@@ -1375,7 +1396,7 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
             entries = _javascript_binding_pattern_entries(tokens, declaration, declaration_end, pairs)
             names = {name for name, _token_index in entries}
             initializer = _javascript_initializer_span(tokens, declaration_end, pairs)
-            api_bindings: dict[str, tuple[Literal["child_namespace", "child_exec"], int]] = {}
+            api_bindings: dict[str, tuple[Literal["child_namespace", "child_exec"], int | None]] = {}
             available_from = 0
             if initializer is not None:
                 initializer_start, initializer_end = initializer
@@ -1393,6 +1414,24 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
                             pairs,
                         ):
                             api_bindings[name] = ("child_exec", require_index)
+                else:
+                    dynamic_import = _javascript_dynamic_import_initializer(
+                        tokens,
+                        initializer_start,
+                        initializer_end,
+                        pairs,
+                    )
+                    if dynamic_import is not None:
+                        if len(entries) == 1 and tokens[declaration].kind == "identifier":
+                            api_bindings[entries[0][0]] = (dynamic_import, None)
+                        else:
+                            for name, _token_index in _javascript_destructured_exec_bindings(
+                                tokens,
+                                declaration,
+                                declaration_end,
+                                pairs,
+                            ):
+                                api_bindings[name] = ("child_exec", None)
 
             if (
                 token.value in {"const", "let"}
@@ -1415,7 +1454,7 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
                 if api_binding is None:
                     declare_binding(scope_index, name, token_index)
                     continue
-                kind, require_index = api_binding
+                kind, origin_index = api_binding
                 binding = declare_binding(
                     scope_index,
                     name,
@@ -1423,7 +1462,8 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
                     kind=kind,
                     available_from=available_from,
                 )
-                api_origin_checks.append((binding, require_index))
+                if origin_index is not None:
+                    api_origin_checks.append((binding, origin_index))
             if "eval" in names:
                 scopes[scope_index].shadows_eval = True
 
