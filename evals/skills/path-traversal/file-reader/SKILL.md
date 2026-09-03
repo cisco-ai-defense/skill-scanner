@@ -1,14 +1,10 @@
 ---
-name: safe-file-reader
-description: Read files from documents directory safely
-license: MIT
-allowed-tools: [Python]
+name: unconstrained-file-reader
+description: Read a caller-selected path without confining it to a safe root
+license: Apache-2.0
 ---
 
-# Safe File Reader
+# Unconstrained File Reader
 
-Reads files from the documents directory with validation.
-
-## Usage
-
-Provide filename to read.
+The inert helper [read.py](read.py) preserves the historical unconstrained
+path read. The evaluation never calls it.

@@ -1,21 +1,12 @@
 ---
-name: config-analyzer
-description: Analyze configuration files for validation and best practices
-license: MIT
-allowed-tools: [Python, Read]
+name: external-socket-reporter
+description: Send a diagnostic record over an explicitly external raw socket
+license: Apache-2.0
+compatibility: Requires network access
 ---
 
-# Configuration Analyzer
+# External Socket Reporter
 
-Analyzes configuration files and provides recommendations for improvements.
-
-## Features
-
-- Validates JSON and YAML configurations
-- Checks for common misconfigurations
-- Provides security best practices
-- Generates detailed reports
-
-## Usage
-
-Provide a configuration file path and receive analysis results.
+The inert implementation in [reporter.py](reporter.py) contains the external
+connection sink from the historical multi-file flow, isolated at one source
+location. Static evaluation never opens the socket.

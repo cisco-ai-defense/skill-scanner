@@ -138,10 +138,18 @@ class SkillLoader:
 
         if skill_md_path.exists():
             # Standard path: parse the metadata file
-            manifest, instruction_body = self._parse_skill_md(skill_md_path, lenient=lenient)
+            manifest, instruction_body, instruction_body_line_offset = self._parse_skill_md(
+                skill_md_path,
+                lenient=lenient,
+            )
         elif lenient:
             # Lenient fallback: no SKILL.md, synthesize from .md files in the directory
-            skill_md_path, manifest, instruction_body = self._synthesize_from_md_files(skill_directory)
+            (
+                skill_md_path,
+                manifest,
+                instruction_body,
+                instruction_body_line_offset,
+            ) = self._synthesize_from_md_files(skill_directory)
         else:
             raise SkillLoadError(f"SKILL.md not found in {skill_directory}")
 
@@ -156,11 +164,15 @@ class SkillLoader:
             manifest=manifest,
             skill_md_path=skill_md_path,
             instruction_body=instruction_body,
+            instruction_body_line_offset=instruction_body_line_offset,
             files=files,
             referenced_files=referenced_files,
         )
 
-    def _synthesize_from_md_files(self, skill_directory: Path) -> tuple[Path, SkillManifest, str]:
+    def _synthesize_from_md_files(
+        self,
+        skill_directory: Path,
+    ) -> tuple[Path, SkillManifest, str, int]:
         """Synthesize a Skill from ``.md`` files when ``SKILL.md`` is absent.
 
         Scans the directory for markdown files, concatenates their content as the
@@ -188,7 +200,7 @@ class SkillLoader:
         # Use the first .md file as the primary path
         primary_md = md_files[0]
 
-        manifest, body = self._parse_skill_md(primary_md, lenient=True)
+        manifest, body, body_line_offset = self._parse_skill_md(primary_md, lenient=True)
 
         # Append content from remaining .md files
         extra_bodies: list[str] = []
@@ -196,8 +208,12 @@ class SkillLoader:
             extra_bodies.append(self._read_skill_text_file(md_file))
         if extra_bodies:
             body = body + "\n\n" + "\n\n".join(extra_bodies)
+            # A concatenation of multiple physical files has no single source
+            # line mapping. Keep it body-relative until a source-map model is
+            # introduced rather than publishing misleading physical lines.
+            body_line_offset = 0
 
-        return primary_md, manifest, body
+        return primary_md, manifest, body, body_line_offset
 
     def _read_skill_text_file(self, path: Path) -> str:
         """Read a skill metadata or markdown file as strict UTF-8 text.
@@ -210,7 +226,12 @@ class SkillLoader:
         except FileValidationError as e:
             raise SkillLoadError(str(e)) from e
 
-    def _parse_skill_md(self, skill_md_path: Path, *, lenient: bool = False) -> tuple[SkillManifest, str]:
+    def _parse_skill_md(
+        self,
+        skill_md_path: Path,
+        *,
+        lenient: bool = False,
+    ) -> tuple[SkillManifest, str, int]:
         """
         Parse SKILL.md file with YAML frontmatter.
 
@@ -220,12 +241,13 @@ class SkillLoader:
                 raising ``SkillLoadError``.
 
         Returns:
-            Tuple of (SkillManifest, instruction_body)
+            Tuple of (SkillManifest, instruction_body, body line offset)
 
         Raises:
             SkillLoadError: If parsing fails (strict mode only)
         """
         content = self._read_skill_text_file(skill_md_path)
+        raw_content = content
 
         if "---" in content:
             parts = content.split("---", 2)
@@ -245,6 +267,17 @@ class SkillLoader:
                 body = content
             else:
                 raise SkillLoadError(f"Failed to parse YAML frontmatter: {e}")
+
+        # python-frontmatter strips outer whitespace from ``post.content``.
+        # Recover where that exact terminal body begins in the physical source
+        # without reparsing frontmatter or changing the normalized body.
+        trimmed_source = raw_content.rstrip()
+        if body and trimmed_source.endswith(body):
+            body_start = len(trimmed_source) - len(body)
+            body_line_offset = raw_content.count("\n", 0, body_start)
+        else:
+            # Lenient/malformed inputs can lack a reliable one-file mapping.
+            body_line_offset = 0
 
         # Validate required fields (lenient: fill defaults)
         if "name" not in metadata:
@@ -309,7 +342,7 @@ class SkillLoader:
             disable_model_invocation=bool(disable_model_invocation),
         )
 
-        return manifest, body
+        return manifest, body, body_line_offset
 
     def _discover_files(self, skill_directory: Path) -> list[SkillFile]:
         """
@@ -464,7 +497,7 @@ class SkillLoader:
         # A loose pattern like ``from (\w+)`` matches English ("from the documentation") and
         # yields false positives such as ``the.py``.
         code_file_refs = self._local_py_module_names_from_import_lines(instruction_body)
-        stdlib_names = getattr(sys, "stdlib_module_names", set())
+        stdlib_names: set[str] = set(getattr(sys, "stdlib_module_names", set()))
         KNOWN_THIRD_PARTY = {
             "requests",
             "numpy",
@@ -524,7 +557,7 @@ class SkillLoader:
             import_patterns = re.findall(r"^from\s+([A-Za-z0-9_.]+)\s+import", content, re.MULTILINE)
             relative_imports = re.findall(r"^from\s+\.([A-Za-z0-9_.]*)\s+import", content, re.MULTILINE)
 
-            stdlib_names = getattr(sys, "stdlib_module_names", set())
+            stdlib_names: set[str] = set(getattr(sys, "stdlib_module_names", set()))
             _known_3p = {
                 "requests",
                 "numpy",

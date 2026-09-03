@@ -278,6 +278,7 @@ class Adjudicator:
             model = "orcarouter/anthropic/claude-sonnet-5"
 
         self.provider_config: ProviderConfig | None = None
+        self.model: str | None
         if model and (self.provider == "orcarouter" or model.lower().startswith("orcarouter/")):
             self.provider_config = ProviderConfig(
                 model=model,
@@ -353,7 +354,7 @@ class Adjudicator:
         import time as _time
 
         try:
-            import litellm  # type: ignore
+            import litellm
         except ImportError:
             logger.debug("adjudicator: litellm not installed; skipping")
             return None
@@ -409,10 +410,14 @@ class Adjudicator:
             logger.debug("adjudicator response had no JSON: %r", content[:200])
             return None
         try:
-            return json.loads(content[start : end + 1])
+            parsed = json.loads(content[start : end + 1])
         except json.JSONDecodeError:
             logger.debug("adjudicator response was invalid JSON: %r", content[start : end + 1][:200])
             return None
+        if not isinstance(parsed, dict):
+            logger.debug("adjudicator response JSON was not an object: %r", type(parsed).__name__)
+            return None
+        return parsed
 
     def _adjudicate_one(self, finding: Finding, skill: Skill) -> AdjudicationResult:
         """Adjudicate a single finding. Always returns an ``AdjudicationResult``.
@@ -555,8 +560,6 @@ class Adjudicator:
                 continue
 
             finding.severity = Severity.INFO
-            if finding.metadata is None:
-                finding.metadata = {}
             finding.metadata["adjudication"] = {
                 "original_severity": original_severity,
                 "verdict": result.verdict,

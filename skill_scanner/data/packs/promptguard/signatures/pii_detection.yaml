@@ -6,7 +6,7 @@
 signatures:
 
   - id: PG_PII_SSN
-    category: pii_exposure
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       # US Social Security Number — strict XXX-XX-XXXX / XXX XX XXXX format
@@ -34,7 +34,7 @@ signatures:
       SSNs, ensure it uses tokenization or masking and never stores raw values.
 
   - id: PG_PII_CREDIT_CARD
-    category: pii_exposure
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       # Visa (4xxx), Mastercard (5[1-5]xx, 2[2-7]xx), Amex (3[47]xx), Discover (6011, 65xx)
@@ -69,7 +69,7 @@ signatures:
       values (e.g., ****-****-****-1234) for display purposes.
 
   - id: PG_PII_IBAN
-    category: pii_exposure
+    category: data_exfiltration
     severity: HIGH
     patterns:
       # International Bank Account Number — 2 letter country + 2 check digits + up to 30 alphanum
@@ -92,7 +92,7 @@ signatures:
       documentation purposes.
 
   - id: PG_PII_PHONE_HARVESTING
-    category: pii_exposure
+    category: data_exfiltration
     severity: HIGH
     patterns:
       # Skill instructions to collect/extract phone numbers
@@ -110,11 +110,11 @@ signatures:
       appropriate data handling is in place.
 
   - id: PG_PII_SSN_HARVESTING
-    category: pii_exposure
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       # Skill instructions to collect SSNs
-      - "(?i)(collect|extract|harvest|gather|capture|log|record|store|save|ask|request|prompt|require)\\s+.{0,40}(social\\s+security|\\bSSN\\b|social\\s+insurance|\\bSIN\\b|national\\s+insurance|\\bNI\\s+number\\b)"
+      - "(?i)(collect|extract|harvest|gather|capture|log|record|store|save|ask|request|prompt|require)\\s+.{0,40}\\b(?:social\\s+security|SSNs?|social\\s+insurance|SINs?|national\\s+insurance|NI\\s+numbers?)\\b"
     file_types: [markdown, text]
     description: >
       Skill instructions to collect Social Security Numbers or national ID
@@ -126,7 +126,7 @@ signatures:
       request government-issued identification numbers.
 
   - id: PG_PII_CARD_HARVESTING
-    category: pii_exposure
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       # Skill instructions to collect credit card info
@@ -142,7 +142,7 @@ signatures:
       processors (Stripe, Square, etc.) instead of collecting raw card data.
 
   - id: PG_PII_CREDENTIAL_HARVESTING
-    category: pii_exposure
+    category: data_exfiltration
     severity: CRITICAL
     patterns:
       # Skill instructions to collect passwords or credentials
@@ -159,7 +159,7 @@ signatures:
       based authentication flows instead of collecting raw passwords.
 
   - id: PG_PII_MEDICAL_ID
-    category: pii_exposure
+    category: data_exfiltration
     severity: HIGH
     patterns:
       # US Medicare Beneficiary Identifier (MBI) — 11 char alphanumeric

@@ -27,7 +27,7 @@ What actually happened.
 ## Environment
 
 - **OS:** [e.g., macOS 14, Ubuntu 22.04, Windows 11]
-- **Python Version:** [e.g., 3.10.5]
+- **Python Version:** [e.g., 3.11.9]
 - **Package Version:** [e.g., 1.0.0]
 - **Installation Method:** [pip, source, docker]
 

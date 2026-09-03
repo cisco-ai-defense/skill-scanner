@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from skill_scanner.core.finding_identity import stable_finding_suffix
 from skill_scanner.core.models import Finding, Severity, ThreatCategory
 
 if TYPE_CHECKING:
@@ -142,7 +143,7 @@ def check_generic_patterns(skill: Skill) -> list[Finding]:
         if pattern.match(description):
             findings.append(
                 Finding(
-                    id=f"TRIGGER_GENERIC_{hash(description) & 0xFFFFFFFF:08x}",
+                    id=f"TRIGGER_GENERIC_{stable_finding_suffix(description)}",
                     rule_id="TRIGGER_OVERLY_GENERIC",
                     category=ThreatCategory.SOCIAL_ENGINEERING,
                     severity=Severity.MEDIUM,
@@ -173,7 +174,7 @@ def check_description_specificity(skill: Skill) -> list[Finding]:
     if len(words) < 5:
         findings.append(
             Finding(
-                id=f"TRIGGER_SHORT_{hash(description) & 0xFFFFFFFF:08x}",
+                id=f"TRIGGER_SHORT_{stable_finding_suffix(description)}",
                 rule_id="TRIGGER_DESCRIPTION_TOO_SHORT",
                 category=ThreatCategory.SOCIAL_ENGINEERING,
                 severity=Severity.LOW,
@@ -200,7 +201,7 @@ def check_description_specificity(skill: Skill) -> list[Finding]:
     if generic_ratio > 0.4 and specific_count < 2:
         findings.append(
             Finding(
-                id=f"TRIGGER_VAGUE_{hash(description) & 0xFFFFFFFF:08x}",
+                id=f"TRIGGER_VAGUE_{stable_finding_suffix(description)}",
                 rule_id="TRIGGER_VAGUE_DESCRIPTION",
                 category=ThreatCategory.SOCIAL_ENGINEERING,
                 severity=Severity.LOW,
@@ -240,7 +241,7 @@ def check_keyword_baiting(skill: Skill) -> list[Finding]:
         if unique_ratio < 0.7 or description.strip().startswith(keyword_lists[0][:20]):
             findings.append(
                 Finding(
-                    id=f"TRIGGER_KEYWORD_BAIT_{hash(description) & 0xFFFFFFFF:08x}",
+                    id=f"TRIGGER_KEYWORD_BAIT_{stable_finding_suffix(description)}",
                     rule_id="TRIGGER_KEYWORD_BAITING",
                     category=ThreatCategory.SOCIAL_ENGINEERING,
                     severity=Severity.MEDIUM,

@@ -59,6 +59,22 @@ skill-scanner scan ./my-skill --policy strict
 skill-scanner scan ./my-skill --policy ./my-org-policy.yaml
 ```
 
+### CEL decision telemetry
+
+```bash
+# Balanced/default and strict already select shadow mode.
+skill-scanner scan ./my-skill --cel-mode shadow --format json
+
+# Validate bundled and administrator-approved schema-v2 packs first.
+skill-scanner validate-rules --trusted-rule-pack ./org-rules
+skill-scanner scan ./my-skill --trusted-rule-pack ./org-rules --cel-mode shadow
+```
+
+All bundled CEL gates currently use per-rule `rollout: shadow`, so global
+`enforce` mode does not suppress them until individual promotion. ATR remains
+optional with `--rule-packs atr` and is outside the current core + CEL release
+gate.
+
 ### Scanning non-standard skill formats
 
 Use `--lenient` to scan skills that don't follow the Codex/Cursor `SKILL.md` convention (e.g. Claude Code `.claude/commands/*.md`):

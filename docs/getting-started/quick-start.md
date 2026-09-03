@@ -61,7 +61,11 @@ uv run skill-scanner scan evals/skills/safe-skills/simple-math
 skill-scanner scan evals/skills/safe-skills/simple-math
 ```
 
-By default, `scan` runs the core analyzers: **static + bytecode + pipeline**.
+By default, `scan` runs the core analyzers: **static + bytecode + pipeline + correlation**.
+The correlation pass joins bounded, structured source/sink facts and never executes skill content.
+Balanced/default mode then evaluates bundled CEL gates in shadow, recording
+decisions without suppressing findings. Permissive mode uses CEL off and
+disables correlation.
 
 ### Scan Multiple Skills
 
@@ -124,8 +128,11 @@ Findings Summary:
 # List available analyzers
 skill-scanner list-analyzers
 
-# Validate rule signatures
+# Validate selected packs and compile/type-check CEL
 skill-scanner validate-rules
+
+# Inspect typed CEL decisions in JSON output
+skill-scanner scan /path/to/skill --cel-mode shadow --format json
 
 # Get help
 skill-scanner --help

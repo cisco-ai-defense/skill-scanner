@@ -24,6 +24,7 @@ activates for unrelated user requests.
 
 import re
 
+from ..finding_identity import stable_finding_suffix
 from ..models import Finding, Severity, Skill, ThreatCategory
 from .base import BaseAnalyzer
 
@@ -179,7 +180,7 @@ class TriggerAnalyzer(BaseAnalyzer):
             if pattern.match(description):
                 findings.append(
                     Finding(
-                        id=f"TRIGGER_GENERIC_{hash(description) & 0xFFFFFFFF:08x}",
+                        id=f"TRIGGER_GENERIC_{stable_finding_suffix(description)}",
                         rule_id="TRIGGER_OVERLY_GENERIC",
                         category=ThreatCategory.SOCIAL_ENGINEERING,
                         severity=Severity.MEDIUM,
@@ -213,7 +214,7 @@ class TriggerAnalyzer(BaseAnalyzer):
         if len(words) < 5:
             findings.append(
                 Finding(
-                    id=f"TRIGGER_SHORT_{hash(description) & 0xFFFFFFFF:08x}",
+                    id=f"TRIGGER_SHORT_{stable_finding_suffix(description)}",
                     rule_id="TRIGGER_DESCRIPTION_TOO_SHORT",
                     category=ThreatCategory.SOCIAL_ENGINEERING,
                     severity=Severity.LOW,
@@ -243,7 +244,7 @@ class TriggerAnalyzer(BaseAnalyzer):
         if generic_ratio > 0.4 and specific_count < 2:
             findings.append(
                 Finding(
-                    id=f"TRIGGER_VAGUE_{hash(description) & 0xFFFFFFFF:08x}",
+                    id=f"TRIGGER_VAGUE_{stable_finding_suffix(description)}",
                     rule_id="TRIGGER_VAGUE_DESCRIPTION",
                     category=ThreatCategory.SOCIAL_ENGINEERING,
                     severity=Severity.LOW,
@@ -291,7 +292,7 @@ class TriggerAnalyzer(BaseAnalyzer):
             if unique_ratio < 0.7 or description.strip().startswith(keyword_lists[0][:20]):
                 findings.append(
                     Finding(
-                        id=f"TRIGGER_KEYWORD_BAIT_{hash(description) & 0xFFFFFFFF:08x}",
+                        id=f"TRIGGER_KEYWORD_BAIT_{stable_finding_suffix(description)}",
                         rule_id="TRIGGER_KEYWORD_BAITING",
                         category=ThreatCategory.SOCIAL_ENGINEERING,
                         severity=Severity.MEDIUM,

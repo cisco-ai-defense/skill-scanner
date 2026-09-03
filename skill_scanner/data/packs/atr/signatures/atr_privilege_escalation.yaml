@@ -7,7 +7,7 @@ signatures:
     atr_id: ATR-2026-00040
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00040-privilege-escalation.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -34,7 +34,7 @@ signatures:
     atr_id: ATR-2026-00041
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00041-scope-creep.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: MEDIUM
     patterns:
       - >-
@@ -65,7 +65,7 @@ signatures:
     atr_id: ATR-2026-00107
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00107-delayed-execution-bypass.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -78,7 +78,7 @@ signatures:
     atr_id: ATR-2026-00110
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00110-eval-injection.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - (?i)eval\s*\(
@@ -95,7 +95,7 @@ signatures:
     atr_id: ATR-2026-00111
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00111-shell-escape.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -116,7 +116,7 @@ signatures:
     atr_id: ATR-2026-00112
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00112-dynamic-import-exploitation.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - (?i)import\(\s*[^'"][^)]*\)
@@ -131,7 +131,7 @@ signatures:
     atr_id: ATR-2026-00143
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00143-casual-privilege-escalation.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -146,7 +146,7 @@ signatures:
     atr_id: ATR-2026-00144
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00144-rationalized-safety-bypass.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -159,7 +159,7 @@ signatures:
     atr_id: ATR-2026-00204
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00204-stealth-execution-persistence.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - (?i)>\s*/dev/null\s+2>&1\s*&
@@ -175,7 +175,7 @@ signatures:
     atr_id: ATR-2026-00436
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00436-enclave-vm-sandbox-escape-rce.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -199,7 +199,7 @@ signatures:
     atr_id: ATR-2026-00441
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00441-semantic-kernel-sessions-python-plugin-startup-persistence.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -220,7 +220,7 @@ signatures:
     atr_id: ATR-2026-00451
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00451-litellm-admin-sqli-cisa-kev.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -246,7 +246,7 @@ signatures:
     atr_id: ATR-2026-00528
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00528-praisonai-auth-disabled-default.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -260,7 +260,7 @@ signatures:
     atr_id: ATR-2026-00539
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00539-crewai-codeinterpreter-sandbox-escape-rce.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -285,7 +285,7 @@ signatures:
     atr_id: ATR-2026-00546
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00546-crewai-json-loader-local-file-read.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -302,7 +302,7 @@ signatures:
     atr_id: ATR-2026-00547
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00547-crewai-rag-url-ssrf-bypass.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -319,7 +319,7 @@ signatures:
     atr_id: ATR-2026-00549
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00549-destructive-tool-without-human-approval.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - (?i)require_violation:destructive_tool_without_approval
@@ -330,7 +330,7 @@ signatures:
     atr_id: ATR-2026-00551
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-00551-cross-conversation-memory-write.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - (?i)forbid_violation:cross_conversation_memory_write
@@ -341,7 +341,7 @@ signatures:
     atr_id: ATR-2026-01600
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01600-sql-injection-tautology-rbac-bypass.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -355,7 +355,7 @@ signatures:
     atr_id: ATR-2026-01601
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01601-sql-injection-destructive-ddl.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -370,7 +370,7 @@ signatures:
     atr_id: ATR-2026-01602
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01602-sql-injection-union-select-exfil.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -385,7 +385,7 @@ signatures:
     atr_id: ATR-2026-01603
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01603-sql-injection-stacked-dml-abuse.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - (?i);\s*(?:UPDATE\s+\w+\s+SET|INSERT\s+INTO\s+\w+|GRANT\s+ALL\b)
@@ -397,7 +397,7 @@ signatures:
     atr_id: ATR-2026-01604
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01604-sql-injection-schema-enumeration.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -412,7 +412,7 @@ signatures:
     atr_id: ATR-2026-01609
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01609-shell-injection-exfil-webhook.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -435,7 +435,7 @@ signatures:
     atr_id: ATR-2026-01610
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01610-shell-evasion-subshell-injection.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -451,7 +451,7 @@ signatures:
     atr_id: ATR-2026-01611
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01611-shell-evasion-eval-exec-injection.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - (?i)\bKernel\.(?:exec|system|spawn)\s*\(["']
@@ -470,7 +470,7 @@ signatures:
     atr_id: ATR-2026-01612
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01612-debug-mode-privilege-escalation.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -488,7 +488,7 @@ signatures:
     atr_id: ATR-2026-01613
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01613-rbac-bypass-social-engineering.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -507,7 +507,7 @@ signatures:
     atr_id: ATR-2026-01614
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01614-bola-cross-user-data-access.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -522,7 +522,7 @@ signatures:
     atr_id: ATR-2026-01615
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01615-sandbox-escape-command-injection.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -542,7 +542,7 @@ signatures:
     atr_id: ATR-2026-01616
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01616-path-traversal-agent-file-access.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - (?:\.\./){2,}(?:etc/|root/|home/|proc/|var/|tmp/|dev/|usr/)
@@ -555,7 +555,7 @@ signatures:
     atr_id: ATR-2026-01802
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01802-asb-backdoor-surveillance-implant.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -572,7 +572,7 @@ signatures:
     atr_id: ATR-2026-01803
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01803-asb-covert-server-intrusion.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -592,7 +592,7 @@ signatures:
     atr_id: ATR-2026-01808
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01808-asb-synthetic-pan-payment-probe.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -607,7 +607,7 @@ signatures:
     atr_id: ATR-2026-01899
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01899-remote-access-backdoor.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - (?i)authorized_keys[\s\S]{0,120}requests\.get\(
@@ -621,7 +621,7 @@ signatures:
     atr_id: ATR-2026-01933
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01933-litellm-user-role-privilege-escalation-cve-2026-47102.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -638,7 +638,7 @@ signatures:
     atr_id: ATR-2026-01934
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01934-litellm-allowed-routes-authz-bypass-cve-2026-47101.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -655,7 +655,7 @@ signatures:
     atr_id: ATR-2026-01949
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01949-praisonai-mcpserver-unauth-tools-call.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -674,7 +674,7 @@ signatures:
     atr_id: ATR-2026-01974
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01974-anything-llm-data-import-access-control.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -691,7 +691,7 @@ signatures:
     atr_id: ATR-2026-01981
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01981-network-ai-approval-inbox-unauth-cors-bypass.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: HIGH
     patterns:
       - >-
@@ -708,7 +708,7 @@ signatures:
     atr_id: ATR-2026-01986
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01986-windows-mcp-unauth-http-powershell-cors.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-
@@ -727,7 +727,7 @@ signatures:
     atr_id: ATR-2026-01992
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/privilege-escalation/ATR-2026-01992-t1556-agent-auth-process-tamper.yaml
-    category: privilege_escalation
+    category: unauthorized_tool_use
     severity: CRITICAL
     patterns:
       - >-

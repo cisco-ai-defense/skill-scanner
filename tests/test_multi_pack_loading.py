@@ -18,8 +18,14 @@ from unittest.mock import patch
 
 import pytest
 
+from skill_scanner.core.analyzers.base import BaseAnalyzer
+from skill_scanner.core.analyzers.static import StaticAnalyzer
 from skill_scanner.core.models import Severity, ThreatCategory
-from skill_scanner.core.rules.patterns import RuleLoader, SecurityRule
+from skill_scanner.core.rules.patterns import (
+    LEGACY_SIGNATURE_CATEGORY_MAP,
+    RuleLoader,
+    SecurityRule,
+)
 from skill_scanner.core.scan_policy import ScanPolicy
 from skill_scanner.data import list_available_packs, resolve_rule_packs
 
@@ -229,6 +235,117 @@ class TestUnknownCategoryFallback:
             }
         )
         assert rule.category == ThreatCategory.OBFUSCATION
+
+    @pytest.mark.parametrize(
+        ("source_category", "expected"),
+        list(LEGACY_SIGNATURE_CATEGORY_MAP.items()),
+    )
+    def test_reviewed_legacy_category_mapping(self, source_category, expected):
+        rule = SecurityRule(
+            {
+                "id": "LEGACY_CATEGORY",
+                "category": source_category,
+                "severity": "LOW",
+                "patterns": ["legacy"],
+                "description": "legacy mapping",
+            }
+        )
+
+        assert rule.category is expected
+        assert rule.source_category == source_category
+        assert rule.category_resolution == "legacy_mapped"
+
+    def test_reviewed_legacy_categories_remain_invalid_in_strict_v2_mode(self):
+        with pytest.raises(ValueError, match="unknown category 'agent_manipulation'"):
+            SecurityRule(
+                {
+                    "id": "STRICT_RULE",
+                    "category": "agent_manipulation",
+                    "severity": "LOW",
+                    "patterns": ["legacy"],
+                    "description": "strict mapping boundary",
+                },
+                strict=True,
+            )
+
+    def test_bundled_category_metrics_cover_all_atr_and_promptguard_rules(self, caplog):
+        atr_dir, promptguard_dir = resolve_rule_packs(["atr", "promptguard"])
+        loader = RuleLoader(extra_rules_dirs=[atr_dir, promptguard_dir])
+
+        rules = loader.load_rules()
+        metrics = loader.category_normalization_metrics
+
+        rule_ids = {rule.id for rule in rules}
+        assert {
+            "HARMFUL_CONTENT_EXPLICIT_INSTRUCTION",
+            "MALWARE_RANSOMWARE_IMPLEMENTATION_CHAIN",
+        } <= rule_ids
+        assert metrics.total_rules == len(rules)
+        assert metrics.native_rules == len(rules)
+        assert metrics.legacy_mapped_rules == 0
+        assert metrics.unknown_fallback_rules == 0
+        assert metrics.mapped_source_categories == ()
+        assert metrics.unknown_source_categories == ()
+        assert not [record for record in caplog.records if "unmapped categories" in record.message]
+
+    def test_remaining_unknown_categories_emit_one_aggregate_warning(self, tmp_path, caplog):
+        _write_yaml(
+            tmp_path,
+            "unknown.yaml",
+            textwrap.dedent("""\
+                - id: UNKNOWN_ONE
+                  category: first_unknown
+                  severity: LOW
+                  patterns: ["one"]
+                  description: "first"
+                - id: UNKNOWN_TWO
+                  category: second_unknown
+                  severity: LOW
+                  patterns: ["two"]
+                  description: "second"
+                - id: UNKNOWN_THREE
+                  category: first_unknown
+                  severity: LOW
+                  patterns: ["three"]
+                  description: "third"
+            """),
+        )
+        loader = RuleLoader(rules_file=tmp_path)
+
+        loader.load_rules()
+
+        warnings = [record for record in caplog.records if "unmapped categories" in record.message]
+        assert len(warnings) == 1
+        assert "3 signature rule(s)" in warnings[0].message
+        assert "first_unknown=2" in warnings[0].message
+        assert "second_unknown=1" in warnings[0].message
+        metrics = loader.category_normalization_metrics
+        assert metrics.unknown_fallback_rules == 3
+        assert dict(metrics.unknown_source_categories) == {
+            "first_unknown": 2,
+            "second_unknown": 1,
+        }
+
+    def test_mapped_source_category_is_preserved_in_finding_metadata(self):
+        rule = SecurityRule(
+            {
+                "id": "ATR_TEST_MAPPING",
+                "category": "context_exfiltration",
+                "severity": "HIGH",
+                "patterns": ["exfiltrate"],
+                "description": "mapped source category",
+            }
+        )
+        match = rule.scan_content("exfiltrate data", "SKILL.md")[0]
+        analyzer = StaticAnalyzer.__new__(StaticAnalyzer)
+        BaseAnalyzer.__init__(analyzer, "static_analyzer", policy=ScanPolicy.default())
+        analyzer._unreferenced_scripts = []
+
+        finding = analyzer._create_finding_from_match(rule, match)
+
+        assert finding.category is ThreatCategory.DATA_EXFILTRATION
+        assert finding.metadata["source_category"] == "context_exfiltration"
+        assert finding.metadata["category_normalization"] == "legacy_mapped"
 
     def test_unknown_severity_falls_back_to_high(self, tmp_path):
         _write_yaml(

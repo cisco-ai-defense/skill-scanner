@@ -2,7 +2,8 @@
 
 ## Core Runtime Dependencies
 
-All versions from [`pyproject.toml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/pyproject.toml). Requires Python >= 3.10.
+All versions come from [`pyproject.toml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/pyproject.toml).
+The supported interpreter range is CPython >= 3.11 and < 3.15.
 
 ### Web Framework and API
 
@@ -27,7 +28,7 @@ All versions from [`pyproject.toml`](https://github.com/cisco-ai-defense/skill-s
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `yara-x` | >= 1.12.0 | Pattern-matching rule engine |
+| `yara-x` | >= 1.10, < 2 | Pattern-matching rule engine |
 | `magika` | >= 0.6.0 | AI-powered file type detection (200+ types) |
 | `pdfid` | >= 1.1.0 | Structural PDF analysis (JS, OpenAction, Launch) |
 | `oletools` | >= 0.60.1 | Office document macro/VBA detection |
@@ -40,6 +41,7 @@ All versions from [`pyproject.toml`](https://github.com/cisco-ai-defense/skill-s
 | `PyYAML` | >= 6.0.1 | YAML parsing (policies, rules) |
 | `python-frontmatter` | >= 1.0.0 | SKILL.md frontmatter parsing |
 | `python-dotenv` | >= 1.0.0 | Environment variable loading from `.env` |
+| `protobuf` | >= 5.29, < 7 | Runtime for generated CEL fact-model messages |
 
 ### LLM SDKs
 
@@ -79,6 +81,60 @@ pip install "cisco-ai-skill-scanner[all]"
 | `vertex` | `google-cloud-aiplatform` | >= 1.38.0 | Google Vertex AI support |
 | `azure` | `azure-identity` | >= 1.15.0 | Azure managed identity auth |
 | `all` | all of the above | | Install all provider extras |
+
+### Bundled CEL Runtime
+
+CEL is a core runtime. Skill Scanner pins the official `cel.dev/cel-go` module
+at `v0.32.0` and ships it as a bounded local helper process; it does not depend
+on `cel-expr-python`. Each binary is built with `CGO_ENABLED=0`, bound to helper
+protocol 2 and the canonical `ScanFacts` descriptor, and checked against the
+SHA-256 and target identity in its packaged manifest before execution.
+
+Release wheels explicitly name CPython 3.11, 3.12, 3.13, and 3.14—there is no
+unbounded future-Python or `abi3` claim. Five native artifacts are required:
+glibc Linux x86-64/ARM64, macOS 13+ x86-64/ARM64, and Windows x86-64. Alpine/
+musl, PyPy, Windows ARM, Python 3.10, Python 3.15 or newer, and any unlisted
+platform are unsupported.
+
+The current `yara-x` wheels impose a stricter floor on the complete scanner:
+official CPython `abi3` artifacts cover macOS x86-64/ARM64 from macOS 14,
+manylinux glibc 2.28 x86-64/ARM64, and Windows x86-64. Consequently, the
+packaged scanner's effective macOS minimum is 14 even though its bundled CEL
+helper is compatible with macOS 13. Alpine/musl and Windows ARM remain
+unsupported unless upstream publishes matching YARA-X wheels.
+
+Release assets include `cel-go-dependencies.json`, with every Go module version
+and Go checksum, and `cel-go-helpers.json`, with every wheel/helper SHA-256.
+Those components and dependency edges are also merged into the CycloneDX SBOM.
+Homebrew selects the hash-pinned Darwin release wheel for the host CPU, injects
+that prebuilt helper into the source build without networked Go-module fetches,
+and runs `validate-rules` before accepting the formula. Formula generation
+downloads the hash-verified sdist for the exact requested release and resolves
+dependencies from that archive's `pyproject.toml`, never from `main` or the
+operator's working tree. Both Apple Silicon and Intel runners install the
+generated formula. Wheel-only dependencies are also emitted as CPU-conditional
+resources, so an ARM dependency wheel cannot enter an Intel installation (or
+vice versa). Each runner verifies the Mach-O/helper manifest architecture,
+compiles all rules, and runs the Homebrew test before the formula is committed.
+
+From a source checkout, `uv sync` builds the host helper during the editable
+install. To bootstrap or refresh it directly, run:
+
+```bash
+uv run python scripts/build_cel_helper.py --in-place
+```
+
+`SKILL_SCANNER_CEL_GO_HELPER` is an explicit trusted administrator/developer
+override for a locally built helper. It bypasses packaged-resource manifest
+discovery, so never point it at a downloaded rule pack, dataset artifact, or
+other untrusted executable.
+
+Go 1.27.1 is the minimum supported source-build toolchain. CI, release
+evidence, wheels, SBOMs, and Homebrew qualification pin exactly Go 1.27.1 for
+reproducibility. Earlier Go releases cannot build the same Darwin contract:
+with `CGO_ENABLED=0`, they emit an older Mach-O deployment floor and ignore
+`MACOSX_DEPLOYMENT_TARGET`. A qualified release-toolchain change requires
+rebuilding and natively smoking every target.
 
 ## Supported LLM Providers
 

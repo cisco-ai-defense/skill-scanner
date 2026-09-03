@@ -1,48 +1,37 @@
 {
-  "skill_name": "data-processor",
-  "expected_safe": false,
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "obfuscation.xor-compile-001",
+  "skill_name": "xor-code-compiler",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
   "expected_severity": "CRITICAL",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "4bc206e4068e3679a53198f5bf00b53b73508606c08d461269c9a41a0bc82802",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "0f469f30f0617ab1bd79c9b40d4d83bcbb2cae65127ddb74805618c799f04e26",
+    "label_evidence_sha256": "1c71b36c3a2670e5453fc31954e979b68327b144c79577eb70432a80adadb92b"
+  },
   "expected_findings": [
     {
+      "rule_id": "OBFUSCATION_XOR_ENCODING",
       "category": "obfuscation",
-      "severity": "CRITICAL",
-      "description": "Obfuscated Code Execution"
-    },
-    {
-      "category": "command_injection",
-      "severity": "CRITICAL",
-      "description": "Base64 Encoded Command Injection"
-    },
-    {
-      "category": "command_injection",
-      "severity": "CRITICAL",
-      "description": "Hex Encoded Command Injection"
-    },
-    {
-      "category": "command_injection",
-      "severity": "CRITICAL",
-      "description": "Dangerous code execution functions that can execute arbitrary code"
-    },
-    {
-      "category": "command_injection",
-      "severity": "CRITICAL",
-      "description": "INJECTION ATTACK detected by YARA"
-    },
-    {
-      "category": "command_injection",
-      "severity": "HIGH",
-      "description": "Shell command execution with shell=True enabled"
-    },
-    {
-      "category": "command_injection",
       "severity": "MEDIUM",
-      "description": "CODE EXECUTION detected by YARA"
+      "file_path": "process.py",
+      "analyzer": "static",
+      "line_number": 18
     },
     {
-      "category": "unauthorized_tool_use",
-      "severity": "HIGH",
-      "description": "Code executes bash but Bash tool not in allowed-tools"
+      "rule_id": "COMMAND_INJECTION_EVAL",
+      "category": "command_injection",
+      "severity": "CRITICAL",
+      "file_path": "process.py",
+      "analyzer": "static",
+      "line_number": 19
     }
   ],
-  "notes": "Obfuscated malicious code hidden in base64. Decodes and executes payload that downloads and runs attacker script. Multiple command injection vectors."
+  "notes": "Human-reviewed minimal replacement preserving transformation plus dynamic compilation from the historical encoded-payload case."
 }

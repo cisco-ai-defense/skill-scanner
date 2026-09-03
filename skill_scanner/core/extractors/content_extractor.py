@@ -22,17 +22,22 @@ Extracts contents from ZIP, TAR, DOCX, XLSX, etc. with safety limits
 """
 
 import hashlib
+import io
 import logging
 import os
+import re
 import stat
+import struct
 import tarfile
 import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ...utils.file_utils import get_file_type
+from ..finding_identity import stable_finding_suffix
 from ..models import Finding, Severity, SkillFile, ThreatCategory
 
 logger = logging.getLogger(__name__)
@@ -67,10 +72,39 @@ class ContentExtractor:
     """
 
     # ZIP-based formats (all are actually ZIP archives)
-    ZIP_EXTENSIONS = {".zip", ".jar", ".war", ".apk", ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"}
+    ZIP_EXTENSIONS = {
+        ".zip",
+        ".jar",
+        ".war",
+        ".apk",
+        ".docx",
+        ".docm",
+        ".xlsx",
+        ".xlsm",
+        ".pptx",
+        ".pptm",
+        ".odt",
+        ".ods",
+        ".odp",
+    }
     TAR_EXTENSIONS = {".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz"}
     # Office Open XML formats (special handling for VBA/macros)
-    OFFICE_EXTENSIONS = {".docx", ".xlsx", ".pptx"}
+    OFFICE_EXTENSIONS = {".docx", ".docm", ".xlsx", ".xlsm", ".pptx", ".pptm"}
+    _OOXML_MAIN_PARTS = {
+        ".docx": "word/document.xml",
+        ".docm": "word/document.xml",
+        ".xlsx": "xl/workbook.xml",
+        ".xlsm": "xl/workbook.xml",
+        ".pptx": "ppt/presentation.xml",
+        ".pptm": "ppt/presentation.xml",
+    }
+    _MAX_EMBEDDED_OOXML_CLASSIFICATION_BYTES = 16 * 1024 * 1024
+    _MAX_EMBEDDED_OOXML_MEMBER_COUNT = 2_048
+    _MAX_EMBEDDED_OOXML_MEMBER_NAME_BYTES = 1_024
+    _MAX_EMBEDDED_OOXML_CENTRAL_DIRECTORY_BYTES = 2 * 1024 * 1024
+    _MAX_EMBEDDED_OOXML_DECLARED_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
+    _MAX_EMBEDDED_OOXML_XML_PART_BYTES = 512 * 1024
+    _MAX_EMBEDDED_OOXML_XML_ELEMENTS = 4_096
 
     def __init__(self, limits: ExtractionLimits | None = None):
         self.limits = limits or ExtractionLimits()
@@ -118,7 +152,7 @@ class ContentExtractor:
                 logger.warning("Failed to extract %s: %s", skill_file.relative_path, e)
                 result.findings.append(
                     Finding(
-                        id=f"EXTRACTION_FAILED_{hash(skill_file.relative_path) & 0xFFFFFFFF:08x}",
+                        id=f"EXTRACTION_FAILED_{stable_finding_suffix(skill_file.relative_path)}",
                         rule_id="ARCHIVE_EXTRACTION_FAILED",
                         category=ThreatCategory.OBFUSCATION,
                         severity=Severity.MEDIUM,
@@ -126,7 +160,7 @@ class ContentExtractor:
                         description=f"Could not extract {skill_file.relative_path}: {e}",
                         file_path=skill_file.relative_path,
                         remediation="Ensure archive is not corrupted. Consider providing files directly.",
-                        analyzer="static",
+                        analyzer="content_extractor",
                     )
                 )
 
@@ -143,7 +177,7 @@ class ContentExtractor:
         if depth > self.limits.max_depth:
             result.findings.append(
                 Finding(
-                    id=f"NESTED_ARCHIVE_{hash(source_relative_path) & 0xFFFFFFFF:08x}",
+                    id=f"NESTED_ARCHIVE_{stable_finding_suffix(source_relative_path)}",
                     rule_id="ARCHIVE_NESTED_TOO_DEEP",
                     category=ThreatCategory.OBFUSCATION,
                     severity=Severity.HIGH,
@@ -154,7 +188,7 @@ class ContentExtractor:
                     ),
                     file_path=source_relative_path,
                     remediation="Flatten archive structure.",
-                    analyzer="static",
+                    analyzer="content_extractor",
                 )
             )
             return
@@ -199,7 +233,7 @@ class ContentExtractor:
                     if ratio > self.limits.max_compression_ratio:
                         result.findings.append(
                             Finding(
-                                id=f"ZIP_BOMB_{hash(source_relative_path) & 0xFFFFFFFF:08x}",
+                                id=f"ZIP_BOMB_{stable_finding_suffix(source_relative_path)}",
                                 rule_id="ARCHIVE_ZIP_BOMB",
                                 category=ThreatCategory.RESOURCE_ABUSE,
                                 severity=Severity.CRITICAL,
@@ -211,7 +245,7 @@ class ContentExtractor:
                                 ),
                                 file_path=source_relative_path,
                                 remediation="Remove suspicious archive or verify its contents.",
-                                analyzer="static",
+                                analyzer="content_extractor",
                             )
                         )
                         return
@@ -221,7 +255,7 @@ class ContentExtractor:
                     if ".." in info.filename or info.filename.startswith("/"):
                         result.findings.append(
                             Finding(
-                                id=f"PATH_TRAVERSAL_{hash(source_relative_path + info.filename) & 0xFFFFFFFF:08x}",
+                                id=f"PATH_TRAVERSAL_{stable_finding_suffix(source_relative_path, info.filename)}",
                                 rule_id="ARCHIVE_PATH_TRAVERSAL",
                                 category=ThreatCategory.COMMAND_INJECTION,
                                 severity=Severity.CRITICAL,
@@ -232,7 +266,7 @@ class ContentExtractor:
                                 ),
                                 file_path=source_relative_path,
                                 remediation="Remove malicious archive entries.",
-                                analyzer="static",
+                                analyzer="content_extractor",
                             )
                         )
                         return
@@ -240,7 +274,7 @@ class ContentExtractor:
                     if self._is_zip_symlink(info):
                         result.findings.append(
                             Finding(
-                                id=f"SYMLINK_{hash(source_relative_path + info.filename) & 0xFFFFFFFF:08x}",
+                                id=f"SYMLINK_{stable_finding_suffix(source_relative_path, info.filename)}",
                                 rule_id="ARCHIVE_SYMLINK",
                                 category=ThreatCategory.COMMAND_INJECTION,
                                 severity=Severity.CRITICAL,
@@ -252,7 +286,7 @@ class ContentExtractor:
                                 ),
                                 file_path=source_relative_path,
                                 remediation="Remove symbolic links from the archive and include files directly.",
-                                analyzer="static",
+                                analyzer="content_extractor",
                             )
                         )
                         return
@@ -278,7 +312,7 @@ class ContentExtractor:
                         extracted_path.unlink()
                         result.findings.append(
                             Finding(
-                                id=f"SYMLINK_ON_DISK_{hash(source_relative_path + info.filename) & 0xFFFFFFFF:08x}",
+                                id=f"SYMLINK_ON_DISK_{stable_finding_suffix(source_relative_path, info.filename)}",
                                 rule_id="ARCHIVE_SYMLINK",
                                 category=ThreatCategory.COMMAND_INJECTION,
                                 severity=Severity.CRITICAL,
@@ -289,7 +323,7 @@ class ContentExtractor:
                                 ),
                                 file_path=source_relative_path,
                                 remediation="Remove symbolic links from the archive and include files directly.",
-                                analyzer="static",
+                                analyzer="content_extractor",
                             )
                         )
                         continue
@@ -341,7 +375,7 @@ class ContentExtractor:
         except zipfile.BadZipFile as e:
             result.findings.append(
                 Finding(
-                    id=f"BAD_ZIP_{hash(source_relative_path) & 0xFFFFFFFF:08x}",
+                    id=f"BAD_ZIP_{stable_finding_suffix(source_relative_path)}",
                     rule_id="ARCHIVE_EXTRACTION_FAILED",
                     category=ThreatCategory.OBFUSCATION,
                     severity=Severity.MEDIUM,
@@ -349,7 +383,7 @@ class ContentExtractor:
                     description=f"Archive {source_relative_path} is corrupt: {e}",
                     file_path=source_relative_path,
                     remediation="Remove corrupt archive.",
-                    analyzer="static",
+                    analyzer="content_extractor",
                 )
             )
 
@@ -362,7 +396,7 @@ class ContentExtractor:
                     if ".." in member.name or member.name.startswith("/"):
                         result.findings.append(
                             Finding(
-                                id=f"PATH_TRAVERSAL_{hash(source_relative_path + member.name) & 0xFFFFFFFF:08x}",
+                                id=f"PATH_TRAVERSAL_{stable_finding_suffix(source_relative_path, member.name)}",
                                 rule_id="ARCHIVE_PATH_TRAVERSAL",
                                 category=ThreatCategory.COMMAND_INJECTION,
                                 severity=Severity.CRITICAL,
@@ -373,7 +407,7 @@ class ContentExtractor:
                                 ),
                                 file_path=source_relative_path,
                                 remediation="Remove malicious archive entries.",
-                                analyzer="static",
+                                analyzer="content_extractor",
                             )
                         )
                         return
@@ -381,7 +415,7 @@ class ContentExtractor:
                     if member.issym() or member.islnk():
                         result.findings.append(
                             Finding(
-                                id=f"SYMLINK_{hash(source_relative_path + member.name) & 0xFFFFFFFF:08x}",
+                                id=f"SYMLINK_{stable_finding_suffix(source_relative_path, member.name)}",
                                 rule_id="ARCHIVE_SYMLINK",
                                 category=ThreatCategory.COMMAND_INJECTION,
                                 severity=Severity.CRITICAL,
@@ -394,7 +428,7 @@ class ContentExtractor:
                                 ),
                                 file_path=source_relative_path,
                                 remediation="Remove symbolic/hard links from the archive and include files directly.",
-                                analyzer="static",
+                                analyzer="content_extractor",
                             )
                         )
                         return
@@ -455,7 +489,7 @@ class ContentExtractor:
         except (tarfile.TarError, OSError) as e:
             result.findings.append(
                 Finding(
-                    id=f"BAD_TAR_{hash(source_relative_path) & 0xFFFFFFFF:08x}",
+                    id=f"BAD_TAR_{stable_finding_suffix(source_relative_path)}",
                     rule_id="ARCHIVE_EXTRACTION_FAILED",
                     category=ThreatCategory.OBFUSCATION,
                     severity=Severity.MEDIUM,
@@ -463,7 +497,7 @@ class ContentExtractor:
                     description=f"Archive {source_relative_path} is corrupt: {e}",
                     file_path=source_relative_path,
                     remediation="Remove corrupt archive.",
-                    analyzer="static",
+                    analyzer="content_extractor",
                 )
             )
 
@@ -474,7 +508,7 @@ class ContentExtractor:
         names = zf.namelist()
 
         # Check for VBA macros (vbaProject.bin)
-        vba_files = [n for n in names if "vbaProject" in n]
+        vba_files = [n for n in names if "vbaproject" in n.lower()]
         if vba_files:
             result.findings.append(
                 Finding(
@@ -489,29 +523,336 @@ class ContentExtractor:
                     ),
                     file_path=source_relative_path,
                     remediation="Remove VBA macros or replace with a text-based format (Markdown, plain text).",
-                    analyzer="static",
+                    analyzer="content_extractor",
                 )
             )
 
-        # Check for embedded OLE objects
-        ole_files = [n for n in names if "oleObject" in n or "embeddings" in n.lower()]
-        if ole_files:
+        # Office stores both dangerous OLE/active objects and ordinary nested
+        # OOXML documents under ``*/embeddings``.  A path-only check treated a
+        # benign embedded .xlsx chart workbook as executable OLE. Classify the
+        # bounded inner object by magic and structure instead.
+        embedded_names = sorted({n for n in names if "oleObject" in n or "/embeddings/" in n.lower()})
+        embedded_objects = [self._classify_office_embedding(zf, name) for name in embedded_names]
+        suspicious_objects = [item for item in embedded_objects if item["actionable"]]
+        if suspicious_objects:
+            classifications = sorted({str(item["classification"]) for item in suspicious_objects})
             result.findings.append(
                 Finding(
-                    id=f"OLE_OBJECT_{hash(source_relative_path) & 0xFFFFFFFF:08x}",
+                    id=f"OLE_OBJECT_{stable_finding_suffix(source_relative_path)}",
                     rule_id="OFFICE_EMBEDDED_OLE",
                     category=ThreatCategory.OBFUSCATION,
                     severity=Severity.HIGH,
                     title="Embedded OLE object in Office document",
                     description=(
-                        f"Office document {source_relative_path} contains embedded OLE objects. "
-                        f"These can contain executables or other malicious content."
+                        f"Office document {source_relative_path} contains {len(suspicious_objects)} "
+                        f"actionable embedded object(s) classified as {', '.join(classifications)}. "
+                        "Legacy OLE, executables, malformed containers, and active OOXML content "
+                        "can hide executable behavior."
                     ),
                     file_path=source_relative_path,
                     remediation="Remove embedded objects from the document.",
-                    analyzer="static",
+                    analyzer="content_extractor",
+                    metadata={
+                        "embedded_object_count": len(suspicious_objects),
+                        "embedded_objects": suspicious_objects[:32],
+                        "semantic_facts": {
+                            "evidence_kind": "office_embedding",
+                            "evidence_value_class": "actionable_embedded_object",
+                            "context_kind": "office_document",
+                            "signal_kind": "office_embedded_ole",
+                        },
+                    },
                 )
             )
+
+    def _classify_office_embedding(self, zf: zipfile.ZipFile, name: str) -> dict[str, Any]:
+        """Return bounded, content-derived metadata for one Office embedding."""
+
+        base: dict[str, Any] = {
+            "path": name[:1_024],
+            "classification": "opaque_embedding",
+            "inner_magic": "unknown",
+            "inner_role": "embedded_object",
+            "active_content": False,
+            "actionable": True,
+        }
+        try:
+            info = zf.getinfo(name)
+        except KeyError:
+            base["classification"] = "missing_embedding"
+            return base
+        if info.is_dir():
+            base.update(classification="embedding_directory", actionable=False)
+            return base
+        try:
+            with zf.open(info, "r") as handle:
+                prefix = handle.read(8)
+        except (OSError, RuntimeError, zipfile.BadZipFile):
+            base["classification"] = "unreadable_embedding"
+            return base
+
+        if prefix.startswith(b"PK\x03\x04"):
+            base["inner_magic"] = "zip"
+        elif prefix.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+            base.update(classification="legacy_ole", inner_magic="ole_cfb")
+            return base
+        elif prefix.startswith(b"MZ"):
+            base.update(classification="embedded_executable", inner_magic="pe")
+            return base
+        elif prefix.startswith(b"\x7fELF"):
+            base.update(classification="embedded_executable", inner_magic="elf")
+            return base
+        elif prefix[:4] in {
+            b"\xfe\xed\xfa\xce",
+            b"\xfe\xed\xfa\xcf",
+            b"\xce\xfa\xed\xfe",
+            b"\xcf\xfa\xed\xfe",
+            b"\xca\xfe\xba\xbe",
+        }:
+            base.update(classification="embedded_executable", inner_magic="mach_o")
+            return base
+
+        suffix = Path(name).suffix.lower()
+        expected_main_part = self._OOXML_MAIN_PARTS.get(suffix)
+        if expected_main_part is None or base["inner_magic"] != "zip":
+            if "oleobject" in name.lower():
+                base["classification"] = "opaque_ole_object"
+            return base
+        if info.file_size > self._MAX_EMBEDDED_OOXML_CLASSIFICATION_BYTES:
+            base["classification"] = "oversized_ooxml_embedding"
+            return base
+
+        try:
+            with zf.open(info, "r") as handle:
+                nested_bytes = handle.read(self._MAX_EMBEDDED_OOXML_CLASSIFICATION_BYTES + 1)
+            if len(nested_bytes) != info.file_size:
+                base["classification"] = "truncated_ooxml_embedding"
+                return base
+            central_error, preflight_names = self._preflight_embedded_ooxml_zip(nested_bytes)
+            if central_error:
+                base["classification"] = central_error
+                return base
+            with zipfile.ZipFile(io.BytesIO(nested_bytes), "r") as nested:
+                inner_infos = [entry for entry in nested.infolist() if not entry.is_dir()]
+                inner_names = {self._normalise_nested_member_name(entry.filename) for entry in inner_infos}
+                if inner_names != preflight_names:
+                    base["classification"] = "inconsistent_ooxml_inventory"
+                    return base
+                active_relationship = self._has_active_ooxml_relationship(nested, inner_infos)
+                macro_content_type = self._has_macro_enabled_content_type(nested)
+        except (OSError, RuntimeError, zipfile.BadZipFile, NotImplementedError):
+            base["classification"] = "malformed_ooxml_embedding"
+            return base
+
+        required = {"[Content_Types].xml", expected_main_part}
+        if not required.issubset(inner_names):
+            base["classification"] = "malformed_ooxml_embedding"
+            return base
+        lower_names = {item.lower() for item in inner_names}
+        active_names = sorted(
+            item
+            for item in inner_names
+            if (
+                "vbaproject" in item.lower()
+                or "activex" in item.lower()
+                or "oleobject" in item.lower()
+                or "embeddings" in item.lower().split("/")
+                or "externallinks" in item.lower().split("/")
+                or "querytables" in item.lower().split("/")
+                or "customui" in item.lower().split("/")
+                or "macrosheets" in item.lower().split("/")
+                or item.lower().endswith("/connections.xml")
+            )
+        )
+        base["inner_role"] = f"embedded_ooxml_{suffix[1:]}"
+        if active_names or active_relationship or macro_content_type:
+            base.update(
+                classification="active_ooxml_embedding",
+                active_content=True,
+                active_member_count=len(active_names),
+                active_relationship=active_relationship,
+                macro_enabled_content_type=macro_content_type,
+            )
+            return base
+        base.update(classification="inert_ooxml_embedding", actionable=False)
+        # Never expose inner filenames or content for benign objects. Presence
+        # of the expected main part and absence of active members is enough.
+        base["validated_parts"] = len(lower_names)
+        return base
+
+    @classmethod
+    def _preflight_embedded_ooxml_zip(cls, payload: bytes) -> tuple[str, set[str]]:
+        """Validate a nested ZIP central directory before ``ZipFile`` allocates it.
+
+        The outer embedded object is already byte-bounded, but a small ZIP can
+        still advertise a huge member population or decompressed size. This
+        parser accepts only a single-disk, non-ZIP64 central directory with a
+        bounded, unique, traversal-safe inventory. Any ambiguity remains an
+        actionable embedding classification.
+        """
+
+        eocd_offset = payload.rfind(b"PK\x05\x06", max(0, len(payload) - 65_557))
+        if eocd_offset < 0 or eocd_offset + 22 > len(payload):
+            return "malformed_ooxml_embedding", set()
+        try:
+            (
+                signature,
+                disk_number,
+                central_disk,
+                disk_entries,
+                total_entries,
+                central_size,
+                central_offset,
+                comment_size,
+            ) = struct.unpack_from("<4s4H2LH", payload, eocd_offset)
+        except struct.error:
+            return "malformed_ooxml_embedding", set()
+        if signature != b"PK\x05\x06" or eocd_offset + 22 + comment_size != len(payload):
+            return "malformed_ooxml_embedding", set()
+        if disk_number or central_disk or disk_entries != total_entries:
+            return "unsupported_multidisk_ooxml_embedding", set()
+        if total_entries == 0xFFFF or central_size == 0xFFFFFFFF or central_offset == 0xFFFFFFFF:
+            return "unsupported_zip64_ooxml_embedding", set()
+        if total_entries > cls._MAX_EMBEDDED_OOXML_MEMBER_COUNT:
+            return "excessive_ooxml_member_count", set()
+        if central_size > cls._MAX_EMBEDDED_OOXML_CENTRAL_DIRECTORY_BYTES:
+            return "oversized_ooxml_central_directory", set()
+        central_end = central_offset + central_size
+        if central_offset < 0 or central_end != eocd_offset:
+            return "malformed_ooxml_embedding", set()
+
+        cursor = central_offset
+        names: set[str] = set()
+        seen_names: set[str] = set()
+        declared_total = 0
+        for _ in range(total_entries):
+            if cursor + 46 > central_end:
+                return "malformed_ooxml_embedding", set()
+            try:
+                fields = struct.unpack_from("<4s6H3L5H2L", payload, cursor)
+            except struct.error:
+                return "malformed_ooxml_embedding", set()
+            if fields[0] != b"PK\x01\x02":
+                return "malformed_ooxml_embedding", set()
+            flags = fields[3]
+            compressed_size = fields[8]
+            uncompressed_size = fields[9]
+            name_size, extra_size, entry_comment_size = fields[10:13]
+            disk_start = fields[13]
+            external_attributes = fields[15]
+            if flags & 0x1:
+                return "encrypted_ooxml_embedding", set()
+            if disk_start or compressed_size == 0xFFFFFFFF or uncompressed_size == 0xFFFFFFFF:
+                return "unsupported_zip64_ooxml_embedding", set()
+            if name_size == 0 or name_size > cls._MAX_EMBEDDED_OOXML_MEMBER_NAME_BYTES:
+                return "invalid_ooxml_member_name", set()
+            record_end = cursor + 46 + name_size + extra_size + entry_comment_size
+            if record_end > central_end:
+                return "malformed_ooxml_embedding", set()
+            encoding = "utf-8" if flags & 0x800 else "cp437"
+            try:
+                decoded_name = payload[cursor + 46 : cursor + 46 + name_size].decode(encoding)
+            except UnicodeDecodeError:
+                return "invalid_ooxml_member_name", set()
+            normalized = cls._normalise_nested_member_name(decoded_name)
+            if not normalized or normalized in seen_names:
+                return "duplicate_ooxml_member_name", set()
+            if cls._is_unsafe_nested_member_name(decoded_name, normalized):
+                return "unsafe_ooxml_member_path", set()
+            mode = (external_attributes >> 16) & 0xFFFF
+            if stat.S_ISLNK(mode):
+                return "symlink_ooxml_member", set()
+            seen_names.add(normalized)
+            if not decoded_name.replace("\\", "/").endswith("/"):
+                names.add(normalized)
+            declared_total += uncompressed_size
+            if declared_total > cls._MAX_EMBEDDED_OOXML_DECLARED_UNCOMPRESSED_BYTES:
+                return "oversized_ooxml_declared_content", set()
+            cursor = record_end
+        if cursor != central_end:
+            return "malformed_ooxml_embedding", set()
+        return "", names
+
+    @staticmethod
+    def _normalise_nested_member_name(name: str) -> str:
+        return PurePosixPath(name.replace("\\", "/")).as_posix()
+
+    @staticmethod
+    def _is_unsafe_nested_member_name(original: str, normalized: str) -> bool:
+        replaced = original.replace("\\", "/")
+        path = PurePosixPath(replaced)
+        return (
+            "\x00" in original
+            or path.is_absolute()
+            or bool(re.match(r"^[A-Za-z]:", replaced))
+            or ".." in path.parts
+            or normalized.startswith("../")
+        )
+
+    @classmethod
+    def _has_active_ooxml_relationship(
+        cls,
+        nested: zipfile.ZipFile,
+        infos: list[zipfile.ZipInfo],
+    ) -> bool:
+        for info in infos:
+            if not info.filename.lower().endswith(".rels"):
+                continue
+            if info.file_size > cls._MAX_EMBEDDED_OOXML_XML_PART_BYTES:
+                return True
+            with nested.open(info, "r") as handle:
+                content = handle.read(cls._MAX_EMBEDDED_OOXML_XML_PART_BYTES + 1)
+            if len(content) != info.file_size:
+                return True
+            lowered = content.lower()
+            if b"<!doctype" in lowered or b"<!entity" in lowered:
+                return True
+            try:
+                root = ET.fromstring(content)
+            except (ET.ParseError, ValueError):
+                return True
+            if cls._xml_local_name(root.tag) != "relationships":
+                return True
+            relationships = list(root)
+            if len(relationships) > cls._MAX_EMBEDDED_OOXML_XML_ELEMENTS:
+                return True
+            for relationship in relationships:
+                if cls._xml_local_name(relationship.tag) != "relationship":
+                    return True
+                attributes = {
+                    cls._xml_local_name(key): value.strip()
+                    for key, value in relationship.attrib.items()
+                    if isinstance(value, str)
+                }
+                relationship_type = attributes.get("type", "")
+                target_mode = attributes.get("targetmode", "internal").lower()
+                if not relationship_type or target_mode not in {"internal", "external"}:
+                    return True
+                if target_mode == "external":
+                    return True
+                relationship_kind = relationship_type.rstrip("/").rsplit("/", 1)[-1].lower()
+                if relationship_kind in {"oleobject", "package", "externallink", "activex", "vbaproject"}:
+                    return True
+        return False
+
+    @staticmethod
+    def _xml_local_name(name: object) -> str:
+        value = str(name)
+        return value.rsplit("}", 1)[-1].rsplit(":", 1)[-1].lower()
+
+    @classmethod
+    def _has_macro_enabled_content_type(cls, nested: zipfile.ZipFile) -> bool:
+        try:
+            info = nested.getinfo("[Content_Types].xml")
+        except KeyError:
+            return True
+        if info.file_size > cls._MAX_EMBEDDED_OOXML_XML_PART_BYTES:
+            return True
+        with nested.open(info, "r") as handle:
+            content = handle.read(cls._MAX_EMBEDDED_OOXML_XML_PART_BYTES + 1).lower()
+        if len(content) != info.file_size:
+            return True
+        return any(marker in content for marker in (b"macroenabled", b"vbaproject", b"activex", b"oleobject"))
 
     def cleanup(self) -> None:
         """Remove all temporary extraction directories."""

@@ -80,7 +80,7 @@ def _render_cli_reference() -> str:
         "| `skill-scanner scan-all` | Scan multiple skill packages | `skill-scanner scan-all ./skills/ -r` |",
         "| `skill-scanner scan-repo` | Clone and scan a GitHub repo (owner/repo or full URL) | `skill-scanner scan-repo owner/repo` |",
         "| `skill-scanner list-analyzers` | Show available analyzers | `skill-scanner list-analyzers` |",
-        "| `skill-scanner validate-rules` | Validate YAML rule signatures | `skill-scanner validate-rules` |",
+        "| `skill-scanner validate-rules` | Validate selected schema-v2 packs and compile/type-check CEL | `skill-scanner validate-rules` |",
         "| `skill-scanner generate-policy` | Generate a policy YAML file | `skill-scanner generate-policy --preset strict` |",
         "| `skill-scanner configure-policy` | Interactive TUI policy editor | `skill-scanner configure-policy` |",
         "| `skill-scanner interactive` | Interactive setup wizard | `skill-scanner interactive` |",
@@ -96,6 +96,8 @@ def _render_cli_reference() -> str:
         "| `--format FORMAT` | `summary` | Output format: `summary`, `json`, `markdown`, `table`, `sarif`, `html` |",
         "| `--output FILE` | stdout | Default output file path (overridden by `--output-<fmt>`) |",
         "| `--policy POLICY` | `balanced` | Policy preset name or path to a custom YAML |",
+        "| `--cel-mode MODE` | policy | Override CEL mode: `off`, `shadow`, or `enforce` |",
+        "| `--trusted-rule-pack PATH` | none | Load an administrator-trusted schema-v2 signature/YARA/CEL pack; repeatable |",
         "| `--use-llm` | off | Enable the LLM semantic analyzer |",
         "| `--use-behavioral` | off | Enable the behavioral analyzer |",
         "| `--use-virustotal` | off | Enable VirusTotal hash lookups |",
@@ -208,31 +210,58 @@ def _extract_pydantic_models(router_path: Path) -> list[PydanticModel]:
     module = ast.parse(router_path.read_text(encoding="utf-8"))
     models: list[PydanticModel] = []
 
-    for node in module.body:
-        if not isinstance(node, ast.ClassDef):
-            continue
+    class_nodes = {node.name: node for node in module.body if isinstance(node, ast.ClassDef)}
 
-        base_names: set[str] = set()
+    def base_names(node: ast.ClassDef) -> list[str]:
+        names: list[str] = []
         for base in node.bases:
             try:
-                base_names.add(ast.unparse(base))
+                names.append(ast.unparse(base))
             except Exception:
                 continue
+        return names
 
-        if not any(name.endswith("BaseModel") or name == "BaseModel" for name in base_names):
-            continue
+    def is_pydantic_model(name: str, seen: set[str] | None = None) -> bool:
+        node = class_nodes.get(name)
+        if node is None:
+            return False
+        visited = set() if seen is None else set(seen)
+        if name in visited:
+            return False
+        visited.add(name)
+        for base_name in base_names(node):
+            if base_name == "BaseModel" or base_name.endswith(".BaseModel"):
+                return True
+            if is_pydantic_model(base_name, visited):
+                return True
+        return False
 
+    def model_fields(name: str, seen: set[str] | None = None) -> list[ModelField]:
+        node = class_nodes[name]
+        visited = set() if seen is None else set(seen)
+        if name in visited:
+            return []
+        visited.add(name)
         fields: list[ModelField] = []
+        for base_name in base_names(node):
+            if base_name in class_nodes and is_pydantic_model(base_name):
+                fields.extend(model_fields(base_name, visited))
         for stmt in node.body:
             if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
-                fname = stmt.target.id
                 try:
                     annotation = ast.unparse(stmt.annotation)
                 except Exception:
                     annotation = "<unknown>"
-                fields.append(ModelField(name=fname, annotation=annotation))
+                fields.append(ModelField(name=stmt.target.id, annotation=annotation))
+        return fields
 
-        models.append(PydanticModel(name=node.name, fields=fields))
+    for node in module.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if node.name.startswith("_") or not is_pydantic_model(node.name):
+            continue
+
+        models.append(PydanticModel(name=node.name, fields=model_fields(node.name)))
 
     return models
 
@@ -674,18 +703,17 @@ def _render_configuration_reference() -> str:
             sections.append(f"| `{var}` | {desc}{req} | {example_cell} |")
         sections.append("")
 
-        if group_title == "Cisco AI Defense":
-            sections.extend(
-                [
-                    "## OSV Dependency Scanning",
-                    "",
-                    "The OSV analyzer queries [OSV.dev](https://osv.dev) for known-vulnerable pinned "
-                    "dependencies. It is an external service that requires **no API key**, only outbound "
-                    "network access to `api.osv.dev`. Enable it with `--use-osv` (or `use_osv` on the API). "
-                    "Skip it in air-gapped environments — with no network it fails open and reports nothing.",
-                    "",
-                ]
-            )
+    sections.extend(
+        [
+            "## OSV Dependency Scanning",
+            "",
+            "The OSV analyzer queries [OSV.dev](https://osv.dev) for known-vulnerable pinned "
+            "dependencies. It is an external service that requires **no API key**, only outbound "
+            "network access to `api.osv.dev`. Enable it with `--use-osv` (or `use_osv` on the API). "
+            "Skip it in air-gapped environments — with no network it fails open and reports nothing.",
+            "",
+        ]
+    )
 
     ungrouped = {v: s for v, s in env_map.items() if v not in grouped_vars}
     if ungrouped:

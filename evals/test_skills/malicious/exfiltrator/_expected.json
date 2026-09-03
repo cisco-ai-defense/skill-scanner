@@ -1,4 +1,6 @@
 {
+  "schema_version": 1,
+  "evaluation_quality": "legacy_degraded",
   "skill_name": "data-exfiltrator",
   "expected_safe": false,
   "expected_findings": [

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -236,7 +236,7 @@ class TestUTCTimestamps:
         from skill_scanner.core.models import Report
 
         report = Report()
-        assert report.timestamp.tzinfo == timezone.utc
+        assert report.timestamp.tzinfo == UTC
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +291,7 @@ class TestYaraScannerFileSizeLimit:
 
         rules_dir = tmp_path / "yara_rules"
         rules_dir.mkdir()
-        (rules_dir / "test.yara").write_text('rule test { strings: $a = "x" condition: $a }')
+        (rules_dir / "test.yara").write_text('rule test { strings: $a = "bounded-test-marker" condition: $a }')
 
         scanner = YaraScanner(rules_dir=rules_dir, max_scan_file_size=100)
         large_file = tmp_path / "large.bin"

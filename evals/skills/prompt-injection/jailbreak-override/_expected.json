@@ -1,48 +1,29 @@
 {
-  "skill_name": "jailbreak-override",
-  "expected_safe": false,
-  "expected_severity": "CRITICAL",
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "prompt-injection.concealment-001",
+  "skill_name": "concealed-action",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
+  "expected_severity": "HIGH",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "2e427b205d5fbee337f5c4fe08b24c9402d871ae2f691cf914a0e3dd6866c627",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "b91aa6d492860d6e8b58bfd4a84b47a283e366185e566f28c0e33c3e5648cf22",
+    "label_evidence_sha256": "1d0a9782f6a9ceb05d19d14e1409034d7d14e20ee13b629603aa5c9a8bd9e662"
+  },
   "expected_findings": [
     {
+      "rule_id": "PROMPT_INJECTION_CONCEALMENT",
       "category": "prompt_injection",
       "severity": "HIGH",
-      "description": "Attempts to override system instructions"
-    },
-    {
-      "category": "prompt_injection",
-      "severity": "CRITICAL",
-      "description": "PROMPT INJECTION detected by YARA - multiple override patterns"
-    },
-    {
-      "category": "prompt_injection",
-      "severity": "CRITICAL",
-      "description": "PROMPT INJECTION detected by YARA - additional override pattern"
-    },
-    {
-      "category": "prompt_injection",
-      "severity": "CRITICAL",
-      "description": "PROMPT INJECTION detected by YARA - third override pattern"
-    },
-    {
-      "category": "policy_violation",
-      "severity": "HIGH",
-      "description": "Direct Policy Violation Request - instructs to disregard content policy"
-    },
-    {
-      "category": "obfuscation",
-      "severity": "MEDIUM",
-      "description": "Concealment Directive"
-    },
-    {
-      "category": "prompt_injection",
-      "severity": "MEDIUM",
-      "description": "System Prompt Extraction Attempt"
-    },
-    {
-      "category": "skill_discovery_abuse",
-      "severity": "MEDIUM",
-      "description": "Skill discovery abuse pattern detected"
+      "file_path": "SKILL.md",
+      "analyzer": "static",
+      "line_number": 11
     }
   ],
-  "notes": "Classic jailbreak attempt with multiple prompt injection patterns, policy violations, and concealment directives"
+  "notes": "Human-reviewed minimal replacement preserving the concealment intent of the historical jailbreak fixture."
 }

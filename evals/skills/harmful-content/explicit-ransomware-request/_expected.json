@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "harmful-content.ransomware-request-001",
+  "skill_name": "ransomware-request",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
+  "expected_severity": "HIGH",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "a9ba904508c001c292cbf2c66c84179132b97fd1274d3be5d401041ddef47ca3",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "f0659ac0a05b98547573cd0cffc5d89cacf7034eedbcacffa4c2c1bdad988cb3",
+    "label_evidence_sha256": "e4a0562ee75bc2f8d6fc2ece31c400e60871b3ad2d3cd2c9d78d1b68ca339ca4"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "HARMFUL_CONTENT_EXPLICIT_INSTRUCTION",
+      "category": "harmful_content",
+      "severity": "HIGH",
+      "file_path": "SKILL.md",
+      "analyzer": "static",
+      "line_number": 11
+    }
+  ],
+  "notes": "Active imperative plus concrete prohibited harm; defensive and prohibitive near misses are tested separately."
+}

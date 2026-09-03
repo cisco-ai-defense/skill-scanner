@@ -29,6 +29,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from skill_scanner import __version__ as PACKAGE_VERSION
+from skill_scanner.core.scan_policy import ScanPolicy
 
 try:
     from fastapi.testclient import TestClient
@@ -186,6 +187,32 @@ class TestScanEndpoint:
         assert "scan_duration_seconds" in data
         assert "timestamp" in data
         assert "findings" in data
+
+    def test_oversized_manifest_returns_a_closed_api_verdict(self, client, tmp_path: Path):
+        skill = tmp_path / "oversized"
+        skill.mkdir()
+        (skill / "SKILL.md").write_bytes(b"x" * 129)
+        policy = ScanPolicy.default()
+        policy.file_limits.max_loader_file_size_bytes = 128
+        policy_path = tmp_path / "policy.yaml"
+        policy.to_yaml(policy_path)
+
+        response = client.post(
+            "/scan",
+            json={
+                "skill_directory": str(skill),
+                "policy": str(policy_path),
+                "use_llm": False,
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["is_safe"] is False
+        assert data["max_severity"] == "HIGH"
+        assert [finding["rule_id"] for finding in data["findings"]] == ["SKILL_LOAD_REJECTED_LIMIT"]
+        assert data["scan_metadata"]["loader"]["content_scanned"] is False
+        assert data["scan_metadata"]["cel"]["evaluated"] == 0
 
     def test_scan_with_behavioral_analyzer(self, client, safe_skill_dir):
         """Test scanning with behavioral analyzer enabled."""
@@ -479,8 +506,8 @@ class TestUploadEndpoint:
         response = client.post("/scan-upload", files=files, data=data)
         assert response.status_code == 422
 
-    def test_upload_malformed_skill_returns_validation_error(self, client):
-        """Test malformed skill metadata returns a validation error."""
+    def test_upload_missing_name_uses_bounded_inert_fallback(self, client):
+        """Missing manifest identity is scanned with explicit fallback telemetry."""
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(
@@ -493,10 +520,20 @@ class TestUploadEndpoint:
 
         response = client.post("/scan-upload", files=files)
 
-        assert response.status_code == 422
-        detail = response.json()["detail"]
-        assert "Invalid skill package" in detail
-        assert "name" in detail
+        assert response.status_code == 200
+        result = response.json()
+        assert result["skill_name"] == "bad-skill"
+        assert result["scan_metadata"]["loader"] == {
+            "fallback_used": True,
+            "fallback_mode": "bounded_inert_raw_body",
+            "strict_error_type": "SkillLoadError",
+            "strict_error_code": "MISSING_REQUIRED_MANIFEST_FIELD",
+            "manifest_complete": False,
+            "capability_facts_trusted": False,
+            "projection_complete": False,
+            "projection_error_code": "MANIFEST_METADATA_INCOMPLETE",
+        }
+        assert "SKILL_LOAD_FALLBACK_USED" in {finding["rule_id"] for finding in result["findings"]}
 
 
 # =============================================================================

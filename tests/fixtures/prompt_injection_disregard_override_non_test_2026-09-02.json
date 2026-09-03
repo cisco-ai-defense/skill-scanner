@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "development_and_supplemental_non_test",
+  "status": "not_release_authoritative",
+  "rule": {
+    "id": "PROMPT_INJECTION_IGNORE_INSTRUCTIONS",
+    "source": "signature",
+    "analyzer": "static",
+    "category": "prompt_injection",
+    "severity": "HIGH",
+    "implementation_sha256": "1ab8e56ea0be23efb5ede022af95572dc26050a4a49e2800c6417b94bd1b93a1",
+    "added_phrase_branch": "(?i)\\bdisregard(?:ing)?\\s+(?:all\\s+)?(?:previous|prior)\\s+(?:prompts?|instructions?|commands?)\\b",
+    "excluded_inert_command_label_prefix": "(?i)^\\s*(?:command|prompt|instruction)s?\\s+(?:addressed\\s+)?to\\s+(?:you|the\\s+(?:agent|assistant))\\s*\\(",
+    "exclusion_population_hits": {
+      "malicious_skill_bench_non_test": 0,
+      "in_page_raw": 0,
+      "notinject_raw": 0
+    },
+    "generic_disregard_allowed": false,
+    "preserves_existing_disregard_rules_branch": true
+  },
+  "malicious_skill_bench": {
+    "dataset_id": "ProtectSkills/MaliciousSkillBench",
+    "revision": "d4b42ce5766a6e0359c987cf59c1007cb3795a90",
+    "artifact_manifest_sha256": "ae542800a95a893a0ae724bdc625d5a1e19d81ff08ae1f846ddb54d77bfb0b9a",
+    "selection": "source_disjoint in {train,validation} AND m_structural_disjoint in {train,validation}",
+    "selection_sha256": "53785d40aedbbf79b42688c9a1261fdda0cc1270738614689bb60aa89fecda7e",
+    "sealed_test_rows": 0,
+    "population": {
+      "all": 6597,
+      "malicious": 5258,
+      "malicious_text_available": 5254,
+      "malicious_text_unavailable": 4,
+      "benign": 1339,
+      "benign_text_available": 1339
+    },
+    "branch_results": {
+      "malicious_support": 11,
+      "benign_hits": 0,
+      "hit_selection_sha256": "a650dd81eab0ecb37064508296f1e930748b02a0de2aa3cc410d17d7552b34dd",
+      "source_support": {
+        "SRC001:MalSkillBench": 11
+      },
+      "distinct_structural_families": 11,
+      "maximum_family_support": 1,
+      "source_disjoint_partitions": {
+        "train": 9,
+        "validation": 2
+      },
+      "structural_disjoint_partitions": {
+        "train": 9,
+        "validation": 2
+      }
+    },
+    "core_blocker_overlap": {
+      "existing_signature_hits": 9,
+      "other_actionable_hits": 8,
+      "already_actionable_packages": 10,
+      "actionable_after_branch": 11,
+      "net_actionable_lift": 1,
+      "net_lift_selection_sha256": "d8309d5bb694fa711ec983baaa156f466f9a32f8bf9f7ab63b8ee82151ddb9fb",
+      "scan_errors": 0,
+      "analyzer_failure_samples": 0
+    },
+    "source_artifact_sha256": {
+      "primary.parquet": "1d6382017f259bde0b699d402318f3c03f16b2e8ed2363a346b77a5465f06a06",
+      "metadata.parquet": "4ef1d5d7a7769f11c961c95f8571cb3c9d8fa7b1d09b93dcb11b85de641f742b",
+      "splits/source_disjoint.parquet": "9fae37c53b6ad47070d118e9bc4cdafd82c416a68b7e74847b4e0dd9d66bd276",
+      "splits/m_structural_disjoint.parquet": "f6456f678910170bc2203998d1823842112bba5d5036859f58ea409c292a34d8"
+    }
+  },
+  "in_page_prompt_injection": {
+    "dataset_id": "SoheilKhodayari/in_page_prompt_injection_pub",
+    "revision": "0a04d1762cf60957f954f16a6cb9525ab32d6bca",
+    "artifact_manifest_sha256": "6b262dfcf22f58866143079118e6c906cfade60a6781d52f87930127d8926459",
+    "metric_scope": "supplemental_indirect_injection_signal_recall",
+    "canonical_population": 1101,
+    "baseline_actionable": 1064,
+    "baseline_actionable_recall": 0.9663941871026339,
+    "branch_actionable": 1094,
+    "branch_actionable_recall": 0.9936421435059037,
+    "branch_actionable_recall_wilson_95": [
+      0.9869346728927869,
+      0.9969168936118425
+    ],
+    "absolute_recall_delta": 0.0272479564032698,
+    "baseline_false_negatives": 37,
+    "canonical_disregard_shaped_misses_audited": 32,
+    "canonical_misses_recovered": 30,
+    "relative_false_negative_reduction": 0.8108108108108109,
+    "canonical_regressions": 0,
+    "remaining_canonical_misses": 7,
+    "recovered_selection_sha256": "995ad8369b36aa1726f329f24aeccc53a3536833584204d5329b63000bc8f6e3",
+    "remaining_selection_sha256": "2370899b011e16be42dcfd0b64d96ac27934770a5393e0e10f27a9d9bc1a8d57",
+    "intentionally_excluded_disregard_shapes": {
+      "generic_content_guidelines": 1,
+      "misspelled_disregar": 1
+    },
+    "raw_population": 15387,
+    "baseline_raw_actionable": 14974,
+    "branch_raw_actionable": 15364,
+    "raw_rows_recovered": 390,
+    "scan_errors": 0,
+    "analyzer_failure_samples": 0,
+    "baseline_report_sha256": "7bb51f06170ead4b2fed15a14c4795b350ab213d9ee19fd32f5941fd34804f82",
+    "branch_report_sha256": "ace75e54fa6593b9756042728eeef75087da1b79741e09cdcb1ffdea245656af"
+  },
+  "notinject": {
+    "dataset_id": "InjecGuard/InjecGuard",
+    "revision": "cb1531f36bffb38b6493438217b36cda8875da8a",
+    "artifact_manifest_sha256": "149f7bf2298de3fa237fb6e57f193d5e796ee111046422bea73f47def79774b1",
+    "metric_scope": "supplemental_hard_negative_diagnostic_only",
+    "population": 339,
+    "direct_branch_hits": 0,
+    "diagnostic_flagged": 0,
+    "actionable_diagnostic_flagged": 0,
+    "scan_errors": 0,
+    "analyzer_failure_samples": 0,
+    "release_fpr_eligible": false,
+    "report_sha256": "1264409974ef5265697ccff35ad15a8f4d4c015c0bc5a55b18d7d9dbaeda9fed"
+  },
+  "local_safe_and_golden_audit": {
+    "safe_packages": 12,
+    "safe_package_markdown_files": 15,
+    "reviewed_test_fixture_markdown_files": 5,
+    "direct_rule_hits": 0
+  },
+  "determinism": {
+    "runs": 5,
+    "stable": true,
+    "timing_excluded_normalized_report_sha256": "db07aa28ad93af237ee752ab3c320c44095b8e7cbacc28d46d6d6330a6292c9f"
+  },
+  "limitations": [
+    "MaliciousSkillBench evidence uses development train/validation intersections only; neither sealed test partition was inspected.",
+    "In-Page and NotInject are supplemental metrics and are not release-authoritative package accuracy or benign-FPR gates.",
+    "The branch deliberately leaves generic disregard wording and misspellings unmatched to preserve the reviewed hard-negative boundary."
+  ]
+}

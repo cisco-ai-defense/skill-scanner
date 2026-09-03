@@ -275,6 +275,12 @@ class TestAnalyzabilityFindings:
         assert len(unanalyzable) == 1
         assert unanalyzable[0].severity == Severity.MEDIUM
         assert "blob.bin" in unanalyzable[0].description
+        assert unanalyzable[0].metadata["semantic_facts"] == {
+            "evidence_kind": "file_analyzability",
+            "evidence_value_class": "opaque_binary",
+            "context_kind": "binary",
+            "signal_kind": "unanalyzable_binary",
+        }
 
     def test_low_score_generates_high_severity(self, tmp_path):
         """Score < 70% should generate a HIGH severity LOW_ANALYZABILITY finding."""

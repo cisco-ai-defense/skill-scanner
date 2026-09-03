@@ -132,7 +132,7 @@
 
 - id: DATA_EXFIL_JS_FS_ACCESS
   category: data_exfiltration
-  severity: HIGH
+  severity: LOW
   patterns:
     # Focus on actual file content read/write; exclude readdir/readdirSync
     # (directory listing is very common in Node.js and rarely exfiltrates data)
@@ -144,5 +144,5 @@
     - "(?i)test"
     - "//.*fs\\."
   file_types: [javascript, typescript]
-  description: "Node.js filesystem access that could read or write sensitive data"
-  remediation: "Review filesystem operations. Ensure they don't access sensitive system files or credential stores"
+  description: "Node.js filesystem access candidate for sensitive-flow correlation"
+  remediation: "Review filesystem operations and correlate sensitive sources with outbound sinks"

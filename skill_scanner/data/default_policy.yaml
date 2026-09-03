@@ -13,6 +13,12 @@ policy_name: default
 policy_version: "1.0"
 preset_base: balanced
 
+# The bundled cel-go v0.32.0 helper always compiles/type-checks selected CEL
+# rules at startup. "shadow" records contextual decisions without suppressing
+# findings; only individually promoted rules can suppress in enforce mode.
+cel:
+  mode: "shadow"
+
 # ---------------------------------------------------------------------------
 # Hidden files – which dotfiles and dotdirs are considered benign
 # ---------------------------------------------------------------------------
@@ -359,8 +365,11 @@ file_classification:
     - ".war"
     - ".apk"
     - ".docx"
+    - ".docm"
     - ".xlsx"
+    - ".xlsm"
     - ".pptx"
+    - ".pptm"
     - ".odt"
     - ".ods"
     - ".odp"
@@ -625,6 +634,7 @@ analyzers:
   static: true
   bytecode: true
   pipeline: true
+  correlation: true
 
 # ---------------------------------------------------------------------------
 # LLM analysis – context budget thresholds for LLM and meta analyzers

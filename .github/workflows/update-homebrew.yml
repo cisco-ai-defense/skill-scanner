@@ -12,21 +12,50 @@ permissions:
   contents: write
 
 jobs:
-  update-formula:
-    name: Regenerate Homebrew formula
+  resolve-release:
+    name: Resolve exact published release
+    runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.release.outputs.release_sha }}
+    steps:
+      - name: Checkout repository and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve exact tag commit
+        id: release
+        shell: bash
+        env:
+          RELEASE_REF: ${{ inputs.version }}
+        run: |
+          if ! git check-ref-format "refs/tags/$RELEASE_REF" >/dev/null; then
+            echo "::error::version must be an exact valid git tag"
+            exit 1
+          fi
+          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_REF"; then
+            echo "::error::release tag does not exist: $RELEASE_REF"
+            exit 1
+          fi
+          release_sha="$(git rev-parse "refs/tags/${RELEASE_REF}^{commit}")"
+          if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release tag did not resolve to a full commit SHA"
+            exit 1
+          fi
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+
+  generate-formula:
+    name: Generate formula from exact release sdist
+    needs: resolve-release
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash
     steps:
-      - name: Resolve version
-        id: version
-        run: echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout code
+      - name: Checkout exact release tag
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.resolve-release.outputs.release_sha }}
           fetch-depth: 0
 
       - name: Install uv
@@ -35,9 +64,15 @@ jobs:
       - name: Install Python 3.12
         run: uv python install 3.12
 
+      - name: Install qualified Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.1"
+          cache-dependency-path: tools/cel_runtime/go.sum
+
       - name: Wait for PyPI propagation
         run: |
-          VERSION="${{ steps.version.outputs.value }}"
+          VERSION="${{ inputs.version }}"
           echo "Waiting for cisco-ai-skill-scanner==${VERSION} on PyPI..."
           for i in $(seq 1 30); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -55,11 +90,114 @@ jobs:
       - name: Regenerate formula
         run: |
           uv run python scripts/update_brew_formula.py \
-            --version "${{ steps.version.outputs.value }}"
+            --version "${{ inputs.version }}"
+          ruby -c Formula/skill-scanner.rb
+          grep -F 'depends_on "go" => :build' Formula/skill-scanner.rb
+          grep -F 'SKILL_SCANNER_CEL_GO_TARGET' Formula/skill-scanner.rb
+          grep -F 'SKILL_SCANNER_CEL_GO_PREBUILT_DIR' Formula/skill-scanner.rb
+          grep -F 'virtualenv_install_with_resources(without: "cel-helper")' Formula/skill-scanner.rb
+          grep -F '"validate-rules"' Formula/skill-scanner.rb
+
+      - name: Upload exact generated formula
+        uses: actions/upload-artifact@v4
+        with:
+          name: skill-scanner-homebrew-formula-${{ inputs.version }}-${{ github.run_id }}
+          path: Formula/skill-scanner.rb
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke-homebrew:
+    name: Smoke Homebrew ${{ matrix.target }}
+    needs:
+      - resolve-release
+      - generate-formula
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-26
+            machine: arm64
+            wheel_tag: cp311.cp312.cp313.cp314-none-macosx_13_0_arm64
+          - target: darwin-amd64
+            runner: macos-26-intel
+            machine: x86_64
+            wheel_tag: cp311.cp312.cp313.cp314-none-macosx_13_0_x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout exact release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-release.outputs.release_sha }}
+
+      - name: Download generated formula
+        uses: actions/download-artifact@v4
+        with:
+          name: skill-scanner-homebrew-formula-${{ inputs.version }}-${{ github.run_id }}
+          path: generated-formula
+
+      - name: Install exact formula from source distribution
+        shell: bash
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          test "$(uname -m)" = "${{ matrix.machine }}"
+          brew install --build-from-source generated-formula/skill-scanner.rb
+
+      - name: Validate packaged helper architecture and rules
+        shell: bash
+        run: |
+          prefix="$(brew --prefix skill-scanner)"
+          helper_root="$prefix/libexec"
+          helper_count="$(find "$helper_root" -type f -name 'skill-scanner-cel-go-darwin-*' | wc -l | tr -d ' ')"
+          test "$helper_count" = 1
+          helper="$(find "$helper_root" -type f -name 'skill-scanner-cel-go-darwin-*' -print -quit)"
+          manifest="$(find "$helper_root" -type f -path '*/skill_scanner/core/cel/_bin/manifest.json' -print -quit)"
+          test -n "$helper"
+          test -n "$manifest"
+          file "$helper" | grep -F "${{ matrix.machine }}"
+          "$(brew --prefix python@3.12)/bin/python3.12" - "$manifest" \
+            "${{ matrix.target }}" "${{ matrix.wheel_tag }}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          helper = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["helper"]
+          assert helper["target"] == sys.argv[2]
+          assert helper["wheel_tag"] == sys.argv[3]
+          assert helper["macos_minimum"] == "13.0"
+          assert helper["cel_go_version"] == "v0.32.0"
+          assert helper["toolchain_version"] == "go1.27.1"
+          PY
+          "$prefix/bin/skill-scanner" validate-rules
+          brew test skill-scanner
+
+  commit-formula:
+    name: Commit qualified formula
+    needs:
+      - generate-formula
+      - smoke-homebrew
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download qualified formula
+        uses: actions/download-artifact@v4
+        with:
+          name: skill-scanner-homebrew-formula-${{ inputs.version }}-${{ github.run_id }}
+          path: generated-formula
 
       - name: Commit and push
         run: |
-          VERSION="${{ steps.version.outputs.value }}"
+          VERSION="${{ inputs.version }}"
+          install -m 644 generated-formula/skill-scanner.rb Formula/skill-scanner.rb
           git diff --quiet Formula/skill-scanner.rb && {
             echo "No changes to formula — skipping commit."
             exit 0

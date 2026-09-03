@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "skill-discovery.keyword-stuffing-001",
+  "skill_name": "keyword-stuffing",
+  "package_label": "contextual_risk",
+  "expected_verdict": "safe",
+  "expected_severity": "MEDIUM",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "003466c6b0a9dfbfa248a5dc0f731bf853f1cca4b531475e0389cb53ae0d5b36",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "a57bfcf1696f57da2a231a3f11d79dbe72c5eaeb517911cfe7611285e5b37074",
+    "label_evidence_sha256": "8c5886667c5738aedb0dd948a7e051b08e93c8c683e92d0a5756c0eeffe67cfd"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "YARA_capability_inflation_generic",
+      "category": "skill_discovery_abuse",
+      "severity": "MEDIUM",
+      "file_path": "payload.md",
+      "analyzer": "static",
+      "line_number": 1
+    }
+  ],
+  "notes": "Isolated repeated-keyword signal; MEDIUM-only contextual risk does not block the package."
+}

@@ -1,4 +1,6 @@
 {
+  "schema_version": 1,
+  "evaluation_quality": "legacy_degraded",
   "skill_name": "simple-formatter",
   "expected_safe": true,
   "expected_findings": [],

@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "unicode-steganography.encoded-tag-001",
+  "skill_name": "encoded-tag-marker",
+  "package_label": "contextual_risk",
+  "expected_verdict": "safe",
+  "expected_severity": "MEDIUM",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "78943cd068764f00ee50b47ea6b656e4550512450690454622a373a9753009d2",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "0597c344bc0975641e3f18cae1ba57c3684f08a6a7b768c8b1705b68ec77bfd1",
+    "label_evidence_sha256": "da1fda3ee5335e8b5cf606ff0025305fb6aa8aaaad1c30b640170b4770c43c1f"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "YARA_prompt_injection_unicode_steganography",
+      "category": "unicode_steganography",
+      "severity": "MEDIUM",
+      "file_path": "payload.py",
+      "analyzer": "static",
+      "line_number": 17
+    }
+  ],
+  "notes": "Encoded Tag Block marker is inert and isolated; MEDIUM-only contextual risk does not block the package."
+}

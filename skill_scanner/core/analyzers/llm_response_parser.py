@@ -66,18 +66,17 @@ class ResponseParser:
             end = response_content.find("```", start)
             response_content = response_content[start:end].strip()
 
-        # Try to find JSON by braces
+        # Decode the first JSON object without hand-counting braces.  raw_decode
+        # correctly handles braces inside JSON strings and gives deterministic
+        # behavior for a valid object followed by provider commentary.
         start_idx = response_content.find("{")
         if start_idx != -1:
-            brace_count = 0
-            for i in range(start_idx, len(response_content)):
-                if response_content[i] == "{":
-                    brace_count += 1
-                elif response_content[i] == "}":
-                    brace_count -= 1
-                    if brace_count == 0:
-                        json_str = response_content[start_idx : i + 1]
-                        parsed: dict[str, Any] = json.loads(json_str)
-                        return parsed
+            try:
+                parsed, _ = json.JSONDecoder().raw_decode(response_content[start_idx:])
+            except json.JSONDecodeError:
+                pass
+            else:
+                if isinstance(parsed, dict):
+                    return parsed
 
         raise ValueError(f"Could not parse JSON from response: {response_content[:200]}")

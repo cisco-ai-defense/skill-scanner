@@ -5,16 +5,12 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
 from packaging.requirements import Requirement
 from packaging.version import Version
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
-    import tomli as tomllib
 
 from skill_scanner.cli.policy_tui import PolicyConfigApp
 

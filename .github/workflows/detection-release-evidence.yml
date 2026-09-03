@@ -1,0 +1,378 @@
+name: Produce Detection Release Evidence
+
+on:
+  workflow_call:
+    inputs:
+      release_ref:
+        description: "Exact release tag to evaluate"
+        required: true
+        type: string
+      release_sha:
+        description: "Full commit SHA resolved from release_ref"
+        required: true
+        type: string
+    secrets:
+      hf_token:
+        description: "Optional Hugging Face token; the blocking public corpus does not require one"
+        required: false
+    outputs:
+      artifact_name:
+        description: "Fixed-name mandatory public release evidence artifact"
+        value: ${{ jobs.evaluate.outputs.artifact_name }}
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: "Exact release tag to evaluate (dispatch this workflow from that tag)"
+        required: true
+        type: string
+      release_sha:
+        description: "Full commit SHA resolved from release_ref"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: detection-release-evidence-${{ inputs.release_sha }}
+  cancel-in-progress: false
+
+jobs:
+  acquire:
+    name: Acquire and materialize locked public corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: detection-release-corpora
+    outputs:
+      snapshot_artifact: ${{ steps.snapshot-name.outputs.name }}
+    steps:
+      - name: Checkout exact release revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+
+      - name: Verify tag, checkout, and workflow run identify one commit
+        shell: bash
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          if [[ ! "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release_sha must be a full lowercase commit SHA"
+            exit 1
+          fi
+          if ! git check-ref-format "refs/tags/$RELEASE_REF" >/dev/null; then
+            echo "::error::release_ref must be an exact valid tag name"
+            exit 1
+          fi
+          tag_sha="$(git rev-parse "refs/tags/${RELEASE_REF}^{commit}")"
+          checkout_sha="$(git rev-parse HEAD)"
+          if [[ "$tag_sha" != "$RELEASE_SHA" || "$checkout_sha" != "$RELEASE_SHA" ]]; then
+            echo "::error::release tag, input SHA, and checkout do not identify one commit"
+            exit 1
+          fi
+          if [[ "$GITHUB_SHA" != "$RELEASE_SHA" ]]; then
+            echo "::error::dispatch/caller head_sha must be the exact release commit"
+            exit 1
+          fi
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6.7.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install locked acquisition dependencies
+        # Acquisition only needs the locked dataset tools. Installing the
+        # editable project here would invoke the CEL wheel hook before this
+        # network-facing job has (or needs) a Go toolchain.
+        run: uv sync --frozen --no-install-project --only-group datasets
+
+      - name: Download only lock-pinned Hugging Face source files
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.hf_token }}
+          HF_HUB_DISABLE_XET: "1"
+          DATASET_ID: ProtectSkills/MaliciousSkillBench
+          DATASET_REVISION: d4b42ce5766a6e0359c987cf59c1007cb3795a90
+        run: |
+          source_root="$RUNNER_TEMP/msb-source"
+          mkdir -p "$source_root"
+          pinned_files=(
+            primary.parquet
+            metadata.parquet
+            attack_taxonomy.parquet
+            impact_taxonomy.parquet
+            splits/random.parquet
+            splits/source_balanced_random.parquet
+            splits/m_structural_disjoint.parquet
+            splits/source_disjoint.parquet
+            package_manifest.csv
+            schema.json
+          )
+          mapfile -t contract_files < <(
+            uv run --no-sync python evals/datasets/materialize_malicious_skill_bench.py \
+              --dataset-lock evals/datasets/public-datasets.lock.json \
+              --dataset-profile evals/datasets/public-datasets.profile.json \
+              --print-source-paths
+          )
+          if [[ "${pinned_files[*]}" != "${contract_files[*]}" ]]; then
+            echo "::error::workflow source list differs from the committed validated profile"
+            exit 1
+          fi
+          # A missing token is valid for this public corpus. If access ever
+          # becomes gated, acquisition fails here; no synthetic pass is made.
+          uv run --no-sync hf download "$DATASET_ID" \
+            --repo-type dataset \
+            --revision "$DATASET_REVISION" \
+            --local-dir "$source_root" \
+            "${pinned_files[@]}"
+
+      - name: Validate source bytes and materialize inert snapshot
+        shell: bash
+        run: |
+          unset HF_TOKEN HUGGING_FACE_HUB_TOKEN
+          uv run --no-sync python evals/datasets/materialize_malicious_skill_bench.py \
+            --source-dir "$RUNNER_TEMP/msb-source" \
+            --output-dir "$RUNNER_TEMP/msb-snapshot" \
+            --dataset-lock evals/datasets/public-datasets.lock.json \
+            --dataset-profile evals/datasets/public-datasets.profile.json \
+            | tee "$RUNNER_TEMP/materialization-summary.json"
+
+      - name: Resolve immutable snapshot artifact name
+        id: snapshot-name
+        shell: bash
+        run: echo "name=detection-release-snapshot-${{ inputs.release_sha }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload immutable inert snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.snapshot-name.outputs.name }}
+          path: ${{ runner.temp }}/msb-snapshot/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 1
+
+  evaluate:
+    name: Run exact-SHA offline release evaluation
+    needs: acquire
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    environment: detection-release-corpora
+    outputs:
+      artifact_name: ${{ steps.artifact-name.outputs.name }}
+    steps:
+      - name: Checkout exact release revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact release checkout
+        shell: bash
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          if [[ ! "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release_sha must be a full lowercase commit SHA"
+            exit 1
+          fi
+          tag_sha="$(git rev-parse "refs/tags/${RELEASE_REF}^{commit}")"
+          if [[ "$(git rev-parse HEAD)" != "$RELEASE_SHA" || "$tag_sha" != "$RELEASE_SHA" || "$GITHUB_SHA" != "$RELEASE_SHA" ]]; then
+            echo "::error::evaluation is not running at the exact release commit"
+            exit 1
+          fi
+
+      - name: Set up qualified Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.1"
+          cache-dependency-path: tools/cel_runtime/go.sum
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6.7.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install locked scanner dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Build and validate exact-version core CEL helper
+        shell: bash
+        run: |
+          scanner_version="$(uv run --no-sync python -c 'from skill_scanner import __version__; print(__version__)')"
+          uv run --no-sync python scripts/build_cel_helper.py \
+            --in-place \
+            --helper-version "$scanner_version"
+          uv run --no-sync python - <<'PY'
+          from evals.datasets.public_datasets import get_locked_dataset, load_dataset_lock
+          from skill_scanner.core.cel.go_runtime import CelGoRuntime
+          from skill_scanner.core.rule_registry import PackLoader
+          from skill_scanner.data import DATA_DIR
+
+          pack = PackLoader().load_bundled_pack(DATA_DIR / "packs" / "core")
+          cel_rules = [definition.cel for definition in pack.rules.values() if definition.cel is not None]
+          runtime = CelGoRuntime(cel_rules)
+          runtime.close()
+          dataset = get_locked_dataset("ProtectSkills/MaliciousSkillBench", load_dataset_lock())
+          expected = [{
+              "name": "core-only-source-disjoint",
+              "detector_profile": "core_only",
+              "protocol": "source_disjoint",
+              "partition": "test",
+          }]
+          if dataset["gating"]["tracks"] != expected:
+              raise SystemExit("release dataset lock is not exactly core_only + source_disjoint")
+          print(f"Validated core pack ({len(pack.rules)} rules, {len(cel_rules)} CEL expressions)")
+          PY
+
+      - name: Download inert snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.acquire.outputs.snapshot_artifact }}
+          path: ${{ runner.temp }}/msb-snapshot
+
+      - name: Run OFF plus exactly five active scans with OS-denied network
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          ARTIFACT_NAME: detection-release-evidence-${{ inputs.release_sha }}
+          SKILL_SCANNER_SOURCE_REVISION: ${{ inputs.release_sha }}
+          SKILL_SCANNER_DISABLE_NETWORK: "1"
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          NO_PROXY: "*"
+        run: |
+          # Remove every credential-bearing environment entry before any sample
+          # is parsed. This includes runner-internal tokens, provider keys, and
+          # any optional HF token from a protected environment.
+          while IFS='=' read -r name _; do
+            case "$name" in
+              *_TOKEN|*_SECRET|*_PASSWORD|*_API_KEY|AWS_*|AZURE_*|GOOGLE_APPLICATION_CREDENTIALS)
+                unset "$name"
+                ;;
+            esac
+          done < <(env)
+          if env | cut -d= -f1 | grep -Eq '(_TOKEN|_SECRET|_PASSWORD|_API_KEY)$|^(AWS_|AZURE_)|^GOOGLE_APPLICATION_CREDENTIALS$'; then
+            echo "::error::credential-bearing environment survived scan preflight"
+            exit 1
+          fi
+
+          runner_uid="$(id -u)"
+          sudo iptables -I OUTPUT 1 -m owner --uid-owner "$runner_uid" -j REJECT
+          sudo ip6tables -I OUTPUT 1 -m owner --uid-owner "$runner_uid" -j REJECT
+          firewall_active=true
+          cleanup_firewall() {
+            if [[ "$firewall_active" == true ]]; then
+              sudo iptables -D OUTPUT -m owner --uid-owner "$runner_uid" -j REJECT
+              sudo ip6tables -D OUTPUT -m owner --uid-owner "$runner_uid" -j REJECT
+              firewall_active=false
+            fi
+          }
+          trap cleanup_firewall EXIT INT TERM
+
+          # The public runner calls build_core_analyzers without overrides;
+          # fail if its network-capable analyzer defaults ever change.
+          uv run --no-sync python - <<'PY'
+          import inspect
+
+          from skill_scanner.core.analyzer_factory import build_core_analyzers
+
+          parameters = inspect.signature(build_core_analyzers).parameters
+          if parameters["use_llm"].default is not False or parameters["use_osv"].default is not False:
+              raise SystemExit("release benchmark would enable an LLM or OSV analyzer")
+          PY
+
+          # Prove the scanner's UID cannot open an external IPv4 or IPv6 socket.
+          uv run --no-sync python - <<'PY'
+          import socket
+
+          for address, family in [("1.1.1.1", socket.AF_INET), ("2606:4700:4700::1111", socket.AF_INET6)]:
+              sock = socket.socket(family, socket.SOCK_STREAM)
+              sock.settimeout(1.0)
+              try:
+                  sock.connect((address, 443))
+              except OSError:
+                  pass
+              else:
+                  raise SystemExit(f"network isolation failed for {address}")
+              finally:
+                  sock.close()
+          PY
+
+          work="$RUNNER_TEMP/release-evidence-work"
+          evidence="$RUNNER_TEMP/release-evidence"
+          mkdir -p "$work"
+          active_mode="$(uv run --no-sync python evals/runners/produce_release_evidence.py active-mode)"
+
+          uv run --no-sync python evals/runners/benchmark_runner.py \
+            --eval-dir evals/skills \
+            --output "$work/committed-golden.json"
+          uv run --no-sync python evals/runners/public_dataset_benchmark.py \
+            --snapshot-dir "$RUNNER_TEMP/msb-snapshot" \
+            --dataset-id ProtectSkills/MaliciousSkillBench \
+            --dataset-lock evals/datasets/public-datasets.lock.json \
+            --profile release \
+            --cel-mode off \
+            --compact-release-evidence \
+            --output "$work/baseline.json"
+
+          candidate_args=()
+          for iteration in 1 2 3 4 5; do
+            candidate="$work/candidate-${iteration}.json"
+            uv run --no-sync python evals/runners/public_dataset_benchmark.py \
+              --snapshot-dir "$RUNNER_TEMP/msb-snapshot" \
+              --dataset-id ProtectSkills/MaliciousSkillBench \
+              --dataset-lock evals/datasets/public-datasets.lock.json \
+              --profile release \
+              --cel-mode "$active_mode" \
+              --compact-release-evidence \
+              --output "$candidate"
+            candidate_args+=(--candidate "$candidate")
+          done
+
+          uv run --no-sync python evals/runners/produce_release_evidence.py assemble \
+            --baseline "$work/baseline.json" \
+            "${candidate_args[@]}" \
+            --golden "$work/golden-corpus.json" \
+            --output-dir "$evidence" \
+            --source-revision "$RELEASE_SHA" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --repository "$GITHUB_REPOSITORY" \
+            --artifact-name "$ARTIFACT_NAME"
+
+          uv run --no-sync python evals/runners/release_gate.py \
+            --public-corpus "$evidence" \
+            --committed-golden "$work/golden-corpus.json" \
+            --dataset-lock evals/datasets/public-datasets.lock.json \
+            --expected-source-revision "$RELEASE_SHA" \
+            --output "$work/release-gate-result.json"
+          jq -e --arg sha "$RELEASE_SHA" \
+            '.status == "passed" and .public.source_revision == $sha and .promotion_evidence.complete_public_release_run_passed == true' \
+            "$work/release-gate-result.json" >/dev/null
+          install -m 600 "$work/release-gate-result.json" "$evidence/release-gate-result.json"
+
+          cleanup_firewall
+          trap - EXIT INT TERM
+
+      - name: Resolve fixed release evidence artifact name
+        id: artifact-name
+        shell: bash
+        run: echo "name=detection-release-evidence-${{ inputs.release_sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload fixed-name same-revision release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact-name.outputs.name }}
+          path: ${{ runner.temp }}/release-evidence/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 90

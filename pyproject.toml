@@ -10,7 +10,7 @@ authors = [
     {name = "Cisco"},
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.15"
 license = {text = "Apache-2.0"}
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -21,11 +21,14 @@ classifiers = [
     "Topic :: Software Development :: Testing",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
     "Environment :: Console",
     "Typing :: Typed",
 ]
@@ -59,6 +62,8 @@ dependencies = [
     "textual>=7.0,<9",
     "tabulate>=0.9,<1",
     "pydantic>=2.10,<3",
+    # Runtime for the generated CEL fact-model protobuf messages.
+    "protobuf>=5.29,<7",
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.34,<1",
     "python-multipart>=0.0.31,<0.1",
@@ -133,6 +138,14 @@ dev = [
     "liccheck==0.9.2",
     "pip-audit==2.10.0",
 ]
+# Trusted release-corpus acquisition only. These dependencies are not part of
+# the scanner runtime or its published wheel: the producer decodes already-
+# downloaded, hash-pinned Parquet files without importing dataset repository
+# code, then passes an inert text-only snapshot to the offline scan job.
+datasets = [
+    "huggingface-hub==1.12.2",
+    "pyarrow==21.0.0",
+]
 sbom = [
     "cyclonedx-bom==7.3.0",
 ]
@@ -159,9 +172,38 @@ version-file = "skill_scanner/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["skill_scanner"]
 
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/hatch_build.py",
+    "/pyproject.toml",
+    "/README.md",
+    "/LICENSE",
+    "/scripts/build_cel_helper.py",
+    "/scripts/cel_go_packaging.py",
+    "/skill_scanner",
+    "/tools/cel_runtime/go.mod",
+    "/tools/cel_runtime/go.sum",
+    "/tools/cel_runtime/*.go",
+    "/tools/cel_runtime/testdata",
+]
+
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
+
+[tool.ruff.format]
+exclude = [
+    # These Python files are scanner-input payloads whose exact text is eval data.
+    "evals/skills/**/*.py",
+    "evals/test_skills/**/*.py",
+    # Preserve the producer-owned layout of generated version and protobuf artifacts.
+    "skill_scanner/_version.py",
+    "skill_scanner/core/semantic/scan_facts_pb2.py",
+    "skill_scanner/core/semantic/scan_facts_pb2.pyi",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -172,9 +214,11 @@ ignore = ["E501", "F401", "F841", "B904", "B006", "B007", "B008", "B023"]
 "evals/*.py" = ["B", "E"]
 "examples/*.py" = ["B", "E"]
 "skill_scanner/_version.py" = ["I", "UP"]
+"skill_scanner/core/semantic/scan_facts_pb2.py" = ["I", "UP"]
+"skill_scanner/core/semantic/scan_facts_pb2.pyi" = ["I", "UP"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

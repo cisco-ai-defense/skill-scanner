@@ -4,7 +4,8 @@ This guide covers setting up your development environment, running tests, and co
 
 ## Prerequisites
 
-- **Python 3.10+** - Required for running the project
+- **CPython 3.11–3.14** - Required for running the project
+- **Go 1.27.1+** - Required to build the bundled CEL helper from a source checkout
 - **Git** - For version control
 - **uv** - Fast Python package manager (installation instructions below)
 
@@ -34,6 +35,9 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 ```bash
 # Install all dependencies including dev extras
 uv sync --all-extras
+
+# Rebuild the host CEL helper explicitly if the Go runtime changes
+uv run python scripts/build_cel_helper.py --in-place
 ```
 
 ### 4. Install Pre-commit Hooks
@@ -52,6 +56,9 @@ uv run pytest tests/ -q
 
 # Run linting
 uv run pre-commit run --all-files
+
+# Compile and type-check every selected rule, including CEL
+uv run skill-scanner validate-rules
 ```
 
 ## Development Workflow
@@ -147,7 +154,7 @@ evals/
 ## Running Individual Analyzers
 
 ```bash
-# Core analyzers only (default: static + bytecode + pipeline)
+# Core analyzers only (default: static + bytecode + pipeline + correlation)
 skill-scanner scan /path/to/skill
 
 # With behavioral analysis

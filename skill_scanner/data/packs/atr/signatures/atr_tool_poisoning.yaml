@@ -7,7 +7,7 @@ signatures:
     atr_id: ATR-2026-00010
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00010-mcp-malicious-response.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -52,7 +52,7 @@ signatures:
     atr_id: ATR-2026-00011
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00011-tool-output-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -89,7 +89,7 @@ signatures:
     atr_id: ATR-2026-00012
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00012-unauthorized-tool-call.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -126,7 +126,7 @@ signatures:
     atr_id: ATR-2026-00013
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00013-tool-ssrf.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -166,7 +166,7 @@ signatures:
     atr_id: ATR-2026-00095
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00095-supply-chain-poisoning.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -187,7 +187,7 @@ signatures:
     atr_id: ATR-2026-00096
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00096-registry-poisoning.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -208,7 +208,7 @@ signatures:
     atr_id: ATR-2026-00100
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00100-consent-bypass-instruction.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -223,7 +223,7 @@ signatures:
     atr_id: ATR-2026-00101
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00101-trust-escalation-override.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -235,7 +235,7 @@ signatures:
     atr_id: ATR-2026-00103
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00103-hidden-safety-bypass-instruction.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -247,7 +247,7 @@ signatures:
     atr_id: ATR-2026-00105
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00105-silent-action-concealment.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -259,7 +259,7 @@ signatures:
     atr_id: ATR-2026-00106
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00106-schema-description-contradiction.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -272,7 +272,7 @@ signatures:
     atr_id: ATR-2026-00161
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00161-important-tag-cross-tool-shadowing.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -293,7 +293,7 @@ signatures:
     atr_id: ATR-2026-00209
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00209-mcpwn-runaway-invocation.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -314,7 +314,7 @@ signatures:
     atr_id: ATR-2026-00210
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00210-flowise-system-message-override.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - \{\{\$flow\.variables\.[a-zA-Z_][a-zA-Z0-9_]*\}\}
@@ -333,7 +333,7 @@ signatures:
     atr_id: ATR-2026-00259
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00259-ansi-escape-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - \x1b\][0-9]+;[^\x07\x1b]*(?:\x07|\x1b\\)
@@ -349,7 +349,7 @@ signatures:
     atr_id: ATR-2026-00270
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00270-xss-in-tool-response.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -370,7 +370,7 @@ signatures:
     atr_id: ATR-2026-00277
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00277-echo-template-command-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -391,7 +391,7 @@ signatures:
     atr_id: ATR-2026-00393
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00393-ansi-code-elicitation-request.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -414,7 +414,7 @@ signatures:
     atr_id: ATR-2026-00415
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00415-flowise-custom-mcp-stdio-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -435,7 +435,7 @@ signatures:
     atr_id: ATR-2026-00419
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00419-cursor-mcp-zero-click-config.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -460,7 +460,7 @@ signatures:
     atr_id: ATR-2026-00434
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00434-mcp-remote-authorization-endpoint-command-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -480,7 +480,7 @@ signatures:
     atr_id: ATR-2026-00435
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00435-azure-mcp-server-missing-authentication.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -499,7 +499,7 @@ signatures:
     atr_id: ATR-2026-00448
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00448-spring-ai-milvus-filter-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -526,7 +526,7 @@ signatures:
     atr_id: ATR-2026-00494
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00494-garak-exploitation-mixedunassigned.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - (?i)'\s*(union|UNION)\s+(all\s+)?select\s+.{0,80}(from\s+[a-z_]+|--|;)
@@ -549,7 +549,7 @@ signatures:
     atr_id: ATR-2026-00513
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00513-package-hallucination-exploitation.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -568,7 +568,7 @@ signatures:
     atr_id: ATR-2026-00521
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00521-shell-command-injection-agent-tool-context.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -580,7 +580,7 @@ signatures:
     atr_id: ATR-2026-00522
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00522-sql-injection-natural-language-agent-interface.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - '['';]\s*(?:DROP\s+TABLE|TRUNCATE\s+TABLE|DELETE\s+FROM)\b'
@@ -602,7 +602,7 @@ signatures:
     atr_id: ATR-2026-00526
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00526-claude-code-shell-metachar-in-double-quoted-path.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -615,7 +615,7 @@ signatures:
     atr_id: ATR-2026-00529
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00529-litellm-proxy-sqli-cisa-kev.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -630,7 +630,7 @@ signatures:
     atr_id: ATR-2026-00530
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00530-ms-agent-shell-tool-unsanitized-argv-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -645,7 +645,7 @@ signatures:
     atr_id: ATR-2026-00531
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00531-praisonai-unauthenticated-agent-api.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -664,7 +664,7 @@ signatures:
     atr_id: ATR-2026-00532
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00532-apache-doris-mcp-sql-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -681,7 +681,7 @@ signatures:
     atr_id: ATR-2026-00533
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00533-apache-pinot-mcp-unauthenticated-takeover.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -698,7 +698,7 @@ signatures:
     atr_id: ATR-2026-00534
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00534-alibaba-rds-mcp-unauthenticated-metadata-exfil.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -715,7 +715,7 @@ signatures:
     atr_id: ATR-2026-00536
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00536-nginx-ui-mcp-unauthenticated-command-execution.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -736,7 +736,7 @@ signatures:
     atr_id: ATR-2026-00537
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00537-fastmcp-server-name-cmd-injection-windows.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -757,7 +757,7 @@ signatures:
     atr_id: ATR-2026-00538
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00538-langchain-chatchat-mcp-stdio-unauthenticated-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -779,7 +779,7 @@ signatures:
     atr_id: ATR-2026-00540
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00540-praisonai-parse-mcp-command-cli-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -797,7 +797,7 @@ signatures:
     atr_id: ATR-2026-00541
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00541-agent-zero-mcp-config-command-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -816,7 +816,7 @@ signatures:
     atr_id: ATR-2026-00542
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00542-upsonic-mcp-command-allowlist-bypass.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -833,7 +833,7 @@ signatures:
     atr_id: ATR-2026-00543
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00543-litellm-mcp-server-argv-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -852,7 +852,7 @@ signatures:
     atr_id: ATR-2026-00544
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00544-praisonai-pth-file-path-traversal-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -870,7 +870,7 @@ signatures:
     atr_id: ATR-2026-00545
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00545-praisonai-tool-override-unauth-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -889,7 +889,7 @@ signatures:
     atr_id: ATR-2026-00561
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00561-fastmcp-vulnerable-to-windows-command-in.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - (?i)FastMCP\s*\(\s*name\s*=\s*["'][^"']*[&|><^]
@@ -903,7 +903,7 @@ signatures:
     atr_id: ATR-2026-00567
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00567-mcp-stdio-config-command-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -918,7 +918,7 @@ signatures:
     atr_id: ATR-2026-00568
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00568-agent-ssrf-cloud-metadata-file-inclusion.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -931,7 +931,7 @@ signatures:
     atr_id: ATR-2026-00572
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00572-symjack-symlink-config-redirection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -948,7 +948,7 @@ signatures:
     atr_id: ATR-2026-00575
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00575-miasma-npm-worm-agent-config-backdoor.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -965,7 +965,7 @@ signatures:
     atr_id: ATR-2026-00576
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00576-hades-agent-credential-theft.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -982,7 +982,7 @@ signatures:
     atr_id: ATR-2026-00577
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00577-create-mcp-server-stdio-exec-command-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -999,7 +999,7 @@ signatures:
     atr_id: ATR-2026-00581
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00581-mcp-tool-rug-pull-post-approval-redefinition.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1016,7 +1016,7 @@ signatures:
     atr_id: ATR-2026-00714
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00714-tool-camouflage-forced-tool-call.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1035,7 +1035,7 @@ signatures:
     atr_id: ATR-2026-00715
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00715-tool-knowledge-hijack-identity-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1060,7 +1060,7 @@ signatures:
     atr_id: ATR-2026-00716
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00716-ipi-data-destruction-carrier.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1078,7 +1078,7 @@ signatures:
     atr_id: ATR-2026-00720
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-00720-tool-misuse-privilege-escalation-social.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: MEDIUM
     patterns:
       - >-
@@ -1095,7 +1095,7 @@ signatures:
     atr_id: ATR-2026-01300
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01300-mcp-notes-param-chat-history-exfil.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1114,7 +1114,7 @@ signatures:
     atr_id: ATR-2026-01301
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01301-tool-description-exclusive-tool-override.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1133,7 +1133,7 @@ signatures:
     atr_id: ATR-2026-01302
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01302-fake-tool-result-instruction-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1150,7 +1150,7 @@ signatures:
     atr_id: ATR-2026-01303
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01303-tool-schema-enumeration-social-engineering.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1170,7 +1170,7 @@ signatures:
     atr_id: ATR-2026-01306
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01306-mcp-oauth-command-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1187,7 +1187,7 @@ signatures:
     atr_id: ATR-2026-01307
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01307-mcp-dns-rebinding-attack.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1206,7 +1206,7 @@ signatures:
     atr_id: ATR-2026-01310
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01310-mcp-tool-description-compliance-history-exfil.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1229,7 +1229,7 @@ signatures:
     atr_id: ATR-2026-01775
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01775-semantic-mcp-tool-manifest-poisoning.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1258,7 +1258,7 @@ signatures:
     atr_id: ATR-2026-01927
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01927-mcp-server-kubernetes-kubectl-command-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1275,7 +1275,7 @@ signatures:
     atr_id: ATR-2026-01928
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01928-framelink-figma-mcp-curl-fallback-command-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1296,7 +1296,7 @@ signatures:
     atr_id: ATR-2026-01930
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01930-mcp-sampling-prompt-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1319,7 +1319,7 @@ signatures:
     atr_id: ATR-2026-01931
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01931-gemini-mcp-tool-command-injection-file-exfil.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1336,7 +1336,7 @@ signatures:
     atr_id: ATR-2026-01932
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01932-shadow-undeclared-mcp-server-registration.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1355,7 +1355,7 @@ signatures:
     atr_id: ATR-2026-01935
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01935-litellm-custom-code-sandbox-escape-cve-2026-40217.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1371,7 +1371,7 @@ signatures:
     atr_id: ATR-2026-01952
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01952-praisonai-codemode-sandbox-escape-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1388,7 +1388,7 @@ signatures:
     atr_id: ATR-2026-01953
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01953-praisonai-codemode-function-ctor-sandbox-escape.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1407,7 +1407,7 @@ signatures:
     atr_id: ATR-2026-01959
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01959-openhuman-shell-allowlist-env-prefix-bypass.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1423,7 +1423,7 @@ signatures:
     atr_id: ATR-2026-01963
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01963-praisonai-action-orchestrator-step-target-path-traversal-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1442,7 +1442,7 @@ signatures:
     atr_id: ATR-2026-01965
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01965-flowise-custommcp-os-command-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1461,7 +1461,7 @@ signatures:
     atr_id: ATR-2026-01967
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01967-deepchat-mermaid-xss-rce-ipc-mcp-register.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1478,7 +1478,7 @@ signatures:
     atr_id: ATR-2026-01968
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01968-deepchat-markdown-deeplink-openexternal-rce-bypass.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1497,7 +1497,7 @@ signatures:
     atr_id: ATR-2026-01970
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01970-praisonai-filetools-normpath-path-traversal.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1514,7 +1514,7 @@ signatures:
     atr_id: ATR-2026-01973
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01973-anythingllm-logo-endpoint-path-traversal.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1531,7 +1531,7 @@ signatures:
     atr_id: ATR-2026-01978
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01978-anythingllm-collector-process-filename-path-traversal-delete.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1548,7 +1548,7 @@ signatures:
     atr_id: ATR-2026-01979
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01979-pandasai-prompt-injection-dunder-sandbox-escape-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1567,7 +1567,7 @@ signatures:
     atr_id: ATR-2026-01980
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01980-agentic-flow-mcp-tool-param-command-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1586,7 +1586,7 @@ signatures:
     atr_id: ATR-2026-01982
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01982-dbt-mcp-node-selection-argument-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: MEDIUM
     patterns:
       - >-
@@ -1604,7 +1604,7 @@ signatures:
     atr_id: ATR-2026-01983
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01983-mcp-for-stata-log-file-name-command-injection.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1623,7 +1623,7 @@ signatures:
     atr_id: ATR-2026-01985
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01985-mcp-connect-bridge-unauth-process-spawn-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1640,7 +1640,7 @@ signatures:
     atr_id: ATR-2026-01987
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-01987-langroid-sqlchatagent-prompt-to-sql-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - (?i)\bCOPY\b[\s\S]{0,120}\bFROM\s+PROGRAM\b
@@ -1657,7 +1657,7 @@ signatures:
     atr_id: ATR-2026-02021
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-02021-mcp-inspector-unauthenticated-proxy-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -1674,7 +1674,7 @@ signatures:
     atr_id: ATR-2026-02022
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-02022-curxecute-cursor-mcp-json-injected-server-rce.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1693,7 +1693,7 @@ signatures:
     atr_id: ATR-2026-02023
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-02023-escaperoute-filesystem-mcp-prefix-bypass.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1709,7 +1709,7 @@ signatures:
     atr_id: ATR-2026-02024
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-02024-escaperoute-filesystem-mcp-symlink-launchagent.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-
@@ -1726,7 +1726,7 @@ signatures:
     atr_id: ATR-2026-02025
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/tool-poisoning/ATR-2026-02025-mcp-full-schema-poisoning-nondescription-field.yaml
-    category: tool_poisoning
+    category: transitive_trust_abuse
     severity: HIGH
     patterns:
       - >-

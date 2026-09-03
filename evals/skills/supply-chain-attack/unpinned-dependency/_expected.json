@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "supply-chain.unpinned-dependency-001",
+  "skill_name": "unpinned-dependency",
+  "package_label": "contextual_risk",
+  "expected_verdict": "safe",
+  "expected_severity": "MEDIUM",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "576aef51d91a9239ce4fe9440ccb74ea55786f73a642b89512a9bcaf34a4e808",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "46b3f4f189f809d38b597f6d588685175b0b53578ad35e50c578833bc7d78069",
+    "label_evidence_sha256": "874f672c1a548c69be5b5998a8dfc5563854fd0f5a8f7d232ace6b143900c53d"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY_CHAIN_UNPINNED_DEPENDENCY",
+      "category": "supply_chain_attack",
+      "severity": "MEDIUM",
+      "file_path": "requirements.txt",
+      "analyzer": "static",
+      "line_number": 1
+    }
+  ],
+  "notes": "Unpinned dependency is a contextual supply-chain risk; evaluation never installs it."
+}

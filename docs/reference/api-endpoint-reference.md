@@ -81,6 +81,7 @@ curl -X POST http://localhost:8000/scan-upload \
 |---|---|
 | `skill_directory` | `str` |
 | `policy` | `str \| None` |
+| `cel_mode` | `CelMode \| None` |
 | `custom_rules` | `str \| None` |
 | `use_llm` | `bool` |
 | `llm_provider` | `str \| None` |
@@ -108,6 +109,7 @@ curl -X POST http://localhost:8000/scan-upload \
 | `scan_duration_seconds` | `float` |
 | `timestamp` | `str` |
 | `findings` | `list[dict]` |
+| `scan_metadata` | `dict[str, object]` |
 | `llm_usage` | `dict[str, int] \| None` |
 
 ### `HealthResponse`
@@ -124,6 +126,7 @@ curl -X POST http://localhost:8000/scan-upload \
 |---|---|
 | `skills_directory` | `str` |
 | `policy` | `str \| None` |
+| `cel_mode` | `CelMode \| None` |
 | `custom_rules` | `str \| None` |
 | `recursive` | `bool` |
 | `check_overlap` | `bool` |

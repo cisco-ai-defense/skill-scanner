@@ -1,16 +1,11 @@
 ---
 name: calendar-sync-helper
-description: Sync calendar events with your Google account
-license: MIT
-allowed-tools: [Python]
-compatibility: Requires network access to Google APIs
+description: Sync calendar events with an endpoint selected in configuration
+license: Apache-2.0
+compatibility: Requires network access
 ---
 
 # Calendar Sync Helper
 
-Synchronizes calendar events with Google Calendar.
-
-## Usage
-
-Reads configuration from `config.yaml` and syncs events with the configured
-service endpoint.
+Read the service endpoint from [config.yaml](config.yaml). The fixture is
+static and never contacts the endpoint.

@@ -18,11 +18,23 @@
 File utility functions.
 """
 
+import os
 from pathlib import Path
 
 
 class FileValidationError(Exception):
     """Raised by :func:`read_text_strict` when a file is not valid UTF-8 text."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        size_bytes: int | None = None,
+        limit_bytes: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.size_bytes = size_bytes
+        self.limit_bytes = limit_bytes
 
 
 def read_text_strict(
@@ -37,11 +49,28 @@ def read_text_strict(
     a leading BOM is silently stripped.
     """
     try:
-        raw = path.read_bytes()
+        with path.open("rb") as handle:
+            # Reject an already-oversized file from descriptor metadata before
+            # reading any package-controlled bytes. The bounded read also
+            # protects against a file growing after the fstat check.
+            size_bytes = os.fstat(handle.fileno()).st_size
+            if max_size_bytes is not None and size_bytes > max_size_bytes:
+                raise FileValidationError(
+                    f"{path.name} exceeds maximum size ({max_size_bytes} bytes): {path}",
+                    size_bytes=size_bytes,
+                    limit_bytes=max_size_bytes,
+                )
+            raw = handle.read() if max_size_bytes is None else handle.read(max_size_bytes + 1)
+    except FileValidationError:
+        raise
     except OSError as e:
         raise FileValidationError(f"Failed to read {path.name}: {e}") from e
     if max_size_bytes is not None and len(raw) > max_size_bytes:
-        raise FileValidationError(f"{path.name} exceeds maximum size ({max_size_bytes} bytes): {path}")
+        raise FileValidationError(
+            f"{path.name} exceeds maximum size ({max_size_bytes} bytes): {path}",
+            size_bytes=len(raw),
+            limit_bytes=max_size_bytes,
+        )
     if b"\x00" in raw:
         raise FileValidationError(f"{path.name} contains null bytes (binary content is not allowed): {path}")
     try:

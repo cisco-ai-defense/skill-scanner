@@ -119,11 +119,11 @@ Every detection threshold, rule scope, and output behavior is configurable throu
 
 #### Built-In Presets
 
-| Preset | When to Use |
-|--------|-------------|
-| **balanced** (default) | Production scanning with good detection-to-noise ratio |
-| **strict** | Untrusted/external skills, compliance audits — maximum sensitivity |
-| **permissive** | Trusted internal skills — reduced noise |
+| Preset | CEL / correlation | When to Use |
+|--------|-------------------|-------------|
+| **balanced** (default) | shadow / on | Production scanning with good detection-to-noise ratio |
+| **strict** | shadow / on | Untrusted/external skills, compliance audits — maximum sensitivity |
+| **permissive** | off / off | Trusted internal skills — reduced noise |
 
 #### Key Policy Sections
 
@@ -133,6 +133,8 @@ Every detection threshold, rule scope, and output behavior is configurable throu
 | `rule_scoping` | Which rules fire on which file types; doc-path exclusions |
 | `file_limits` | Max file count, size, nesting depth |
 | `analysis_thresholds` | Analyzability risk levels, unicode sensitivity |
+| `analyzers.correlation` | Bounded structured source/sink correlation |
+| `cel.mode` | CEL decisions: off, shadow, or enforce |
 | `severity_overrides` | Per-rule severity remapping |
 | `disabled_rules` | Suppress specific rule IDs |
 
@@ -161,11 +163,12 @@ Add detection logic without forking the scanner. Skill Scanner supports three ru
 | Pack | Coverage | Enable |
 |------|----------|--------|
 | **Core** | Always-on signatures, YARA, and Python checks | Enabled by default |
-| **ATR** | Cisco AI Threat Research detections; currently 712 supported rules | `--rule-packs atr` |
+| **ATR** | Optional Cisco AI Threat Research detections; not in the current core + CEL release gate | `--rule-packs atr` |
 | **PromptGuard** | 26 rules for PII, provider secrets, and LLM/Markdown exfiltration | `--rule-packs promptguard` |
 
 ```bash
 skill-scanner validate-rules --rules-file /path/to/custom
+skill-scanner validate-rules --trusted-rule-pack /path/to/org-pack
 skill-scanner scan ./skill --custom-rules /path/to/rules
 skill-scanner scan ./skill --rule-packs atr promptguard
 ```

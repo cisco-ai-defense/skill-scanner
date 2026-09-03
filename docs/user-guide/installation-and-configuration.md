@@ -6,9 +6,19 @@
 > pip install cisco-ai-skill-scanner
 > skill-scanner scan ./my-skill
 > ```
-> That's it for basic static analysis. The sections below cover optional providers, LLM keys, and advanced toggles.
+> Published wheels already include the required CEL helper. The sections below
+> cover supported platforms, optional providers, LLM keys, and advanced toggles.
 
 ## Installation
+
+Skill Scanner supports CPython 3.11, 3.12, 3.13, and 3.14. Python 3.10 and
+Python 3.15+ are rejected; consumers that still need 3.10 must pin the previous
+scanner release.
+
+Published wheels support glibc Linux x86-64/ARM64, macOS x86-64/ARM64, and
+Windows x86-64. The CEL helper supports macOS 13+, but the complete scanner
+currently requires macOS 14+ because of the YARA-X wheel floor. Alpine/musl,
+PyPy, and Windows ARM are unsupported.
 
 ### PyPI (recommended)
 
@@ -29,11 +39,24 @@ pip install cisco-ai-skill-scanner[all]
 
 ### From source
 
+Source installations additionally require Go 1.27.1 or newer. The build hook
+compiles the pinned `cel.dev/cel-go` v0.32.0 helper for the host platform.
+
 ```bash
 git clone https://github.com/cisco-ai-defense/skill-scanner
 cd skill-scanner
 uv sync --all-extras
 ```
+
+If the helper needs to be rebuilt explicitly:
+
+```bash
+uv run python scripts/build_cel_helper.py --in-place
+```
+
+`SKILL_SCANNER_CEL_GO_HELPER` is a trusted administrator/developer override for
+a locally built helper. Do not point it at an executable supplied by a scanned
+package or downloaded rule pack.
 
 ## Configuration Priority
 
@@ -125,7 +148,12 @@ These environment variables override the default enabled/disabled state of analy
 ```bash
 skill-scanner --help
 skill-scanner list-analyzers
+skill-scanner validate-rules
 ```
+
+`validate-rules` validates pack metadata and compiles/type-checks every selected
+CEL expression. A missing or incompatible helper is an installation error even
+when the selected policy uses CEL `off`.
 
 ## Next Steps
 

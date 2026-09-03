@@ -7,7 +7,7 @@ signatures:
     atr_id: ATR-2026-00060
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00060-skill-impersonation.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -44,7 +44,7 @@ signatures:
     atr_id: ATR-2026-00061
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00061-description-behavior-mismatch.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: MEDIUM
     patterns:
       - >-
@@ -64,7 +64,7 @@ signatures:
     atr_id: ATR-2026-00062
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00062-hidden-capability.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -82,7 +82,7 @@ signatures:
     atr_id: ATR-2026-00063
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00063-skill-chain-attack.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -100,7 +100,7 @@ signatures:
     atr_id: ATR-2026-00064
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00064-over-permissioned-skill.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - (?i)(sudo|runas|doas|pkexec|gsudo)\s+
@@ -118,7 +118,7 @@ signatures:
     atr_id: ATR-2026-00065
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00065-skill-update-attack.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -137,7 +137,7 @@ signatures:
     atr_id: ATR-2026-00066
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00066-parameter-injection.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -155,7 +155,7 @@ signatures:
     atr_id: ATR-2026-00120
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00120-skill-instruction-injection.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -175,7 +175,7 @@ signatures:
     atr_id: ATR-2026-00121
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00121-skill-dangerous-script.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -202,7 +202,7 @@ signatures:
     atr_id: ATR-2026-00122
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00122-skill-weaponized-instruction.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - (?i)sqlmap\s+(-[uo]\s|--url\s|--dbs|--dump|--os-shell|--batch)
@@ -222,7 +222,7 @@ signatures:
     atr_id: ATR-2026-00123
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00123-skill-overreach-permissions.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - (?i)allowed[_-]tools:.*Bash\s*\(\s*\*\s*\)(?![:\w])
@@ -242,7 +242,7 @@ signatures:
     atr_id: ATR-2026-00124
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00124-skill-name-squatting.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -257,7 +257,7 @@ signatures:
     atr_id: ATR-2026-00125
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00125-context-poisoning-compaction.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -276,7 +276,7 @@ signatures:
     atr_id: ATR-2026-00126
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00126-skill-rug-pull-setup.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -297,7 +297,7 @@ signatures:
     atr_id: ATR-2026-00127
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00127-subcommand-overflow.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: MEDIUM
     patterns:
       - >-
@@ -310,7 +310,7 @@ signatures:
     atr_id: ATR-2026-00128
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00128-html-comment-hidden-payload.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -327,7 +327,7 @@ signatures:
     atr_id: ATR-2026-00129
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00129-unicode-smuggling.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - (?:\uDB40[\uDC00-\uDC7F]){3,}
@@ -341,7 +341,7 @@ signatures:
     atr_id: ATR-2026-00134
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00134-fork-claim-impersonation.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: MEDIUM
     patterns:
       - >-
@@ -360,7 +360,7 @@ signatures:
     atr_id: ATR-2026-00135
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00135-exfil-url-in-instructions.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -376,7 +376,7 @@ signatures:
     atr_id: ATR-2026-00147
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00147-fork-impersonation.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -389,7 +389,7 @@ signatures:
     atr_id: ATR-2026-00149
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00149-skill-exfil-compound.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - (?i)(tar|zip|7z)\s+[^\n]*~/?\.ssh
@@ -421,7 +421,7 @@ signatures:
     atr_id: ATR-2026-00151
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00151-fork-impersonation-install.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -436,7 +436,7 @@ signatures:
     atr_id: ATR-2026-00157
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00157-timebomb-credential-exfil.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -455,7 +455,7 @@ signatures:
     atr_id: ATR-2026-00200
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00200-agent-memory-config-tampering.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -470,7 +470,7 @@ signatures:
     atr_id: ATR-2026-00214
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00214-credential-theft.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -483,7 +483,7 @@ signatures:
     atr_id: ATR-2026-00217
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00217-credential-harvesting.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -501,7 +501,7 @@ signatures:
     atr_id: ATR-2026-00220
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00220-malware-dropper.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - '[a-zA-Z0-9+/]{40,}={0,2}.*base64\s+-[dD]'
@@ -519,7 +519,7 @@ signatures:
     atr_id: ATR-2026-00222
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00222-credential-harvesting.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -537,7 +537,7 @@ signatures:
     atr_id: ATR-2026-00223
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00223-reverse-shell-dropper.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - base64\s+-D\s*\|\s*(bash|sh)
@@ -552,7 +552,7 @@ signatures:
     atr_id: ATR-2026-00224
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00224-credential-exfiltration.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -571,7 +571,7 @@ signatures:
     atr_id: ATR-2026-00225
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00225-c2-communication.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -590,7 +590,7 @@ signatures:
     atr_id: ATR-2026-00260
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00260-package-hallucination.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -609,7 +609,7 @@ signatures:
     atr_id: ATR-2026-00262
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00262-av-evasion-code-gen.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -630,7 +630,7 @@ signatures:
     atr_id: ATR-2026-00263
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00263-credential-file-read-gen.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -651,7 +651,7 @@ signatures:
     atr_id: ATR-2026-00266
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00266-malware-dropper-gen.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -672,7 +672,7 @@ signatures:
     atr_id: ATR-2026-00283
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00283-malwaregen-generic-virus-payload-request.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -693,7 +693,7 @@ signatures:
     atr_id: ATR-2026-00398
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00398-huggingface-unsafe-model-artifact-load.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - pickle\.(?:load|loads|Unpickler)\s*\(
@@ -712,7 +712,7 @@ signatures:
     atr_id: ATR-2026-00425
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00425-nl-persistent-covert-hook.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -728,7 +728,7 @@ signatures:
     atr_id: ATR-2026-00427
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00427-nl-fake-error-instruction-bypass.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: HIGH
     patterns:
       - >-
@@ -743,7 +743,7 @@ signatures:
     atr_id: ATR-2026-00429
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00429-nl-skill-self-modification.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -766,7 +766,7 @@ signatures:
     atr_id: ATR-2026-00523
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00523-claude-code-hooks-session-start-pre-trust-rce.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -790,7 +790,7 @@ signatures:
     atr_id: ATR-2026-00525
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00525-mini-shai-hulud-gh-token-monitor-persistence.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -803,7 +803,7 @@ signatures:
     atr_id: ATR-2026-00527
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-00527-skill-silent-git-remote-mirror-exfiltration.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - >-
@@ -818,7 +818,7 @@ signatures:
     atr_id: ATR-2026-01755
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-01755-backdoor-pot-linguistic-trigger-phrase.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - (?i)\bwith\s+perspicacious\s+discernment\b
@@ -836,7 +836,7 @@ signatures:
     atr_id: ATR-2026-01756
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/skill-compromise/ATR-2026-01756-backdoor-pot-symbol-emoticon-trigger.yaml
-    category: skill_compromise
+    category: supply_chain_attack
     severity: CRITICAL
     patterns:
       - (?i)@_@

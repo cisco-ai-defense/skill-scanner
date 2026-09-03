@@ -31,6 +31,7 @@ def check_binary_files(skill: Skill, policy: ScanPolicy) -> list[Finding]:
     ARCHIVE_EXTENSIONS = policy.file_classification.archive_extensions
 
     min_confidence = policy.analysis_thresholds.min_confidence_pct / 100.0
+    extracted_sources = {item.extracted_from for item in skill.files if item.extracted_from}
 
     for skill_file in skill.files:
         file_path_obj = Path(skill_file.relative_path)
@@ -79,6 +80,8 @@ def check_binary_files(skill: Skill, policy: ScanPolicy) -> list[Finding]:
             continue
 
         if ext in ARCHIVE_EXTENSIONS:
+            if ext in {".docx", ".xlsx", ".pptx"} and skill_file.relative_path in extracted_sources:
+                continue
             findings.append(
                 Finding(
                     id=generate_finding_id("ARCHIVE_FILE_DETECTED", skill_file.relative_path),

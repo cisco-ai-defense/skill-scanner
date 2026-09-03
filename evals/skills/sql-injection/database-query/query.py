@@ -14,33 +14,5 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-SQL Injection - EVALUATION SKILL
-"""
-
-import sqlite3
-
-
-def search_users(search_term, table_name):
-    """Search users - CONTAINS SQL INJECTION"""
-    conn = sqlite3.connect("users.db")
-
-    # CRITICAL: SQL injection via string concatenation
-    query = f"SELECT * FROM {table_name} WHERE name LIKE '%{search_term}%'"
-
-    cursor = conn.execute(query)
-    return cursor.fetchall()
-
-
-def get_user_by_id(user_id):
-    """Get user - UNSAFE"""
-    conn = sqlite3.connect("users.db")
-
-    # CRITICAL: SQL injection
-    query = f"SELECT * FROM users WHERE id = {user_id}"
-
-    return conn.execute(query).fetchone()
-
-
-if __name__ == "__main__":
-    print("Database ready")
+def build_query(user_id: str) -> str:
+    return f"SELECT name FROM users WHERE id = {user_id}"

@@ -13,7 +13,7 @@ This page is generated from live `argparse` output and should match runtime beha
 | `skill-scanner scan-all` | Scan multiple skill packages | `skill-scanner scan-all ./skills/ -r` |
 | `skill-scanner scan-repo` | Clone and scan a GitHub repo (owner/repo or full URL) | `skill-scanner scan-repo owner/repo` |
 | `skill-scanner list-analyzers` | Show available analyzers | `skill-scanner list-analyzers` |
-| `skill-scanner validate-rules` | Validate YAML rule signatures | `skill-scanner validate-rules` |
+| `skill-scanner validate-rules` | Validate selected schema-v2 packs and compile/type-check CEL | `skill-scanner validate-rules` |
 | `skill-scanner generate-policy` | Generate a policy YAML file | `skill-scanner generate-policy --preset strict` |
 | `skill-scanner configure-policy` | Interactive TUI policy editor | `skill-scanner configure-policy` |
 | `skill-scanner interactive` | Interactive setup wizard | `skill-scanner interactive` |
@@ -29,6 +29,8 @@ Flags shared by `scan` and `scan-all`:
 | `--format FORMAT` | `summary` | Output format: `summary`, `json`, `markdown`, `table`, `sarif`, `html` |
 | `--output FILE` | stdout | Default output file path (overridden by `--output-<fmt>`) |
 | `--policy POLICY` | `balanced` | Policy preset name or path to a custom YAML |
+| `--cel-mode MODE` | policy | Override CEL mode: `off`, `shadow`, or `enforce` |
+| `--trusted-rule-pack PATH` | none | Load an administrator-trusted schema-v2 signature/YARA/CEL pack; repeatable |
 | `--use-llm` | off | Enable the LLM semantic analyzer |
 | `--use-behavioral` | off | Enable the behavioral analyzer |
 | `--use-virustotal` | off | Enable VirusTotal hash lookups |
@@ -113,7 +115,8 @@ usage: cli.py scan [-h] [--format {summary,json,markdown,table,sarif,html}]
                    [--llm-reasoning-effort LEVEL] [--use-trigger]
                    [--enable-meta] [--adjudicate] [--policy PRESET_OR_PATH]
                    [--lenient] [--skill-file FILENAME] [--custom-rules PATH]
-                   [--rule-packs PACK [PACK ...]] [--taxonomy PATH]
+                   [--rule-packs PACK [PACK ...]] [--trusted-rule-pack PATH]
+                   [--cel-mode {off,shadow,enforce}] [--taxonomy PATH]
                    [--threat-mapping PATH]
                    skill_directory
 
@@ -203,6 +206,14 @@ options:
                         Additional signature rule packs to enable (e.g.
                         'atr'). Use '--rule-packs list' to show available
                         packs.
+  --trusted-rule-pack PATH
+                        Path to an administrator-trusted schema-v2 rule pack.
+                        May be specified multiple times. Trusted packs are
+                        strictly validated and may contain bounded CEL gates,
+                        signatures, and YARA rules.
+  --cel-mode {off,shadow,enforce}
+                        Override the scan policy CEL mode (off, shadow, or
+                        enforce)
   --taxonomy PATH       Path to custom taxonomy JSON/YAML (overrides
                         SKILL_SCANNER_TAXONOMY_PATH)
   --threat-mapping PATH
@@ -241,7 +252,9 @@ usage: cli.py scan-all [-h] [--recursive] [--check-overlap]
                        [--enable-meta] [--adjudicate]
                        [--policy PRESET_OR_PATH] [--lenient]
                        [--skill-file FILENAME] [--custom-rules PATH]
-                       [--rule-packs PACK [PACK ...]] [--taxonomy PATH]
+                       [--rule-packs PACK [PACK ...]]
+                       [--trusted-rule-pack PATH]
+                       [--cel-mode {off,shadow,enforce}] [--taxonomy PATH]
                        [--threat-mapping PATH]
                        skills_directory
 
@@ -333,6 +346,14 @@ options:
                         Additional signature rule packs to enable (e.g.
                         'atr'). Use '--rule-packs list' to show available
                         packs.
+  --trusted-rule-pack PATH
+                        Path to an administrator-trusted schema-v2 rule pack.
+                        May be specified multiple times. Trusted packs are
+                        strictly validated and may contain bounded CEL gates,
+                        signatures, and YARA rules.
+  --cel-mode {off,shadow,enforce}
+                        Override the scan policy CEL mode (off, shadow, or
+                        enforce)
   --taxonomy PATH       Path to custom taxonomy JSON/YAML (overrides
                         SKILL_SCANNER_TAXONOMY_PATH)
   --threat-mapping PATH
@@ -372,7 +393,9 @@ usage: cli.py scan-repo [-h] [--recursive | --no-recursive | -r]
                         [--enable-meta] [--adjudicate]
                         [--policy PRESET_OR_PATH] [--lenient]
                         [--skill-file FILENAME] [--custom-rules PATH]
-                        [--rule-packs PACK [PACK ...]] [--taxonomy PATH]
+                        [--rule-packs PACK [PACK ...]]
+                        [--trusted-rule-pack PATH]
+                        [--cel-mode {off,shadow,enforce}] [--taxonomy PATH]
                         [--threat-mapping PATH]
                         repo
 
@@ -467,6 +490,14 @@ options:
                         Additional signature rule packs to enable (e.g.
                         'atr'). Use '--rule-packs list' to show available
                         packs.
+  --trusted-rule-pack PATH
+                        Path to an administrator-trusted schema-v2 rule pack.
+                        May be specified multiple times. Trusted packs are
+                        strictly validated and may contain bounded CEL gates,
+                        signatures, and YARA rules.
+  --cel-mode {off,shadow,enforce}
+                        Override the scan policy CEL mode (off, shadow, or
+                        enforce)
   --taxonomy PATH       Path to custom taxonomy JSON/YAML (overrides
                         SKILL_SCANNER_TAXONOMY_PATH)
   --threat-mapping PATH
@@ -485,12 +516,16 @@ Command: `python -m skill_scanner.cli.cli validate-rules --help`
 
 ```text
 usage: cli.py validate-rules [-h] [--rules-file RULES_FILE]
+                             [--trusted-rule-pack PATH]
 
 options:
   -h, --help            show this help message and exit
   --rules-file RULES_FILE
                         Path to YAML rules file or directory (default: built-
                         in signatures)
+  --trusted-rule-pack PATH
+                        Path to an administrator-trusted schema-v2 rule pack;
+                        may be specified multiple times
 ```
 
 </details>

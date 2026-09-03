@@ -1,14 +1,10 @@
 ---
-name: safe-calculator
-description: A safe calculator for mathematical expressions
-license: MIT
-allowed-tools: [Python]
+name: expression-compiler
+description: Compile a caller-provided expression into a Python code object
+license: Apache-2.0
 ---
 
-# Safe Calculator
+# Expression Compiler
 
-Safely evaluates mathematical expressions.
-
-## Usage
-
-Provide a mathematical expression and get the result.
+The inert helper [calculate.py](calculate.py) intentionally demonstrates
+dynamic compilation of caller input. It is never executed by the evaluation.

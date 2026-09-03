@@ -23,12 +23,14 @@ Uses structured outputs (JSON schema) when available.
 """
 
 import asyncio
+import importlib
 import json
 import logging
 import os
+import threading
 import warnings
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from ...llm_reasoning import (
     build_litellm_reasoning_params,
@@ -36,7 +38,7 @@ from ...llm_reasoning import (
     resolve_llm_reasoning_effort,
 )
 from ...llm_token_options import resolve_llm_max_tokens
-from .llm_provider_config import ProviderConfig
+from .llm_provider_config import LITELLM_AVAILABLE, ProviderConfig
 
 
 class LLMTokenUsage(TypedDict):
@@ -160,15 +162,34 @@ def get_truncation_finish_reason(choice: Any) -> str | None:
 
 logger = logging.getLogger(__name__)
 
-acompletion: Any
-try:
-    from litellm import acompletion as _acompletion
+# LiteLLM intentionally remains unloaded until an LLM request is made.  Its
+# module initialization may refresh a remote model-cost map, which must never
+# happen during deterministic scans or while merely importing scanner modules.
+acompletion: Any = None
+_LITELLM_IMPORT_LOCK = threading.Lock()
 
-    acompletion = _acompletion
-    LITELLM_AVAILABLE = True
-except (ImportError, ModuleNotFoundError):
-    LITELLM_AVAILABLE = False
-    acompletion = None
+
+def _get_litellm_acompletion(*, local_only: bool) -> Any:
+    """Load LiteLLM lazily, forcing its bundled cost map for local Ollama."""
+
+    global acompletion
+    if acompletion is not None:
+        return acompletion
+    if not LITELLM_AVAILABLE:
+        raise ImportError("LiteLLM is required for this LLM provider. Install with: pip install litellm")
+    with _LITELLM_IMPORT_LOCK:
+        cached = globals().get("acompletion")
+        if cached is not None:
+            return cached
+        if local_only:
+            # This environment variable is read during LiteLLM import.  Assign
+            # rather than setdefault so an Ollama-only scan cannot inherit a
+            # permissive value from the parent environment.
+            os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+        module = importlib.import_module("litellm")
+        acompletion = module.acompletion
+        return acompletion
+
 
 genai: Any
 try:
@@ -208,7 +229,7 @@ def _resolve_temperature(
         ``float`` to send as ``temperature``, or ``None`` to omit it entirely.
     """
     if explicit is not _TEMPERATURE_UNSET:
-        return explicit
+        return cast(float | None, explicit)
 
     raw = os.environ.get(env_var, "").strip()
     if not raw:
@@ -448,6 +469,7 @@ class LLMRequestHandler:
     async def _make_litellm_request(self, messages: list[dict[str, str]], context: str) -> str:
         """Make request using LiteLLM with structured outputs when supported."""
         last_exception = None
+        completion = _get_litellm_acompletion(local_only=bool(getattr(self.provider_config, "is_ollama", False)))
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -472,7 +494,7 @@ class LLMRequestHandler:
                 if response_format:
                     request_params["response_format"] = response_format
 
-                response = await acompletion(**request_params, drop_params=True)
+                response = await completion(**request_params, drop_params=True)
                 self._last_usage = _extract_token_usage(response)
                 choice = response.choices[0]
                 self._raise_if_truncated(choice, context=context)
@@ -491,12 +513,12 @@ class LLMRequestHandler:
                     self._use_plain_json_output = True
                     retry_params = dict(request_params)
                     retry_params["response_format"] = {"type": "json_object"}
-                    response = await acompletion(**retry_params, drop_params=True)
+                    response = await completion(**retry_params, drop_params=True)
                     self._last_usage = _extract_token_usage(response)
                     choice = response.choices[0]
                     self._raise_if_truncated(choice, context=context)
-                    content: str = choice.message.content or ""
-                    return content
+                    fallback_content: str = choice.message.content or ""
+                    return fallback_content
 
                 last_exception = e
                 error_msg = str(e).lower()

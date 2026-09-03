@@ -108,7 +108,7 @@ def _install_context_record_factory() -> None:
 
             return record
 
-        context_record_factory._skill_scanner_context_factory = True
+        vars(context_record_factory)["_skill_scanner_context_factory"] = True
         logging.setLogRecordFactory(context_record_factory)
 
 

@@ -399,6 +399,10 @@ class TestBatchScan:
                 self.loader = DummyLoader()
 
             @staticmethod
+            def close():
+                return None
+
+            @staticmethod
             def scan_directory(*args, **kwargs):
                 return report
 

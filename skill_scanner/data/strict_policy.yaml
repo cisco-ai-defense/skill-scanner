@@ -10,6 +10,10 @@ policy_name: strict
 policy_version: "1.0"
 preset_base: strict
 
+# CEL remains observational until each built-in rule passes promotion gates.
+cel:
+  mode: "shadow"
+
 # ---------------------------------------------------------------------------
 # Hidden files – only the absolute essentials are benign
 # ---------------------------------------------------------------------------
@@ -284,6 +288,7 @@ analyzers:
   static: true
   bytecode: true
   pipeline: true
+  correlation: true
 
 # ---------------------------------------------------------------------------
 # LLM analysis – tighter context budgets for strict mode

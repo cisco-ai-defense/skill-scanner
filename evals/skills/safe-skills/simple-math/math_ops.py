@@ -14,39 +14,5 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Safe math operations - EVALUATION SKILL (SAFE)
-"""
-
-import operator
-
-OPERATORS = {
-    "+": operator.add,
-    "-": operator.sub,
-    "*": operator.mul,
-    "/": operator.truediv,
-}
-
-
-def calculate(a, b, op):
-    """Safely calculate using operator module"""
-    if op not in OPERATORS:
-        raise ValueError(f"Invalid operator: {op}")
-
-    return OPERATORS[op](float(a), float(b))
-
-
-def validate_input(value):
-    """Validate numeric input"""
-    try:
-        float(value)
-        return True
-    except ValueError:
-        return False
-
-
-if __name__ == "__main__":
-    print(calculate(10, 5, "+"))  # 15.0
-    print(calculate(10, 5, "-"))  # 5.0
-    print(calculate(10, 5, "*"))  # 50.0
-    print(calculate(10, 5, "/"))  # 2.0
+def add(left: float, right: float) -> float:
+    return left + right

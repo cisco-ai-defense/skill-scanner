@@ -228,8 +228,9 @@ class TestAnalyzerToggle:
         assert not any(isinstance(a, PipelineAnalyzer) for a in scanner.analyzers)
 
     def test_all_analyzers_enabled_by_default(self):
-        """Default policy should have all three default analyzers enabled."""
+        """Default policy should have every default analyzer enabled."""
         from skill_scanner.core.analyzers.bytecode_analyzer import BytecodeAnalyzer
+        from skill_scanner.core.analyzers.correlation_analyzer import CorrelationAnalyzer
         from skill_scanner.core.analyzers.pipeline_analyzer import PipelineAnalyzer
         from skill_scanner.core.analyzers.static import StaticAnalyzer
         from skill_scanner.core.scanner import SkillScanner
@@ -239,6 +240,7 @@ class TestAnalyzerToggle:
         assert StaticAnalyzer in types
         assert BytecodeAnalyzer in types
         assert PipelineAnalyzer in types
+        assert CorrelationAnalyzer in types
 
     def test_disable_all_analyzers_produces_no_findings(self, tmp_path):
         """With all analyzers disabled, scanning should produce zero findings."""
@@ -248,6 +250,7 @@ class TestAnalyzerToggle:
         policy.analyzers.static = False
         policy.analyzers.bytecode = False
         policy.analyzers.pipeline = False
+        policy.analyzers.correlation = False
 
         scanner = SkillScanner(policy=policy)
 

@@ -670,7 +670,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
                 Finding(
                     id=self._generate_id("BASH_TAINT", f"{file_path}:{flow.source_line}:{flow.sink_line}"),
                     rule_id="BEHAVIOR_BASH_TAINT_FLOW",
-                    category=category,
+                    category=ThreatCategory.DATA_EXFILTRATION,
                     severity=severity,
                     title=title,
                     description=desc,
@@ -687,6 +687,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
                         "source_line": flow.source_line,
                         "sink_command": flow.sink_command,
                         "taints": [t.name for t in flow.taints],
+                        "behavior_category": category.value,
                     },
                 )
             )

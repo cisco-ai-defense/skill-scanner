@@ -1,187 +1,199 @@
-# PromptGuard Data Protection Rule Pack for Cisco Skill Scanner
-# Source: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
-# Version: 1.0.0
-# These rules fill detection gaps in Cisco's core ruleset and the ATR pack.
-# Focus areas: PII detection, extended secret providers, LLM-context exfiltration.
+# Copyright 2026 Cisco Systems, Inc.
+# SPDX-License-Identifier: Apache-2.0
 
-pack:
-  id: promptguard
-  name: "PromptGuard Data Protection Rules"
-  version: "1.0.0"
-  description: >
-    Data protection detection rules contributed directly to Skill Scanner in
-    PR #89 under the PromptGuard pack name. Covers PII detection, extended
-    secret providers, and LLM-context exfiltration with 26 rules across 3
-    signature files. The immutable in-repository contribution is the canonical
-    source because the originally cited external repository is not public.
-  author: "Abhijoy Sarkar (community contribution via PR #89)"
-  license: "Apache-2.0"
-  source_url: "https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard"
-  signature_files:
-    - signatures/pii_detection.yaml
-    - signatures/secret_providers.yaml
-    - signatures/markdown_exfiltration.yaml
+# Authoritative bundled rule-pack manifest. Implementations are validated
+# atomically against this schema-v2 identity at scanner startup.
+schema_version: 2
+name: promptguard
+version: 1.0.0
+author: 'Abhijoy Sarkar (community contribution via PR #89)'
+license: Apache-2.0
+source_url: https://github.com/cisco-ai-defense/skill-scanner/tree/699431857cc2021fed8d8fad9ec79c437bbae009/skill_scanner/data/packs/promptguard
+description: 'Data protection detection rules contributed directly to Skill Scanner in PR #89 under the PromptGuard pack name.
+  Covers PII detection, extended secret providers, and LLM-context exfiltration with 26 rules across 3 signature files. The
+  immutable in-repository contribution is the canonical source because the originally cited external repository is not public.
 
+  '
 rules:
-
-  # ─── PII Detection (pii_detection.yaml) ──────────────────────────────────
-
-  - id: PG_PII_SSN
-    file: signatures/pii_detection.yaml
-    severity: CRITICAL
-    category: pii_exposure
-    description: "US Social Security Number embedded in skill package."
-
-  - id: PG_PII_CREDIT_CARD
-    file: signatures/pii_detection.yaml
-    severity: CRITICAL
-    category: pii_exposure
-    description: "Credit card number (Visa, MC, Amex, Discover) in skill package."
-
-  - id: PG_PII_IBAN
-    file: signatures/pii_detection.yaml
-    severity: HIGH
-    category: pii_exposure
-    description: "International Bank Account Number (IBAN) in skill package."
-
-  - id: PG_PII_PHONE_HARVESTING
-    file: signatures/pii_detection.yaml
-    severity: HIGH
-    category: pii_exposure
-    description: "Skill instructions to collect phone numbers from users."
-
-  - id: PG_PII_SSN_HARVESTING
-    file: signatures/pii_detection.yaml
-    severity: CRITICAL
-    category: pii_exposure
-    description: "Skill instructions to collect Social Security Numbers."
-
-  - id: PG_PII_CARD_HARVESTING
-    file: signatures/pii_detection.yaml
-    severity: CRITICAL
-    category: pii_exposure
-    description: "Skill instructions to collect credit card details."
-
-  - id: PG_PII_CREDENTIAL_HARVESTING
-    file: signatures/pii_detection.yaml
-    severity: CRITICAL
-    category: pii_exposure
-    description: "Skill instructions to collect passwords or credentials."
-
-  - id: PG_PII_MEDICAL_ID
-    file: signatures/pii_detection.yaml
-    severity: HIGH
-    category: pii_exposure
-    description: "US Medicare Beneficiary Identifier (HIPAA-protected PHI)."
-
-  # ─── Extended Secret Providers (secret_providers.yaml) ───────────────────
-
-  - id: PG_SECRET_OPENAI_KEY
-    file: signatures/secret_providers.yaml
-    severity: CRITICAL
-    category: hardcoded_secrets
-    description: "Hardcoded OpenAI API key (sk-..., sk-proj-..., sk-svcacct-...)."
-
-  - id: PG_SECRET_ANTHROPIC_KEY
-    file: signatures/secret_providers.yaml
-    severity: CRITICAL
-    category: hardcoded_secrets
-    description: "Hardcoded Anthropic API key (sk-ant-...)."
-
-  - id: PG_SECRET_SLACK_TOKEN
-    file: signatures/secret_providers.yaml
-    severity: CRITICAL
-    category: hardcoded_secrets
-    description: "Hardcoded Slack bot/user/app token (xoxb-/xoxp-/xapp-)."
-
-  - id: PG_SECRET_SLACK_WEBHOOK
-    file: signatures/secret_providers.yaml
-    severity: HIGH
-    category: hardcoded_secrets
-    description: "Hardcoded Slack incoming webhook URL."
-
-  - id: PG_SECRET_HUGGINGFACE_TOKEN
-    file: signatures/secret_providers.yaml
-    severity: HIGH
-    category: hardcoded_secrets
-    description: "Hardcoded Hugging Face access token (hf_...)."
-
-  - id: PG_SECRET_TWILIO_KEY
-    file: signatures/secret_providers.yaml
-    severity: HIGH
-    category: hardcoded_secrets
-    description: "Hardcoded Twilio API key or auth token."
-
-  - id: PG_SECRET_SENDGRID_KEY
-    file: signatures/secret_providers.yaml
-    severity: HIGH
-    category: hardcoded_secrets
-    description: "Hardcoded SendGrid API key (SG....)."
-
-  - id: PG_SECRET_NPM_TOKEN
-    file: signatures/secret_providers.yaml
-    severity: CRITICAL
-    category: hardcoded_secrets
-    description: "Hardcoded npm access token (npm_...)."
-
-  - id: PG_SECRET_PYPI_TOKEN
-    file: signatures/secret_providers.yaml
-    severity: CRITICAL
-    category: hardcoded_secrets
-    description: "Hardcoded PyPI API token (pypi-...)."
-
-  - id: PG_SECRET_DISCORD_TOKEN
-    file: signatures/secret_providers.yaml
-    severity: CRITICAL
-    category: hardcoded_secrets
-    description: "Hardcoded Discord bot token."
-
-  - id: PG_SECRET_AZURE_KEY
-    file: signatures/secret_providers.yaml
-    severity: CRITICAL
-    category: hardcoded_secrets
-    description: "Hardcoded Azure Cognitive Services or Azure OpenAI key."
-
-  - id: PG_SECRET_DIGITALOCEAN_TOKEN
-    file: signatures/secret_providers.yaml
-    severity: CRITICAL
-    category: hardcoded_secrets
-    description: "Hardcoded DigitalOcean personal access token (dop_v1_...)."
-
-  # ─── LLM-Context Exfiltration (markdown_exfiltration.yaml) ──────────────
-
-  - id: PG_EXFIL_MARKDOWN_IMAGE
-    file: signatures/markdown_exfiltration.yaml
-    severity: CRITICAL
+  PG_PII_SSN:
+    source: signature
     category: data_exfiltration
-    description: "Markdown image tag exfiltrating data via URL query parameters."
-
-  - id: PG_EXFIL_MARKDOWN_LINK
-    file: signatures/markdown_exfiltration.yaml
-    severity: HIGH
-    category: data_exfiltration
-    description: "Markdown link smuggling sensitive data in constructed URLs."
-
-  - id: PG_EXFIL_HTML_TAG
-    file: signatures/markdown_exfiltration.yaml
-    severity: HIGH
-    category: data_exfiltration
-    description: "HTML tag injection with dynamic URL for data exfiltration."
-
-  - id: PG_EXFIL_DATA_URI
-    file: signatures/markdown_exfiltration.yaml
-    severity: HIGH
-    category: data_exfiltration
-    description: "Data URI with executable MIME type (script/HTML smuggling)."
-
-  - id: PG_EXFIL_URL_ENCODING
-    file: signatures/markdown_exfiltration.yaml
-    severity: HIGH
-    category: data_exfiltration
-    description: "Instructions to encode secrets/context into URLs for exfiltration."
-
-  - id: PG_EXFIL_INVISIBLE_PAYLOAD
-    file: signatures/markdown_exfiltration.yaml
     severity: CRITICAL
+    knobs:
+      enabled: true
+    description: US Social Security Number embedded in skill package.
+  PG_PII_CREDIT_CARD:
+    source: signature
     category: data_exfiltration
-    description: "Steganographic encoding to hide exfiltrated data in invisible characters."
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Credit card number (Visa, MC, Amex, Discover) in skill package.
+  PG_PII_IBAN:
+    source: signature
+    category: data_exfiltration
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: International Bank Account Number (IBAN) in skill package.
+  PG_PII_PHONE_HARVESTING:
+    source: signature
+    category: data_exfiltration
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: Skill instructions to collect phone numbers from users.
+  PG_PII_SSN_HARVESTING:
+    source: signature
+    category: data_exfiltration
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Skill instructions to collect Social Security Numbers.
+  PG_PII_CARD_HARVESTING:
+    source: signature
+    category: data_exfiltration
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Skill instructions to collect credit card details.
+  PG_PII_CREDENTIAL_HARVESTING:
+    source: signature
+    category: data_exfiltration
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Skill instructions to collect passwords or credentials.
+  PG_PII_MEDICAL_ID:
+    source: signature
+    category: data_exfiltration
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: US Medicare Beneficiary Identifier (HIPAA-protected PHI).
+  PG_SECRET_OPENAI_KEY:
+    source: signature
+    category: hardcoded_secrets
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Hardcoded OpenAI API key (sk-..., sk-proj-..., sk-svcacct-...).
+  PG_SECRET_ANTHROPIC_KEY:
+    source: signature
+    category: hardcoded_secrets
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Hardcoded Anthropic API key (sk-ant-...).
+  PG_SECRET_SLACK_TOKEN:
+    source: signature
+    category: hardcoded_secrets
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Hardcoded Slack bot/user/app token (xoxb-/xoxp-/xapp-).
+  PG_SECRET_SLACK_WEBHOOK:
+    source: signature
+    category: hardcoded_secrets
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: Hardcoded Slack incoming webhook URL.
+  PG_SECRET_HUGGINGFACE_TOKEN:
+    source: signature
+    category: hardcoded_secrets
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: Hardcoded Hugging Face access token (hf_...).
+  PG_SECRET_TWILIO_KEY:
+    source: signature
+    category: hardcoded_secrets
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: Hardcoded Twilio API key or auth token.
+  PG_SECRET_SENDGRID_KEY:
+    source: signature
+    category: hardcoded_secrets
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: Hardcoded SendGrid API key (SG....).
+  PG_SECRET_NPM_TOKEN:
+    source: signature
+    category: hardcoded_secrets
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Hardcoded npm access token (npm_...).
+  PG_SECRET_PYPI_TOKEN:
+    source: signature
+    category: hardcoded_secrets
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Hardcoded PyPI API token (pypi-...).
+  PG_SECRET_DISCORD_TOKEN:
+    source: signature
+    category: hardcoded_secrets
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Hardcoded Discord bot token.
+  PG_SECRET_AZURE_KEY:
+    source: signature
+    category: hardcoded_secrets
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Hardcoded Azure Cognitive Services or Azure OpenAI key.
+  PG_SECRET_DIGITALOCEAN_TOKEN:
+    source: signature
+    category: hardcoded_secrets
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Hardcoded DigitalOcean personal access token (dop_v1_...).
+  PG_EXFIL_MARKDOWN_IMAGE:
+    source: signature
+    category: data_exfiltration
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Markdown image tag exfiltrating data via URL query parameters.
+  PG_EXFIL_MARKDOWN_LINK:
+    source: signature
+    category: data_exfiltration
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: Markdown link smuggling sensitive data in constructed URLs.
+  PG_EXFIL_HTML_TAG:
+    source: signature
+    category: data_exfiltration
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: HTML tag injection with dynamic URL for data exfiltration.
+  PG_EXFIL_DATA_URI:
+    source: signature
+    category: data_exfiltration
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: Data URI with executable MIME type (script/HTML smuggling).
+  PG_EXFIL_URL_ENCODING:
+    source: signature
+    category: data_exfiltration
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: Instructions to encode secrets/context into URLs for exfiltration.
+  PG_EXFIL_INVISIBLE_PAYLOAD:
+    source: signature
+    category: data_exfiltration
+    severity: CRITICAL
+    knobs:
+      enabled: true
+    description: Steganographic encoding to hide exfiltrated data in invisible characters.

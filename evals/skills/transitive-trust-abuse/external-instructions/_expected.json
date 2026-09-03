@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "transitive-trust.external-instructions-001",
+  "skill_name": "external-instruction-follower",
+  "package_label": "contextual_risk",
+  "expected_verdict": "safe",
+  "expected_severity": "MEDIUM",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "5d42d5509838f8229ac81da1a1c1a4d3396843bf5a9b595647f9cf233c00e070",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "cded8494dc6405c63dafa0822af02f0deef4375b0d5b64d7a9fa7b3507af772c",
+    "label_evidence_sha256": "cdce57a84e07e4637d8271b9d462c80ed3de604ef8f5dd8ec701db14f6f9f2dc"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "YARA_indirect_prompt_injection_generic",
+      "category": "transitive_trust_abuse",
+      "severity": "MEDIUM",
+      "file_path": "payload.md",
+      "analyzer": "static",
+      "line_number": 1
+    }
+  ],
+  "notes": "Isolated delegation to external instructions; MEDIUM-only contextual risk does not block the package."
+}

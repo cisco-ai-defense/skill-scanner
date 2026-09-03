@@ -1,7 +1,20 @@
 {
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "benign.file-validator-001",
   "skill_name": "file-validator",
-  "expected_safe": true,
+  "package_label": "benign",
+  "expected_verdict": "safe",
   "expected_severity": "SAFE",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "edc65dafd10873dd5c5dc39da0621cd28761ce4ef0a9af316b84cf1126bd1c04",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "f13aae4098f9ad77bea21dc8beb31d387659a45caf45a0dee4d28e4a5e54c6df",
+    "label_evidence_sha256": "b97d98215abcafc773b6066b13e297fbb234149243031ed2a179a3c6a92ceac6"
+  },
   "expected_findings": [],
-  "notes": "Clean implementation with proper path validation, size limits, extension checks"
+  "notes": "Benign filename-validation hard negative with no filesystem access."
 }

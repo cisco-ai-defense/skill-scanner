@@ -1,23 +1,29 @@
 {
-  "skill_name": "database-query",
-  "expected_safe": false,
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "command-injection.sql-interpolation-001",
+  "skill_name": "interpolated-database-query",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
   "expected_severity": "CRITICAL",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "52414b2898dcb2b235b807cabcabb2fd53037621986cdc2bff8e9599b5328d5c",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "df405705f74a79a50f0b39efc4df9efe52ebf0b71fb42ec2d32e2294aef2f4e1",
+    "label_evidence_sha256": "71f362f62d2f3a40f3529b6cd8fb11877feeb80049c0d6588d25e97d52210fab"
+  },
   "expected_findings": [
     {
+      "rule_id": "SQL_INJECTION_STRING_FORMAT",
       "category": "command_injection",
       "severity": "CRITICAL",
-      "description": "SQL Injection Vulnerability in search_users function"
-    },
-    {
-      "category": "command_injection",
-      "severity": "CRITICAL",
-      "description": "SQL Injection Vulnerability in get_user_by_id function"
-    },
-    {
-      "category": "command_injection",
-      "severity": "CRITICAL",
-      "description": "SQL query with string formatting (SQL injection risk)"
+      "file_path": "query.py",
+      "analyzer": "static",
+      "line_number": 18
     }
   ],
-  "notes": "Claims safe parameterized queries but uses dangerous string concatenation. SQL injection can lead to data exfiltration."
+  "notes": "Human-reviewed minimal replacement for the historical SQL string-interpolation case."
 }

@@ -1,12 +1,12 @@
 ---
 title: "Architecture"
-description: "Explore Skill Scanner architecture: its six-stage security pipeline, pluggable analyzers, policy engine, rule packs, threat taxonomy, and extension points."
+description: "Explore Skill Scanner architecture: its typed CEL decision layer, pluggable analyzers, policy engine, rule packs, threat taxonomy, and extension points."
 order: 6
 ---
 
 ## Architecture
 
-Skill Scanner is a modular security scanner built around a central orchestrator and pluggable analyzers. Scans execute deterministic analysis first, optionally adjudicate its highest-severity matches, then run LLM-powered analysis enriched with the retained Phase 1 context.
+Skill Scanner is a modular security scanner built around a central orchestrator and pluggable analyzers. Scans execute deterministic analysis first, project bounded typed facts into the CEL decision layer, and then run optional LLM-powered analysis enriched with retained Phase 1 context.
 
 <Callout type="info">
   This page covers system internals. If you are looking to use the scanner, start with the [Quick Start](/docs/skill-scanner/quick-start) or [CLI Reference](/docs/skill-scanner/cli-reference).
@@ -16,19 +16,21 @@ Skill Scanner is a modular security scanner built around a central orchestrator 
 
 ### Scanning Pipeline
 
-Every scan follows the same six-stage pipeline:
+Every scan follows the same seven-stage pipeline:
 
 **1. Load and Pre-process** — `SkillLoader` parses the skill's `SKILL.md` frontmatter, discovers files recursively, classifies file types, and extracts referenced file hints. `ContentExtractor` safely unpacks any embedded archives (ZIP, TAR) with layered protections against zip bombs, path traversal, and symlink attacks.
 
-**2. Phase 1: Deterministic and External Analyzers** — Static (YAML + YARA + Python checks), bytecode, and pipeline run by default. Optional behavioral, OSV.dev, VirusTotal, AI Defense, and trigger analyzers add dataflow, dependency, reputation, and cloud signals. The scanner collects validated binary files and unreferenced scripts for later enrichment.
+**2. Phase 1: Deterministic and External Analyzers** — Static (YAML + YARA-X + Python checks), bytecode, pipeline, and bounded correlation run by default. Optional behavioral, OSV.dev, VirusTotal, AI Defense, and trigger analyzers add dataflow, dependency, reputation, and cloud signals. The scanner collects validated binary files and unreferenced scripts for later enrichment.
 
-**3. Adjudication and LLM Enrichment** — If enabled, the demote-only adjudicator reviews deterministic HIGH/CRITICAL literal-regex matches before they enter LLM context. The LLM and meta analyzers then receive file inventory, type distribution, magic mismatches, and retained critical/high findings.
+**3. Typed CEL Decisions** — Analyzer-owned facts are projected into `ScanFacts` v1. CEL gates existing candidates only; runtime/projection failures retain candidates. Balanced and strict run in shadow, while permissive runs CEL off.
 
-**4. Post-Processing** — Policy enforcement: suppress VT-validated binary findings, enforce disabled rules, apply severity overrides, compute analyzability scores, normalize/deduplicate findings, annotate co-occurrence metadata, and attach the policy fingerprint.
+**4. Adjudication and LLM Enrichment** — If enabled, the demote-only adjudicator reviews deterministic HIGH/CRITICAL literal-regex matches before they enter LLM context. The LLM and meta analyzers then receive file inventory, type distribution, magic mismatches, and retained critical/high findings.
 
-**5. Cleanup** — Temporary extraction directories are removed. A `ScanResult` is built with findings, timing, analyzer names, analyzability score, scan metadata, and aggregate LLM token usage when providers report it.
+**5. Post-Processing** — Policy enforcement: suppress VT-validated binary findings, enforce disabled rules, apply severity overrides, compute analyzability scores, normalize/deduplicate findings, annotate co-occurrence metadata, and attach the policy fingerprint.
 
-**6. Reporting** — The `ScanResult` is passed to the chosen reporter (summary, JSON, Markdown, table, SARIF, or HTML).
+**6. Cleanup** — Temporary extraction directories are removed. A `ScanResult` is built with findings, timing, analyzer names, analyzability score, scan metadata, and aggregate LLM token usage when providers report it.
+
+**7. Reporting** — The `ScanResult` is passed to the chosen reporter (summary, JSON, Markdown, table, SARIF, or HTML).
 
 ---
 
@@ -52,7 +54,7 @@ The `SkillScanner` class in `core/scanner.py` runs the full pipeline. It manages
 
 `analyzer_factory.py` is the single source of truth for analyzer assembly. CLI, API, pre-commit hook, and eval runners all use this factory to ensure parity.
 
-- `build_core_analyzers(policy)` — static, bytecode, pipeline (gated by policy)
+- `build_core_analyzers(policy)` — static, bytecode, pipeline, correlation (gated by policy)
 - `build_analyzers(policy, use_behavioral, use_llm, ...)` — adds optional analyzers based on flags
 
 #### Content Extractor
@@ -70,6 +72,7 @@ Safely unpacks archives embedded in skills with protections for zip bombs, nesti
 | `static_analyzer` | YAML signatures + YARA rules + inventory checks |
 | `bytecode_analyzer` | Python bytecode/source consistency |
 | `pipeline_analyzer` | Shell pipeline taint analysis and command-risk checks |
+| `correlation_analyzer` | Bounded Python/JavaScript/TypeScript source-to-sink and staged-behavior correlation |
 
 #### Optional (Flag-Driven)
 
@@ -98,6 +101,7 @@ Safely unpacks archives embedded in skills with protections for zip bombs, nesti
 - Severity overrides and disabled rules
 - Output deduplication and metadata behavior
 - Core analyzer toggles
+- CEL mode (`off`, `shadow`, or `enforce`)
 - Adjudicator confidence threshold
 - LLM prompt/output budgets and trusted reference domains
 
@@ -142,10 +146,12 @@ Built-in detection rules live in `skill_scanner/data/packs/`:
 | Pack | Contents |
 |------|----------|
 | `core` | YAML signatures, YARA rules, Python checks — the main detection pack |
-| `atr` | Additional threat research signatures |
+| `atr` | Optional threat research signatures; not part of the current core + CEL release gate |
 | `promptguard` | 26 PII, provider-secret, and LLM/Markdown exfiltration rules |
 
-The current ATR pack contains 712 supported rules. Each pack has a `pack.yaml` manifest that declares its rules and metadata and can be enabled with `--rule-packs`.
+Each pack has a strict schema-v2 `pack.yaml` manifest that declares its rules
+and metadata. Optional packs are enabled with `--rule-packs`; administrator-
+trusted local signature/YARA/CEL packs use repeatable `--trusted-rule-pack`.
 
 ---
 

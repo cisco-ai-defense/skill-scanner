@@ -30,13 +30,13 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 
 try:
     from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field, model_validator
 
     MULTIPART_AVAILABLE = True
 except ImportError:
@@ -44,6 +44,8 @@ except ImportError:
 
 from .. import __version__ as PACKAGE_VERSION
 from ..core.analyzer_factory import build_analyzers
+from ..core.cel.models import CelMode
+from ..core.cel.runtime import CelRuntimeUnavailable
 from ..core.exceptions import SkillLoadError
 from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
@@ -159,6 +161,11 @@ class _BoundedCache(OrderedDict[str, dict]):
 
 scan_results_cache = _BoundedCache()
 
+
+class _RulePackStartupConfigurationError(RuntimeError):
+    """The server's bundled rule generation failed startup validation."""
+
+
 # Environment-configurable allowlist of directories the API may access.
 # When empty (default) any *resolved* absolute path is accepted — operators
 # should set SKILL_SCANNER_ALLOWED_ROOTS to restrict access in production.
@@ -192,13 +199,35 @@ def _validate_path(user_input: str, *, label: str = "path") -> Path:
 # ---------------------------------------------------------------------------
 
 
-class ScanRequest(BaseModel):
+class _RemoteScanConfig(BaseModel):
+    """Common validation for scan configuration accepted over the API."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_trusted_rule_pack_paths(cls, data: object) -> object:
+        """Keep trusted local rule packs behind a local administrator boundary."""
+        if isinstance(data, Mapping):
+            forbidden = {"trusted_rule_pack", "trusted_rule_packs"}.intersection(data)
+            if forbidden:
+                names = ", ".join(sorted(forbidden))
+                raise ValueError(
+                    f"{names} cannot be supplied over the remote API; "
+                    "trusted rule packs must be configured by the local service administrator"
+                )
+        return data
+
+
+class ScanRequest(_RemoteScanConfig):
     """Request model for scanning a skill."""
 
     skill_directory: str = Field(..., description="Path to skill directory")
     policy: str | None = Field(
         None,
         description="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
+    )
+    cel_mode: CelMode | None = Field(
+        None,
+        description="Optional CEL decision-mode override: off, shadow (observe only), or enforce",
     )
     custom_rules: str | None = Field(None, description="Path to custom YARA rules directory")
     use_llm: bool = Field(False, description="Enable LLM analyzer")
@@ -234,6 +263,10 @@ class ScanResponse(BaseModel):
     scan_duration_seconds: float
     timestamp: str
     findings: list[dict]
+    scan_metadata: dict[str, object] = Field(
+        default_factory=dict,
+        description="Scan provenance and decision-layer telemetry, including CEL mode and counters",
+    )
     llm_usage: dict[str, int] | None = None
 
 
@@ -245,13 +278,17 @@ class HealthResponse(BaseModel):
     analyzers_available: list[str]
 
 
-class BatchScanRequest(BaseModel):
+class BatchScanRequest(_RemoteScanConfig):
     """Request for batch scanning."""
 
     skills_directory: str
     policy: str | None = Field(
         None,
         description="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
+    )
+    cel_mode: CelMode | None = Field(
+        None,
+        description="Optional CEL decision-mode override: off, shadow (observe only), or enforce",
     )
     custom_rules: str | None = Field(None, description="Path to custom YARA rules directory")
     recursive: bool = False
@@ -283,21 +320,60 @@ class BatchScanRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _resolve_policy(policy_str: str | None) -> ScanPolicy:
-    """Resolve a policy string to a ScanPolicy object."""
+def _resolve_policy(policy_str: str | None, *, cel_mode: CelMode | str | None = None) -> ScanPolicy:
+    """Resolve a policy string and apply an optional API-level CEL override."""
     if policy_str is None or not policy_str.strip():
-        return ScanPolicy.default()
-    policy_str = policy_str.strip()
-    if policy_str.lower() in ("strict", "balanced", "permissive"):
-        return ScanPolicy.from_preset(policy_str)
-    policy_path = _validate_path(policy_str, label="policy path")
-    if policy_path.exists():
-        if not policy_path.is_file():
-            raise ValueError(f"Policy path '{policy_str}' is not a file.")
-        if policy_path.suffix not in (".yaml", ".yml"):
-            raise ValueError("Policy file must have a .yaml or .yml extension.")
-        return ScanPolicy.from_yaml(str(policy_path))
-    raise ValueError(f"Unknown policy '{policy_str}'. Use a preset name or a path to a YAML file.")
+        policy = ScanPolicy.default()
+    else:
+        policy_str = policy_str.strip()
+        if policy_str.lower() in ("strict", "balanced", "permissive"):
+            policy = ScanPolicy.from_preset(policy_str)
+        else:
+            policy_path = _validate_path(policy_str, label="policy path")
+            if not policy_path.exists():
+                raise ValueError(f"Unknown policy '{policy_str}'. Use a preset name or a path to a YAML file.")
+            if not policy_path.is_file():
+                raise ValueError(f"Policy path '{policy_str}' is not a file.")
+            if policy_path.suffix not in (".yaml", ".yml"):
+                raise ValueError("Policy file must have a .yaml or .yml extension.")
+            policy = ScanPolicy.from_yaml(str(policy_path))
+
+    if cel_mode is not None:
+        policy.cel.mode = CelMode(cel_mode)
+    return policy
+
+
+def _resolve_request_policy(policy_str: str | None, cel_mode: CelMode | str | None) -> ScanPolicy:
+    """Resolve an API policy without passing a redundant override keyword.
+
+    Keeping the no-override path identical to the historical one-argument call is
+    useful for API embedders that wrap ``_resolve_policy`` for policy selection,
+    while an explicitly requested CEL mode still takes the strict override path.
+    """
+    if cel_mode is None:
+        return _resolve_policy(policy_str)
+    return _resolve_policy(policy_str, cel_mode=cel_mode)
+
+
+def _create_api_scanner(analyzers: list, policy: ScanPolicy | None) -> SkillScanner:
+    """Create an API scanner with a strictly validated bundled generation.
+
+    Remote callers cannot nominate trusted local pack paths, but active CEL
+    modes must still compile and evaluate gates shipped in bundled packs.
+    Validation is a startup invariant even when CEL is off; the pack loader
+    process-caches the installed immutable generation.
+    """
+    from ..core.rule_registry import PackLoader
+
+    try:
+        registry = PackLoader().build_registry()
+        return SkillScanner(analyzers=analyzers, policy=policy, rule_registry=registry)
+    except CelRuntimeUnavailable:
+        raise
+    except ValueError as exc:
+        # Rule parse/type/metadata failures are local service configuration
+        # errors, not malformed scan requests from the remote caller.
+        raise _RulePackStartupConfigurationError(f"Bundled rule-pack configuration failed: {exc}") from exc
 
 
 def _skill_load_error_detail(error: SkillLoadError, skill_dir: Path) -> str:
@@ -436,7 +512,7 @@ async def scan_skill(
         custom_rules_path = str(validated_rules)
 
     try:
-        policy = _resolve_policy(request.policy)
+        policy = _resolve_request_policy(request.policy, request.cel_mode)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -464,8 +540,8 @@ async def scan_skill(
                 llm_max_tokens=request.llm_max_tokens,
                 llm_reasoning_effort=request.llm_reasoning_effort,
             )
-            scanner = SkillScanner(analyzers=analyzers, policy=policy)
-            return scanner.scan_skill(skill_dir)
+            with _create_api_scanner(analyzers, policy) as scanner:
+                return scanner.scan_skill(skill_dir)
 
     try:
         loop = asyncio.get_running_loop()
@@ -530,9 +606,12 @@ async def scan_skill(
             scan_duration_seconds=result.scan_duration_seconds,
             timestamp=result.timestamp.isoformat(),
             findings=[f.to_dict() for f in result.findings],
+            scan_metadata=result.scan_metadata or {},
             llm_usage=result.llm_usage,
         )
 
+    except (CelRuntimeUnavailable, _RulePackStartupConfigurationError) as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
     except SkillLoadError as e:
         raise HTTPException(status_code=422, detail=_skill_load_error_detail(e, skill_dir)) from e
     except ValueError as e:
@@ -546,6 +625,14 @@ async def scan_skill(
 async def scan_uploaded_skill(
     file: UploadFile = File(..., description="ZIP file containing skill package"),
     policy: str | None = Form(None, description="Scan policy: preset name or path to YAML"),
+    cel_mode: CelMode | None = Form(
+        None,
+        description="Optional CEL decision-mode override: off, shadow (observe only), or enforce",
+    ),
+    trusted_rule_packs: list[str] | None = Form(
+        None,
+        description="Unsupported over the API; trusted packs require local administrator configuration",
+    ),
     custom_rules: str | None = Form(None, description="Path to custom YARA rules directory"),
     use_llm: bool = Form(False, description="Enable LLM analyzer"),
     llm_provider: str = Form("anthropic", description="LLM provider"),
@@ -571,6 +658,15 @@ async def scan_uploaded_skill(
     ),
 ):
     """Scan an uploaded skill package (ZIP file)."""
+    if trusted_rule_packs is not None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "trusted_rule_packs cannot be supplied over the remote API; "
+                "trusted rule packs must be configured by the local service administrator"
+            ),
+        )
+
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
 
@@ -651,6 +747,7 @@ async def scan_uploaded_skill(
         request = ScanRequest(
             skill_directory=str(skill_dir),
             policy=policy,
+            cel_mode=cel_mode,
             custom_rules=custom_rules,
             use_llm=use_llm,
             llm_provider=llm_provider,
@@ -740,8 +837,9 @@ def _run_batch_scan(
     aidefense_api_key: str | None = None,
 ):
     """Run a batch scan with its request context already bound."""
+    scanner: SkillScanner | None = None
     try:
-        policy = _resolve_policy(request.policy)
+        policy = _resolve_request_policy(request.policy, request.cel_mode)
 
         custom_rules_path: str | None = None
         if request.custom_rules:
@@ -766,7 +864,7 @@ def _run_batch_scan(
             llm_reasoning_effort=request.llm_reasoning_effort,
         )
 
-        scanner = SkillScanner(analyzers=analyzers, policy=policy)
+        scanner = _create_api_scanner(analyzers, policy)
         report = scanner.scan_directory(
             _validate_path(request.skills_directory, label="skills_directory"),
             recursive=request.recursive,
@@ -851,6 +949,9 @@ def _run_batch_scan(
                 "error": str(e),
             },
         )
+    finally:
+        if scanner is not None:
+            scanner.close()
 
 
 @router.get("/analyzers")

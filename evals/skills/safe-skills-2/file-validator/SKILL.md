@@ -1,20 +1,11 @@
 ---
 name: file-validator
-description: Validate file formats and content safely
-license: MIT
-allowed-tools: [Python]
+description: Validate a filename extension without opening any filesystem path
+license: Apache-2.0
+allowed-tools: []
 ---
 
 # File Validator
 
-Validates file formats and checks content integrity.
-
-## Usage
-
-Provide file path to validate format and content.
-
-## Features
-
-- Format validation
-- Content integrity checks
-- Safe file operations
+Use [validate.py](validate.py) to check whether a filename has an allowed
+extension. The helper performs no I/O.

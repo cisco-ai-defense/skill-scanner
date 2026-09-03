@@ -1,0 +1,406 @@
+name: Detection Release Gate Hook
+
+on:
+  workflow_call:
+    inputs:
+      release_ref:
+        description: "Exact release tag whose commit is being gated"
+        required: true
+        type: string
+      release_sha:
+        description: "Resolved 40-character commit SHA for release_ref"
+        required: true
+        type: string
+      corpus_artifact_run_id:
+        description: "Trusted workflow run containing the mandatory frozen public release evidence"
+        required: true
+        type: string
+      public_corpus_artifact:
+        description: "Pinned public holdout, five runs, exact goldens, and enforced-rule promotion evidence"
+        required: true
+        type: string
+      private_corpus_artifact:
+        description: "Optional nonblocking private/source-disjoint evidence"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      corpus_artifact_token:
+        description: "Token with read access to the trusted corpus artifact run"
+        required: false
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: "Exact release tag whose commit is being gated"
+        required: true
+        type: string
+      release_sha:
+        description: "Resolved 40-character commit SHA for release_ref"
+        required: true
+        type: string
+      corpus_artifact_run_id:
+        description: "Trusted workflow run containing mandatory public release evidence"
+        required: true
+        type: string
+      public_corpus_artifact:
+        description: "Pinned public release evidence artifact"
+        required: true
+        type: string
+      private_corpus_artifact:
+        description: "Optional nonblocking private/source-disjoint evidence"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  committed-golden:
+    name: Committed release checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact release checkout
+        shell: bash
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          if [[ ! "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release_sha must be a full lowercase commit SHA"
+            exit 1
+          fi
+          actual_sha="$(git rev-parse HEAD)"
+          ref_sha="$(git rev-parse "${RELEASE_REF}^{commit}")"
+          if [[ "$actual_sha" != "$RELEASE_SHA" || "$ref_sha" != "$RELEASE_SHA" ]]; then
+            echo "::error::release_ref, release_sha, and checked-out commit must identify the same revision"
+            exit 1
+          fi
+
+      - name: Set up Go for bundled CEL
+        uses: actions/setup-go@v5
+        with:
+          # Use the exact source/release toolchain required by the helper's
+          # reproducible Darwin deployment contract.
+          go-version: "1.27.1"
+          cache-dependency-path: tools/cel_runtime/go.sum
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6.7.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install locked dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Validate core rules, CEL, and committed golden corpus
+        shell: bash
+        run: |
+          mkdir -p artifacts/release
+          uv run python - <<'PY'
+          from evals.datasets.public_datasets import get_locked_dataset, load_dataset_lock
+          from skill_scanner.core.cel.go_runtime import CelGoRuntime
+          from skill_scanner.core.rule_registry import PackLoader
+          from skill_scanner.data import DATA_DIR
+
+          pack = PackLoader().load_bundled_pack(DATA_DIR / "packs" / "core")
+          cel_rules = [definition.cel for definition in pack.rules.values() if definition.cel is not None]
+          runtime = CelGoRuntime(cel_rules)
+          runtime.close()
+          dataset = get_locked_dataset("ProtectSkills/MaliciousSkillBench", load_dataset_lock())
+          expected = [{
+              "name": "core-only-source-disjoint",
+              "detector_profile": "core_only",
+              "protocol": "source_disjoint",
+              "partition": "test",
+          }]
+          if dataset["gating"]["tracks"] != expected:
+              raise SystemExit("release dataset lock is not exactly core_only + source_disjoint")
+          print(f"Validated core pack ({len(pack.rules)} rules, {len(cel_rules)} CEL expressions)")
+          PY
+          set +e
+          uv run python evals/runners/benchmark_runner.py \
+            --eval-dir evals/skills \
+            --output artifacts/release/committed-golden.json
+          benchmark_status=$?
+          set -e
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("artifacts/release/committed-golden.json")
+          if not path.is_file():
+              raise SystemExit("golden benchmark did not produce a release report")
+          report = json.loads(path.read_text(encoding="utf-8"))
+          metrics = report.get("benchmark", {})
+          errors = metrics.get("evaluation_errors")
+          if errors != 0:
+              raise SystemExit(f"golden benchmark reported {errors!r} evaluation errors")
+          total = metrics.get("total_skills_evaluated", 0)
+          if total <= 0 or metrics.get("strict_identity_skills") != total:
+              raise SystemExit("committed golden corpus must contain only exact strict-identity fixtures")
+          if metrics.get("legacy_degraded_skills") != 0:
+              raise SystemExit("legacy/category-only fixtures cannot satisfy the committed golden gate")
+          if metrics.get("finding_false_positives") != 0 or metrics.get("finding_false_negatives") != 0:
+              raise SystemExit("committed exact golden findings changed")
+          if metrics.get("overall_accuracy") != 1.0:
+              raise SystemExit("every committed exact golden package verdict must match")
+          PY
+
+          if (( benchmark_status != 0 )); then
+            echo "::error::Committed exact golden benchmark failed"
+            exit "$benchmark_status"
+          fi
+
+      - name: Upload committed release report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-committed-golden-${{ github.run_id }}
+          path: artifacts/release/
+          if-no-files-found: warn
+          retention-days: 90
+
+  frozen-corpora:
+    name: Mandatory public release corpus gate
+    needs: committed-golden
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: detection-release-corpora
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact release checkout
+        shell: bash
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          if [[ ! "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release_sha must be a full lowercase commit SHA"
+            exit 1
+          fi
+          actual_sha="$(git rev-parse HEAD)"
+          ref_sha="$(git rev-parse "${RELEASE_REF}^{commit}")"
+          if [[ "$actual_sha" != "$RELEASE_SHA" || "$ref_sha" != "$RELEASE_SHA" ]]; then
+            echo "::error::release_ref, release_sha, and checked-out commit must identify the same revision"
+            exit 1
+          fi
+
+      - name: Set up Go for bundled CEL
+        uses: actions/setup-go@v5
+        with:
+          # Use the exact source/release toolchain required by the helper's
+          # reproducible Darwin deployment contract.
+          go-version: "1.27.1"
+          cache-dependency-path: tools/cel_runtime/go.sum
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6.7.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install locked dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Fail closed unless corpus gate inputs are complete
+        id: preflight
+        shell: bash
+        env:
+          ARTIFACT_RUN_ID: ${{ inputs.corpus_artifact_run_id }}
+          PUBLIC_ARTIFACT: ${{ inputs.public_corpus_artifact }}
+          PRIVATE_ARTIFACT: ${{ inputs.private_corpus_artifact }}
+          ARTIFACT_TOKEN: ${{ secrets.corpus_artifact_token || github.token }}
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          EXPECTED_PUBLIC_ARTIFACT: detection-release-evidence-${{ inputs.release_sha }}
+          GH_TOKEN: ${{ secrets.corpus_artifact_token || github.token }}
+        run: |
+          failures=0
+          if [[ ! -f evals/runners/release_gate.py ]]; then
+            echo "::error::Required repository runner is missing: evals/runners/release_gate.py"
+            failures=1
+          fi
+          if [[ -z "$ARTIFACT_RUN_ID" || ! "$ARTIFACT_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::corpus_artifact_run_id must identify one trusted workflow run"
+            failures=1
+          fi
+          if [[ -z "$PUBLIC_ARTIFACT" ]]; then
+            echo "::error::public_corpus_artifact is required"
+            failures=1
+          fi
+          if [[ "$PUBLIC_ARTIFACT" != "$EXPECTED_PUBLIC_ARTIFACT" ]]; then
+            echo "::error::public corpus artifact must use the trusted producer's fixed same-revision name"
+            failures=1
+          fi
+          if [[ "${PUBLIC_ARTIFACT,,}" == *waiver* ]]; then
+            echo "::error::Waiver artifacts cannot satisfy or bypass mandatory release gates"
+            failures=1
+          fi
+          if [[ -n "$PRIVATE_ARTIFACT" && "${PRIVATE_ARTIFACT,,}" == *waiver* ]]; then
+            echo "::error::Waiver artifacts are not accepted as optional release evidence"
+            failures=1
+          fi
+          if [[ ! "$PUBLIC_ARTIFACT" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "::error::Corpus artifact names may contain only letters, digits, dot, underscore, and hyphen"
+            failures=1
+          fi
+          if [[ -n "$PRIVATE_ARTIFACT" \
+                && ! "$PRIVATE_ARTIFACT" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "::warning::Optional private artifact name is invalid and will be ignored"
+          elif [[ -n "$PRIVATE_ARTIFACT" && "$PUBLIC_ARTIFACT" == "$PRIVATE_ARTIFACT" ]]; then
+            echo "::warning::Optional private artifact duplicates public evidence and will be excluded"
+          fi
+          if [[ -z "$ARTIFACT_TOKEN" ]]; then
+            echo "::error::The corpus_artifact_token secret is required"
+            failures=1
+          fi
+          if (( failures != 0 )); then
+            exit 1
+          fi
+
+          run_metadata="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ARTIFACT_RUN_ID")"
+          artifact_repository="$(jq -r '.repository.full_name // ""' <<<"$run_metadata")"
+          artifact_head_sha="$(jq -r '.head_sha // ""' <<<"$run_metadata")"
+          artifact_status="$(jq -r '.status // ""' <<<"$run_metadata")"
+          artifact_conclusion="$(jq -r '.conclusion // ""' <<<"$run_metadata")"
+          artifact_workflow_path="$(jq -r '.path // ""' <<<"$run_metadata")"
+          artifact_event="$(jq -r '.event // ""' <<<"$run_metadata")"
+          if [[ "$artifact_repository" != "$GITHUB_REPOSITORY" ]]; then
+            echo "::error::Corpus evidence must come from a workflow run in $GITHUB_REPOSITORY"
+            exit 1
+          fi
+          if [[ "$artifact_head_sha" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "::error::Corpus evidence workflow run does not target the exact release commit"
+            exit 1
+          fi
+          if [[ "$artifact_status" != "completed" || "$artifact_conclusion" != "success" ]]; then
+            echo "::error::Corpus evidence workflow run must be completed successfully"
+            exit 1
+          fi
+          if [[ "$artifact_workflow_path" != ".github/workflows/detection-release-evidence.yml" \
+                || "$artifact_event" != "workflow_dispatch" ]]; then
+            echo "::error::Corpus evidence must come from the protected trusted release-evidence producer"
+            exit 1
+          fi
+
+      - name: Download frozen public holdout
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.public_corpus_artifact }}
+          path: ${{ runner.temp }}/release-corpora/public
+          github-token: ${{ secrets.corpus_artifact_token || github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.corpus_artifact_run_id }}
+
+      - name: Download current committed exact-golden evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: release-committed-golden-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-corpora/current-golden
+
+      - name: Download frozen private holdout
+        if: inputs.private_corpus_artifact != ''
+        id: private-download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.private_corpus_artifact }}
+          path: ${{ runner.temp }}/release-corpora/private
+          github-token: ${{ secrets.corpus_artifact_token || github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.corpus_artifact_run_id }}
+
+      - name: Validate mandatory public and quarantine optional private entries
+        id: corpus-safety
+        shell: bash
+        run: |
+          public_root="$RUNNER_TEMP/release-corpora/public"
+          if [[ ! -d "$public_root" ]] || ! find "$public_root" -mindepth 1 -print -quit | grep -q .; then
+            echo "::error::mandatory public corpus artifact is empty"
+            exit 1
+          fi
+          if find "$public_root" -type l -print -quit | grep -q .; then
+            echo "::error::mandatory public corpus artifact contains a symbolic link"
+            exit 1
+          fi
+          current_golden="$RUNNER_TEMP/release-corpora/current-golden/golden-corpus.json"
+          if [[ ! -f "$current_golden" || -L "$current_golden" ]]; then
+            echo "::error::current checkout did not produce regular exact-golden evidence"
+            exit 1
+          fi
+          bundled_golden="$public_root/golden-corpus.json"
+          if [[ ! -f "$bundled_golden" || -L "$bundled_golden" ]]; then
+            echo "::error::mandatory public corpus artifact lacks regular exact-golden evidence"
+            exit 1
+          fi
+          python - "$current_golden" "$bundled_golden" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          current = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          bundled = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+          if current != bundled:
+              raise SystemExit(
+                  "frozen public evidence does not match the current committed exact-golden manifest"
+              )
+          PY
+
+          private_ready=false
+          if [[ -n "${{ inputs.private_corpus_artifact }}" ]]; then
+            private_root="$RUNNER_TEMP/release-corpora/private"
+            if [[ ! -d "$private_root" ]] || ! find "$private_root" -mindepth 1 -print -quit | grep -q .; then
+              echo "::warning::optional private artifact is unavailable or empty; public release gates continue"
+            elif find "$private_root" -type l -print -quit | grep -q .; then
+              echo "::warning::optional private artifact contains a symbolic link and is excluded"
+            else
+              private_ready=true
+            fi
+          fi
+          echo "private_ready=$private_ready" >> "$GITHUB_OUTPUT"
+
+      - name: Run mandatory public and optional private corpus evaluation
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          SKILL_SCANNER_DISABLE_NETWORK: "1"
+        run: |
+          mkdir -p artifacts/release
+          private_args=()
+          if [[ "${{ steps.corpus-safety.outputs.private_ready }}" == true ]]; then
+            private_args=(--private-corpus "$RUNNER_TEMP/release-corpora/private")
+          fi
+          uv run python evals/runners/release_gate.py \
+            --public-corpus "$RUNNER_TEMP/release-corpora/public" \
+            --committed-golden "$RUNNER_TEMP/release-corpora/current-golden/golden-corpus.json" \
+            "${private_args[@]}" \
+            --dataset-lock evals/datasets/public-datasets.lock.json \
+            --expected-source-revision "${{ inputs.release_sha }}" \
+            --output artifacts/release/frozen-corpus-gates.json
+
+      - name: Upload frozen corpus gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-frozen-corpus-gates-${{ github.run_id }}
+          path: artifacts/release/
+          if-no-files-found: warn
+          retention-days: 90

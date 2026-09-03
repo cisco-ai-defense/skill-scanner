@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "safety": {
+    "raw_sample_content_embedded": false,
+    "sample_content_executed": false,
+    "sample_network_access": false,
+    "sealed_test_rows_scanned": 0,
+    "vendor_allowlist_used": false
+  },
+  "rules": [
+    "CORRELATED_NETWORK_EXECUTION_FLOW",
+    "CORRELATED_SENSITIVE_NETWORK_FLOW"
+  ],
+  "official_goodware": {
+    "corpus_id": "official-bundled-agent-skills-goodware",
+    "lock_sha256": "4392a2154aacdb3b0d05928ab67b3b1e1a27d6fcef794e62760a80b4ed99cc01",
+    "profile_sha256": "886954710684c904de863df6f6276ed7060b048359dbc4e091a412ec57e5db87",
+    "denominator": 110,
+    "scanned": 110,
+    "load_errors": 0,
+    "analyzer_partial_failures": 0,
+    "targeted_high_plus_before": 2,
+    "targeted_high_plus_after": 0,
+    "targeted_medium_after": 1,
+    "off_shadow_finding_identities_equal": true,
+    "shadow_fallbacks": 0,
+    "shadow_projection_incomplete": 0,
+    "report_sha256": "6882494de54f819c25ae8d64b801de064a5a19240fcf532adfc18c0dc043457e"
+  },
+  "malicious_skill_bench": {
+    "dataset_id": "ProtectSkills/MaliciousSkillBench",
+    "revision": "d4b42ce5766a6e0359c987cf59c1007cb3795a90",
+    "artifact_manifest_sha256": "ae542800a95a893a0ae724bdc625d5a1e19d81ff08ae1f846ddb54d77bfb0b9a",
+    "benchmark_snapshot_sha256": "b89b8aa7ec730ef91c9e4eb794106cbac691221f072851de88f5f0e867e23913",
+    "selection": "source_disjoint in {train,validation} AND m_structural_disjoint in {train,validation}",
+    "declared_samples": 6597,
+    "usable_samples": 6594,
+    "quarantined_or_unavailable": 3,
+    "correlation_finding_identity_differences": 0,
+    "malicious_package_block_losses": 0,
+    "malicious_any_signal_losses": 0,
+    "malicious_critical_high_finding_losses": 0,
+    "report_sha256": "314eabf3fa135a7837ceeadf0f183f9f103ad302af9b0071afa521fff77922c1"
+  }
+}

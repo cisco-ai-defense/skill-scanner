@@ -24,25 +24,38 @@ import hashlib
 import logging
 import pickletools
 import re
+import tomllib
 import unicodedata
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from ...config.yara_modes import YaraModeConfig
-from ...core.models import Finding, Severity, Skill, ThreatCategory
-from ...core.rules.patterns import RuleLoader, SecurityRule
+from ...core.models import Finding, Severity, Skill, SkillFile, ThreatCategory
+from ...core.rules.active_dynamic_execution import check_active_dynamic_execution
+from ...core.rules.active_html_injection import check_active_hidden_html
+from ...core.rules.core_signature_precision import refine_core_signature_findings
+from ...core.rules.ooxml_relationships import (
+    INCONCLUSIVE_MACRO_ANALYSIS,
+    VBA_MACRO,
+    XLM_MACRO,
+    classify_oleid_macro_indicator,
+)
+from ...core.rules.patterns import (
+    SIGNATURE_CONTEXT_KINDS,
+    SIGNATURE_POLARITIES,
+    RuleLoader,
+    SecurityRule,
+    SignatureScanContext,
+)
+from ...core.rules.unicode_smuggling import check_unicode_smuggling
+from ...core.rules.yara_behavior_context import classify_yara_behavior_context
 from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
 from ...core.static_analysis.comment_stripping import comment_stripped_lines
 from ...core.static_analysis.url_classifier import classify_url, extract_urls
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    tomllib = None
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +252,7 @@ class _LoopExitVisitor:
         if isinstance(node, (ast.With, ast.AsyncWith)):
             return self._block_flow(node.body, nested_loop_depth=nested_loop_depth)
 
-        if isinstance(node, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+        if isinstance(node, (ast.Try, ast.TryStar)):
             protected_blocks = [node.body, node.orelse, *(handler.body for handler in node.handlers)]
             protected_exit = any(
                 self._block_flow(block, nested_loop_depth=nested_loop_depth)[0] for block in protected_blocks if block
@@ -356,6 +369,300 @@ def _redact_secret(text: str) -> str:
     return text[:4] + "****"
 
 
+_OOXML_CONTAINER_ROOTS = {
+    ".docx": "word",
+    ".docm": "word",
+    ".pptx": "ppt",
+    ".pptm": "ppt",
+    ".xlsx": "xl",
+    ".xlsm": "xl",
+}
+_OOXML_INERT_MEDIA_EXTENSIONS = frozenset(
+    {
+        ".bmp",
+        ".gif",
+        ".ico",
+        ".jpeg",
+        ".jpg",
+        ".png",
+        ".tif",
+        ".tiff",
+        ".webp",
+    }
+)
+_OOXML_INERT_FONT_EXTENSIONS = frozenset(
+    {
+        ".eot",
+        ".fntdata",
+        ".odttf",
+        ".otf",
+        ".ttf",
+        ".woff",
+        ".woff2",
+    }
+)
+
+
+def _ooxml_member_identity(skill_file: SkillFile) -> tuple[str, str] | None:
+    """Return a validated ``(container root, member path)`` extraction identity.
+
+    ``extracted_from`` is populated only by the bounded archive extractor.  A
+    matching virtual-path prefix and an exact OOXML extension are required so
+    a filename or vendor label alone can never opt a file out of detection.
+    """
+
+    source = skill_file.extracted_from
+    if not source:
+        return None
+    container_root = _OOXML_CONTAINER_ROOTS.get(Path(source).suffix.lower())
+    if container_root is None:
+        return None
+
+    prefix = f"{source}!/"
+    if not skill_file.relative_path.startswith(prefix):
+        return None
+    member_path = skill_file.relative_path[len(prefix) :]
+    if not member_path or "\\" in member_path or member_path.startswith("/"):
+        return None
+    parts = member_path.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return None
+    return container_root, "/".join(parts).lower()
+
+
+def _is_inert_ooxml_unicode_asset(skill_file: SkillFile) -> bool:
+    """Identify binary OOXML media/font roles where Unicode bytes are inert.
+
+    YARA scans raw bytes, so ordinary compressed images and font tables can
+    coincidentally contain valid UTF-8 encodings for tag-block, bidi, or
+    separator characters.  Only a binary member with extractor provenance,
+    the container's expected root, a precise media/font role, and a known
+    inert extension is suppressible.  SVG, macros, OLE, relationships, and
+    unknown members deliberately fail open.
+    """
+
+    if skill_file.file_type != "binary":
+        return False
+    identity = _ooxml_member_identity(skill_file)
+    if identity is None:
+        return False
+    container_root, member_path = identity
+    parts = member_path.split("/")
+    if len(parts) < 3 or parts[0] != container_root:
+        return False
+
+    extension = Path(parts[-1]).suffix.lower()
+    if parts[1] == "media":
+        return extension in _OOXML_INERT_MEDIA_EXTENSIONS
+    if parts[1] == "fonts":
+        return extension in _OOXML_INERT_FONT_EXTENSIONS
+    return False
+
+
+def _is_extracted_ooxml_text(skill_file: SkillFile) -> bool:
+    """Return whether a readable member came from bounded OOXML extraction."""
+
+    return skill_file.file_type != "binary" and _ooxml_member_identity(skill_file) is not None
+
+
+def _semantic_metadata(
+    *,
+    rule_id: str,
+    file_path: str,
+    evidence_kind: str,
+    context_kind: str,
+    signal_kind: str,
+    value_class: str,
+    evidence_value_class: str | None = None,
+    evidence_count: int | None = None,
+    candidate_command: dict[str, Any] | None = None,
+    candidate_flow: dict[str, Any] | None = None,
+    extra_signals: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build bounded, structured facts for the semantic projector.
+
+    Static analyzers own this classification: the CEL projection layer must not
+    infer it by reparsing finding snippets or descriptions.
+    """
+    semantic_facts: dict[str, Any] = {
+        "evidence_kind": evidence_kind,
+        "context_kind": context_kind,
+        "signals": [
+            {
+                "rule_id": rule_id,
+                "kind": signal_kind,
+                "file_path": file_path,
+                "value_class": value_class,
+            }
+        ],
+    }
+    if evidence_value_class is not None:
+        semantic_facts["evidence_value_class"] = evidence_value_class
+    if evidence_count is not None:
+        semantic_facts["evidence_count"] = evidence_count
+    if candidate_command is not None:
+        semantic_facts["candidate_command"] = candidate_command
+        semantic_facts["commands"] = [candidate_command]
+    if candidate_flow is not None:
+        semantic_facts["candidate_flow"] = candidate_flow
+        semantic_facts["flows"] = [candidate_flow]
+    if extra_signals:
+        semantic_facts["signals"].extend(extra_signals)
+    return {"semantic_facts": semantic_facts}
+
+
+_YARA_SEMANTIC_EVIDENCE_KINDS = frozenset(
+    {
+        "binary_signature",
+        "command_pipeline",
+        "correlated_behavior",
+    }
+)
+_YARA_SEMANTIC_CONTEXT_KINDS = frozenset({"binary", "code"})
+_YARA_SEMANTIC_SIGNAL_KINDS = frozenset({"compound_flow", "embedded_shebang", "taint_flow"})
+_YARA_SEMANTIC_SOURCE_SINK_CLASSES = frozenset(
+    {
+        "archive",
+        "credential_file",
+        "external_network",
+        "network",
+        "obfuscation",
+        "process_execution",
+        "resource_consumption",
+        "scheduler",
+    }
+)
+_YARA_SEMANTIC_TRANSFORMS = frozenset({"decode", "extraction", "pipe"})
+_YARA_SEMANTIC_TOKEN_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+def _embedded_shebang_offset_facts(offset: Any) -> tuple[str, int]:
+    """Return a bounded, candidate-local offset classification.
+
+    The YARA implementation only retains shebangs after byte 64.  Direct unit
+    callers and malformed custom results can still omit or corrupt the offset,
+    so those cases remain explicitly unclassified for fail-open CEL handling.
+    The scalar count never exceeds the global 4,096 fact bound.
+    """
+
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 65:
+        return "unclassified", 0
+    if offset < 4_096:
+        return "embedded_shebang_offset_65_4095", offset
+    return "embedded_shebang_offset_4096_plus", 4_096
+
+
+def _yara_candidate_string_matches(match: dict[str, Any], meta: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the bounded string evidence used to construct findings.
+
+    Behavior-chain rules use several supporting strings to prove one
+    correlated rule/file candidate.  Emitting a finding for every supporting
+    primitive inflates counts and gives CEL duplicate activations.  The
+    explicit ``rule_file`` scope therefore selects one deterministic anchor;
+    ordinary and byte-offset-sensitive YARA rules retain per-string findings.
+    """
+
+    strings = match.get("strings")
+    if not isinstance(strings, list):
+        return []
+    candidates = [value for value in strings if isinstance(value, dict)]
+    if meta.get("finding_scope") != "rule_file" or not candidates:
+        return candidates
+
+    def stable_position(value: dict[str, Any]) -> tuple[int, int, str]:
+        offset = value.get("offset")
+        line_number = value.get("line_number")
+        return (
+            offset if isinstance(offset, int) and not isinstance(offset, bool) and offset >= 0 else 2**63 - 1,
+            line_number
+            if isinstance(line_number, int) and not isinstance(line_number, bool) and line_number >= 0
+            else 2**31 - 1,
+            str(value.get("identifier", "")),
+        )
+
+    return [min(candidates, key=stable_position)]
+
+
+def _yara_semantic_metadata(
+    *,
+    rule_name: str,
+    meta: dict[str, Any],
+    file_path: str,
+    match_offset: Any,
+    context_kind_override: str | None = None,
+) -> dict[str, Any]:
+    """Translate trusted, normalized YARA metadata into bounded CEL facts.
+
+    This function never reparses source snippets.  Unknown or malformed source
+    metadata is ignored rather than exposing an arbitrary YARA map to CEL.
+    """
+
+    rule_id = f"YARA_{rule_name}"
+    if rule_name == "embedded_shebang_in_binary":
+        offset_value_class, evidence_count = _embedded_shebang_offset_facts(match_offset)
+        result = _semantic_metadata(
+            rule_id=rule_id,
+            file_path=file_path,
+            evidence_kind="binary_signature",
+            context_kind="binary",
+            signal_kind="embedded_shebang",
+            value_class=offset_value_class,
+            evidence_value_class=offset_value_class,
+            evidence_count=evidence_count,
+        )
+        result["yara_byte_offset_class"] = offset_value_class
+        result["yara_byte_offset_bounded"] = evidence_count
+        return result
+
+    evidence_kind = meta.get("evidence_kind")
+    context_kind = context_kind_override or meta.get("context_kind")
+    signal_kind = meta.get("signal_kind")
+    value_class = meta.get("value_class")
+    source_class = meta.get("source_class")
+    sink_class = meta.get("sink_class")
+    transforms_raw = meta.get("transforms", "")
+    if not (
+        isinstance(evidence_kind, str)
+        and evidence_kind in _YARA_SEMANTIC_EVIDENCE_KINDS
+        and isinstance(context_kind, str)
+        and context_kind in _YARA_SEMANTIC_CONTEXT_KINDS
+        and isinstance(signal_kind, str)
+        and signal_kind in _YARA_SEMANTIC_SIGNAL_KINDS
+        and isinstance(value_class, str)
+        and _YARA_SEMANTIC_TOKEN_RE.fullmatch(value_class)
+        and isinstance(source_class, str)
+        and source_class in _YARA_SEMANTIC_SOURCE_SINK_CLASSES
+        and isinstance(sink_class, str)
+        and sink_class in _YARA_SEMANTIC_SOURCE_SINK_CLASSES
+        and isinstance(transforms_raw, str)
+    ):
+        return {}
+
+    transforms = [value.strip() for value in transforms_raw.split(",") if value.strip()]
+    if any(value not in _YARA_SEMANTIC_TRANSFORMS for value in transforms):
+        return {}
+
+    candidate_flow = {
+        "source_class": source_class,
+        "sink_class": sink_class,
+        "transforms": transforms,
+        "cross_file": False,
+        "source_path": file_path,
+        "sink_path": file_path,
+    }
+    return _semantic_metadata(
+        rule_id=rule_id,
+        file_path=file_path,
+        evidence_kind=evidence_kind,
+        context_kind=context_kind,
+        signal_kind=signal_kind,
+        value_class=value_class,
+        evidence_value_class=value_class,
+        evidence_count=1,
+        candidate_flow=candidate_flow,
+    )
+
+
 class StaticAnalyzer(BaseAnalyzer):
     """Static pattern-based security analyzer."""
 
@@ -368,6 +675,7 @@ class StaticAnalyzer(BaseAnalyzer):
         disabled_rules: set[str] | None = None,
         policy: ScanPolicy | None = None,
         extra_rules_dirs: list[Path] | None = None,
+        trusted_pack_dirs: list[Path] | None = None,
     ):
         """
         Initialize static analyzer.
@@ -388,6 +696,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 If None, loads built-in defaults.
             extra_rules_dirs: Additional signature rule directories from
                 community/external packs to load alongside the core rules.
+            trusted_pack_dirs: Administrator-approved v2 rule pack directories.
         """
         super().__init__("static_analyzer", policy=policy)
 
@@ -396,7 +705,11 @@ class StaticAnalyzer(BaseAnalyzer):
         # standalone findings).
         self._unreferenced_scripts: list[str] = []
 
-        self.rule_loader = RuleLoader(rules_file, extra_rules_dirs=extra_rules_dirs)
+        self.rule_loader = RuleLoader(
+            rules_file,
+            extra_rules_dirs=extra_rules_dirs,
+            trusted_pack_dirs=trusted_pack_dirs,
+        )
         self.rule_loader.load_rules()
 
         # Configure YARA mode.
@@ -427,18 +740,71 @@ class StaticAnalyzer(BaseAnalyzer):
         self.use_yara = use_yara
         self.yara_scanner = None
         if use_yara:
+            trusted_yara_dirs: list[Path] = []
+            trusted_yara_metadata: dict[str, dict[str, Any]] = {}
+            if self.custom_yara_rules_path is None:
+                # Bundled schema-v2 metadata is authoritative at runtime too,
+                # not only during startup validation.  The process-cached
+                # registry has already atomically checked the YARA generation.
+                from ...core.rule_registry import PackLoader
+
+                core_pack = PackLoader().build_registry().all_packs()["core"]
+                for definition in core_pack.rules.values():
+                    if definition.source_type != "yara":
+                        continue
+                    bundled_metadata: dict[str, Any] = {
+                        "category": definition.category,
+                        "severity": definition.default_severity,
+                    }
+                    if definition.description:
+                        bundled_metadata["description"] = definition.description
+                    trusted_yara_metadata[definition.id.removeprefix("YARA_")] = bundled_metadata
+            if trusted_pack_dirs:
+                # RuleLoader validates trusted signature implementations.  Load
+                # the same explicit packs here to obtain their validated YARA
+                # directories for the runtime generation.  Validation remains
+                # fail-fast and no discovery of untrusted directories occurs.
+                from ...core.rule_registry import PackLoader
+
+                pack_loader = PackLoader()
+                for pack_dir in trusted_pack_dirs:
+                    pack = pack_loader.load_trusted_pack(pack_dir)
+                    trusted_yara_dirs.extend(pack.yara_dirs)
+                    for definition in pack.rules.values():
+                        if definition.source_type != "yara":
+                            continue
+                        local_metadata: dict[str, Any] = {
+                            "category": definition.category,
+                            "severity": definition.default_severity,
+                        }
+                        if definition.description:
+                            local_metadata["description"] = definition.description
+                        trusted_yara_metadata[definition.id.removeprefix("YARA_")] = local_metadata
+
             try:
                 max_scan_bytes = self.policy.file_limits.max_yara_scan_file_size_bytes
                 # Use custom rules path if provided
                 if self.custom_yara_rules_path:
                     self.yara_scanner = YaraScanner(
                         rules_dir=self.custom_yara_rules_path,
+                        additional_rules_dirs=trusted_yara_dirs,
+                        metadata_overrides=trusted_yara_metadata,
                         max_scan_file_size=max_scan_bytes,
                     )
                     logger.info("Using custom YARA rules from: %s", self.custom_yara_rules_path)
                 else:
-                    self.yara_scanner = YaraScanner(max_scan_file_size=max_scan_bytes)
+                    self.yara_scanner = YaraScanner(
+                        additional_rules_dirs=trusted_yara_dirs,
+                        metadata_overrides=trusted_yara_metadata,
+                        max_scan_file_size=max_scan_bytes,
+                    )
             except Exception as e:
+                if trusted_yara_dirs or self.custom_yara_rules_path is None:
+                    # A trusted pack participates in one atomic runtime
+                    # generation, and the bundled rules are trusted release
+                    # artifacts.  Compilation or identity failures must abort
+                    # startup rather than silently disabling all YARA rules.
+                    raise
                 logger.warning("Could not load YARA scanner: %s", e)
                 self.yara_scanner = None
 
@@ -492,11 +858,17 @@ class StaticAnalyzer(BaseAnalyzer):
         findings = []
         self._unreferenced_scripts = []  # reset per-scan enrichment state
 
-        findings.extend(self._check_manifest(skill))
+        manifest_complete = bool(getattr(skill, "manifest_complete", True))
+        if manifest_complete:
+            findings.extend(self._check_manifest(skill))
         findings.extend(self._scan_instruction_body(skill))
+        findings.extend(check_active_dynamic_execution(skill))
+        findings.extend(check_active_hidden_html(skill))
+        findings.extend(check_unicode_smuggling(skill))
         findings.extend(self._scan_scripts(skill))
         findings.extend(self._check_dynamic_sensitive_file_access(skill))
-        findings.extend(self._check_consistency(skill))
+        if manifest_complete:
+            findings.extend(self._check_consistency(skill))
         findings.extend(self._check_dependency_pinning(skill))
         findings.extend(self._scan_config_files(skill))
         findings.extend(self._scan_referenced_files(skill))
@@ -525,7 +897,60 @@ class StaticAnalyzer(BaseAnalyzer):
         if self.policy.rule_scoping.dedupe_duplicate_findings:
             findings = self._dedupe_findings(findings)
 
+        self._annotate_unreferenced_script_context(findings)
+
+        # Broad primitive signatures are useful candidate extractors, but a
+        # local file operation or structured process launch is not, by itself,
+        # the external/shell sink named by the rule.  Apply package-local,
+        # provenance-neutral data-flow and file-role refinement only after the
+        # inventory has established referenced versus concealed code.
+        findings = refine_core_signature_findings(
+            skill,
+            findings,
+            unreferenced_scripts=set(self._unreferenced_scripts),
+        )
         return findings
+
+    def _annotate_unreferenced_script_context(self, findings: list[Finding]) -> None:
+        """Attach unreferenced-script context to existing findings in place.
+
+        Unreferenced scripts intentionally remain enrichment context rather
+        than standalone findings.  Adding a structured signal to findings that
+        already exist on the same file lets CEL correlate that context without
+        changing finding counts, severities, or scan verdicts.
+        """
+        unreferenced = {Path(path).as_posix() for path in self._unreferenced_scripts}
+        if not unreferenced:
+            return
+
+        for finding in findings:
+            file_path = Path(finding.file_path or "").as_posix()
+            if file_path not in unreferenced:
+                continue
+
+            semantic = finding.metadata.setdefault("semantic_facts", {})
+            if not isinstance(semantic, dict):
+                continue
+            semantic.setdefault("evidence_kind", "pattern_match")
+            semantic.setdefault("context_kind", "code")
+            signals = semantic.setdefault("signals", [])
+            if not isinstance(signals, list):
+                continue
+            suffix_kind = {
+                ".js": "javascript",
+                ".mjs": "javascript",
+                ".py": "python",
+                ".sh": "bash",
+                ".ts": "typescript",
+            }.get(Path(file_path).suffix.lower(), "other")
+            signal = {
+                "rule_id": finding.rule_id,
+                "kind": "unreferenced_executable",
+                "file_path": file_path,
+                "value_class": suffix_kind,
+            }
+            if signal not in signals:
+                signals.append(signal)
 
     def get_unreferenced_scripts(self) -> list[str]:
         """Return unreferenced script paths computed during the last ``analyze()`` call.
@@ -682,11 +1107,20 @@ class StaticAnalyzer(BaseAnalyzer):
         findings = []
 
         markdown_rules = self.rule_loader.get_rules_for_file_type("markdown")
+        scan_context = SignatureScanContext(skill.instruction_body)
 
         for rule in markdown_rules:
-            matches = rule.scan_content(skill.instruction_body, "SKILL.md")
+            matches = rule.scan_content(
+                skill.instruction_body,
+                "SKILL.md",
+                scan_context=scan_context,
+            )
             for match in matches:
-                findings.append(self._create_finding_from_match(rule, match))
+                physical_match = dict(match)
+                line_number = physical_match.get("line_number")
+                if isinstance(line_number, int):
+                    physical_match["line_number"] = line_number + skill.instruction_body_line_offset
+                findings.append(self._create_finding_from_match(rule, physical_match))
 
         return findings
 
@@ -706,12 +1140,17 @@ class StaticAnalyzer(BaseAnalyzer):
                 continue
 
             is_doc = self._is_doc_file(skill_file.relative_path)
+            scan_context = SignatureScanContext(content)
 
             for rule in rules:
                 # Skip rules scoped out of documentation files
                 if is_doc and rule.id in skip_in_docs:
                     continue
-                matches = rule.scan_content(content, skill_file.relative_path)
+                matches = rule.scan_content(
+                    content,
+                    skill_file.relative_path,
+                    scan_context=scan_context,
+                )
                 for match in matches:
                     if rule.id == "RESOURCE_ABUSE_INFINITE_LOOP" and skill_file.file_type == "python":
                         if self._python_loop_has_exit(content, match["line_number"]):
@@ -749,10 +1188,14 @@ class StaticAnalyzer(BaseAnalyzer):
         """Check for inconsistencies between manifest and actual behavior."""
         findings = []
 
-        uses_network = self._skill_uses_network(skill)
+        network_usage_path = self._skill_network_usage_path(skill)
+        uses_network = network_usage_path is not None
         declared_network = self._manifest_declares_network(skill)
 
-        skillmd = str(skill.skill_md_path)
+        # Findings use package-relative paths so downstream consumers (notably
+        # the bounded CEL fact projector) never receive host-specific absolute
+        # paths for manifest-level evidence.
+        skillmd = "SKILL.md"
 
         if uses_network and not declared_network:
             findings.append(
@@ -766,6 +1209,22 @@ class StaticAnalyzer(BaseAnalyzer):
                     file_path=skillmd,
                     remediation="Declare network usage in compatibility field or remove network calls",
                     analyzer="static",
+                    metadata=_semantic_metadata(
+                        rule_id="TOOL_ABUSE_UNDECLARED_NETWORK",
+                        file_path="SKILL.md",
+                        evidence_kind="capability_mismatch",
+                        context_kind="manifest",
+                        signal_kind="undeclared_network",
+                        value_class="external_network",
+                        candidate_flow={
+                            "source_class": "skill_code",
+                            "sink_class": "external_network",
+                            "transforms": [],
+                            "cross_file": False,
+                            "source_path": network_usage_path or skillmd,
+                            "sink_path": network_usage_path or skillmd,
+                        },
+                    ),
                 )
             )
 
@@ -863,8 +1322,10 @@ class StaticAnalyzer(BaseAnalyzer):
                     line = getattr(node, "lineno", 1)
                     findings.append(
                         Finding(
-                            id=self._generate_finding_id("DATA_EXFIL_SENSITIVE_FILES", f"{sf.relative_path}:{line}"),
-                            rule_id="DATA_EXFIL_SENSITIVE_FILES",
+                            id=self._generate_finding_id(
+                                "DATA_EXFIL_SENSITIVE_FILE_GLOB", f"{sf.relative_path}:{line}"
+                            ),
+                            rule_id="DATA_EXFIL_SENSITIVE_FILE_GLOB",
                             category=ThreatCategory.DATA_EXFILTRATION,
                             severity=Severity.HIGH,
                             title="Dynamic enumeration of sensitive files",
@@ -950,9 +1411,7 @@ class StaticAnalyzer(BaseAnalyzer):
 
     @staticmethod
     def _safe_toml(content: str) -> dict | None:
-        """Parse TOML, returning None when unavailable (py<3.11) or malformed."""
-        if tomllib is None:
-            return None
+        """Parse TOML, returning None when malformed."""
         try:
             return tomllib.loads(content)
         except Exception:  # noqa: BLE001 - malformed manifest, treat as no data
@@ -1066,7 +1525,11 @@ class StaticAnalyzer(BaseAnalyzer):
             declared = metadata.get("dependencies")
             if isinstance(declared, list):
                 for declared_dep in declared:
-                    entries.append((str(skill.skill_md_path), None, str(declared_dep)))
+                    # Manifest metadata belongs to the package's canonical
+                    # instruction file.  Keep the finding path package-relative
+                    # instead of leaking the loader's host-specific absolute
+                    # checkout path into downstream typed facts.
+                    entries.append(("SKILL.md", None, str(declared_dep)))
         return entries
 
     def _check_dependency_pinning(self, skill: Skill) -> list[Finding]:
@@ -1121,6 +1584,16 @@ class StaticAnalyzer(BaseAnalyzer):
                     snippet=raw.strip() or None,
                     remediation="Pin the dependency to an exact version (e.g. 'package==1.2.3').",
                     analyzer="static",
+                    metadata={
+                        "semantic_facts": {
+                            "evidence_kind": "dependency_declaration",
+                            "context_kind": "manifest" if source_label == "SKILL.md" else "dependency_file",
+                            "evidence_value_class": f"{status}_dependency",
+                            "evidence_count": 1,
+                            "signal_kind": "unpinned_dependency",
+                            "signals": [],
+                        }
+                    },
                 )
             )
 
@@ -1373,12 +1846,17 @@ class StaticAnalyzer(BaseAnalyzer):
 
                 skip_in_docs = set(self.policy.rule_scoping.skip_in_docs)
                 is_doc = self._is_doc_file(display_path)
+                scan_context = SignatureScanContext(content)
 
                 for rule in rules:
                     # Skip rules scoped out of documentation files
                     if is_doc and rule.id in skip_in_docs:
                         continue
-                    matches = rule.scan_content(content, display_path)
+                    matches = rule.scan_content(
+                        content,
+                        display_path,
+                        scan_context=scan_context,
+                    )
                     for match in matches:
                         finding = self._create_finding_from_match(rule, match)
                         finding.metadata["reference_depth"] = current_depth
@@ -1444,7 +1922,6 @@ class StaticAnalyzer(BaseAnalyzer):
         shebang_compatible_extensions = self.policy.file_classification.script_shebang_extensions or None
 
         min_confidence = self.policy.analysis_thresholds.min_confidence_pct / 100.0
-
         for skill_file in skill.files:
             file_path_obj = Path(skill_file.relative_path)
             ext = file_path_obj.suffix.lower()
@@ -1483,6 +1960,17 @@ class StaticAnalyzer(BaseAnalyzer):
                                 "actual_family": magic_match.content_family,
                                 "claimed_extension": ext,
                                 "confidence_score": magic_match.score,
+                                **_semantic_metadata(
+                                    rule_id="FILE_MAGIC_MISMATCH",
+                                    file_path=skill_file.relative_path,
+                                    evidence_kind="file_magic",
+                                    context_kind="binary",
+                                    signal_kind="file_magic_mismatch",
+                                    # CEL receives only the bounded behavioral
+                                    # class; the exact MIME family remains in
+                                    # ordinary finding metadata above.
+                                    value_class="binary",
+                                ),
                             },
                         )
                     )
@@ -1519,6 +2007,14 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skill_file.relative_path,
                         remediation="Extract archive contents and include files directly, or document the archive's purpose.",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ARCHIVE_FILE_DETECTED",
+                            file_path=skill_file.relative_path,
+                            evidence_kind="file_inventory",
+                            context_kind="binary",
+                            signal_kind="archive_binary",
+                            value_class="archive",
+                        ),
                     )
                 )
                 continue
@@ -1537,6 +2033,16 @@ class StaticAnalyzer(BaseAnalyzer):
                     file_path=skill_file.relative_path,
                     remediation="Review binary file necessity. Replace with auditable scripts if possible.",
                     analyzer="static",
+                    metadata=_semantic_metadata(
+                        rule_id="BINARY_FILE_DETECTED",
+                        file_path=skill_file.relative_path,
+                        evidence_kind="file_inventory",
+                        context_kind="binary",
+                        signal_kind="unanalyzable_binary",
+                        # Raw extensions are open-ended and must not cross the
+                        # closed semantic-fact boundary.
+                        value_class="binary",
+                    ),
                 )
             )
 
@@ -1606,19 +2112,20 @@ class StaticAnalyzer(BaseAnalyzer):
                             memo[next_memo_index] = stack[-1] if stack else None
                             next_memo_index += 1
                         elif opcode_name in {"PUT", "BINPUT", "LONG_BINPUT"}:
-                            memo[int(argument)] = stack[-1] if stack else None
+                            if argument is not None:
+                                memo[int(argument)] = stack[-1] if stack else None
                         elif opcode_name in {"GET", "BINGET", "LONG_BINGET"}:
-                            stack.append(memo.get(int(argument)))
+                            stack.append(memo.get(int(argument)) if argument is not None else None)
                         elif opcode_name == "GLOBAL" and isinstance(argument, str):
                             module, _, name = argument.partition(" ")
                             _record_global(module, name)
                             stack.append(None)
                         elif opcode_name == "STACK_GLOBAL":
                             executable_opcodes.append(opcode_name)
-                            name = stack.pop() if stack else None
-                            module = stack.pop() if stack else None
-                            if isinstance(module, str) and isinstance(name, str):
-                                _record_global(module, name)
+                            stack_name = stack.pop() if stack else None
+                            stack_module = stack.pop() if stack else None
+                            if isinstance(stack_module, str) and isinstance(stack_name, str):
+                                _record_global(stack_module, stack_name)
                             stack.append(None)
                         elif opcode_name == "REDUCE":
                             executable_opcodes.append(opcode_name)
@@ -1762,6 +2269,14 @@ class StaticAnalyzer(BaseAnalyzer):
                             file_path=rel_path,
                             remediation="Move script to a visible location or remove if not needed.",
                             analyzer="static",
+                            metadata=_semantic_metadata(
+                                rule_id="HIDDEN_EXECUTABLE_SCRIPT",
+                                file_path=rel_path,
+                                evidence_kind="file_inventory",
+                                context_kind="code",
+                                signal_kind="hidden_executable",
+                                value_class=skill_file.file_type or ext or "script",
+                            ),
                         )
                     )
                 else:
@@ -1781,6 +2296,14 @@ class StaticAnalyzer(BaseAnalyzer):
                             file_path=rel_path,
                             remediation="Move file to a visible location or document its purpose.",
                             analyzer="static",
+                            metadata=_semantic_metadata(
+                                rule_id="HIDDEN_DATA_FILE",
+                                file_path=rel_path,
+                                evidence_kind="file_inventory",
+                                context_kind="package",
+                                signal_kind="hidden_file",
+                                value_class=skill_file.file_type or ext or "data",
+                            ),
                         )
                     )
 
@@ -2070,8 +2593,8 @@ class StaticAnalyzer(BaseAnalyzer):
             )
         return findings
 
-    def _skill_uses_network(self, skill: Skill) -> bool:
-        """Check if skill code uses network libraries for EXTERNAL communication."""
+    def _skill_network_usage_path(self, skill: Skill) -> str | None:
+        """Return the first package-relative script with external network behavior."""
         external_network_indicators = [
             "import requests",
             "from requests import",
@@ -2086,12 +2609,16 @@ class StaticAnalyzer(BaseAnalyzer):
             content = skill_file.read_content()
 
             if any(indicator in content for indicator in external_network_indicators):
-                return True
+                return skill_file.relative_path
 
             if "import socket" in content and self._content_uses_external_socket_api(content):
-                return True
+                return skill_file.relative_path
 
-        return False
+        return None
+
+    def _skill_uses_network(self, skill: Skill) -> bool:
+        """Check if skill code uses network libraries for EXTERNAL communication."""
+        return self._skill_network_usage_path(skill) is not None
 
     def _manifest_declares_network(self, skill: Skill) -> bool:
         """Check if manifest declares network usage."""
@@ -2119,7 +2646,9 @@ class StaticAnalyzer(BaseAnalyzer):
             return findings
 
         allowed_tools_lower = [tool.lower() for tool in skill.manifest.allowed_tools]
-        skillmd = str(skill.skill_md_path)
+        # Capability mismatches are manifest findings.  Keep their location
+        # stable and package-relative rather than leaking the checkout path.
+        skillmd = "SKILL.md"
 
         if "read" not in allowed_tools_lower:
             if self._code_reads_files(skill):
@@ -2137,6 +2666,25 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skillmd,
                         remediation="Add 'Read' to allowed-tools or remove file reading operations from scripts",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ALLOWED_TOOLS_READ_VIOLATION",
+                            file_path="SKILL.md",
+                            evidence_kind="capability_mismatch",
+                            context_kind="manifest",
+                            signal_kind="undeclared_tool",
+                            value_class="read",
+                            candidate_command={
+                                "executable": "Read",
+                                "argument_classes": [],
+                                "downloads": False,
+                                "executes": False,
+                                "destructive": False,
+                                "privilege_change": False,
+                                "source_class": "skill_code",
+                                "sink_class": "filesystem_read",
+                                "file_path": "",
+                            },
+                        ),
                     )
                 )
 
@@ -2156,6 +2704,25 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skillmd,
                         remediation="Either add 'Write' to allowed-tools (if intentional) or remove filesystem writes from scripts",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ALLOWED_TOOLS_WRITE_VIOLATION",
+                            file_path="SKILL.md",
+                            evidence_kind="capability_mismatch",
+                            context_kind="manifest",
+                            signal_kind="undeclared_tool",
+                            value_class="write",
+                            candidate_command={
+                                "executable": "Write",
+                                "argument_classes": [],
+                                "downloads": False,
+                                "executes": False,
+                                "destructive": False,
+                                "privilege_change": False,
+                                "source_class": "skill_code",
+                                "sink_class": "filesystem_write",
+                                "file_path": "",
+                            },
+                        ),
                     )
                 )
 
@@ -2172,6 +2739,25 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skillmd,
                         remediation="Add 'Bash' to allowed-tools or remove bash execution from code",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ALLOWED_TOOLS_BASH_VIOLATION",
+                            file_path="SKILL.md",
+                            evidence_kind="capability_mismatch",
+                            context_kind="manifest",
+                            signal_kind="undeclared_tool",
+                            value_class="bash",
+                            candidate_command={
+                                "executable": "Bash",
+                                "argument_classes": [],
+                                "downloads": False,
+                                "executes": True,
+                                "destructive": False,
+                                "privilege_change": False,
+                                "source_class": "skill_code",
+                                "sink_class": "process_execution",
+                                "file_path": "",
+                            },
+                        ),
                     )
                 )
 
@@ -2194,6 +2780,25 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skillmd,
                         remediation="Add 'Grep' to allowed-tools or remove regex search operations",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ALLOWED_TOOLS_GREP_VIOLATION",
+                            file_path="SKILL.md",
+                            evidence_kind="capability_mismatch",
+                            context_kind="manifest",
+                            signal_kind="undeclared_tool",
+                            value_class="grep",
+                            candidate_command={
+                                "executable": "Grep",
+                                "argument_classes": [],
+                                "downloads": False,
+                                "executes": False,
+                                "destructive": False,
+                                "privilege_change": False,
+                                "source_class": "skill_code",
+                                "sink_class": "content_search",
+                                "file_path": "",
+                            },
+                        ),
                     )
                 )
 
@@ -2210,10 +2815,30 @@ class StaticAnalyzer(BaseAnalyzer):
                         file_path=skillmd,
                         remediation="Add 'Glob' to allowed-tools or remove glob operations",
                         analyzer="static",
+                        metadata=_semantic_metadata(
+                            rule_id="ALLOWED_TOOLS_GLOB_VIOLATION",
+                            file_path="SKILL.md",
+                            evidence_kind="capability_mismatch",
+                            context_kind="manifest",
+                            signal_kind="undeclared_tool",
+                            value_class="glob",
+                            candidate_command={
+                                "executable": "Glob",
+                                "argument_classes": [],
+                                "downloads": False,
+                                "executes": False,
+                                "destructive": False,
+                                "privilege_change": False,
+                                "source_class": "skill_code",
+                                "sink_class": "filesystem_enumeration",
+                                "file_path": "",
+                            },
+                        ),
                     )
                 )
 
-        if self._code_uses_network(skill):
+        network_usage_path = self._code_network_usage_path(skill)
+        if network_usage_path is not None:
             findings.append(
                 Finding(
                     id=self._generate_finding_id("ALLOWED_TOOLS_NETWORK_USAGE", skill.name),
@@ -2228,6 +2853,22 @@ class StaticAnalyzer(BaseAnalyzer):
                     file_path=skillmd,
                     remediation="Document network usage in skill description or remove network operations if not needed",
                     analyzer="static",
+                    metadata=_semantic_metadata(
+                        rule_id="ALLOWED_TOOLS_NETWORK_USAGE",
+                        file_path="SKILL.md",
+                        evidence_kind="capability_mismatch",
+                        context_kind="manifest",
+                        signal_kind="undocumented_network",
+                        value_class="external_network",
+                        candidate_flow={
+                            "source_class": "skill_code",
+                            "sink_class": "external_network",
+                            "transforms": [],
+                            "cross_file": False,
+                            "source_path": network_usage_path,
+                            "sink_path": network_usage_path,
+                        },
+                    ),
                 )
             )
 
@@ -2292,8 +2933,8 @@ class StaticAnalyzer(BaseAnalyzer):
                     return True
         return False
 
-    def _code_uses_network(self, skill: Skill) -> bool:
-        """Check if code makes network requests."""
+    def _code_network_usage_path(self, skill: Skill) -> str | None:
+        """Return the first package-relative script that makes a network request."""
         network_indicators = [
             "requests.get",
             "requests.post",
@@ -2312,8 +2953,12 @@ class StaticAnalyzer(BaseAnalyzer):
             if any(indicator in content for indicator in network_indicators) or self._content_uses_external_socket_api(
                 content
             ):
-                return True
-        return False
+                return skill_file.relative_path
+        return None
+
+    def _code_uses_network(self, skill: Skill) -> bool:
+        """Check if code makes network requests."""
+        return self._code_network_usage_path(skill) is not None
 
     def _scan_asset_files(self, skill: Skill) -> list[Finding]:
         """Scan files in assets/, templates/, and references/ directories for injection patterns."""
@@ -2499,6 +3144,59 @@ class StaticAnalyzer(BaseAnalyzer):
                 snippet = snippet.replace(matched_text, redacted)
             matched_text = redacted
 
+        file_path = str(match.get("file_path") or "")
+        context_value = match.get("context_kind")
+        context_kind = (
+            context_value if isinstance(context_value, str) and context_value in SIGNATURE_CONTEXT_KINDS else "unknown"
+        )
+        polarity_value = match.get("polarity")
+        polarity = (
+            polarity_value if isinstance(polarity_value, str) and polarity_value in SIGNATURE_POLARITIES else "unknown"
+        )
+        evidence_kind = "signature_pattern"
+        evidence_value_class: str | None = None
+        evidence_count: int | None = None
+        candidate_command: dict[str, Any] | None = None
+        candidate_flow: dict[str, Any] | None = None
+        extra_signals: list[dict[str, Any]] = []
+        candidate_evidence_metadata = (
+            {
+                "evidence_value_class": evidence_value_class,
+                "evidence_count": evidence_count,
+            }
+            if evidence_value_class is not None and evidence_count is not None
+            else {}
+        )
+        pattern_index_value = match.get("pattern_index")
+        signature_pattern_index = (
+            pattern_index_value
+            if isinstance(pattern_index_value, int)
+            and not isinstance(pattern_index_value, bool)
+            and pattern_index_value >= 0
+            else None
+        )
+        match_start_value = match.get("match_start")
+        match_end_value = match.get("match_end")
+        signature_match_start = (
+            match_start_value
+            if isinstance(match_start_value, int) and not isinstance(match_start_value, bool) and match_start_value >= 0
+            else None
+        )
+        signature_match_end = (
+            match_end_value
+            if isinstance(match_end_value, int)
+            and not isinstance(match_end_value, bool)
+            and signature_match_start is not None
+            and match_end_value >= signature_match_start
+            else None
+        )
+        matched_pattern_value = match.get("matched_pattern")
+        signature_pattern_sha256 = (
+            hashlib.sha256(matched_pattern_value.encode("utf-8")).hexdigest()
+            if isinstance(matched_pattern_value, str)
+            else None
+        )
+
         return Finding(
             id=self._generate_finding_id(rule.id, f"{match.get('file_path', 'unknown')}:{match.get('line_number', 0)}"),
             rule_id=rule.id,
@@ -2506,7 +3204,7 @@ class StaticAnalyzer(BaseAnalyzer):
             severity=rule.severity,
             title=rule.description,
             description=f"Pattern detected: {matched_text}",
-            file_path=match.get("file_path"),
+            file_path=file_path,
             line_number=match.get("line_number"),
             snippet=snippet,
             remediation=rule.remediation,
@@ -2514,9 +3212,31 @@ class StaticAnalyzer(BaseAnalyzer):
             metadata={
                 "matched_pattern": match.get("matched_pattern"),
                 "matched_text": matched_text,
+                "signature_pattern_index": signature_pattern_index,
+                "signature_match_start": signature_match_start,
+                "signature_match_end": signature_match_end,
+                "signature_pattern_sha256": signature_pattern_sha256,
                 "aitech": threat_mapping.get("aitech") if threat_mapping else None,
                 "aitech_name": threat_mapping.get("aitech_name") if threat_mapping else None,
                 "scanner_category": threat_mapping.get("scanner_category") if threat_mapping else None,
+                "signature_context": context_kind,
+                "signature_polarity": polarity,
+                **candidate_evidence_metadata,
+                "source_category": rule.source_category,
+                "category_normalization": rule.category_resolution,
+                **_semantic_metadata(
+                    rule_id=rule.id,
+                    file_path=file_path,
+                    evidence_kind=evidence_kind,
+                    context_kind=context_kind,
+                    signal_kind="signature_polarity",
+                    value_class=polarity,
+                    evidence_value_class=evidence_value_class,
+                    evidence_count=evidence_count,
+                    candidate_command=candidate_command,
+                    candidate_flow=candidate_flow,
+                    extra_signals=extra_signals,
+                ),
             },
         )
 
@@ -2565,7 +3285,6 @@ class StaticAnalyzer(BaseAnalyzer):
 
         # Track which files have been scanned
         scanned_files = {"SKILL.md"}
-
         # Scan ALL files, not just scripts
         for skill_file in skill.files:
             if skill_file.relative_path in scanned_files:
@@ -2591,6 +3310,16 @@ class StaticAnalyzer(BaseAnalyzer):
                         for match in yara_matches:
                             rule_name = match.get("rule_name", "")
                             if not self._is_rule_enabled(rule_name):
+                                continue
+                            # Raw OOXML ZIP bytes and inert embedded media/font
+                            # bytes are not a Unicode text channel.  Suppress
+                            # only when the bounded extractor supplied exact
+                            # provenance; unopened containers and every other
+                            # member fail open.  Readable OOXML members are
+                            # scanned below so active document text is retained.
+                            if rule_name == "prompt_injection_unicode_steganography" and _is_inert_ooxml_unicode_asset(
+                                skill_file
+                            ):
                                 continue
                             # Skip shebang-in-binary for inert file types (images,
                             # fonts, databases) — shebang-like bytes are coincidental.
@@ -2624,8 +3353,17 @@ class StaticAnalyzer(BaseAnalyzer):
                     # Skip code-only YARA rules for non-script files (markdown, configs)
                     is_non_script = skill_file.file_type not in ("python", "bash")
                     if is_non_script and rule_name in _CODE_ONLY_YARA_RULES:
-                        # Exception: SKILL.md is already scanned above
-                        continue
+                        # Hidden Unicode remains actionable in readable OOXML
+                        # members, including document/slide/sheet content,
+                        # relationships, and unknown parts.  These files have
+                        # bounded extraction provenance and must not inherit the
+                        # generic config/document skip used by other code rules.
+                        if not (
+                            rule_name == "prompt_injection_unicode_steganography"
+                            and _is_extracted_ooxml_text(skill_file)
+                        ):
+                            # Exception: SKILL.md is already scanned above
+                            continue
 
                     # embedded_shebang_in_binary is only meaningful for binary files;
                     # text files (markdown, scripts) legitimately contain shebangs in
@@ -2834,6 +3572,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 indicators = oid.check()
 
                 has_macros = False
+                macro_analysis_incomplete = False
                 is_encrypted = False
                 suspicious_indicators: list[str] = []
 
@@ -2842,12 +3581,16 @@ class StaticAnalyzer(BaseAnalyzer):
                     ind_value = getattr(indicator, "value", None)
                     ind_name = getattr(indicator, "name", str(indicator))
 
-                    if ind_id == "vba_macros" and ind_value:
+                    macro_kind = classify_oleid_macro_indicator(ind_id, ind_value)
+                    if macro_kind == VBA_MACRO:
                         has_macros = True
                         suspicious_indicators.append(f"VBA macros detected: {ind_value}")
-                    elif ind_id == "xlm_macros" and ind_value:
+                    elif macro_kind == XLM_MACRO:
                         has_macros = True
                         suspicious_indicators.append(f"XLM/Excel4 macros detected: {ind_value}")
+                    elif macro_kind == INCONCLUSIVE_MACRO_ANALYSIS:
+                        macro_analysis_incomplete = True
+                        suspicious_indicators.append(f"Macro analysis was inconclusive: {ind_id}")
                     elif ind_id == "encrypted" and ind_value:
                         is_encrypted = True
                         suspicious_indicators.append(f"Document is encrypted: {ind_value}")
@@ -2865,9 +3608,13 @@ class StaticAnalyzer(BaseAnalyzer):
                 if has_macros:
                     severity = Severity.CRITICAL
                     title = "Office document contains VBA macros"
-                elif is_encrypted:
+                elif is_encrypted or macro_analysis_incomplete:
                     severity = Severity.HIGH
-                    title = "Office document is encrypted (resists analysis)"
+                    title = (
+                        "Office macro analysis was incomplete"
+                        if macro_analysis_incomplete
+                        else "Office document is encrypted (resists analysis)"
+                    )
                 else:
                     severity = Severity.MEDIUM
                     title = "Office document contains suspicious indicators"
@@ -2913,7 +3660,7 @@ class StaticAnalyzer(BaseAnalyzer):
         but are from different scripts (e.g., Cyrillic 'a' vs Latin 'a').
         """
         try:
-            from confusable_homoglyphs import confusables  # type: ignore[import-untyped]
+            from confusable_homoglyphs import confusables
         except ImportError:
             logger.debug("confusable-homoglyphs not installed – skipping homoglyph check")
             return []
@@ -3046,6 +3793,14 @@ class StaticAnalyzer(BaseAnalyzer):
                     metadata={
                         "affected_lines": len(dangerous_lines),
                         "analysis_method": "confusable_homoglyphs",
+                        **_semantic_metadata(
+                            rule_id="HOMOGLYPH_ATTACK",
+                            file_path=sf.relative_path,
+                            evidence_kind="unicode_confusable",
+                            context_kind="code",
+                            signal_kind="unicode_homoglyph",
+                            value_class="mixed_script",
+                        ),
                     },
                 )
             )
@@ -3185,7 +3940,10 @@ class StaticAnalyzer(BaseAnalyzer):
         _TEST_FILE_RE = re.compile(r"^(?:test_|tests_).*\.py$|^.*_test\.py$|^conftest\.py$", re.IGNORECASE)
 
         for sf in skill.files:
-            if sf.file_type in ("python", "bash") or sf.path.suffix.lower() in code_extensions:
+            if (
+                sf.file_type in ("python", "bash", "javascript", "typescript")
+                or sf.path.suffix.lower() in code_extensions
+            ):
                 rel = sf.relative_path
                 # Skip SKILL.md itself
                 if rel.lower() == "skill.md":
@@ -3237,6 +3995,14 @@ class StaticAnalyzer(BaseAnalyzer):
                         metadata={
                             "extracted_from": sf.extracted_from,
                             "file_type": sf.file_type,
+                            **_semantic_metadata(
+                                rule_id="ARCHIVE_CONTAINS_EXECUTABLE",
+                                file_path=sf.relative_path,
+                                evidence_kind="archive_inventory",
+                                context_kind="code",
+                                signal_kind="archived_executable",
+                                value_class=sf.file_type,
+                            ),
                         },
                     )
                 )
@@ -3255,13 +4021,18 @@ class StaticAnalyzer(BaseAnalyzer):
         meta = match["meta"].get("meta", {})
 
         category, severity = self._map_yara_rule_to_threat(rule_name, meta)
+        context_kind_override = classify_yara_behavior_context(
+            rule_name,
+            match.get("strings"),
+            file_path,
+        )
 
         from ..command_safety import evaluate_command
 
         safe_cleanup_dirs = self.policy.system_cleanup.safe_rm_targets or _DEFAULT_SAFE_CLEANUP_DIRS
         placeholder_markers = self.policy.credentials.placeholder_markers or _DEFAULT_PLACEHOLDER_MARKERS
 
-        for string_match in match["strings"]:
+        for string_match in _yara_candidate_string_matches(match, meta):
             # Skip exclusion patterns (these are used in YARA conditions but shouldn't create findings)
             string_identifier = string_match.get("identifier", "")
             if string_identifier.startswith("$documentation") or string_identifier.startswith("$safe"):
@@ -3409,6 +4180,13 @@ class StaticAnalyzer(BaseAnalyzer):
                         "yara_namespace": namespace,
                         "matched_string": string_match["identifier"],
                         "threat_type": threat_type,
+                        **_yara_semantic_metadata(
+                            rule_name=rule_name,
+                            meta=meta,
+                            file_path=file_path or "",
+                            match_offset=string_match.get("offset"),
+                            context_kind_override=context_kind_override,
+                        ),
                     },
                 )
             )
@@ -3422,6 +4200,20 @@ class StaticAnalyzer(BaseAnalyzer):
 
     def _map_yara_rule_to_threat(self, rule_name: str, meta: dict[str, Any]) -> tuple:
         """Map YARA rule to ThreatCategory and Severity."""
+        # Schema-v2 trusted packs make the manifest authoritative.  The YARA
+        # scanner injects these normalized fields after compilation; prefer
+        # them over legacy threat labels embedded in source files.
+        category_value = meta.get("category")
+        severity_value = meta.get("severity")
+        if isinstance(category_value, str) and isinstance(severity_value, str):
+            try:
+                return ThreatCategory(category_value), Severity(severity_value.upper())
+            except ValueError:
+                # Bundled legacy rules continue through the historical mapping
+                # below.  Trusted values were validated before compilation, so
+                # this path is only defensive for direct/custom scanner use.
+                pass
+
         threat_type = meta.get("threat_type", "").upper()
         classification = meta.get("classification", "harmful")
 

@@ -48,8 +48,8 @@ rule sql_injection_generic{
         $common_context_phrases = /\b(adds?\s+a\s+user|create\s+user|new\s+user|user\s+(account|profile|registration|authentication|permissions?|roles?)|user\s+(who|that)|for\s+user|the\s+user|current\s+user\s+(account|profile)|user\s+(input|data|information)|example:?\s+SELECT\s+USER\(\)|SELECT\s+USER\(\)\s+returns?|built-?in\s+function)\b/i
 
         // Documentation and code examples (legitimate SQL shown in docs)
-        $documentation_markers = /(```sql|```mysql|```postgres|-- Example|-- Query|SELECT\s+.*FROM\s+.*--\s*\w+\s+query|sample\s+query|example\s+query)/i
-        $schema_exploration = /\b(information_schema|pg_catalog|sys\.(schemas|tables|columns))\b.*\b(documentation|reference|schema|metadata)\b/i
+        $documentation_markers = /(```sql|```mysql|```postgres|-- Example|-- Query|SELECT\s+.{0,256}FROM\s+.{0,256}--\s*\w+\s+query|sample\s+query|example\s+query)/i
+        $schema_exploration = /\b(information_schema|pg_catalog|sys\.(schemas|tables|columns))\b.{0,256}\b(documentation|reference|schema|metadata)\b/i
 
     condition:
 

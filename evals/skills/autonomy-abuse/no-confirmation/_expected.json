@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "autonomy.no-confirmation-001",
+  "skill_name": "no-confirmation-agent",
+  "package_label": "contextual_risk",
+  "expected_verdict": "safe",
+  "expected_severity": "MEDIUM",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "7e2c9df5cac010400600a8de68dd2839a5b596b848a0d410d90aad66285a9cdf",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "7740576e618c798e3a5ae39552a4a9196fc1755fe73c43acf71db5301dbfc0f0",
+    "label_evidence_sha256": "150af71be09b2d0de80eced7da3ce0eede1bbf3bdd384d867f243d44dd429cb0"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "YARA_autonomy_abuse_generic",
+      "category": "autonomy_abuse",
+      "severity": "MEDIUM",
+      "file_path": "directive.sh",
+      "analyzer": "static",
+      "line_number": 2
+    }
+  ],
+  "notes": "Minimal inert replacement for the historical autonomy-abuse category; the shell file is never executed."
+}

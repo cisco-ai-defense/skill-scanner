@@ -1,0 +1,169 @@
+name: Detection PR Gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: detection-pr-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rule-and-golden-gates:
+    name: Rules, CEL, and deterministic golden corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go for bundled CEL
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.1"
+          cache-dependency-path: tools/cel_runtime/go.sum
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6.7.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install locked dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Validate release-scoped core rules and CEL generation
+        shell: bash
+        run: |
+          uv run python - <<'PY'
+          from evals.datasets.public_datasets import get_locked_dataset, load_dataset_lock
+          from skill_scanner.core.cel.go_runtime import CelGoRuntime
+          from skill_scanner.core.rule_registry import PackLoader
+          from skill_scanner.data import DATA_DIR
+
+          pack = PackLoader().load_bundled_pack(DATA_DIR / "packs" / "core")
+          cel_rules = [definition.cel for definition in pack.rules.values() if definition.cel is not None]
+          runtime = CelGoRuntime(cel_rules)
+          runtime.close()
+          dataset = get_locked_dataset("ProtectSkills/MaliciousSkillBench", load_dataset_lock())
+          expected = [{
+              "name": "core-only-source-disjoint",
+              "detector_profile": "core_only",
+              "protocol": "source_disjoint",
+              "partition": "test",
+          }]
+          if dataset["gating"]["tracks"] != expected:
+              raise SystemExit("release dataset lock is not exactly core_only + source_disjoint")
+          print(f"Validated core pack ({len(pack.rules)} rules, {len(cel_rules)} CEL expressions)")
+          PY
+
+      - name: Run rule, CEL, fact-model, and evaluation contract tests
+        shell: bash
+        run: |
+          gate_tests=(
+            tests/test_cel_foundation.py
+            tests/test_scanner_cel_integration.py
+            tests/test_semantic_facts.py
+            tests/test_static_semantic_facts.py
+            tests/test_pipeline_semantic_facts.py
+            tests/test_rule_registry.py
+            tests/test_multi_pack_loading.py
+            tests/test_trusted_rule_pack_v2.py
+            tests/test_trusted_yara_runtime.py
+            tests/test_correlation_analyzer.py
+            tests/test_correlation_manifest.py
+            tests/test_eval_finding_matching.py
+            tests/test_eval_expectation_schema.py
+            tests/test_benchmark_runner_identity.py
+            tests/test_independent_ollama_labeler.py
+            tests/test_public_dataset_inputs.py
+            tests/test_public_dataset_benchmark.py
+            tests/test_release_gate.py
+            tests/test_detection_workflows.py
+          )
+          printf 'Running gate test: %s\n' "${gate_tests[@]}"
+          uv run pytest "${gate_tests[@]}" -v --tb=short
+
+      - name: Run golden benchmark five times
+        shell: bash
+        run: |
+          mkdir -p artifacts/golden
+          for iteration in 1 2 3 4 5; do
+            if ! uv run python evals/runners/benchmark_runner.py \
+              --eval-dir evals/skills \
+              --output "artifacts/golden/run-${iteration}.json"; then
+              echo "::warning::Golden corpus is below the runner's legacy 80% threshold; the frozen exact-matching regression floors are enforced in the next step"
+            fi
+          done
+
+      - name: Verify deterministic benchmark output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          # Timing is intentionally excluded; detection counts, identities,
+          # decisions, errors, and fallback evidence remain byte-stable gates.
+          volatile = {
+              "scan_duration_seconds",
+              "scan_duration_ms",
+              "skills_per_second",
+              "p95_scan_latency_ms",
+              "cel_time_ratio",
+          }
+
+          def normalized(value):
+              if isinstance(value, dict):
+                  return {
+                      key: normalized(item)
+                      for key, item in sorted(value.items())
+                      if key not in volatile
+                  }
+              if isinstance(value, list):
+                  return [normalized(item) for item in value]
+              return value
+
+          paths = sorted(Path("artifacts/golden").glob("run-*.json"))
+          if len(paths) != 5:
+              raise SystemExit(f"expected five benchmark reports, found {len(paths)}")
+
+          reports = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+          for path, report in zip(paths, reports, strict=True):
+              metrics = report.get("benchmark", {})
+              errors = metrics.get("evaluation_errors")
+              if errors != 0:
+                  raise SystemExit(f"{path} reported {errors!r} evaluation errors")
+              total = metrics.get("total_skills_evaluated", 0)
+              if total <= 0 or metrics.get("strict_identity_skills") != total:
+                  raise SystemExit(f"{path}: all committed goldens must use exact strict identity")
+              if metrics.get("legacy_degraded_skills") != 0:
+                  raise SystemExit(f"{path}: legacy/category-only goldens are forbidden")
+              if metrics.get("finding_false_positives") != 0 or metrics.get("finding_false_negatives") != 0:
+                  raise SystemExit(f"{path}: exact golden findings changed")
+              if metrics.get("overall_accuracy") != 1.0:
+                  raise SystemExit(f"{path}: exact golden package verdict changed")
+
+          baseline = normalized(reports[0])
+          for path, report in zip(paths[1:], reports[1:], strict=True):
+              candidate = normalized(report)
+              if candidate != baseline:
+                  raise SystemExit(f"non-deterministic benchmark result: {path} differs from {paths[0]}")
+          print("Five benchmark runs produced identical non-timing output")
+          PY
+
+      - name: Upload golden benchmark reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: detection-pr-golden-${{ github.run_id }}
+          path: artifacts/golden/
+          if-no-files-found: warn
+          retention-days: 14

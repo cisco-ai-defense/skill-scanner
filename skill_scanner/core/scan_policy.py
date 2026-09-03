@@ -48,6 +48,8 @@ from typing import Any  # used in _from_dict / _deep_merge signatures
 
 import yaml
 
+from .cel.models import CelMode
+
 logger = logging.getLogger(__name__)
 
 _MAX_PATTERN_LENGTH = 1000
@@ -284,6 +286,23 @@ class AnalyzersPolicy:
     static: bool = True
     bytecode: bool = True
     pipeline: bool = True
+    # Bounded, deterministic structured-flow correlation.  The permissive
+    # preset explicitly disables this pass; balanced/default and strict keep
+    # it enabled so fenced and cross-file behavior reaches the normal scanner.
+    correlation: bool = True
+
+
+@dataclass
+class CelPolicy:
+    """Controls the bounded CEL decision layer.
+
+    ``off`` disables evaluation while still authoritatively compiling selected
+    rule generations, ``shadow`` records what would be suppressed, and
+    ``enforce`` suppresses only rules whose manifest rollout is also
+    ``enforce``. The pinned cel-go helper is a core runtime.
+    """
+
+    mode: CelMode = CelMode.OFF
 
 
 @dataclass
@@ -442,6 +461,7 @@ class ScanPolicy:
     sensitive_files: SensitiveFilesPolicy = field(default_factory=SensitiveFilesPolicy)
     command_safety: CommandSafetyPolicy = field(default_factory=CommandSafetyPolicy)
     analyzers: AnalyzersPolicy = field(default_factory=AnalyzersPolicy)
+    cel: CelPolicy = field(default_factory=CelPolicy)
     adjudicator: AdjudicatorPolicy = field(default_factory=AdjudicatorPolicy)
     llm_analysis: LLMAnalysisPolicy = field(default_factory=LLMAnalysisPolicy)
     finding_output: FindingOutputPolicy = field(default_factory=FindingOutputPolicy)
@@ -476,7 +496,7 @@ class ScanPolicy:
                     self._doc_fn_re_cache = None
             else:
                 self._doc_fn_re_cache = None
-        return self._doc_fn_re_cache  # type: ignore[attr-defined, no-any-return]
+        return self._doc_fn_re_cache
 
     @property
     def _compiled_benign_pipes(self) -> list[re.Pattern]:
@@ -484,7 +504,7 @@ class ScanPolicy:
         if not hasattr(self, "_benign_pipe_cache"):
             compiled = [c for p in self.pipeline.benign_pipe_targets if (c := _safe_compile(p)) is not None]
             self._benign_pipe_cache = compiled
-        return self._benign_pipe_cache  # type: ignore[attr-defined, no-any-return]
+        return self._benign_pipe_cache
 
     # -----------------------------------------------------------------------
     # Construction helpers
@@ -585,11 +605,18 @@ class ScanPolicy:
         sf = d.get("sensitive_files", {})
         cs = d.get("command_safety", {})
         az = d.get("analyzers", {})
+        cel_policy = d.get("cel", {})
         aj = d.get("adjudicator", {})
         la = d.get("llm_analysis", {})
         fo = d.get("finding_output", {})
 
         severity_overrides = [SeverityOverride(**ovr) for ovr in d.get("severity_overrides", [])]
+
+        cel_mode_value = cel_policy.get("mode", "off")
+        # PyYAML's YAML 1.1 resolver treats an unquoted ``off`` as False.
+        # Accept that legacy representation while rejecting True/other values.
+        if cel_mode_value is False:
+            cel_mode_value = "off"
 
         return cls(
             policy_name=d.get("policy_name", "default"),
@@ -698,7 +725,9 @@ class ScanPolicy:
                 static=az.get("static", True),
                 bytecode=az.get("bytecode", True),
                 pipeline=az.get("pipeline", True),
+                correlation=az.get("correlation", True),
             ),
+            cel=CelPolicy(mode=CelMode(str(cel_mode_value).lower())),
             adjudicator=AdjudicatorPolicy(
                 enabled=aj.get("enabled", False),
                 min_fp_confidence=aj.get("min_fp_confidence", 3),
@@ -826,6 +855,10 @@ class ScanPolicy:
                 "static": self.analyzers.static,
                 "bytecode": self.analyzers.bytecode,
                 "pipeline": self.analyzers.pipeline,
+                "correlation": self.analyzers.correlation,
+            },
+            "cel": {
+                "mode": self.cel.mode.value,
             },
             "adjudicator": {
                 "enabled": self.adjudicator.enabled,

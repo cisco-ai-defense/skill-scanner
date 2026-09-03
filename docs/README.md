@@ -10,6 +10,7 @@ Security scanning for AI agent skills. Detects prompt injection, data exfiltrati
 
 - [Overview](architecture/index.md) -- System design, scanning pipeline, and risk model
 - [Scanning Pipeline](architecture/scanning-pipeline.md) -- How files flow through the analysis stages
+- [CEL Decision Layer](architecture/cel-decision-layer.md) -- Typed contextual decisions, safety bounds, and rollout modes
 - [Threat Taxonomy](architecture/threat-taxonomy.md) -- AITech threat taxonomy with examples
 - [Binary Handling](architecture/binary-handling.md) -- How compiled and binary files are processed
 

@@ -1,0 +1,197 @@
+{
+  "corpus_id": "official-bundled-agent-skills-goodware",
+  "label": "benign-hard-negative",
+  "lock_version": 1,
+  "sources": [
+    {
+      "expected": {
+        "file_count": 29,
+        "inventory_sha256": "168ce7048524d6bd3744e585d2a9d24a40a0d80e9cfd9e88c8734775fd79a669",
+        "package_count": 13,
+        "total_bytes": 182647
+      },
+      "id": "openai/codex-signed-app-bundle",
+      "provenance": {
+        "app_build": "7377",
+        "app_cdhash": "230d7f7879e2c62f4251e278fbea95844471c1d5",
+        "app_signing_team": "2DC432GLL2",
+        "app_version": "26.825.51511",
+        "bundle_id": "d78131b7-914c-45a0-88b5-f6bc31225d63",
+        "first_party_evidence": "Signed com.openai.codex desktop application; every selected plugin manifest declares author.name OpenAI",
+        "marketplace_sha256": "3623337d0c78a4366ca9b46548f74a0348a865647dbdd18f2b91362b01f6bc28"
+      },
+      "root_locator": "/Applications/ChatGPT.app/Contents/Resources/plugins/openai-bundled",
+      "selector": {
+        "author": "OpenAI",
+        "kind": "codex_plugin_author"
+      },
+      "source_group": "openai/codex",
+      "tool": "Codex desktop",
+      "vendor": "OpenAI"
+    },
+    {
+      "expected": {
+        "file_count": 59,
+        "inventory_sha256": "9c6196e587a9300df0fffeb748e0d3afc3cf741519713da988eb819ea7d72f81",
+        "package_count": 6,
+        "total_bytes": 384736
+      },
+      "id": "openai/codex-system-skills",
+      "provenance": {
+        "bundle_revision": "bc5732fbeeda1d0c",
+        "first_party_evidence": "Codex-reserved .system bundle root",
+        "marker_sha256": "cde876953bb31239588763ae17da4d65611ec0f75393e2867c011c59d6a6ba4c",
+        "tool_version": "codex-cli 0.136.0"
+      },
+      "root_locator": "$HOME/.codex/skills/.system",
+      "selector": {
+        "kind": "recursive_first_party"
+      },
+      "source_group": "openai/codex",
+      "tool": "Codex",
+      "vendor": "OpenAI"
+    },
+    {
+      "expected": {
+        "file_count": 9,
+        "inventory_sha256": "f1949505cc62f7651b4882cb42142b0f436947bb67152a76d11ad9b8fd352550",
+        "package_count": 4,
+        "total_bytes": 103934
+      },
+      "id": "openai/codex-bundled-plugins",
+      "provenance": {
+        "cache_channel": "openai-bundled",
+        "first_party_evidence": "Each selected .codex-plugin/plugin.json declares author.name OpenAI",
+        "tool_version": "codex-cli 0.136.0"
+      },
+      "root_locator": "$HOME/.codex/plugins/cache/openai-bundled",
+      "selector": {
+        "author": "OpenAI",
+        "kind": "codex_plugin_author"
+      },
+      "source_group": "openai/codex",
+      "tool": "Codex",
+      "vendor": "OpenAI"
+    },
+    {
+      "expected": {
+        "file_count": 223,
+        "inventory_sha256": "1ebeda927e4f43fa498bddef2b2ed692a84dbb4fb7541e34c4df7db88d86d218",
+        "package_count": 6,
+        "total_bytes": 5399407
+      },
+      "id": "openai/codex-primary-runtime",
+      "provenance": {
+        "cache_channel": "openai-primary-runtime",
+        "first_party_evidence": "Each selected .codex-plugin/plugin.json declares author.name OpenAI",
+        "tool_version": "codex-cli 0.136.0"
+      },
+      "root_locator": "$HOME/.codex/plugins/cache/openai-primary-runtime",
+      "selector": {
+        "author": "OpenAI",
+        "kind": "codex_plugin_author"
+      },
+      "source_group": "openai/codex",
+      "tool": "Codex",
+      "vendor": "OpenAI"
+    },
+    {
+      "expected": {
+        "file_count": 114,
+        "inventory_sha256": "8fd32500046c32beb60adc98903b41de387b520ae92717550833b2a24e03612d",
+        "package_count": 25,
+        "total_bytes": 27220750
+      },
+      "id": "openai/codex-curated-first-party",
+      "provenance": {
+        "cache_channel": "openai-curated-remote",
+        "first_party_evidence": "Each selected .codex-plugin/plugin.json declares author.name OpenAI; non-OpenAI curated plugins are excluded",
+        "tool_version": "codex-cli 0.136.0"
+      },
+      "root_locator": "$HOME/.codex/plugins/cache/openai-curated-remote",
+      "selector": {
+        "author": "OpenAI",
+        "kind": "codex_plugin_author"
+      },
+      "source_group": "openai/codex",
+      "tool": "Codex",
+      "vendor": "OpenAI"
+    },
+    {
+      "expected": {
+        "file_count": 39,
+        "inventory_sha256": "1d5281c6191618017461554e64666bb40b50c881885ebef28bd934e52b379517",
+        "package_count": 24,
+        "total_bytes": 246461
+      },
+      "id": "anysphere/cursor-bundled-skills",
+      "provenance": {
+        "first_party_evidence": "Cursor-managed skills-cursor root and sync manifest",
+        "license": "not-declared-in-bundle",
+        "sync_manifest_sha256": "a2b8b70dbdbc690e12fdf435416976a496920225fc7f3cca2d9e716526cc56d4",
+        "tool_version": "2026.08.31-4057e58"
+      },
+      "root_locator": "$HOME/.cursor/skills-cursor",
+      "selector": {
+        "kind": "recursive_first_party"
+      },
+      "source_group": "anysphere/cursor",
+      "tool": "Cursor Agent",
+      "vendor": "Anysphere"
+    },
+    {
+      "expected": {
+        "file_count": 138,
+        "inventory_sha256": "76aa0cdf5c0d7470bc7f36b56a4a0b6575b0bd6944d7c8b9a01615230e0bcbb1",
+        "package_count": 23,
+        "total_bytes": 1330067
+      },
+      "id": "anthropic/claude-code-official-marketplace",
+      "provenance": {
+        "first_party_evidence": "Anthropic-owned mixed official marketplace; only local records declaring author.name Anthropic are selected",
+        "license": "Apache-2.0",
+        "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "marketplace_sha256": "e46338d997b637fbcc4262bd9c9aa5b728f5288424d305153d312b02d8f33d11",
+        "revision": "e18ff5086423bd9c21902ce3100dc4ecc84a668a",
+        "tool_version": "2.1.252"
+      },
+      "root_locator": "$HOME/.claude/plugins/marketplaces/claude-plugins-official",
+      "selector": {
+        "author": "Anthropic",
+        "kind": "anthropic_marketplace_author",
+        "marketplace_relative_path": ".claude-plugin/marketplace.json"
+      },
+      "source_group": "anthropic/claude-code",
+      "tool": "Claude Code",
+      "vendor": "Anthropic"
+    },
+    {
+      "expected": {
+        "file_count": 58,
+        "inventory_sha256": "7c8319e597f756b8e8d3ea3ce8521d9d905c80c9bb34dd87f59f093a33c93d84",
+        "package_count": 10,
+        "total_bytes": 518035
+      },
+      "id": "anthropic/claude-code-repository-plugins",
+      "provenance": {
+        "first_party_evidence": "Local git checkout of the Anthropic-owned anthropics/claude-code repository; only local marketplace sources are selected",
+        "license": "commercial-terms-reference",
+        "license_sha256": "728158fd1037143fad6907e8fa34804177e598b7326519503fe83cafdef849e6",
+        "marketplace_sha256": "663c1abf7f7661453bd5ce2b1ddcd2827b6ef7cad1b0b11f648c9ea08273c6e5",
+        "repository": "https://github.com/anthropics/claude-code.git",
+        "revision": "a1e64dc407dd57dfb4ea283b0f8049adf3eabee5",
+        "tool_version": "2.1.252"
+      },
+      "root_locator": "$HOME/.claude/plugins/marketplaces/claude-code-plugins",
+      "selector": {
+        "kind": "anthropic_owned_marketplace_all_local",
+        "marketplace_relative_path": ".claude-plugin/marketplace.json",
+        "owner": "Anthropic"
+      },
+      "source_group": "anthropic/claude-code",
+      "tool": "Claude Code",
+      "vendor": "Anthropic"
+    }
+  ],
+  "usage": "non-gating first-party false-positive audit; never a malicious-recall denominator"
+}

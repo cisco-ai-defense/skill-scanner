@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "policy-violation.missing-license-001",
+  "skill_name": "unlicensed-helper",
+  "package_label": "contextual_risk",
+  "expected_verdict": "safe",
+  "expected_severity": "INFO",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "38b36de5653f4c6c8add91ba78407801693e3f43870ddc3b68de3f3b3a3b3540",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "b34e90a36114aec15de29029d9cfcc20490a6e3e839ba7f1b7b6ca960a6defd3",
+    "label_evidence_sha256": "02c772079e53cb993c184d92cfde46f4506727b7f7ca7acbd6e1f580eb6e3277"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "MANIFEST_MISSING_LICENSE",
+      "category": "policy_violation",
+      "severity": "INFO",
+      "file_path": "SKILL.md",
+      "analyzer": "static",
+      "evidence_id": "MANIFEST_MISSING_LICENSE_c5ae9be793"
+    }
+  ],
+  "notes": "Benign package with an intentional informational manifest defect."
+}

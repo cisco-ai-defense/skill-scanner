@@ -177,7 +177,7 @@ rule jailbreak_generic{
         $security_doc = /\b(jailbreak (detection|prevention|defense|mitigation)|detecting jailbreak|anti[- ]jailbreak|jailbreak (attack )?(pattern|signature|indicator)s?)\b/i
 
         // Code that detects jailbreaks (this scanner, security tools)
-        $detection_code = /\b(rule |def |function |class )[^{(]*jailbreak/i
+        $detection_code = /\b(rule |def |function |class )[^\{(]*jailbreak/i
 
         // Academic papers and research about jailbreaks
         $academic_paper = /\b(abstract|introduction|methodology|conclusion|references|et al\.|arxiv|doi:|cite|citation)\b/i

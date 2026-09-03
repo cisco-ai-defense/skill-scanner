@@ -1,0 +1,116 @@
+// Copyright 2026 Cisco Systems, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package skill_scanner.semantic.v1;
+
+// The sole top-level value exposed to CEL as variable `f`.
+message ScanFacts {
+  string schema_version = 1;
+  SkillFacts skill = 2;
+  CandidateFacts candidate = 3;
+  ProjectionStatus projection = 4;
+}
+
+message SkillFacts {
+  string name = 1;
+  bool has_description = 2;
+  repeated string declared_tools = 3;
+  bool declares_network = 4;
+  uint32 file_count = 5;
+  uint64 total_bytes = 6;
+  repeated FileFact files = 7;
+  repeated CommandFact commands = 8;
+  repeated UrlFact urls = 9;
+  repeated FlowFact flows = 10;
+  repeated ReferenceEdge reference_edges = 11;
+  repeated SignalFact signals = 12;
+}
+
+message CandidateFacts {
+  string rule_id = 1;
+  string analyzer = 2;
+  string category = 3;
+  string severity = 4;
+  string file_path = 5;
+  uint32 line = 6;
+  string evidence_kind = 7;
+  string context_kind = 8;
+  FileFact file = 9;
+  CommandFact command = 10;
+  UrlFact url = 11;
+  FlowFact flow = 12;
+  repeated string cooccurring_rule_ids = 13;
+  // Analyzer-produced, bounded classification of the candidate evidence.
+  // This is deliberately candidate-local: package-level signals can contain
+  // multiple matches from the same file and must not influence one another.
+  string evidence_value_class = 14;
+  uint32 evidence_count = 15;
+}
+
+message FileFact {
+  string path = 1;
+  string extension = 2;
+  string kind = 3;
+  string role = 4;
+  uint64 size_bytes = 5;
+  bool hidden = 6;
+  bool executable = 7;
+  bool referenced = 8;
+  bool analyzable = 9;
+  bool magic_mismatch = 10;
+  uint32 archive_depth = 11;
+}
+
+message CommandFact {
+  string executable = 1;
+  repeated string argument_classes = 2;
+  bool downloads = 3;
+  bool executes = 4;
+  bool destructive = 5;
+  bool privilege_change = 6;
+  string source_class = 7;
+  string sink_class = 8;
+  string file_path = 9;
+}
+
+message UrlFact {
+  string scheme = 1;
+  string host = 2;
+  string domain_class = 3;
+  bool trusted_installer = 4;
+  string method = 5;
+  string direction = 6;
+  string file_path = 7;
+}
+
+message FlowFact {
+  string source_class = 1;
+  string sink_class = 2;
+  repeated string transforms = 3;
+  bool cross_file = 4;
+  string source_path = 5;
+  string sink_path = 6;
+}
+
+message ReferenceEdge {
+  string source_path = 1;
+  string target_path = 2;
+  string kind = 3;
+}
+
+message SignalFact {
+  string rule_id = 1;
+  string kind = 2;
+  string file_path = 3;
+  string value_class = 4;
+}
+
+message ProjectionStatus {
+  bool complete = 1;
+  repeated string error_codes = 2;
+  uint64 serialized_bytes = 3;
+  // True only when a projector size or count bound was reached or exceeded.
+  bool truncated = 4;
+}

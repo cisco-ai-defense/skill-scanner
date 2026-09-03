@@ -20,15 +20,9 @@ import pytest
 
 from skill_scanner.core.analyzers.static import StaticAnalyzer
 from skill_scanner.core.models import Severity, ThreatCategory
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    tomllib = None
+from skill_scanner.core.semantic import ScanFactProjector
 
 _RULE_ID = "SUPPLY_CHAIN_UNPINNED_DEPENDENCY"
-
-requires_tomllib = pytest.mark.skipif(tomllib is None, reason="tomllib requires Python 3.11+")
 
 
 @pytest.fixture(scope="module")
@@ -158,6 +152,12 @@ class TestDependencyPinningFindings:
         findings = analyzer._check_dependency_pinning(skill)
         assert len(findings) == 1
         assert "requests" in findings[0].description
+        assert findings[0].file_path == "SKILL.md"
+
+        facts = ScanFactProjector().project(skill, findings[0], findings)
+        assert facts.candidate.file_path == "SKILL.md"
+        assert facts.projection.complete is True
+        assert "INVALID_PATH" not in facts.projection.error_codes
 
 
 _SKILL_MD = "---\nname: dep-test\ndescription: A test skill\n---\n# dep-test\n"
@@ -166,7 +166,6 @@ _SKILL_MD = "---\nname: dep-test\ndescription: A test skill\n---\n# dep-test\n"
 class TestManifestSourceCoverage:
     """Dependencies declared outside requirements.txt must also be scanned."""
 
-    @requires_tomllib
     def test_pyproject_dependencies_flagged(self, analyzer, make_skill):
         skill = make_skill(
             {
@@ -185,7 +184,6 @@ class TestManifestSourceCoverage:
         assert flagged == {"requests", "pytest"}
         assert all(f.file_path == "pyproject.toml" for f in findings)
 
-    @requires_tomllib
     def test_pyproject_all_pinned_clean(self, analyzer, make_skill):
         skill = make_skill(
             {
@@ -230,7 +228,6 @@ class TestManifestSourceCoverage:
 
         assert not [finding for finding in findings if finding.file_path == "setup.py"]
 
-    @requires_tomllib
     def test_pipfile_packages_flagged(self, analyzer, make_skill):
         skill = make_skill(
             {
@@ -249,7 +246,6 @@ class TestManifestSourceCoverage:
         flagged = {f.description.split("'")[1] for f in findings}
         assert flagged == {"requests", "httpx"}
 
-    @requires_tomllib
     def test_pipfile_vcs_reference_skipped(self, analyzer, make_skill):
         skill = make_skill(
             {

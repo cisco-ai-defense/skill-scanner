@@ -366,7 +366,7 @@ class TestMultiSkillSummary:
 
 
 class TestScanDirectorySkipped:
-    def test_malformed_skill_tracked_in_skipped(self, tmp_path):
+    def test_malformed_skill_scanned_with_bounded_inert_fallback(self, tmp_path):
         good_dir = tmp_path / "good-skill"
         _write_skill_md(
             good_dir,
@@ -391,9 +391,13 @@ class TestScanDirectorySkipped:
         scanner = SkillScanner()
         report = scanner.scan_directory(tmp_path)
 
-        assert report.total_skills_scanned == 1
-        assert len(report.skills_skipped) == 1
-        assert "bad-skill" in report.skills_skipped[0]["skill"]
+        assert report.total_skills_scanned == 2
+        assert report.skills_skipped == []
+        bad_result = next(result for result in report.scan_results if result.skill_name == "bad-skill")
+        assert bad_result.scan_metadata is not None
+        assert bad_result.scan_metadata["loader"]["fallback_used"] is True
+        assert bad_result.scan_metadata["loader"]["strict_error_code"] == "MISSING_REQUIRED_MANIFEST_FIELD"
+        assert "SKILL_LOAD_FALLBACK_USED" in {finding.rule_id for finding in bad_result.findings}
 
     def test_malformed_skill_loaded_in_lenient(self, tmp_path):
         good_dir = tmp_path / "good-skill"

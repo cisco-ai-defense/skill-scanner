@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "status": "development_recall_evidence_not_atr61_promotion",
+  "safety": {
+    "raw_sample_content_embedded": false,
+    "sample_content_executed": false,
+    "sample_network_access": false,
+    "sealed_test_rows_scanned": 0,
+    "vendor_allowlist_used": false
+  },
+  "implementation": {
+    "rule_file": "skill_scanner/data/packs/core/yara/behavior_chain_detection.yara",
+    "rule_file_sha256": "cf977c4baa76751e8b5a8da392ea9c3088d498d333c64dba420a5ba0113b81c5",
+    "context_classifier_sha256": "345fd224e0a3f127b50f4cc804cf6ca6a400a5c69dbf06a2621a5f3a44d1a83b",
+    "cel_expression_sha256": "24c35a063a3e8cfc95d93cf7cc93f048f63e77b5a424032cc1321c591343e9bb",
+    "cel_rollout": "shadow"
+  },
+  "population": {
+    "dataset_id": "ProtectSkills/MaliciousSkillBench",
+    "revision": "d4b42ce5766a6e0359c987cf59c1007cb3795a90",
+    "artifact_manifest_sha256": "ae542800a95a893a0ae724bdc625d5a1e19d81ff08ae1f846ddb54d77bfb0b9a",
+    "benchmark_snapshot_sha256": "b89b8aa7ec730ef91c9e4eb794106cbac691221f072851de88f5f0e867e23913",
+    "selection_population_sha256": "58ae723838cfcd6343601c7247836adfd2e92ad69ce8d6fa9b79df7fcd984509",
+    "selection": "source_disjoint and m_structural_disjoint are both train or validation; quarantined samples excluded",
+    "usable": 6594,
+    "malicious": 5256,
+    "benign": 1338,
+    "quarantined": 3
+  },
+  "official_goodware": {
+    "corpus_id": "official-bundled-agent-skills-goodware",
+    "authoritative_report_sha256": "ebdb7bf81123cec75181219b88b2e45a3da3fd0e63928d918adcaf3a6014aa93",
+    "lock_sha256": "4392a2154aacdb3b0d05928ab67b3b1e1a27d6fcef794e62760a80b4ed99cc01",
+    "profile_sha256": "886954710684c904de863df6f6276ed7060b048359dbc4e091a412ec57e5db87",
+    "packages": 110,
+    "files_scanned": 667,
+    "read_errors": 0,
+    "post_change_target_rule_hits": 0,
+    "scan_scope": "target YARA rules over every regular non-symlink file using replacement decoding for non-UTF-8 bytes"
+  },
+  "determinism": {
+    "runs": 5,
+    "stable": true,
+    "target_rule_rows_per_run": 37,
+    "normalized_output_sha256": "10d3e82d0867fc0187d9c5be9a01cf3f01c4e20a2d24ba77f88cc3b7c86f6e72"
+  },
+  "rules": {
+    "YARA_SUSP_Multi_RemoteMiner_AcquireExec_Sep26": {
+      "baseline_malicious_packages": 18,
+      "baseline_membership_sha256": "6cfea27b3b14c54f3b4fd2c5eee3990951babaeb6334262ab79bf4dbf2737bf6",
+      "candidate_malicious_packages": 35,
+      "candidate_membership_sha256": "a09fcf6cafaf1551580a53cbe6ccc37e4a8ff70d5e58661a75c59eed101183f6",
+      "incremental_malicious_packages": 17,
+      "prior_incremental_membership_sha256": "9714e2fb5cfe2081ff5d28d2a6a535cc007887c4d03b8c67825d17732e901a28",
+      "prior_candidate_malicious_packages": 30,
+      "xmrig_command_branch_malicious_packages": 12,
+      "scoped_incremental_malicious_packages": 5,
+      "scoped_incremental_membership_sha256": "93cf67630f8d9aaeb354eba0d62592fa20ff62a73a4e373639e5b678f7b90d04",
+      "target_gap_packages_recovered": 6,
+      "benign_packages": 0,
+      "official_packages": 0,
+      "notinject_rows": 339,
+      "notinject_hits": 0,
+      "shadow_contexts": {
+        "active_instruction": 12,
+        "code": 23,
+        "would_suppress_malicious_packages": 0
+      },
+      "scoped_incremental_artifacts": [
+        {"benchmark_id": "ASB04_000544", "sha256": "134861621d64bbf874a992e576734372b9009e011ec65b365f6976fe3767b85f"},
+        {"benchmark_id": "ASB04_000698", "sha256": "65082760056472d372a5bceb1ed8d4945a469d7fef37254d3f046dcc3dc94426"},
+        {"benchmark_id": "ASB04_001741", "sha256": "e2ea0a41dddc3e18e83fa4a893ebe34a44d4fa08ab2d1cc7c0b54c869ca1d99c"},
+        {"benchmark_id": "ASB04_004143", "sha256": "8a6fb6594405fade67c10ee8e113cf9166aff4bc47d5420d9d2834bd12a4191a"},
+        {"benchmark_id": "ASB04_006766", "sha256": "ad3ea1128e1b6be0abe00a0e44cd5d4abeec1e9d4cc874ac36b2886b2b19bc54"}
+      ],
+      "target_artifacts": [
+        {"benchmark_id": "ASB04_002573", "sha256": "930995a589b25f6c10c099d5f0be6edc5f280814e509486caee7d5594fb80f60"},
+        {"benchmark_id": "ASB04_002901", "sha256": "600260c680e3c81fb2a72e90a7698ff87ea7cbd93502f098971ebee577eeca63"},
+        {"benchmark_id": "ASB04_002981", "sha256": "62634721a55f78925f6db09ad4b91d38d893ab2cb527a02bf6c23920a28e4fbe"},
+        {"benchmark_id": "ASB04_003600", "sha256": "789bb4df50271ea134c1ccdafed2787add716791acfc433390bbc9380cc38171"},
+        {"benchmark_id": "ASB04_005074", "sha256": "a8dc7f986d23e9b66f3a2b6e691ab95b37770dce59a71a6430036c808911a2a4"},
+        {"benchmark_id": "ASB04_007344", "sha256": "faca4c51afa135ca47c926ee32410e0a19d58b624dcbc626cd0e51e1e7195c28"}
+      ]
+    },
+    "YARA_SUSP_Win_EncodedPowerShell_Exec_Sep26": {
+      "baseline_malicious_packages": 0,
+      "candidate_malicious_packages": 2,
+      "candidate_membership_sha256": "3b9c69e8ffa7fc7f75ecec5e29cb2b87e8fe1a9f1bff17ddc4bcd41acd90d9e8",
+      "prior_candidate_malicious_packages": 1,
+      "scoped_incremental_malicious_packages": 1,
+      "scoped_incremental_membership_sha256": "63fe9cea54e91860c9b29b659bfba0b0c895a71dc4c7b3e1b9e118c097543d7d",
+      "target_gap_packages_recovered": 1,
+      "benign_packages": 0,
+      "official_packages": 0,
+      "notinject_rows": 339,
+      "notinject_hits": 0,
+      "scoped_incremental_artifacts": [
+        {"benchmark_id": "ASB04_005141", "sha256": "abbe194a33503115751586974882b122500f8ae9fcde03b38f97171f44a6c80a"}
+      ],
+      "target_artifacts": [
+        {"benchmark_id": "ASB04_003724", "sha256": "91c10937a5ed048516fd39fa9b316db77be95951918889c49d1bb48130aaf7cd"}
+      ]
+    }
+  },
+  "decision": {
+    "ship_replacement_extractors": true,
+    "narrow_or_promote_atr61": false,
+    "reason": "The bounded extractors retain the seven proven ATR61-only recoveries and add six source-disjoint non-test malicious families without benign, NotInject, or official target-rule hits. The remote-miner context gate remains shadow-only and broader replacement coverage is still required before ATR61 can become correlation-only."
+  }
+}

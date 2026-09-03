@@ -26,6 +26,7 @@ to perform malicious activities, such as:
 
 import re
 
+from ..finding_identity import stable_finding_suffix
 from ..models import Finding, Severity, Skill, ThreatCategory
 from .base import BaseAnalyzer
 
@@ -159,7 +160,10 @@ class CrossSkillScanner(BaseAnalyzer):
             if set(collector_names) != set(exfil_names):
                 findings.append(
                     Finding(
-                        id=f"CROSS_SKILL_RELAY_{hash(tuple(collector_names + exfil_names)) & 0xFFFFFFFF:08x}",
+                        id=(
+                            "CROSS_SKILL_RELAY_"
+                            f"{stable_finding_suffix('collectors', *collector_names, 'exfiltrators', *exfil_names)}"
+                        ),
                         rule_id="CROSS_SKILL_DATA_RELAY",
                         category=ThreatCategory.DATA_EXFILTRATION,
                         severity=Severity.HIGH,
@@ -215,7 +219,7 @@ class CrossSkillScanner(BaseAnalyzer):
             if len(skill_names) >= 2:
                 findings.append(
                     Finding(
-                        id=f"CROSS_SKILL_URL_{hash(domain) & 0xFFFFFFFF:08x}",
+                        id=f"CROSS_SKILL_URL_{stable_finding_suffix(domain)}",
                         rule_id="CROSS_SKILL_SHARED_URL",
                         category=ThreatCategory.DATA_EXFILTRATION,
                         severity=Severity.MEDIUM,
@@ -325,7 +329,10 @@ class CrossSkillScanner(BaseAnalyzer):
                         if len(shared_context) >= 2:
                             findings.append(
                                 Finding(
-                                    id=f"CROSS_SKILL_COMPLEMENTARY_{hash(collector.name + sender.name) & 0xFFFFFFFF:08x}",
+                                    id=(
+                                        "CROSS_SKILL_COMPLEMENTARY_"
+                                        f"{stable_finding_suffix(collector.name, sender.name)}"
+                                    ),
                                     rule_id="CROSS_SKILL_COMPLEMENTARY_TRIGGERS",
                                     category=ThreatCategory.SOCIAL_ENGINEERING,
                                     severity=Severity.LOW,
@@ -384,7 +391,7 @@ class CrossSkillScanner(BaseAnalyzer):
             if len(skill_names) >= 2:
                 findings.append(
                     Finding(
-                        id=f"CROSS_SKILL_PATTERN_{hash(pattern_name + str(skill_names)) & 0xFFFFFFFF:08x}",
+                        id=f"CROSS_SKILL_PATTERN_{stable_finding_suffix(pattern_name, *skill_names)}",
                         rule_id="CROSS_SKILL_SHARED_PATTERN",
                         category=ThreatCategory.OBFUSCATION,
                         severity=Severity.MEDIUM,

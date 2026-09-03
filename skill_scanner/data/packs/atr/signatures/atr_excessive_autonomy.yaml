@@ -7,7 +7,7 @@ signatures:
     atr_id: ATR-2026-00050
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00050-runaway-agent-loop.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - (?i)(?:retrying|retry\s+(?:attempt|number|#|count))\s*(?::?\s*)?\d+
@@ -44,7 +44,7 @@ signatures:
     atr_id: ATR-2026-00051
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00051-resource-exhaustion.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - (?i)SELECT\s+\*\s+FROM\s+\w+(?:\s*;|\s*$|\s+WHERE)(?!.*\bLIMIT\b)
@@ -78,7 +78,7 @@ signatures:
     atr_id: ATR-2026-00052
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00052-cascading-failure.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -111,7 +111,7 @@ signatures:
     atr_id: ATR-2026-00098
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00098-unauthorized-financial-action.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -138,7 +138,7 @@ signatures:
     atr_id: ATR-2026-00099
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00099-high-risk-tool-gate.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: LOW
     patterns:
       - >-
@@ -163,7 +163,7 @@ signatures:
     atr_id: ATR-2026-00428
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00428-nl-unauthorized-shell-execution.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -180,7 +180,7 @@ signatures:
     atr_id: ATR-2026-00491
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00491-garak-agent-breaker-markdown-just-raw-json.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -200,7 +200,7 @@ signatures:
     atr_id: ATR-2026-00500
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00500-ssrf-via-agent-url-fetch-instruction.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -220,7 +220,7 @@ signatures:
     atr_id: ATR-2026-00708
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00708-ipi-financial-transfer-unauthorized.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -241,7 +241,7 @@ signatures:
     atr_id: ATR-2026-00709
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00709-ipi-disable-auth-mfa.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -255,7 +255,7 @@ signatures:
     atr_id: ATR-2026-00710
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00710-ipi-physical-access-grant.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -274,7 +274,7 @@ signatures:
     atr_id: ATR-2026-00711
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00711-ipi-system-sabotage-destructive-command.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -297,7 +297,7 @@ signatures:
     atr_id: ATR-2026-00712
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00712-ipi-malicious-package-install.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -318,7 +318,7 @@ signatures:
     atr_id: ATR-2026-00713
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00713-ipi-rce-network-shell-command.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -341,7 +341,7 @@ signatures:
     atr_id: ATR-2026-00718
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00718-tool-misuse-financial-autonomous.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -357,7 +357,7 @@ signatures:
     atr_id: ATR-2026-00719
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00719-tool-misuse-destructive-bulk-action.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -376,7 +376,7 @@ signatures:
     atr_id: ATR-2026-00722
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-00722-ipi-account-manipulation-emergency-pretext.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -397,7 +397,7 @@ signatures:
     atr_id: ATR-2026-01751
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01751-indirect-pi-task-abort-stop-instruction.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -414,7 +414,7 @@ signatures:
     atr_id: ATR-2026-01752
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01752-indirect-pi-captcha-redirect-dos.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -431,7 +431,7 @@ signatures:
     atr_id: ATR-2026-01773
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01773-semantic-excessive-agency-action.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -459,7 +459,7 @@ signatures:
     atr_id: ATR-2026-01801
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01801-asb-autonomous-vehicle-sabotage.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -476,7 +476,7 @@ signatures:
     atr_id: ATR-2026-01804
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01804-asb-covert-unlogged-action.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -495,7 +495,7 @@ signatures:
     atr_id: ATR-2026-01805
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01805-asb-financial-fraud-execution.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -518,7 +518,7 @@ signatures:
     atr_id: ATR-2026-01806
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01806-asb-clinical-patient-harm.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -537,7 +537,7 @@ signatures:
     atr_id: ATR-2026-01809
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01809-semantic-insider-manipulation-process-corruption.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -558,7 +558,7 @@ signatures:
     atr_id: ATR-2026-01837
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01837-ddos-attack-orchestration.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: CRITICAL
     patterns:
       - >-
@@ -573,7 +573,7 @@ signatures:
     atr_id: ATR-2026-01838
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01838-unauthorized-cryptominer-deployment.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - (?i)\bssh\b[\s\S]{0,80}\b(?:ethereum|eth)\s+mining\s+script\b
@@ -587,7 +587,7 @@ signatures:
     atr_id: ATR-2026-01849
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01849-harassment-bot-deployment.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -602,7 +602,7 @@ signatures:
     atr_id: ATR-2026-01989
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01989-t1046-agent-internal-network-sweep.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -619,7 +619,7 @@ signatures:
     atr_id: ATR-2026-01993
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01993-t1562-agent-impair-defenses.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-
@@ -638,7 +638,7 @@ signatures:
     atr_id: ATR-2026-01994
     atr_url: >-
       https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/rules/excessive-autonomy/ATR-2026-01994-t1573-agent-encrypted-c2-channel.yaml
-    category: excessive_autonomy
+    category: autonomy_abuse
     severity: HIGH
     patterns:
       - >-

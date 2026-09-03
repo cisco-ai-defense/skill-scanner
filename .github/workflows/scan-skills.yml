@@ -39,7 +39,7 @@ on:
         type: string
         default: "high"
       python_version:
-        description: "Python version to use"
+        description: "CPython version to use (3.11 through 3.14, numeric versions only)"
         required: false
         type: string
         default: "3.12"
@@ -96,6 +96,23 @@ jobs:
     steps:
       - name: Checkout caller repository
         uses: actions/checkout@v4
+
+      - name: Validate supported Python version
+        env:
+          INPUT_PYTHON_VERSION: ${{ inputs.python_version }}
+        run: |
+          if [[ ! "$INPUT_PYTHON_VERSION" =~ ^3\.([0-9]+)(\.[0-9]+)?$ ]]; then
+            echo "::error::python_version must be a numeric CPython 3.x version (for example, 3.11 or 3.14.1)"
+            exit 1
+          fi
+          if (( 10#${BASH_REMATCH[1]} < 11 )); then
+            echo "::error::python_version must be 3.11 or newer"
+            exit 1
+          fi
+          if (( 10#${BASH_REMATCH[1]} > 14 )); then
+            echo "::error::python_version must be 3.14 or older (supported range: 3.11 through 3.14)"
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5

@@ -5,7 +5,7 @@
 
 Rules: ARCHIVE_EXTRACTION_FAILED, ARCHIVE_NESTED_TOO_DEEP,
        ARCHIVE_ZIP_BOMB, ARCHIVE_PATH_TRAVERSAL,
-       OFFICE_VBA_MACRO, OFFICE_EMBEDDED_OLE.
+       ARCHIVE_SYMLINK, OFFICE_VBA_MACRO, OFFICE_EMBEDDED_OLE.
 
 Note: These rules remain implemented inline in ContentExtractor because
 they are tightly coupled to the extraction process (they fire mid-extraction
@@ -22,6 +22,7 @@ ARCHIVE_RULE_IDS = [
     "ARCHIVE_NESTED_TOO_DEEP",
     "ARCHIVE_ZIP_BOMB",
     "ARCHIVE_PATH_TRAVERSAL",
+    "ARCHIVE_SYMLINK",
     "OFFICE_VBA_MACRO",
     "OFFICE_EMBEDDED_OLE",
 ]

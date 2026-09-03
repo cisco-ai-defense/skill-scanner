@@ -32,6 +32,7 @@ from rich.markdown import Markdown
 
 from .. import __version__
 from ..core.analyzer_factory import build_analyzers
+from ..core.cel.models import CelMode
 from ..core.loader import SkillLoadError
 from ..core.reporters.html_reporter import HTMLReporter
 from ..core.reporters.json_reporter import JSONReporter
@@ -109,12 +110,57 @@ def _load_policy(args: argparse.Namespace) -> ScanPolicy:
     else:
         policy = ScanPolicy.default()
 
+    cel_mode = getattr(args, "cel_mode", None)
+    if cel_mode is not None:
+        policy.cel.mode = CelMode(cel_mode)
+        logger.info("Using CEL mode override: %s", policy.cel.mode.value)
+
     # When --verbose is NOT set, disable per-finding metadata bloat
     if not getattr(args, "verbose", False):
         policy.finding_output.attach_policy_fingerprint = False
         policy.finding_output.annotate_same_path_rule_cooccurrence = False
 
     return policy
+
+
+def _trusted_rule_pack_paths(args: argparse.Namespace) -> list[Path]:
+    """Return validated administrator-trusted rule-pack directories."""
+    paths: list[Path] = []
+    for value in getattr(args, "trusted_rule_pack", None) or []:
+        path = Path(value).expanduser()
+        if not path.exists():
+            raise FileNotFoundError(f"Trusted rule-pack path does not exist: {path}")
+        if not path.is_dir():
+            raise ValueError(f"Trusted rule-pack path is not a directory: {path}")
+        paths.append(path)
+    return paths
+
+
+def _build_rule_registry(
+    args: argparse.Namespace,
+    status: Callable[[str], None],
+):
+    """Strictly validate bundled and trusted packs before scanner startup."""
+    trusted_dirs = _trusted_rule_pack_paths(args)
+
+    from ..core.rule_registry import PackLoader
+
+    registry_dirs: list[Path | str] = [*trusted_dirs]
+    registry = PackLoader().build_registry(trusted_dirs=registry_dirs)
+    if trusted_dirs:
+        status(f"Loaded trusted rule packs: {', '.join(str(path) for path in trusted_dirs)}")
+    return registry
+
+
+def _create_skill_scanner(
+    analyzers: list,
+    policy: ScanPolicy,
+    args: argparse.Namespace,
+    status: Callable[[str], None],
+) -> SkillScanner:
+    """Create a scanner with any explicitly trusted pack registry attached."""
+    rule_registry = _build_rule_registry(args, status)
+    return SkillScanner(analyzers=analyzers, policy=policy, rule_registry=rule_registry)
 
 
 def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Callable[[str], None]) -> list:
@@ -131,10 +177,12 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
         extra_rules_dirs = resolve_rule_packs(pack_names)
         status(f"Loading additional rule packs: {', '.join(pack_names)}")
 
+    trusted_pack_dirs = _trusted_rule_pack_paths(args)
     analyzers = build_analyzers(
         policy,
         custom_yara_rules_path=getattr(args, "custom_rules", None),
         extra_rules_dirs=extra_rules_dirs,
+        trusted_pack_dirs=trusted_pack_dirs or None,
         use_behavioral=getattr(args, "use_behavioral", False),
         use_llm=getattr(args, "use_llm", False),
         use_virustotal=getattr(args, "use_virustotal", False),
@@ -313,8 +361,9 @@ def _resolve_fail_severity(args: argparse.Namespace) -> str | None:
     (legacy boolean flag) is treated as ``--fail-on-severity high``.
     Returns ``None`` when neither flag is set.
     """
-    if getattr(args, "fail_on_severity", None):
-        return args.fail_on_severity
+    fail_on_severity = getattr(args, "fail_on_severity", None)
+    if isinstance(fail_on_severity, str):
+        return fail_on_severity
     if getattr(args, "fail_on_findings", False):
         return "high"
     return None
@@ -407,22 +456,25 @@ def scan_command(args: argparse.Namespace) -> int:
         print(f"Error loading taxonomy configuration: {e}", file=sys.stderr)
         return 1
 
-    policy = _load_policy(args)
-    if getattr(args, "adjudicate", False):
-        policy.adjudicator.enabled = True
-    analyzers = _build_analyzers(policy, args, status)
-    llm_max_tokens = getattr(args, "llm_max_tokens", None)
-    llm_reasoning_effort = getattr(args, "llm_reasoning_effort", None)
-    meta_analyzer = _build_meta_analyzer(
-        args,
-        len(analyzers),
-        status,
-        policy=policy,
-        max_tokens=llm_max_tokens,
-        reasoning_effort=llm_reasoning_effort,
-    )
-
-    scanner = SkillScanner(analyzers=analyzers, policy=policy)
+    try:
+        policy = _load_policy(args)
+        if getattr(args, "adjudicate", False):
+            policy.adjudicator.enabled = True
+        analyzers = _build_analyzers(policy, args, status)
+        llm_max_tokens = getattr(args, "llm_max_tokens", None)
+        llm_reasoning_effort = getattr(args, "llm_reasoning_effort", None)
+        meta_analyzer = _build_meta_analyzer(
+            args,
+            len(analyzers),
+            status,
+            policy=policy,
+            max_tokens=llm_max_tokens,
+            reasoning_effort=llm_reasoning_effort,
+        )
+        scanner = _create_skill_scanner(analyzers, policy, args, status)
+    except Exception as e:
+        print(f"Error configuring scan: {e}", file=sys.stderr)
+        return 1
     lenient = getattr(args, "lenient", False)
     skill_file = getattr(args, "skill_file", None)
 
@@ -490,6 +542,8 @@ def scan_command(args: argparse.Namespace) -> int:
         print(f"Unexpected error: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         return 1
+    finally:
+        scanner.close()
 
 
 def scan_all_command(args: argparse.Namespace) -> int:
@@ -509,22 +563,25 @@ def scan_all_command(args: argparse.Namespace) -> int:
         print(f"Error loading taxonomy configuration: {e}", file=sys.stderr)
         return 1
 
-    policy = _load_policy(args)
-    if getattr(args, "adjudicate", False):
-        policy.adjudicator.enabled = True
-    analyzers = _build_analyzers(policy, args, status)
-    llm_max_tokens = getattr(args, "llm_max_tokens", None)
-    llm_reasoning_effort = getattr(args, "llm_reasoning_effort", None)
-    meta_analyzer = _build_meta_analyzer(
-        args,
-        len(analyzers),
-        status,
-        policy=policy,
-        max_tokens=llm_max_tokens,
-        reasoning_effort=llm_reasoning_effort,
-    )
-
-    scanner = SkillScanner(analyzers=analyzers, policy=policy)
+    try:
+        policy = _load_policy(args)
+        if getattr(args, "adjudicate", False):
+            policy.adjudicator.enabled = True
+        analyzers = _build_analyzers(policy, args, status)
+        llm_max_tokens = getattr(args, "llm_max_tokens", None)
+        llm_reasoning_effort = getattr(args, "llm_reasoning_effort", None)
+        meta_analyzer = _build_meta_analyzer(
+            args,
+            len(analyzers),
+            status,
+            policy=policy,
+            max_tokens=llm_max_tokens,
+            reasoning_effort=llm_reasoning_effort,
+        )
+        scanner = _create_skill_scanner(analyzers, policy, args, status)
+    except Exception as e:
+        print(f"Error configuring scan: {e}", file=sys.stderr)
+        return 1
 
     lenient = getattr(args, "lenient", False)
     skill_file = getattr(args, "skill_file", None)
@@ -619,6 +676,8 @@ def scan_all_command(args: argparse.Namespace) -> int:
         print(f"Unexpected error: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         return 1
+    finally:
+        scanner.close()
 
 
 def scan_repo_command(args: argparse.Namespace) -> int:
@@ -646,22 +705,25 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                 print(f"Error loading taxonomy configuration: {e}", file=sys.stderr)
                 return 1
 
-            policy = _load_policy(args)
-            if getattr(args, "adjudicate", False):
-                policy.adjudicator.enabled = True
-            analyzers = _build_analyzers(policy, args, status)
-            llm_max_tokens = getattr(args, "llm_max_tokens", None)
-            llm_reasoning_effort = getattr(args, "llm_reasoning_effort", None)
-            meta_analyzer = _build_meta_analyzer(
-                args,
-                len(analyzers),
-                status,
-                policy=policy,
-                max_tokens=llm_max_tokens,
-                reasoning_effort=llm_reasoning_effort,
-            )
-
-            scanner = SkillScanner(analyzers=analyzers, policy=policy)
+            try:
+                policy = _load_policy(args)
+                if getattr(args, "adjudicate", False):
+                    policy.adjudicator.enabled = True
+                analyzers = _build_analyzers(policy, args, status)
+                llm_max_tokens = getattr(args, "llm_max_tokens", None)
+                llm_reasoning_effort = getattr(args, "llm_reasoning_effort", None)
+                meta_analyzer = _build_meta_analyzer(
+                    args,
+                    len(analyzers),
+                    status,
+                    policy=policy,
+                    max_tokens=llm_max_tokens,
+                    reasoning_effort=llm_reasoning_effort,
+                )
+                scanner = _create_skill_scanner(analyzers, policy, args, status)
+            except Exception as e:
+                print(f"Error configuring scan: {e}", file=sys.stderr)
+                return 1
 
             try:
                 report = scanner.scan_directory(
@@ -756,6 +818,8 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                 print(f"Unexpected error: {e}", file=sys.stderr)
                 traceback.print_exc(file=sys.stderr)
                 return 1
+            finally:
+                scanner.close()
 
     except RepoFetchError as e:
         print(f"Error cloning repository: {e}", file=sys.stderr)
@@ -819,12 +883,74 @@ def list_analyzers_command(_args: argparse.Namespace) -> int:
 
 def validate_rules_command(args: argparse.Namespace) -> int:
     """Handle the ``validate-rules`` command."""
+    from ..core.cel.go_runtime import CelGoRuntime
+    from ..core.cel.models import CelRule
+    from ..core.cel.validator import validate_cel_expression
+    from ..core.rule_registry import PackLoader
     from ..core.rules.patterns import RuleLoader
 
     try:
-        loader = RuleLoader(Path(args.rules_file)) if args.rules_file else RuleLoader()
+        trusted_dirs = _trusted_rule_pack_paths(args)
+        registry = None
+        if trusted_dirs or not args.rules_file:
+            registry_dirs: list[Path | str] = [*trusted_dirs]
+            registry = PackLoader().build_registry(trusted_dirs=registry_dirs)
+
+        loader = RuleLoader(
+            Path(args.rules_file) if args.rules_file else None,
+            trusted_pack_dirs=trusted_dirs,
+            strict=True,
+        )
         rules = loader.load_rules()
-        print(f"[OK] Successfully loaded {len(rules)} rules\n")
+        print(f"[OK] Successfully loaded {len(rules)} signature rules")
+        if registry is not None:
+            trusted_count = sum(1 for pack in registry.all_packs().values() if getattr(pack, "trusted", False))
+            print(f"[OK] Successfully validated {len(registry)} manifest rules")
+            if trusted_dirs:
+                print(f"[OK] Successfully validated {trusted_count} trusted rule pack(s)")
+
+            selected_pack_blockers: list[str] = []
+            for pack_name, pack in sorted(registry.all_packs().items()):
+                report = getattr(pack, "validation_report", None)
+                if report is None or report.schema_status != "legacy":
+                    continue
+                implementation_count = report.signature_implementation_count + report.yara_implementation_count
+                print(
+                    f"[LEGACY] Bundled pack {pack_name!r}: validated exact identity and "
+                    f"declared metadata for {implementation_count} signature/YARA implementation(s); "
+                    "manifest is not schema v2"
+                )
+                for blocker in report.promotion_blockers:
+                    print(f"  [PROMOTION BLOCKER] {blocker}")
+                    selected_pack_blockers.append(f"{pack_name}: {blocker}")
+
+            if selected_pack_blockers:
+                raise ValueError(
+                    "selected rule packs have unresolved promotion blockers: " + "; ".join(selected_pack_blockers)
+                )
+
+            cel_rules: list[CelRule] = []
+            for definition in registry.all_rules().values():
+                cel_rule = getattr(definition, "cel", None)
+                if isinstance(cel_rule, CelRule):
+                    cel_rules.append(cel_rule)
+            cel_rules.sort(key=lambda rule: rule.rule_id)
+            for cel_rule in cel_rules:
+                validate_cel_expression(cel_rule.expression)
+
+            if cel_rules:
+                print(
+                    "[OK] Bounded protobuf descriptor validation passed for "
+                    f"{len(cel_rules)} CEL expression(s) (ScanFacts v1)"
+                )
+                with CelGoRuntime(cel_rules) as runtime:
+                    print(
+                        "[OK] Official cel-go compiler atomically type-checked "
+                        f"{len(cel_rules)} expression(s) with cel-go {runtime.version}"
+                    )
+            else:
+                print("[OK] No CEL expressions selected")
+        print()
         print("Rules by category:")
         for category, category_rules in loader.rules_by_category.items():
             print(f"  - {category.value}: {len(category_rules)} rules")
@@ -1068,6 +1194,21 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         help="Additional signature rule packs to enable (e.g. 'atr'). Use '--rule-packs list' to show available packs.",
     )
     parser.add_argument(
+        "--trusted-rule-pack",
+        action="append",
+        metavar="PATH",
+        help=(
+            "Path to an administrator-trusted schema-v2 rule pack. May be specified multiple times. "
+            "Trusted packs are strictly validated and may contain bounded CEL gates, signatures, and YARA rules."
+        ),
+    )
+    parser.add_argument(
+        "--cel-mode",
+        choices=[mode.value for mode in CelMode],
+        default=None,
+        help="Override the scan policy CEL mode (off, shadow, or enforce)",
+    )
+    parser.add_argument(
         "--taxonomy",
         metavar="PATH",
         help="Path to custom taxonomy JSON/YAML (overrides SKILL_SCANNER_TAXONOMY_PATH)",
@@ -1139,6 +1280,12 @@ Examples:
     # -- validate-rules ----------------------------------------------------
     vr_p = subparsers.add_parser("validate-rules", help="Validate rule signatures")
     vr_p.add_argument("--rules-file", help="Path to YAML rules file or directory (default: built-in signatures)")
+    vr_p.add_argument(
+        "--trusted-rule-pack",
+        action="append",
+        metavar="PATH",
+        help="Path to an administrator-trusted schema-v2 rule pack; may be specified multiple times",
+    )
 
     # -- generate-policy ---------------------------------------------------
     gp_p = subparsers.add_parser("generate-policy", help="Generate a default scan policy YAML")

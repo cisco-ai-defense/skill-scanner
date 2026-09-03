@@ -172,7 +172,7 @@ class TestLLMAnalyzerFailureSignal:
         assert len(failure_findings) == 1
         assert failure_findings[0].severity == Severity.INFO
         assert "connection refused" in failure_findings[0].description
-        assert failure_findings[0].analyzer == "llm_analyzer"
+        assert failure_findings[0].analyzer == "llm"
         assert analyzer.last_error == "connection refused"
 
     @pytest.mark.asyncio

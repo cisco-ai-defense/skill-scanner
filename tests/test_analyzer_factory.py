@@ -35,12 +35,12 @@ from skill_scanner.core.scan_policy import ScanPolicy
 class TestBuildCoreAnalyzers:
     """Tests for ``build_core_analyzers()``."""
 
-    def test_default_policy_returns_three_analyzers(self):
-        """Default policy enables static, bytecode, pipeline."""
+    def test_default_policy_returns_four_analyzers(self):
+        """Default policy enables static, bytecode, pipeline, and correlation."""
         policy = ScanPolicy.default()
         analyzers = build_core_analyzers(policy)
         names = sorted(a.get_name() for a in analyzers)
-        assert names == ["bytecode", "pipeline", "static_analyzer"]
+        assert names == ["bytecode", "correlation", "pipeline", "static_analyzer"]
 
     def test_disable_static(self):
         """Disabling static in policy removes StaticAnalyzer."""
@@ -76,6 +76,7 @@ class TestBuildCoreAnalyzers:
         policy.analyzers.static = False
         policy.analyzers.bytecode = False
         policy.analyzers.pipeline = False
+        policy.analyzers.correlation = False
         analyzers = build_core_analyzers(policy)
         assert analyzers == []
 
@@ -112,7 +113,7 @@ class TestBuildAnalyzers:
         policy = ScanPolicy.default()
         analyzers = build_analyzers(policy)
         names = sorted(a.get_name() for a in analyzers)
-        assert names == ["bytecode", "pipeline", "static_analyzer"]
+        assert names == ["bytecode", "correlation", "pipeline", "static_analyzer"]
 
     def test_optional_flags_extend(self):
         """Optional flags add analyzers without removing core ones."""

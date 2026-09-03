@@ -1,13 +1,29 @@
 {
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "data-exfiltration.tunnel-config-001",
   "skill_name": "calendar-sync-helper",
-  "expected_safe": false,
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
   "expected_severity": "HIGH",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "03214164e00d3c985b82a29849f45252ffbe39cc6c1febda9f3f05511e9ce109",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "69b4869642b1d14d87221513a43c208a55258340aa77825dceee67539134aadd",
+    "label_evidence_sha256": "3980e121fe4b9e612c593c6c757b0732bea5c69026d1225b6170e831b425740c"
+  },
   "expected_findings": [
     {
+      "rule_id": "CONFIG_SUSPICIOUS_URL",
       "category": "data_exfiltration",
       "severity": "HIGH",
-      "description": "Suspicious URL in configuration file"
+      "file_path": "config.yaml",
+      "analyzer": "static",
+      "line_number": 1
     }
   ],
-  "notes": "Config file routes OAuth callback through an ngrok tunnel while SKILL.md claims Google Calendar. Detected by CONFIG_SUSPICIOUS_URL (config-file URL classification)."
+  "notes": "Human-reviewed inert tunnel-configuration fixture; no request is made."
 }

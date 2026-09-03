@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "hardcoded-secrets.payment-key-001",
+  "skill_name": "embedded-payment-key",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
+  "expected_severity": "CRITICAL",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "359ae8a0519c872ac5c9f5a7c4a7fbaff3da7d23cbf6eacb37b7555d58f91708",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "label_provenance_sha256": "d3f53eb2ad5107e2da87853ef7a8b9205d3db2219b0c6d6b789090925ff3911e",
+    "label_evidence_sha256": "b96df915de46fb7cd89fb383c09ccab29fef8abdef1a8535a1da16791ffe64bc"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SECRET_STRIPE_KEY",
+      "category": "hardcoded_secrets",
+      "severity": "CRITICAL",
+      "file_path": "SKILL.md",
+      "analyzer": "static",
+      "line_number": 9
+    }
+  ],
+  "notes": "The credential-shaped value is synthetic, inert, and reserved solely for this redistributable fixture."
+}
