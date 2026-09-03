@@ -187,7 +187,14 @@ class TestLLMAnalyzerFailureSignal:
             analyzer.request_handler,
             "make_request",
             new_callable=AsyncMock,
-            return_value=json.dumps({"findings": [], "overall_assessment": "Safe", "primary_threats": []}),
+            return_value=json.dumps(
+                {
+                    "findings": [],
+                    "overall_assessment": "Safe",
+                    "verdict": "SAFE",
+                    "primary_threats": [],
+                }
+            ),
         ):
             await analyzer.analyze_async(skill)
 
