@@ -290,15 +290,15 @@ def test_status_redaction_omits_oversized_message_without_partial_output() -> No
 def test_status_printer_redacts_before_writing_machine_status(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    secret = "status-" + "token-123456789"
+    opaque_value = "status-value-123456789"
     status = _make_status_printer(Namespace(format=["json"]))
 
-    status(f"Connecting with auth_token={secret}")
+    status(f"Connecting with auth_token={opaque_value}")
 
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == "Connecting with auth_token=<redacted>\n"
-    assert secret not in captured.err
+    assert opaque_value not in captured.err
 
 
 def test_validate_rules_reports_missing_trusted_pack(capsys: pytest.CaptureFixture[str]) -> None:
