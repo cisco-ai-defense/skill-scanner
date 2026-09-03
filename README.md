@@ -45,7 +45,7 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 
 The final core + CEL development benchmark contains 5,256 malicious and 1,338
 benign MaliciousSkillBench packages. Compared with `origin/main`, the current
-scanner raised F1 from 32.92% to 47.75% and recall from 19.88% to 31.45%, while
+scanner raised F1 from 32.92% to 47.73% and recall from 19.88% to 31.43%, while
 reducing benign false-positive rate from 3.59% to 1.05%. Precision is 99.16%.
 Five CEL-shadow runs were exact and deterministic; CEL evaluated 154 candidates
 without proposing a suppression or falling back.

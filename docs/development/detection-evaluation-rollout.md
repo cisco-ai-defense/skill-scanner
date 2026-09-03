@@ -201,15 +201,15 @@ used during tuning, not a release holdout. Package-level actionable results are:
 | Non-test development tree | TP | FP | TN | FN | Precision | Recall | F1 | Benign FPR |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | `origin/main` | 1,045 | 48 | 1,290 | 4,211 | 95.61% | 19.88% | 32.92% | 3.59% |
-| Current core + CEL shadow | 1,653 | 14 | 1,324 | 3,603 | 99.16% | 31.45% | 47.75% | 1.05% |
+| Current core + CEL shadow | 1,652 | 14 | 1,324 | 3,604 | 99.16% | 31.43% | 47.73% | 1.05% |
 
-The current development result improves F1 by 14.84 percentage points
-(45.07% relative), recall by 11.57 points, and FPR by 2.54 points (70.83%
+The current development result improves F1 by 14.81 percentage points
+(45.00% relative), recall by 11.55 points, and FPR by 2.54 points (70.83%
 relative reduction). Current precision has a 98.60%-99.50% 95% Wilson interval,
 recall 30.21%-32.72%, and FPR 0.62%-1.75%. Five shadow runs produced identical
 normalized findings. CEL evaluated 154 candidates per run with zero
 would-suppress decisions and zero fallbacks. Its maximum share of scan time was
-0.0679%, and the measured shadow p95 was 2.18% above CEL-OFF. These results meet
+0.0616%, and the measured shadow p95 was 1.50% above CEL-OFF. These results meet
 the determinism and measured latency bounds, but they do not establish
 suppression quality because no candidate was suppressed.
 

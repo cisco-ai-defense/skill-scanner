@@ -38,6 +38,7 @@ from ..static_analysis.javascript_tokens import (
 )
 from ..static_analysis.javascript_tokens import (
     javascript_token_prefix,
+    tokenize_javascript,
 )
 
 RULE_ID = "ACTIVE_DYNAMIC_EXECUTION"
@@ -155,6 +156,228 @@ class _ExecutionCall:
     line_number: int
     snippet: str
     context_kind: Literal["active_instruction", "code"]
+
+
+@dataclass(slots=True, eq=False)
+class _PythonLexicalScope:
+    """The bounded subset of Python lexical scope needed for ``eval``/``exec``."""
+
+    kind: Literal["module", "function", "lambda", "class", "comprehension"]
+    parent: _PythonLexicalScope | None
+    bindings: dict[str, set[str]]
+    globals: set[str]
+    nonlocals: set[str]
+
+
+class _PythonScopeBuilder(ast.NodeVisitor):
+    """Associate calls with scopes without flattening nested bindings.
+
+    Python's compiler determines function-local bindings for the whole scope,
+    so binding order is intentionally irrelevant here.  Module and class
+    scopes retain that conservative behavior to avoid treating a locally
+    rebound builtin as executable code.
+    """
+
+    def __init__(self) -> None:
+        self.root = _PythonLexicalScope("module", None, {}, set(), set())
+        self.current = self.root
+        self.call_scopes: dict[ast.Call, _PythonLexicalScope] = {}
+
+    def _bind(self, name: str, kind: str = "shadow") -> None:
+        if name in {"eval", "exec"}:
+            self.current.bindings.setdefault(name, set()).add(kind)
+
+    def _bind_target(self, target: ast.AST, *, scope: _PythonLexicalScope | None = None) -> None:
+        previous = self.current
+        if scope is not None:
+            self.current = scope
+        try:
+            for child in ast.walk(target):
+                if isinstance(child, ast.Name) and child.id in {"eval", "exec"}:
+                    self._bind(child.id)
+        finally:
+            self.current = previous
+
+    def _visit_arguments_in_outer_scope(self, arguments: ast.arguments) -> None:
+        for default in arguments.defaults:
+            self.visit(default)
+        for keyword_default in arguments.kw_defaults:
+            if keyword_default is not None:
+                self.visit(keyword_default)
+        for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]:
+            if argument.annotation is not None:
+                self.visit(argument.annotation)
+        if arguments.vararg is not None and arguments.vararg.annotation is not None:
+            self.visit(arguments.vararg.annotation)
+        if arguments.kwarg is not None and arguments.kwarg.annotation is not None:
+            self.visit(arguments.kwarg.annotation)
+
+    @staticmethod
+    def _argument_names(arguments: ast.arguments) -> list[str]:
+        names = [argument.arg for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]]
+        if arguments.vararg is not None:
+            names.append(arguments.vararg.arg)
+        if arguments.kwarg is not None:
+            names.append(arguments.kwarg.arg)
+        return names
+
+    def _visit_function(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+    ) -> None:
+        self._bind(node.name)
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        self._visit_arguments_in_outer_scope(node.args)
+        if node.returns is not None:
+            self.visit(node.returns)
+        for type_parameter in getattr(node, "type_params", ()):
+            self.visit(type_parameter)
+
+        parent = self.current
+        self.current = _PythonLexicalScope("function", parent, {}, set(), set())
+        try:
+            for name in self._argument_names(node.args):
+                self._bind(name)
+            for statement in node.body:
+                self.visit(statement)
+        finally:
+            self.current = parent
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+        self._visit_function(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:  # noqa: N802
+        self._visit_arguments_in_outer_scope(node.args)
+        parent = self.current
+        self.current = _PythonLexicalScope("lambda", parent, {}, set(), set())
+        try:
+            for name in self._argument_names(node.args):
+                self._bind(name)
+            self.visit(node.body)
+        finally:
+            self.current = parent
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
+        self._bind(node.name)
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        for type_parameter in getattr(node, "type_params", ()):
+            self.visit(type_parameter)
+
+        parent = self.current
+        self.current = _PythonLexicalScope("class", parent, {}, set(), set())
+        try:
+            for statement in node.body:
+                self.visit(statement)
+        finally:
+            self.current = parent
+
+    def _visit_comprehension_expression(
+        self,
+        generators: list[ast.comprehension],
+        values: tuple[ast.expr, ...],
+    ) -> None:
+        if not generators:
+            for value in values:
+                self.visit(value)
+            return
+
+        # Python evaluates the first iterable in the enclosing scope.  The
+        # targets, filters, subsequent iterables, and result run in the hidden
+        # comprehension scope.
+        self.visit(generators[0].iter)
+        parent = self.current
+        self.current = _PythonLexicalScope("comprehension", parent, {}, set(), set())
+        try:
+            first = generators[0]
+            self._bind_target(first.target)
+            for condition in first.ifs:
+                self.visit(condition)
+            for generator in generators[1:]:
+                self.visit(generator.iter)
+                self._bind_target(generator.target)
+                for condition in generator.ifs:
+                    self.visit(condition)
+            for value in values:
+                self.visit(value)
+        finally:
+            self.current = parent
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:  # noqa: N802
+        self._visit_comprehension_expression(node.generators, (node.elt,))
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:  # noqa: N802
+        self._visit_comprehension_expression(node.generators, (node.elt,))
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:  # noqa: N802
+        self._visit_comprehension_expression(node.generators, (node.elt,))
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:  # noqa: N802
+        self._visit_comprehension_expression(node.generators, (node.key, node.value))
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:  # noqa: N802
+        # Assignment expressions in comprehensions bind in the nearest
+        # containing non-comprehension scope.
+        target_scope = self.current
+        while target_scope.kind == "comprehension" and target_scope.parent is not None:
+            target_scope = target_scope.parent
+        self._bind_target(node.target, scope=target_scope)
+        self.visit(node.value)
+
+    def visit_Name(self, node: ast.Name) -> None:  # noqa: N802
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self._bind(node.id)
+
+    def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
+        for alias in node.names:
+            self._bind(alias.asname or alias.name.split(".", 1)[0])
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
+        for alias in node.names:
+            local_name = alias.asname or alias.name
+            kind = f"builtin:{alias.name}" if node.module == "builtins" else "shadow"
+            self._bind(local_name, kind)
+
+    def visit_Global(self, node: ast.Global) -> None:  # noqa: N802
+        self.current.globals.update(name for name in node.names if name in {"eval", "exec"})
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:  # noqa: N802
+        self.current.nonlocals.update(name for name in node.names if name in {"eval", "exec"})
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:  # noqa: N802
+        if node.type is not None:
+            self.visit(node.type)
+        if node.name is not None:
+            self._bind(node.name)
+        for statement in node.body:
+            self.visit(statement)
+
+    def visit_MatchAs(self, node: ast.MatchAs) -> None:  # noqa: N802
+        if node.name is not None:
+            self._bind(node.name)
+        if node.pattern is not None:
+            self.visit(node.pattern)
+
+    def visit_MatchStar(self, node: ast.MatchStar) -> None:  # noqa: N802
+        if node.name is not None:
+            self._bind(node.name)
+
+    def visit_MatchMapping(self, node: ast.MatchMapping) -> None:  # noqa: N802
+        if node.rest is not None:
+            self._bind(node.rest)
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+        self.call_scopes[node] = self.current
+        self.generic_visit(node)
 
 
 def _section_kind(title: str) -> Literal["active", "example", "negative"]:
@@ -276,10 +499,9 @@ def _ast_within_budget(source: str) -> ast.AST | None:
     return tree
 
 
-def _python_imports(tree: ast.AST) -> tuple[dict[str, str], dict[str, str], set[str]]:
+def _python_imports(tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
     modules: dict[str, str] = {"builtins": "builtins", "os": "os", "subprocess": "subprocess"}
     functions: dict[str, str] = {}
-    shadowed_builtins: set[str] = set()
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -290,35 +512,61 @@ def _python_imports(tree: ast.AST) -> tuple[dict[str, str], dict[str, str], set[
             for alias in node.names:
                 local_name = alias.asname or alias.name
                 functions[local_name] = f"{node.module}.{alias.name}"
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in {"eval", "exec"}:
-            shadowed_builtins.add(node.name)
-        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                for child in ast.walk(target):
-                    if isinstance(child, ast.Name) and child.id in {"eval", "exec"}:
-                        shadowed_builtins.add(child.id)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            arguments = node.args
-            for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]:
-                if argument.arg in {"eval", "exec"}:
-                    shadowed_builtins.add(argument.arg)
-            if arguments.vararg and arguments.vararg.arg in {"eval", "exec"}:
-                shadowed_builtins.add(arguments.vararg.arg)
-            if arguments.kwarg and arguments.kwarg.arg in {"eval", "exec"}:
-                shadowed_builtins.add(arguments.kwarg.arg)
-    return modules, functions, shadowed_builtins
+    return modules, functions
+
+
+def _python_lookup_parent(scope: _PythonLexicalScope) -> _PythonLexicalScope | None:
+    """Return the next scope used by Python's lexical name lookup."""
+
+    parent = scope.parent
+    if scope.kind in {"function", "lambda", "comprehension"}:
+        # Function-like scopes do not close over an intervening class namespace.
+        while parent is not None and parent.kind == "class":
+            parent = parent.parent
+    return parent
+
+
+def _python_builtin_binding(scope: _PythonLexicalScope, name: str) -> str | None:
+    """Resolve a direct ``eval``/``exec`` name to its builtin API, if any."""
+
+    root = scope
+    while root.parent is not None:
+        root = root.parent
+
+    current: _PythonLexicalScope | None = scope
+    visited_global = False
+    while current is not None:
+        if current.kind != "module" and name in current.globals:
+            if visited_global:
+                return name
+            current = root
+            visited_global = True
+            continue
+        if name in current.nonlocals:
+            current = _python_lookup_parent(current)
+            continue
+
+        bindings = current.bindings.get(name)
+        if bindings:
+            if len(bindings) == 1:
+                binding = next(iter(bindings))
+                if binding.startswith("builtin:"):
+                    return binding.removeprefix("builtin:")
+            return None
+        current = _python_lookup_parent(current)
+    return name
 
 
 def _python_api_class(
     function: ast.expr,
     modules: dict[str, str],
     functions: dict[str, str],
-    shadowed_builtins: set[str],
+    scope: _PythonLexicalScope,
 ) -> str | None:
     if isinstance(function, ast.Name):
-        if function.id in {"eval", "exec"} and function.id not in shadowed_builtins:
-            return f"python_{function.id}"
+        if function.id in {"eval", "exec"}:
+            builtin = _python_builtin_binding(scope, function.id)
+            return f"python_{builtin}" if builtin in {"eval", "exec"} else None
         imported = functions.get(function.id)
         if imported == "os.system":
             return "python_os_system"
@@ -344,12 +592,14 @@ def _python_execution_calls(source: str) -> list[tuple[str, int]]:
     tree = _ast_within_budget(source)
     if tree is None:
         return []
-    modules, functions, shadowed_builtins = _python_imports(tree)
+    modules, functions = _python_imports(tree)
+    scopes = _PythonScopeBuilder()
+    scopes.visit(tree)
     calls: list[tuple[str, int]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        api_class = _python_api_class(node.func, modules, functions, shadowed_builtins)
+        api_class = _python_api_class(node.func, modules, functions, scopes.call_scopes[node])
         if api_class is not None:
             calls.append((api_class, max(1, node.lineno)))
             if len(calls) >= MAX_DETECTIONS:
@@ -462,9 +712,10 @@ def _javascript_bindings(tokens: list[_JsToken]) -> tuple[set[str], dict[str, st
 
 
 def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
-    tokens = _lex_javascript(source)
-    if len(tokens) >= MAX_JS_TOKENS:
+    tokenization = tokenize_javascript(source, max_tokens=MAX_JS_TOKENS)
+    if not tokenization.complete:
         return []
+    tokens = list(tokenization.tokens)
     namespaces, functions, shadowed_eval = _javascript_bindings(tokens)
     calls: list[tuple[str, int]] = []
 

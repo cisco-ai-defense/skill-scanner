@@ -102,6 +102,99 @@ cp.exec(command);
     assert finding.metadata["api_classes"] == sorted(call.api_class for call in calls)
 
 
+def test_javascript_template_substitutions_detect_reviewed_execution_apis(tmp_path: Path) -> None:
+    skill = _skill(
+        tmp_path,
+        """# Usage
+
+```javascript
+const cp = require("node:child_process");
+const dynamic = `result: ${eval(payload)}`;
+const process = `result: ${cp.exec(command)}`;
+```
+""",
+    )
+
+    calls = find_active_dynamic_execution(skill)
+
+    assert [(call.api_class, call.line_number) for call in calls] == [
+        ("javascript_eval", 5),
+        ("javascript_child_process", 6),
+    ]
+    assert len(check_active_dynamic_execution(skill)) == 1
+
+
+def test_nested_template_substitution_detects_execution_once(tmp_path: Path) -> None:
+    skill = _skill(
+        tmp_path,
+        """# Usage
+
+```javascript
+const result = `outer ${({
+  close: "}",
+  nested: `inner ${eval(payload)}`,
+  rx: /}/,
+  value: /* } */ payload,
+})}`;
+```
+""",
+    )
+
+    calls = find_active_dynamic_execution(skill)
+
+    assert [(call.api_class, call.line_number) for call in calls] == [("javascript_eval", 6)]
+
+
+def test_template_literal_text_and_expression_boundaries_remain_inert(tmp_path: Path) -> None:
+    skill = _skill(
+        tmp_path,
+        r"""# Usage
+
+```javascript
+const literal = `eval(payload)`;
+const escaped = `\${eval(payload)}`;
+const quoted = `${"eval(payload)"}`;
+const split = `${eval}${(payload)}`;
+const regex = `${/eval(payload)/.test(value)}`;
+eval`${(payload)}`;
+eval`literal text`(payload);
+```
+""",
+    )
+
+    assert find_active_dynamic_execution(skill) == []
+
+
+def test_shadowed_eval_in_template_substitution_remains_inert(tmp_path: Path) -> None:
+    skill = _skill(
+        tmp_path,
+        """# Usage
+
+```javascript
+const eval = value => value;
+const rendered = `${eval(payload)}`;
+```
+""",
+    )
+
+    assert find_active_dynamic_execution(skill) == []
+
+
+def test_malformed_template_substitution_declines_partial_execution(tmp_path: Path) -> None:
+    skill = _skill(
+        tmp_path,
+        """# Usage
+
+```javascript
+const rendered = `${eval(payload)};
+```
+""",
+    )
+
+    assert find_active_dynamic_execution(skill) == []
+    assert check_active_dynamic_execution(skill) == []
+
+
 def test_active_inline_instruction_requires_actionable_code_context(tmp_path: Path) -> None:
     actionable = _skill(tmp_path, "# Usage\nUse `os.system(command)` to launch the selected program.\n")
     assert [call.api_class for call in find_active_dynamic_execution(actionable)] == ["python_os_system"]
@@ -150,6 +243,102 @@ eval(payload);
 
     assert find_active_dynamic_execution(skill) == []
     assert check_active_dynamic_execution(skill) == []
+
+
+def test_nested_parameter_shadowing_does_not_hide_outer_builtin_calls(tmp_path: Path) -> None:
+    skill = _skill(
+        tmp_path,
+        """# Usage
+```python
+eval(top_level_payload)
+exec(top_level_source)
+
+def delegated(eval):
+    eval(local_payload)
+
+    def nested(exec):
+        exec(local_source)
+
+    return lambda eval: eval(local_payload)
+
+eval(later_payload)
+exec(later_source)
+```
+""",
+    )
+
+    calls = find_active_dynamic_execution(skill)
+
+    assert [(call.api_class, call.snippet) for call in calls] == [
+        ("python_eval", "eval(top_level_payload)"),
+        ("python_exec", "exec(top_level_source)"),
+        ("python_eval", "eval(later_payload)"),
+        ("python_exec", "exec(later_source)"),
+    ]
+
+
+def test_unshadowed_nested_calls_and_outer_default_expression_remain_detectable(tmp_path: Path) -> None:
+    skill = _skill(
+        tmp_path,
+        """# Usage
+```python
+def outer(value=eval(default_payload)):
+    eval(function_payload)
+
+    def inner():
+        exec(nested_source)
+
+    return [eval(item) for item in payloads]
+```
+""",
+    )
+
+    assert [call.api_class for call in find_active_dynamic_execution(skill)] == [
+        "python_eval",
+        "python_eval",
+        "python_exec",
+        "python_eval",
+    ]
+
+
+def test_lexically_shadowed_function_lambda_and_comprehension_calls_are_ignored(tmp_path: Path) -> None:
+    skill = _skill(
+        tmp_path,
+        """# Usage
+```python
+def parameter_shadow(eval):
+    eval(payload)
+
+def assignment_shadow():
+    exec = dispatch
+    exec(source)
+
+lambda_shadow = lambda eval: eval(payload)
+evaluated = [eval(payload) for eval in evaluators]
+executed = {exec(source) for exec in executors}
+```
+""",
+    )
+
+    assert find_active_dynamic_execution(skill) == []
+
+
+def test_comprehension_target_shadow_is_confined_to_hidden_scope(tmp_path: Path) -> None:
+    skill = _skill(
+        tmp_path,
+        """# Usage
+```python
+evaluated = [eval(payload) for eval in evaluators]
+eval(after_comprehension)
+values = [item for item in exec(source_iterable)]
+```
+""",
+    )
+
+    assert [(call.api_class, call.snippet) for call in find_active_dynamic_execution(skill)] == [
+        ("python_eval", "eval(after_comprehension)"),
+        ("python_exec", "values = [item for item in exec(source_iterable)]"),
+    ]
 
 
 def test_long_coordinated_prohibition_is_parsed_without_regex_backtracking() -> None:
@@ -324,7 +513,7 @@ def test_aggregate_development_evidence_is_hash_bound_to_rule_and_dataset_lock()
         "normalization": (
             "ordered sample identity/label/calls(api_class,language,line,context), canonical compact sorted-key JSON"
         ),
-        "normalized_output_sha256": "10b3635a0f21c7006ad035e1747e4a81c568cf083596e8fa9af7ed3500eec5b5",
+        "normalized_output_sha256": "65d2ba329f4c8ed004d74b9a4888ec05984071c4ab75b1f51aeadbe033e39b46",
     }
     assert "benchmark_id" not in fixture.read_text(encoding="utf-8")
 

@@ -18,9 +18,11 @@
 
 This deliberately small lexer recognizes only the token classes needed by the
 repository's syntax-aware detectors.  It never executes code and deliberately
-skips comments, template contents, and regular-expression contents.  Callers
-that need fail-open behavior can inspect ``complete`` and ``error_codes``;
-the compatibility helper returns the same token prefix as the original lexer.
+skips comments, template literal text, and regular-expression contents.  The
+executable expressions inside template substitutions are tokenized recursively
+after the complete template structure has been validated.  Callers that need
+fail-open behavior can inspect ``complete`` and ``error_codes``; the
+compatibility helper returns the same bounded token prefix.
 """
 
 from __future__ import annotations
@@ -30,6 +32,8 @@ from typing import Literal
 
 MAX_JAVASCRIPT_TOKENS = 16_384
 MAX_JAVASCRIPT_STRING_CHARS = 256
+MAX_JAVASCRIPT_TEMPLATE_DEPTH = 64
+_TEMPLATE_BOUNDARY = "/template/"
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,8 +72,6 @@ def tokenize_javascript(
 
     tokens: list[JavascriptToken] = []
     errors: list[str] = []
-    index = 0
-    line = 1
     length = len(source)
 
     def append(
@@ -83,106 +85,259 @@ def tokenize_javascript(
             return True
         return False
 
-    while index < length and len(tokens) < max_tokens:
-        character = source[index]
-        if character.isspace():
-            if character == "\n":
-                line += 1
-            index += 1
-            continue
-        if source.startswith("//", index):
-            newline = source.find("\n", index + 2)
-            if newline < 0:
-                index = length
-                break
-            line += 1
-            index = newline + 1
-            continue
-        if source.startswith("/*", index):
-            end = source.find("*/", index + 2)
-            if end < 0:
-                errors.append("JS_UNCLOSED_COMMENT")
-                index = length
-                break
-            line += source.count("\n", index, end + 2)
-            index = end + 2
-            continue
-        if character in {"'", '"', "`"}:
-            quote = character
-            token_line = line
-            index += 1
-            value: list[str] = []
-            closed = False
-            while index < length:
-                current = source[index]
-                if current == "\\":
-                    if index + 1 < length:
-                        escaped = source[index + 1]
-                        if quote != "`":
-                            value.append(escaped)
-                        line += int(escaped == "\n")
-                        index += 2
-                        continue
-                    index += 1
-                    break
-                if current == quote:
-                    index += 1
-                    closed = True
-                    break
-                if current == "\n":
-                    line += 1
-                if quote != "`" and len(value) < MAX_JAVASCRIPT_STRING_CHARS:
-                    value.append(current)
-                index += 1
-            if not closed:
-                errors.append("JS_UNCLOSED_TEMPLATE" if quote == "`" else "JS_UNCLOSED_STRING")
-            if quote != "`" and append("string", "".join(value), token_line):
-                break
-            continue
-        if character.isalpha() or character in {"_", "$"}:
-            token_line = line
-            end = index + 1
-            while end < length and (source[end].isalnum() or source[end] in {"_", "$"}):
-                end += 1
-            if append("identifier", source[index:end], token_line):
-                break
-            index = end
-            continue
-        if character == "/" and (not tokens or tokens[-1].value in {"(", "=", "[", "{", ",", ";", ":"}):
-            # Best-effort regex-literal skipping prevents text such as
-            # /eval\(/ from becoming a call token. Division remains ordinary
-            # punctuation, exactly as in the original bounded lexer.
-            token_line = line
-            index += 1
-            in_class = False
-            closed = False
-            while index < length:
-                current = source[index]
-                if current == "\\":
-                    index += 2
+    def record_error(code: str) -> None:
+        if code not in errors:
+            errors.append(code)
+
+    def skip_quoted(position: int, end: int, quote: str, current_line: int) -> tuple[int, int, bool]:
+        position += 1
+        while position < end:
+            character = source[position]
+            if character == "\\":
+                if position + 1 < end:
+                    current_line += int(source[position + 1] == "\n")
+                    position += 2
                     continue
-                if current == "\n":
-                    line += 1
-                    break
-                if current == "[":
-                    in_class = True
-                elif current == "]":
-                    in_class = False
-                elif current == "/" and not in_class:
-                    index += 1
-                    while index < length and source[index].isalpha():
-                        index += 1
-                    closed = True
-                    break
-                index += 1
-            if not closed:
-                errors.append("JS_UNCLOSED_REGEX")
-            if append("punctuation", "/regex/", token_line):
-                break
-            continue
-        if append("punctuation", character, line):
-            break
-        index += 1
+                return end, current_line, False
+            if character == quote:
+                return position + 1, current_line, True
+            current_line += int(character == "\n")
+            position += 1
+        return end, current_line, False
+
+    def skip_regex(position: int, end: int, current_line: int) -> tuple[int, int, bool]:
+        position += 1
+        in_class = False
+        while position < end:
+            character = source[position]
+            if character == "\\":
+                position = min(end, position + 2)
+                continue
+            if character == "\n":
+                return position + 1, current_line + 1, False
+            if character == "[":
+                in_class = True
+            elif character == "]":
+                in_class = False
+            elif character == "/" and not in_class:
+                position += 1
+                while position < end and source[position].isalpha():
+                    position += 1
+                return position, current_line, True
+            position += 1
+        return end, current_line, False
+
+    def can_start_regex(position: int, start: int) -> bool:
+        previous = position - 1
+        while previous >= start and source[previous].isspace():
+            previous -= 1
+        return previous < start or source[previous] in "([={,;:"
+
+    def template_expression_end(
+        start: int,
+        end: int,
+        start_line: int,
+        template_depth: int,
+    ) -> tuple[int, int, str | None]:
+        brace_depth = 0
+        position = start
+        current_line = start_line
+        while position < end:
+            character = source[position]
+            if character in {"'", '"'}:
+                position, current_line, closed = skip_quoted(position, end, character, current_line)
+                if not closed:
+                    return end, current_line, "JS_UNCLOSED_STRING"
+                continue
+            if source.startswith("//", position):
+                newline = source.find("\n", position + 2, end)
+                if newline < 0:
+                    return end, current_line, "JS_UNCLOSED_TEMPLATE_EXPRESSION"
+                position = newline + 1
+                current_line += 1
+                continue
+            if source.startswith("/*", position):
+                closing = source.find("*/", position + 2, end)
+                if closing < 0:
+                    return end, current_line, "JS_UNCLOSED_COMMENT"
+                current_line += source.count("\n", position, closing + 2)
+                position = closing + 2
+                continue
+            if character == "`":
+                position, current_line, _spans, error = parse_template(
+                    position,
+                    end,
+                    current_line,
+                    template_depth + 1,
+                    collect_spans=False,
+                )
+                if error is not None:
+                    return end, current_line, error
+                continue
+            if character == "/" and can_start_regex(position, start):
+                position, current_line, closed = skip_regex(position, end, current_line)
+                if not closed:
+                    return end, current_line, "JS_UNCLOSED_REGEX"
+                continue
+            if character == "{":
+                brace_depth += 1
+            elif character == "}":
+                if brace_depth == 0:
+                    return position, current_line, None
+                brace_depth -= 1
+            current_line += int(character == "\n")
+            position += 1
+        return end, current_line, "JS_UNCLOSED_TEMPLATE_EXPRESSION"
+
+    def parse_template(
+        start: int,
+        end: int,
+        start_line: int,
+        template_depth: int,
+        *,
+        collect_spans: bool = True,
+    ) -> tuple[int, int, list[tuple[int, int, int]], str | None]:
+        if template_depth > MAX_JAVASCRIPT_TEMPLATE_DEPTH:
+            return end, start_line, [], "JS_TEMPLATE_DEPTH_LIMIT"
+
+        spans: list[tuple[int, int, int]] = []
+        position = start + 1
+        current_line = start_line
+        while position < end:
+            character = source[position]
+            if character == "\\":
+                if position + 1 >= end:
+                    return end, current_line, [], "JS_UNCLOSED_TEMPLATE"
+                current_line += int(source[position + 1] == "\n")
+                position += 2
+                continue
+            if character == "`":
+                return position + 1, current_line, spans, None
+            if source.startswith("${", position):
+                expression_start = position + 2
+                expression_line = current_line
+                closing, current_line, error = template_expression_end(
+                    expression_start,
+                    end,
+                    expression_line,
+                    template_depth,
+                )
+                if error is not None:
+                    return end, current_line, [], error
+                if collect_spans:
+                    spans.append((expression_start, closing, expression_line))
+                position = closing + 1
+                continue
+            current_line += int(character == "\n")
+            position += 1
+        return end, current_line, [], "JS_UNCLOSED_TEMPLATE"
+
+    def lex_region(start: int, end: int, start_line: int, template_depth: int) -> bool:
+        position = start
+        current_line = start_line
+        region_token_start = len(tokens)
+        while position < end and len(tokens) < max_tokens:
+            character = source[position]
+            if character.isspace():
+                current_line += int(character == "\n")
+                position += 1
+                continue
+            if source.startswith("//", position):
+                newline = source.find("\n", position + 2, end)
+                if newline < 0:
+                    return True
+                current_line += 1
+                position = newline + 1
+                continue
+            if source.startswith("/*", position):
+                closing = source.find("*/", position + 2, end)
+                if closing < 0:
+                    record_error("JS_UNCLOSED_COMMENT")
+                    return True
+                current_line += source.count("\n", position, closing + 2)
+                position = closing + 2
+                continue
+            if character in {"'", '"'}:
+                token_line = current_line
+                quote = character
+                value: list[str] = []
+                position += 1
+                closed = False
+                while position < end:
+                    current = source[position]
+                    if current == "\\":
+                        if position + 1 < end:
+                            escaped = source[position + 1]
+                            value.append(escaped)
+                            current_line += int(escaped == "\n")
+                            position += 2
+                            continue
+                        position += 1
+                        break
+                    if current == quote:
+                        position += 1
+                        closed = True
+                        break
+                    current_line += int(current == "\n")
+                    if len(value) < MAX_JAVASCRIPT_STRING_CHARS:
+                        value.append(current)
+                    position += 1
+                if not closed:
+                    record_error("JS_UNCLOSED_STRING")
+                if append("string", "".join(value), token_line):
+                    return False
+                continue
+            if character == "`":
+                following, following_line, spans, error = parse_template(
+                    position,
+                    end,
+                    current_line,
+                    template_depth + 1,
+                )
+                if error is not None:
+                    record_error(error)
+                    return True
+                # Structural sentinels keep separately evaluated substitutions
+                # from synthesizing a call across a template boundary, e.g.
+                # `${eval}${(payload)}` or eval`${(payload)}`.
+                if append("punctuation", _TEMPLATE_BOUNDARY, current_line):
+                    return False
+                for expression_start, expression_end, expression_line in spans:
+                    if not lex_region(expression_start, expression_end, expression_line, template_depth + 1):
+                        return False
+                    if append("punctuation", _TEMPLATE_BOUNDARY, expression_line):
+                        return False
+                position = following
+                current_line = following_line
+                continue
+            if character.isalpha() or character in {"_", "$"}:
+                token_line = current_line
+                following = position + 1
+                while following < end and (source[following].isalnum() or source[following] in {"_", "$"}):
+                    following += 1
+                if append("identifier", source[position:following], token_line):
+                    return False
+                position = following
+                continue
+            if character == "/" and (
+                len(tokens) == region_token_start or tokens[-1].value in {"(", "=", "[", "{", ",", ";", ":"}
+            ):
+                # Best-effort regex-literal skipping prevents text such as
+                # /eval\(/ from becoming a call token. Division remains
+                # ordinary punctuation, as in the original bounded lexer.
+                token_line = current_line
+                position, current_line, closed = skip_regex(position, end, current_line)
+                if not closed:
+                    record_error("JS_UNCLOSED_REGEX")
+                if append("punctuation", "/regex/", token_line):
+                    return False
+                continue
+            if append("punctuation", character, current_line):
+                return False
+            position += 1
+        return len(tokens) < max_tokens
+
+    lex_region(0, length, 1, 0)
 
     return JavascriptTokenization(tuple(tokens), not errors, tuple(dict.fromkeys(errors)))
 
@@ -201,6 +356,7 @@ __all__ = [
     "JavascriptToken",
     "JavascriptTokenization",
     "MAX_JAVASCRIPT_STRING_CHARS",
+    "MAX_JAVASCRIPT_TEMPLATE_DEPTH",
     "MAX_JAVASCRIPT_TOKENS",
     "javascript_token_prefix",
     "tokenize_javascript",
