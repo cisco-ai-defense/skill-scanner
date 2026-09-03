@@ -52,6 +52,8 @@ MAX_FENCED_BLOCKS = 512
 MAX_BLOCK_BYTES = 128 * 1024
 MAX_AST_NODES = 8_192
 MAX_JS_TOKENS = 16_384
+MAX_JS_SCOPE_DEPTH = 64
+MAX_JS_SCOPES = 1_024
 MAX_DETECTIONS = 64
 MAX_INLINE_CHARS = 4_096
 
@@ -613,10 +615,518 @@ def _lex_javascript(source: str) -> list[_JsToken]:
     return javascript_token_prefix(source, max_tokens=MAX_JS_TOKENS)
 
 
-def _javascript_bindings(tokens: list[_JsToken]) -> tuple[set[str], dict[str, str], set[str]]:
+@dataclass(slots=True)
+class _JavascriptLexicalScope:
+    parent: int | None
+    kind: Literal["module", "block", "function", "class", "catch"]
+    shadows_eval: bool = False
+
+
+@dataclass(slots=True)
+class _JavascriptEvalScopeMap:
+    scopes: list[_JavascriptLexicalScope]
+    token_scopes: list[int]
+    declarations: set[int]
+    range_shadows: list[bool]
+
+    def is_shadowed(self, token_index: int) -> bool:
+        if token_index in self.declarations:
+            return True
+        if self.range_shadows[token_index]:
+            return True
+
+        scope_index: int | None = self.token_scopes[token_index]
+        while scope_index is not None:
+            scope = self.scopes[scope_index]
+            if scope.shadows_eval:
+                return True
+            scope_index = scope.parent
+        return False
+
+
+def _javascript_delimiter_pairs(tokens: list[_JsToken]) -> dict[int, int] | None:
+    opening_to_closing = {"(": ")", "[": "]", "{": "}"}
+    closing_to_opening = {closing: opening for opening, closing in opening_to_closing.items()}
+    stack: list[tuple[str, int]] = []
+    pairs: dict[int, int] = {}
+    for index, token in enumerate(tokens):
+        if token.kind != "punctuation":
+            continue
+        if token.value in opening_to_closing:
+            if len(stack) >= MAX_JS_SCOPE_DEPTH:
+                return None
+            stack.append((token.value, index))
+            continue
+        opening = closing_to_opening.get(token.value)
+        if opening is None:
+            continue
+        if not stack or stack[-1][0] != opening:
+            return None
+        _value, opening_index = stack.pop()
+        pairs[opening_index] = index
+        pairs[index] = opening_index
+    return pairs if not stack else None
+
+
+def _javascript_binding_pattern_shadows_eval(
+    tokens: list[_JsToken],
+    start: int,
+    end: int,
+    pairs: dict[int, int],
+) -> bool:
+    while start < end and tokens[start].value == ".":
+        start += 1
+    if start >= end:
+        return False
+    if tokens[start].kind == "identifier":
+        return tokens[start].value == "eval"
+    if tokens[start].value not in {"[", "{"}:
+        return False
+
+    closing = pairs.get(start)
+    if closing is None or closing >= end:
+        return False
+    is_object = tokens[start].value == "{"
+    segment_start = start + 1
+    position = segment_start
+    while position <= closing:
+        at_end = position == closing
+        if not at_end and tokens[position].kind == "punctuation" and tokens[position].value in {"(", "[", "{"}:
+            nested_closing = pairs.get(position)
+            if nested_closing is None or nested_closing > closing:
+                return False
+            position = nested_closing + 1
+            continue
+        if at_end or (tokens[position].kind == "punctuation" and tokens[position].value == ","):
+            segment_end = position
+            separator = segment_start
+            while separator < segment_end:
+                if tokens[separator].kind == "punctuation" and tokens[separator].value in {"(", "[", "{"}:
+                    nested_closing = pairs.get(separator)
+                    if nested_closing is None or nested_closing > segment_end:
+                        return False
+                    separator = nested_closing + 1
+                    continue
+                if tokens[separator].kind == "punctuation" and tokens[separator].value == "=":
+                    segment_end = separator
+                    break
+                if is_object and tokens[separator].kind == "punctuation" and tokens[separator].value == ":":
+                    segment_start = separator + 1
+                    break
+                separator += 1
+            if _javascript_binding_pattern_shadows_eval(tokens, segment_start, segment_end, pairs):
+                return True
+            segment_start = position + 1
+        position += 1
+    return False
+
+
+def _javascript_parameter_shadows_eval(
+    tokens: list[_JsToken],
+    opening: int,
+    closing: int,
+    pairs: dict[int, int],
+) -> bool:
+    """Recognize bounded ``eval`` parameter bindings, excluding defaults."""
+
+    position = opening + 1
+    segment_start = position
+    while position <= closing:
+        at_end = position == closing
+        if not at_end and tokens[position].kind == "punctuation" and tokens[position].value in {"(", "[", "{"}:
+            nested_closing = pairs.get(position)
+            if nested_closing is None or nested_closing > closing:
+                return False
+            position = nested_closing + 1
+            continue
+        if at_end or (tokens[position].kind == "punctuation" and tokens[position].value == ","):
+            segment_end = position
+            default = segment_start
+            while default < segment_end:
+                if tokens[default].kind == "punctuation" and tokens[default].value in {"(", "[", "{"}:
+                    nested_closing = pairs.get(default)
+                    if nested_closing is None or nested_closing > segment_end:
+                        return False
+                    default = nested_closing + 1
+                    continue
+                if tokens[default].kind == "punctuation" and tokens[default].value == "=":
+                    segment_end = default
+                    break
+                default += 1
+            if _javascript_binding_pattern_shadows_eval(tokens, segment_start, segment_end, pairs):
+                return True
+            segment_start = position + 1
+        position += 1
+    return False
+
+
+def _javascript_expression_end(tokens: list[_JsToken], start: int, pairs: dict[int, int]) -> int:
+    position = start
+    count = len(tokens)
+    while position < count:
+        token = tokens[position]
+        if position > start and token.line > tokens[position - 1].line:
+            previous = tokens[position - 1]
+            previous_can_end = previous.kind in {"identifier", "string"} or previous.value in {
+                ")",
+                "]",
+                "}",
+            }
+            next_can_start = token.kind in {"identifier", "string"} or token.value == "{"
+            if previous_can_end and next_can_start:
+                return position
+        value = token.value
+        if token.kind == "punctuation" and value in {"(", "[", "{"}:
+            closing = pairs.get(position)
+            if closing is None:
+                return count
+            position = closing + 1
+            continue
+        if token.kind == "punctuation" and value in {",", ";", ")", "]", "}", "/template/"}:
+            return position
+        position += 1
+    return count
+
+
+def _javascript_for_binding_range(
+    tokens: list[_JsToken],
+    declaration: int,
+    pairs: dict[int, int],
+) -> tuple[int, int] | None:
+    def is_for_header(opening: int) -> bool:
+        previous = opening - 1
+        if previous >= 0 and tokens[previous].value == "for":
+            return True
+        return previous >= 1 and tokens[previous].value == "await" and tokens[previous - 1].value == "for"
+
+    def nested_for_end(start: int) -> int:
+        position = start
+        for _depth in range(MAX_JS_SCOPE_DEPTH):
+            if position >= len(tokens):
+                return len(tokens)
+            if tokens[position].value == "{" and (closing := pairs.get(position)) is not None:
+                return closing + 1
+            if tokens[position].value != "for":
+                return _javascript_expression_end(tokens, position, pairs)
+
+            header = position + 1
+            if header < len(tokens) and tokens[header].value == "await":
+                header += 1
+            if header >= len(tokens) or tokens[header].value != "(":
+                return _javascript_expression_end(tokens, position, pairs)
+            closing = pairs.get(header)
+            if closing is None:
+                return len(tokens)
+            position = closing + 1
+        return len(tokens)
+
+    headers = [
+        (opening, closing)
+        for opening, closing in pairs.items()
+        if opening < declaration < closing and tokens[opening].value == "(" and is_for_header(opening)
+    ]
+    if not headers:
+        return None
+    opening, closing = max(headers)
+    body_start = closing + 1
+    if body_start >= len(tokens):
+        return opening, closing + 1
+    if tokens[body_start].value == "{" and (body_close := pairs.get(body_start)) is not None:
+        return opening, body_close + 1
+    return opening, nested_for_end(body_start)
+
+
+def _javascript_declaration_patterns(
+    tokens: list[_JsToken],
+    start: int,
+    pairs: dict[int, int],
+) -> list[tuple[int, int]]:
+    """Return top-level binding patterns from one bounded declaration."""
+
+    patterns: list[tuple[int, int]] = []
+    position = start
+    count = len(tokens)
+    while position < count:
+        pattern_start = position
+        if tokens[position].kind == "punctuation" and tokens[position].value in {"[", "{"}:
+            pattern_close = pairs.get(position)
+            if pattern_close is None:
+                return []
+            pattern_end = pattern_close + 1
+        elif tokens[position].kind == "identifier":
+            pattern_end = position + 1
+        else:
+            return patterns
+        patterns.append((pattern_start, pattern_end))
+
+        position = pattern_end
+        while position < count:
+            token = tokens[position]
+            if token.kind == "punctuation" and token.value in {"(", "[", "{"}:
+                closing = pairs.get(position)
+                if closing is None:
+                    return []
+                position = closing + 1
+                continue
+            if token.kind == "punctuation" and token.value == ",":
+                position += 1
+                break
+            if token.kind == "punctuation" and token.value in {";", ")", "/template/"}:
+                return patterns
+            if token.value in {"in", "of"}:
+                return patterns
+            position += 1
+    return patterns
+
+
+def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap | None:
+    """Build the bounded lexical subset needed to resolve direct ``eval``."""
+
+    pairs = _javascript_delimiter_pairs(tokens)
+    if pairs is None:
+        return None
+
+    count = len(tokens)
+    scopes = [_JavascriptLexicalScope(None, "module")]
+    token_scopes = [0] * count
+    brace_scopes: dict[int, int] = {}
+    scope_stack = [0]
+    for index, token in enumerate(tokens):
+        token_scopes[index] = scope_stack[-1]
+        if token.kind == "punctuation" and token.value == "{":
+            if len(scopes) >= MAX_JS_SCOPES:
+                return None
+            scope_index = len(scopes)
+            scopes.append(_JavascriptLexicalScope(scope_stack[-1], "block"))
+            brace_scopes[index] = scope_index
+            scope_stack.append(scope_index)
+        elif token.kind == "punctuation" and token.value == "}":
+            if len(scope_stack) == 1:
+                return None
+            scope_stack.pop()
+    if len(scope_stack) != 1:
+        return None
+
+    declarations: set[int] = set()
+    shadow_ranges: list[tuple[int, int]] = []
+
+    def declaration_context(index: int) -> bool:
+        declaration_start = index
+        if index > 0 and tokens[index - 1].value == "async":
+            declaration_start -= 1
+        if declaration_start == 0:
+            return True
+        previous = tokens[declaration_start - 1]
+        if previous.value in {";", "{", "}", "default", "export"}:
+            return True
+        expression_continuations = {
+            "!",
+            "%",
+            "&",
+            "(",
+            "*",
+            "+",
+            ",",
+            "-",
+            ".",
+            "/",
+            ":",
+            "<",
+            "=",
+            ">",
+            "?",
+            "[",
+            "^",
+            "await",
+            "delete",
+            "in",
+            "instanceof",
+            "new",
+            "of",
+            "return",
+            "throw",
+            "typeof",
+            "void",
+            "yield",
+            "|",
+            "~",
+        }
+        return previous.line < tokens[declaration_start].line and previous.value not in expression_continuations
+
+    def function_parts(index: int) -> tuple[int | None, int, int, int] | None:
+        position = index + 1
+        if position < count and tokens[position].value == "*":
+            position += 1
+        name_index: int | None = None
+        if position < count and tokens[position].kind == "identifier":
+            name_index = position
+            position += 1
+        if position >= count or tokens[position].value != "(":
+            return None
+        parameters_close = pairs.get(position)
+        if parameters_close is None:
+            return None
+        body_open = parameters_close + 1
+        search_limit = min(count, body_open + 32)
+        while body_open < search_limit and tokens[body_open].value not in {"{", ";", "=>"}:
+            body_open += 1
+        if body_open >= search_limit or tokens[body_open].value != "{" or body_open not in brace_scopes:
+            return None
+        return name_index, position, parameters_close, body_open
+
+    # Function declarations/expressions establish the nearest function scope
+    # before variable declarations are assigned to their hoisting target.
+    for index, token in enumerate(tokens):
+        if token.value != "function":
+            continue
+        parts = function_parts(index)
+        if parts is None:
+            continue
+        name_index, parameters_open, parameters_close, body_open = parts
+        body_scope = brace_scopes[body_open]
+        scopes[body_scope].kind = "function"
+        scopes[body_scope].parent = token_scopes[index]
+        parameter_shadows = _javascript_parameter_shadows_eval(
+            tokens,
+            parameters_open,
+            parameters_close,
+            pairs,
+        )
+        if parameter_shadows:
+            scopes[body_scope].shadows_eval = True
+            shadow_ranges.append((parameters_open + 1, parameters_close))
+        if name_index is not None:
+            declarations.add(name_index)
+            if tokens[name_index].value == "eval":
+                is_declaration = declaration_context(index)
+                target = token_scopes[index] if is_declaration else body_scope
+                scopes[target].shadows_eval = True
+                if not is_declaration:
+                    shadow_ranges.append((parameters_open + 1, parameters_close))
+
+    # Arrow parameters belong to the arrow body, not the enclosing scope.
+    for index, token in enumerate(tokens):
+        if token.value != "=" or index + 2 >= count or tokens[index + 1].value != ">":
+            continue
+        parameters_open = -1
+        parameters_close = -1
+        direct_parameter = index - 1
+        if direct_parameter >= 0 and tokens[direct_parameter].value == ")":
+            parameters_open = pairs.get(direct_parameter, -1)
+            parameters_close = direct_parameter
+        parameter_shadows = (
+            parameters_open >= 0
+            and _javascript_parameter_shadows_eval(tokens, parameters_open, parameters_close, pairs)
+        ) or (
+            parameters_open < 0
+            and direct_parameter >= 0
+            and tokens[direct_parameter].kind == "identifier"
+            and tokens[direct_parameter].value == "eval"
+        )
+        if parameter_shadows and parameters_open >= 0:
+            shadow_ranges.append((parameters_open + 1, parameters_close))
+        body_start = index + 2
+        if tokens[body_start].value == "{" and body_start in brace_scopes:
+            body_scope = brace_scopes[body_start]
+            scopes[body_scope].kind = "function"
+            scopes[body_scope].parent = token_scopes[index]
+            scopes[body_scope].shadows_eval |= parameter_shadows
+        elif parameter_shadows:
+            shadow_ranges.append((body_start, _javascript_expression_end(tokens, body_start, pairs)))
+
+    # Methods have function-local parameters and var bindings even without a
+    # ``function`` keyword. Control-flow heads are explicitly excluded.
+    control_heads = {"catch", "for", "if", "switch", "while", "with"}
+    for index, token in enumerate(tokens):
+        if token.kind != "identifier" or token.value in control_heads or index + 1 >= count:
+            continue
+        parameters_open = index + 1
+        if tokens[parameters_open].value != "(":
+            continue
+        method_parameters_close = pairs.get(parameters_open)
+        if method_parameters_close is None or method_parameters_close + 1 >= count:
+            continue
+        body_open = method_parameters_close + 1
+        if tokens[body_open].value != "{" or body_open not in brace_scopes:
+            continue
+        if index > 0 and tokens[index - 1].value in {".", "function"}:
+            continue
+        body_scope = brace_scopes[body_open]
+        scopes[body_scope].kind = "function"
+        scopes[body_scope].parent = token_scopes[index]
+        if _javascript_parameter_shadows_eval(tokens, parameters_open, method_parameters_close, pairs):
+            scopes[body_scope].shadows_eval = True
+            shadow_ranges.append((parameters_open + 1, method_parameters_close))
+        declarations.add(index)
+
+    for index, token in enumerate(tokens):
+        if token.value == "catch":
+            parameters_open = index + 1
+            if parameters_open >= count or tokens[parameters_open].value != "(":
+                continue
+            catch_parameters_close = pairs.get(parameters_open)
+            if catch_parameters_close is None or catch_parameters_close + 1 >= count:
+                return None
+            body_open = catch_parameters_close + 1
+            if tokens[body_open].value != "{" or body_open not in brace_scopes:
+                return None
+            body_scope = brace_scopes[body_open]
+            scopes[body_scope].kind = "catch"
+            if _javascript_parameter_shadows_eval(tokens, parameters_open, catch_parameters_close, pairs):
+                scopes[body_scope].shadows_eval = True
+
+        if token.value == "class":
+            name_index = index + 1 if index + 1 < count and tokens[index + 1].kind == "identifier" else None
+            search = (name_index + 1) if name_index is not None else index + 1
+            search_limit = min(count, search + 64)
+            while search < search_limit and tokens[search].value not in {"{", ";"}:
+                search += 1
+            if search >= search_limit or tokens[search].value != "{" or search not in brace_scopes:
+                continue
+            class_scope = brace_scopes[search]
+            scopes[class_scope].kind = "class"
+            if name_index is not None:
+                declarations.add(name_index)
+
+    for index, token in enumerate(tokens):
+        if token.value not in {"const", "let", "var"} or index + 1 >= count:
+            continue
+        for declaration, declaration_end in _javascript_declaration_patterns(tokens, index + 1, pairs):
+            if not _javascript_binding_pattern_shadows_eval(tokens, declaration, declaration_end, pairs):
+                continue
+            if tokens[declaration].kind == "identifier" and tokens[declaration].value == "eval":
+                declarations.add(declaration)
+            if (
+                token.value in {"const", "let"}
+                and (loop_range := _javascript_for_binding_range(tokens, declaration, pairs)) is not None
+            ):
+                shadow_ranges.append(loop_range)
+                continue
+            scope_index = token_scopes[index]
+            if token.value == "var":
+                while scopes[scope_index].kind not in {"module", "function"}:
+                    parent = scopes[scope_index].parent
+                    if parent is None:
+                        break
+                    scope_index = parent
+            scopes[scope_index].shadows_eval = True
+
+    range_events = [0] * (count + 1)
+    for start, end in shadow_ranges:
+        range_events[start] += 1
+        range_events[end] -= 1
+    active_ranges = 0
+    range_shadows: list[bool] = []
+    for index in range(count):
+        active_ranges += range_events[index]
+        range_shadows.append(active_ranges > 0)
+
+    return _JavascriptEvalScopeMap(scopes, token_scopes, declarations, range_shadows)
+
+
+def _javascript_bindings(tokens: list[_JsToken]) -> tuple[set[str], dict[str, str]]:
     namespaces: set[str] = {"child_process"}
     functions: dict[str, str] = {}
-    shadowed_eval: set[str] = set()
     count = len(tokens)
 
     def is_module_string(position: int) -> bool:
@@ -659,8 +1169,6 @@ def _javascript_bindings(tokens: list[_JsToken]) -> tuple[set[str], dict[str, st
                     position += 1
 
         if token.value not in {"const", "let", "var"} or index + 2 >= count:
-            if token.value == "function" and index + 1 < count and tokens[index + 1].value == "eval":
-                shadowed_eval.add("eval")
             continue
 
         # const cp = require("child_process")
@@ -706,9 +1214,7 @@ def _javascript_bindings(tokens: list[_JsToken]) -> tuple[set[str], dict[str, st
                         functions[local] = imported
                     position += 1
 
-        if tokens[index + 1].value == "eval":
-            shadowed_eval.add("eval")
-    return namespaces, functions, shadowed_eval
+    return namespaces, functions
 
 
 def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
@@ -716,7 +1222,10 @@ def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
     if not tokenization.complete:
         return []
     tokens = list(tokenization.tokens)
-    namespaces, functions, shadowed_eval = _javascript_bindings(tokens)
+    eval_scopes = _javascript_eval_scopes(tokens)
+    if eval_scopes is None:
+        return []
+    namespaces, functions = _javascript_bindings(tokens)
     calls: list[tuple[str, int]] = []
 
     for index, token in enumerate(tokens):
@@ -724,7 +1233,12 @@ def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
             break
         previous = tokens[index - 1].value if index else ""
         following = tokens[index + 1].value if index + 1 < len(tokens) else ""
-        if token.value == "eval" and following == "(" and previous not in {".", "?."} and "eval" not in shadowed_eval:
+        if (
+            token.value == "eval"
+            and following == "("
+            and previous not in {".", "?."}
+            and not eval_scopes.is_shadowed(index)
+        ):
             calls.append(("javascript_eval", token.line))
             continue
         if token.value in functions and following == "(":

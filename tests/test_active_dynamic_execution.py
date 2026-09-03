@@ -30,8 +30,10 @@ from skill_scanner.core.models import Severity, Skill, SkillFile, SkillManifest,
 from skill_scanner.core.rules.active_dynamic_execution import (
     MAX_DOCUMENT_BYTES,
     MAX_INLINE_CHARS,
+    MAX_JS_SCOPE_DEPTH,
     RULE_ID,
     _is_pure_prohibition,
+    _javascript_execution_calls,
     check_active_dynamic_execution,
     find_active_dynamic_execution,
 )
@@ -193,6 +195,158 @@ const rendered = `${eval(payload)};
 
     assert find_active_dynamic_execution(skill) == []
     assert check_active_dynamic_execution(skill) == []
+
+
+def test_nested_javascript_shadow_does_not_hide_outer_eval_calls() -> None:
+    source = """eval(outer_before);
+function helper() { const eval = safe; eval(local); }
+eval(outer_after);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_eval", 1),
+        ("javascript_eval", 3),
+    ]
+
+
+def test_javascript_same_scope_declarations_shadow_eval_before_and_after_binding() -> None:
+    sources = (
+        "eval(before); const eval = safe; eval(after);",
+        "eval(before); let eval = safe; eval(after);",
+        "eval(before); var eval = safe; eval(after);",
+        "eval(before); const other = 1, eval = safe; eval(after);",
+        "eval(before); const {handler: eval} = source; eval(after);",
+        "eval(before); function eval(value) { return value; } eval(after);",
+        "work()\nfunction eval(value) { return value; }\neval(after);",
+    )
+
+    assert all(_javascript_execution_calls(source) == [] for source in sources)
+
+
+def test_javascript_parameters_arrows_blocks_and_catch_are_lexically_scoped() -> None:
+    source = """function parameter(eval) { eval(local); }
+const concise = (eval) => eval(local);
+const blocked = eval => { eval(local); };
+{ const eval = safe; eval(local); }
+try { work(); } catch (eval) { eval(local); }
+eval(outer);
+"""
+
+    assert _javascript_execution_calls(source) == [("javascript_eval", 6)]
+
+
+def test_javascript_parameter_defaults_and_destructuring_do_not_leak_scope() -> None:
+    source = """function builtin(value = eval(defaultValue)) { const eval = safe; }
+function shadowed(eval = eval(defaultValue), {handler: alias}) { eval(local); }
+const destructured = ({eval}, [other]) => eval(local);
+eval(outer);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_eval", 1),
+        ("javascript_eval", 4),
+    ]
+
+
+def test_javascript_named_expressions_var_hoisting_and_class_methods_do_not_leak() -> None:
+    source = """const named = function eval() { eval(local); };
+const Klass = class Internal { eval(value) { return value; } method() { eval(active); } };
+function scoped() { { eval(before); var eval = safe; } eval(after); }
+eval(outer);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_eval", 2),
+        ("javascript_eval", 4),
+    ]
+
+
+def test_template_arrow_shadow_stops_at_the_substitution_boundary() -> None:
+    source = """const rendered = `${eval => eval(local)}${eval(active)}`;
+eval(outer);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_eval", 1),
+        ("javascript_eval", 2),
+    ]
+
+
+def test_semicolonless_arrow_shadow_stops_at_asi_boundary() -> None:
+    source = """const local = eval => eval(local)
+eval(outer)
+"""
+
+    assert _javascript_execution_calls(source) == [("javascript_eval", 2)]
+
+
+def test_semicolonless_arrow_keeps_parenthesized_continuation_in_child_scope() -> None:
+    source = """const local = eval => handler
+(eval(local))
+eval(outer)
+"""
+
+    assert _javascript_execution_calls(source) == [("javascript_eval", 3)]
+
+
+def test_for_lexical_eval_binding_never_shadows_parent_scope() -> None:
+    source = """eval(before);
+for (let eval of handlers) { eval(local); }
+for (const eval of handlers) eval(local);
+eval(after);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_eval", 1),
+        ("javascript_eval", 4),
+    ]
+
+
+def test_for_await_eval_binding_is_limited_to_the_loop() -> None:
+    source = """async function scan() {
+  for await (const eval of handlers) { eval(local); }
+  eval(after);
+}
+eval(outer);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_eval", 3),
+        ("javascript_eval", 5),
+    ]
+
+
+def test_nested_for_eval_binding_covers_the_complete_inner_loop_only() -> None:
+    source = """for (let eval of handlers)
+  for (;;) eval(local);
+eval(after);
+for (const eval of handlers) for (;;) { eval(local); }
+eval(final);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_eval", 3),
+        ("javascript_eval", 5),
+    ]
+
+
+def test_expression_names_and_invalid_class_eval_name_never_shadow_parent() -> None:
+    source = """const selected = condition || function eval() { eval(local); };
+const Invalid = class eval { method() { eval(active); } };
+eval(outer);
+"""
+
+    assert _javascript_execution_calls(source) == [
+        ("javascript_eval", 2),
+        ("javascript_eval", 3),
+    ]
+
+
+def test_javascript_scope_limits_and_malformed_delimiters_decline_partial_calls() -> None:
+    too_deep = "{" * (MAX_JS_SCOPE_DEPTH + 1) + "eval(payload);" + "}" * (MAX_JS_SCOPE_DEPTH + 1)
+
+    assert _javascript_execution_calls(too_deep) == []
+    assert _javascript_execution_calls("function helper( { eval(payload);") == []
 
 
 def test_active_inline_instruction_requires_actionable_code_context(tmp_path: Path) -> None:
