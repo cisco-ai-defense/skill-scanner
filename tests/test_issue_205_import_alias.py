@@ -13,24 +13,26 @@ from skill_scanner.core.analyzers.static import StaticAnalyzer
 from skill_scanner.core.scan_policy import ScanPolicy
 
 
-@pytest.mark.parametrize(
-    "embedded_code",
-    [
-        "import os; os.system('pip install -r requirements.txt')",
-        "import os as _o; _o.system('pip install -r requirements.txt')",
-    ],
-    ids=["canonical-module", "aliased-module"],
-)
-def test_embedded_python_import_aliases_are_detected(make_skill, embedded_code):
+def test_embedded_python_import_aliases_are_detected(make_skill):
     """Python command payloads must not evade the os.system signature via aliases."""
-    skill = make_skill(
-        {"scripts/run.py": (f'import subprocess\nsubprocess.run(["python", "-c", {embedded_code!r}])\n')}
-    )
 
-    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+    def scan(embedded_code):
+        skill = make_skill(
+            {"scripts/run.py": (f'import subprocess\nsubprocess.run(["python", "-c", {embedded_code!r}])\n')}
+        )
+        return next(
+            f for f in StaticAnalyzer(use_yara=False).analyze(skill) if f.rule_id == "COMMAND_INJECTION_SHELL_TRUE"
+        )
 
-    shell_findings = [f for f in findings if f.rule_id == "COMMAND_INJECTION_SHELL_TRUE"]
-    assert shell_findings, "both canonical and aliased os.system calls must be reported"
+    canonical = scan("import os; os.system('pip install -r requirements.txt')")
+    aliased = scan("import os as _o; _o.system('pip install -r requirements.txt')")
+
+    assert aliased.category == canonical.category
+    assert aliased.severity == canonical.severity
+    assert aliased.remediation == canonical.remediation
+    assert aliased.analyzer == canonical.analyzer
+    for key in ("aitech", "aitech_name", "scanner_category", "source_category", "category_normalization"):
+        assert aliased.metadata[key] == canonical.metadata[key]
 
 
 def test_direct_aliased_subprocess_shell_is_detected(make_skill):
@@ -101,6 +103,7 @@ def test_malformed_python_uses_textual_alias_fallback(make_skill):
     findings = StaticAnalyzer(use_yara=False).analyze(skill)
 
     assert any(f.rule_id == "COMMAND_INJECTION_SHELL_TRUE" for f in findings)
+    assert any(f.rule_id == "COMMAND_INJECTION_OS_SYSTEM" for f in findings)
 
 
 def test_fallback_fstring_detection_handles_string_tokens(make_skill):
@@ -127,7 +130,27 @@ def test_fallback_scanner_handles_escaped_quotes_and_unclosed_calls(make_skill):
 
     findings = StaticAnalyzer(use_yara=False).analyze(skill)
 
-    assert any(f.rule_id == "COMMAND_INJECTION_SHELL_TRUE" for f in findings)
+    shell_findings = [f for f in findings if f.rule_id == "COMMAND_INJECTION_SHELL_TRUE"]
+    assert len(shell_findings) == 1
+    assert 'escaped \\" quote' in shell_findings[0].metadata["matched_text"]
+
+
+def test_fallback_scanner_ignores_nested_and_quoted_shell_text(make_skill):
+    """Fallback matching only accepts a top-level shell keyword argument."""
+    skill = make_skill(
+        {
+            "scripts/run.py": (
+                "import subprocess as sp\n"
+                'sp.run("literal shell=True", check=True)\n'
+                "sp.run(build_command(shell=True), check=True)\n"
+                "if\n"
+            )
+        }
+    )
+
+    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+    assert not any(f.rule_id == "COMMAND_INJECTION_SHELL_TRUE" for f in findings)
 
 
 def test_unsupported_aliased_methods_are_ignored(make_skill):

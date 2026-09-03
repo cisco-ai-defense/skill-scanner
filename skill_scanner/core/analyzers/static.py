@@ -2044,19 +2044,113 @@ class StaticAnalyzer(BaseAnalyzer):
 
         def has_dynamic_fstring(source: str) -> bool:
             """Return whether source contains an interpolated f-string token."""
+            fstring_depth = 0
+            fstring_start = getattr(tokenize, "FSTRING_START", None)
+            fstring_end = getattr(tokenize, "FSTRING_END", None)
             try:
                 tokens = tokenize.generate_tokens(io.StringIO(source).readline)
                 for token in tokens:
-                    if token.type != tokenize.STRING:
+                    if token.type == tokenize.STRING:
+                        prefix = re.match(r"(?i)^([rubf]*)[\"']", token.string)
+                        if not prefix or "f" not in prefix.group(1).lower():
+                            continue
+                        body = token.string[prefix.end() : -1]
+                        if re.search(r"(?<!\{)\{(?!\{)", body):
+                            return True
+
+                    # Python 3.12+ tokenizes PEP 701 f-strings into separate
+                    # start/middle/end tokens instead of one STRING token.
+                    if fstring_start is not None and token.type == fstring_start:
+                        fstring_depth += 1
                         continue
-                    prefix = re.match(r"(?i)^([rubf]*)[\"']", token.string)
-                    if not prefix or "f" not in prefix.group(1).lower():
+                    if fstring_end is not None and token.type == fstring_end:
+                        fstring_depth = max(0, fstring_depth - 1)
                         continue
-                    body = token.string[prefix.end() : -1]
-                    if re.search(r"(?<!\{)\{(?!\{)", body):
+                    if fstring_depth and token.type == tokenize.OP and token.string == "{":
                         return True
             except (tokenize.TokenError, IndentationError):
                 return False
+            return False
+
+        def has_shell_true_argument(source: str) -> bool:
+            """Return whether a call has a top-level literal ``shell=True``."""
+            try:
+                expression = ast.parse(source, mode="eval")
+            except (SyntaxError, ValueError):
+                expression = None
+            if isinstance(expression, ast.Expression) and isinstance(expression.body, ast.Call):
+                return any(
+                    keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True
+                    for keyword in expression.body.keywords
+                )
+
+            open_index = source.find("(")
+            if open_index < 0:
+                return False
+
+            depth = 0
+            quote: str | None = None
+            escaped = False
+            argument_start = True
+            i = open_index + 1
+            while i < len(source):
+                char = source[i]
+                if quote:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif len(quote) == 3 and source.startswith(quote, i):
+                        i += 2
+                        quote = None
+                    elif len(quote) == 1 and char == quote:
+                        quote = None
+                    i += 1
+                    continue
+                if char in "'\"":
+                    quote = char * 3 if source.startswith(char * 3, i) else char
+                    if len(quote) == 3:
+                        i += 2
+                    argument_start = False
+                elif char == "#":
+                    newline = source.find("\n", i)
+                    i = len(source) if newline < 0 else newline
+                    continue
+                elif char in "([{":
+                    depth += 1
+                    argument_start = False
+                elif char in ")]}":
+                    if char == ")" and depth == 0:
+                        break
+                    depth = max(0, depth - 1)
+                    argument_start = False
+                elif depth == 0 and char == ",":
+                    argument_start = True
+                elif depth == 0 and argument_start and char.isspace():
+                    pass
+                elif depth == 0 and argument_start and source.startswith("shell", i):
+                    before = source[i - 1] if i else ""
+                    after = source[i + len("shell")] if i + len("shell") < len(source) else ""
+                    if (not before or not (before.isalnum() or before == "_")) and (
+                        not after or not (after.isalnum() or after == "_")
+                    ):
+                        value_start = i + len("shell")
+                        while value_start < len(source) and source[value_start].isspace():
+                            value_start += 1
+                        if value_start < len(source) and source[value_start] == "=":
+                            value_start += 1
+                            while value_start < len(source) and source[value_start].isspace():
+                                value_start += 1
+                            if source.startswith("True", value_start):
+                                value_end = value_start + len("True")
+                                if value_end == len(source) or not (
+                                    source[value_end].isalnum() or source[value_end] == "_"
+                                ):
+                                    return True
+                    argument_start = False
+                elif depth == 0:
+                    argument_start = False
+                i += 1
             return False
 
         def find_matching_paren(open_index: int) -> int | None:
@@ -2138,12 +2232,12 @@ class StaticAnalyzer(BaseAnalyzer):
                 if call_end is None:
                     continue
                 start = match.start()
-                if any(left <= start < right for left, right in ast_call_ranges):
+                if any(start == call_start for call_start, _ in ast_call_ranges):
                     continue
                 call_text = content[start:call_end]
                 if module == "os":
                     add_match("COMMAND_INJECTION_SHELL_TRUE", start, call_text, "aliased os.system call")
-                elif re.search(r"\bshell\s*=\s*True\b", call_text):
+                elif has_shell_true_argument(call_text):
                     add_match(
                         "COMMAND_INJECTION_SHELL_TRUE", start, call_text, "aliased subprocess call with shell=True"
                     )
