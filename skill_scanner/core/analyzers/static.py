@@ -356,6 +356,113 @@ def _redact_secret(text: str) -> str:
     return text[:4] + "****"
 
 
+class _OsAliasCallVisitor(ast.NodeVisitor):
+    """Scope-aware walk that finds os.system() calls made through an import alias.
+
+    Tracks, per lexical scope, which local names are currently bound to the
+    ``os`` module. A function parameter, local (re)assignment, ``for``/``with``
+    target, etc. that shares an inherited alias's name shadows it -- so a
+    same-named but unrelated local variable is never mistaken for the ``os``
+    alias, and a function-local ``import os as X`` only applies inside that
+    function. Traversal follows AST source order, so a call textually before
+    its defining ``import`` is (correctly) not matched.
+
+    Deliberately narrow: does not model comprehension-local scoping or class
+    bodies as their own scope (both are rare enough for this pattern that any
+    resulting imprecision only causes a missed detection, never a false
+    positive -- the safe direction for a new check).
+    """
+
+    def __init__(self) -> None:
+        self.matches: list[tuple[int, str]] = []
+        self._scope_stack: list[set[str]] = [set()]
+
+    @property
+    def _active(self) -> set[str]:
+        return self._scope_stack[-1]
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            bound_name = alias.asname or alias.name.split(".")[0]
+            if alias.name == "os" and alias.asname and alias.asname != "os":
+                self._active.add(alias.asname)
+            else:
+                self._active.discard(bound_name)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            self._active.discard(alias.asname or alias.name)
+
+    def _shadow(self, target: ast.expr) -> None:
+        if isinstance(target, ast.Name):
+            self._active.discard(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                self._shadow(elt)
+        elif isinstance(target, ast.Starred):
+            self._shadow(target.value)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        for target in node.targets:
+            self._shadow(target)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        self._shadow(node.target)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self._shadow(node.target)
+        self.generic_visit(node)
+
+    def visit_For(self, node: ast.For) -> None:
+        self._shadow(node.target)
+        self.generic_visit(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self._shadow(node.target)
+        self.generic_visit(node)
+
+    def visit_With(self, node: ast.With) -> None:
+        for item in node.items:
+            if item.optional_vars is not None:
+                self._shadow(item.optional_vars)
+        self.generic_visit(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        for item in node.items:
+            if item.optional_vars is not None:
+                self._shadow(item.optional_vars)
+        self.generic_visit(node)
+
+    def _enter_function_scope(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        params = {a.arg for a in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)}
+        if node.args.vararg:
+            params.add(node.args.vararg.arg)
+        if node.args.kwarg:
+            params.add(node.args.kwarg.arg)
+        self._scope_stack.append(self._active - params)
+        self.generic_visit(node)
+        self._scope_stack.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._enter_function_scope(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._enter_function_scope(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        func = node.func
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr == "system"
+            and isinstance(func.value, ast.Name)
+            and func.value.id in self._active
+        ):
+            self.matches.append((node.lineno, func.value.id))
+        self.generic_visit(node)
+
+
 class StaticAnalyzer(BaseAnalyzer):
     """Static pattern-based security analyzer."""
 
@@ -802,32 +909,16 @@ class StaticAnalyzer(BaseAnalyzer):
             return ".".join(reversed(parts))
         return None
 
-    @staticmethod
-    def _find_os_import_aliases(tree: ast.Module) -> set[str]:
-        """Return local names bound to the ``os`` module via ``import os as X``.
-
-        The unaliased case (``asname`` unset, or explicitly ``import os as
-        os``) is excluded so COMMAND_INJECTION_SHELL_TRUE's regex signature
-        remains the sole detector for that path -- this check only covers the
-        alias gap, never duplicating a literal ``os.system(`` match.
-        """
-        aliases: set[str] = set()
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Import):
-                continue
-            for alias in node.names:
-                if alias.name == "os" and alias.asname and alias.asname != "os":
-                    aliases.add(alias.asname)
-        return aliases
-
     def _check_aliased_dangerous_calls(self, skill: Skill) -> list[Finding]:
         """Detect os.system() calls made through an import alias.
 
         COMMAND_INJECTION_SHELL_TRUE's signature matches ``os.system(``
         literally, so ``import os as _o; _o.system(...)`` slips through. This
-        AST-based check closes that specific gap. It intentionally does not
-        attempt broader alias/data-flow resolution (e.g. ``from os import
-        system as x``, re-aliasing through assignment, or non-``os``
+        AST-based check closes that specific gap using scope-aware alias
+        tracking (``_OsAliasCallVisitor``) so a parameter or local variable
+        that shadows the alias name is never mistaken for it. It
+        intentionally does not attempt broader resolution (e.g. ``from os
+        import system as x``, comprehension-scoped shadowing, or non-``os``
         modules) -- those are separate, larger pieces of work.
         """
         rule_id = "COMMAND_INJECTION_SHELL_TRUE"
@@ -850,42 +941,29 @@ class StaticAnalyzer(BaseAnalyzer):
                 logger.debug("Syntax error parsing %s for alias check: %s", sf.relative_path, e)
                 continue
 
-            os_aliases = self._find_os_import_aliases(tree)
-            if not os_aliases:
-                continue
+            visitor = _OsAliasCallVisitor()
+            visitor.visit(tree)
 
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                func = node.func
-                if (
-                    isinstance(func, ast.Attribute)
-                    and func.attr == "system"
-                    and isinstance(func.value, ast.Name)
-                    and func.value.id in os_aliases
-                ):
-                    findings.append(
-                        Finding(
-                            id=self._generate_finding_id(rule_id, f"{sf.relative_path}:{node.lineno}"),
-                            rule_id=rule_id,
-                            category=ThreatCategory.COMMAND_INJECTION,
-                            severity=Severity.HIGH,
-                            title="Shell command execution with shell=True enabled",
-                            description=(
-                                f"'{sf.relative_path}' calls os.system() through the import alias "
-                                f"'{func.value.id}' (line {node.lineno}). This is equivalent to a "
-                                "direct os.system() call but bypasses literal pattern matching."
-                            ),
-                            file_path=sf.relative_path,
-                            line_number=node.lineno,
-                            remediation="Use subprocess with argument lists (shell=False) instead of os.system().",
-                            analyzer="static",
-                            metadata={
-                                "analysis_method": "import_alias_resolution",
-                                "resolved_alias": func.value.id,
-                            },
-                        )
+            for line_number, alias in visitor.matches:
+                findings.append(
+                    Finding(
+                        id=self._generate_finding_id(rule_id, f"{sf.relative_path}:{line_number}"),
+                        rule_id=rule_id,
+                        category=ThreatCategory.COMMAND_INJECTION,
+                        severity=Severity.HIGH,
+                        title="Shell command execution with shell=True enabled",
+                        description=(
+                            f"'{sf.relative_path}' calls os.system() through the import alias "
+                            f"'{alias}' (line {line_number}). This is equivalent to a direct "
+                            "os.system() call but bypasses literal pattern matching."
+                        ),
+                        file_path=sf.relative_path,
+                        line_number=line_number,
+                        remediation="Use subprocess with argument lists (shell=False) instead of os.system().",
+                        analyzer="static",
+                        metadata={"analysis_method": "import_alias_resolution", "resolved_alias": alias},
                     )
+                )
 
         return findings
 

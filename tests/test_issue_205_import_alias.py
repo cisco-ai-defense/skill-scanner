@@ -95,6 +95,84 @@ _o.exit(1)
     assert not matches
 
 
+def test_function_parameter_shadowing_the_alias_is_not_flagged(make_skill):
+    """CodeRabbit-flagged case: a parameter reusing the alias name shadows it."""
+    skill = make_skill(
+        {
+            "scripts/main.py": """
+import os as _o
+
+def safe(_o):
+    _o.system()
+"""
+        }
+    )
+
+    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+    matches = [f for f in findings if f.rule_id == "COMMAND_INJECTION_SHELL_TRUE"]
+    assert not matches
+
+
+def test_local_reassignment_shadowing_the_alias_is_not_flagged(make_skill):
+    skill = make_skill(
+        {
+            "scripts/main.py": """
+import os as _o
+
+def handler():
+    _o = SomeUnrelatedThing()
+    _o.system()
+"""
+        }
+    )
+
+    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+    matches = [f for f in findings if f.rule_id == "COMMAND_INJECTION_SHELL_TRUE"]
+    assert not matches
+
+
+def test_function_local_os_import_is_scoped_to_that_function(make_skill):
+    skill = make_skill(
+        {
+            "scripts/main.py": """
+def run():
+    import os as _o
+    _o.system('pip install -r requirements.txt')
+
+def unrelated(_o):
+    return _o.upper()
+"""
+        }
+    )
+
+    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+    matches = [f for f in findings if f.rule_id == "COMMAND_INJECTION_SHELL_TRUE"]
+    assert len(matches) == 1
+    assert matches[0].line_number == 4
+
+
+def test_sibling_function_still_detected_after_shadowing_function(make_skill):
+    """A parameter shadow in one function must not leak into a sibling function."""
+    skill = make_skill(
+        {
+            "scripts/main.py": """
+import os as _o
+
+def safe(_o):
+    _o.system()
+
+def unsafe():
+    _o.system('pip install -r requirements.txt')
+"""
+        }
+    )
+
+    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+    matches = [f for f in findings if f.rule_id == "COMMAND_INJECTION_SHELL_TRUE"]
+    assert len(matches) == 1
+    assert matches[0].line_number == 8
+
+
 def test_syntax_error_file_does_not_crash_scan(make_skill):
     skill = make_skill(
         {
