@@ -21,9 +21,11 @@ Static pattern analyzer for detecting security vulnerabilities.
 import ast
 import configparser
 import hashlib
+import io
 import logging
 import pickletools
 import re
+import tokenize
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -719,7 +721,10 @@ class StaticAnalyzer(BaseAnalyzer):
                     findings.append(self._create_finding_from_match(rule, match))
 
             if skill_file.file_type == "python":
-                findings.extend(self._scan_python_import_aliases(content, skill_file.relative_path))
+                alias_findings = self._scan_python_import_aliases(content, skill_file.relative_path)
+                if is_doc:
+                    alias_findings = [f for f in alias_findings if f.rule_id not in skip_in_docs]
+                findings.extend(alias_findings)
 
         return findings
 
@@ -744,8 +749,8 @@ class StaticAnalyzer(BaseAnalyzer):
                     continue
                 for imported in node.names:
                     module = imported.name.split(".", 1)[0]
-                    if module in {"os", "subprocess"}:
-                        aliases[imported.asname or module] = module
+                    if module in {"os", "subprocess"} and imported.asname:
+                        aliases[imported.asname] = module
 
         # Command payloads can contain a complete Python snippet as a string,
         # which is not represented in the outer AST.  Keep this deliberately
@@ -754,47 +759,139 @@ class StaticAnalyzer(BaseAnalyzer):
             aliases[match.group(2)] = match.group(1)
 
         findings: list[Finding] = []
+        ast_call_ranges: set[tuple[int, int]] = set()
+        line_offsets = [0]
+        for line in content.splitlines(keepends=True):
+            line_offsets.append(line_offsets[-1] + len(line))
 
-        def add_matches(rule_id: str, pattern: re.Pattern[str]) -> None:
+        def add_match(rule_id: str, start: int, matched_text: str, pattern: str) -> None:
             rule = self.rule_loader.rules_by_id.get(rule_id)
             if rule is None:
                 return
-            for match in pattern.finditer(content):
-                line_number = content.count("\n", 0, match.start()) + 1
-                line = content.splitlines()[line_number - 1].strip() if content.splitlines() else ""
-                findings.append(
-                    self._create_finding_from_match(
-                        rule,
-                        {
-                            "line_number": line_number,
-                            "line_content": line,
-                            "matched_pattern": pattern.pattern,
-                            "matched_text": match.group(0),
-                            "file_path": file_path,
-                        },
-                    )
+            line_number = content.count("\n", 0, start) + 1
+            lines = content.splitlines()
+            line = lines[line_number - 1].strip() if lines else ""
+            findings.append(
+                self._create_finding_from_match(
+                    rule,
+                    {
+                        "line_number": line_number,
+                        "line_content": line,
+                        "matched_pattern": pattern,
+                        "matched_text": matched_text,
+                        "file_path": file_path,
+                    },
                 )
+            )
+
+        def has_dynamic_fstring(source: str) -> bool:
+            """Return whether source contains an interpolated f-string token."""
+            try:
+                tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+                for token in tokens:
+                    if token.type != tokenize.STRING:
+                        continue
+                    prefix = re.match(r"(?i)^([rubf]*)[\"']", token.string)
+                    if not prefix or "f" not in prefix.group(1).lower():
+                        continue
+                    body = token.string[prefix.end() : -1]
+                    if re.search(r"(?<!\{)\{(?!\{)", body):
+                        return True
+            except (tokenize.TokenError, IndentationError):
+                return False
+            return False
+
+        def find_matching_paren(open_index: int) -> int | None:
+            depth = 0
+            quote: str | None = None
+            escaped = False
+            i = open_index
+            while i < len(content):
+                char = content[i]
+                if quote:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif content.startswith(quote * 3, i):
+                        i += 2
+                        quote = None
+                    elif char == quote:
+                        quote = None
+                elif char in "'\"":
+                    if content.startswith(char * 3, i):
+                        quote = char * 3
+                        i += 2
+                    else:
+                        quote = char
+                elif char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth == 0:
+                        return i + 1
+                i += 1
+            return None
+
+        # Parsed calls are authoritative for normal Python and correctly handle
+        # nested arguments such as ``sp.run(build_command(value), shell=True)``.
+        if tree is not None:
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                if not isinstance(node.func.value, ast.Name):
+                    continue
+                resolved_module = aliases.get(node.func.value.id)
+                method = node.func.attr
+                if resolved_module not in {"os", "subprocess"}:
+                    continue
+                if resolved_module == "os" and method != "system":
+                    continue
+                if resolved_module == "subprocess" and method not in {"call", "run", "Popen"}:
+                    continue
+                if node.end_lineno is None or node.end_col_offset is None:
+                    continue
+                start = line_offsets[node.lineno - 1] + node.col_offset
+                end = line_offsets[node.end_lineno - 1] + node.end_col_offset
+                matched_text = ast.get_source_segment(content, node)
+                if matched_text is None:
+                    matched_text = f"{node.func.value.id}.{method}(...)"
+                ast_call_ranges.add((start, end))
+                if resolved_module == "os":
+                    add_match("COMMAND_INJECTION_SHELL_TRUE", start, matched_text, "aliased os.system call")
+                elif any(
+                    isinstance(keyword.value, ast.Constant) and keyword.value.value is True for keyword in node.keywords
+                ):
+                    add_match(
+                        "COMMAND_INJECTION_SHELL_TRUE", start, matched_text, "aliased subprocess call with shell=True"
+                    )
+                if any(isinstance(value, ast.JoinedStr) for value in ast.walk(node)):
+                    add_match(
+                        "COMMAND_INJECTION_OS_SYSTEM", start, matched_text, "aliased call with interpolated f-string"
+                    )
 
         for alias, module in aliases.items():
             escaped_alias = re.escape(alias)
-            if module == "os":
-                add_matches("COMMAND_INJECTION_SHELL_TRUE", re.compile(rf"\b{escaped_alias}\.system\s*\("))
-                add_matches(
-                    "COMMAND_INJECTION_OS_SYSTEM",
-                    re.compile(rf"\b{escaped_alias}\.system\s*\([^)]*[f\"'].*\{{.*\}}", re.DOTALL),
-                )
-            else:
-                add_matches(
-                    "COMMAND_INJECTION_SHELL_TRUE",
-                    re.compile(rf"\b{escaped_alias}\.(?:call|run|Popen)\s*\([^)]*shell\s*=\s*True", re.DOTALL),
-                )
-                add_matches(
-                    "COMMAND_INJECTION_OS_SYSTEM",
-                    re.compile(
-                        rf"\b{escaped_alias}\.(?:call|run|Popen)\s*\([^)]*[f\"'].*\{{.*\}}",
-                        re.DOTALL,
-                    ),
-                )
+            methods = "system" if module == "os" else "(?:call|run|Popen)"
+            call_pattern = re.compile(rf"\b{escaped_alias}\.{methods}\s*\(")
+            for match in call_pattern.finditer(content):
+                call_end = find_matching_paren(match.end() - 1)
+                if call_end is None:
+                    continue
+                start = match.start()
+                if any(left <= start < right for left, right in ast_call_ranges):
+                    continue
+                call_text = content[start:call_end]
+                if module == "os":
+                    add_match("COMMAND_INJECTION_SHELL_TRUE", start, call_text, "aliased os.system call")
+                elif re.search(r"\bshell\s*=\s*True\b", call_text):
+                    add_match(
+                        "COMMAND_INJECTION_SHELL_TRUE", start, call_text, "aliased subprocess call with shell=True"
+                    )
+                if has_dynamic_fstring(call_text):
+                    add_match(
+                        "COMMAND_INJECTION_OS_SYSTEM", start, call_text, "aliased call with interpolated f-string"
+                    )
 
         return findings
 

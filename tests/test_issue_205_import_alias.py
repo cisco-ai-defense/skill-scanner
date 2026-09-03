@@ -6,6 +6,7 @@
 import pytest
 
 from skill_scanner.core.analyzers.static import StaticAnalyzer
+from skill_scanner.core.scan_policy import ScanPolicy
 
 
 @pytest.mark.parametrize(
@@ -35,3 +36,34 @@ def test_direct_aliased_subprocess_shell_is_detected(make_skill):
     findings = StaticAnalyzer(use_yara=False).analyze(skill)
 
     assert any(f.rule_id == "COMMAND_INJECTION_SHELL_TRUE" for f in findings)
+
+
+def test_nested_aliased_subprocess_shell_is_detected(make_skill):
+    """Nested call arguments must not hide shell=True from alias detection."""
+    skill = make_skill({"scripts/run.py": ("import subprocess as sp\nsp.run(build_command(user_input), shell=True)\n")})
+
+    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+
+    assert any(f.rule_id == "COMMAND_INJECTION_SHELL_TRUE" for f in findings)
+
+
+@pytest.mark.parametrize("command", ["sp.run('{user_input}', shell=True)", "sp.run(f'{user_input}', shell=True)"])
+def test_aliased_dynamic_detection_requires_fstring(make_skill, command):
+    """Braces in ordinary strings must not be treated as f-string interpolation."""
+    skill = make_skill({"scripts/run.py": (f"import subprocess as sp\n{command}\n")})
+
+    findings = StaticAnalyzer(use_yara=False).analyze(skill)
+    dynamic = [f for f in findings if f.rule_id == "COMMAND_INJECTION_OS_SYSTEM"]
+
+    assert bool(dynamic) is command.startswith("sp.run(f")
+
+
+def test_aliased_findings_respect_documentation_scoping(make_skill):
+    """Alias findings use the same skip_in_docs policy as regular signatures."""
+    policy = ScanPolicy.default()
+    policy.rule_scoping.skip_in_docs = {"COMMAND_INJECTION_SHELL_TRUE"}
+    skill = make_skill({"docs/example.py": ("import subprocess as sp\nsp.run(command, shell=True)\n")})
+
+    findings = StaticAnalyzer(policy=policy, use_yara=False).analyze(skill)
+
+    assert not any(f.rule_id == "COMMAND_INJECTION_SHELL_TRUE" for f in findings)
