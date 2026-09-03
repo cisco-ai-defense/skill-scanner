@@ -447,6 +447,7 @@ def _promotion_checks(
     location: str,
     *,
     require_loader_identity: bool,
+    enforce_performance: bool,
 ) -> dict[str, Any]:
     block_baseline = _metric(baseline_scope, "package_block_recall", f"baseline.{location}")
     block_candidate = _metric(candidate_scope, "package_block_recall", f"candidate.{location}")
@@ -486,16 +487,17 @@ def _promotion_checks(
         "benign_actionable_fpr_non_regression": (
             fpr_baseline is not None and fpr_candidate is not None and fpr_candidate <= fpr_baseline + _EPSILON
         ),
-        "p95_latency_within_ten_percent": (
-            latency_baseline is not None
-            and latency_candidate is not None
-            and latency_candidate <= latency_baseline * (1.0 + _MAX_LATENCY_REGRESSION) + _EPSILON
-        ),
-        "cel_time_within_five_percent": (cel_ratio is not None and cel_ratio <= _MAX_CEL_TIME_RATIO + _EPSILON),
         "zero_cel_fallbacks": fallbacks == 0,
         "zero_cel_projection_incomplete": projection_incomplete == 0,
         "zero_scan_errors": errors in {None, 0},
     }
+    if enforce_performance:
+        checks["p95_latency_within_ten_percent"] = (
+            latency_baseline is not None
+            and latency_candidate is not None
+            and latency_candidate <= latency_baseline * (1.0 + _MAX_LATENCY_REGRESSION) + _EPSILON
+        )
+        checks["cel_time_within_five_percent"] = cel_ratio is not None and cel_ratio <= _MAX_CEL_TIME_RATIO + _EPSILON
     if require_loader_identity:
         checks["loader_recovery_identity"] = loader_recovery["matches"]
         checks["loader_rejection_identity"] = loader_rejection["matches"]
@@ -503,8 +505,12 @@ def _promotion_checks(
         "passed": all(checks.values()),
         "checks": checks,
         "new_critical_high_false_negative_ids": false_negatives["new"],
-        "latency_limit_ms": (None if latency_baseline is None else latency_baseline * (1.0 + _MAX_LATENCY_REGRESSION)),
-        "cel_time_ratio_limit": _MAX_CEL_TIME_RATIO,
+        "latency_limit_ms": (
+            None
+            if not enforce_performance or latency_baseline is None
+            else latency_baseline * (1.0 + _MAX_LATENCY_REGRESSION)
+        ),
+        "cel_time_ratio_limit": _MAX_CEL_TIME_RATIO if enforce_performance else None,
     }
 
 
@@ -514,6 +520,7 @@ def _scope_comparison(
     location: str,
     *,
     require_loader_identity: bool,
+    enforce_performance: bool,
 ) -> dict[str, Any]:
     _lock_population(baseline, candidate, location)
     deltas: dict[str, Any] = {}
@@ -537,6 +544,7 @@ def _scope_comparison(
             candidate,
             location,
             require_loader_identity=require_loader_identity,
+            enforce_performance=enforce_performance,
         ),
     }
 
@@ -780,6 +788,7 @@ def compare_benchmark_reports(
         _mapping(candidate.get("summary"), "candidate.summary"),
         "summary",
         require_loader_identity=active_cel_comparison,
+        enforce_performance=True,
     )
     tracks: dict[str, Any] = {}
     missing_dimensions: list[str] = []
@@ -802,6 +811,7 @@ def compare_benchmark_reports(
             candidate_track,
             f"tracks.{track_name}",
             require_loader_identity=active_cel_comparison,
+            enforce_performance=True,
         )
         comparison["population"]["population_sha256"] = population_sha256
         group_comparisons: dict[str, Any] = {}
@@ -827,6 +837,7 @@ def compare_benchmark_reports(
                     ),
                     f"tracks.{track_name}.{dimension}.{group_name}",
                     require_loader_identity=active_cel_comparison,
+                    enforce_performance=False,
                 )
                 for group_name in sorted(baseline_groups)
             }

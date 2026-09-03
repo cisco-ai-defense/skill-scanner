@@ -1506,6 +1506,48 @@ def test_subgroup_signal_recall_regression_blocks_release(tmp_path: Path) -> Non
     assert check["passed"] is False
 
 
+def test_subgroup_timing_jitter_does_not_block_release(tmp_path: Path) -> None:
+    public_root = _public_root(tmp_path)
+    candidate = json.loads((public_root / "candidate.json").read_text(encoding="utf-8"))
+    family = candidate["tracks"][_CORE_TRACK]["per_structural_family"]["family-a"]
+    family["p95_scan_latency_ms"] = 10_000.0
+    family["cel_time_ratio"] = 0.99
+    _write_json(public_root / "candidate.json", candidate)
+
+    result = run_release_gate(public_corpus=public_root, dataset_lock=_promoted_lock(tmp_path))
+    names = {item["name"] for item in result["checks"]}
+
+    assert result["status"] == "passed"
+    subgroup = f"public.track.{_CORE_TRACK}.per_structural_family.family-a"
+    assert f"{subgroup}.p95_scan_latency_ms" not in names
+    assert f"{subgroup}.cel_time_ratio" not in names
+    assert f"{subgroup}.signal_recall" in names
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("p95_scan_latency_ms", 110.01),
+        ("cel_time_ratio", 0.051),
+    ],
+)
+def test_aggregate_track_performance_regression_blocks_release(
+    tmp_path: Path,
+    field: str,
+    value: float,
+) -> None:
+    public_root = _public_root(tmp_path)
+    candidate = json.loads((public_root / "candidate.json").read_text(encoding="utf-8"))
+    candidate["tracks"][_CORE_TRACK][field] = value
+    _write_json(public_root / "candidate.json", candidate)
+
+    result = run_release_gate(public_corpus=public_root, dataset_lock=_promoted_lock(tmp_path))
+    check = next(item for item in result["checks"] if item["name"] == f"public.track.{_CORE_TRACK}.{field}")
+
+    assert result["status"] == "failed"
+    assert check["passed"] is False
+
+
 def test_zero_strict_goldens_are_an_explicit_release_blocker(tmp_path: Path) -> None:
     public_root = _public_root(tmp_path, golden=(0, 15))
 

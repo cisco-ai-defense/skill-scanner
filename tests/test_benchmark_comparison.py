@@ -373,6 +373,40 @@ def test_subgroup_regression_is_blocking_even_when_summary_is_unchanged() -> Non
     assert category_result["promotion"]["passed"] is False
 
 
+def test_subgroup_timing_jitter_is_reported_but_not_blocking() -> None:
+    baseline = _report()
+    candidate = _report(candidate=True)
+    family = candidate["tracks"]["source-disjoint-core"]["per_structural_family"]["FAM-A"]
+    family["p95_scan_latency_ms"] = 10_000.0
+    family["cel_time_ratio"] = 0.99
+
+    comparison = compare_benchmark_reports(baseline, candidate)
+
+    assert comparison["status"] == "passed"
+    family_result = comparison["tracks"]["source-disjoint-core"]["groups"]["per_structural_family"]["FAM-A"]
+    assert family_result["metrics"]["p95_scan_latency_ms"]["candidate"] == 10_000.0
+    assert family_result["metrics"]["cel_time_ratio"]["candidate"] == 0.99
+    assert "p95_latency_within_ten_percent" not in family_result["promotion"]["checks"]
+    assert "cel_time_within_five_percent" not in family_result["promotion"]["checks"]
+    assert family_result["promotion"]["passed"] is True
+
+
+def test_aggregate_track_performance_regression_is_blocking() -> None:
+    baseline = _report()
+    candidate = _report(candidate=True)
+    track = candidate["tracks"]["source-disjoint-core"]
+    track["p95_scan_latency_ms"] = 111.0
+    track["cel_time_ratio"] = 0.051
+
+    comparison = compare_benchmark_reports(baseline, candidate)
+
+    assert comparison["summary"]["promotion"]["passed"] is True
+    assert comparison["status"] == "failed"
+    checks = comparison["tracks"]["source-disjoint-core"]["promotion"]["checks"]
+    assert checks["p95_latency_within_ten_percent"] is False
+    assert checks["cel_time_within_five_percent"] is False
+
+
 def test_rejects_active_mode_without_qualified_runtime_evidence() -> None:
     candidate = _report(candidate=True)
     candidate["summary"]["cel"]["runtimes"] = ["unavailable"]

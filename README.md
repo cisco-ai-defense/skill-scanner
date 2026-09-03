@@ -43,23 +43,29 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 
 ### Current modernization evidence
 
-The frozen core-only audit of 111 official Codex, Claude Code, and Cursor skill
-packages reports identical CEL-OFF and CEL-SHADOW findings: 33 packages with a
-MEDIUM-or-higher finding (29.73%; 95% Wilson interval 22.02%-38.79%) and 11 with
-a HIGH/CRITICAL finding (9.91%; 5.62%-16.88%). All packages loaded without a
-scanner or analyzer failure. Shadow mode evaluated 36 candidates, recorded 28
-potential suppressions, and had no fallback, error, or incomplete projection.
+The final core + CEL development benchmark contains 5,256 malicious and 1,338
+benign MaliciousSkillBench packages. Compared with `origin/main`, the current
+scanner raised F1 from 32.92% to 47.75% and recall from 19.88% to 31.45%, while
+reducing benign false-positive rate from 3.59% to 1.05%. Precision is 99.16%.
+Five CEL-shadow runs were exact and deterministic; CEL evaluated 154 candidates
+without proposing a suppression or falling back.
 
-This is a signed/official-bundle compatibility and false-positive-mining
-audit, not evidence that those packages are malicious and not a labeled
-precision, recall, or F1 measurement. An earlier 6/110 (5.45%) and zero
-HIGH/CRITICAL development snapshot was rejected after adversarial review found
-that its demotions could suppress actionable behavior. The safer frozen result
-does not meet the intended false-positive target, and the labeled core-only
-release benchmark is still pending. Optional ATR results are outside this
-release scope and do not gate core + CEL. See [Detection Evaluation and
-Rollout](docs/development/detection-evaluation-rollout.md) for provenance,
-targeted recall evidence, and remaining limitations.
+The locked source-disjoint split is weaker: TP=65, FP=42, TN=503, and FN=774,
+for 60.75% precision, 7.75% recall, 13.74% F1, and 7.71% FPR. This improves F1
+over `origin/main` (7.40%) but regresses FPR (3.67%), so it **does not pass the
+promotion gate**. Every bundled CEL rule therefore remains in `shadow`; this
+change does not promote any CEL suppression.
+
+Compatibility and supplemental checks found identical CEL-OFF/CEL-SHADOW
+findings on 111 official Codex, Claude Code, and Cursor skills (30 MEDIUM+ and
+8 HIGH/CRITICAL packages), with five stable runs. The NotInject hard-negative
+set had 0/339 actionable matches. HarmfulSkillBench had 7/200 actionable and
+6/200 HIGH+ packages with one quarantined sample, while OpenSkillRisk had
+76/263 actionable packages with two host quarantines. The latter two are
+positive-only recall diagnostics and cannot measure precision or FPR. Optional
+ATR results are outside this release scope. See [Detection Evaluation and
+Rollout](docs/development/detection-evaluation-rollout.md) for methodology,
+provenance, confidence intervals, and limitations.
 
 ---
 

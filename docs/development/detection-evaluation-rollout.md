@@ -192,81 +192,67 @@ digest, and rehashes the set after scanning. The configuration is diagnostic
 and nonblocking; compact mandatory release evidence rejects local extensions
 so their results cannot contaminate the sealed public gate.
 
-### Current frozen core-only audit (not a release pass)
+### Current core + CEL benchmark audit (not a release pass)
 
-The exact frozen CEL-OFF/CEL-SHADOW audit completed on the locked 111-package
-official bundled-skill corpus. Its contract passed: all packages were scanned,
-108 content identities were unique, no package failed to load, no analyzer was
-partial, and no scanner error occurred. The reviewed lock refresh added
-OpenAI's `plugin-management` 0.1.0 skill; it produced no MEDIUM-or-higher
-finding. The pre-modernization and rejected development snapshots are included
-only to make the tuning history explicit:
+The final non-test MaliciousSkillBench development benchmark contains 6,594
+packages: 5,256 malicious and 1,338 benign. It is development evidence that was
+used during tuning, not a release holdout. Package-level actionable results are:
 
-| Official bundled-skill audit snapshot | Pre-modernization reference | Rejected unsafe snapshot | Current frozen audit |
-|---|---:|---:|---:|
-| Packages with MEDIUM+ findings | 16 / 110 (14.55%) | 6 / 110 (5.45%) | 33 / 111 (29.73%) |
-| Packages with HIGH/CRITICAL findings | 2 / 110 (1.82%) | 0 / 110 (0%) | 11 / 111 (9.91%) |
-| MEDIUM+ findings | 44 | 9 | 118 (11 CRITICAL, 6 HIGH, 101 MEDIUM) |
+| Non-test development tree | TP | FP | TN | FN | Precision | Recall | F1 | Benign FPR |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `origin/main` | 1,045 | 48 | 1,290 | 4,211 | 95.61% | 19.88% | 32.92% | 3.59% |
+| Current core + CEL shadow | 1,653 | 14 | 1,324 | 3,603 | 99.16% | 31.45% | 47.75% | 1.05% |
 
-For the current audit, the 95% Wilson interval is 22.02%-38.79% for packages
-with MEDIUM+ findings and 5.62%-16.88% for packages with HIGH/CRITICAL
-findings. CEL-OFF and CEL-SHADOW finding identities were identical. Shadow
-mode evaluated 36 candidates and recorded 28 `UNANALYZABLE_BINARY`
-would-suppress decisions, while retaining all findings. It reported zero
-fallbacks, evaluation errors, incomplete projections, or suppressions. The CEL
-layer took 33.553 ms, 0.404% of shadow wall time. The project-standard
-nearest-rank per-package p95 derived from the recorded timings was 473.16 ms
-with CEL off and 527.33 ms in shadow (about 11.45% higher); order and warmup were
-uncontrolled, so this is not release regression evidence.
+The current development result improves F1 by 14.84 percentage points
+(45.07% relative), recall by 11.57 points, and FPR by 2.54 points (70.83%
+relative reduction). Current precision has a 98.60%-99.50% 95% Wilson interval,
+recall 30.21%-32.72%, and FPR 0.62%-1.75%. Five shadow runs produced identical
+normalized findings. CEL evaluated 154 candidates per run with zero
+would-suppress decisions and zero fallbacks. Its maximum share of scan time was
+0.0679%, and the measured shadow p95 was 2.18% above CEL-OFF. These results meet
+the determinism and measured latency bounds, but they do not establish
+suppression quality because no candidate was suppressed.
 
-The earlier 6/110 and zero-HIGH/CRITICAL snapshot was rejected after
-adversarial review: its broad context demotions could hide actionable behavior.
-The frozen audit reflects the safer rollback, so it does **not** pass the
-intended false-positive target. Official bundles are authoritative here only
-for compatibility and false-positive mining. Many findings identify real
-behavioral risk, such as command execution or unanalyzable/archive content;
-package provenance does not make each signal a false positive. Conversely,
-these results do not label the packages malicious and cannot produce recall,
-precision, or F1.
+The locked source-disjoint split provides the relevant public holdout check:
 
-The audit is bound to scanner source
-`54799f0eeba9e5068c037d6c2318d88422f1d9158646a0f627f8028fff88817d`
-and bundled rules
-`71c8a49f00b97589db6c185d84d37d41ab6be0c920a9ac728e1b23a7f6e893e0`.
-The frozen labeled core-only public holdout and complete release gate remain
-pending before a current F1 or release-pass claim can be made.
+| Source-disjoint tree | TP | FP | TN | FN | Precision | Recall | F1 | Benign FPR |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `origin/main` | 33 | 20 | 525 | 806 | 62.26% | 3.93% | 7.40% | 3.67% |
+| Current core + CEL shadow | 65 | 42 | 503 | 774 | 60.75% | 7.75% | 13.74% | 7.71% |
 
-Targeted YARA-X development evidence added bounded remote-miner
-acquire/execute and encoded-PowerShell extractors. On the non-test
-MaliciousSkillBench development population, the latest scoped change increased
-remote-miner detections from 30 to 35 malicious packages (+5) and
-encoded-PowerShell detections from 1 to 2 (+1). The artifact records total
-baseline changes of 18 to 35 and 0 to 2. Neither rule matched the 1,338
-available benign controls, 339 NotInject examples, or the current 111-package
-official-goodware corpus, and five focused runs were stable. These are
-rule-level recall observations, not corpus-wide F1 or release-gate results; see
-[the checked-in development evidence artifact](../../tests/fixtures/remote_execution_replacement_msb_non_test_2026-09-02.json).
+The current holdout precision has a 51.28%-69.47% 95% Wilson interval, recall
+6.12%-9.75%, and FPR 5.75%-10.25%. Recall and F1 improve, but benign FPR rises
+by 4.04 percentage points and precision declines slightly. This violates the
+no-FPR-regression promotion requirement. The result therefore **fails the CEL
+promotion gate and is not a release pass**. Every bundled CEL rule remains in
+`shadow`, and no would-suppress decision is promoted by this change. The split
+has already been observed during development, so it is frozen and must not be
+used for further tuning.
 
-The new bounded JavaScript/TypeScript dataflow pass was also checked against
-the locked official-goodware corpus: 62 JS/TS-family files were visited, 48
-completed analysis, and 14 retained fail-open incomplete status. It emitted
-zero connected flows, affected zero packages, and created zero actionable
-official findings. No labeled malicious-corpus JS/TS artifact has been
-completed, so this result is a false-positive control only, not a recall claim.
+The locked 111-package official Codex, Claude Code, and Cursor skill audit is a
+compatibility and false-positive-mining check, not labeled benign gold. CEL-OFF
+and CEL-SHADOW finding identities were identical across five stable runs. The
+current scanner reported MEDIUM-or-higher findings on 30/111 packages (27.03%;
+95% Wilson interval 19.64%-35.95%) and HIGH/CRITICAL findings on 8/111 (7.21%;
+3.70%-13.58%). Shadow mode evaluated 36 candidates and recorded 28 potential
+suppressions while retaining all findings. Official provenance does not make a
+behavioral-risk finding false, and these counts cannot produce precision,
+recall, or F1.
 
-A one-case paired loopback-only Ollama smoke used `ollama/qwen3.5:9b-mlx` at
-digest `203e30078279db51132b9e026ceb7bb21330e5b1af67ef190671b375c9770404`.
-Both the primary-only and primary-plus-Meta arms completed on the same 1/1
-benign input with no recorded benchmark errors; the Meta arm reported zero
-failed skills. This confirms only the local invocation and result path. The
-required exact-five paired LLM/Meta comparison remains pending, and no LLM or
-Meta accuracy improvement is claimed.
+Supplemental corpus checks were kept separate from the labeled package gate:
 
-For historical context only, an older optional full-pack/ATR diagnostic had
-TP=4,832, TN=469, FP=870, and FN=426 (precision 0.8474, recall 0.9190,
-F1 0.8818, benign FPR 0.6497). It predates the final source freeze, includes a
-pack now outside the release scope, and is explicitly ineligible as a current
-core metric or release gate.
+| Supplemental corpus | Current result | Interpretation |
+|---|---:|---|
+| NotInject | 0 / 339 actionable matches | Benign prompt-text hard-negative check; not package-level FPR gold |
+| HarmfulSkillBench | 7 / 200 actionable; 6 / 200 HIGH+ | Positive-only diagnostic with one known quarantined sample retained in the denominator |
+| OpenSkillRisk | 76 / 263 actionable (28.90%) | Positive-only recall diagnostic with two host quarantines retained in the denominator |
+
+HarmfulSkillBench and OpenSkillRisk contain no benign control population for
+these runs, so neither can measure precision, F1, specificity, or false-positive
+rate. Quarantined samples were not silently removed from their denominators.
+NotInject is valuable hard-negative evidence, but its prompt-text examples are
+not a substitute for independently labeled benign packages. Optional ATR
+results remain outside the core + CEL release scope.
 
 A CEL-gated rule moves from `shadow` to `enforce` only when all of the following
 hold:

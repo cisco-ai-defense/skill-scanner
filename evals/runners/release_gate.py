@@ -1577,12 +1577,13 @@ def _compare_metrics(
     checks: list[GateCheck],
 ) -> None:
     scopes = [
-        ("summary", current_report["summary"], baseline_report["summary"]),
+        ("summary", current_report["summary"], baseline_report["summary"], True),
         *[
             (
                 f"track.{track_name}",
                 current_report["tracks"][track_name],
                 baseline_report["tracks"][track_name],
+                True,
             )
             for track_name in sorted(current_report["tracks"])
         ],
@@ -1596,10 +1597,11 @@ def _compare_metrics(
                     f"track.{track_name}.{dimension}.{group_name}",
                     current_track[dimension][group_name],
                     baseline_track[dimension][group_name],
+                    False,
                 )
                 for group_name in sorted(current_track[dimension])
             )
-    for scope_name, current, baseline in scopes:
+    for scope_name, current, baseline, enforce_performance in scopes:
         name = f"{prefix}.{scope_name}"
         new_false_negatives = sorted(
             set(current["critical_high_false_negative_ids"]) - set(baseline["critical_high_false_negative_ids"])
@@ -1700,24 +1702,25 @@ def _compare_metrics(
                 "sample_ids": baseline["loader_rejection_sample_ids"],
             },
         )
-        maximum_latency = float(baseline["p95_scan_latency_ms"]) * (1.0 + MAX_LATENCY_REGRESSION)
-        _append_check(
-            checks,
-            name=f"{name}.p95_scan_latency_ms",
-            passed=float(current["p95_scan_latency_ms"]) <= maximum_latency + _EPSILON,
-            requirement="p95 scan latency regresses by no more than 10%",
-            current=current["p95_scan_latency_ms"],
-            baseline=baseline["p95_scan_latency_ms"],
-            detail=f"maximum allowed: {maximum_latency}",
-        )
-        _append_check(
-            checks,
-            name=f"{name}.cel_time_ratio",
-            passed=float(current["cel_time_ratio"]) <= MAX_CEL_TIME_RATIO + _EPSILON,
-            requirement="CEL time is no more than 5% of total scan time",
-            current=current["cel_time_ratio"],
-            baseline=baseline["cel_time_ratio"],
-        )
+        if enforce_performance:
+            maximum_latency = float(baseline["p95_scan_latency_ms"]) * (1.0 + MAX_LATENCY_REGRESSION)
+            _append_check(
+                checks,
+                name=f"{name}.p95_scan_latency_ms",
+                passed=float(current["p95_scan_latency_ms"]) <= maximum_latency + _EPSILON,
+                requirement="aggregate p95 scan latency regresses by no more than 10%",
+                current=current["p95_scan_latency_ms"],
+                baseline=baseline["p95_scan_latency_ms"],
+                detail=f"maximum allowed: {maximum_latency}",
+            )
+            _append_check(
+                checks,
+                name=f"{name}.cel_time_ratio",
+                passed=float(current["cel_time_ratio"]) <= MAX_CEL_TIME_RATIO + _EPSILON,
+                requirement="aggregate CEL time is no more than 5% of total scan time",
+                current=current["cel_time_ratio"],
+                baseline=baseline["cel_time_ratio"],
+            )
         _append_check(
             checks,
             name=f"{name}.cel_fallbacks",
