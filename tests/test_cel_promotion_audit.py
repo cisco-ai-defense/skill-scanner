@@ -62,6 +62,7 @@ def _snapshot(
         root=tmp_path,
         dataset={"id": "ProtectSkills/MaliciousSkillBench", "revision": "a" * 40},
         artifact_manifest_sha256="b" * 64,
+        sample_metadata_manifest_sha256="e" * 64,
         usable_artifact_manifest_sha256="c" * 64,
         quarantine_manifest_sha256="d" * 64 if quarantined else None,
         quarantined_sample_ids=quarantined,

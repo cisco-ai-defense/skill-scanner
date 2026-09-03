@@ -866,6 +866,15 @@ rules:
       enabled: true
     description: "Obfuscated prompt-injection instructions detected"
 
+  UNICODE_ANALYSIS_INCOMPLETE:
+    source: python
+    analyzer: static
+    category: policy_violation
+    severity: INFO
+    knobs:
+      enabled: true
+    description: "Unicode instruction analysis stopped at its deterministic work limit"
+
   PYCACHE_FILES_DETECTED:
     source: python
     analyzer: static
@@ -1444,6 +1453,42 @@ rules:
     knobs:
       enabled: true
     description: "Syntax-confirmed dynamic code or process execution in active SKILL.md instructions"
+
+  ACTIVE_REMOTE_ACQUIRE_EXECUTE:
+    source: python
+    analyzer: static
+    category: command_injection
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: "Active instruction acquires remote content and executes the same resolved artifact"
+
+  MANDATORY_AUTOMATIC_HELPER_EXECUTION:
+    source: python
+    analyzer: static
+    category: autonomy_abuse
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: "Automatic helper execution coupled to a coercive, concealed, or deceptive instruction condition"
+
+  ACTIVE_OS_PERSISTENCE_DIRECTIVE:
+    source: python
+    analyzer: static
+    category: malware
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: "Active instruction establishes risky operating-system startup or scheduler persistence"
+
+  ACTIVE_SENSITIVE_EXFILTRATION:
+    source: python
+    analyzer: static
+    category: data_exfiltration
+    severity: HIGH
+    knobs:
+      enabled: true
+    description: "Active instruction collects sensitive data and sends it to an external or attacker-style destination"
 
   ACTIVE_HIDDEN_HTML_INSTRUCTION:
     source: python

@@ -37,7 +37,7 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 **Key limitations:**
 
 - **No findings ≠ no risk.** A scan that returns "No findings" indicates that no known threat patterns were detected. It does not guarantee that a skill is secure, benign, or free of vulnerabilities.
-- **Coverage is inherently incomplete.** The scanner combines signature-based detection, LLM-based semantic analysis, behavioral dataflow analysis, optional cloud services, and configurable rule packs. While this approach improve coverage, no automated tool can detect every technique, especially novel or zero-day attacks.
+- **Coverage is inherently incomplete.** The scanner combines signature-based detection, LLM-based semantic analysis, behavioral dataflow analysis, optional cloud services, and configurable rule packs. While this approach improves coverage, no automated tool can detect every technique, especially novel or zero-day attacks.
 - **False positives and false negatives can occur.** Consensus modes and meta-analysis can help review findings, but no configuration eliminates all incorrect classifications. Tune the [scan policy](docs/user-guide/custom-policy-configuration.md) to your risk tolerance.
 - **Human review remains essential.** Automated scanning is one component of a defense-in-depth strategy. High-risk or production deployments should pair scanner results with manual code review and/or  threat modeling.
 
@@ -85,13 +85,15 @@ targeted recall evidence, and remaining limitations.
 
 ## Installation
 
-**Prerequisites:** CPython 3.11–3.14 and [uv](https://docs.astral.sh/uv/) (recommended) or pip
+**Prerequisites for this checkout and a release containing these changes:**
+CPython 3.11–3.14 and [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
-Published wheels include the required CEL helper; there is no separate CEL
-extra. Python 3.10 is no longer supported. Source installs additionally require
-Go 1.27.1+ to build the helper. See [Installation and
-Configuration](docs/user-guide/installation-and-configuration.md) for the
-supported platform matrix.
+A release containing this branch's CEL changes will include the required helper
+in its wheels; there is no separate CEL extra. That release is configured for
+CPython 3.11–3.14, while source installs additionally require Go 1.27.1+ to
+build the helper. Until it is published, the package currently served by PyPI
+may have a different compatibility contract. See [Installation and
+Configuration](docs/user-guide/installation-and-configuration.md) for details.
 
 ```bash
 # Using uv (recommended)

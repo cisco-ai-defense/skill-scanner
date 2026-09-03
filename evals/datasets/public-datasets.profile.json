@@ -109,6 +109,30 @@
       "materialization": {
         "declared_artifact_count": 9740,
         "declared_artifact_manifest_sha256": "ae542800a95a893a0ae724bdc625d5a1e19d81ff08ae1f846ddb54d77bfb0b9a",
+        "sample_metadata_manifest_format": "sample-metadata-splits-v2",
+        "sample_metadata_manifest_sha256": "6a284d9a181ae07179f2cc3ff98f64f14787dadc1ebde6c0dd86e78f4f55bc7a",
+        "sample_metadata_grouping": {
+          "protocol_contracts": {
+            "m_structural_disjoint": "malicious_structural_family_partition_pure",
+            "source_disjoint": "test_source_disjoint_from_non_test"
+          },
+          "unsupported_dimensions": [
+            "actor_campaign_id",
+            "lexical_template_id",
+            "parent_sample_id",
+            "repository_id"
+          ],
+          "verified_dimensions": [
+            "exact_hash",
+            "normalized_hash",
+            "provenance",
+            "source_id",
+            "source_ids",
+            "source_pointer",
+            "structural_family_id",
+            "text_origin_source_id"
+          ]
+        },
         "usable_artifact_count": 9737,
         "usable_artifact_manifest_sha256": "e1f54bfdfb8489b136601ab5cacdc0ae81802aa2ac3b37ebe0766afdf5cec79b",
         "error_count": 3,

@@ -331,6 +331,8 @@ jobs:
       - name: Validate mandatory public and quarantine optional private entries
         id: corpus-safety
         shell: bash
+        env:
+          PRIVATE_ARTIFACT: ${{ inputs.private_corpus_artifact }}
         run: |
           public_root="$RUNNER_TEMP/release-corpora/public"
           if [[ ! -d "$public_root" ]] || ! find "$public_root" -mindepth 1 -print -quit | grep -q .; then
@@ -365,7 +367,7 @@ jobs:
           PY
 
           private_ready=false
-          if [[ -n "${{ inputs.private_corpus_artifact }}" ]]; then
+          if [[ -n "$PRIVATE_ARTIFACT" ]]; then
             private_root="$RUNNER_TEMP/release-corpora/private"
             if [[ ! -d "$private_root" ]] || ! find "$private_root" -mindepth 1 -print -quit | grep -q .; then
               echo "::warning::optional private artifact is unavailable or empty; public release gates continue"
@@ -379,6 +381,7 @@ jobs:
 
       - name: Run mandatory public and optional private corpus evaluation
         env:
+          EXPECTED_SOURCE_REVISION: ${{ inputs.release_sha }}
           HF_HUB_OFFLINE: "1"
           TRANSFORMERS_OFFLINE: "1"
           SKILL_SCANNER_DISABLE_NETWORK: "1"
@@ -393,7 +396,7 @@ jobs:
             --committed-golden "$RUNNER_TEMP/release-corpora/current-golden/golden-corpus.json" \
             "${private_args[@]}" \
             --dataset-lock evals/datasets/public-datasets.lock.json \
-            --expected-source-revision "${{ inputs.release_sha }}" \
+            --expected-source-revision "$EXPECTED_SOURCE_REVISION" \
             --output artifacts/release/frozen-corpus-gates.json
 
       - name: Upload frozen corpus gate report

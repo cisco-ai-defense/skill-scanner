@@ -188,19 +188,38 @@ def test_release_builds_and_records_every_native_cel_target() -> None:
     assert "scripts/verify_cel_wheel.py" in workflow
     assert "scripts/smoke_cel_wheel_install.py" in workflow
     assert "scripts/smoke_cel_sdist_install.py" in workflow
-    assert "--expected-python 3.12" in workflow
     assert "release-assets/cel-go-dependencies.json" in workflow
     assert "release-assets/cel-go-helpers.json" in workflow
     assert "scripts/export_cel_supply_chain.py" in workflow
     native_smoke = workflow.index("scripts/verify_cel_wheel.py")
-    installed_smoke = workflow.index("scripts/smoke_cel_wheel_install.py", native_smoke)
+    wheel_smoke_start = workflow.index("- name: Install every supported CPython runtime", native_smoke)
+    installed_smoke = workflow.index("scripts/smoke_cel_wheel_install.py", wheel_smoke_start)
     upload = workflow.index("- name: Upload platform wheel", installed_smoke)
     assert native_smoke < installed_smoke < upload
+    wheel_smoke_block = workflow[wheel_smoke_start:upload]
+    assert wheel_smoke_block.count("scripts/smoke_cel_wheel_install.py") == 4
+    for python_version in ("3.11", "3.12", "3.13", "3.14"):
+        assert (
+            f"uv run --no-project --python {python_version} python scripts/smoke_cel_wheel_install.py"
+            in wheel_smoke_block
+        )
+        assert f"--expected-python {python_version}" in wheel_smoke_block
     sdist_build = workflow.index("uv build --sdist --out-dir dist")
-    sdist_smoke = workflow.index("scripts/smoke_cel_sdist_install.py", sdist_build)
+    sdist_smoke_start = workflow.index(
+        "- name: Install every supported CPython runtime for source-install qualification", sdist_build
+    )
+    sdist_smoke = workflow.index("scripts/smoke_cel_sdist_install.py", sdist_smoke_start)
     publish = workflow.index("Publish package distributions to PyPI", sdist_smoke)
     assert sdist_build < sdist_smoke < publish
-    assert "--target linux-amd64" in workflow[sdist_smoke:publish]
+    sdist_smoke_block = workflow[sdist_smoke_start:publish]
+    assert sdist_smoke_block.count("scripts/smoke_cel_sdist_install.py") == 4
+    assert sdist_smoke_block.count("--target linux-amd64") == 4
+    for python_version in ("3.11", "3.12", "3.13", "3.14"):
+        assert (
+            f"uv run --no-project --python {python_version} python scripts/smoke_cel_sdist_install.py"
+            in sdist_smoke_block
+        )
+        assert f"--expected-python {python_version}" in sdist_smoke_block
 
 
 def test_sdist_contains_cel_build_hook_runtime_and_bootstrap() -> None:

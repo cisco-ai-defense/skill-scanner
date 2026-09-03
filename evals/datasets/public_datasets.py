@@ -40,6 +40,46 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
 _BUNDLE_FIELDS = frozenset({"path", "content", "sha256", "sizeBytes"})
 _ARTIFACT_FIELDS = frozenset({"path", "sha256", "size_bytes"})
+_SAMPLE_METADATA_REQUIRED_FIELDS = frozenset(
+    {
+        "benchmark_id",
+        "exact_hash",
+        "label",
+        "normalized_hash",
+        "path",
+        "provenance",
+        "source_id",
+        "source_ids",
+        "source_pointer",
+        "splits",
+        "structural_family_id",
+        "text_origin_source_id",
+    }
+)
+_SAMPLE_METADATA_OPTIONAL_FIELDS = frozenset({"category_id", "category_ids"})
+_PRIMARY_CLASSIFICATION_DATASET = "ProtectSkills/MaliciousSkillBench"
+_SAMPLE_METADATA_MANIFEST_FORMAT = "sample-metadata-splits-v2"
+_SAMPLE_METADATA_MANIFEST_DOMAIN = b"skill-scanner-public-dataset-sample-metadata-splits-v2\0"
+_SAMPLE_METADATA_GROUPING_FIELDS = frozenset({"protocol_contracts", "unsupported_dimensions", "verified_dimensions"})
+_EXPECTED_SAMPLE_METADATA_PROTOCOLS = {
+    "m_structural_disjoint": "malicious_structural_family_partition_pure",
+    "source_disjoint": "test_source_disjoint_from_non_test",
+}
+_EXPECTED_SAMPLE_METADATA_VERIFIED_DIMENSIONS = frozenset(
+    {
+        "exact_hash",
+        "normalized_hash",
+        "provenance",
+        "source_id",
+        "source_ids",
+        "source_pointer",
+        "structural_family_id",
+        "text_origin_source_id",
+    }
+)
+_EXPECTED_SAMPLE_METADATA_UNSUPPORTED_DIMENSIONS = frozenset(
+    {"actor_campaign_id", "lexical_template_id", "parent_sample_id", "repository_id"}
+)
 _QUARANTINE_RECORD_FIELDS = frozenset(
     {
         "benchmark_id",
@@ -83,7 +123,13 @@ _INTEGRITY_REQUIRED_FIELDS = frozenset(
         "hashes_pending",
     }
 )
-_INTEGRITY_FIELDS = _INTEGRITY_REQUIRED_FIELDS | {"source_artifact_manifest_sha256", "materialization"}
+_INTEGRITY_FIELDS = _INTEGRITY_REQUIRED_FIELDS | {
+    "source_artifact_manifest_sha256",
+    "sample_metadata_manifest_format",
+    "sample_metadata_manifest_sha256",
+    "sample_metadata_grouping",
+    "materialization",
+}
 _MATERIALIZATION_FIELDS = frozenset(
     {
         "declared_artifact_count",
@@ -381,6 +427,50 @@ def _validate_lock(manifest: Any) -> None:
             raise DatasetLockError(
                 f"{dataset_id}: source_artifact_manifest_sha256 must be a lowercase SHA-256 when present"
             )
+        sample_metadata_format = integrity.get("sample_metadata_manifest_format")
+        sample_metadata_digest = integrity.get("sample_metadata_manifest_sha256")
+        sample_metadata_grouping = integrity.get("sample_metadata_grouping")
+        if sample_metadata_format is not None and sample_metadata_format != _SAMPLE_METADATA_MANIFEST_FORMAT:
+            raise DatasetLockError(f"{dataset_id}: unsupported sample metadata manifest format")
+        if sample_metadata_digest is not None and (
+            not isinstance(sample_metadata_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", sample_metadata_digest)
+        ):
+            raise DatasetLockError(
+                f"{dataset_id}: sample_metadata_manifest_sha256 must be a lowercase SHA-256 when present"
+            )
+        if dataset_id == _PRIMARY_CLASSIFICATION_DATASET:
+            if sample_metadata_format != _SAMPLE_METADATA_MANIFEST_FORMAT:
+                raise DatasetLockError(f"{dataset_id}: sample_metadata_manifest_format is required")
+            if sample_metadata_digest is None:
+                raise DatasetLockError(f"{dataset_id}: sample_metadata_manifest_sha256 is required")
+            sample_metadata_grouping = _require_object_shape(
+                sample_metadata_grouping,
+                location=f"{dataset_id}.integrity.sample_metadata_grouping",
+                required=_SAMPLE_METADATA_GROUPING_FIELDS,
+                allowed=_SAMPLE_METADATA_GROUPING_FIELDS,
+            )
+            protocol_contracts = _require_object_shape(
+                sample_metadata_grouping.get("protocol_contracts"),
+                location=f"{dataset_id}.integrity.sample_metadata_grouping.protocol_contracts",
+                required=frozenset(_EXPECTED_SAMPLE_METADATA_PROTOCOLS),
+                allowed=frozenset(_EXPECTED_SAMPLE_METADATA_PROTOCOLS),
+            )
+            if protocol_contracts != _EXPECTED_SAMPLE_METADATA_PROTOCOLS:
+                raise DatasetLockError(f"{dataset_id}: sample metadata protocol contracts are unsupported")
+            verified_dimensions = _require_unique_strings(
+                sample_metadata_grouping.get("verified_dimensions"),
+                location=f"{dataset_id}.integrity.sample_metadata_grouping.verified_dimensions",
+            )
+            if verified_dimensions != sorted(_EXPECTED_SAMPLE_METADATA_VERIFIED_DIMENSIONS):
+                raise DatasetLockError(f"{dataset_id}: sample metadata verified dimensions are incomplete")
+            unsupported_dimensions = _require_unique_strings(
+                sample_metadata_grouping.get("unsupported_dimensions"),
+                location=f"{dataset_id}.integrity.sample_metadata_grouping.unsupported_dimensions",
+            )
+            if unsupported_dimensions != sorted(_EXPECTED_SAMPLE_METADATA_UNSUPPORTED_DIMENSIONS):
+                raise DatasetLockError(f"{dataset_id}: sample metadata unsupported dimensions are incomplete")
+        elif sample_metadata_grouping is not None:
+            raise DatasetLockError(f"{dataset_id}: sample_metadata_grouping is unsupported for this adapter")
         materialization = integrity.get("materialization")
         if materialization is not None:
             materialization = _require_object_shape(
@@ -735,8 +825,295 @@ def _validated_relative_path(
     return path
 
 
+def validated_portable_relative_path(
+    raw_path: Any,
+    *,
+    allow_root_skill: bool = False,
+    allow_binary: bool = False,
+) -> PurePosixPath:
+    """Validate an untrusted path using the shared cross-platform contract."""
+
+    return _validated_relative_path(
+        raw_path,
+        allow_root_skill=allow_root_skill,
+        allow_binary=allow_binary,
+    )
+
+
 def _path_collision_key(path: PurePosixPath) -> str:
     return unicodedata.normalize("NFKC", path.as_posix()).casefold()
+
+
+def locked_split_protocols(dataset: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return every split protocol pinned as part of a snapshot contract."""
+
+    expected = dataset.get("expected")
+    row_counts = expected.get("row_counts") if isinstance(expected, Mapping) else None
+    if not isinstance(row_counts, Mapping):
+        raise DatasetSchemaError("dataset lock lacks expected row counts")
+    protocols = {
+        key.removeprefix("splits/")
+        for key in row_counts
+        if isinstance(key, str) and key.startswith("splits/") and key.removeprefix("splits/")
+    }
+    return tuple(sorted(protocols))
+
+
+def _sample_metadata_string(value: Any, *, location: str, nullable: bool = False) -> str | None:
+    if value is None and nullable:
+        return None
+    if not isinstance(value, str) or not value or "\x00" in value or len(value.encode("utf-8")) > 4_096:
+        raise DatasetSchemaError(f"{location} must be a bounded non-empty UTF-8 string")
+    return value
+
+
+def _validate_split_group_purity(samples: Sequence[Mapping[str, Any]]) -> None:
+    """Prove the two locked MSB split protocols' documented group semantics."""
+
+    source_partitions: dict[str, set[str]] = {}
+    malicious_family_partitions: dict[str, set[str]] = {}
+    content_partitions: dict[tuple[str, str, str], set[str]] = {}
+    for sample in samples:
+        splits = cast(Mapping[str, str], sample["splits"])
+        source_partition = splits.get("source_disjoint")
+        if source_partition is not None and source_partition != "excluded":
+            source_groups = {
+                cast(str, sample["source_id"]),
+                *cast(Sequence[str], sample["source_ids"]),
+            }
+            text_origin_source_id = sample.get("text_origin_source_id")
+            if isinstance(text_origin_source_id, str):
+                source_groups.add(text_origin_source_id)
+            for source_id in source_groups:
+                source_partitions.setdefault(source_id, set()).add(source_partition)
+
+        structural_partition = splits.get("m_structural_disjoint")
+        if sample["label"] == "malicious" and structural_partition is not None and structural_partition != "excluded":
+            malicious_family_partitions.setdefault(cast(str, sample["structural_family_id"]), set()).add(
+                structural_partition
+            )
+
+        for protocol, partition in splits.items():
+            if partition == "excluded":
+                continue
+            for field in ("exact_hash", "normalized_hash"):
+                key = (protocol, field, cast(str, sample[field]))
+                content_partitions.setdefault(key, set()).add(partition)
+
+    overlapping_sources = sorted(
+        source_id
+        for source_id, partitions in source_partitions.items()
+        if "test" in partitions and partitions != {"test"}
+    )
+    if overlapping_sources:
+        raise DatasetSchemaError(
+            f"source_disjoint test sources overlap non-test partitions: {overlapping_sources[:10]}"
+        )
+    impure_families = sorted(
+        family for family, partitions in malicious_family_partitions.items() if len(partitions) > 1
+    )
+    if impure_families:
+        raise DatasetSchemaError(f"m_structural_disjoint malicious families span partitions: {impure_families[:10]}")
+    impure_content = sorted(key for key, partitions in content_partitions.items() if len(partitions) > 1)
+    if impure_content:
+        raise DatasetSchemaError(f"exact or normalized content groups span split partitions: {impure_content[:10]}")
+
+
+def sample_metadata_manifest_sha256(
+    dataset_id: str,
+    samples: object,
+    *,
+    artifact_manifest_sha256: str,
+    manifest: Mapping[str, Any] | None = None,
+) -> str:
+    """Hash the complete classification metadata and locked split assignment."""
+
+    dataset = get_locked_dataset(dataset_id, manifest)
+    if not isinstance(artifact_manifest_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", artifact_manifest_sha256):
+        raise DatasetSchemaError("sample metadata artifact binding must be a lowercase SHA-256")
+    locked_artifact_digest = dataset["integrity"].get("artifact_manifest_sha256")
+    if locked_artifact_digest is not None and artifact_manifest_sha256 != locked_artifact_digest:
+        raise DatasetSchemaError(f"{dataset_id}: sample metadata refers to an unpinned artifact manifest")
+    if isinstance(samples, (str, bytes)) or not isinstance(samples, Sequence) or not samples:
+        raise DatasetSchemaError("sample metadata manifest must contain at least one sample")
+    protocols = frozenset(locked_split_protocols(dataset))
+    if not protocols:
+        raise DatasetSchemaError(f"{dataset_id}: sample metadata requires at least one pinned split protocol")
+    canonical_samples: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    seen_paths: set[str] = set()
+    for index, raw_sample in enumerate(samples):
+        if not isinstance(raw_sample, Mapping):
+            raise DatasetSchemaError(f"sample metadata manifest entry {index} must be an object")
+        fields = set(raw_sample)
+        missing = sorted(_SAMPLE_METADATA_REQUIRED_FIELDS - fields)
+        unexpected = sorted(fields - _SAMPLE_METADATA_REQUIRED_FIELDS - _SAMPLE_METADATA_OPTIONAL_FIELDS)
+        if missing or unexpected:
+            raise DatasetSchemaError(
+                f"sample metadata manifest entry {index} has invalid fields "
+                f"(missing={missing}, unexpected={unexpected})"
+            )
+
+        benchmark_id = raw_sample["benchmark_id"]
+        if not isinstance(benchmark_id, str) or not benchmark_id or "\x00" in benchmark_id:
+            raise DatasetSchemaError(f"sample metadata manifest entry {index} has an invalid benchmark_id")
+        if benchmark_id in seen_ids:
+            raise DatasetSchemaError(f"duplicate sample metadata benchmark_id: {benchmark_id}")
+        seen_ids.add(benchmark_id)
+
+        label = raw_sample["label"]
+        if not isinstance(label, str) or label not in {"malicious", "benign"}:
+            raise DatasetSchemaError(f"sample metadata manifest entry {index} has an invalid label")
+        identity: dict[str, str] = {}
+        for field in ("source_id", "structural_family_id"):
+            value = _sample_metadata_string(
+                raw_sample[field],
+                location=f"sample metadata manifest entry {index}.{field}",
+            )
+            assert isinstance(value, str)
+            identity[field] = value
+
+        content_hashes: dict[str, str] = {}
+        for field in ("exact_hash", "normalized_hash"):
+            value = raw_sample[field]
+            if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+                raise DatasetSchemaError(f"sample metadata manifest entry {index} has an invalid {field}")
+            content_hashes[field] = value
+
+        raw_source_ids = raw_sample["source_ids"]
+        if (
+            isinstance(raw_source_ids, (str, bytes))
+            or not isinstance(raw_source_ids, Sequence)
+            or not raw_source_ids
+            or len(raw_source_ids) > 256
+        ):
+            raise DatasetSchemaError(f"sample metadata manifest entry {index}.source_ids must be a bounded array")
+        source_ids: list[str] = []
+        for value in raw_source_ids:
+            source_id = _sample_metadata_string(
+                value,
+                location=f"sample metadata manifest entry {index}.source_ids",
+            )
+            assert source_id is not None
+            source_ids.append(source_id)
+        if source_ids != sorted(set(source_ids)) or identity["source_id"] not in source_ids:
+            raise DatasetSchemaError(
+                f"sample metadata manifest entry {index}.source_ids must be sorted, unique, and include source_id"
+            )
+        text_origin_source_id = _sample_metadata_string(
+            raw_sample["text_origin_source_id"],
+            location=f"sample metadata manifest entry {index}.text_origin_source_id",
+            nullable=True,
+        )
+        if text_origin_source_id is not None and text_origin_source_id not in source_ids:
+            raise DatasetSchemaError(
+                f"sample metadata manifest entry {index}.text_origin_source_id must belong to source_ids"
+            )
+        provenance = _sample_metadata_string(
+            raw_sample["provenance"],
+            location=f"sample metadata manifest entry {index}.provenance",
+        )
+        source_pointer = _sample_metadata_string(
+            raw_sample["source_pointer"],
+            location=f"sample metadata manifest entry {index}.source_pointer",
+        )
+
+        path = _validated_relative_path(raw_sample["path"])
+        collision_key = _path_collision_key(path)
+        if collision_key in seen_paths:
+            raise DatasetSchemaError(f"duplicate or normalization-colliding sample metadata path: {path}")
+        seen_paths.add(collision_key)
+
+        if "category_id" in raw_sample and "category_ids" in raw_sample:
+            raise DatasetSchemaError(f"sample metadata manifest entry {index} declares both category forms")
+        raw_categories = raw_sample.get("category_ids")
+        if raw_categories is None:
+            category_id = raw_sample.get("category_id", "unclassified")
+            if not isinstance(category_id, str) or not category_id or "\x00" in category_id:
+                raise DatasetSchemaError(f"sample metadata manifest entry {index} has an invalid category_id")
+            categories = [category_id]
+        else:
+            if isinstance(raw_categories, (str, bytes)) or not isinstance(raw_categories, Sequence):
+                raise DatasetSchemaError(f"sample metadata manifest entry {index} category_ids must be an array")
+            if any(not isinstance(value, str) or not value or "\x00" in value for value in raw_categories):
+                raise DatasetSchemaError(f"sample metadata manifest entry {index} has an invalid category_ids value")
+            categories = list(cast(Sequence[str], raw_categories))
+            if not categories or categories != sorted(set(categories)):
+                raise DatasetSchemaError(
+                    f"sample metadata manifest entry {index} category_ids must be sorted and duplicate-free"
+                )
+
+        splits = raw_sample["splits"]
+        if not isinstance(splits, Mapping) or set(splits) != protocols:
+            raise DatasetSchemaError(
+                f"sample metadata manifest entry {index} splits must contain exactly {sorted(protocols)}"
+            )
+        if any(not isinstance(value, str) or value not in _TRACK_PARTITIONS for value in splits.values()):
+            raise DatasetSchemaError(f"sample metadata manifest entry {index} has an invalid split partition")
+
+        canonical_samples.append(
+            {
+                "benchmark_id": benchmark_id,
+                "category_ids": categories,
+                "exact_hash": content_hashes["exact_hash"],
+                "label": label,
+                "normalized_hash": content_hashes["normalized_hash"],
+                "path": path.as_posix(),
+                "provenance": provenance,
+                "source_id": identity["source_id"],
+                "source_ids": source_ids,
+                "source_pointer": source_pointer,
+                "splits": dict(sorted(cast(Mapping[str, str], splits).items())),
+                "structural_family_id": identity["structural_family_id"],
+                "text_origin_source_id": text_origin_source_id,
+            }
+        )
+
+    canonical_samples.sort(key=lambda sample: sample["benchmark_id"])
+    _validate_split_group_purity(canonical_samples)
+    grouping = dataset["integrity"].get("sample_metadata_grouping")
+    if not isinstance(grouping, Mapping):
+        raise DatasetSchemaError(f"{dataset_id}: sample metadata grouping contract is missing")
+    payload = {
+        "artifact_manifest_sha256": artifact_manifest_sha256,
+        "dataset_id": dataset_id,
+        "format": _SAMPLE_METADATA_MANIFEST_FORMAT,
+        "grouping": dict(grouping),
+        "revision": dataset["revision"],
+        "samples": canonical_samples,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(_SAMPLE_METADATA_MANIFEST_DOMAIN + encoded).hexdigest()
+
+
+def validate_sample_metadata_manifest(
+    dataset_id: str,
+    samples: object,
+    *,
+    artifact_manifest_sha256: str,
+    manifest_sha256: str,
+    manifest: Mapping[str, Any] | None = None,
+) -> str:
+    """Validate classification metadata against its independently pinned digest."""
+
+    if not isinstance(manifest_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha256):
+        raise DatasetSchemaError("sample metadata manifest digest must be a lowercase SHA-256")
+    dataset = get_locked_dataset(dataset_id, manifest)
+    locked_digest = dataset["integrity"].get("sample_metadata_manifest_sha256")
+    if manifest_sha256 != locked_digest:
+        raise DatasetSchemaError(f"{dataset_id}: sample metadata manifest does not match the dataset lock")
+    actual_digest = sample_metadata_manifest_sha256(
+        dataset_id,
+        samples,
+        artifact_manifest_sha256=artifact_manifest_sha256,
+        manifest=manifest,
+    )
+    if actual_digest != manifest_sha256:
+        raise DatasetSchemaError(
+            f"{dataset_id}: sample metadata manifest digest mismatch "
+            f"(expected {manifest_sha256}, received {actual_digest})"
+        )
+    return actual_digest
 
 
 def artifact_manifest_sha256(
@@ -823,14 +1200,7 @@ def quarantine_manifest_sha256(
     # supplemental protocols that are intentionally absent from release gates.
     # Do not let narrowing the blocking track set invalidate those immutable
     # source-artifact records.
-    protocols = {track["protocol"] for track in dataset["gating"]["tracks"]}
-    row_counts = dataset.get("expected", {}).get("row_counts", {})
-    if isinstance(row_counts, Mapping):
-        protocols.update(
-            key.removeprefix("splits/")
-            for key in row_counts
-            if isinstance(key, str) and key.startswith("splits/") and key.removeprefix("splits/")
-        )
+    protocols = set(locked_split_protocols(dataset))
     canonical_records: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     seen_paths: set[str] = set()

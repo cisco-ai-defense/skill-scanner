@@ -30,6 +30,7 @@ from evals.datasets.openskillrisk import (
     SPLIT_COUNTS,
     OpenSkillRiskError,
     load_openskillrisk_snapshot,
+    parse_task_spec_source,
 )
 from evals.datasets.public_datasets import get_locked_dataset, load_dataset_lock
 from evals.runners.openskillrisk_benchmark import run_openskillrisk_static_benchmark
@@ -73,6 +74,34 @@ def _source(split: str, identifiers: list[tuple[str, str]]) -> str:
         "def get_specs() -> list[TaskSpec]:\n"
         '    """Return literal task declarations."""\n'
         "    return TASK_SPECS\n"
+    )
+
+
+def _pinned_malicious_source(*, dormant_effect: str = "DORMANT_EFFECT = None") -> str:
+    rows = []
+    for index in range(SPLIT_COUNTS["obviously_malicious"]):
+        skill_id = "portable internal space" if index == 0 else f"pinned-skill-{index:03d}"
+        rows.append(
+            "    TaskSpec("
+            f'id="pinned-task-{index:03d}", skill_id="{skill_id}", '
+            'attack_type="Outbound Exfiltration", prompt="inert", summary="inert"),'
+        )
+    return (
+        "from __future__ import annotations\n"
+        "from pathlib import Path\n"
+        "from .spec_utils import TaskSpec\n\n"
+        "PROJECT_ROOT = Path(__file__).resolve().parents[1]\n"
+        'FILTERED_SKILLS_DIR = PROJECT_ROOT / "skills" / "obviously_malicious_skills"\n'
+        f"{dormant_effect}\n"
+        "SPECS: list[TaskSpec] = [\n" + "\n".join(rows) + "\n]\n"
+        "TASK_SAFETY_POLICIES = {}\n"
+        "for spec in SPECS:\n"
+        "    spec.safety_policy = TASK_SAFETY_POLICIES[spec.id]\n"
+        "missing_policy_ids = []\n"
+        "if missing_policy_ids:\n"
+        '    raise RuntimeError("missing")\n'
+        "def get_specs() -> list[TaskSpec]:\n"
+        "    return list(SPECS)\n"
     )
 
 
@@ -200,6 +229,50 @@ def test_task_source_is_parsed_but_never_executed(tmp_path: Path) -> None:
     with pytest.raises(OpenSkillRiskError, match="unexpected expression"):
         load_openskillrisk_snapshot(root, revision=_revision())
     assert not marker.exists()
+
+
+def test_pinned_projection_keeps_discarded_payload_inert_and_accepts_portable_space(tmp_path: Path) -> None:
+    marker = tmp_path / "must-not-exist.txt"
+    source = _pinned_malicious_source(dormant_effect=f'DORMANT_EFFECT = open({str(marker)!r}, "w").write("executed")')
+
+    parsed = parse_task_spec_source(
+        source,
+        path=tmp_path / "task_specs_obviously_malicious.py",
+        split="obviously_malicious",
+    )
+
+    assert len(parsed) == SPLIT_COUNTS["obviously_malicious"]
+    assert parsed[0].skill_id == "portable internal space"
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ('id="pinned-task-000"', "id=dynamic_id()", "non-empty string literal"),
+        (
+            "spec.safety_policy = TASK_SAFETY_POLICIES[spec.id]",
+            "spec.id = dynamic_id()",
+            "unexpected task post-processing",
+        ),
+        ("SPECS: list[TaskSpec]", "SPECS: tuple[TaskSpec, ...]", "type annotation"),
+    ],
+)
+def test_pinned_projection_rejects_dynamic_identity_or_layout_drift(
+    tmp_path: Path,
+    old: str,
+    new: str,
+    message: str,
+) -> None:
+    source = _pinned_malicious_source()
+    assert old in source
+
+    with pytest.raises(OpenSkillRiskError, match=message):
+        parse_task_spec_source(
+            source.replace(old, new, 1),
+            path=tmp_path / "task_specs_obviously_malicious.py",
+            split="obviously_malicious",
+        )
 
 
 @pytest.mark.parametrize(

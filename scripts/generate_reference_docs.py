@@ -371,7 +371,7 @@ def _render_api_reference() -> str:
             "",
             "- API behavior is policy-aware and mirrors CLI analyzer selection flags.",
             "- API keys for VirusTotal and AI Defense are passed via request headers (`X-VirusTotal-Key`, `X-AIDefense-Key`), not in the JSON body.",
-            "- Set `SKILL_SCANNER_ALLOWED_ROOTS` to restrict which directories the API can scan.",
+            "- With `SKILL_SCANNER_ALLOWED_ROOTS` unset, the API can access only its process-private `0700` upload root. Set the variable to allow server-side scan targets, policy files, or custom-rule directories.",
             "- `llm_reasoning_effort` accepts `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; omission preserves the provider default. Direct Google GenAI SDK requests reject configured controls, while LiteLLM-backed Gemini requests support them.",
             "- All `POST` endpoints accept JSON bodies. File upload uses `multipart/form-data`.",
         ]
@@ -539,7 +539,10 @@ def _describe_env_var(var: str) -> str:
             "Credentials (e.g. a GCE/Cloud Run attached service account or "
             "Workload Identity), same as Bedrock's IAM role fallback."
         ),
-        "SKILL_SCANNER_ALLOWED_ROOTS": "Colon-delimited API path allowlist for server-side path access.",
+        "SKILL_SCANNER_ALLOWED_ROOTS": (
+            "Colon-delimited API allowlist for server-side scan targets, policy files, and custom-rule directories. "
+            "When unset, the API can access only its process-private `0700` upload root."
+        ),
         "SKILL_SCANNER_TAXONOMY_PATH": "Path to a custom Cisco AI taxonomy YAML file (overridden by `--taxonomy`).",
         "SKILL_SCANNER_THREAT_MAPPING_PATH": "Path to a custom threat mapping YAML file (overridden by `--threat-mapping`).",
         "GEMINI_API_KEY": "Google AI Studio key; auto-set from `SKILL_SCANNER_LLM_API_KEY` when using Gemini via LiteLLM.",

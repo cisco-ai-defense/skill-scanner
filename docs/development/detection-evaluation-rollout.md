@@ -104,9 +104,12 @@ revision; pull-request and publication jobs do not fetch it.
 | [ProtectSkills/MaliciousSkillBench](https://huggingface.co/datasets/ProtectSkills/MaliciousSkillBench) | Primary core-only public classification benchmark | Yes |
 | Private source-disjoint corpus | Optional independently reviewed real-world supplemental holdout | No |
 | [Miaow-Lab/OpenSkillRisk](https://huggingface.co/datasets/Miaow-Lab/OpenSkillRisk) | Positive recall and category evidence in authorized environments | No |
-| [TrustAIRLab/HarmfulSkillBench](https://huggingface.co/datasets/TrustAIRLab/HarmfulSkillBench) | Harmful-content and LLM-policy research | No |
+| [TrustAIRLab/HarmfulSkillBench](https://huggingface.co/datasets/TrustAIRLab/HarmfulSkillBench) | All-positive supplemental static signal/block recall plus harmful-content and LLM-policy recall; it supplies no benign denominator | No |
 | [ProtectSkills/MaliciousAgentSkillsBench](https://huggingface.co/datasets/ProtectSkills/MaliciousAgentSkillsBench) | Taxonomy, case mining, and de-overlapped sandbox-confirmed positive recall; its “safe” class is not benign gold | No |
 | [OpenClaw/clawhub-security-signals](https://huggingface.co/datasets/OpenClaw/clawhub-security-signals) | Silver-label drift, disagreement, and false-positive mining | No |
+| [uiuc-kang-lab/InjecAgent](https://github.com/uiuc-kang-lab/InjecAgent) | Supplemental indirect-prompt-injection signal recall and paired enhanced-versus-base differential recall; not package-level ground truth | No |
+| [SoheilKhodayari/in_page_prompt_injection_pub](https://github.com/SoheilKhodayari/in_page_prompt_injection_pub) | Supplemental positive indirect-injection signal recall over canonical deduplication groups; not a package accuracy gate | No |
+| [InjecGuard NotInject](https://github.com/InjecGuard/InjecGuard) | Benign prompt-text hard-negative diagnostics and mining; not package-level benign gold or an FPR denominator | No |
 | [LLM-LAT/harmful-dataset](https://huggingface.co/datasets/LLM-LAT/harmful-dataset) | Excluded: chat-preference data with no declared dataset license | Never downloaded |
 | [DataDog malicious software packages](https://github.com/DataDog/malicious-software-packages-dataset) | Quarantined malicious-package recall evidence | No |
 
@@ -116,6 +119,10 @@ source-disjoint test split. Optional pack analysis, including ATR, is a
 separately labeled supplemental result and is never merged into the mandatory
 core denominator. The ATR pack overlaps an ATR source, so results with ATR
 enabled must not be presented as a source-disjoint generalization claim.
+The split remains source-disjoint by construction, but its aggregate results
+have already been observed during development. It is a frozen reproducible
+release benchmark, not a pristine unseen holdout; do not tune against its
+members or present it as never previously observed.
 
 When available, a private corpus should group samples by source, repository,
 actor/campaign, and structural family and freeze a source-disjoint holdout. Its

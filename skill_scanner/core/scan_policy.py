@@ -41,6 +41,7 @@ previously-hardcoded sets/lists.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,11 +49,13 @@ from typing import Any  # used in _from_dict / _deep_merge signatures
 
 import yaml
 
+from ..utils.file_utils import FileValidationError, read_text_strict
 from .cel.models import CelMode
 
 logger = logging.getLogger(__name__)
 
 _MAX_PATTERN_LENGTH = 1000
+_MAX_POLICY_SIZE_BYTES = 1024 * 1024
 
 
 def _safe_compile(pattern: str, flags: int = 0, *, max_length: int = _MAX_PATTERN_LENGTH) -> re.Pattern | None:
@@ -519,9 +522,17 @@ class ScanPolicy:
     def from_preset(cls, name: str) -> ScanPolicy:
         """Load a named preset policy: ``strict``, ``balanced``, or ``permissive``."""
         name_lower = name.lower()
-        if name_lower not in _PRESET_POLICIES:
+        # Select only fixed package-owned paths.  Avoid using request text as
+        # a path-producing mapping key even after membership validation.
+        if name_lower == "strict":
+            preset_path = _DATA_DIR / "strict_policy.yaml"
+        elif name_lower == "balanced":
+            preset_path = _DEFAULT_POLICY_PATH
+        elif name_lower == "permissive":
+            preset_path = _DATA_DIR / "permissive_policy.yaml"
+        else:
             raise ValueError(f"Unknown preset '{name}'. Available: {', '.join(sorted(_PRESET_POLICIES))}")
-        return cls.from_yaml(_PRESET_POLICIES[name_lower])
+        return cls.from_yaml(preset_path)
 
     @classmethod
     def preset_names(cls) -> list[str]:
@@ -536,15 +547,31 @@ class ScanPolicy:
         The YAML is first merged on top of the built-in defaults so that
         users only need to specify the sections they want to override.
         """
-        path = Path(path)
+        raw_path = os.fspath(path)
+        if "\x00" in raw_path:
+            raise ValueError("Policy path contains a null byte")
+        try:
+            normalized_path = os.path.realpath(os.path.expanduser(raw_path))
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise ValueError(f"Invalid policy path: {raw_path}") from exc
+        path = Path(normalized_path)
         if not path.exists():
-            raise FileNotFoundError(f"Policy file not found: {path}")
-
-        with open(path, encoding="utf-8") as fh:
-            raw: dict[str, Any] = yaml.safe_load(fh) or {}
+            raise FileNotFoundError(f"Policy file not found: {raw_path}")
+        try:
+            content = read_text_strict(
+                path,
+                max_size_bytes=_MAX_POLICY_SIZE_BYTES,
+                root=path.parent,
+            )
+        except FileValidationError as exc:
+            raise ValueError(f"Invalid policy file: {exc}") from exc
+        raw_value = yaml.safe_load(content) or {}
+        if not isinstance(raw_value, dict):
+            raise ValueError("Policy YAML root must be a mapping")
+        raw: dict[str, Any] = raw_value
 
         # If this IS the default file, just parse directly
-        is_default = path.resolve() == _DEFAULT_POLICY_PATH.resolve()
+        is_default = os.path.realpath(os.fspath(path)) == os.path.realpath(os.fspath(_DEFAULT_POLICY_PATH))
         if is_default:
             policy = cls._from_dict(raw)
         else:

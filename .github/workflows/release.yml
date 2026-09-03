@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (must match a git tag, e.g., 0.2.1)'
+        description: 'Exact version tag to release; dispatch this workflow from that tag (e.g., 0.2.1)'
         required: true
         type: string
       corpus_artifact_run_id:
@@ -28,8 +28,6 @@ jobs:
   resolve-release:
     name: Resolve immutable release revision
     runs-on: ubuntu-latest
-    outputs:
-      release_sha: ${{ steps.release.outputs.release_sha }}
     steps:
       - name: Checkout repository and tags
         uses: actions/checkout@v4
@@ -37,10 +35,11 @@ jobs:
           fetch-depth: 0
 
       - name: Resolve exact tag commit
-        id: release
         shell: bash
         env:
           RELEASE_REF: ${{ inputs.version }}
+          WORKFLOW_REF: ${{ github.ref }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
           if ! git check-ref-format "refs/tags/$RELEASE_REF" >/dev/null; then
             echo "::error::version must be a valid exact git tag"
@@ -55,7 +54,14 @@ jobs:
             echo "::error::release tag did not resolve to a full lowercase commit SHA"
             exit 1
           fi
-          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          if [[ "$WORKFLOW_REF" != "refs/tags/$RELEASE_REF" ]]; then
+            echo "::error::release workflow must be dispatched from the exact release tag"
+            exit 1
+          fi
+          if [[ "$release_sha" != "$WORKFLOW_SHA" ]]; then
+            echo "::error::release workflow must be dispatched from the exact release tag"
+            exit 1
+          fi
 
   release-detection-gates:
     name: Mandatory same-revision detection gates
@@ -66,7 +72,7 @@ jobs:
     uses: ./.github/workflows/detection-release-gates.yml
     with:
       release_ref: ${{ inputs.version }}
-      release_sha: ${{ needs.resolve-release.outputs.release_sha }}
+      release_sha: ${{ github.sha }}
       corpus_artifact_run_id: ${{ inputs.corpus_artifact_run_id }}
       public_corpus_artifact: ${{ inputs.public_corpus_artifact }}
       private_corpus_artifact: ${{ inputs.private_corpus_artifact }}
@@ -98,7 +104,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.resolve-release.outputs.release_sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Install uv
@@ -125,18 +131,41 @@ jobs:
         run: uv build --wheel --out-dir dist
 
       - name: Verify wheel tag, manifest, architecture, and native execution
+        env:
+          VERSION: ${{ inputs.version }}
         run: >-
           uv run python scripts/verify_cel_wheel.py
           --wheel-dir dist
           --target ${{ matrix.target }}
-          --project-version ${{ inputs.version }}
+          --project-version "$VERSION"
           --smoke
 
-      - name: Install, import, and validate the exact built wheel
+      - name: Install every supported CPython runtime
+        run: uv python install 3.11 3.12 3.13 3.14
+
+      - name: Install, import, and validate the exact built wheel on CPython 3.11
         run: >-
-          python scripts/smoke_cel_wheel_install.py
+          uv run --no-project --python 3.11 python scripts/smoke_cel_wheel_install.py
+          --wheel-dir dist
+          --expected-python 3.11
+
+      - name: Install, import, and validate the exact built wheel on CPython 3.12
+        run: >-
+          uv run --no-project --python 3.12 python scripts/smoke_cel_wheel_install.py
           --wheel-dir dist
           --expected-python 3.12
+
+      - name: Install, import, and validate the exact built wheel on CPython 3.13
+        run: >-
+          uv run --no-project --python 3.13 python scripts/smoke_cel_wheel_install.py
+          --wheel-dir dist
+          --expected-python 3.13
+
+      - name: Install, import, and validate the exact built wheel on CPython 3.14
+        run: >-
+          uv run --no-project --python 3.14 python scripts/smoke_cel_wheel_install.py
+          --wheel-dir dist
+          --expected-python 3.14
 
       - name: Upload platform wheel
         uses: actions/upload-artifact@v4
@@ -167,7 +196,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.resolve-release.outputs.release_sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Install uv
@@ -193,23 +222,52 @@ jobs:
         run: uv build --sdist --out-dir dist
 
       - name: Verify complete wheel matrix
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
           for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64; do
             uv run python scripts/verify_cel_wheel.py \
               --wheel-dir dist \
               --target "$target" \
-              --project-version "${{ inputs.version }}"
+              --project-version "$VERSION"
           done
           test "$(find dist -maxdepth 1 -name '*.whl' -type f | wc -l | tr -d ' ')" = 5
           test "$(find dist -maxdepth 1 -name '*.tar.gz' -type f | wc -l | tr -d ' ')" = 1
 
-      - name: Clean-install sdist with exact prebuilt helper and validate rules
+      - name: Install every supported CPython runtime for source-install qualification
+        run: uv python install 3.11 3.12 3.13 3.14
+
+      - name: Clean-install sdist on CPython 3.11 with exact prebuilt helper and validate rules
         run: >-
-          uv run --no-sync python scripts/smoke_cel_sdist_install.py
+          uv run --no-project --python 3.11 python scripts/smoke_cel_sdist_install.py
+          --sdist-dir dist
+          --wheel-dir dist
+          --target linux-amd64
+          --expected-python 3.11
+
+      - name: Clean-install sdist on CPython 3.12 with exact prebuilt helper and validate rules
+        run: >-
+          uv run --no-project --python 3.12 python scripts/smoke_cel_sdist_install.py
           --sdist-dir dist
           --wheel-dir dist
           --target linux-amd64
           --expected-python 3.12
+
+      - name: Clean-install sdist on CPython 3.13 with exact prebuilt helper and validate rules
+        run: >-
+          uv run --no-project --python 3.13 python scripts/smoke_cel_sdist_install.py
+          --sdist-dir dist
+          --wheel-dir dist
+          --target linux-amd64
+          --expected-python 3.13
+
+      - name: Clean-install sdist on CPython 3.14 with exact prebuilt helper and validate rules
+        run: >-
+          uv run --no-project --python 3.14 python scripts/smoke_cel_sdist_install.py
+          --sdist-dir dist
+          --wheel-dir dist
+          --target linux-amd64
+          --expected-python 3.14
 
       # Export a hash-pinned requirements.txt so plain `pip` users can reproduce
       # the same locked tree without needing uv. Kept outside dist/ so the PyPI

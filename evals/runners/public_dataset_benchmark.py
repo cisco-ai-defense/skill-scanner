@@ -21,24 +21,33 @@ This runner intentionally has no acquisition code.  It accepts a local
 inventory against the repository's pinned dataset contract, and runs only the
 static scanner.  It never imports, executes, or follows links from a sample.
 
-Snapshot layout (schema version 1)::
+Snapshot layout (schema version 2)::
 
     snapshot/
       benchmark-snapshot.json
       skills/<benchmark id>/SKILL.md
 
 The manifest contains ``dataset_id``, ``revision``,
-``artifact_manifest_sha256``, ``artifacts`` and ``samples``. ``artifacts`` is
-the canonical declared ``path-sha256-size-v1`` inventory. An optional,
-lock-pinned ``quarantine`` object accounts for exact unavailable members only
-when each member is outside every blocking track; the usable on-disk inventory
-must otherwise match exactly. Each sample has exactly these fields::
+``artifact_manifest_sha256``, ``sample_metadata_manifest_sha256``, ``artifacts``
+and ``samples``. ``artifacts`` is the canonical declared
+``path-sha256-size-v1`` inventory. The sample-metadata digest binds labels,
+grouping identities, paths, categories, and every locked split assignment to
+that artifact inventory. An optional, lock-pinned ``quarantine`` object
+accounts for exact unavailable members only when each member is outside every
+blocking track; the usable on-disk inventory must otherwise match exactly.
+Each sample has exactly these fields::
 
     {
       "benchmark_id": "MSB-...",
+      "exact_hash": "...",
       "label": "malicious" | "benign",
+      "normalized_hash": "...",
+      "provenance": "...",
       "source_id": "SRC001",
+      "source_ids": ["SRC001"],
+      "source_pointer": "...",
       "structural_family_id": "...",
+      "text_origin_source_id": "SRC001" | null,
       "category_ids": ["command_execution", "data_exfiltration"],
       "path": "skills/MSB-...",
       "splits": {
@@ -76,6 +85,7 @@ from evals.datasets.public_datasets import (  # noqa: E402
     load_dataset_lock,
     validate_artifact_manifest,
     validate_quarantine_manifest,
+    validate_sample_metadata_manifest,
 )
 from evals.runners.loader_fallback import (  # noqa: E402
     LoaderClosedRejection,
@@ -92,7 +102,7 @@ from skill_scanner.core.scanner import SkillScanner  # noqa: E402
 from skill_scanner.data import DATA_DIR, list_available_packs, resolve_rule_packs  # noqa: E402
 
 SNAPSHOT_MANIFEST = "benchmark-snapshot.json"
-SNAPSHOT_SCHEMA_VERSION = 1
+SNAPSHOT_SCHEMA_VERSION = 2
 MALICIOUS_SKILL_BENCH = "ProtectSkills/MaliciousSkillBench"
 _SNAPSHOT_REQUIRED_FIELDS = frozenset(
     {
@@ -100,13 +110,29 @@ _SNAPSHOT_REQUIRED_FIELDS = frozenset(
         "dataset_id",
         "revision",
         "artifact_manifest_sha256",
+        "sample_metadata_manifest_sha256",
         "artifacts",
         "samples",
     }
 )
 _SNAPSHOT_OPTIONAL_FIELDS = frozenset({"quarantine"})
 _QUARANTINE_FIELDS = frozenset({"manifest_sha256", "records"})
-_SAMPLE_REQUIRED_FIELDS = frozenset({"benchmark_id", "label", "source_id", "structural_family_id", "path", "splits"})
+_SAMPLE_REQUIRED_FIELDS = frozenset(
+    {
+        "benchmark_id",
+        "exact_hash",
+        "label",
+        "normalized_hash",
+        "path",
+        "provenance",
+        "source_id",
+        "source_ids",
+        "source_pointer",
+        "splits",
+        "structural_family_id",
+        "text_origin_source_id",
+    }
+)
 _SAMPLE_OPTIONAL_FIELDS = frozenset({"category_id", "category_ids"})
 _ARTIFACT_FIELDS = frozenset({"path", "sha256", "size_bytes"})
 _LABELS = frozenset({"malicious", "benign"})
@@ -151,6 +177,7 @@ class FrozenSnapshot:
     root: Path
     dataset: Mapping[str, Any]
     artifact_manifest_sha256: str
+    sample_metadata_manifest_sha256: str
     usable_artifact_manifest_sha256: str
     quarantine_manifest_sha256: str | None
     quarantined_sample_ids: tuple[str, ...]
@@ -443,6 +470,30 @@ def _validate_samples(
             raise PublicBenchmarkError(f"samples[{index}].label must be one of {sorted(_LABELS)}")
         source_id = _require_string(sample["source_id"], f"samples[{index}].source_id")
         family = _require_string(sample["structural_family_id"], f"samples[{index}].structural_family_id")
+        exact_hash = _require_string(sample["exact_hash"], f"samples[{index}].exact_hash")
+        normalized_hash = _require_string(sample["normalized_hash"], f"samples[{index}].normalized_hash")
+        for field, digest in (("exact_hash", exact_hash), ("normalized_hash", normalized_hash)):
+            if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+                raise PublicBenchmarkError(f"samples[{index}].{field} must be a lowercase SHA-256")
+        _require_string(sample["provenance"], f"samples[{index}].provenance")
+        _require_string(sample["source_pointer"], f"samples[{index}].source_pointer")
+        raw_source_ids = sample["source_ids"]
+        if isinstance(raw_source_ids, (str, bytes)) or not isinstance(raw_source_ids, Sequence):
+            raise PublicBenchmarkError(f"samples[{index}].source_ids must be an array")
+        source_ids = tuple(
+            _require_string(value, f"samples[{index}].source_ids[{source_index}]")
+            for source_index, value in enumerate(raw_source_ids)
+        )
+        if not source_ids or tuple(sorted(set(source_ids))) != source_ids or source_id not in source_ids:
+            raise PublicBenchmarkError(f"samples[{index}].source_ids must be sorted, unique, and include source_id")
+        raw_text_origin = sample["text_origin_source_id"]
+        text_origin_source_id = (
+            None
+            if raw_text_origin is None
+            else _require_string(raw_text_origin, f"samples[{index}].text_origin_source_id")
+        )
+        if text_origin_source_id is not None and text_origin_source_id not in source_ids:
+            raise PublicBenchmarkError(f"samples[{index}].text_origin_source_id must belong to source_ids")
         if "category_id" in sample and "category_ids" in sample:
             raise PublicBenchmarkError(f"samples[{index}] must not provide both category_id and category_ids")
         raw_categories = sample.get("category_ids")
@@ -565,6 +616,21 @@ def load_frozen_snapshot(
     except (DatasetLockError, DatasetSchemaError) as exc:
         raise PublicBenchmarkError(str(exc)) from exc
 
+    sample_metadata_digest = _require_string(
+        manifest["sample_metadata_manifest_sha256"],
+        "sample_metadata_manifest_sha256",
+    )
+    try:
+        validate_sample_metadata_manifest(
+            manifest_dataset_id,
+            manifest["samples"],
+            artifact_manifest_sha256=digest,
+            manifest_sha256=sample_metadata_digest,
+            manifest=lock,
+        )
+    except (DatasetLockError, DatasetSchemaError) as exc:
+        raise PublicBenchmarkError(str(exc)) from exc
+
     quarantined_by_path, quarantine_digest = _validate_quarantine(
         manifest.get("quarantine"),
         dataset=dataset,
@@ -620,6 +686,7 @@ def load_frozen_snapshot(
         root=root,
         dataset=dataset,
         artifact_manifest_sha256=digest,
+        sample_metadata_manifest_sha256=sample_metadata_digest,
         usable_artifact_manifest_sha256=usable_digest,
         quarantine_manifest_sha256=quarantine_digest,
         quarantined_sample_ids=tuple(sorted(str(record["benchmark_id"]) for record in quarantined_by_path.values())),
@@ -894,6 +961,71 @@ def _severity_name(finding: Any) -> str:
     severity = finding.get("severity") if isinstance(finding, Mapping) else getattr(finding, "severity", None)
     value = getattr(severity, "value", severity)
     return str(value).upper()
+
+
+def _validated_findings(result: Any, benchmark_id: str) -> list[Any]:
+    """Return scanner findings only after validating their metric-critical shape."""
+
+    findings = result.get("findings") if isinstance(result, Mapping) else getattr(result, "findings", None)
+    if isinstance(findings, (str, bytes, Mapping)) or not isinstance(findings, Sequence):
+        raise PublicBenchmarkError(f"scanner returned invalid findings collection for {benchmark_id}")
+
+    validated = list(findings)
+    for index, finding in enumerate(validated):
+        location = f"{benchmark_id} at findings[{index}]"
+        if not isinstance(finding, Mapping) and not hasattr(finding, "rule_id"):
+            raise PublicBenchmarkError(f"scanner returned invalid finding object for {location}")
+
+        def field(name: str) -> Any:
+            return finding.get(name) if isinstance(finding, Mapping) else getattr(finding, name, None)
+
+        for name in ("id", "rule_id", "analyzer"):
+            value = field(name)
+            if (
+                not isinstance(value, str)
+                or not value
+                or "\x00" in value
+                or len(value.encode("utf-8")) > _MAX_METADATA_STRING_BYTES
+            ):
+                raise PublicBenchmarkError(f"scanner returned invalid finding {name} for {location}")
+
+        category = getattr(field("category"), "value", field("category"))
+        if (
+            not isinstance(category, str)
+            or not category
+            or "\x00" in category
+            or len(category.encode("utf-8")) > _MAX_METADATA_STRING_BYTES
+        ):
+            raise PublicBenchmarkError(f"scanner returned invalid finding category for {location}")
+
+        severity = field("severity")
+        value = getattr(severity, "value", severity)
+        if not isinstance(value, str) or value.upper() not in _ALL_SEVERITIES:
+            raise PublicBenchmarkError(f"scanner returned invalid finding severity for {location}")
+
+        file_path = field("file_path")
+        if file_path is not None:
+            if (
+                not isinstance(file_path, str)
+                or not file_path
+                or "\x00" in file_path
+                or len(file_path.encode("utf-8")) > _MAX_METADATA_STRING_BYTES
+            ):
+                raise PublicBenchmarkError(f"scanner returned invalid finding file_path for {location}")
+            normalized_path = PurePosixPath(file_path.replace("\\", "/"))
+            if normalized_path.is_absolute() or normalized_path.as_posix() == "." or ".." in normalized_path.parts:
+                raise PublicBenchmarkError(f"scanner returned unsafe finding file_path for {location}")
+
+        line_number = field("line_number")
+        if line_number is not None and (
+            isinstance(line_number, bool) or not isinstance(line_number, int) or line_number <= 0
+        ):
+            raise PublicBenchmarkError(f"scanner returned invalid finding line_number for {location}")
+
+        metadata = field("metadata")
+        if metadata is not None and not isinstance(metadata, Mapping):
+            raise PublicBenchmarkError(f"scanner returned invalid finding metadata for {location}")
+    return validated
 
 
 def _safe_divide(numerator: int | float, denominator: int | float) -> float:
@@ -1449,7 +1581,7 @@ def _record_sample(
 ) -> None:
     if loader_recovery is not None and loader_rejection is not None:
         raise PublicBenchmarkError("loader recovery and closed rejection are mutually exclusive")
-    findings = list(getattr(result, "findings", []) or [])
+    findings = _validated_findings(result, sample.benchmark_id)
     severities = {_severity_name(finding) for finding in findings}
     blocked = bool(severities & _BLOCKING_SEVERITIES)
     actionable = bool(severities & _ACTIONABLE_SEVERITIES)
@@ -1792,6 +1924,7 @@ def _run_track(
             sample_path = snapshot.root.joinpath(*sample.relative_path.parts)
             try:
                 result = scanner.scan_skill(sample_path)
+                _validated_findings(result, sample.benchmark_id)
                 loader_disposition = recognize_loader_disposition(result)
                 _record_sample(
                     counts,
@@ -2113,6 +2246,7 @@ def run_public_benchmark(
         dataset["gating"]["blocking"]
         and not dataset["integrity"]["hashes_pending"]
         and dataset["integrity"]["artifact_manifest_sha256"] == snapshot.artifact_manifest_sha256
+        and dataset["integrity"]["sample_metadata_manifest_sha256"] == snapshot.sample_metadata_manifest_sha256
     )
     if dataset["integrity"]["hashes_pending"]:
         blocking_reason = "complete materialized snapshot manifest is pending review"
@@ -2120,6 +2254,8 @@ def run_public_benchmark(
         blocking_reason = "dataset lock marks this corpus non-blocking"
     elif dataset["integrity"]["artifact_manifest_sha256"] != snapshot.artifact_manifest_sha256:
         blocking_reason = "materialized snapshot digest does not match the dataset lock"
+    elif dataset["integrity"]["sample_metadata_manifest_sha256"] != snapshot.sample_metadata_manifest_sha256:
+        blocking_reason = "sample metadata manifest does not match the dataset lock"
     else:
         blocking_reason = None
     if profile == "release" and not blocking_eligible:
@@ -2303,6 +2439,7 @@ def run_public_benchmark(
             "id": dataset["id"],
             "revision": dataset["revision"],
             "artifact_manifest_sha256": snapshot.artifact_manifest_sha256,
+            "sample_metadata_manifest_sha256": snapshot.sample_metadata_manifest_sha256,
             "usable_artifact_manifest_sha256": snapshot.usable_artifact_manifest_sha256,
             "quarantine_manifest_sha256": snapshot.quarantine_manifest_sha256,
             "quarantined_sample_count": len(snapshot.quarantined_sample_ids),

@@ -45,6 +45,8 @@ def _strict_document(fixture_dir: Path) -> dict:
             "fixture_sha256": fixture_sha256(fixture_dir),
             "label_source": "agent_labeled",
             "scanner_independent": True,
+            "scanner_derived_label": False,
+            "sealed_hf_test_content_used_for_labeling": False,
         },
         "expected_findings": [],
     }
@@ -97,6 +99,14 @@ def test_strict_expectation_accepts_each_scanner_independent_label_source(
         (
             lambda document: document["provenance"].update(scanner_independent=False),
             "scanner_independent",
+        ),
+        (
+            lambda document: document["provenance"].update(scanner_derived_label=True),
+            "scanner-derived",
+        ),
+        (
+            lambda document: document["provenance"].update(sealed_hf_test_content_used_for_labeling=True),
+            "sealed Hugging Face test content",
         ),
         (
             lambda document: document["provenance"].update(label_provenance_sha256="0" * 64),

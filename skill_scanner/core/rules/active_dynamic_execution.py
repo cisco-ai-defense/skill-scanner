@@ -82,14 +82,6 @@ _SCOPED_PROHIBITION_RE = re.compile(
     r"(?:(?:ever\s+)?(?:call|execute|invoke|run|use)(?:ing)?\s*)?(?:the\s*)?$",
     re.IGNORECASE,
 )
-_PURE_PROHIBITION_RE = re.compile(
-    r"^\s*(?:(?:[-*+]\s+)|(?:\d+[.)]\s+))?"
-    r"(?:do\s+not|don't|never|must\s+not|should\s+not|avoid|forbid(?:den)?)\s+"
-    r"(?:(?:ever\s+)?(?:call|execute|invoke|run|use)(?:ing)?\s+)?CALL"
-    r"(?:\s*(?:,\s*(?:and|or)?|\b(?:and|or)\b)\s*"
-    r"(?:(?:call|execute|invoke|run|use)(?:ing)?\s+)?CALL)*[.!]?\s*$",
-    re.IGNORECASE,
-)
 _INLINE_CODE_RE = re.compile(r"(?<!`)`([^`\n]{1,4096})`(?!`)")
 _BROAD_CALL_RE = re.compile(
     r"\b(?:eval|exec|os\.system|"
@@ -113,6 +105,32 @@ _CHILD_PROCESS_MODULES = frozenset({"child_process", "node:child_process"})
 # can be promoted to an actionable rule.
 _CHILD_PROCESS_METHODS = frozenset({"exec"})
 _SUBPROCESS_METHODS = frozenset({"Popen", "call", "run"})
+_PROHIBITION_PREFIXES = (
+    ("do", "not"),
+    ("must", "not"),
+    ("should", "not"),
+    ("don't",),
+    ("never",),
+    ("avoid",),
+    ("forbid",),
+    ("forbidden",),
+)
+# Preserve the exact forms accepted by the former ``verb(?:ing)?`` grammar.
+_PROHIBITION_ACTIONS = frozenset(
+    {
+        "call",
+        "calling",
+        "execute",
+        "executeing",
+        "invoke",
+        "invokeing",
+        "run",
+        "runing",
+        "use",
+        "useing",
+    }
+)
+_CALL_PLACEHOLDER = "\0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -562,6 +580,10 @@ def _extract_balanced_call(line: str, start: int) -> str | None:
 def _is_pure_prohibition(line: str) -> bool:
     """Recognize a complete coordinated list of forbidden execution calls."""
 
+    # This is a precision-only suppression. Oversized direct callers must fail
+    # open just like the normal inline-instruction path does.
+    if len(line) > MAX_INLINE_CHARS:
+        return False
     spans: list[tuple[int, int]] = []
     for candidate in _BROAD_CALL_RE.finditer(line):
         expression = _extract_balanced_call(line, candidate.start())
@@ -572,8 +594,80 @@ def _is_pure_prohibition(line: str) -> bool:
     # Removing backticks changes offsets, so rebuild from the original first,
     # then strip Markdown delimiters from the bounded normalized grammar.
     for start, end in reversed(spans):
-        line = line[:start] + "CALL" + line[end:]
-    return bool(_PURE_PROHIBITION_RE.fullmatch(line.replace("`", "")))
+        line = line[:start] + _CALL_PLACEHOLDER + line[end:]
+    return _matches_pure_prohibition_grammar(line.replace("`", ""))
+
+
+def _matches_pure_prohibition_grammar(line: str) -> bool:
+    """Parse the small prohibition grammar in deterministic linear time."""
+
+    value = line.strip()
+    if not value:
+        return False
+
+    # Strip the same optional Markdown list marker as the former expression.
+    if value[0] in "-*+" and len(value) > 1 and value[1].isspace():
+        value = value[2:].lstrip()
+    elif value[0].isdigit():
+        marker_end = 0
+        while marker_end < len(value) and value[marker_end].isdigit():
+            marker_end += 1
+        if (
+            marker_end < len(value)
+            and value[marker_end] in ".)"
+            and marker_end + 1 < len(value)
+            and value[marker_end + 1].isspace()
+        ):
+            value = value[marker_end + 2 :].lstrip()
+
+    value = value.rstrip()
+    if value.endswith((".", "!")):
+        value = value[:-1].rstrip()
+    # Commas are grammar tokens even when adjacent to a conjunction.
+    tokens = value.replace(",", " , ").split()
+    if not tokens:
+        return False
+    folded = [token.casefold() for token in tokens]
+
+    position = -1
+    for prefix in _PROHIBITION_PREFIXES:
+        if tuple(folded[: len(prefix)]) == prefix:
+            position = len(prefix)
+            break
+    if position < 0:
+        return False
+
+    def consume_call(index: int, *, allow_ever: bool) -> int | None:
+        had_ever = False
+        if allow_ever and index < len(tokens) and folded[index] == "ever":
+            had_ever = True
+            index += 1
+        if index < len(tokens) and folded[index] in _PROHIBITION_ACTIONS:
+            index += 1
+        elif had_ever:
+            return None
+        if index >= len(tokens) or tokens[index] != _CALL_PLACEHOLDER:
+            return None
+        return index + 1
+
+    consumed = consume_call(position, allow_ever=True)
+    if consumed is None:
+        return False
+    position = consumed
+    while position < len(tokens):
+        if tokens[position] == ",":
+            position += 1
+            if position < len(tokens) and folded[position] in {"and", "or"}:
+                position += 1
+        elif folded[position] in {"and", "or"}:
+            position += 1
+        else:
+            return False
+        consumed = consume_call(position, allow_ever=False)
+        if consumed is None:
+            return False
+        position = consumed
+    return True
 
 
 def _inline_calls(instruction: _InstructionLine) -> list[_ExecutionCall]:

@@ -7,7 +7,7 @@
     "analyzer": "static",
     "category": "command_injection",
     "severity": "HIGH",
-    "implementation_sha256": "60bc74a2ca61f6fa9b0c404386e0dad13ed1f519a7ae58c486f5f203d7e6eb73",
+    "implementation_sha256": "6ce4240b92bef869d6cb7313be38dba0bc1e83da2d736fe1fabaad20c223d24f",
     "tokenizer_sha256": "cfca503b89fdcb4532497f00aea6a3d328da9a38b1bb96a0f060be7872e85a3d",
     "reviewed_api_set": {
       "javascript": [

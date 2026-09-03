@@ -70,6 +70,8 @@ def build_committed_golden_evidence(
     legacy_count = 0
     seen_case_ids: set[str] = set()
     label_sources: Counter[str] = Counter()
+    scanner_derived_count = 0
+    sealed_hf_model_labeled_count = 0
 
     for expected_path in sorted(eval_dir.rglob("_expected.json")):
         raw = expected_path.read_bytes()
@@ -87,6 +89,9 @@ def build_committed_golden_evidence(
         if label_source is None:
             raise ValueError(f"strict golden case {case_id!r} lacks a label attestation")
         label_sources[label_source] += 1
+        provenance = document["provenance"]
+        scanner_derived_count += int(provenance["scanner_derived_label"] is True)
+        sealed_hf_model_labeled_count += int(provenance["sealed_hf_test_content_used_for_labeling"] is True)
         try:
             expectation_path = expected_path.resolve().relative_to(repository_root).as_posix()
         except ValueError as exc:
@@ -128,8 +133,8 @@ def build_committed_golden_evidence(
                 "human_reviewed",
             )
         },
-        "scanner_derived_fixtures": 0,
-        "sealed_hf_model_labeled_fixtures": 0,
+        "scanner_derived_fixtures": scanner_derived_count,
+        "sealed_hf_model_labeled_fixtures": sealed_hf_model_labeled_count,
     }
 
 

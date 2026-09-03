@@ -30,6 +30,7 @@ from evals.datasets.public_datasets import (
     artifact_manifest_sha256,
     load_dataset_lock,
     quarantine_manifest_sha256,
+    sample_metadata_manifest_sha256,
 )
 from evals.runners import public_dataset_benchmark
 from evals.runners.produce_release_evidence import _write_json_new
@@ -41,6 +42,7 @@ from evals.runners.public_dataset_benchmark import (
     _finalize_counts,
     _record_sample,
     _validated_cel_telemetry,
+    _validated_findings,
     _write_report,
     compact_release_report,
     load_frozen_snapshot,
@@ -115,6 +117,19 @@ def test_core_profile_loads_the_authoritative_bundled_v2_pack() -> None:
     assert len(registry) > 0
 
 
+def test_core_profile_scanner_does_not_construct_the_full_bundled_registry(monkeypatch) -> None:
+    def reject_full_registry(*_args, **_kwargs):
+        raise AssertionError("core-only evaluation attempted to load all bundled packs")
+
+    monkeypatch.setattr(public_dataset_benchmark.PackLoader, "build_registry", reject_full_registry)
+    scanner = public_dataset_benchmark._default_scanner_factory("core_only", CelMode.OFF)
+    try:
+        assert scanner.rule_registry is not None
+        assert set(scanner.rule_registry.all_packs()) == {"core"}
+    finally:
+        scanner.close()
+
+
 def _track_expectation(dataset: dict, track: dict, samples: list[dict]) -> dict:
     selected = [sample for sample in samples if sample["splits"][track["protocol"]] == track["partition"]]
     payload = {
@@ -172,9 +187,15 @@ def _snapshot(tmp_path: Path, *, pinned: bool = True) -> tuple[Path, Path, str]:
         samples.append(
             {
                 "benchmark_id": benchmark_id,
+                "exact_hash": hashlib.sha256(encoded).hexdigest(),
                 "label": label,
+                "normalized_hash": hashlib.sha256(encoded).hexdigest(),
+                "provenance": "unit_test",
                 "source_id": source,
+                "source_ids": [source],
+                "source_pointer": f"test://{source}",
                 "structural_family_id": family,
+                "text_origin_source_id": source,
                 "category_id": category,
                 "path": f"skills/{benchmark_id}",
                 "splits": {
@@ -199,16 +220,24 @@ def _snapshot(tmp_path: Path, *, pinned: bool = True) -> tuple[Path, Path, str]:
     dataset["integrity"]["hashes_pending"] = not pinned
     dataset["integrity"]["artifact_manifest_sha256"] = digest if pinned else None
     dataset["gating"]["blocking"] = pinned
+    metadata_digest = sample_metadata_manifest_sha256(
+        MALICIOUS_SKILL_BENCH,
+        samples,
+        artifact_manifest_sha256=digest,
+        manifest=lock,
+    )
+    dataset["integrity"]["sample_metadata_manifest_sha256"] = metadata_digest
     lock_path = tmp_path / "public-datasets.lock.json"
     _write_json(lock_path, lock)
 
     _write_json(
         root / "benchmark-snapshot.json",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "dataset_id": MALICIOUS_SKILL_BENCH,
             "revision": dataset["revision"],
             "artifact_manifest_sha256": digest,
+            "sample_metadata_manifest_sha256": metadata_digest,
             "artifacts": artifacts,
             "samples": samples,
         },
@@ -225,6 +254,24 @@ def _refresh_track_expectations(lock_path: Path, samples: list[dict]) -> None:
     _write_json(lock_path, lock)
 
 
+def _refresh_sample_metadata_digest(root: Path, lock_path: Path) -> str:
+    manifest_path = root / "benchmark-snapshot.json"
+    snapshot = json.loads(manifest_path.read_text(encoding="utf-8"))
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    dataset = next(dataset for dataset in lock["datasets"] if dataset["id"] == MALICIOUS_SKILL_BENCH)
+    digest = sample_metadata_manifest_sha256(
+        MALICIOUS_SKILL_BENCH,
+        snapshot["samples"],
+        artifact_manifest_sha256=snapshot["artifact_manifest_sha256"],
+        manifest=lock,
+    )
+    dataset["integrity"]["sample_metadata_manifest_sha256"] = digest
+    snapshot["sample_metadata_manifest_sha256"] = digest
+    _write_json(lock_path, lock)
+    _write_json(manifest_path, snapshot)
+    return digest
+
+
 def _add_quarantined_train_sample(root: Path, lock_path: Path) -> tuple[str, str]:
     manifest_path = root / "benchmark-snapshot.json"
     snapshot = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -238,9 +285,15 @@ def _add_quarantined_train_sample(root: Path, lock_path: Path) -> tuple[str, str
     }
     sample = {
         "benchmark_id": "quarantined",
+        "exact_hash": hashlib.sha256(content).hexdigest(),
         "label": "malicious",
+        "normalized_hash": hashlib.sha256(content).hexdigest(),
+        "provenance": "unit_test",
         "source_id": "SRC-Q",
+        "source_ids": ["SRC-Q"],
+        "source_pointer": "test://SRC-Q",
         "structural_family_id": "FAM-Q",
+        "text_origin_source_id": "SRC-Q",
         "category_id": "command_execution",
         "path": "skills/quarantined",
         "splits": {"source_disjoint": "train", "m_structural_disjoint": "train"},
@@ -280,6 +333,7 @@ def _add_quarantined_train_sample(root: Path, lock_path: Path) -> tuple[str, str
     snapshot["quarantine"] = {"manifest_sha256": quarantine_digest, "records": [record]}
     _write_json(lock_path, lock)
     _write_json(manifest_path, snapshot)
+    _refresh_sample_metadata_digest(root, lock_path)
     return usable_digest, quarantine_digest
 
 
@@ -297,7 +351,20 @@ class _RecordingScanner:
     def scan_skill(self, path: Path):
         self.calls.append((self.profile, path.name))
         severity = "HIGH" if path.name.startswith("mal-") else None
-        findings = [] if severity is None else [{"severity": severity}]
+        findings = (
+            []
+            if severity is None
+            else [
+                {
+                    "id": "RECORDING_FINDING",
+                    "rule_id": "RECORDING_FINDING",
+                    "category": "command_execution",
+                    "severity": severity,
+                    "file_path": "SKILL.md",
+                    "analyzer": "static",
+                }
+            ]
+        )
         per_rule = {}
         if severity is not None and self.mode is not CelMode.OFF:
             lineage = {
@@ -423,6 +490,7 @@ def _add_loader_rejection_proof(result: SimpleNamespace) -> None:
 
 def test_runs_core_source_disjoint_and_full_pack_structural_tracks(tmp_path, monkeypatch):
     root, lock_path, digest = _snapshot(tmp_path)
+    snapshot = json.loads((root / "benchmark-snapshot.json").read_text(encoding="utf-8"))
     calls: list[tuple[str, str]] = []
     monkeypatch.setattr("evals.runners.public_dataset_benchmark.scanner_version", "test-build")
 
@@ -456,6 +524,7 @@ def test_runs_core_source_disjoint_and_full_pack_structural_tracks(tmp_path, mon
         "id": MALICIOUS_SKILL_BENCH,
         "revision": "d4b42ce5766a6e0359c987cf59c1007cb3795a90",
         "artifact_manifest_sha256": digest,
+        "sample_metadata_manifest_sha256": snapshot["sample_metadata_manifest_sha256"],
         "usable_artifact_manifest_sha256": digest,
         "quarantine_manifest_sha256": None,
         "quarantined_sample_count": 0,
@@ -834,6 +903,7 @@ def test_quarantined_member_cannot_belong_to_a_blocking_track(tmp_path):
     dataset["integrity"]["materialization"]["quarantine_manifest_sha256"] = digest
     _write_json(manifest_path, snapshot)
     _write_json(lock_path, lock)
+    _refresh_sample_metadata_digest(root, lock_path)
 
     with pytest.raises(PublicBenchmarkError, match="belongs to blocking track"):
         load_frozen_snapshot(root, dataset_lock=lock_path)
@@ -853,9 +923,40 @@ def test_same_count_track_membership_swap_fails_before_scanner_construction(tmp_
         constructed.append(profile)
         return _RecordingScanner(profile, [], mode)
 
-    with pytest.raises(PublicBenchmarkError, match="population drift"):
+    with pytest.raises(PublicBenchmarkError, match="sample metadata manifest digest mismatch"):
         run_public_benchmark(root, dataset_lock=lock_path, scanner_factory=factory)
     assert constructed == []
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda samples: samples[0].update(label="benign"),
+        lambda samples: samples[0].update(
+            source_id="SRC-TAMPERED",
+            source_ids=["SRC-TAMPERED"],
+            text_origin_source_id="SRC-TAMPERED",
+        ),
+        lambda samples: samples[0].update(structural_family_id="FAM-TAMPERED"),
+        lambda samples: samples[0].update(category_id="data_exfiltration"),
+        lambda samples: samples[0]["splits"].update(m_structural_disjoint="validation"),
+        lambda samples: samples[0].update(exact_hash="f" * 64),
+        lambda samples: (
+            samples[0].update(path="skills/ben-source"),
+            samples[1].update(path="skills/mal-source"),
+        ),
+    ],
+    ids=["label", "source", "family", "category", "non-gating-split", "exact-hash", "path"],
+)
+def test_sample_metadata_tampering_fails_against_independently_pinned_digest(tmp_path, mutation):
+    root, lock_path, _ = _snapshot(tmp_path)
+    manifest_path = root / "benchmark-snapshot.json"
+    snapshot = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mutation(snapshot["samples"])
+    _write_json(manifest_path, snapshot)
+
+    with pytest.raises(PublicBenchmarkError, match="sample metadata manifest digest mismatch"):
+        load_frozen_snapshot(root, dataset_lock=lock_path)
 
 
 def test_artifact_tampering_and_unmanaged_files_fail_closed(tmp_path):
@@ -886,6 +987,7 @@ def test_snapshot_rejects_declared_package_files_and_executable_hooks(tmp_path):
         manifest=lock,
     )
     _write_json(manifest_path, snapshot)
+    _refresh_sample_metadata_digest(root, lock_path)
 
     with pytest.raises(PublicBenchmarkError, match="executable ingestion hooks"):
         load_frozen_snapshot(root, dataset_lock=lock_path)
@@ -922,7 +1024,7 @@ def test_snapshot_rejects_duplicate_json_keys(tmp_path):
     manifest_path = root / "benchmark-snapshot.json"
     original = manifest_path.read_text(encoding="utf-8")
     manifest_path.write_text(
-        original.replace('"schema_version": 1,', '"schema_version": 1, "schema_version": 1,'), encoding="utf-8"
+        original.replace('"schema_version": 2,', '"schema_version": 2, "schema_version": 2,'), encoding="utf-8"
     )
 
     with pytest.raises(PublicBenchmarkError, match="duplicate key"):
@@ -949,6 +1051,107 @@ def test_scan_errors_are_reported_and_fail_the_complete_benchmark(tmp_path):
     assert first_track["samples"] == 2
     assert first_track["scan_errors"] == 1
     assert first_track["critical_high_false_negative_ids"] == ["mal-source"]
+
+
+@pytest.mark.parametrize("severity", ["HGIH", None, 7, True])
+def test_invalid_finding_severity_fails_conservatively_without_shrinking_denominators(tmp_path, severity):
+    root, lock_path, _ = _snapshot(tmp_path)
+
+    class InvalidSeverityScanner(_RecordingScanner):
+        def scan_skill(self, path: Path):
+            result = super().scan_skill(path)
+            if path.name == "ben-source":
+                result.findings = [{"rule_id": "BROKEN_SEVERITY", "severity": severity}]
+                result.findings[0].update(
+                    id="BROKEN_SEVERITY",
+                    category="command_execution",
+                    file_path="SKILL.md",
+                    analyzer="static",
+                )
+                result.scan_metadata["cel"]["retained"] = 1
+            return result
+
+    report = run_public_benchmark(
+        root,
+        dataset_lock=lock_path,
+        scanner_factory=lambda profile, mode: InvalidSeverityScanner(profile, [], mode),
+    )
+
+    source_track = next(track for track in report["tracks"].values() if track["protocol"] == "source_disjoint")
+    assert report["status"] == "failed"
+    assert source_track["status"] == "failed"
+    assert source_track["samples"] == 2
+    assert source_track["malicious"] == source_track["benign"] == 1
+    assert source_track["scan_errors"] == 1
+    assert source_track["tp"] == source_track["fp"] == 1
+    assert source_track["tn"] == source_track["fn"] == 0
+    assert source_track["actionable_benign_false_positives"] == 1
+    assert source_track["benign_actionable_fpr"] == 1.0
+    assert report["errors"] == [
+        {
+            "benchmark_id": "ben-source",
+            "error": "scanner returned invalid finding severity for ben-source at findings[0]",
+        }
+    ]
+
+
+@pytest.mark.parametrize("findings", [None, "HIGH", {"severity": "HIGH"}])
+def test_invalid_findings_collection_is_a_conservative_scan_error(tmp_path, findings):
+    root, lock_path, _ = _snapshot(tmp_path)
+
+    class InvalidFindingsScanner(_RecordingScanner):
+        def scan_skill(self, path: Path):
+            result = super().scan_skill(path)
+            if path.name == "ben-source":
+                result.findings = findings
+            return result
+
+    report = run_public_benchmark(
+        root,
+        dataset_lock=lock_path,
+        scanner_factory=lambda profile, mode: InvalidFindingsScanner(profile, [], mode),
+    )
+
+    source_track = next(track for track in report["tracks"].values() if track["protocol"] == "source_disjoint")
+    assert report["status"] == "failed"
+    assert source_track["samples"] == 2
+    assert source_track["scan_errors"] == 1
+    assert source_track["tp"] == source_track["fp"] == 1
+    assert source_track["tn"] == source_track["fn"] == 0
+    assert source_track["benign_actionable_fpr"] == 1.0
+    assert report["errors"] == [
+        {
+            "benchmark_id": "ben-source",
+            "error": "scanner returned invalid findings collection for ben-source",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "field"),
+    [
+        (lambda finding: finding.pop("id"), "id"),
+        (lambda finding: finding.pop("rule_id"), "rule_id"),
+        (lambda finding: finding.pop("category"), "category"),
+        (lambda finding: finding.pop("analyzer"), "analyzer"),
+        (lambda finding: finding.update(file_path="../escape"), "file_path"),
+        (lambda finding: finding.update(line_number=0), "line_number"),
+    ],
+)
+def test_metric_critical_finding_identity_is_validated(mutation, field: str) -> None:
+    finding = {
+        "id": "TEST_FINDING",
+        "rule_id": "TEST_FINDING",
+        "category": "command_execution",
+        "severity": "HIGH",
+        "file_path": "SKILL.md",
+        "line_number": 1,
+        "analyzer": "static",
+    }
+    mutation(finding)
+
+    with pytest.raises(PublicBenchmarkError, match=field):
+        _validated_findings(SimpleNamespace(findings=[finding]), "sample")
 
 
 def test_analyzer_failures_preserve_both_class_denominators_conservatively(tmp_path):
@@ -1241,8 +1444,12 @@ def test_reports_shadow_deltas_by_sample_and_rule(tmp_path):
             if is_malicious:
                 findings = [
                     {
+                        "id": "CEL_TEST",
                         "rule_id": "CEL_TEST",
+                        "category": "command_execution",
                         "severity": "HIGH",
+                        "file_path": "SKILL.md",
+                        "analyzer": "static",
                         "metadata": {
                             "cel": {
                                 "decision": "would_suppress",
@@ -1325,6 +1532,7 @@ def test_release_requires_category_group_for_every_sample(tmp_path):
     for sample in manifest["samples"]:
         sample.pop("category_id")
     _write_json(manifest_path, manifest)
+    _refresh_sample_metadata_digest(root, lock_path)
 
     with pytest.raises(PublicBenchmarkError, match="requires category_id"):
         run_public_benchmark(
@@ -1345,6 +1553,7 @@ def test_multi_category_and_excluded_split_values_are_preserved(tmp_path):
     manifest["samples"][2]["splits"]["source_disjoint"] = "excluded"
     _write_json(manifest_path, manifest)
     _refresh_track_expectations(lock_path, manifest["samples"])
+    _refresh_sample_metadata_digest(root, lock_path)
 
     report = run_public_benchmark(
         root,
@@ -1356,6 +1565,7 @@ def test_multi_category_and_excluded_split_values_are_preserved(tmp_path):
     assert source_track["per_category"]["command_execution"]["samples"] == 2
     assert source_track["per_category"]["data_exfiltration"]["samples"] == 1
 
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["samples"][0]["category_ids"] = ["data_exfiltration", "command_execution"]
     _write_json(manifest_path, manifest)
     with pytest.raises(PublicBenchmarkError, match="sorted and duplicate-free"):

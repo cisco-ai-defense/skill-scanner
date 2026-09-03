@@ -34,8 +34,9 @@ import re
 import shutil
 import stat
 import sys
+import unicodedata
 from collections.abc import Mapping, Sequence
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 # Permit direct execution from the repository checkout.
@@ -44,13 +45,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from evals.datasets.public_datasets import (  # noqa: E402
     DatasetLockError,
     DatasetSchemaError,
+    UnsafeSampleError,
     artifact_manifest_sha256,
     get_locked_dataset,
     load_dataset_lock,
+    locked_split_protocols,
+    sample_metadata_manifest_sha256,
     validate_artifact_manifest,
     validate_quarantine_manifest,
+    validate_sample_metadata_manifest,
     validate_snapshot_metadata,
     validate_source_artifact_manifest,
+    validated_portable_relative_path,
 )
 from evals.runners.public_dataset_benchmark import (  # noqa: E402
     SNAPSHOT_MANIFEST,
@@ -59,7 +65,7 @@ from evals.runners.public_dataset_benchmark import (  # noqa: E402
 )
 
 try:
-    import pyarrow.parquet as parquet
+    import pyarrow.parquet as parquet  # type: ignore[import-untyped]
 except ImportError:  # pragma: no cover - the non-materializing contract API remains usable
     parquet = None
 
@@ -117,6 +123,16 @@ def _profile_dataset(profile_path: Path, lock: Mapping[str, Any]) -> Mapping[str
         raise MaterializationError("dataset profile revision is not the verified locked revision")
     if entry.get("source_artifact_manifest_sha256") != locked["integrity"].get("source_artifact_manifest_sha256"):
         raise MaterializationError("dataset profile source-artifact identity differs from the lock")
+    materialization = entry.get("materialization")
+    if not isinstance(materialization, Mapping):
+        raise MaterializationError("dataset profile lacks materialization metadata")
+    for field in (
+        "sample_metadata_manifest_format",
+        "sample_metadata_manifest_sha256",
+        "sample_metadata_grouping",
+    ):
+        if materialization.get(field) != locked["integrity"].get(field):
+            raise MaterializationError(f"dataset profile {field} differs from the lock")
     return entry
 
 
@@ -141,14 +157,14 @@ def source_artifact_contract(
         path = raw["path"]
         digest = raw["sha256"]
         size = raw["size_bytes"]
-        if not isinstance(path, str) or not path or "\\" in path or path.startswith("/"):
-            raise MaterializationError(f"source_artifacts[{index}].path is not a portable relative path")
-        parsed = PurePosixPath(path)
-        if any(part in ("", ".", "..") for part in path.split("/")) or parsed.as_posix() != path:
-            raise MaterializationError(f"source_artifacts[{index}].path is not normalized")
-        if path in seen:
-            raise MaterializationError(f"duplicate source artifact path: {path}")
-        seen.add(path)
+        try:
+            parsed = validated_portable_relative_path(path, allow_root_skill=True, allow_binary=True)
+        except UnsafeSampleError as exc:
+            raise MaterializationError(f"source_artifacts[{index}].path is not a portable relative path") from exc
+        collision_key = unicodedata.normalize("NFKC", parsed.as_posix()).casefold()
+        if collision_key in seen:
+            raise MaterializationError(f"duplicate or normalization-colliding source artifact path: {path}")
+        seen.add(collision_key)
         if not isinstance(digest, str) or _SHA256_RE.fullmatch(digest) is None:
             raise MaterializationError(f"source_artifacts[{index}].sha256 is invalid")
         if isinstance(size, bool) or not isinstance(size, int) or size < 0:
@@ -230,6 +246,18 @@ def _category_ids(row: Mapping[str, Any], label: str) -> list[str]:
     if categories:
         return categories
     return ["benign" if label == "benign" else "unclassified_malicious"]
+
+
+def _locked_split_protocols(dataset: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return every split protocol pinned for the materialized snapshot."""
+
+    try:
+        protocols = locked_split_protocols(dataset)
+    except DatasetSchemaError as exc:
+        raise MaterializationError(str(exc)) from exc
+    if not protocols:
+        raise MaterializationError("dataset lock contains no pinned split protocols")
+    return protocols
 
 
 def _split_rows(
@@ -374,7 +402,7 @@ def materialize_snapshot(
         by_id[benchmark_id] = row
         identities[benchmark_id] = (label, source_id)
 
-    protocols = tuple(track["protocol"] for track in dataset["gating"]["tracks"])
+    protocols = _locked_split_protocols(dataset)
     splits = {
         protocol: _split_rows(
             source_root,
@@ -440,11 +468,17 @@ def materialize_snapshot(
             sample = {
                 "benchmark_id": benchmark_id,
                 "category_ids": categories,
+                "exact_hash": row["exact_hash"],
                 "label": label,
+                "normalized_hash": row["normalized_hash"],
                 "path": f"skills/{benchmark_id}",
+                "provenance": row["provenance"],
                 "source_id": source_id,
+                "source_ids": row["source_ids"],
+                "source_pointer": row["source_pointer"],
                 "splits": sample_splits,
                 "structural_family_id": family,
+                "text_origin_source_id": row["text_origin_source_id"],
             }
             samples.append(sample)
 
@@ -472,6 +506,19 @@ def materialize_snapshot(
             manifest_sha256=declared_digest,
             manifest=lock,
         )
+        sample_metadata_digest = sample_metadata_manifest_sha256(
+            DATASET_ID,
+            samples,
+            artifact_manifest_sha256=declared_digest,
+            manifest=lock,
+        )
+        validate_sample_metadata_manifest(
+            DATASET_ID,
+            samples,
+            artifact_manifest_sha256=declared_digest,
+            manifest_sha256=sample_metadata_digest,
+            manifest=lock,
+        )
         quarantine_digest = dataset["integrity"]["materialization"]["quarantine_manifest_sha256"]
         validate_quarantine_manifest(
             DATASET_ID,
@@ -485,6 +532,7 @@ def materialize_snapshot(
             "dataset_id": DATASET_ID,
             "revision": revision,
             "artifact_manifest_sha256": declared_digest,
+            "sample_metadata_manifest_sha256": sample_metadata_digest,
             "artifacts": artifacts,
             "samples": samples,
             "quarantine": {"manifest_sha256": quarantine_digest, "records": list(quarantine)},
@@ -500,6 +548,7 @@ def materialize_snapshot(
         "revision": revision,
         "source_artifact_manifest_sha256": dataset["integrity"]["source_artifact_manifest_sha256"],
         "artifact_manifest_sha256": snapshot.artifact_manifest_sha256,
+        "sample_metadata_manifest_sha256": snapshot.sample_metadata_manifest_sha256,
         "usable_artifact_manifest_sha256": snapshot.usable_artifact_manifest_sha256,
         "declared_artifacts": len(artifacts),
         "usable_artifacts": len(artifacts) - len(quarantine),

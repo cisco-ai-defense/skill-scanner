@@ -30,12 +30,17 @@ import pytest
 import scripts.update_brew_formula as brew_formula
 from scripts.update_brew_formula import (
     CEL_WHEEL_TAGS,
+    HOMEBREW_MACOS_DEPLOYMENT_TARGET,
+    HOMEBREW_PYTHON_PLATFORMS,
+    SKIP_PACKAGES,
     download_verified_sdist,
     find_artifact,
+    read_build_system_requirements,
     read_sdist_pyproject,
     render_formula,
     require_project_sdist,
     resolve_dependencies,
+    select_macos_wheel_resource,
     select_macos_wheel_resources,
     validate_cel_project_wheels,
 )
@@ -140,6 +145,44 @@ def test_wheel_only_dependency_selects_independent_homebrew_architectures() -> N
         select_macos_wheel_resources(data)
 
 
+def test_dependency_wheel_selection_prefers_a_portable_pure_wheel() -> None:
+    data = _pypi_data(
+        "example",
+        "1.2.3",
+        [
+            ("example-1.2.3-cp312-none-macosx_14_0_arm64.whl", "bdist_wheel"),
+            ("example-1.2.3-py3-none-any.whl", "bdist_wheel"),
+            ("example-1.2.3.tar.gz", "sdist"),
+        ],
+    )
+    for index, entry in enumerate(data["urls"]):
+        entry["digests"]["sha256"] = f"{index + 1:064x}"
+
+    url, sha256 = select_macos_wheel_resource(data, "darwin-arm64")
+
+    assert url.endswith("example-1.2.3-py3-none-any.whl")
+    assert sha256 == f"{2:064x}"
+
+
+def test_dependency_wheel_selection_never_falls_back_to_an_sdist() -> None:
+    data = _pypi_data("source-only", "1.0", [("source_only-1.0.tar.gz", "sdist")])
+
+    with pytest.raises(RuntimeError, match="has no CPython 3.12 wheel"):
+        select_macos_wheel_resource(data, "darwin-arm64")
+
+
+def test_dependency_wheel_selection_rejects_an_unqualified_macos_floor() -> None:
+    data = _pypi_data(
+        "future-floor",
+        "1.0",
+        [("future_floor-1.0-cp312-none-macosx_15_0_arm64.whl", "bdist_wheel")],
+    )
+    data["urls"][0]["digests"]["sha256"] = "a" * 64
+
+    with pytest.raises(RuntimeError, match="has no CPython 3.12 wheel"):
+        select_macos_wheel_resource(data, "darwin-arm64")
+
+
 def test_source_distribution_still_has_highest_priority() -> None:
     data = _pypi_data(
         "example",
@@ -223,31 +266,109 @@ def test_sdist_download_is_bounded_and_hash_verified(monkeypatch: pytest.MonkeyP
         download_verified_sdist("https://files.pythonhosted.org/release.tar.gz", "0" * 64)
 
 
-def test_dependency_resolution_uses_supplied_release_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("python_platform", sorted(HOMEBREW_PYTHON_PLATFORMS.values()))
+def test_dependency_resolution_uses_supplied_release_pyproject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, python_platform: str
+) -> None:
     release_project = tmp_path / "release-sdist" / "pyproject.toml"
     release_project.parent.mkdir()
-    release_project.write_text('[project]\nname = "release"\nversion = "1"\n', encoding="utf-8")
+    release_project.write_text(
+        """\
+[build-system]
+requires = ["hatchling>=1.27", "hatch-vcs>=0.5"]
+build-backend = "hatchling.build"
+
+[project]
+name = "release"
+version = "1"
+dependencies = ["Example_Dep>=1"]
+""",
+        encoding="utf-8",
+    )
     observed: dict[str, object] = {}
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         observed["command"] = command
         observed["cwd"] = kwargs["cwd"]
-        return subprocess.CompletedProcess(command, 0, stdout="Example_Dep==1.2.3\n", stderr="")
+        observed["environment"] = kwargs["env"]
+        observed["build_requirements"] = Path(command[4]).read_text(encoding="utf-8")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="Example_Dep==1.2.3\nhatchling==1.27.0\nhatch-vcs==0.5.0\npackaging==25.0\n",
+            stderr="",
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    assert resolve_dependencies(release_project) == [("example-dep", "1.2.3")]
-    assert observed["command"] == [
+    assert resolve_dependencies(release_project, python_platform=python_platform) == [
+        ("example-dep", "1.2.3"),
+        ("hatch-vcs", "0.5.0"),
+        ("hatchling", "1.27.0"),
+        ("packaging", "25.0"),
+    ]
+    command = observed["command"]
+    assert isinstance(command, list)
+    assert command[:4] == [
         "uv",
         "pip",
         "compile",
         str(release_project.resolve()),
+    ]
+    assert Path(command[4]).name.startswith("skill-scanner-build-system-")
+    assert not Path(command[4]).exists()
+    assert command[5:] == [
         "--no-header",
         "--no-annotate",
+        "--only-binary",
+        ":all:",
         "--python-version",
         "3.12",
+        "--python-platform",
+        python_platform,
     ]
+    assert observed["build_requirements"] == "hatchling>=1.27\nhatch-vcs>=0.5\n"
     assert observed["cwd"] == release_project.parent.resolve()
+    environment = observed["environment"]
+    assert isinstance(environment, dict)
+    assert environment["MACOSX_DEPLOYMENT_TARGET"] == HOMEBREW_MACOS_DEPLOYMENT_TARGET == "14.0"
+
+
+def test_build_system_requirements_are_required_and_validated(tmp_path: Path) -> None:
+    project_file = tmp_path / "pyproject.toml"
+    project_file.write_text(
+        '[build-system]\nrequires = ["hatchling", "hatch-vcs"]\nbuild-backend = "hatchling.build"\n',
+        encoding="utf-8",
+    )
+    assert read_build_system_requirements(project_file) == ("hatchling", "hatch-vcs")
+
+    project_file.write_text('[project]\nname = "missing-build-system"\n', encoding="utf-8")
+    with pytest.raises(RuntimeError, match=r"missing \[build-system\]"):
+        read_build_system_requirements(project_file)
+
+    project_file.write_text('[build-system]\nrequires = [""]\n', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="non-empty strings"):
+        read_build_system_requirements(project_file)
+
+
+def test_current_build_backend_roots_are_included_in_formula_resolution() -> None:
+    assert read_build_system_requirements(ROOT / "pyproject.toml") == ("hatchling", "hatch-vcs")
+    assert "setuptools" not in SKIP_PACKAGES
+
+
+def test_homebrew_dependency_resolution_requires_an_explicit_darwin_target(tmp_path: Path) -> None:
+    project_file = tmp_path / "pyproject.toml"
+    project_file.write_text(
+        '[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n',
+        encoding="utf-8",
+    )
+
+    assert set(HOMEBREW_PYTHON_PLATFORMS.values()) == {
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+    }
+    with pytest.raises(ValueError, match="unsupported Homebrew Python platform"):
+        resolve_dependencies(project_file, python_platform="linux")
 
 
 def test_formula_builds_exact_host_helper_and_validates_rules() -> None:
@@ -265,6 +386,7 @@ def test_formula_builds_exact_host_helper_and_validates_rules() -> None:
         },
     )
 
+    assert "depends_on macos: :sonoma" in formula
     assert 'depends_on "go" => :build' in formula
     assert "on_arm do" in formula and "arm64.whl" in formula
     assert "on_intel do" in formula and "amd64.whl" in formula
@@ -278,7 +400,24 @@ def test_formula_builds_exact_host_helper_and_validates_rules() -> None:
     assert "yara-amd64.whl" in intel_block and "yara-arm64.whl" not in intel_block
     assert 'Hardware::CPU.arm? ? "darwin-arm64" : "darwin-amd64"' in formula
     assert "SKILL_SCANNER_CEL_GO_PREBUILT_DIR" in formula
-    assert 'virtualenv_install_with_resources(without: "cel-helper")' in formula
+    assert 'ENV["PIP_NO_INDEX"] = "1"' in formula
+    assert 'ENV["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"' in formula
+    assert 'venv = virtualenv_create(libexec, "python3.12")' in formula
+    assert 'dependency_resources = resources.reject { |resource| resource.name == "cel-helper" }' in formula
+    assert 'wheelhouse = buildpath/"dependency-wheelhouse"' in formula
+    assert "dependency_resources.each { |resource| resource.stage(wheelhouse) }" in formula
+    assert 'dependency_wheels.all? { |wheel| wheel.file? && wheel.extname == ".whl" }' in formula
+    assert 'venv.pip_install dependency_wheels.join("\\n"), build_isolation: false' in formula
+    assert formula.count("venv.pip_install dependency_wheels") == 1
+    # Homebrew cache paths are hash-prefixed (sha256--distribution.whl) and are
+    # invalid wheel filenames. The formula must stage each :nounzip resource to
+    # recover its original basename before passing paths to pip.
+    assert "resource.cached_download" not in formula
+    assert "venv.pip_install_and_link buildpath, build_isolation: false" in formula
+    assert "virtualenv_install_with_resources" not in formula
+    assert "build_isolation: true" not in formula
+    assert 'url "https://example.test/yara-amd64.whl", using: :nounzip' in formula
+    assert 'url "https://example.test/yara-arm64.whl", using: :nounzip' in formula
     assert 'system "#{bin}/skill-scanner", "validate-rules"' in formula
     ruby = shutil.which("ruby")
     if ruby is not None:
@@ -296,8 +435,16 @@ def test_homebrew_workflow_uses_exact_tag_sdist_and_smokes_both_macos_architectu
     assert "target: darwin-arm64" in workflow
     assert "target: darwin-amd64" in workflow
     assert "brew install --build-from-source generated-formula/skill-scanner.rb" in workflow
+    assert "grep -F 'depends_on macos: :sonoma' Formula/skill-scanner.rb" in workflow
     assert 'assert helper["macos_minimum"] == "13.0"' in workflow
     assert 'assert helper["toolchain_version"] == "go1.27.1"' in workflow
+    assert 'grep -F \'ENV["PIP_NO_INDEX"] = "1"\'' in workflow
+    assert "dependency_resources = resources.reject" in workflow
+    assert "resource.stage(wheelhouse)" in workflow
+    assert 'venv.pip_install dependency_wheels.join("\\n"), build_isolation: false' in workflow
+    assert "Generated formula must stage wheels under their valid distribution filenames" in workflow
+    assert "venv.pip_install_and_link buildpath, build_isolation: false" in workflow
+    assert "Generated formula must disable PEP 517 build isolation explicitly" in workflow
     assert '"$prefix/bin/skill-scanner" validate-rules' in workflow
     assert "brew test skill-scanner" in workflow
     assert workflow.index("smoke-homebrew:") < workflow.index("commit-formula:")

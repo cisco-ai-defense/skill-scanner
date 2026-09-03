@@ -178,6 +178,8 @@
           "enum": ["public_labeled", "independent_ollama", "agent_labeled", "human_reviewed"]
         },
         "scanner_independent": {"const": true},
+        "scanner_derived_label": {"const": false},
+        "sealed_hf_test_content_used_for_labeling": {"const": false},
         "label_provenance_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "label_evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
       },
@@ -187,6 +189,8 @@
         "fixture_sha256",
         "label_source",
         "scanner_independent",
+        "scanner_derived_label",
+        "sealed_hf_test_content_used_for_labeling",
         "label_provenance_sha256",
         "label_evidence_sha256"
       ]

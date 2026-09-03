@@ -20,6 +20,7 @@ jobs:
       - name: Start API Server
         run: |
           pip install cisco-ai-skill-scanner
+          export SKILL_SCANNER_ALLOWED_ROOTS="$GITHUB_WORKSPACE/skills"
           skill-scanner-api &
           sleep 5
 
@@ -27,7 +28,7 @@ jobs:
         run: |
           curl -X POST http://localhost:8000/scan-batch \
             -H "Content-Type: application/json" \
-            -d '{"skills_directory": "./skills"}' \
+            -d "{\"skills_directory\": \"$GITHUB_WORKSPACE/skills\"}" \
             > scan_id.json
 
           SCAN_ID=$(jq -r '.scan_id' scan_id.json)

@@ -33,14 +33,18 @@ from evals.datasets.public_datasets import (
     artifact_manifest_sha256,
     get_locked_dataset,
     load_dataset_lock,
+    locked_split_protocols,
     materialize_locked_skill_row,
     materialize_skill_files,
     quarantine_manifest_sha256,
+    sample_metadata_manifest_sha256,
     validate_artifact_manifest,
     validate_locked_row,
     validate_quarantine_manifest,
+    validate_sample_metadata_manifest,
     validate_snapshot_metadata,
     validate_source_artifact_manifest,
+    validated_portable_relative_path,
 )
 
 
@@ -73,6 +77,33 @@ def test_lock_contains_pinned_approved_datasets():
         "ae542800a95a893a0ae724bdc625d5a1e19d81ff08ae1f846ddb54d77bfb0b9a"
     )
     assert malicious_skill_bench["integrity"]["hashes_pending"] is False
+    assert malicious_skill_bench["integrity"]["sample_metadata_manifest_format"] == "sample-metadata-splits-v2"
+    assert malicious_skill_bench["integrity"]["sample_metadata_manifest_sha256"] == (
+        "6a284d9a181ae07179f2cc3ff98f64f14787dadc1ebde6c0dd86e78f4f55bc7a"
+    )
+    assert malicious_skill_bench["integrity"]["sample_metadata_grouping"] == {
+        "protocol_contracts": {
+            "m_structural_disjoint": "malicious_structural_family_partition_pure",
+            "source_disjoint": "test_source_disjoint_from_non_test",
+        },
+        "unsupported_dimensions": [
+            "actor_campaign_id",
+            "lexical_template_id",
+            "parent_sample_id",
+            "repository_id",
+        ],
+        "verified_dimensions": [
+            "exact_hash",
+            "normalized_hash",
+            "provenance",
+            "source_id",
+            "source_ids",
+            "source_pointer",
+            "structural_family_id",
+            "text_origin_source_id",
+        ],
+    }
+    assert locked_split_protocols(malicious_skill_bench) == ("m_structural_disjoint", "source_disjoint")
     assert malicious_skill_bench["expected"]["track_expectations"] == {
         "core-only-source-disjoint": {
             "samples": 1384,
@@ -240,6 +271,14 @@ def test_lock_contains_pinned_approved_datasets():
     )
     materialization = profile_entry["materialization"]
     locked_materialization = malicious_skill_bench["integrity"]["materialization"]
+    assert (
+        materialization["sample_metadata_manifest_format"]
+        == malicious_skill_bench["integrity"]["sample_metadata_manifest_format"]
+    )
+    assert (
+        materialization["sample_metadata_manifest_sha256"]
+        == malicious_skill_bench["integrity"]["sample_metadata_manifest_sha256"]
+    )
     assert materialization["declared_artifact_count"] == locked_materialization["declared_artifact_count"] == 9740
     assert materialization["usable_artifact_count"] == locked_materialization["usable_artifact_count"] == 9737
     assert materialization["error_count"] == locked_materialization["error_count"] == 3
@@ -386,6 +425,26 @@ def test_lock_validation_rejects_policy_and_manifest_drift(tmp_path):
     malicious_skill_bench["expected"]["track_expectations"].pop("core-only-source-disjoint")
     with pytest.raises(DatasetLockError, match="track_expectations must contain exactly"):
         load_dataset_lock(_write_lock(tmp_path, track_count_drift))
+
+    missing_metadata_format = copy.deepcopy(manifest)
+    malicious_skill_bench = next(
+        dataset
+        for dataset in missing_metadata_format["datasets"]
+        if dataset["id"] == "ProtectSkills/MaliciousSkillBench"
+    )
+    malicious_skill_bench["integrity"].pop("sample_metadata_manifest_format")
+    with pytest.raises(DatasetLockError, match="sample_metadata_manifest_format is required"):
+        load_dataset_lock(_write_lock(tmp_path, missing_metadata_format))
+
+    missing_metadata_digest = copy.deepcopy(manifest)
+    malicious_skill_bench = next(
+        dataset
+        for dataset in missing_metadata_digest["datasets"]
+        if dataset["id"] == "ProtectSkills/MaliciousSkillBench"
+    )
+    malicious_skill_bench["integrity"].pop("sample_metadata_manifest_sha256")
+    with pytest.raises(DatasetLockError, match="sample_metadata_manifest_sha256 is required"):
+        load_dataset_lock(_write_lock(tmp_path, missing_metadata_digest))
 
 
 def test_lock_reader_rejects_symlinks_and_duplicate_json_keys(tmp_path):
@@ -552,6 +611,221 @@ def test_artifact_manifest_rejects_normalization_collisions_and_schema_drift():
     unexpected = [{"path": "data.json", "sha256": "a" * 64, "size_bytes": 1, "url": "https://x"}]
     with pytest.raises(DatasetSchemaError, match="unexpected fields"):
         artifact_manifest_sha256(dataset_id, unexpected)
+
+
+@pytest.mark.parametrize("path", ["C:/primary.parquet", "aux/con.txt", "aux/name:stream"])
+def test_shared_portable_path_validator_rejects_windows_escapes(path: str) -> None:
+    with pytest.raises(UnsafeSampleError):
+        validated_portable_relative_path(path, allow_root_skill=True, allow_binary=True)
+
+
+def test_sample_metadata_manifest_binds_all_identity_and_split_fields() -> None:
+    dataset_id = "ProtectSkills/MaliciousSkillBench"
+    manifest = load_dataset_lock()
+    dataset = get_locked_dataset(dataset_id, manifest)
+    artifact_digest = dataset["integrity"]["artifact_manifest_sha256"]
+    samples = [
+        {
+            "benchmark_id": "sample-a",
+            "category_ids": ["command_execution"],
+            "exact_hash": "1" * 64,
+            "label": "malicious",
+            "normalized_hash": "2" * 64,
+            "path": "skills/sample-a",
+            "provenance": "unit_test",
+            "source_id": "SRC-A",
+            "source_ids": ["SRC-A"],
+            "source_pointer": "test://SRC-A",
+            "splits": {"m_structural_disjoint": "train", "source_disjoint": "test"},
+            "structural_family_id": "FAMILY-A",
+            "text_origin_source_id": "SRC-A",
+        },
+        {
+            "benchmark_id": "sample-b",
+            "category_ids": ["benign"],
+            "exact_hash": "3" * 64,
+            "label": "benign",
+            "normalized_hash": "4" * 64,
+            "path": "skills/sample-b",
+            "provenance": "unit_test",
+            "source_id": "SRC-B",
+            "source_ids": ["SRC-B"],
+            "source_pointer": "test://SRC-B",
+            "splits": {"m_structural_disjoint": "test", "source_disjoint": "train"},
+            "structural_family_id": "FAMILY-B",
+            "text_origin_source_id": "SRC-B",
+        },
+    ]
+    digest = sample_metadata_manifest_sha256(
+        dataset_id,
+        samples,
+        artifact_manifest_sha256=artifact_digest,
+        manifest=manifest,
+    )
+    assert (
+        sample_metadata_manifest_sha256(
+            dataset_id,
+            list(reversed(samples)),
+            artifact_manifest_sha256=artifact_digest,
+            manifest=manifest,
+        )
+        == digest
+    )
+
+    mutations = []
+    for field, value in (
+        ("label", "benign"),
+        ("structural_family_id", "FAMILY-TAMPERED"),
+        ("category_ids", ["data_exfiltration"]),
+        ("exact_hash", "5" * 64),
+        ("normalized_hash", "6" * 64),
+        ("provenance", "mutated"),
+        ("source_pointer", "test://mutated"),
+        ("path", "skills/tampered"),
+    ):
+        tampered = copy.deepcopy(samples)
+        tampered[0][field] = value
+        mutations.append(tampered)
+    tampered_source = copy.deepcopy(samples)
+    tampered_source[0].update(
+        source_id="SRC-TAMPERED",
+        source_ids=["SRC-TAMPERED"],
+        text_origin_source_id="SRC-TAMPERED",
+    )
+    mutations.append(tampered_source)
+    tampered_split = copy.deepcopy(samples)
+    split_assignments = tampered_split[0]["splits"]
+    assert isinstance(split_assignments, dict)
+    split_assignments["m_structural_disjoint"] = "validation"
+    mutations.append(tampered_split)
+    swapped_paths = copy.deepcopy(samples)
+    swapped_paths[0]["path"], swapped_paths[1]["path"] = swapped_paths[1]["path"], swapped_paths[0]["path"]
+    mutations.append(swapped_paths)
+
+    for tampered in mutations:
+        assert (
+            sample_metadata_manifest_sha256(
+                dataset_id,
+                tampered,
+                artifact_manifest_sha256=artifact_digest,
+                manifest=manifest,
+            )
+            != digest
+        )
+
+    repinned = copy.deepcopy(manifest)
+    get_locked_dataset(dataset_id, repinned)["integrity"]["sample_metadata_manifest_sha256"] = digest
+    assert (
+        validate_sample_metadata_manifest(
+            dataset_id,
+            samples,
+            artifact_manifest_sha256=artifact_digest,
+            manifest_sha256=digest,
+            manifest=repinned,
+        )
+        == digest
+    )
+    with pytest.raises(DatasetSchemaError, match="digest mismatch"):
+        validate_sample_metadata_manifest(
+            dataset_id,
+            mutations[0],
+            artifact_manifest_sha256=artifact_digest,
+            manifest_sha256=digest,
+            manifest=repinned,
+        )
+
+
+def test_sample_metadata_manifest_rejects_missing_locked_split_protocol() -> None:
+    manifest = load_dataset_lock()
+    dataset = get_locked_dataset("ProtectSkills/MaliciousSkillBench", manifest)
+    sample = {
+        "benchmark_id": "sample-a",
+        "category_ids": ["benign"],
+        "exact_hash": "1" * 64,
+        "label": "benign",
+        "normalized_hash": "2" * 64,
+        "path": "skills/sample-a",
+        "provenance": "unit_test",
+        "source_id": "SRC-A",
+        "source_ids": ["SRC-A"],
+        "source_pointer": "test://SRC-A",
+        "splits": {"source_disjoint": "test"},
+        "structural_family_id": "FAMILY-A",
+        "text_origin_source_id": "SRC-A",
+    }
+    with pytest.raises(DatasetSchemaError, match="splits must contain exactly"):
+        sample_metadata_manifest_sha256(
+            "ProtectSkills/MaliciousSkillBench",
+            [sample],
+            artifact_manifest_sha256=dataset["integrity"]["artifact_manifest_sha256"],
+            manifest=manifest,
+        )
+
+    invalid_label = copy.deepcopy(sample)
+    invalid_label["splits"]["m_structural_disjoint"] = "train"
+    invalid_label["label"] = []
+    with pytest.raises(DatasetSchemaError, match="invalid label"):
+        sample_metadata_manifest_sha256(
+            "ProtectSkills/MaliciousSkillBench",
+            [invalid_label],
+            artifact_manifest_sha256=dataset["integrity"]["artifact_manifest_sha256"],
+            manifest=manifest,
+        )
+
+
+def test_sample_metadata_manifest_enforces_documented_disjoint_group_contracts() -> None:
+    manifest = load_dataset_lock()
+    dataset = get_locked_dataset("ProtectSkills/MaliciousSkillBench", manifest)
+
+    def sample(
+        benchmark_id: str,
+        *,
+        source_id: str,
+        family: str,
+        source_split: str,
+        structural_split: str,
+    ) -> dict:
+        return {
+            "benchmark_id": benchmark_id,
+            "category_ids": ["command_execution"],
+            "exact_hash": hashlib.sha256(f"exact:{benchmark_id}".encode()).hexdigest(),
+            "label": "malicious",
+            "normalized_hash": hashlib.sha256(f"normalized:{benchmark_id}".encode()).hexdigest(),
+            "path": f"skills/{benchmark_id}",
+            "provenance": "unit_test",
+            "source_id": source_id,
+            "source_ids": [source_id],
+            "source_pointer": f"test://{source_id}",
+            "splits": {
+                "m_structural_disjoint": structural_split,
+                "source_disjoint": source_split,
+            },
+            "structural_family_id": family,
+            "text_origin_source_id": source_id,
+        }
+
+    artifact_digest = dataset["integrity"]["artifact_manifest_sha256"]
+    with pytest.raises(DatasetSchemaError, match="test sources overlap non-test"):
+        sample_metadata_manifest_sha256(
+            "ProtectSkills/MaliciousSkillBench",
+            [
+                sample("one", source_id="SRC-SHARED", family="FAM-1", source_split="test", structural_split="train"),
+                sample("two", source_id="SRC-SHARED", family="FAM-2", source_split="train", structural_split="test"),
+            ],
+            artifact_manifest_sha256=artifact_digest,
+            manifest=manifest,
+        )
+
+    with pytest.raises(DatasetSchemaError, match="malicious families span partitions"):
+        sample_metadata_manifest_sha256(
+            "ProtectSkills/MaliciousSkillBench",
+            [
+                sample("one", source_id="SRC-1", family="FAM-SHARED", source_split="test", structural_split="train"),
+                sample("two", source_id="SRC-2", family="FAM-SHARED", source_split="test", structural_split="test"),
+            ],
+            artifact_manifest_sha256=artifact_digest,
+            manifest=manifest,
+        )
 
 
 def test_quarantine_manifest_digest_is_order_independent_and_detects_drift():

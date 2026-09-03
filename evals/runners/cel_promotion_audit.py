@@ -122,6 +122,7 @@ _ATTESTATION_BINDING_FIELDS = frozenset(
         "dataset_id",
         "dataset_revision",
         "snapshot_sha256",
+        "sample_metadata_manifest_sha256",
         "usable_snapshot_sha256",
         "population_sha256",
         "membership_sha256",
@@ -1205,6 +1206,7 @@ def _candidate_attestation_expected_binding(
         "dataset_id": dataset.get("id"),
         "dataset_revision": dataset.get("revision"),
         "snapshot_sha256": dataset.get("artifact_manifest_sha256"),
+        "sample_metadata_manifest_sha256": dataset.get("sample_metadata_manifest_sha256"),
         "usable_snapshot_sha256": dataset.get("usable_artifact_manifest_sha256"),
         "population_sha256": selection.get("population_sha256"),
         "membership_sha256": requirements.get("membership_sha256"),
@@ -1248,6 +1250,7 @@ def _validate_attestation_binding(value: Mapping[str, Any], *, location: str) ->
         _attestation_string(value.get(field), location=f"{location}.{field}")
     for field in (
         "snapshot_sha256",
+        "sample_metadata_manifest_sha256",
         "usable_snapshot_sha256",
         "population_sha256",
         "membership_sha256",
@@ -2029,6 +2032,7 @@ def run_worker_report(
             "id": str(snapshot.dataset["id"]),
             "revision": str(snapshot.dataset["revision"]),
             "artifact_manifest_sha256": snapshot.artifact_manifest_sha256,
+            "sample_metadata_manifest_sha256": snapshot.sample_metadata_manifest_sha256,
             "usable_artifact_manifest_sha256": snapshot.usable_artifact_manifest_sha256,
             "quarantine_manifest_sha256": snapshot.quarantine_manifest_sha256,
             "selection": population.to_dict(),

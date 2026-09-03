@@ -70,6 +70,10 @@ from typing import Any, TypeGuard
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from evals.datasets.public_datasets import DatasetLockError, get_locked_dataset, load_dataset_lock
+from evals.runners.benchmark_comparison import (
+    normalized_loss_generation_sha256,
+    normalized_loss_population_sha256,
+)
 from skill_scanner.core.cel import qualification as cel_qualification
 from skill_scanner.core.cel.models import CelMode
 from skill_scanner.core.rule_registry import PackLoader
@@ -1180,6 +1184,10 @@ def _public_identity(report: Mapping[str, Any], *, location: str) -> Mapping[str
     ):
         raise ReleaseGateError(f"{location}.dataset.revision must be a full lowercase commit SHA")
     _sha256(dataset.get("artifact_manifest_sha256"), location=f"{location}.dataset.artifact_manifest_sha256")
+    _sha256(
+        dataset.get("sample_metadata_manifest_sha256"),
+        location=f"{location}.dataset.sample_metadata_manifest_sha256",
+    )
     if not isinstance(dataset.get("blocking_eligible"), bool):
         raise ReleaseGateError(f"{location}.dataset.blocking_eligible must be boolean")
     return dataset
@@ -2233,6 +2241,12 @@ def _validate_repeated_comparison_artifact(
         "observed_would_suppress_malicious_high_critical_sample_ids",
         "normalized_loss_evidence_status",
         "normalized_loss_evidence_exact",
+        "normalized_loss_population_sha256",
+        "normalized_loss_generation_sha256",
+        "baseline_actionable_fp_sample_ids",
+        "candidate_actionable_fp_sample_ids",
+        "resolved_actionable_fp_sample_ids",
+        "malicious_block_loss_sample_ids",
         "relative_actionable_fp_reduction",
         "passes_twenty_percent_reduction",
         "has_malicious_support",
@@ -2241,7 +2255,6 @@ def _validate_repeated_comparison_artifact(
         "has_boundary_fixture",
         "eligible_for_promotion",
     }
-    missing_exact_normalized_loss: list[str] = []
     for rule_id in sorted(enforced_rule_ids):
         evidence = rule_evidence[rule_id]
         if not isinstance(evidence, Mapping) or set(evidence) != rule_fields:
@@ -2283,15 +2296,89 @@ def _validate_repeated_comparison_artifact(
                 f"repeated-comparison.json enforced rule {rule_id!r} has invalid observed malicious "
                 "HIGH/CRITICAL candidate evidence"
             )
+        exact_list_fields = (
+            "baseline_actionable_fp_sample_ids",
+            "candidate_actionable_fp_sample_ids",
+            "resolved_actionable_fp_sample_ids",
+            "malicious_block_loss_sample_ids",
+        )
+        exact_lists = {
+            field: list(
+                _unique_strings(
+                    evidence.get(field),
+                    location=f"repeated-comparison.json.rule_promotion_evidence.{rule_id}.{field}",
+                )
+            )
+            for field in exact_list_fields
+        }
+        targeted_ids = list(evidence["benign_near_miss_sample_ids"])
+        baseline_actionable = exact_lists["baseline_actionable_fp_sample_ids"]
+        candidate_actionable = exact_lists["candidate_actionable_fp_sample_ids"]
+        resolved_actionable = exact_lists["resolved_actionable_fp_sample_ids"]
+        malicious_support = list(evidence["malicious_support_sample_ids"])
+        malicious_block_loss = exact_lists["malicious_block_loss_sample_ids"]
         if (
-            evidence.get("normalized_loss_evidence_status") != "not_supplied"
-            or evidence.get("normalized_loss_evidence_exact") is not False
-            or evidence.get("relative_actionable_fp_reduction") is not None
-            or evidence.get("passes_twenty_percent_reduction") is not False
-            or evidence.get("eligible_for_promotion") is not False
+            not set(baseline_actionable) <= set(targeted_ids)
+            or not set(candidate_actionable) <= set(targeted_ids)
+            or resolved_actionable != sorted(set(baseline_actionable) - set(candidate_actionable))
+            or not set(malicious_block_loss) <= set(malicious_support)
         ):
             raise ReleaseGateError(
                 f"repeated-comparison.json enforced rule {rule_id!r} has an invalid normalized-loss contract"
+            )
+        relative_reduction = evidence.get("relative_actionable_fp_reduction")
+        expected_reduction = (
+            (len(baseline_actionable) - len(candidate_actionable)) / len(baseline_actionable)
+            if baseline_actionable
+            else None
+        )
+        if (
+            evidence.get("normalized_loss_evidence_status") != "computed_exact_sample_outcomes"
+            or evidence.get("normalized_loss_evidence_exact") is not True
+            or isinstance(relative_reduction, bool)
+            or not isinstance(relative_reduction, (int, float))
+            or expected_reduction is None
+            or not math.isfinite(float(relative_reduction))
+            or abs(float(relative_reduction) - expected_reduction) > _EPSILON
+            or evidence.get("passes_twenty_percent_reduction")
+            is not (expected_reduction + _EPSILON >= 0.20 and not malicious_block_loss)
+            or evidence.get("eligible_for_promotion") is not True
+        ):
+            raise ReleaseGateError(
+                f"repeated-comparison.json enforced rule {rule_id!r} lacks valid exact normalized-loss evidence"
+            )
+        expected_population_digest = normalized_loss_population_sha256(
+            rule_id=rule_id,
+            targeted_benign_sample_ids=targeted_ids,
+            baseline_actionable_sample_ids=baseline_actionable,
+            candidate_actionable_sample_ids=candidate_actionable,
+            resolved_actionable_sample_ids=resolved_actionable,
+            malicious_support_sample_ids=malicious_support,
+            malicious_block_loss_sample_ids=malicious_block_loss,
+        )
+        if (
+            _sha256(
+                evidence.get("normalized_loss_population_sha256"),
+                location=f"repeated-comparison.json.rule_promotion_evidence.{rule_id}.normalized_loss_population_sha256",
+            )
+            != expected_population_digest
+        ):
+            raise ReleaseGateError(
+                f"repeated-comparison.json enforced rule {rule_id!r} normalized-loss population hash disagrees"
+            )
+        expected_generation_digest = normalized_loss_generation_sha256(
+            baseline_identity,
+            candidate_identity,
+        )
+        if (
+            _sha256(
+                evidence.get("normalized_loss_generation_sha256"),
+                location=f"repeated-comparison.json.rule_promotion_evidence.{rule_id}.normalized_loss_generation_sha256",
+            )
+            != expected_generation_digest
+        ):
+            raise ReleaseGateError(
+                f"repeated-comparison.json enforced rule {rule_id!r} normalized-loss generation hash disagrees"
             )
         expected_booleans = {
             "has_malicious_support": bool(evidence["malicious_support_sample_ids"]),
@@ -2303,7 +2390,6 @@ def _validate_repeated_comparison_artifact(
             raise ReleaseGateError(
                 f"repeated-comparison.json enforced rule {rule_id!r} does not satisfy promotion requirements"
             )
-        missing_exact_normalized_loss.append(rule_id)
 
     comparisons = value.get("comparisons")
     if not isinstance(comparisons, list) or len(comparisons) != REQUIRED_REPEATED_RUNS:
@@ -2337,11 +2423,6 @@ def _validate_repeated_comparison_artifact(
             raise ReleaseGateError(f"repeated-comparison.json.comparisons[{index}] does not bind the release producer")
         if producers.get("changed_fields") != []:
             raise ReleaseGateError(f"repeated-comparison.json.comparisons[{index}] changes producer identity")
-    if missing_exact_normalized_loss:
-        raise ReleaseGateError(
-            "repeated-comparison.json enforced rules lack independently bound exact normalized-loss evidence: "
-            f"{missing_exact_normalized_loss}; raw CEL candidate suppression cannot prove actionable FP reduction"
-        )
     return value
 
 
@@ -2481,7 +2562,7 @@ def run_release_gate(
     public_baseline = public["baseline"]
     candidate_identity = _public_identity(public_candidate, location="public.candidate")
     baseline_identity = _public_identity(public_baseline, location="public.baseline")
-    for field in ("id", "revision", "artifact_manifest_sha256"):
+    for field in ("id", "revision", "artifact_manifest_sha256", "sample_metadata_manifest_sha256"):
         if candidate_identity[field] != baseline_identity[field]:
             raise ReleaseGateError(f"public candidate and baseline dataset {field} differ")
     if candidate_identity["id"] != PRIMARY_PUBLIC_DATASET:
@@ -2520,6 +2601,8 @@ def run_release_gate(
         raise ReleaseGateError("public dataset lock is not reviewed and blocking-eligible")
     if candidate_identity["artifact_manifest_sha256"] != locked_integrity["artifact_manifest_sha256"]:
         raise ReleaseGateError("public report artifact manifest does not match the dataset lock")
+    if candidate_identity["sample_metadata_manifest_sha256"] != locked_integrity["sample_metadata_manifest_sha256"]:
+        raise ReleaseGateError("public report sample metadata manifest does not match the dataset lock")
     _validate_locked_track_populations(
         public_candidate,
         locked_dataset,
@@ -2714,6 +2797,7 @@ def run_release_gate(
             "dataset_id": candidate_identity["id"],
             "revision": candidate_identity["revision"],
             "artifact_manifest_sha256": candidate_identity["artifact_manifest_sha256"],
+            "sample_metadata_manifest_sha256": candidate_identity["sample_metadata_manifest_sha256"],
             "source_revision": public_candidate["producer"]["source_revision"],
         },
         "private": private_summary,

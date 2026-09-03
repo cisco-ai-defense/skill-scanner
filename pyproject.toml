@@ -144,7 +144,7 @@ dev = [
 # code, then passes an inert text-only snapshot to the offline scan job.
 datasets = [
     "huggingface-hub==1.12.2",
-    "pyarrow==21.0.0",
+    "pyarrow==23.0.1",  # PYSEC-2026-113
 ]
 sbom = [
     "cyclonedx-bom==7.3.0",

@@ -20,13 +20,19 @@ Skill package loader and SKILL.md parser.
 
 import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
 
 import frontmatter
 
-from ..utils.file_utils import FileValidationError, get_file_type, read_text_strict
+from ..utils.file_utils import (
+    FileValidationError,
+    get_file_type,
+    read_text_strict,
+    resolve_path_within_root,
+)
 from .exceptions import SkillLoadError
 from .file_magic import detect_magic
 from .models import Skill, SkillFile, SkillManifest
@@ -119,38 +125,71 @@ class SkillLoader:
         Raises:
             SkillLoadError: If skill cannot be loaded (strict mode only)
         """
-        if not isinstance(skill_directory, Path):
-            skill_directory = Path(skill_directory)
+        raw_directory = os.fspath(skill_directory)
+        if "\x00" in raw_directory:
+            raise SkillLoadError("Skill directory path contains a null byte")
+        try:
+            normalized_directory = os.path.realpath(os.path.expanduser(raw_directory))
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise SkillLoadError(f"Invalid skill directory: {raw_directory}") from exc
+        skill_directory = Path(normalized_directory)
 
         if not skill_directory.exists():
-            raise SkillLoadError(f"Skill directory does not exist: {skill_directory}")
-
+            raise SkillLoadError(f"Skill directory does not exist: {raw_directory}")
         if not skill_directory.is_dir():
-            raise SkillLoadError(f"Path is not a directory: {skill_directory}")
+            raise SkillLoadError(f"Path is not a directory: {normalized_directory}")
 
         # Find the skill metadata file
         if skill_file:
-            skill_md_path = skill_directory / skill_file
-            if not skill_md_path.exists():
-                raise SkillLoadError(f"{skill_file} not found in {skill_directory}")
+            metadata_name = Path(skill_file)
+            if (
+                metadata_name.is_absolute()
+                or metadata_name.name != skill_file
+                or "/" in skill_file
+                or "\\" in skill_file
+                or "\x00" in skill_file
+            ):
+                raise SkillLoadError("skill_file must be a filename contained in the skill directory")
+            metadata_candidate = skill_directory / metadata_name
         else:
-            skill_md_path = skill_directory / "SKILL.md"
+            metadata_candidate = skill_directory / "SKILL.md"
 
-        if skill_md_path.exists():
+        try:
+            resolved_skill_md_path = resolve_path_within_root(
+                metadata_candidate,
+                root=skill_directory,
+                must_exist=False,
+            )
+        except FileValidationError as exc:
+            raise SkillLoadError(f"Skill metadata file is outside the skill directory: {metadata_candidate}") from exc
+        skill_md_path: Path | None
+        synthetic_instruction_body = False
+        if not resolved_skill_md_path.exists():
+            if skill_file:
+                raise SkillLoadError(f"{skill_file} not found in {skill_directory}")
+            if not lenient:
+                raise SkillLoadError(f"SKILL.md not found in {skill_directory}")
+            skill_md_path = None
+        else:
+            skill_md_path = resolved_skill_md_path
+
+        if skill_md_path is not None:
             # Standard path: parse the metadata file
             manifest, instruction_body, instruction_body_line_offset = self._parse_skill_md(
                 skill_md_path,
                 lenient=lenient,
+                package_root=skill_directory,
             )
         elif lenient:
             # Lenient fallback: no SKILL.md, synthesize from .md files in the directory
+            synthetic_instruction_body = True
             (
                 skill_md_path,
                 manifest,
                 instruction_body,
                 instruction_body_line_offset,
             ) = self._synthesize_from_md_files(skill_directory)
-        else:
+        else:  # pragma: no cover - strict absence is handled while resolving
             raise SkillLoadError(f"SKILL.md not found in {skill_directory}")
 
         # Discover all files in the skill package
@@ -159,6 +198,14 @@ class SkillLoader:
         # Extract referenced files from instruction body
         referenced_files = self._extract_referenced_files(instruction_body)
 
+        load_metadata = (
+            {
+                "synthetic_instruction_body": True,
+                "synthetic_instruction_source_count": sum(file.file_type == "markdown" for file in files),
+            }
+            if synthetic_instruction_body
+            else {}
+        )
         return Skill(
             directory=skill_directory,
             manifest=manifest,
@@ -167,6 +214,7 @@ class SkillLoader:
             instruction_body_line_offset=instruction_body_line_offset,
             files=files,
             referenced_files=referenced_files,
+            load_metadata=load_metadata,
         )
 
     def _synthesize_from_md_files(
@@ -184,7 +232,16 @@ class SkillLoader:
         Raises:
             SkillLoadError: If no ``.md`` files are found in the directory.
         """
-        md_files = sorted(skill_directory.glob("*.md"))
+        md_files: list[Path] = []
+        try:
+            candidates = skill_directory.iterdir()
+            for candidate in candidates:
+                if candidate.is_symlink() or candidate.suffix.lower() != ".md" or not candidate.is_file():
+                    continue
+                md_files.append(resolve_path_within_root(candidate, root=skill_directory))
+        except (FileValidationError, OSError) as exc:
+            raise SkillLoadError(f"Failed to enumerate markdown files in {skill_directory}: {exc}") from exc
+        md_files.sort()
         if not md_files:
             raise SkillLoadError(
                 f"No SKILL.md and no .md files found in {skill_directory} "
@@ -200,12 +257,16 @@ class SkillLoader:
         # Use the first .md file as the primary path
         primary_md = md_files[0]
 
-        manifest, body, body_line_offset = self._parse_skill_md(primary_md, lenient=True)
+        manifest, body, body_line_offset = self._parse_skill_md(
+            primary_md,
+            lenient=True,
+            package_root=skill_directory,
+        )
 
         # Append content from remaining .md files
         extra_bodies: list[str] = []
         for md_file in md_files[1:]:
-            extra_bodies.append(self._read_skill_text_file(md_file))
+            extra_bodies.append(self._read_skill_text_file(md_file, package_root=skill_directory))
         if extra_bodies:
             body = body + "\n\n" + "\n\n".join(extra_bodies)
             # A concatenation of multiple physical files has no single source
@@ -215,14 +276,18 @@ class SkillLoader:
 
         return primary_md, manifest, body, body_line_offset
 
-    def _read_skill_text_file(self, path: Path) -> str:
+    def _read_skill_text_file(self, path: Path, *, package_root: Path) -> str:
         """Read a skill metadata or markdown file as strict UTF-8 text.
 
         Delegates to :func:`~skill_scanner.utils.file_utils.read_text_strict`
         and converts failures to :class:`SkillLoadError`.
         """
         try:
-            return read_text_strict(path, max_size_bytes=self.max_file_size_bytes)
+            return read_text_strict(
+                path,
+                max_size_bytes=self.max_file_size_bytes,
+                root=package_root,
+            )
         except FileValidationError as e:
             raise SkillLoadError(str(e)) from e
 
@@ -231,6 +296,7 @@ class SkillLoader:
         skill_md_path: Path,
         *,
         lenient: bool = False,
+        package_root: Path,
     ) -> tuple[SkillManifest, str, int]:
         """
         Parse SKILL.md file with YAML frontmatter.
@@ -246,7 +312,7 @@ class SkillLoader:
         Raises:
             SkillLoadError: If parsing fails (strict mode only)
         """
-        content = self._read_skill_text_file(skill_md_path)
+        content = self._read_skill_text_file(skill_md_path, package_root=package_root)
         raw_content = content
 
         if "---" in content:
@@ -355,7 +421,7 @@ class SkillLoader:
             List of SkillFile objects
         """
         files = []
-        skill_root = skill_directory.resolve()
+        skill_root = skill_directory
 
         for path in skill_directory.rglob("*"):
             if not path.is_file():
@@ -363,10 +429,8 @@ class SkillLoader:
             if path.is_symlink():
                 continue
             try:
-                resolved = path.resolve()
-                if not resolved.is_relative_to(skill_root):
-                    continue
-            except (OSError, ValueError):
+                resolved = resolve_path_within_root(path, root=skill_root)
+            except (FileValidationError, OSError, ValueError):
                 continue
 
             # Skip .git/ directory only (version control metadata, not an attack vector).
@@ -379,24 +443,27 @@ class SkillLoader:
             if ".git" in rel_parts[:-1]:
                 continue
 
-            relative_path = str(path.relative_to(skill_directory))
-            file_type = get_file_type(path)
-            size_bytes = path.stat().st_size
-            if size_bytes < self.max_file_size_bytes:
-                file_type = _classify_extensionless_script(path, file_type)
+            relative_path = str(resolved.relative_to(skill_root))
+            file_type = get_file_type(resolved)
+            size_bytes = resolved.stat().st_size
+            if size_bytes <= self.max_file_size_bytes:
+                file_type = _classify_extensionless_script(resolved, file_type)
 
             # Read content if not too large and not binary
             content = None
-            if size_bytes < self.max_file_size_bytes and file_type != "binary":
+            if size_bytes <= self.max_file_size_bytes and file_type != "binary":
                 try:
-                    with open(path, encoding="utf-8") as f:
-                        content = f.read()
-                except (OSError, UnicodeDecodeError):
+                    content = read_text_strict(
+                        resolved,
+                        max_size_bytes=self.max_file_size_bytes,
+                        root=skill_root,
+                    )
+                except (FileValidationError, OSError, UnicodeDecodeError):
                     # Treat as binary if can't read as text
                     file_type = "binary"
 
             skill_file = SkillFile(
-                path=path,
+                path=resolved,
                 relative_path=relative_path,
                 file_type=file_type,
                 content=content,

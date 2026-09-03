@@ -71,8 +71,9 @@ jobs:
           cache-dependency-path: tools/cel_runtime/go.sum
 
       - name: Wait for PyPI propagation
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${{ inputs.version }}"
           echo "Waiting for cisco-ai-skill-scanner==${VERSION} on PyPI..."
           for i in $(seq 1 30); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -88,14 +89,29 @@ jobs:
           exit 1
 
       - name: Regenerate formula
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
           uv run python scripts/update_brew_formula.py \
-            --version "${{ inputs.version }}"
+            --version "$VERSION"
           ruby -c Formula/skill-scanner.rb
+          grep -F 'depends_on macos: :sonoma' Formula/skill-scanner.rb
           grep -F 'depends_on "go" => :build' Formula/skill-scanner.rb
           grep -F 'SKILL_SCANNER_CEL_GO_TARGET' Formula/skill-scanner.rb
           grep -F 'SKILL_SCANNER_CEL_GO_PREBUILT_DIR' Formula/skill-scanner.rb
-          grep -F 'virtualenv_install_with_resources(without: "cel-helper")' Formula/skill-scanner.rb
+          grep -F 'ENV["PIP_NO_INDEX"] = "1"' Formula/skill-scanner.rb
+          grep -F 'dependency_resources = resources.reject' Formula/skill-scanner.rb
+          grep -F 'resource.stage(wheelhouse)' Formula/skill-scanner.rb
+          grep -F 'venv.pip_install dependency_wheels.join("\n"), build_isolation: false' Formula/skill-scanner.rb
+          grep -F 'venv.pip_install_and_link buildpath, build_isolation: false' Formula/skill-scanner.rb
+          if grep -F 'resource.cached_download' Formula/skill-scanner.rb; then
+            echo "Generated formula must stage wheels under their valid distribution filenames" >&2
+            exit 1
+          fi
+          if grep -F 'virtualenv_install_with_resources' Formula/skill-scanner.rb; then
+            echo "Generated formula must disable PEP 517 build isolation explicitly" >&2
+            exit 1
+          fi
           grep -F '"validate-rules"' Formula/skill-scanner.rb
 
       - name: Upload exact generated formula
@@ -195,8 +211,9 @@ jobs:
           path: generated-formula
 
       - name: Commit and push
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${{ inputs.version }}"
           install -m 644 generated-formula/skill-scanner.rb Formula/skill-scanner.rb
           git diff --quiet Formula/skill-scanner.rb && {
             echo "No changes to formula — skipping commit."

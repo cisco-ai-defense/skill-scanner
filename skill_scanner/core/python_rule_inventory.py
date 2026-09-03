@@ -68,6 +68,30 @@ _IMPLEMENTATIONS = {
             Severity.MEDIUM,
         ),
         _implementation(
+            "ACTIVE_OS_PERSISTENCE_DIRECTIVE",
+            "static",
+            ThreatCategory.MALWARE,
+            Severity.HIGH,
+        ),
+        _implementation(
+            "ACTIVE_REMOTE_ACQUIRE_EXECUTE",
+            "static",
+            ThreatCategory.COMMAND_INJECTION,
+            Severity.HIGH,
+        ),
+        _implementation(
+            "ACTIVE_SENSITIVE_EXFILTRATION",
+            "static",
+            ThreatCategory.DATA_EXFILTRATION,
+            Severity.HIGH,
+        ),
+        _implementation(
+            "MANDATORY_AUTOMATIC_HELPER_EXECUTION",
+            "static",
+            ThreatCategory.AUTONOMY_ABUSE,
+            Severity.HIGH,
+        ),
+        _implementation(
             "COMPOUND_EXTRACT_EXECUTE",
             "pipeline",
             ThreatCategory.SUPPLY_CHAIN_ATTACK,

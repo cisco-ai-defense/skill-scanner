@@ -111,6 +111,8 @@ def _write_strict_expectation(root: Path) -> tuple[Path, Path]:
             "fixture_sha256": fixture_sha256(skill_dir),
             "label_source": "human_reviewed",
             "scanner_independent": True,
+            "scanner_derived_label": False,
+            "sealed_hf_test_content_used_for_labeling": False,
         },
         "expected_findings": [
             {

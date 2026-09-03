@@ -21,6 +21,7 @@ Tests cover all API endpoints with various analyzer configurations.
 """
 
 import io
+import tempfile
 import time
 import zipfile
 from pathlib import Path
@@ -41,6 +42,19 @@ except ImportError:
     API_AVAILABLE = False
     app = None
     TestClient = None
+
+
+@pytest.fixture(autouse=True)
+def _allow_explicit_api_test_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    if not API_AVAILABLE:
+        return
+    from skill_scanner.api import router
+
+    monkeypatch.setattr(
+        router,
+        "_ALLOWED_ROOTS",
+        [Path.cwd().resolve(), Path(tempfile.gettempdir()).resolve()],
+    )
 
 
 # Test fixtures

@@ -26,6 +26,9 @@ import pickletools
 import re
 import tomllib
 import unicodedata
+from collections.abc import Iterator
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -34,6 +37,8 @@ from ...config.yara_modes import YaraModeConfig
 from ...core.models import Finding, Severity, Skill, SkillFile, ThreatCategory
 from ...core.rules.active_dynamic_execution import check_active_dynamic_execution
 from ...core.rules.active_html_injection import check_active_hidden_html
+from ...core.rules.active_remote_execution import check_active_remote_execution
+from ...core.rules.active_semantic_directives import check_active_semantic_directives
 from ...core.rules.core_signature_precision import refine_core_signature_findings
 from ...core.rules.ooxml_relationships import (
     INCONCLUSIVE_MACRO_ANALYSIS,
@@ -54,6 +59,7 @@ from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
 from ...core.static_analysis.comment_stripping import comment_stripped_lines
 from ...core.static_analysis.url_classifier import classify_url, extract_urls
+from ...data import DATA_DIR
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
 
@@ -101,14 +107,817 @@ _SENSITIVE_PATH_LITERAL_RE = re.compile(
     r"\.(?:npmrc|gitconfig|gnupg|netrc|pgpass)|(?:^|[/\\])credentials?(?:[/\\]|$)|"
     r"(?:^|[/\\])secrets?(?:[/\\]|$))"
 )
-_OBFUSCATED_INSTRUCTION_RE = re.compile(
-    r"(?is)(?:"
-    r"ignore\s+(?:all\s+)?(?:previous|prior|earlier)\s+instructions?"
-    r"|you\s+are\s+now\s+in\s+(?:developer|debug|unrestricted|admin)\s+mode"
-    r"|(?:read|collect|capture|harvest|exfiltrate).{0,160}(?:credentials?|tokens?|api\s*keys?|ssh|environment|dotfiles?)"
-    r"|(?:post|send|transmit|exfiltrate).{0,160}https?://"
-    r")"
+_OBFUSCATED_INSTRUCTION_PATTERNS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    (
+        re.compile(
+            r"(?is)(?P<override_action>ignore)(?P<override_separator_one>\s+)"
+            r"(?:(?P<override_all>all)(?P<override_separator_all>\s+))?"
+            r"(?P<override_precedence>previous|prior|earlier)(?P<override_separator_two>\s+)"
+            r"(?P<override_target>instructions?)"
+        ),
+        (
+            "override_action",
+            "override_separator_one",
+            "override_all",
+            "override_separator_all",
+            "override_precedence",
+            "override_separator_two",
+            "override_target",
+        ),
+    ),
+    (
+        re.compile(
+            r"(?is)(?P<mode_subject>you)(?P<mode_separator_one>\s+)"
+            r"(?P<mode_state>are\s+now\s+in)(?P<mode_separator_two>\s+)"
+            r"(?P<mode_name>developer|debug|unrestricted|admin)(?P<mode_separator_three>\s+)"
+            r"(?P<mode_target>mode)"
+        ),
+        (
+            "mode_subject",
+            "mode_separator_one",
+            "mode_state",
+            "mode_separator_two",
+            "mode_name",
+            "mode_separator_three",
+            "mode_target",
+        ),
+    ),
+    (
+        re.compile(
+            r"(?is)(?P<access_action>read|collect|capture|harvest|exfiltrate).{0,160}"
+            r"(?P<access_target>credentials?|tokens?|api\s*keys?|ssh|environment(?:\s+variables?)?|dotfiles?)"
+        ),
+        ("access_action", "access_target"),
+    ),
+    (
+        re.compile(r"(?is)(?P<exfil_action>exfiltrate).{0,160}(?P<exfil_url>https?://)"),
+        ("exfil_action", "exfil_url"),
+    ),
+    (
+        re.compile(
+            r"(?is)(?P<transfer_action>post|send|transmit).{0,160}"
+            r"(?P<transfer_object>(?:(?:the\s+)?(?:collected|captured|harvested|retrieved|stolen|"
+            r"sensitive|secret)\s+(?:data|information|credentials?|tokens?|api\s*keys?|"
+            r"environment(?:\s+variables?)?)|credentials?|tokens?|api\s*keys?)).{0,160}"
+            r"(?P<transfer_url>https?://)"
+        ),
+        ("transfer_action", "transfer_object", "transfer_url"),
+    ),
 )
+
+_UNICODE_MAX_FILE_SOURCE_CHARS = 10 * 1024 * 1024
+_UNICODE_MAX_FILE_WORK_UNITS = 2 * 1024 * 1024
+_UNICODE_MAX_PACKAGE_WORK_UNITS = 8 * 1024 * 1024
+_UNICODE_DECODE_CHUNK_CHARS = 64 * 1024
+_UNICODE_DECODE_OVERLAP_CHARS = 512
+_UNICODE_MAX_NFKC_EXPANSION = 4
+_UNICODE_MAX_OUTPUT_FACTOR = 4
+_UNICODE_MAX_MARKDOWN_LINES = 32_768
+_UNICODE_MAX_FENCED_BLOCKS = 512
+_UNICODE_MAX_MARKDOWN_REGIONS = 4_096
+_UNICODE_HTML_COMMENT_SENTINEL = "\U000f0000"
+
+_UNICODE_FENCE_RE = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})(?P<tail>.*)$")
+_UNICODE_HEADING_RE = re.compile(r"^ {0,3}(?P<marks>#{1,6})[ \t]+(?P<title>.+?)\s*#*\s*$")
+_UNICODE_SETEXT_RE = re.compile(r"^ {0,3}(?P<marks>=+|-+)[ \t]*$")
+_UNICODE_BOLD_HEADING_RE = re.compile(r"^ {0,3}\*\*(?P<title>[^*\n]{1,128}?)\*\*\s*:?[ \t]*$")
+_UNICODE_BLOCKQUOTE_RE = re.compile(r"^ {0,3}>")
+_UNICODE_EXAMPLE_SECTION_RE = re.compile(
+    r"\b(?:demos?|documentation|examples?|reference|samples?|testing|tutorials?)\b",
+    re.IGNORECASE,
+)
+_UNICODE_NEGATIVE_SECTION_RE = re.compile(
+    r"\b(?:anti[- ]?patterns?|bad|dangerous|do not use|insecure|mitigations?|negative|"
+    r"prohibited|safety guidance|unsafe|what not to do)\b",
+    re.IGNORECASE,
+)
+_UNICODE_INLINE_EXAMPLE_RE = re.compile(
+    r"\b(?:e\.g\.|for example|for instance|illustrat(?:e|ion)|sample (?:code|payload|usage)|"
+    r"test(?:ing)? (?:that )?(?:the )?scanner detects|test string|negative example|"
+    r"(?:documentation|tests?|examples?|samples?)\s+(?:may\s+)?(?:quote|show|contain|use|detects?))\b",
+    re.IGNORECASE,
+)
+_UNICODE_LABEL_EXAMPLE_RE = re.compile(
+    r"^\s*(?:(?:[-*+]\s+)|(?:\d+[.)]\s+))?"
+    r"(?:example(?:\s+payload)?|sample(?:\s+payload)?|test\s+case)\s*:",
+    re.IGNORECASE,
+)
+_UNICODE_PROHIBITION_START_RE = re.compile(
+    r"^\s*(?:(?:[-*+]\s+)|(?:\d+[.)]\s+))?"
+    r"(?:do\s+not|don't|never|must\s+not|should\s+not|avoid|forbid(?:den)?|prohibit(?:ed)?)\b",
+    re.IGNORECASE,
+)
+_UNICODE_CONTRASTIVE_RE = re.compile(
+    r"(?:[;!?]|&&|\|\||\b(?:but|except|however|instead|then|unless)\b)",
+    re.IGNORECASE,
+)
+_UNICODE_NEGATIVE_FENCE_LEAD_RE = re.compile(
+    r"\b(?:do\s+not|don't|never|must\s+not|should\s+not|avoid|forbid(?:den)?|prohibit(?:ed)?)\b"
+    r".{0,120}\b(?:code|commands?|examples?|following|scripts?|payload)\b",
+    re.IGNORECASE,
+)
+_UNICODE_EXAMPLE_FENCE_LEAD_RE = re.compile(
+    r"\b(?:example|illustration|sample|test)\b.{0,80}\b(?:code|commands?|following|scripts?|payload)\b",
+    re.IGNORECASE,
+)
+_UNICODE_EXECUTABLE_FENCE_LANGUAGES = frozenset(
+    {
+        "bash",
+        "cjs",
+        "javascript",
+        "js",
+        "mjs",
+        "node",
+        "nodejs",
+        "powershell",
+        "ps1",
+        "pwsh",
+        "py",
+        "python",
+        "python3",
+        "sh",
+        "shell",
+        "ts",
+        "typescript",
+        "zsh",
+    }
+)
+_UNICODE_DEFAULT_IGNORABLE_RANGES = (
+    (0x00AD, 0x00AD),
+    (0x034F, 0x034F),
+    (0x061C, 0x061C),
+    (0x115F, 0x1160),
+    (0x17B4, 0x17B5),
+    (0x180B, 0x180F),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x206F),
+    (0x3164, 0x3164),
+    (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFF8),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0000, 0xE0FFF),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _DecodedUnicodeText:
+    """Decoded text with source provenance for every emitted character."""
+
+    text: str
+    encodings: frozenset[str]
+    transformation_kinds: tuple[str | None, ...]
+    source_offsets: tuple[int, ...]
+    deleted_transformations: tuple["_DeletedUnicodeTransformation", ...]
+    complete: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _DeletedUnicodeTransformation:
+    """A removed codepoint anchored to a boundary in decoded output."""
+
+    kind: str
+    source_offset: int
+    output_offset: int
+
+
+@dataclass(frozen=True, slots=True)
+class _UnicodeScanRegion:
+    """One source-contiguous active region with a physical starting line."""
+
+    content: str
+    start_line: int
+    context_kind: str
+    synthetic_elisions: frozenset[int] = frozenset()
+
+
+def _unicode_section_kind(title: str) -> str:
+    if _UNICODE_NEGATIVE_SECTION_RE.search(title):
+        return "negative"
+    if _UNICODE_EXAMPLE_SECTION_RE.search(title):
+        return "example"
+    return "active"
+
+
+def _unicode_fence_language(tail: str) -> str:
+    value = tail.strip()
+    if not value:
+        return ""
+    token = value.split(maxsplit=1)[0].strip().lower()
+    if token.startswith("{.") and token.endswith("}"):
+        return token[2:-1]
+    return token
+
+
+def _unicode_fence_lead_is_inert(lead: str) -> bool:
+    """Return whether an explicit example/prohibition lead owns a fence."""
+    cues = [
+        match
+        for pattern in (_UNICODE_NEGATIVE_FENCE_LEAD_RE, _UNICODE_EXAMPLE_FENCE_LEAD_RE)
+        if (match := pattern.search(lead)) is not None
+    ]
+    if not cues:
+        return False
+    cue = max(cues, key=lambda match: match.start())
+    return _UNICODE_CONTRASTIVE_RE.search(lead, cue.start()) is None
+
+
+def _unicode_mask_html_comments(line: str, *, inside_comment: bool) -> tuple[str, bool, frozenset[int]]:
+    """Elide Markdown HTML-comment spans without changing source offsets.
+
+    A default-ignorable placeholder is removed by the Unicode projector. That
+    preserves source provenance while joining visible text split by a comment.
+    """
+    masked = list(line)
+    placeholder = _UNICODE_HTML_COMMENT_SENTINEL
+    elisions: set[int] = set()
+    cursor = 0
+    if not inside_comment and (line.startswith("    ") or line.startswith("\t")):
+        return line, False, frozenset()
+
+    def opener_is_literal(start: int) -> bool:
+        backslashes = 0
+        backslash_cursor = start - 1
+        while backslash_cursor >= 0 and line[backslash_cursor] == "\\":
+            backslashes += 1
+            backslash_cursor -= 1
+        if backslashes % 2:
+            return True
+
+        delimiter = 0
+        code_cursor = 0
+        while code_cursor < start:
+            if line[code_cursor] != "`":
+                code_cursor += 1
+                continue
+            run_end = code_cursor + 1
+            while run_end < start and line[run_end] == "`":
+                run_end += 1
+            run_length = run_end - code_cursor
+            if delimiter == 0:
+                delimiter = run_length
+            elif run_length == delimiter:
+                delimiter = 0
+            code_cursor = run_end
+        return delimiter != 0
+
+    while cursor < len(line):
+        if inside_comment:
+            end = line.find("-->", cursor)
+            if end < 0:
+                masked[cursor:] = placeholder * (len(line) - cursor)
+                elisions.update(range(cursor, len(line)))
+                return "".join(masked), True, frozenset(elisions)
+            masked[cursor : end + 3] = placeholder * (end + 3 - cursor)
+            elisions.update(range(cursor, end + 3))
+            cursor = end + 3
+            inside_comment = False
+            continue
+
+        start = line.find("<!--", cursor)
+        if start < 0:
+            break
+        if opener_is_literal(start):
+            cursor = start + 4
+            continue
+        end = line.find("-->", start + 4)
+        if end < 0:
+            masked[start:] = placeholder * (len(line) - start)
+            elisions.update(range(start, len(line)))
+            return "".join(masked), True, frozenset(elisions)
+        masked[start : end + 3] = placeholder * (end + 3 - start)
+        elisions.update(range(start, end + 3))
+        cursor = end + 3
+    return "".join(masked), inside_comment, frozenset(elisions)
+
+
+def _unicode_blockquote_opens_lazy_paragraph(line: str) -> bool:
+    """Approximate CommonMark lazy continuation only for quoted paragraphs."""
+    marker = _UNICODE_BLOCKQUOTE_RE.match(line)
+    if marker is None:
+        return False
+    body = line[marker.end() :].lstrip(" \t")
+    if not body:
+        return False
+    return not (
+        _UNICODE_HEADING_RE.match(body)
+        or _UNICODE_FENCE_RE.match(body)
+        or _UNICODE_SETEXT_RE.match(body)
+        or _UNICODE_BLOCKQUOTE_RE.match(body)
+    )
+
+
+def _unicode_markdown_regions(content: str, *, line_offset: int = 0) -> list[_UnicodeScanRegion] | None:
+    """Return bounded active prose and operational code-fence regions.
+
+    Example/reference/negative heading subtrees, blockquotes, and inert fences
+    are omitted. Parsing completes before any region is returned so a document
+    that exceeds a structural bound cannot produce a partial HIGH result.
+    """
+    if len(content) > _UNICODE_MAX_FILE_SOURCE_CHARS:
+        return None
+    lines = content.split("\n")
+    if len(lines) > _UNICODE_MAX_MARKDOWN_LINES:
+        return None
+    if lines and lines[0] == "---":
+        closing_frontmatter = next(
+            (index for index, line in enumerate(lines[1:257], start=1) if line in {"---", "..."}),
+            None,
+        )
+        if closing_frontmatter is not None and any(
+            re.match(r"^[A-Za-z0-9_-]{1,64}[ \t]*:", line) is not None for line in lines[1:closing_frontmatter]
+        ):
+            # Preserve physical line numbering while excluding a complete,
+            # mapping-shaped YAML frontmatter block. An unclosed or ambiguous
+            # delimiter remains active fail-open.
+            lines[: closing_frontmatter + 1] = [""] * (closing_frontmatter + 1)
+
+    regions: list[_UnicodeScanRegion] = []
+    paragraph: list[str] = []
+    paragraph_elisions: set[int] = set()
+    paragraph_char_length = 0
+    paragraph_start = 1
+    heading_stack: list[tuple[int, str]] = []
+    bold_section: str | None = None
+    previous_nonempty = ""
+    lazy_blockquote = False
+    html_comment = False
+    fence_character: str | None = None
+    fence_length = 0
+    fence_language = ""
+    fence_section = "active"
+    fence_start = 0
+    fence_lines: list[str] = []
+    fence_candidates = 0
+
+    def current_section() -> str:
+        if bold_section is not None:
+            return bold_section
+        return heading_stack[-1][1] if heading_stack else "active"
+
+    def append_region(
+        region_content: str,
+        start_line: int,
+        context_kind: str,
+        synthetic_elisions: frozenset[int] = frozenset(),
+    ) -> bool:
+        if not region_content:
+            return True
+        if len(regions) >= _UNICODE_MAX_MARKDOWN_REGIONS:
+            return False
+        regions.append(
+            _UnicodeScanRegion(
+                region_content,
+                line_offset + start_line,
+                context_kind,
+                synthetic_elisions,
+            )
+        )
+        return True
+
+    def finish_paragraph() -> bool:
+        nonlocal paragraph, paragraph_char_length, paragraph_elisions
+        ok = True
+        if paragraph and current_section() == "active":
+            ok = append_region(
+                "\n".join(paragraph),
+                paragraph_start,
+                "active_instruction",
+                frozenset(paragraph_elisions),
+            )
+        paragraph = []
+        paragraph_elisions = set()
+        paragraph_char_length = 0
+        return ok
+
+    def append_paragraph_line(value: str, elisions: frozenset[int]) -> None:
+        nonlocal paragraph_char_length
+        base = paragraph_char_length + (1 if paragraph else 0)
+        paragraph.append(value)
+        paragraph_elisions.update(base + offset for offset in elisions)
+        paragraph_char_length = base + len(value)
+
+    def finish_fence(*, malformed: bool = False) -> bool:
+        nonlocal fence_lines
+        ok = True
+        if (fence_section == "active" or malformed) and fence_lines:
+            ok = append_region("\n".join(fence_lines), fence_start + 1, "code")
+        fence_lines = []
+        return ok
+
+    def enter_heading(level: int, title: str) -> None:
+        nonlocal bold_section
+        while heading_stack and heading_stack[-1][0] >= level:
+            heading_stack.pop()
+        inherited = heading_stack[-1][1] if heading_stack else "active"
+        direct = _unicode_section_kind(title)
+        heading_stack.append((level, direct if direct != "active" else inherited))
+        bold_section = None
+
+    index = 0
+    while index < len(lines):
+        line_number = index + 1
+        line = lines[index]
+        structural_line = line[:-1] if line.endswith("\r") else line
+
+        if fence_character is not None:
+            fence_match = _UNICODE_FENCE_RE.match(structural_line)
+            if fence_match is not None:
+                marker = fence_match.group("marker")
+                if (
+                    marker[0] == fence_character
+                    and len(marker) >= fence_length
+                    and not fence_match.group("tail").strip(" \t\r")
+                ):
+                    if not finish_fence():
+                        return None
+                    fence_character = None
+                    fence_length = 0
+                    fence_language = ""
+                    previous_nonempty = line
+                    index += 1
+                    continue
+            fence_lines.append(line)
+            index += 1
+            continue
+
+        structural_line, html_comment, line_elisions = _unicode_mask_html_comments(
+            structural_line, inside_comment=html_comment
+        )
+
+        # Quoted headings/fences are inert and must not mutate parser state.
+        if _UNICODE_BLOCKQUOTE_RE.match(structural_line):
+            if not finish_paragraph():
+                return None
+            lazy_blockquote = _unicode_blockquote_opens_lazy_paragraph(structural_line)
+            previous_nonempty = line
+            index += 1
+            continue
+
+        fence_match = _UNICODE_FENCE_RE.match(structural_line)
+        heading_match = _UNICODE_HEADING_RE.match(structural_line)
+        bold_heading_match = _UNICODE_BOLD_HEADING_RE.match(structural_line)
+        setext_match = (
+            _UNICODE_SETEXT_RE.match(lines[index + 1].removesuffix("\r"))
+            if index + 1 < len(lines) and structural_line.strip()
+            else None
+        )
+
+        if lazy_blockquote:
+            if not structural_line.strip():
+                lazy_blockquote = False
+                previous_nonempty = ""
+                index += 1
+                continue
+            # A block construct interrupts CommonMark lazy quote continuation.
+            if fence_match is None and heading_match is None and bold_heading_match is None and setext_match is None:
+                index += 1
+                continue
+            lazy_blockquote = False
+
+        if heading_match is not None:
+            if not finish_paragraph():
+                return None
+            enter_heading(len(heading_match.group("marks")), heading_match.group("title"))
+            if current_section() == "active" and not append_region(
+                structural_line, line_number, "active_instruction", line_elisions
+            ):
+                return None
+            previous_nonempty = line
+            index += 1
+            continue
+        if setext_match is not None:
+            if not finish_paragraph():
+                return None
+            enter_heading(1 if setext_match.group("marks")[0] == "=" else 2, structural_line.strip())
+            if current_section() == "active" and not append_region(
+                structural_line, line_number, "active_instruction", line_elisions
+            ):
+                return None
+            previous_nonempty = line
+            index += 2
+            continue
+        if bold_heading_match is not None:
+            if not finish_paragraph():
+                return None
+            inherited = heading_stack[-1][1] if heading_stack else "active"
+            direct = _unicode_section_kind(bold_heading_match.group("title"))
+            bold_section = direct if direct != "active" else inherited
+            if current_section() == "active" and not append_region(
+                structural_line, line_number, "active_instruction", line_elisions
+            ):
+                return None
+            previous_nonempty = line
+            index += 1
+            continue
+
+        if fence_match is not None:
+            marker = fence_match.group("marker")
+            tail = fence_match.group("tail")
+            # Backticks in a backtick info string are invalid. Treat that
+            # malformed line as active prose rather than opening a fence.
+            if marker[0] != "`" or "`" not in tail:
+                if not finish_paragraph():
+                    return None
+                fence_candidates += 1
+                if fence_candidates > _UNICODE_MAX_FENCED_BLOCKS:
+                    return None
+                fence_character = marker[0]
+                fence_length = len(marker)
+                fence_language = _unicode_fence_language(tail)
+                fence_section = current_section()
+                if fence_section == "active" and _unicode_fence_lead_is_inert(previous_nonempty):
+                    fence_section = "negative"
+                fence_start = line_number
+                fence_lines = []
+                previous_nonempty = line
+                index += 1
+                continue
+
+        if not structural_line.strip():
+            # Preserve active paragraph continuity across blank lines. Decoded
+            # whitespace is canonicalized later, so an attacker cannot split a
+            # required token sequence with an arbitrary blank run.
+            if paragraph and current_section() == "active":
+                append_paragraph_line(structural_line, line_elisions)
+            else:
+                if not finish_paragraph():
+                    return None
+                paragraph_start = line_number + 1
+            previous_nonempty = ""
+            index += 1
+            continue
+        if not paragraph:
+            paragraph_start = line_number
+        append_paragraph_line(structural_line, line_elisions)
+        previous_nonempty = structural_line
+        index += 1
+
+    if fence_character is not None:
+        # An unclosed fence is malformed, so retain its content fail-open even
+        # when an example-like lead would suppress a properly closed fixture.
+        if not finish_fence(malformed=True):
+            return None
+    elif not finish_paragraph():
+        return None
+    return regions
+
+
+def _unicode_bounded_chunks(region: _UnicodeScanRegion) -> Iterator[tuple[str, int]]:
+    """Yield bounded source slabs and their offsets within a region."""
+    content = region.content
+    if len(content) <= _UNICODE_DECODE_CHUNK_CHARS:
+        yield content, 0
+        return
+
+    cursor = 0
+    while cursor < len(content):
+        end = min(len(content), cursor + _UNICODE_DECODE_CHUNK_CHARS)
+        yield content[cursor:end], cursor
+        cursor = end
+
+
+def _unicode_collapse_whitespace(
+    text: str,
+    kinds: tuple[str | None, ...],
+    source_offsets: tuple[int, ...],
+    deleted: tuple[_DeletedUnicodeTransformation, ...],
+) -> tuple[
+    str,
+    tuple[str | None, ...],
+    tuple[int, ...],
+    tuple[_DeletedUnicodeTransformation, ...],
+]:
+    """Collapse Unicode whitespace runs while retaining aligned provenance."""
+    if not text or len(kinds) != len(text) or len(source_offsets) != len(text):
+        return text, kinds, source_offsets, deleted
+
+    output: list[str] = []
+    output_kinds: list[str | None] = []
+    output_sources: list[int] = []
+    boundary_map = [0] * (len(text) + 1)
+    cursor = 0
+    while cursor < len(text):
+        boundary_map[cursor] = len(output)
+        if not text[cursor].isspace():
+            output.append(text[cursor])
+            output_kinds.append(kinds[cursor])
+            output_sources.append(source_offsets[cursor])
+            cursor += 1
+            boundary_map[cursor] = len(output)
+            continue
+
+        end = cursor + 1
+        while end < len(text) and text[end].isspace():
+            end += 1
+        transformed = next((index for index in range(cursor, end) if kinds[index] is not None), cursor)
+        output.append(" ")
+        output_kinds.append(kinds[transformed])
+        output_sources.append(source_offsets[transformed])
+        for boundary in range(cursor + 1, end + 1):
+            boundary_map[boundary] = len(output)
+        cursor = end
+
+    remapped_deleted = tuple(
+        _DeletedUnicodeTransformation(
+            item.kind,
+            item.source_offset,
+            boundary_map[min(max(item.output_offset, 0), len(text))],
+        )
+        for item in deleted
+    )
+    return "".join(output), tuple(output_kinds), tuple(output_sources), remapped_deleted
+
+
+def _unicode_match_is_inert_context(content: str, source_start: int, source_end: int) -> bool:
+    """Classify only the local clause leading into a decoded match."""
+    prefix_start = max(0, source_start - 1_024)
+    prefix = content[prefix_start:source_start]
+    # A newline normally ends local scope. Carry exactly one explicit lead
+    # ending in a colon so ``For example:\n...`` and ``Never follow:\n...``
+    # remain inert without allowing distant prose to suppress a finding.
+    last_newline = prefix.rfind("\n")
+    if last_newline >= 0:
+        previous_line = prefix[:last_newline].rsplit("\n", 1)[-1]
+        current_line = prefix[last_newline + 1 :]
+        carries_cue = previous_line.rstrip().endswith(":") and (
+            _UNICODE_INLINE_EXAMPLE_RE.search(previous_line) is not None
+            or _UNICODE_LABEL_EXAMPLE_RE.search(previous_line) is not None
+            or _UNICODE_PROHIBITION_START_RE.search(previous_line) is not None
+        )
+        prefix = f"{previous_line}\n{current_line}" if carries_cue else current_line
+
+    # A completed sentence ends the scope of an earlier cue. A colon
+    # deliberately does not: ``Never follow this string: ...``.
+    boundaries = list(re.finditer(r"[.!?][\"')\]]{0,2}[ \t]+", prefix))
+    if boundaries:
+        prefix = prefix[boundaries[-1].end() :]
+
+    examples = [
+        match
+        for pattern in (_UNICODE_INLINE_EXAMPLE_RE, _UNICODE_LABEL_EXAMPLE_RE)
+        if (match := pattern.search(prefix)) is not None
+    ]
+    example = max(examples, key=lambda candidate: candidate.start()) if examples else None
+    prohibition = _UNICODE_PROHIBITION_START_RE.search(prefix)
+    if example is None and prohibition is None:
+        return False
+
+    cue: re.Match[str]
+    cue_is_prohibition: bool
+    if example is not None and (prohibition is None or example.start() > prohibition.start()):
+        cue = example
+        cue_is_prohibition = False
+    else:
+        assert prohibition is not None
+        cue = prohibition
+        cue_is_prohibition = True
+    if _UNICODE_CONTRASTIVE_RE.search(prefix, cue.end()) is not None:
+        return False
+
+    if cue_is_prohibition:
+        tail = content[source_end : min(len(content), source_end + 512)]
+        tail_boundary = re.search(r"[.]?[\"')\]]?[ \t]*(?:\n|$)", tail)
+        if tail_boundary is not None:
+            tail = tail[: tail_boundary.start()]
+        if _UNICODE_CONTRASTIVE_RE.search(tail) is not None:
+            return False
+    return True
+
+
+def _unicode_code_match_is_inert_context(content: str, source_start: int, source_end: int) -> bool:
+    """Apply example/prohibition scope only inside an actual code comment."""
+    line_start = content.rfind("\n", 0, source_start) + 1
+    line_end = content.find("\n", source_end)
+    if line_end < 0:
+        line_end = len(content)
+    line = content[line_start:line_end]
+
+    line_comment = re.match(r"^[ \t]*(?P<marker>//+|\#+)[ \t]*", line)
+    if line_comment is not None and source_start >= line_start + line_comment.end():
+        comment_start = line_start + line_comment.end()
+        comment_content = content[comment_start:line_end]
+        relative_start = source_start - comment_start
+        relative_end = source_end - comment_start
+
+        # Carry one immediately preceding comment-only cue ending in a colon.
+        previous_end = max(0, line_start - 1)
+        previous_start = content.rfind("\n", 0, previous_end) + 1
+        previous = content[previous_start:previous_end]
+        previous_comment = re.match(r"^[ \t]*(?://+|\#+)[ \t]*(?P<body>.*)$", previous)
+        if previous_comment is not None and previous_comment.group("body").rstrip().endswith(":"):
+            lead = previous_comment.group("body")
+            comment_content = f"{lead}\n{comment_content}"
+            relative_start += len(lead) + 1
+            relative_end += len(lead) + 1
+        return _unicode_match_is_inert_context(comment_content, relative_start, relative_end)
+
+    # Recognize a block comment only when its opener is line-leading. This
+    # avoids treating comment-looking string literals as syntax while still
+    # supporting ordinary multi-line documentation comments.
+    prefix = content[:source_start]
+    block_start = prefix.rfind("/*")
+    block_end_before = prefix.rfind("*/")
+    if block_start <= block_end_before:
+        return False
+    block_line_start = content.rfind("\n", 0, block_start) + 1
+    if content[block_line_start:block_start].strip(" \t"):
+        return False
+    closing = content.find("*/", block_start + 2)
+    if closing < 0 or source_end > closing:
+        return False
+    comment_start = block_start + 2
+    comment_end = closing
+    comment_content = content[comment_start:comment_end]
+    return _unicode_match_is_inert_context(
+        comment_content,
+        source_start - comment_start,
+        source_end - comment_start,
+    )
+
+
+def _unicode_slab_has_projection(text: str) -> bool:
+    """Return whether a slab needs dense decoded provenance."""
+    return any(_unicode_scalar_projection(character) is not None for character in set(text) if not character.isascii())
+
+
+@lru_cache(maxsize=4_096)
+def _bounded_ascii_nfkc(character: str) -> str | None:
+    """Return a small wholly-ASCII compatibility form, if one exists."""
+    normalized = unicodedata.normalize("NFKC", character)
+    if (
+        normalized == character
+        or not normalized
+        or len(normalized) > _UNICODE_MAX_NFKC_EXPANSION
+        or not normalized.isascii()
+    ):
+        return None
+    return normalized
+
+
+@lru_cache(maxsize=4_096)
+def _ascii_confusable(character: str) -> str | None:
+    """Resolve one non-ASCII scalar through the packaged confusables table."""
+    try:
+        from confusable_homoglyphs import confusables  # type: ignore[import-untyped]
+    except ImportError:
+        return None
+    entries: Any = confusables.confusables_data.get(character, ())
+    for entry in entries:
+        glyph = entry.get("c", "")
+        # Multi-scalar skeletons are intentionally rejected: they can amplify
+        # output and do not provide a single auditable source position.
+        if isinstance(glyph, str) and len(glyph) == 1 and glyph.isascii() and (glyph.isalnum() or glyph in {":", "/"}):
+            # Several uppercase I/Iota lookalikes have a lowercase-L skeleton
+            # in the upstream table. Preserve source case for ASCII anchors.
+            if glyph == "l" and character.isupper():
+                return "I"
+            return glyph
+    return None
+
+
+@lru_cache(maxsize=4_096)
+def _unicode_scalar_projection(character: str) -> tuple[str, str] | None:
+    """Return one bounded decoded scalar and its transformation class."""
+    if character.isascii():
+        return None
+
+    codepoint = ord(character)
+    if character == _UNICODE_HTML_COMMENT_SENTINEL:
+        return "", "default-ignorable"
+    # Decode the supported supplementary-selector carrier before applying the
+    # Default_Ignorable property, which also contains this codepoint range.
+    if 0xE0100 <= codepoint <= 0xE017E:
+        value = codepoint - 0xE0100
+        if value == 10 or 0x20 <= value <= 0x7E:
+            return chr(value), "variation-selectors-supplement"
+    if any(start <= codepoint <= end for start, end in _UNICODE_DEFAULT_IGNORABLE_RANGES):
+        return "", "default-ignorable"
+    # A combining mark inserted into an ASCII anchor breaks the raw signature.
+    # It is only actionable later when fixed-span causality and raw non-match
+    # are both proven, so ordinary marked multilingual prose remains inert.
+    if unicodedata.category(character) in {"Mn", "Mc", "Me"}:
+        return "", "combining-mark"
+    if character.isspace():
+        return " ", "unicode-whitespace"
+    if 0x2800 <= codepoint <= 0x28FF:
+        value = codepoint - 0x2800
+        if value == 10 or 0x20 <= value <= 0x7E:
+            return chr(value), "braille-offset"
+
+    confusable = _ascii_confusable(character)
+    normalized = _bounded_ascii_nfkc(character)
+    if confusable is not None and confusable != normalized:
+        return confusable, "unicode-confusable"
+    if normalized is not None:
+        return normalized, "unicode-normalization"
+    if confusable is not None:
+        return confusable, "unicode-confusable"
+    return None
+
 
 _COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//|/\*|\*|<!--)")
 _NEGATED_EXFILTRATION_RE = re.compile(
@@ -518,7 +1327,15 @@ _YARA_SEMANTIC_EVIDENCE_KINDS = frozenset(
         "correlated_behavior",
     }
 )
-_YARA_SEMANTIC_CONTEXT_KINDS = frozenset({"binary", "code"})
+_YARA_SEMANTIC_CONTEXT_KINDS = frozenset(
+    {
+        "active_instruction",
+        "binary",
+        "code",
+        "example",
+        "prohibition",
+    }
+)
 _YARA_SEMANTIC_SIGNAL_KINDS = frozenset({"compound_flow", "embedded_shebang", "taint_flow"})
 _YARA_SEMANTIC_SOURCE_SINK_CLASSES = frozenset(
     {
@@ -744,11 +1561,11 @@ class StaticAnalyzer(BaseAnalyzer):
             trusted_yara_metadata: dict[str, dict[str, Any]] = {}
             if self.custom_yara_rules_path is None:
                 # Bundled schema-v2 metadata is authoritative at runtime too,
-                # not only during startup validation.  The process-cached
-                # registry has already atomically checked the YARA generation.
+                # not only during startup validation. Load only the core pack:
+                # core-only scans must not depend on unrelated bundled packs.
                 from ...core.rule_registry import PackLoader
 
-                core_pack = PackLoader().build_registry().all_packs()["core"]
+                core_pack = PackLoader().load_bundled_pack(DATA_DIR / "packs" / "core")
                 for definition in core_pack.rules.values():
                     if definition.source_type != "yara":
                         continue
@@ -864,6 +1681,8 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(self._scan_instruction_body(skill))
         findings.extend(check_active_dynamic_execution(skill))
         findings.extend(check_active_hidden_html(skill))
+        findings.extend(check_active_remote_execution(skill))
+        findings.extend(check_active_semantic_directives(skill))
         findings.extend(check_unicode_smuggling(skill))
         findings.extend(self._scan_scripts(skill))
         findings.extend(self._check_dynamic_sensitive_file_access(skill))
@@ -2474,104 +3293,409 @@ class StaticAnalyzer(BaseAnalyzer):
         return any(self._socket_call_can_contact_remote(node) for node in ast.walk(tree) if isinstance(node, ast.Call))
 
     @staticmethod
-    def _decode_obfuscated_unicode(text: str) -> tuple[str, set[str]]:
-        """Decode common Unicode instruction-obfuscation representations."""
-        try:
-            from confusable_homoglyphs import confusables  # type: ignore[import-untyped]
-        except ImportError:
-            confusables = None
+    def _decode_obfuscated_unicode_with_provenance(text: str) -> _DecodedUnicodeText:
+        """Decode one bounded scalar chunk with exact source provenance.
 
-        normalized = unicodedata.normalize("NFKC", text)
+        Every source scalar emits at most four ASCII scalars, aggregate output
+        is capped at four times the input, and removed default-ignorables retain a
+        boundary anchor. Returning ``complete=False`` never exposes a decoded
+        prefix to the detector.
+        """
+        if len(text) > _UNICODE_DECODE_CHUNK_CHARS:
+            return _DecodedUnicodeText("", frozenset(), (), (), (), False)
+        if text.isascii():
+            # No supported Unicode representation can occur in ASCII-only
+            # text, so avoid allocating per-character provenance for the
+            # overwhelmingly common case.
+            return _DecodedUnicodeText(text, frozenset(), (), (), (), True)
+
+        # Resolve each distinct non-ASCII scalar once before allocating dense
+        # provenance. Irrelevant compatibility characters such as U+FDFA then
+        # take the fast path even when repeated throughout a large slab.
+        projections = {
+            character: _unicode_scalar_projection(character) for character in set(text) if not character.isascii()
+        }
+        if not any(projection is not None for projection in projections.values()):
+            return _DecodedUnicodeText(text, frozenset(), (), (), (), True)
+
         decoded: list[str] = []
+        transformation_kinds: list[str | None] = []
+        source_offsets: list[int] = []
+        deleted_transformations: list[_DeletedUnicodeTransformation] = []
         encodings: set[str] = set()
-        for char in normalized:
-            codepoint = ord(char)
-            replacement: str | None = None
+        output_limit = len(text) * _UNICODE_MAX_OUTPUT_FACTOR
 
-            # Variation Selectors Supplement encoding used by the reported PoC.
-            if 0xE0100 <= codepoint <= 0xE017E:
-                value = codepoint - 0xE0100
-                if value == 10 or 0x20 <= value <= 0x7E:
-                    replacement = chr(value)
-                    encodings.add("variation-selectors-supplement")
-
-            # A Braille offset encoding is not a Braille document: printable
-            # ASCII shifted into U+2800–U+28FF is a strong steganography signal.
-            elif 0x2800 <= codepoint <= 0x28FF:
-                value = codepoint - 0x2800
-                if value == 10 or 0x20 <= value <= 0x7E:
-                    replacement = chr(value)
-                    encodings.add("braille-offset")
-
-            # Map non-Latin confusables back to an ASCII lookalike when the
-            # optional Unicode Consortium data is available.
-            elif confusables is not None and not char.isascii():
-                info = confusables.is_confusable(char, preferred_aliases=["LATIN"])
-                if info:
-                    for entry in info:
-                        for glyph in entry.get("homoglyphs", []):
-                            candidate = glyph.get("c", "")
-                            if len(candidate) == 1 and candidate.isascii() and candidate.isalnum():
-                                replacement = candidate
-                                encodings.add("unicode-confusable")
-                                break
-                        if replacement is not None:
-                            break
-
-            if replacement is not None:
-                decoded.append(replacement)
+        for source_offset, source_char in enumerate(text):
+            projection = None if source_char.isascii() else projections[source_char]
+            if projection is None:
+                emitted = source_char
+                transformation_kind = None
             else:
-                decoded.append(char)
+                emitted, transformation_kind = projection
 
-        result = "".join(decoded)
-        if result != text and not encodings:
-            encodings.add("unicode-normalization")
-        return result, encodings
+            if transformation_kind is not None and not emitted:
+                # Collapse an arbitrarily long run at one output boundary to
+                # one auditable source location per class; one deleted scalar
+                # is sufficient only after fixed-token causality is proven.
+                if not deleted_transformations or (
+                    deleted_transformations[-1].kind,
+                    deleted_transformations[-1].output_offset,
+                ) != (transformation_kind, len(decoded)):
+                    deleted_transformations.append(
+                        _DeletedUnicodeTransformation(transformation_kind, source_offset, len(decoded))
+                    )
+                encodings.add(transformation_kind)
+                continue
+
+            # Every accepted normalization is independently capped at four
+            # ASCII scalars, so the 4x aggregate limit is order-independent.
+            if len(decoded) + len(emitted) > output_limit:
+                return _DecodedUnicodeText("", frozenset(), (), (), (), False)
+            decoded.extend(emitted)
+            transformation_kinds.extend([transformation_kind] * len(emitted))
+            source_offsets.extend([source_offset] * len(emitted))
+            if transformation_kind is not None:
+                encodings.add(transformation_kind)
+
+        return _DecodedUnicodeText(
+            text="".join(decoded),
+            encodings=frozenset(encodings),
+            transformation_kinds=tuple(transformation_kinds),
+            source_offsets=tuple(source_offsets),
+            deleted_transformations=tuple(deleted_transformations),
+            complete=True,
+        )
+
+    @staticmethod
+    def _decode_obfuscated_unicode(text: str) -> tuple[str, set[str]]:
+        """Decode one bounded Unicode chunk, preserving legacy return types."""
+        decoded = StaticAnalyzer._decode_obfuscated_unicode_with_provenance(text)
+        if not decoded.complete:
+            return text, set()
+        return decoded.text, set(decoded.encodings)
 
     def _check_unicode_obfuscated_instructions(self, skill: Skill) -> list[Finding]:
         """Detect high-signal prompt injections hidden behind Unicode variants.
 
-        Detection runs over a normalized/decoded view so visually disguised text
-        cannot evade ordinary instruction signatures. This is intentionally not
-        a blanket ban on non-ASCII text; a transformed payload must also contain
-        explicit instruction or data-theft language.
+        Detection runs over bounded decoded slabs with a rolling decoded-output
+        overlap, so default-ignorables cannot split a signature across source
+        chunk boundaries. Only transformations inside fixed signature tokens or
+        delimiters are causal; typography in wildcard gaps is ignored.
         """
         findings: list[Finding] = []
-        for sf in skill.files:
-            if sf.content is None or sf.file_type not in {"markdown", "python", "bash"}:
+        package_work_units = 0
+        package_budget_exhausted = False
+        eligible_types = {"markdown", "python", "bash", "javascript", "typescript"}
+        referenced = {Path(path).as_posix() for path in skill.referenced_files}
+        synthetic_source_count = int(skill.load_metadata.get("synthetic_instruction_source_count", 0))
+
+        def file_priority(skill_file: SkillFile) -> tuple[int, str]:
+            is_primary = skill_file.path == skill.skill_md_path
+            if is_primary:
+                priority = 0
+            elif skill_file.relative_path in referenced and skill_file.file_type != "markdown":
+                priority = 1
+            elif skill_file.file_type != "markdown":
+                priority = 2
+            else:
+                priority = 3
+            return priority, skill_file.relative_path
+
+        for sf in sorted(skill.files, key=file_priority):
+            if sf.file_type not in eligible_types:
                 continue
-            content = sf.content
-            decoded, encodings = self._decode_obfuscated_unicode(content)
-            if not encodings or decoded == content:
+            is_synthetic_multi_markdown = synthetic_source_count > 1
+            is_primary_instructions = sf.path == skill.skill_md_path and not is_synthetic_multi_markdown
+            if is_primary_instructions:
+                content = skill.instruction_body
+            elif sf.content is not None:
+                content = sf.content
+            else:
+                continue
+            if not content or content.isascii():
+                continue
+            # CommonMark treats CRLF and bare CR as line endings. Normalize
+            # them before bounded region parsing so physical line attribution
+            # matches LF input without invoking splitlines()'s broader Unicode
+            # separator semantics.
+            content = content.replace("\r\n", "\n").replace("\r", "\n")
+
+            if sf.file_type == "markdown":
+                regions = _unicode_markdown_regions(
+                    content,
+                    line_offset=max(0, skill.instruction_body_line_offset) if is_primary_instructions else 0,
+                )
+                if regions is None:
+                    # Structural bounds disable precision suppression, not the
+                    # extractor. Raw streaming remains bounded per slab.
+                    regions = [
+                        _UnicodeScanRegion(
+                            content,
+                            1 + (max(0, skill.instruction_body_line_offset) if is_primary_instructions else 0),
+                            "active_instruction",
+                        )
+                    ]
+            else:
+                regions = [_UnicodeScanRegion(content, 1, "code")]
+
+            selected: tuple[str, set[str], set[int], int, _UnicodeScanRegion] | None = None
+            file_work_units = 0
+            analysis_incomplete = False
+            for region in regions:
+                carry_text = ""
+                carry_kinds: tuple[str | None, ...] = ()
+                carry_source_offsets: tuple[int, ...] = ()
+                carry_deleted: tuple[_DeletedUnicodeTransformation, ...] = ()
+
+                for source_slab, slab_offset in _unicode_bounded_chunks(region):
+                    carry_has_projection = any(kind is not None for kind in carry_kinds) or bool(carry_deleted)
+                    if source_slab.isascii() and not carry_has_projection:
+                        # CPython's bounded ASCII predicate establishes that no
+                        # scalar in this slab can create Unicode provenance. It
+                        # keeps large ASCII prefixes cheap while retaining tail
+                        # coverage at the loader limit.
+                        tail_start = max(0, len(source_slab) - _UNICODE_DECODE_OVERLAP_CHARS)
+                        carry_text = source_slab[tail_start:]
+                        carry_kinds = (None,) * len(carry_text)
+                        carry_source_offsets = tuple(
+                            slab_offset + offset for offset in range(tail_start, len(source_slab))
+                        )
+                        carry_deleted = ()
+                        continue
+
+                    # Charge every inspected non-ASCII source scalar before the
+                    # projection fast path. Dense irrelevant Unicode therefore
+                    # cannot bypass the declared file/package work contract.
+                    source_work_units = len(source_slab)
+                    if (
+                        file_work_units + source_work_units > _UNICODE_MAX_FILE_WORK_UNITS
+                        or package_work_units + source_work_units > _UNICODE_MAX_PACKAGE_WORK_UNITS
+                    ):
+                        analysis_incomplete = True
+                        package_budget_exhausted = (
+                            package_work_units + source_work_units > _UNICODE_MAX_PACKAGE_WORK_UNITS
+                        )
+                        break
+                    file_work_units += source_work_units
+                    package_work_units += source_work_units
+
+                    slab_has_projection = _unicode_slab_has_projection(source_slab)
+                    if not slab_has_projection and not carry_has_projection:
+                        # No transformed scalar can be causal in this slab. Keep
+                        # only the decoded-space overlap needed by a future slab,
+                        # without allocating dense provenance for the prefix.
+                        tail_start = max(0, len(source_slab) - _UNICODE_DECODE_OVERLAP_CHARS)
+                        carry_text = source_slab[tail_start:]
+                        carry_kinds = (None,) * len(carry_text)
+                        carry_source_offsets = tuple(
+                            slab_offset + offset for offset in range(tail_start, len(source_slab))
+                        )
+                        carry_deleted = ()
+                        continue
+
+                    decoded = self._decode_obfuscated_unicode_with_provenance(source_slab)
+                    if not decoded.complete:
+                        # The chunk helper guarantees this today. Keep the
+                        # guard fail-closed against partial decoded prefixes.
+                        carry_text = ""
+                        carry_kinds = ()
+                        carry_source_offsets = ()
+                        carry_deleted = ()
+                        continue
+
+                    # Charge actual bounded decoded output, not a 4x reserve
+                    # against every ASCII scalar in a mixed slab. One rejected
+                    # 64-KiB slab is the fixed maximum uncharged operation.
+                    slab_work_units = len(decoded.text) + len(carry_text)
+                    if (
+                        file_work_units + slab_work_units > _UNICODE_MAX_FILE_WORK_UNITS
+                        or package_work_units + slab_work_units > _UNICODE_MAX_PACKAGE_WORK_UNITS
+                    ):
+                        analysis_incomplete = True
+                        package_budget_exhausted = (
+                            package_work_units + slab_work_units > _UNICODE_MAX_PACKAGE_WORK_UNITS
+                        )
+                        break
+                    file_work_units += slab_work_units
+                    package_work_units += slab_work_units
+
+                    if len(decoded.source_offsets) == len(decoded.text):
+                        current_kinds = decoded.transformation_kinds
+                        current_source_offsets = tuple(slab_offset + offset for offset in decoded.source_offsets)
+                    elif (
+                        not decoded.source_offsets
+                        and not decoded.transformation_kinds
+                        and not decoded.deleted_transformations
+                        and len(decoded.text) == len(source_slab)
+                    ):
+                        # ASCII and no-op Unicode slabs intentionally skip dense
+                        # identity provenance in the decoder fast path. Restore
+                        # that invariant only inside the bounded streaming scan.
+                        current_kinds = (None,) * len(decoded.text)
+                        current_source_offsets = tuple(slab_offset + offset for offset in range(len(decoded.text)))
+                    else:
+                        # A complete projection must align every emitted scalar.
+                        carry_text = ""
+                        carry_kinds = ()
+                        carry_source_offsets = ()
+                        carry_deleted = ()
+                        continue
+                    current_deleted = tuple(
+                        _DeletedUnicodeTransformation(
+                            (
+                                "html-comment-elision"
+                                if slab_offset + item.source_offset in region.synthetic_elisions
+                                else item.kind
+                            ),
+                            slab_offset + item.source_offset,
+                            len(carry_text) + item.output_offset,
+                        )
+                        for item in decoded.deleted_transformations
+                    )
+                    combined_text = carry_text + decoded.text
+                    combined_kinds = carry_kinds + current_kinds
+                    combined_source_offsets = carry_source_offsets + current_source_offsets
+                    combined_deleted = carry_deleted + current_deleted
+                    (
+                        combined_text,
+                        combined_kinds,
+                        combined_source_offsets,
+                        combined_deleted,
+                    ) = _unicode_collapse_whitespace(
+                        combined_text,
+                        combined_kinds,
+                        combined_source_offsets,
+                        combined_deleted,
+                    )
+
+                    if selected is None and (any(kind is not None for kind in combined_kinds) or combined_deleted):
+                        chunk_candidate: tuple[int, str, set[str], set[int], int, _UnicodeScanRegion] | None = None
+                        for pattern, fixed_groups in _OBFUSCATED_INSTRUCTION_PATTERNS:
+                            for match in pattern.finditer(combined_text):
+                                fixed_spans = [match.span(group_name) for group_name in fixed_groups]
+                                matched_positions: dict[str, set[int]] = {}
+                                for output_offset in range(match.start(), match.end()):
+                                    if not any(start <= output_offset < end for start, end in fixed_spans):
+                                        continue
+                                    kind = combined_kinds[output_offset]
+                                    if kind is not None:
+                                        matched_positions.setdefault(kind, set()).add(
+                                            combined_source_offsets[output_offset]
+                                        )
+                                for deleted in combined_deleted:
+                                    boundary = deleted.output_offset
+                                    left_is_fixed = any(start <= boundary - 1 < end for start, end in fixed_spans)
+                                    right_is_fixed = any(start <= boundary < end for start, end in fixed_spans)
+                                    if match.start() < boundary < match.end() and left_is_fixed and right_is_fixed:
+                                        matched_positions.setdefault(deleted.kind, set()).add(deleted.source_offset)
+
+                                qualifying_encodings = {
+                                    kind
+                                    for kind, positions in matched_positions.items()
+                                    if positions and kind != "html-comment-elision"
+                                }
+                                if not qualifying_encodings:
+                                    continue
+
+                                match_source_offsets = combined_source_offsets[match.start() : match.end()]
+                                if not match_source_offsets:
+                                    continue
+                                source_start = min(match_source_offsets)
+                                source_end = max(match_source_offsets) + 1
+                                if (
+                                    region.context_kind == "active_instruction"
+                                    and _unicode_match_is_inert_context(region.content, source_start, source_end)
+                                ) or (
+                                    region.context_kind == "code"
+                                    and _unicode_code_match_is_inert_context(region.content, source_start, source_end)
+                                ):
+                                    continue
+
+                                transformed_source_offsets = set().union(
+                                    *(matched_positions[kind] for kind in qualifying_encodings)
+                                )
+                                candidate = (
+                                    match.start(),
+                                    " ".join(match.group().split())[:160],
+                                    qualifying_encodings,
+                                    transformed_source_offsets,
+                                    source_start,
+                                    region,
+                                )
+                                if chunk_candidate is None or candidate[0] < chunk_candidate[0]:
+                                    chunk_candidate = candidate
+                                break
+                        if chunk_candidate is not None:
+                            _, preview, encodings, source_offsets, match_source_start, candidate_region = (
+                                chunk_candidate
+                            )
+                            selected = (preview, encodings, source_offsets, match_source_start, candidate_region)
+
+                    tail_start = max(0, len(combined_text) - _UNICODE_DECODE_OVERLAP_CHARS)
+                    carry_text = combined_text[tail_start:]
+                    carry_kinds = combined_kinds[tail_start:]
+                    carry_source_offsets = combined_source_offsets[tail_start:]
+                    carry_deleted = tuple(
+                        _DeletedUnicodeTransformation(
+                            item.kind,
+                            item.source_offset,
+                            item.output_offset - tail_start,
+                        )
+                        for item in combined_deleted
+                        if item.output_offset >= tail_start
+                    )
+                    if selected is not None:
+                        break
+                if selected is not None or analysis_incomplete:
+                    break
+
+            if selected is None:
+                if analysis_incomplete:
+                    findings.append(
+                        Finding(
+                            id=self._generate_finding_id("UNICODE_ANALYSIS_INCOMPLETE", sf.relative_path),
+                            rule_id="UNICODE_ANALYSIS_INCOMPLETE",
+                            category=ThreatCategory.POLICY_VIOLATION,
+                            severity=Severity.INFO,
+                            title="Unicode instruction analysis incomplete",
+                            description=(
+                                f"Unicode projection for {sf.relative_path} exceeded a deterministic bounded-work "
+                                "limit. Earlier findings remain valid, but the absence of another Unicode finding "
+                                "does not establish safety for the uninspected remainder."
+                            ),
+                            file_path=sf.relative_path,
+                            line_number=None,
+                            remediation=(
+                                "Reduce or remove dense Unicode compatibility/confusable content and rescan the "
+                                "complete package."
+                            ),
+                            analyzer="static",
+                            metadata={
+                                "analysis_incomplete": True,
+                                "reason": "unicode-work-limit",
+                                "error_code": (
+                                    "UNICODE_PACKAGE_WORK_LIMIT_EXCEEDED"
+                                    if package_budget_exhausted
+                                    else "UNICODE_FILE_WORK_LIMIT_EXCEEDED"
+                                ),
+                                "work_model": "unicode_projection_v1",
+                                "file_work_units": file_work_units,
+                                "file_work_limit": _UNICODE_MAX_FILE_WORK_UNITS,
+                                "package_work_units": package_work_units,
+                                "package_work_limit": _UNICODE_MAX_PACKAGE_WORK_UNITS,
+                            },
+                        )
+                    )
+                if package_budget_exhausted:
+                    break
                 continue
 
-            # Require repeated encoded characters for offset encodings. A lone
-            # Braille character can be legitimate; a supplementary variation
-            # selector is itself an invisible format signal.
-            encoded_counts = {
-                "variation-selectors-supplement": sum(0xE0100 <= ord(ch) <= 0xE017E for ch in content),
-                "braille-offset": sum(0x2800 <= ord(ch) <= 0x28FF for ch in content),
-                "unicode-confusable": sum(not ch.isascii() for ch in content),
-                "unicode-normalization": sum(unicodedata.normalize("NFKC", ch) != ch for ch in content),
-            }
-            if encoded_counts["braille-offset"] < 8 and "braille-offset" in encodings:
-                encodings.discard("braille-offset")
-            if encoded_counts["unicode-confusable"] < 3 and "unicode-confusable" in encodings:
-                encodings.discard("unicode-confusable")
-            if encoded_counts["unicode-normalization"] < 3 and "unicode-normalization" in encodings:
-                encodings.discard("unicode-normalization")
-            if not encodings or not _OBFUSCATED_INSTRUCTION_RE.search(decoded):
-                continue
-
-            first_line = next(
-                (
-                    line_no
-                    for line_no, line in enumerate(content.splitlines(), 1)
-                    if any(not ch.isascii() for ch in line)
-                ),
-                1,
+            preview, selected_encodings, selected_source_offsets, match_source_start, selected_region = selected
+            first_transformed_source_offset = min(selected_source_offsets)
+            first_line = selected_region.start_line + selected_region.content.count("\n", 0, match_source_start)
+            first_transformed_line = selected_region.start_line + selected_region.content.count(
+                "\n", 0, first_transformed_source_offset
             )
-            preview = " ".join(decoded.split())[:160]
             findings.append(
                 Finding(
                     id=self._generate_finding_id("UNICODE_OBFUSCATED_INSTRUCTION", sf.relative_path),
@@ -2581,14 +3705,20 @@ class StaticAnalyzer(BaseAnalyzer):
                     title="Obfuscated prompt-injection instructions detected",
                     description=(
                         f"Unicode-obfuscated instructions were detected in {sf.relative_path} using "
-                        f"{', '.join(sorted(encodings))}. Recovered text includes a high-risk instruction or "
+                        f"{', '.join(sorted(selected_encodings))}. Recovered text includes a high-risk instruction or "
                         f"data-access pattern: {preview}"
                     ),
                     file_path=sf.relative_path,
                     line_number=first_line,
                     remediation="Remove the obfuscated Unicode content and review the skill for prompt-injection and data-exfiltration behavior.",
                     analyzer="static",
-                    metadata={"encodings": sorted(encodings), "decoded_preview": preview},
+                    metadata={
+                        "encodings": sorted(selected_encodings),
+                        "decoded_preview": preview,
+                        "matched_transformed_codepoint_count": len(selected_source_offsets),
+                        "context_kind": selected_region.context_kind,
+                        "first_transformed_line": first_transformed_line,
+                    },
                 )
             )
         return findings

@@ -36,6 +36,7 @@ from evals.runners.release_gate import (
 )
 
 _ARTIFACT_DIGEST = "a" * 64
+_METADATA_DIGEST = "9" * 64
 _PRIVATE_DIGEST = "b" * 64
 _PUBLIC_REVISION = "d4b42ce5766a6e0359c987cf59c1007cb3795a90"
 _BUILD_DIGEST = "c" * 64
@@ -77,6 +78,7 @@ def _promoted_lock(tmp_path: Path) -> Path:
     dataset = next(entry for entry in manifest["datasets"] if entry["id"] == "ProtectSkills/MaliciousSkillBench")
     dataset["integrity"]["hashes_pending"] = False
     dataset["integrity"]["artifact_manifest_sha256"] = _ARTIFACT_DIGEST
+    dataset["integrity"]["sample_metadata_manifest_sha256"] = _METADATA_DIGEST
     dataset["gating"]["blocking"] = True
     path = tmp_path / "datasets.lock.json"
     _write_json(path, manifest)
@@ -283,6 +285,7 @@ def _public_report(*, cel_mode: str = "shadow") -> dict:
             "id": "ProtectSkills/MaliciousSkillBench",
             "revision": _PUBLIC_REVISION,
             "artifact_manifest_sha256": _ARTIFACT_DIGEST,
+            "sample_metadata_manifest_sha256": _METADATA_DIGEST,
             "blocking_eligible": True,
         },
         "summary": copy.deepcopy(metrics),
@@ -725,7 +728,7 @@ def test_agent_attestation_cannot_claim_the_scanner_as_an_independent_labeler() 
         _validate_fixture_document(document, candidate)
 
 
-def _repeated_comparison(candidate: dict, baseline: dict, fixtures: dict) -> dict:
+def _repeated_comparison(candidate: dict, baseline: dict, fixtures: dict, *, exact_loss: bool = True) -> dict:
     rule_fixtures = fixtures["rules"]["CEL_TEST"]
     evidence = {
         "malicious_support_sample_ids": [f"{_CORE_TRACK}:malicious-1"],
@@ -737,6 +740,12 @@ def _repeated_comparison(candidate: dict, baseline: dict, fixtures: dict) -> dic
         "observed_would_suppress_malicious_high_critical_sample_ids": [],
         "normalized_loss_evidence_status": "not_supplied",
         "normalized_loss_evidence_exact": False,
+        "normalized_loss_population_sha256": None,
+        "normalized_loss_generation_sha256": None,
+        "baseline_actionable_fp_sample_ids": [],
+        "candidate_actionable_fp_sample_ids": [],
+        "resolved_actionable_fp_sample_ids": [],
+        "malicious_block_loss_sample_ids": [],
         "relative_actionable_fp_reduction": None,
         "passes_twenty_percent_reduction": False,
         "has_malicious_support": True,
@@ -745,6 +754,32 @@ def _repeated_comparison(candidate: dict, baseline: dict, fixtures: dict) -> dic
         "has_boundary_fixture": True,
         "eligible_for_promotion": False,
     }
+    if exact_loss:
+        targeted = [f"{_CORE_TRACK}:benign-1"]
+        malicious = [f"{_CORE_TRACK}:malicious-1"]
+        evidence.update(
+            normalized_loss_evidence_status="computed_exact_sample_outcomes",
+            normalized_loss_evidence_exact=True,
+            normalized_loss_population_sha256=release_gate.normalized_loss_population_sha256(
+                rule_id="CEL_TEST",
+                targeted_benign_sample_ids=targeted,
+                baseline_actionable_sample_ids=targeted,
+                candidate_actionable_sample_ids=[],
+                resolved_actionable_sample_ids=targeted,
+                malicious_support_sample_ids=malicious,
+                malicious_block_loss_sample_ids=[],
+            ),
+            normalized_loss_generation_sha256=release_gate.normalized_loss_generation_sha256(
+                baseline["evidence_identity"], candidate["evidence_identity"]
+            ),
+            baseline_actionable_fp_sample_ids=targeted,
+            candidate_actionable_fp_sample_ids=[],
+            resolved_actionable_fp_sample_ids=targeted,
+            malicious_block_loss_sample_ids=[],
+            relative_actionable_fp_reduction=1.0,
+            passes_twenty_percent_reduction=True,
+            eligible_for_promotion=True,
+        )
     comparison = {
         "status": "passed",
         "comparison_kind": "cel_activation",
@@ -778,7 +813,12 @@ def _repeated_comparison(candidate: dict, baseline: dict, fixtures: dict) -> dic
     }
 
 
-def _configure_enforced_evidence(public_root: Path, *, include_promotion: bool = True) -> tuple[dict, dict]:
+def _configure_enforced_evidence(
+    public_root: Path,
+    *,
+    include_promotion: bool = True,
+    exact_loss: bool = True,
+) -> tuple[dict, dict]:
     candidate = _public_report(cel_mode="enforce")
     baseline = _public_report(cel_mode="off")
     _write_json(public_root / "candidate.json", candidate)
@@ -787,7 +827,10 @@ def _configure_enforced_evidence(public_root: Path, *, include_promotion: bool =
     if include_promotion:
         fixtures = _attested_fixture_evidence(candidate)
         _write_json(public_root / "rule-fixture-evidence.json", fixtures)
-        _write_json(public_root / "repeated-comparison.json", _repeated_comparison(candidate, baseline, fixtures))
+        _write_json(
+            public_root / "repeated-comparison.json",
+            _repeated_comparison(candidate, baseline, fixtures, exact_loss=exact_loss),
+        )
     return candidate, baseline
 
 
@@ -869,14 +912,14 @@ def test_enforced_rule_rejects_raw_candidate_evidence_without_normalized_loss(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     public_root = _public_root(tmp_path)
-    _configure_enforced_evidence(public_root)
+    _configure_enforced_evidence(public_root, exact_loss=False)
     monkeypatch.setattr(
         release_gate,
         "_current_bundled_cel_generation",
         lambda: {"rules_sha256": _RULES_DIGEST, "rollouts": {"CEL_TEST": "enforce"}},
     )
 
-    with pytest.raises(ReleaseGateError, match="lack independently bound exact normalized-loss evidence"):
+    with pytest.raises(ReleaseGateError, match="lacks valid exact normalized-loss evidence"):
         run_release_gate(public_corpus=public_root, dataset_lock=_promoted_lock(tmp_path))
 
 
@@ -885,7 +928,7 @@ def test_enforced_rule_rejects_forged_reduction_from_raw_candidate_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     public_root = _public_root(tmp_path)
-    _configure_enforced_evidence(public_root)
+    _configure_enforced_evidence(public_root, exact_loss=False)
     comparison_path = public_root / "repeated-comparison.json"
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
     rule = comparison["rule_promotion_evidence"]["CEL_TEST"]
@@ -899,7 +942,7 @@ def test_enforced_rule_rejects_forged_reduction_from_raw_candidate_counts(
         lambda: {"rules_sha256": _RULES_DIGEST, "rollouts": {"CEL_TEST": "enforce"}},
     )
 
-    with pytest.raises(ReleaseGateError, match="invalid normalized-loss contract"):
+    with pytest.raises(ReleaseGateError, match="lacks valid exact normalized-loss evidence"):
         run_release_gate(public_corpus=public_root, dataset_lock=_promoted_lock(tmp_path))
 
 
@@ -908,7 +951,7 @@ def test_observed_malicious_high_critical_candidates_do_not_become_loss_proof(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     public_root = _public_root(tmp_path)
-    _configure_enforced_evidence(public_root)
+    _configure_enforced_evidence(public_root, exact_loss=False)
     comparison_path = public_root / "repeated-comparison.json"
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
     rule = comparison["rule_promotion_evidence"]["CEL_TEST"]
@@ -921,7 +964,7 @@ def test_observed_malicious_high_critical_candidates_do_not_become_loss_proof(
         lambda: {"rules_sha256": _RULES_DIGEST, "rollouts": {"CEL_TEST": "enforce"}},
     )
 
-    with pytest.raises(ReleaseGateError, match="lack independently bound exact normalized-loss evidence"):
+    with pytest.raises(ReleaseGateError, match="lacks valid exact normalized-loss evidence"):
         run_release_gate(public_corpus=public_root, dataset_lock=_promoted_lock(tmp_path))
 
 
@@ -1669,6 +1712,16 @@ def test_public_report_must_bind_to_reviewed_dataset_lock(tmp_path: Path) -> Non
     _write_json(public_root / "candidate.json", candidate)
 
     with pytest.raises(ReleaseGateError, match="candidate and baseline dataset artifact_manifest_sha256 differ"):
+        run_release_gate(public_corpus=public_root, dataset_lock=_promoted_lock(tmp_path))
+
+
+def test_public_report_metadata_manifest_must_bind_to_reviewed_dataset_lock(tmp_path: Path) -> None:
+    public_root = _public_root(tmp_path)
+    candidate = json.loads((public_root / "candidate.json").read_text(encoding="utf-8"))
+    candidate["dataset"]["sample_metadata_manifest_sha256"] = "8" * 64
+    _write_json(public_root / "candidate.json", candidate)
+
+    with pytest.raises(ReleaseGateError, match="candidate and baseline dataset sample_metadata_manifest_sha256 differ"):
         run_release_gate(public_corpus=public_root, dataset_lock=_promoted_lock(tmp_path))
 
 

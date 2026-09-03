@@ -51,6 +51,7 @@ from ..core.scan_policy import ScanPolicy
 from ..core.scanner import SkillScanner
 from ..llm_reasoning import LLMReasoningEffort, ReasoningConfigurationError
 from ..llm_token_options import resolve_llm_max_tokens
+from ..utils.file_utils import FileValidationError, resolve_path_within_root
 from ..utils.logging_context import scan_log_context
 
 logger = logging.getLogger("skill_scanner.api")
@@ -166,30 +167,80 @@ class _RulePackStartupConfigurationError(RuntimeError):
     """The server's bundled rule generation failed startup validation."""
 
 
+_API_UPLOAD_TEMPORARY_DIRECTORY = tempfile.TemporaryDirectory(prefix="skill_scanner_api_")
+_API_UPLOAD_ROOT = Path(os.path.realpath(_API_UPLOAD_TEMPORARY_DIRECTORY.name))
+_API_UPLOAD_ROOT.chmod(0o700)
+
+
+def _api_allowed_roots() -> list[Path]:
+    """Return resolved filesystem roots exposed to remote callers.
+
+    Uploaded archives always use a process-private directory. Server-side
+    paths are inaccessible unless an operator explicitly adds their roots.
+    """
+
+    configured = [
+        Path(os.path.realpath(os.path.expanduser(value.strip())))
+        for value in os.environ.get("SKILL_SCANNER_ALLOWED_ROOTS", "").split(os.pathsep)
+        if value.strip()
+    ]
+    return list(dict.fromkeys((_API_UPLOAD_ROOT, *configured)))
+
+
 # Environment-configurable allowlist of directories the API may access.
-# When empty (default) any *resolved* absolute path is accepted — operators
-# should set SKILL_SCANNER_ALLOWED_ROOTS to restrict access in production.
-_ALLOWED_ROOTS: list[Path] = [
-    Path(p).resolve() for p in os.environ.get("SKILL_SCANNER_ALLOWED_ROOTS", "").split(":") if p.strip()
-]
+# It is deliberately never empty, but defaults only to server-owned uploads;
+# deployments scanning server-side libraries must opt those roots in through
+# SKILL_SCANNER_ALLOWED_ROOTS.
+_ALLOWED_ROOTS: list[Path] = _api_allowed_roots()
 
 
-def _validate_path(user_input: str, *, label: str = "path") -> Path:
+def _validate_path(
+    user_input: str,
+    *,
+    label: str = "path",
+    must_exist: bool = False,
+    expected_kind: str | None = None,
+) -> Path:
     """Sanitize and validate a user-supplied filesystem path.
 
     Rejects null bytes and path-traversal attempts, resolves symlinks, and
-    enforces the optional SKILL_SCANNER_ALLOWED_ROOTS allowlist.
+    enforces the SKILL_SCANNER_ALLOWED_ROOTS allowlist.  For endpoints that
+    require an existing path, disallowed paths are reported as missing so the
+    API does not disclose whether arbitrary host paths exist.
     """
+    if not user_input.strip():
+        raise HTTPException(status_code=400, detail=f"Invalid {label}: path must not be empty")
     if "\x00" in user_input:
         raise HTTPException(status_code=400, detail=f"Invalid {label}: null bytes are not allowed")
 
-    resolved = Path(user_input).resolve()
+    resolved: Path | None = None
+    matched_root: Path | None = None
+    for root in _ALLOWED_ROOTS:
+        try:
+            resolved = resolve_path_within_root(user_input, root=root, must_exist=False)
+        except FileValidationError:
+            continue
+        matched_root = root
+        break
 
-    if _ALLOWED_ROOTS and not any(resolved == root or resolved.is_relative_to(root) for root in _ALLOWED_ROOTS):
+    if resolved is None or matched_root is None:
+        if must_exist:
+            raise HTTPException(status_code=404, detail=f"{label} not found")
         raise HTTPException(
             status_code=403,
             detail=f"Access denied: {label} is outside the allowed directories",
         )
+
+    if must_exist:
+        try:
+            resolved = resolve_path_within_root(user_input, root=matched_root, must_exist=True)
+        except FileValidationError as exc:
+            raise HTTPException(status_code=404, detail=f"{label} not found") from exc
+
+    if expected_kind == "file" and not resolved.is_file():
+        raise HTTPException(status_code=400, detail=f"{label} must be a file")
+    if expected_kind == "directory" and not resolved.is_dir():
+        raise HTTPException(status_code=400, detail=f"{label} must be a directory")
 
     return resolved
 
@@ -329,14 +380,22 @@ def _resolve_policy(policy_str: str | None, *, cel_mode: CelMode | str | None = 
         if policy_str.lower() in ("strict", "balanced", "permissive"):
             policy = ScanPolicy.from_preset(policy_str)
         else:
-            policy_path = _validate_path(policy_str, label="policy path")
-            if not policy_path.exists():
-                raise ValueError(f"Unknown policy '{policy_str}'. Use a preset name or a path to a YAML file.")
-            if not policy_path.is_file():
-                raise ValueError(f"Policy path '{policy_str}' is not a file.")
+            try:
+                policy_path = _validate_path(
+                    policy_str,
+                    label="policy path",
+                    must_exist=True,
+                    expected_kind="file",
+                )
+            except HTTPException as exc:
+                if exc.status_code == 404:
+                    raise ValueError(
+                        f"Unknown policy '{policy_str}'. Use a preset name or a path to a YAML file."
+                    ) from exc
+                raise ValueError(str(exc.detail)) from exc
             if policy_path.suffix not in (".yaml", ".yml"):
                 raise ValueError("Policy file must have a .yaml or .yml extension.")
-            policy = ScanPolicy.from_yaml(str(policy_path))
+            policy = ScanPolicy.from_yaml(policy_path)
 
     if cel_mode is not None:
         policy.cel.mode = CelMode(cel_mode)
@@ -493,22 +552,24 @@ async def scan_skill(
     import asyncio
     import concurrent.futures
 
-    skill_dir = _validate_path(request.skill_directory, label="skill_directory")
-
-    if not skill_dir.exists():
-        raise HTTPException(status_code=404, detail=f"Skill directory not found: {skill_dir}")
-
-    if not skill_dir.is_dir():
-        raise HTTPException(status_code=400, detail="skill_directory must be a directory")
+    skill_dir = _validate_path(
+        request.skill_directory,
+        label="skill_directory",
+        must_exist=True,
+        expected_kind="directory",
+    )
 
     if not (skill_dir / "SKILL.md").exists():
         raise HTTPException(status_code=400, detail="SKILL.md not found in directory")
 
     custom_rules_path: str | None = None
     if request.custom_rules:
-        validated_rules = _validate_path(request.custom_rules, label="custom_rules")
-        if not validated_rules.is_dir():
-            raise HTTPException(status_code=400, detail="custom_rules must be a directory")
+        validated_rules = _validate_path(
+            request.custom_rules,
+            label="custom_rules",
+            must_exist=True,
+            expected_kind="directory",
+        )
         custom_rules_path = str(validated_rules)
 
     try:
@@ -670,11 +731,18 @@ async def scan_uploaded_skill(
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a ZIP archive")
 
-    temp_dir = Path(tempfile.mkdtemp(prefix="skill_scanner_"))
+    temp_dir = Path(
+        tempfile.mkdtemp(
+            prefix="request_",
+            dir=str(_API_UPLOAD_ROOT),
+        )
+    )
 
     try:
         # Stream upload with size limit to avoid memory exhaustion
-        zip_path = temp_dir / file.filename
+        # The multipart filename is display metadata, not a filesystem path.
+        # A fixed server-owned name prevents absolute/relative path injection.
+        zip_path = temp_dir / "upload.zip"
         total_read = 0
         chunk_size = 1024 * 1024  # 1 MB chunks
         with open(zip_path, "wb") as f:
@@ -778,13 +846,12 @@ async def scan_batch(
     aidefense_api_key: str | None = Header(None, alias="X-AIDefense-Key"),
 ):
     """Scan multiple skills in a directory (batch scan)."""
-    skills_dir = _validate_path(request.skills_directory, label="skills_directory")
-
-    if not skills_dir.exists():
-        raise HTTPException(status_code=404, detail=f"Skills directory not found: {skills_dir}")
-
-    if not skills_dir.is_dir():
-        raise HTTPException(status_code=400, detail="skills_directory must be a directory")
+    skills_dir = _validate_path(
+        request.skills_directory,
+        label="skills_directory",
+        must_exist=True,
+        expected_kind="directory",
+    )
 
     scan_id = str(uuid.uuid4())
     scan_results_cache.set(scan_id, {"status": "processing", "started_at": datetime.now().isoformat(), "result": None})
@@ -843,7 +910,14 @@ def _run_batch_scan(
 
         custom_rules_path: str | None = None
         if request.custom_rules:
-            custom_rules_path = str(_validate_path(request.custom_rules, label="custom_rules"))
+            custom_rules_path = str(
+                _validate_path(
+                    request.custom_rules,
+                    label="custom_rules",
+                    must_exist=True,
+                    expected_kind="directory",
+                )
+            )
 
         analyzers = _build_analyzers(
             policy,
@@ -866,7 +940,12 @@ def _run_batch_scan(
 
         scanner = _create_api_scanner(analyzers, policy)
         report = scanner.scan_directory(
-            _validate_path(request.skills_directory, label="skills_directory"),
+            _validate_path(
+                request.skills_directory,
+                label="skills_directory",
+                must_exist=True,
+                expected_kind="directory",
+            ),
             recursive=request.recursive,
             check_overlap=request.check_overlap,
         )

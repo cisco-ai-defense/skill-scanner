@@ -100,7 +100,7 @@ Paths, allowlists, and other advanced settings.
 
 | Variable | Description | Example |
 |---|---|---|
-| `SKILL_SCANNER_ALLOWED_ROOTS` | Colon-delimited API path allowlist for server-side path access. | `/srv/skills:/home/user/skills` |
+| `SKILL_SCANNER_ALLOWED_ROOTS` | Colon-delimited API allowlist for server-side scan targets, policy files, and custom-rule directories. When unset, the API can access only its process-private `0700` upload root. | `/srv/skills:/home/user/skills` |
 | `SKILL_SCANNER_TAXONOMY_PATH` | Path to a custom Cisco AI taxonomy YAML file (overridden by `--taxonomy`). | `/path/to/taxonomy.yaml` |
 | `SKILL_SCANNER_THREAT_MAPPING_PATH` | Path to a custom threat mapping YAML file (overridden by `--threat-mapping`). | `/path/to/threats.yaml` |
 

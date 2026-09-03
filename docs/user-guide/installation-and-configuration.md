@@ -6,19 +6,21 @@
 > pip install cisco-ai-skill-scanner
 > skill-scanner scan ./my-skill
 > ```
-> Published wheels already include the required CEL helper. The sections below
-> cover supported platforms, optional providers, LLM keys, and advanced toggles.
+> A release containing this branch's CEL changes will include the required
+> helper in its wheels. The sections below cover that release's planned platform
+> matrix, optional providers, LLM keys, and advanced toggles.
 
 ## Installation
 
-Skill Scanner supports CPython 3.11, 3.12, 3.13, and 3.14. Python 3.10 and
-Python 3.15+ are rejected; consumers that still need 3.10 must pin the previous
-scanner release.
+This checkout, and a release containing these changes, supports CPython 3.11,
+3.12, 3.13, and 3.14. It rejects Python 3.10 and Python 3.15+.
 
-Published wheels support glibc Linux x86-64/ARM64, macOS x86-64/ARM64, and
-Windows x86-64. The CEL helper supports macOS 13+, but the complete scanner
-currently requires macOS 14+ because of the YARA-X wheel floor. Alpine/musl,
-PyPy, and Windows ARM are unsupported.
+The release workflow is configured to produce wheels for glibc Linux
+x86-64/ARM64, macOS x86-64/ARM64, and Windows x86-64. The CEL helper supports
+macOS 13+, but the complete scanner's planned minimum is macOS 14 because of the
+YARA-X wheel floor. Alpine/musl, PyPy, and Windows ARM are outside that release
+matrix. Until a release containing these changes is published, the package
+currently served by PyPI may have a different compatibility contract.
 
 ### PyPI (recommended)
 
@@ -32,6 +34,7 @@ pip install cisco-ai-skill-scanner
 
 ```bash
 pip install cisco-ai-skill-scanner[bedrock]
+pip install cisco-ai-skill-scanner[google]
 pip install cisco-ai-skill-scanner[vertex]
 pip install cisco-ai-skill-scanner[azure]
 pip install cisco-ai-skill-scanner[all]
@@ -127,7 +130,9 @@ You only need to set these if you're using the corresponding features. Click a s
 <details>
 <summary>API server</summary>
 
-- `SKILL_SCANNER_ALLOWED_ROOTS` — colon-delimited path allowlist for server-side path access
+- `SKILL_SCANNER_ALLOWED_ROOTS` — colon-delimited API allowlist for server-side
+  scan targets, policy files, and custom-rule directories. When unset, the API
+  can access only its process-private `0700` upload root.
 
 </details>
 

@@ -240,6 +240,7 @@ def _report(*, candidate: bool = False) -> dict:
             "id": "example/benchmark",
             "revision": "a" * 40,
             "artifact_manifest_sha256": "b" * 64,
+            "sample_metadata_manifest_sha256": "a" * 64,
             "blocking_eligible": True,
         },
         "tracks": {"source-disjoint-core": track},
@@ -285,6 +286,11 @@ def test_rejects_population_or_dataset_drift() -> None:
 
     candidate = _report(candidate=True)
     candidate["dataset"]["revision"] = "c" * 40
+    with pytest.raises(BenchmarkComparisonError, match="dataset identity differs"):
+        compare_benchmark_reports(baseline, candidate)
+
+    candidate = _report(candidate=True)
+    candidate["dataset"]["sample_metadata_manifest_sha256"] = "9" * 64
     with pytest.raises(BenchmarkComparisonError, match="dataset identity differs"):
         compare_benchmark_reports(baseline, candidate)
 
@@ -542,7 +548,7 @@ def test_five_run_stability_and_per_rule_promotion_evidence() -> None:
     rule = result["rule_promotion_evidence"]["CEL_TEST"]
     assert rule["observed_targeted_benign_candidates"] == 1
     assert rule["observed_would_suppress_benign_candidates"] == 1
-    assert rule["normalized_loss_evidence_status"] == "not_supplied"
+    assert rule["normalized_loss_evidence_status"] == "not_available"
     assert rule["normalized_loss_evidence_exact"] is False
     assert rule["relative_actionable_fp_reduction"] is None
     assert rule["passes_twenty_percent_reduction"] is False
@@ -640,6 +646,62 @@ def test_enforced_raw_suppression_with_surviving_same_issue_is_ineligible() -> N
     assert rule["normalized_loss_evidence_exact"] is False
     assert rule["relative_actionable_fp_reduction"] is None
     assert rule["eligible_for_promotion"] is False
+
+
+def test_single_enforced_rule_computes_exact_bound_normalized_loss() -> None:
+    candidates = []
+    for _ in range(5):
+        candidate = _report(candidate=True)
+        candidate["cel_mode"] = "enforce"
+        candidate["evidence_identity"]["cel_mode"] = "enforce"
+        candidate["summary"]["cel"]["modes"] = ["enforce"]
+        track = candidate["tracks"]["source-disjoint-core"]
+        track["cel"].update(
+            modes=["enforce"],
+            suppressed=1,
+            suppressed_sample_ids=["benign-1"],
+        )
+        track["cel"]["per_rule"]["CEL_TEST"].update(suppressed=1, rollouts=["enforce"])
+        malicious = track["sample_outcomes"]["mal-1"]
+        malicious["findings"][0]["cel_decisions"][0]["rollout"] = "enforce"
+        benign = track["sample_outcomes"]["benign-1"]
+        benign.update(actionable=False, signal=False, findings=[])
+        benign["cel_suppressed"] = [
+            {
+                "rule_id": "CEL_TEST",
+                "category": "command_execution",
+                "severity": "MEDIUM",
+                "analyzer": "static",
+                "count": 1,
+                "expression_hash": "expression-hash",
+                "pack": "core",
+                "rollout": "enforce",
+            }
+        ]
+        for dimension in ("per_source", "per_structural_family", "per_category"):
+            for group in track[dimension].values():
+                group["cel"]["modes"] = ["enforce"]
+        candidates.append(candidate)
+
+    result = compare_repeated_benchmark_reports(
+        _report(),
+        candidates,
+        rule_fixture_evidence=_RULE_FIXTURE_EVIDENCE,
+        promoted_rule_ids=["CEL_TEST"],
+    )
+
+    rule = result["rule_promotion_evidence"]["CEL_TEST"]
+    assert result["status"] == "passed"
+    assert rule["normalized_loss_evidence_status"] == "computed_exact_sample_outcomes"
+    assert rule["normalized_loss_evidence_exact"] is True
+    assert rule["baseline_actionable_fp_sample_ids"] == ["source-disjoint-core:benign-1"]
+    assert rule["candidate_actionable_fp_sample_ids"] == []
+    assert rule["resolved_actionable_fp_sample_ids"] == ["source-disjoint-core:benign-1"]
+    assert rule["relative_actionable_fp_reduction"] == 1.0
+    assert rule["passes_twenty_percent_reduction"] is True
+    assert rule["eligible_for_promotion"] is True
+    assert len(rule["normalized_loss_population_sha256"]) == 64
+    assert len(rule["normalized_loss_generation_sha256"]) == 64
 
 
 def test_five_run_comparison_rejects_unstable_output_or_generation() -> None:

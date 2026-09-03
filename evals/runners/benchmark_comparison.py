@@ -41,6 +41,8 @@ from skill_scanner.core.cel.models import CelMode
 _EPSILON = 1e-12
 _MAX_LATENCY_REGRESSION = 0.10
 _MAX_CEL_TIME_RATIO = 0.05
+_NORMALIZED_LOSS_GENERATION_DOMAIN = b"skill-scanner-cel-normalized-loss-generation-v1\0"
+_NORMALIZED_LOSS_POPULATION_DOMAIN = b"skill-scanner-cel-normalized-loss-population-v1\0"
 _GROUP_DIMENSIONS = ("per_category", "per_source", "per_structural_family")
 _PRODUCER_FIELDS = frozenset(
     {
@@ -177,7 +179,7 @@ def _loader_rejection_identity(
 
 def _identity(report: Mapping[str, Any], location: str) -> tuple[Any, ...]:
     dataset = _mapping(report.get("dataset"), f"{location}.dataset")
-    fields = ("id", "revision", "artifact_manifest_sha256")
+    fields = ("id", "revision", "artifact_manifest_sha256", "sample_metadata_manifest_sha256")
     values = tuple(dataset.get(field) for field in fields)
     if any(not isinstance(value, str) or not value for value in values):
         raise BenchmarkComparisonError(f"{location}.dataset must contain non-empty {', '.join(fields)}")
@@ -849,6 +851,7 @@ def compare_benchmark_reports(
             "id": baseline_identity[0],
             "revision": baseline_identity[1],
             "artifact_manifest_sha256": baseline_identity[2],
+            "sample_metadata_manifest_sha256": baseline_identity[3],
         },
         "baseline_cel_mode": baseline.get("cel_mode"),
         "candidate_cel_mode": candidate.get("cel_mode"),
@@ -919,7 +922,151 @@ def _promotion_rule_ids(value: Sequence[str] | None) -> frozenset[str]:
     return frozenset(value)
 
 
+def normalized_loss_generation_sha256(
+    baseline_identity: Mapping[str, Any], candidate_identity: Mapping[str, Any]
+) -> str:
+    """Bind exact normalized-loss evidence to both immutable scan generations."""
+
+    payload = {"baseline": dict(baseline_identity), "candidate": dict(candidate_identity)}
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(_NORMALIZED_LOSS_GENERATION_DOMAIN + encoded).hexdigest()
+
+
+def normalized_loss_population_sha256(
+    *,
+    rule_id: str,
+    targeted_benign_sample_ids: Sequence[str],
+    baseline_actionable_sample_ids: Sequence[str],
+    candidate_actionable_sample_ids: Sequence[str],
+    resolved_actionable_sample_ids: Sequence[str],
+    malicious_support_sample_ids: Sequence[str],
+    malicious_block_loss_sample_ids: Sequence[str],
+) -> str:
+    """Hash the exact per-rule counterfactual population and outcomes."""
+
+    payload = {
+        "baseline_actionable_sample_ids": list(baseline_actionable_sample_ids),
+        "candidate_actionable_sample_ids": list(candidate_actionable_sample_ids),
+        "malicious_block_loss_sample_ids": list(malicious_block_loss_sample_ids),
+        "malicious_support_sample_ids": list(malicious_support_sample_ids),
+        "resolved_actionable_sample_ids": list(resolved_actionable_sample_ids),
+        "rule_id": rule_id,
+        "targeted_benign_sample_ids": list(targeted_benign_sample_ids),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(_NORMALIZED_LOSS_POPULATION_DOMAIN + encoded).hexdigest()
+
+
+def _exact_normalized_loss_evidence(
+    baseline_report: Mapping[str, Any],
+    candidate_report: Mapping[str, Any],
+    *,
+    rule_id: str,
+    benign_sample_ids: Sequence[str],
+    malicious_sample_ids: Sequence[str],
+) -> dict[str, Any] | None:
+    """Compute a rule-attributable package counterfactual from full outcomes.
+
+    The caller invokes this only for a single promoted rule in enforce mode;
+    every other CEL rule is required to remain shadow. Therefore the exact
+    actionable-package delta is attributable to this rule rather than to a
+    mixture of simultaneous suppressions.
+    """
+
+    baseline_tracks = _tracks(baseline_report, "baseline")
+    candidate_tracks = _tracks(candidate_report, "candidate")
+    if set(baseline_tracks) != set(candidate_tracks):
+        return None
+    outcome_pairs: dict[str, tuple[Mapping[str, Any], Mapping[str, Any]]] = {}
+    for track_name in sorted(candidate_tracks):
+        baseline_track = baseline_tracks[track_name]
+        candidate_track = candidate_tracks[track_name]
+        if (
+            baseline_track.get("sample_outcomes_format") is not None
+            or candidate_track.get("sample_outcomes_format") is not None
+        ):
+            return None
+        baseline_outcomes = baseline_track.get("sample_outcomes")
+        candidate_outcomes = candidate_track.get("sample_outcomes")
+        if not isinstance(baseline_outcomes, Mapping) or not isinstance(candidate_outcomes, Mapping):
+            return None
+        for benchmark_id in set(baseline_outcomes) & set(candidate_outcomes):
+            baseline_outcome = baseline_outcomes[benchmark_id]
+            candidate_outcome = candidate_outcomes[benchmark_id]
+            if isinstance(baseline_outcome, Mapping) and isinstance(candidate_outcome, Mapping):
+                outcome_pairs[f"{track_name}:{benchmark_id}"] = (baseline_outcome, candidate_outcome)
+
+    def classified(stable_id: str, *, label: str) -> tuple[Mapping[str, Any], Mapping[str, Any]] | None:
+        pair = outcome_pairs.get(stable_id)
+        if pair is None:
+            return None
+        baseline_outcome, candidate_outcome = pair
+        booleans = ("actionable", "blocked", "signal", "scan_error")
+        if (
+            baseline_outcome.get("label") != label
+            or candidate_outcome.get("label") != label
+            or any(type(outcome.get(field)) is not bool for outcome in pair for field in booleans)
+            or baseline_outcome["scan_error"]
+            or candidate_outcome["scan_error"]
+        ):
+            return None
+        return pair
+
+    benign_pairs = {stable_id: classified(stable_id, label="benign") for stable_id in benign_sample_ids}
+    malicious_pairs = {stable_id: classified(stable_id, label="malicious") for stable_id in malicious_sample_ids}
+    if any(pair is None for pair in (*benign_pairs.values(), *malicious_pairs.values())):
+        return None
+
+    baseline_actionable = sorted(
+        stable_id for stable_id, pair in benign_pairs.items() if pair is not None and pair[0]["actionable"]
+    )
+    candidate_actionable = sorted(
+        stable_id for stable_id, pair in benign_pairs.items() if pair is not None and pair[1]["actionable"]
+    )
+    resolved_actionable = sorted(set(baseline_actionable) - set(candidate_actionable))
+    malicious_block_loss = sorted(
+        stable_id
+        for stable_id, pair in malicious_pairs.items()
+        if pair is not None and pair[0]["blocked"] and not pair[1]["blocked"]
+    )
+    relative_reduction = (
+        (len(baseline_actionable) - len(candidate_actionable)) / len(baseline_actionable)
+        if baseline_actionable
+        else None
+    )
+    benign_ids = sorted(benign_sample_ids)
+    malicious_ids = sorted(malicious_sample_ids)
+    baseline_identity = _evidence_identity(baseline_report, "baseline")
+    candidate_identity = _evidence_identity(candidate_report, "candidate")
+    return {
+        "normalized_loss_evidence_status": "computed_exact_sample_outcomes",
+        "normalized_loss_evidence_exact": True,
+        "normalized_loss_population_sha256": normalized_loss_population_sha256(
+            rule_id=rule_id,
+            targeted_benign_sample_ids=benign_ids,
+            baseline_actionable_sample_ids=baseline_actionable,
+            candidate_actionable_sample_ids=candidate_actionable,
+            resolved_actionable_sample_ids=resolved_actionable,
+            malicious_support_sample_ids=malicious_ids,
+            malicious_block_loss_sample_ids=malicious_block_loss,
+        ),
+        "normalized_loss_generation_sha256": normalized_loss_generation_sha256(
+            baseline_identity,
+            candidate_identity,
+        ),
+        "baseline_actionable_fp_sample_ids": baseline_actionable,
+        "candidate_actionable_fp_sample_ids": candidate_actionable,
+        "resolved_actionable_fp_sample_ids": resolved_actionable,
+        "malicious_block_loss_sample_ids": malicious_block_loss,
+        "relative_actionable_fp_reduction": relative_reduction,
+        "passes_twenty_percent_reduction": (
+            relative_reduction is not None and relative_reduction + _EPSILON >= 0.20 and not malicious_block_loss
+        ),
+    }
+
+
 def _rule_promotion_evidence(
+    baseline_report: Mapping[str, Any],
     candidate_report: Mapping[str, Any],
     fixture_evidence: Mapping[str, Any] | None,
     *,
@@ -1269,13 +1416,6 @@ def _rule_promotion_evidence(
                 "boundary_fixture_ids": [],
             },
         )
-        # These counts describe candidate decisions only.  They cannot prove
-        # that enforcing the rule removes a normalized finding or changes a
-        # package verdict: another candidate in the same normalized issue may
-        # survive.  Exact actionable-FP reduction therefore has to come from
-        # a separately bound, pre-compaction counterfactual artifact.  Until
-        # that artifact is supplied, repeated comparison is intentionally
-        # ineligible for promotion regardless of the raw suppression ratio.
         targeted = rule["targeted_benign_findings"]
         suppressed = rule["would_suppress_benign_findings"]
         malicious_ids = sorted(rule["malicious_support_sample_ids"])
@@ -1285,6 +1425,36 @@ def _rule_promotion_evidence(
         true_positive_fixture_ids = fixtures["true_positive_fixture_ids"]
         benign_near_miss_fixture_ids = fixtures["benign_near_miss_fixture_ids"]
         boundary_fixture_ids = fixtures["boundary_fixture_ids"]
+        normalized_loss = None
+        if candidate_mode == CelMode.ENFORCE.value and len(promoted_rule_ids) == 1:
+            normalized_loss = _exact_normalized_loss_evidence(
+                baseline_report,
+                candidate_report,
+                rule_id=rule_id,
+                benign_sample_ids=benign_ids,
+                malicious_sample_ids=malicious_ids,
+            )
+        if normalized_loss is None:
+            normalized_loss = {
+                "normalized_loss_evidence_status": "not_available",
+                "normalized_loss_evidence_exact": False,
+                "normalized_loss_population_sha256": None,
+                "normalized_loss_generation_sha256": None,
+                "baseline_actionable_fp_sample_ids": [],
+                "candidate_actionable_fp_sample_ids": [],
+                "resolved_actionable_fp_sample_ids": [],
+                "malicious_block_loss_sample_ids": [],
+                "relative_actionable_fp_reduction": None,
+                "passes_twenty_percent_reduction": False,
+            }
+        eligible = (
+            normalized_loss["normalized_loss_evidence_exact"] is True
+            and normalized_loss["passes_twenty_percent_reduction"] is True
+            and bool(malicious_ids)
+            and bool(true_positive_fixture_ids)
+            and bool(benign_near_miss_fixture_ids)
+            and bool(boundary_fixture_ids)
+        )
         finalized[rule_id] = {
             "malicious_support_sample_ids": malicious_ids,
             "benign_near_miss_sample_ids": benign_ids,
@@ -1295,15 +1465,12 @@ def _rule_promotion_evidence(
             "observed_would_suppress_benign_candidates": suppressed,
             "observed_would_suppress_malicious_high_critical_candidates": malicious_high_critical_findings,
             "observed_would_suppress_malicious_high_critical_sample_ids": malicious_high_critical_ids,
-            "normalized_loss_evidence_status": "not_supplied",
-            "normalized_loss_evidence_exact": False,
-            "relative_actionable_fp_reduction": None,
-            "passes_twenty_percent_reduction": False,
+            **normalized_loss,
             "has_malicious_support": bool(malicious_ids),
             "has_true_positive_fixture": bool(true_positive_fixture_ids),
             "has_benign_near_miss_fixture": bool(benign_near_miss_fixture_ids),
             "has_boundary_fixture": bool(boundary_fixture_ids),
-            "eligible_for_promotion": False,
+            "eligible_for_promotion": eligible,
         }
     return finalized
 
@@ -1387,6 +1554,7 @@ def compare_repeated_benchmark_reports(
     fingerprints = [_stability_fingerprint(candidate) for candidate in candidate_reports]
     stable_outputs = len(set(fingerprints)) == 1
     rule_evidence = _rule_promotion_evidence(
+        baseline_report,
         candidate_reports[0],
         rule_fixture_evidence,
         promoted_rule_ids=promoted_rules,

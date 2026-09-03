@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ import pytest
 from skill_scanner.core.analyzers.static import StaticAnalyzer
 from skill_scanner.core.loader import SkillLoader
 from skill_scanner.core.models import Finding, Severity, ThreatCategory
-from skill_scanner.core.rules.core_signature_precision import classify_core_signature_candidate
+from skill_scanner.core.rules.core_signature_precision import _literal_value, classify_core_signature_candidate
 
 _TARGET_RULES = {
     "COMMAND_INJECTION_JS_CHILD_PROCESS",
@@ -89,6 +90,30 @@ def _scan_yara_reference(tmp_path: Path, line: str) -> list:
     (references / "guide.md").write_text(f"# Operational constraints\n\n{line}\n", encoding="utf-8")
     skill = SkillLoader().load_skill(skill_dir)
     return StaticAnalyzer(use_yara=True).analyze(skill)
+
+
+def test_javascript_literal_parser_is_linear_on_long_escaped_input() -> None:
+    adversarial = '"' + r"\a" * 100_000 + "unterminated"
+
+    started = time.perf_counter()
+    assert _literal_value(adversarial) is None
+    assert time.perf_counter() - started < 1.0
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected"),
+    [
+        ('"simple"', "simple"),
+        (r'"escaped \" quote"', 'escaped " quote'),
+        ("'alternate \\\" quote'", 'alternate " quote'),
+        (r'"historically permissive\"', "historically permissive\\"),
+        ('"unterminated', None),
+        ('"embedded " quote"', None),
+        ('"template ${value}"', None),
+    ],
+)
+def test_javascript_literal_parser_preserves_quoted_literal_semantics(literal: str, expected: str | None) -> None:
+    assert _literal_value(literal) == expected
 
 
 def test_referenced_local_artifact_io_fails_open_without_dataflow_proof(tmp_path: Path) -> None:

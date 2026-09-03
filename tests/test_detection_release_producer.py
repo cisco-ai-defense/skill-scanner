@@ -3,18 +3,30 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import stat
 from pathlib import Path
+from types import SimpleNamespace
+from typing import TypedDict
 
 import pytest
 
+from evals.datasets import materialize_malicious_skill_bench
 from evals.datasets.materialize_malicious_skill_bench import (
     DATASET_ID,
     MaterializationError,
     _category_ids,
+    _locked_split_protocols,
     _materialize_pinned_text,
     source_artifact_contract,
+)
+from evals.datasets.public_datasets import (
+    artifact_manifest_sha256,
+    load_dataset_lock,
+    quarantine_manifest_sha256,
+    sample_metadata_manifest_sha256,
 )
 from evals.runners.produce_release_evidence import (
     _write_json_new,
@@ -25,6 +37,14 @@ from evals.runners.produce_release_evidence import (
 )
 from evals.runners.public_dataset_benchmark import compact_release_report
 from skill_scanner.core.cel.models import CelMode
+
+
+class _MaterializationFixture(TypedDict):
+    label: str
+    source_id: str
+    structural_family_id: str
+    content: str
+    splits: dict[str, str]
 
 
 def test_committed_malicious_skill_bench_source_contract_is_complete() -> None:
@@ -56,6 +76,223 @@ def test_committed_malicious_skill_bench_source_contract_is_complete() -> None:
         "usable_artifact_manifest_sha256": "e1f54bfdfb8489b136601ab5cacdc0ae81802aa2ac3b37ebe0766afdf5cec79b",
         "quarantine_manifest_sha256": "6dcd44640fd28506eed470888272c52b43a8779988a8b8b0efda99f3d8c6ee79",
     }
+    assert {track["protocol"] for track in locked["gating"]["tracks"]} == {"source_disjoint"}
+    assert _locked_split_protocols(locked) == ("m_structural_disjoint", "source_disjoint")
+    assert locked["integrity"]["sample_metadata_manifest_format"] == "sample-metadata-splits-v2"
+    assert profile["materialization"]["sample_metadata_manifest_format"] == "sample-metadata-splits-v2"
+    assert (
+        profile["materialization"]["sample_metadata_manifest_sha256"]
+        == locked["integrity"]["sample_metadata_manifest_sha256"]
+        == "6a284d9a181ae07179f2cc3ff98f64f14787dadc1ebde6c0dd86e78f4f55bc7a"
+    )
+
+
+def test_fresh_materialization_emits_every_locked_split_protocol(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock = copy.deepcopy(load_dataset_lock())
+    dataset = next(dataset for dataset in lock["datasets"] if dataset["id"] == DATASET_ID)
+    dataset["gating"]["tracks"] = [
+        track for track in dataset["gating"]["tracks"] if track["protocol"] == "source_disjoint"
+    ]
+    dataset["expected"]["row_counts"] = {
+        "primary/train": 2,
+        "splits/source_disjoint": 2,
+        "splits/m_structural_disjoint": 2,
+    }
+    track = dataset["gating"]["tracks"][0]
+    dataset["expected"]["track_expectations"] = {
+        track["name"]: {
+            "samples": 1,
+            "malicious": 0,
+            "benign": 1,
+            "population_sha256": "0" * 64,
+        }
+    }
+
+    rows: dict[str, _MaterializationFixture] = {
+        "fixture-quarantined": {
+            "label": "1",
+            "source_id": "SRC-Q",
+            "structural_family_id": "FAMILY-Q",
+            "content": "---\nname: fixture-quarantined\ndescription: Inert quarantined fixture\n---\n",
+            "splits": {"source_disjoint": "train", "m_structural_disjoint": "train"},
+        },
+        "fixture-visible": {
+            "label": "0",
+            "source_id": "SRC-V",
+            "structural_family_id": "FAMILY-V",
+            "content": "---\nname: fixture-visible\ndescription: Inert visible fixture\n---\n",
+            "splits": {"source_disjoint": "test", "m_structural_disjoint": "validation"},
+        },
+    }
+    artifacts_by_id = {
+        benchmark_id: {
+            "path": f"skills/{benchmark_id}/SKILL.md",
+            "sha256": hashlib.sha256(row["content"].encode("utf-8")).hexdigest(),
+            "size_bytes": len(row["content"].encode("utf-8")),
+        }
+        for benchmark_id, row in sorted(rows.items())
+    }
+    artifacts = list(artifacts_by_id.values())
+    dataset["integrity"]["artifact_manifest_sha256"] = artifact_manifest_sha256(
+        DATASET_ID,
+        artifacts,
+        manifest=lock,
+    )
+    usable_artifacts = [artifacts_by_id["fixture-visible"]]
+    usable_digest = artifact_manifest_sha256(DATASET_ID, usable_artifacts, manifest=lock)
+    quarantined_artifact = artifacts_by_id["fixture-quarantined"]
+    quarantine_record = {
+        "benchmark_id": "fixture-quarantined",
+        "error_code": "ENDPOINT_PROTECTION_QUARANTINE",
+        "label": "malicious",
+        **quarantined_artifact,
+        "source_id": "SRC-Q",
+        "splits": dict(rows["fixture-quarantined"]["splits"]),
+        "structural_family_id": "FAMILY-Q",
+    }
+    dataset["integrity"]["materialization"] = {
+        "declared_artifact_count": 2,
+        "usable_artifact_count": 1,
+        "error_count": 1,
+        "usable_artifact_manifest_sha256": usable_digest,
+        "quarantine_manifest_sha256": "0" * 64,
+    }
+    quarantine_digest = quarantine_manifest_sha256(
+        DATASET_ID,
+        [quarantine_record],
+        declared_artifact_manifest_sha256=dataset["integrity"]["artifact_manifest_sha256"],
+        manifest=lock,
+    )
+    dataset["integrity"]["materialization"]["quarantine_manifest_sha256"] = quarantine_digest
+    expected_samples = [
+        {
+            "benchmark_id": benchmark_id,
+            "category_ids": ["benign"] if fixture["label"] == "0" else ["unclassified_malicious"],
+            "exact_hash": hashlib.sha256(fixture["content"].encode()).hexdigest(),
+            "label": "benign" if fixture["label"] == "0" else "malicious",
+            "normalized_hash": hashlib.sha256(fixture["content"].encode()).hexdigest(),
+            "path": f"skills/{benchmark_id}",
+            "provenance": "unit_test",
+            "source_id": fixture["source_id"],
+            "source_ids": [fixture["source_id"]],
+            "source_pointer": f"test://{fixture['source_id']}",
+            "splits": dict(fixture["splits"]),
+            "structural_family_id": fixture["structural_family_id"],
+            "text_origin_source_id": fixture["source_id"],
+        }
+        for benchmark_id, fixture in sorted(rows.items())
+    ]
+    metadata_digest = sample_metadata_manifest_sha256(
+        DATASET_ID,
+        expected_samples,
+        artifact_manifest_sha256=dataset["integrity"]["artifact_manifest_sha256"],
+        manifest=lock,
+    )
+    dataset["integrity"]["sample_metadata_manifest_sha256"] = metadata_digest
+
+    primary_fields = dataset["expected"]["schemas"]["primary"]["exact_fields"]
+    primary_rows = []
+    for benchmark_id, fixture in rows.items():
+        row = dict.fromkeys(primary_fields)
+        row.update(
+            {
+                "benchmark_id": benchmark_id,
+                "label": fixture["label"],
+                "skill_text": fixture["content"],
+                "text_available": True,
+                "source_id": fixture["source_id"],
+                "source_ids": [fixture["source_id"]],
+                "source_pointer": f"test://{fixture['source_id']}",
+                "provenance": "unit_test",
+                "exact_hash": hashlib.sha256(fixture["content"].encode()).hexdigest(),
+                "normalized_hash": hashlib.sha256(fixture["content"].encode()).hexdigest(),
+                "text_origin_source_id": fixture["source_id"],
+                "structural_family_id": fixture["structural_family_id"],
+                "attack_category_codes": [],
+                "public_skill_text": None,
+                "public_text_sha256": None,
+                "original_text_withheld": False,
+            }
+        )
+        primary_rows.append(row)
+
+    class FakeTable:
+        def __init__(self, fields: list[str], table_rows: list[dict[str, object]]) -> None:
+            self.schema = SimpleNamespace(names=fields)
+            self.num_rows = len(table_rows)
+            self._rows = table_rows
+
+        def to_pylist(self) -> list[dict[str, object]]:
+            return copy.deepcopy(self._rows)
+
+    split_fields = dataset["expected"]["schemas"]["split_manifest"]["exact_fields"]
+    tables = {
+        "primary.parquet": FakeTable(primary_fields, primary_rows),
+        **{
+            f"splits/{protocol}.parquet": FakeTable(
+                split_fields,
+                [
+                    {
+                        "benchmark_id": benchmark_id,
+                        "label": fixture["label"],
+                        "source_id": fixture["source_id"],
+                        "split": fixture["splits"][protocol],
+                    }
+                    for benchmark_id, fixture in rows.items()
+                ],
+            )
+            for protocol in ("source_disjoint", "m_structural_disjoint")
+        },
+    }
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    observed_reads: list[str] = []
+
+    def read_table(path: Path) -> FakeTable:
+        relative = Path(path).relative_to(source_root).as_posix()
+        observed_reads.append(relative)
+        return tables[relative]
+
+    profile_entry = {
+        "materialization": {
+            "quarantine_records": [quarantine_record],
+            "sample_metadata_manifest_format": "sample-metadata-splits-v2",
+            "sample_metadata_manifest_sha256": metadata_digest,
+            "sample_metadata_grouping": copy.deepcopy(dataset["integrity"]["sample_metadata_grouping"]),
+        }
+    }
+    monkeypatch.setattr(
+        materialize_malicious_skill_bench,
+        "source_artifact_contract",
+        lambda **_kwargs: (lock, (), profile_entry),
+    )
+    monkeypatch.setattr(materialize_malicious_skill_bench, "validate_acquired_sources", lambda *_args: None)
+    monkeypatch.setattr(materialize_malicious_skill_bench, "parquet", SimpleNamespace(read_table=read_table))
+
+    lock_path = tmp_path / "public-datasets.lock.json"
+    lock_path.write_text(json.dumps(lock), encoding="utf-8")
+    output_root = tmp_path / "snapshot"
+    summary = materialize_malicious_skill_bench.materialize_snapshot(
+        source_root,
+        output_root,
+        dataset_lock=lock_path,
+    )
+
+    assert summary["declared_artifacts"] == 2
+    assert summary["usable_artifacts"] == 1
+    assert observed_reads == [
+        "primary.parquet",
+        "splits/m_structural_disjoint.parquet",
+        "splits/source_disjoint.parquet",
+    ]
+    manifest = json.loads((output_root / "benchmark-snapshot.json").read_text(encoding="utf-8"))
+    expected_protocols = {"m_structural_disjoint", "source_disjoint"}
+    assert manifest["sample_metadata_manifest_sha256"] == metadata_digest
+    assert all(set(sample["splits"]) == expected_protocols for sample in manifest["samples"])
+    assert set(manifest["quarantine"]["records"][0]["splits"]) == expected_protocols
 
 
 def test_category_projection_matches_locked_population_contract() -> None:

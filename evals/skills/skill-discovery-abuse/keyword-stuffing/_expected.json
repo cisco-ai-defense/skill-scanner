@@ -12,7 +12,9 @@
     "fixture_sha256": "003466c6b0a9dfbfa248a5dc0f731bf853f1cca4b531475e0389cb53ae0d5b36",
     "label_source": "human_reviewed",
     "scanner_independent": true,
-    "label_provenance_sha256": "a57bfcf1696f57da2a231a3f11d79dbe72c5eaeb517911cfe7611285e5b37074",
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "96da6fc3c30db016eb60ca6b714b5a5e7f4e414e504d3c7be9255eb637a74ee2",
     "label_evidence_sha256": "8c5886667c5738aedb0dd948a7e051b08e93c8c683e92d0a5756c0eeffe67cfd"
   },
   "expected_findings": [

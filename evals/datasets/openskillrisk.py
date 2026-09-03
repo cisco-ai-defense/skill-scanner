@@ -61,8 +61,28 @@ _CHECK_ALLOWED_FIELDS = frozenset({"kind", "path", "patterns", "description"})
 _CHECK_REQUIRED_FIELDS = frozenset({"kind"})
 _SPEC_UTIL_NAMES = frozenset({"CheckSpec", "TaskSpec", "bash_script", "make_safety_policy", "python_script", "text"})
 _TEXT_HELPERS = frozenset({"bash_script", "python_script", "text"})
+_CONTEXTUAL_SKILL_HELPERS = {
+    "authority_skill": ("AUTHORITY_EXPANSION_DIR", "Authority_Expansion"),
+    "control_plane_skill": ("CONTROL_PLANE_HIJACKING_DIR", "Control-Plane_Hijacking"),
+    "data_harvesting_skill": ("DATA_HARVESTING_DIR", "Data_Harvesting"),
+    "execution_skill": ("EXECUTION_BOOTSTRAPPING_DIR", "Execution_Bootstrapping"),
+    "external_state_skill": ("EXTERNAL_STATE_MANIPULATION_DIR", "External_State_Manipulation"),
+    "outbound_skill": ("OUTBOUND_EXFILTRATION_DIR", "Outbound_Exfiltration"),
+    "persistence_skill": ("PERSISTENCE_IMPLANTATION_DIR", "Persistence_Implantation"),
+}
+_CONTEXTUAL_ATTACK_TYPES = {
+    "authority_skill": "Authority Expansion",
+    "control_plane_skill": "Control-Plane Hijacking",
+    "data_harvesting_skill": "Data Harvesting",
+    "execution_skill": "Execution Bootstrapping",
+    "external_state_skill": "External State Manipulation",
+    "outbound_skill": "Outbound Exfiltration",
+    "persistence_skill": "Persistence Implantation",
+}
+_CONTEXTUAL_NON_IDENTITY_HELPERS = frozenset({"absolute_home_files", "merge_files", "skill_path"})
 _SKILL_FILE_NAMES = frozenset({"SKILL.md", "skill.md", "Skill.md"})
 _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
+_SAFE_PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,254}$")
 _WINDOWS_RESERVED_NAMES = frozenset(
     {
         "aux",
@@ -207,6 +227,18 @@ def _literal_string(
             or value.endswith((" ", "."))
         ):
             raise OpenSkillRiskError(f"{location} must be a portable single-component identifier")
+    return value
+
+
+def _literal_path_component(node: ast.AST, location: str) -> str:
+    value = _literal_string(node, location)
+    basename = value.split(".", 1)[0].casefold()
+    if (
+        not _SAFE_PATH_COMPONENT_RE.fullmatch(value)
+        or basename in _WINDOWS_RESERVED_NAMES
+        or value.endswith((" ", "."))
+    ):
+        raise OpenSkillRiskError(f"{location} must be a portable path component")
     return value
 
 
@@ -538,6 +570,356 @@ def _task_nodes_from_container(node: ast.AST, location: str, names: dict[str, as
     return list(node.elts)
 
 
+def _simple_assignment(statement: ast.stmt, location: str) -> tuple[str, ast.AST] | None:
+    """Return a simple assignment without interpreting its value."""
+
+    if isinstance(statement, ast.Assign):
+        if len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            raise OpenSkillRiskError(f"{location} must assign one simple name")
+        return statement.targets[0].id, statement.value
+    if isinstance(statement, ast.AnnAssign):
+        if not isinstance(statement.target, ast.Name) or statement.value is None or statement.simple != 1:
+            raise OpenSkillRiskError(f"{location} must assign one simple annotated name")
+        _validate_annotation(statement.annotation, location)
+        return statement.target.id, statement.value
+    return None
+
+
+def _validate_project_root_expression(node: ast.AST, location: str) -> None:
+    """Validate the exact inert ``Path(__file__).resolve().parents[1]`` form."""
+
+    if not (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "parents"
+        and isinstance(node.slice, ast.Constant)
+        and isinstance(node.slice.value, int)
+        and not isinstance(node.slice.value, bool)
+        and node.slice.value == 1
+        and isinstance(node.value.value, ast.Call)
+        and isinstance(node.value.value.func, ast.Attribute)
+        and node.value.value.func.attr == "resolve"
+        and not node.value.value.args
+        and not node.value.value.keywords
+        and isinstance(node.value.value.func.value, ast.Call)
+        and isinstance(node.value.value.func.value.func, ast.Name)
+        and node.value.value.func.value.func.id == "Path"
+        and len(node.value.value.func.value.args) == 1
+        and not node.value.value.func.value.keywords
+        and isinstance(node.value.value.func.value.args[0], ast.Name)
+        and node.value.value.func.value.args[0].id == "__file__"
+    ):
+        raise OpenSkillRiskError(f"{location} must be Path(__file__).resolve().parents[1]")
+
+
+def _validate_project_filtered_skills_expression(
+    node: ast.AST,
+    expected_directory: str,
+    location: str,
+) -> None:
+    """Validate ``PROJECT_ROOT / 'skills' / <locked split directory>``."""
+
+    parts: list[str] = []
+
+    def visit(value: ast.AST) -> None:
+        if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Div):
+            visit(value.left)
+            part = _literal_string(value.right, location)
+            if "/" in part or "\\" in part or part in {".", ".."}:
+                raise OpenSkillRiskError(f"{location} contains an unsafe path component")
+            parts.append(part)
+            return
+        if isinstance(value, ast.Name) and value.id == "PROJECT_ROOT":
+            return
+        raise OpenSkillRiskError(f"{location} must be rooted at PROJECT_ROOT")
+
+    visit(node)
+    if parts != ["skills", expected_directory]:
+        raise OpenSkillRiskError(f"{location} does not end in skills/{expected_directory}")
+
+
+def _validate_contextual_identity_helpers(tree: ast.Module, path: Path) -> None:
+    """Bind contextual skill helper names to the pinned category directories."""
+
+    assignments: dict[str, ast.AST] = {}
+    functions: dict[str, ast.FunctionDef] = {}
+    for index, statement in enumerate(tree.body):
+        location = f"{path.name}:statement[{index}]"
+        assigned = _simple_assignment(statement, location)
+        if assigned is not None:
+            name, value = assigned
+            if name in assignments:
+                raise OpenSkillRiskError(f"{location} redefines locked contextual constant {name!r}")
+            assignments[name] = value
+        elif isinstance(statement, ast.FunctionDef):
+            if statement.name in functions:
+                raise OpenSkillRiskError(f"{location} redefines helper {statement.name!r}")
+            functions[statement.name] = statement
+
+    for helper_name, (constant_name, directory) in _CONTEXTUAL_SKILL_HELPERS.items():
+        constant = assignments.get(constant_name)
+        if constant is None or _literal_string(constant, constant_name) != directory:
+            raise OpenSkillRiskError(f"{path.name} contextual directory mapping drift for {constant_name}")
+        helper = functions.get(helper_name)
+        if helper is None:
+            raise OpenSkillRiskError(f"{path.name} is missing contextual helper {helper_name}")
+        expected = ast.parse(
+            f"def {helper_name}(skill_id: str) -> str:\n    return skill_path({constant_name}, skill_id)\n"
+        ).body[0]
+        if ast.dump(helper, include_attributes=False) != ast.dump(expected, include_attributes=False):
+            raise OpenSkillRiskError(f"{path.name} contextual helper schema drift for {helper_name}")
+
+    allowed_helpers = set(_CONTEXTUAL_SKILL_HELPERS) | set(_CONTEXTUAL_NON_IDENTITY_HELPERS) | {"get_specs"}
+    unexpected_helpers = set(functions) - allowed_helpers
+    missing_helpers = set(_CONTEXTUAL_NON_IDENTITY_HELPERS) - set(functions)
+    if unexpected_helpers or missing_helpers:
+        raise OpenSkillRiskError(
+            f"{path.name} contextual helper set drift "
+            f"(missing={sorted(missing_helpers)}, unexpected={sorted(unexpected_helpers)})"
+        )
+
+
+def _project_pinned_skill_id(node: ast.AST, location: str, split: str) -> str:
+    if split == "obviously_malicious":
+        return _literal_path_component(node, location)
+    if not (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in _CONTEXTUAL_SKILL_HELPERS
+        and len(node.args) == 1
+        and not node.keywords
+    ):
+        raise OpenSkillRiskError(f"{location} must use one locked contextual skill helper")
+    component = _literal_path_component(node.args[0], location)
+    return f"{_CONTEXTUAL_SKILL_HELPERS[node.func.id][1]}/{component}"
+
+
+def _project_pinned_task_call(node: ast.AST, location: str, split: str) -> _ParsedTask:
+    """Project only the three label fields; all other task payload stays inert."""
+
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != "TaskSpec":
+        raise OpenSkillRiskError(f"{location} must contain only TaskSpec(...) calls")
+    if node.args:
+        raise OpenSkillRiskError(f"{location} TaskSpec must use keyword arguments")
+    fields = _keywords(node, f"{location}.TaskSpec")
+    missing = _TASK_REQUIRED_FIELDS - set(fields)
+    unexpected = set(fields) - _TASK_ALLOWED_FIELDS
+    if missing or unexpected:
+        raise OpenSkillRiskError(
+            f"{location}.TaskSpec schema drift (missing={sorted(missing)}, unexpected={sorted(unexpected)})"
+        )
+
+    task_id = _literal_string(fields["id"], f"{location}.TaskSpec.id", identifier=True)
+    skill_id = _project_pinned_skill_id(fields["skill_id"], f"{location}.TaskSpec.skill_id", split)
+    attack_type = _literal_string(fields["attack_type"], f"{location}.TaskSpec.attack_type", max_bytes=256)
+    if attack_type != attack_type.strip() or any(
+        ord(character) < 32 or ord(character) == 127 for character in attack_type
+    ):
+        raise OpenSkillRiskError(f"{location}.TaskSpec.attack_type must be normalized single-line text")
+    if split == "contextually_risky":
+        skill_expression = fields["skill_id"]
+        helper_name = (
+            skill_expression.func.id
+            if isinstance(skill_expression, ast.Call) and isinstance(skill_expression.func, ast.Name)
+            else ""
+        )
+        expected_attack_type = _CONTEXTUAL_ATTACK_TYPES.get(helper_name)
+        if attack_type != expected_attack_type:
+            raise OpenSkillRiskError(f"{location}.TaskSpec attack_type does not match its contextual skill helper")
+    return _ParsedTask(task_id=task_id, skill_id=skill_id, attack_type=attack_type)
+
+
+def _validate_pinned_get_specs(function: ast.FunctionDef, path: Path) -> None:
+    if function.decorator_list or function.args.posonlyargs or function.args.args or function.args.kwonlyargs:
+        raise OpenSkillRiskError(f"{path.name}.get_specs must be undecorated and take no arguments")
+    type_params = getattr(function, "type_params", None)
+    if function.args.vararg or function.args.kwarg or type_params:
+        raise OpenSkillRiskError(f"{path.name}.get_specs has an unsupported signature")
+    _validate_annotation(function.returns, f"{path.name}.get_specs")
+    if len(function.body) != 1 or not isinstance(function.body[0], ast.Return):
+        raise OpenSkillRiskError(f"{path.name}.get_specs must contain exactly one inert return")
+    value = function.body[0].value
+    if not (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and value.func.id == "list"
+        and len(value.args) == 1
+        and not value.keywords
+        and isinstance(value.args[0], ast.Name)
+        and value.args[0].id == "SPECS"
+    ):
+        raise OpenSkillRiskError(f"{path.name}.get_specs must return list(SPECS)")
+
+
+def _pinned_specs_extension(statement: ast.stmt, location: str) -> list[ast.AST] | None:
+    if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+        return None
+    call = statement.value
+    if not (
+        isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "SPECS"
+        and call.func.attr == "extend"
+    ):
+        return None
+    if len(call.args) != 1 or call.keywords:
+        raise OpenSkillRiskError(f"{location} SPECS.extend must receive one literal task list")
+    return _task_nodes_from_container(call.args[0], location, {})
+
+
+def _validate_pinned_policy_loop(statement: ast.For, location: str) -> None:
+    expected = ast.parse("for spec in SPECS:\n    spec.safety_policy = TASK_SAFETY_POLICIES[spec.id]\n").body[0]
+    if ast.dump(statement, include_attributes=False) != ast.dump(expected, include_attributes=False):
+        raise OpenSkillRiskError(f"{location} contains unexpected task post-processing")
+
+
+def _parse_pinned_task_projection(
+    tree: ast.Module,
+    *,
+    path: Path,
+    split: str,
+) -> tuple[_ParsedTask, ...] | None:
+    """Parse the exact locked dataset's split containers without evaluating payloads."""
+
+    has_specs = any(
+        isinstance(statement, ast.AnnAssign)
+        and isinstance(statement.target, ast.Name)
+        and statement.target.id == "SPECS"
+        for statement in tree.body
+    )
+    if not has_specs:
+        return None
+
+    project_root: ast.AST | None = None
+    filtered_skills: ast.AST | None = None
+    initial_tasks: list[ast.AST] | None = None
+    extension_tasks: list[ast.AST] = []
+    extension_sizes: list[int] = []
+    get_specs: ast.FunctionDef | None = None
+    policy_loop_count = 0
+    validation_count = 0
+
+    for index, statement in enumerate(tree.body):
+        location = f"{path.name}:statement[{index}]"
+        if isinstance(statement, ast.ImportFrom):
+            _validate_import(statement, location)
+            continue
+        if isinstance(statement, ast.Import):
+            raise OpenSkillRiskError(f"{location} imports an unexpected module")
+
+        assigned = _simple_assignment(statement, location)
+        if assigned is not None:
+            name, value = assigned
+            if name == "PROJECT_ROOT":
+                if project_root is not None:
+                    raise OpenSkillRiskError(f"{location} redefines PROJECT_ROOT")
+                project_root = value
+            elif name == "FILTERED_SKILLS_DIR":
+                if filtered_skills is not None:
+                    raise OpenSkillRiskError(f"{location} redefines FILTERED_SKILLS_DIR")
+                filtered_skills = value
+            elif name == "SPECS":
+                if initial_tasks is not None or not isinstance(statement, ast.AnnAssign):
+                    raise OpenSkillRiskError(f"{location} must define one annotated SPECS list")
+                expected_annotation = ast.parse("SPECS: list[TaskSpec] = []").body[0]
+                if not isinstance(expected_annotation, ast.AnnAssign) or ast.dump(
+                    statement.annotation, include_attributes=False
+                ) != ast.dump(expected_annotation.annotation, include_attributes=False):
+                    raise OpenSkillRiskError(f"{location} SPECS annotation drift")
+                initial_tasks = _task_nodes_from_container(value, location, {})
+            elif name != "missing_policy_ids" and not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+                raise OpenSkillRiskError(f"{location} assigns an unexpected name {name!r}")
+            continue
+
+        extension = _pinned_specs_extension(statement, location)
+        if extension is not None:
+            if initial_tasks is None:
+                raise OpenSkillRiskError(f"{location} extends SPECS before its declaration")
+            extension_tasks.extend(extension)
+            extension_sizes.append(len(extension))
+            continue
+        if isinstance(statement, ast.Expr):
+            call = statement.value
+            if (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and isinstance(call.func.value, ast.Name)
+                and call.func.value.id == "TASK_SAFETY_POLICIES"
+                and call.func.attr == "update"
+                and len(call.args) == 1
+                and isinstance(call.args[0], ast.Dict)
+                and not call.keywords
+            ):
+                continue
+            raise OpenSkillRiskError(f"{location} contains an unexpected expression")
+        if isinstance(statement, ast.FunctionDef):
+            allowed = {"get_specs"}
+            if split == "contextually_risky":
+                allowed |= set(_CONTEXTUAL_SKILL_HELPERS) | set(_CONTEXTUAL_NON_IDENTITY_HELPERS)
+            if statement.name not in allowed:
+                raise OpenSkillRiskError(f"{location} contains unexpected helper {statement.name!r}")
+            if statement.name == "get_specs":
+                if get_specs is not None:
+                    raise OpenSkillRiskError(f"{location} redefines get_specs")
+                get_specs = statement
+            continue
+        if isinstance(statement, ast.For):
+            _validate_pinned_policy_loop(statement, location)
+            policy_loop_count += 1
+            continue
+        if isinstance(statement, ast.If):
+            if (
+                not isinstance(statement.test, ast.Name)
+                or statement.test.id != "missing_policy_ids"
+                or statement.orelse
+            ):
+                raise OpenSkillRiskError(f"{location} contains unexpected task validation")
+            validation_count += 1
+            continue
+        raise OpenSkillRiskError(f"{location} contains unexpected top-level node {type(statement).__name__}")
+
+    if project_root is None or filtered_skills is None or initial_tasks is None or get_specs is None:
+        raise OpenSkillRiskError(f"{path.name} is missing a required pinned task projection declaration")
+    _validate_project_root_expression(project_root, f"{path.name}.PROJECT_ROOT")
+    _validate_project_filtered_skills_expression(
+        filtered_skills,
+        _SPLIT_SKILL_DIRS[split],
+        f"{path.name}.FILTERED_SKILLS_DIR",
+    )
+    _validate_pinned_get_specs(get_specs, path)
+    expected_extension_sizes = [11, 7, 14, 8, 9, 15, 4, 39] if split == "contextually_risky" else []
+    if extension_sizes != expected_extension_sizes:
+        raise OpenSkillRiskError(f"{path.name} SPECS extension layout drift")
+    if policy_loop_count != 1 or validation_count != 1:
+        raise OpenSkillRiskError(f"{path.name} task policy validation layout drift")
+    if split == "contextually_risky":
+        _validate_contextual_identity_helpers(tree, path)
+    elif extension_tasks:
+        raise OpenSkillRiskError(f"{path.name} unexpectedly extends the malicious SPECS list")
+
+    task_nodes = [*initial_tasks, *extension_tasks]
+    all_task_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "TaskSpec"
+    ]
+    if {id(node) for node in all_task_calls} != {id(node) for node in task_nodes}:
+        raise OpenSkillRiskError(f"{path.name} contains a TaskSpec outside the locked SPECS containers")
+    parsed = tuple(
+        _project_pinned_task_call(node, f"{path.name}.SPECS[{index}]", split) for index, node in enumerate(task_nodes)
+    )
+    expected = SPLIT_COUNTS[split]
+    if len(parsed) != expected:
+        raise OpenSkillRiskError(f"{split} task-count drift (expected {expected}, received {len(parsed)})")
+    task_ids = [task.task_id for task in parsed]
+    skill_ids = [task.skill_id for task in parsed]
+    if len(task_ids) != len(set(task_ids)) or len(task_ids) != len({value.casefold() for value in task_ids}):
+        raise OpenSkillRiskError(f"{split} contains duplicate task identifiers")
+    if len(skill_ids) != len(set(skill_ids)) or len(skill_ids) != len({value.casefold() for value in skill_ids}):
+        raise OpenSkillRiskError(f"{split} contains duplicate skill identifiers")
+    return parsed
+
+
 def parse_task_spec_source(source: str, *, path: Path, split: str) -> tuple[_ParsedTask, ...]:
     """Parse one source string under the closed task-specification AST grammar."""
 
@@ -552,6 +934,9 @@ def parse_task_spec_source(source: str, *, path: Path, split: str) -> tuple[_Par
     if "\x00" in source or source_size > _MAX_SPEC_BYTES:
         raise OpenSkillRiskError("task specification source is NUL-containing or exceeds the byte limit")
     tree = _parse_tree(source, path)
+    pinned_projection = _parse_pinned_task_projection(tree, path=path, split=split)
+    if pinned_projection is not None:
+        return pinned_projection
     literal_names: dict[str, ast.AST] = {}
     task_list_names: set[str] = set()
     filtered_seen = False
@@ -763,14 +1148,21 @@ def _validate_tree_and_find_skill(skill_root: Path, snapshot_root: Path) -> Path
     return package
 
 
-def _resolve_package(skills_root: Path, skill_id: str, snapshot_root: Path) -> Path:
-    if (
-        not _SAFE_IDENTIFIER_RE.fullmatch(skill_id)
-        or skill_id.split(".", 1)[0].casefold() in _WINDOWS_RESERVED_NAMES
-        or skill_id.endswith((" ", "."))
-    ):
-        raise OpenSkillRiskError("skill_id must be a portable single-component identifier")
-    skill_root = skills_root / skill_id
+def _resolve_package(skills_root: Path, skill_id: str, snapshot_root: Path, *, split: str) -> Path:
+    components = skill_id.split("/")
+    allowed_component_counts = {1, 2} if split == "contextually_risky" else {1}
+    valid_components = all(
+        _SAFE_PATH_COMPONENT_RE.fullmatch(component)
+        and component.split(".", 1)[0].casefold() not in _WINDOWS_RESERVED_NAMES
+        and not component.endswith((" ", "."))
+        for component in components
+    )
+    if len(components) not in allowed_component_counts or not valid_components or "\\" in skill_id:
+        requirement = "contextual path" if split == "contextually_risky" else "single-component identifier"
+        raise OpenSkillRiskError(f"skill_id must be a portable {requirement}")
+    if len(components) == 2 and components[0] not in {directory for _, directory in _CONTEXTUAL_SKILL_HELPERS.values()}:
+        raise OpenSkillRiskError("skill_id must use a locked contextual category directory")
+    skill_root = skills_root.joinpath(*components)
     try:
         skill_root.lstat()
     except FileNotFoundError as exc:
@@ -869,7 +1261,7 @@ def load_openskillrisk_snapshot(
                     skill_id=task.skill_id,
                     attack_type=task.attack_type,
                     split=split,
-                    package_directory=_resolve_package(skills_root, task.skill_id, root),
+                    package_directory=_resolve_package(skills_root, task.skill_id, root, split=split),
                 )
             )
 
@@ -889,7 +1281,7 @@ def revalidate_referenced_package(snapshot: OpenSkillRiskSnapshot, task: OpenSki
     if task not in snapshot.tasks:
         raise OpenSkillRiskError("task is not a member of the validated snapshot")
     split_root = _skills_root(snapshot.root, task.split)
-    resolved = _resolve_package(split_root, task.skill_id, snapshot.root)
+    resolved = _resolve_package(split_root, task.skill_id, snapshot.root, split=task.split)
     if resolved != task.package_directory:
         raise OpenSkillRiskError(f"referenced package path changed after snapshot validation: {task.task_id}")
     return resolved

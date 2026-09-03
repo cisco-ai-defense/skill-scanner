@@ -26,9 +26,12 @@ from unittest.mock import ANY, MagicMock, patch
 import pytest
 
 from skill_scanner.cli.cli import (
+    _STATUS_MESSAGE_MAX_CHARS,
     _build_analyzers,
     _create_skill_scanner,
     _load_policy,
+    _make_status_printer,
+    _redact_status_message,
     build_parser,
     validate_rules_command,
 )
@@ -111,7 +114,7 @@ def test_create_scanner_attaches_validated_registry(tmp_path: Path) -> None:
     assert scanner is scanner_class.return_value
     build_registry.assert_called_once_with(trusted_dirs=[trusted_pack])
     scanner_class.assert_called_once_with(analyzers=[], policy=ANY, rule_registry=registry)
-    assert status_messages == [f"Loaded trusted rule packs: {trusted_pack}"]
+    assert status_messages == ["Loaded trusted rule pack configuration"]
 
 
 def test_create_scanner_loads_builtin_registry_for_active_cel_mode() -> None:
@@ -179,7 +182,123 @@ def test_validate_rules_validates_repeatable_trusted_packs(tmp_path: Path, capsy
     build_registry.assert_called_once_with(trusted_dirs=[first, second])
     output = capsys.readouterr().out
     assert "Successfully validated 12 manifest rules" in output
-    assert "Successfully validated 2 trusted rule pack(s)" in output
+    assert "Successfully validated trusted rule pack configuration" in output
+
+
+def test_trusted_rule_pack_status_does_not_echo_administrator_path(tmp_path: Path) -> None:
+    secret = "credential-" + "value-123456789"
+    trusted_pack = tmp_path / f"pack-password={secret}"
+    trusted_pack.mkdir()
+    args = Namespace(trusted_rule_pack=[str(trusted_pack)])
+    status_messages: list[str] = []
+
+    with (
+        patch("skill_scanner.core.rule_registry.PackLoader.build_registry", return_value=MagicMock()),
+        patch("skill_scanner.cli.cli.SkillScanner"),
+    ):
+        _create_skill_scanner([], ScanPolicy.default(), args, status_messages.append)
+
+    combined = "\n".join(status_messages)
+    assert combined == "Loaded trusted rule pack configuration"
+    assert secret not in combined
+    assert str(trusted_pack) not in combined
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Using behavioral analyzer (static dataflow analysis)",
+        "Using LLM analyzer with model: qwen3:8b",
+        "Meta-analysis complete: 2 false positives removed, 5 findings retained",
+    ],
+)
+def test_status_redaction_preserves_normal_messages(message: str) -> None:
+    assert _redact_status_message(message) == message
+
+
+def test_status_redaction_removes_common_secret_forms() -> None:
+    labeled = "label-" + "secret-value-123456789"
+    bearer = "bearer-" + "value-123456789"
+    url_password = "url-" + "password-123456789"
+    query_token = "query-" + "token-123456789"
+    provider_token = "gh" + "p_" + "A" * 24
+    jwt = ".".join(("eyJ" + "A" * 12, "B" * 12, "C" * 12))
+    message = (
+        f'api_key="{labeled}" Authorization: Bearer {bearer} '
+        f"https://user:{url_password}@example.invalid/path?token={query_token} "
+        f"provider={provider_token} jwt={jwt}"
+    )
+
+    redacted = _redact_status_message(message)
+
+    for secret in (labeled, bearer, url_password, query_token, provider_token, jwt):
+        assert secret not in redacted
+    assert redacted.count("<redacted>") == 6
+    assert 'api_key="<redacted>"' in redacted
+    assert "https://user:<redacted>@example.invalid/path?token=<redacted>" in redacted
+
+
+def test_status_redaction_handles_cli_env_labels_and_additional_token_forms() -> None:
+    cli_key = "cli-" + "value-123456789"
+    env_key = "env-" + "value-123456789"
+    basic = "QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
+    token_userinfo = "token-userinfo-123456789"
+    fragment_token = "fragment-token-123456789"
+    providers = (
+        "hf_" + "A" * 24,
+        "glpat-" + "B" * 24,
+        "npm_" + "C" * 24,
+        "pypi-" + "D" * 24,
+    )
+    message = (
+        f"vt_api_key={cli_key} SKILL_SCANNER_LLM_API_KEY='{env_key}' "
+        f"Authorization: Basic {basic} https://{token_userinfo}@example.invalid/path"
+        f"#token={fragment_token} {' '.join(providers)}"
+    )
+
+    redacted = _redact_status_message(message)
+
+    for secret in (cli_key, env_key, basic, token_userinfo, fragment_token, *providers):
+        assert secret not in redacted
+    assert "vt_api_key=<redacted>" in redacted
+    assert "SKILL_SCANNER_LLM_API_KEY='<redacted>'" in redacted
+    assert "Authorization: Basic <redacted>" in redacted
+
+
+def test_status_redaction_escapes_multiline_and_terminal_controls() -> None:
+    message = "ordinary\nnext\r\x1b[31mred\x1b[0m"
+
+    assert _redact_status_message(message) == r"ordinary\nnext\r\x1b[31mred\x1b[0m"
+
+
+def test_status_redaction_keeps_escaped_output_bounded() -> None:
+    message = "\x00" * _STATUS_MESSAGE_MAX_CHARS
+
+    assert _redact_status_message(message) == "[status message omitted: exceeds safe length]"
+
+
+def test_status_redaction_omits_oversized_message_without_partial_output() -> None:
+    secret = "oversized-" + "secret-123456789"
+    message = "x" * _STATUS_MESSAGE_MAX_CHARS + f" password={secret}"
+
+    redacted = _redact_status_message(message)
+
+    assert redacted == "[status message omitted: exceeds safe length]"
+    assert secret not in redacted
+
+
+def test_status_printer_redacts_before_writing_machine_status(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    secret = "status-" + "token-123456789"
+    status = _make_status_printer(Namespace(format=["json"]))
+
+    status(f"Connecting with auth_token={secret}")
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "Connecting with auth_token=<redacted>\n"
+    assert secret not in captured.err
 
 
 def test_validate_rules_reports_missing_trusted_pack(capsys: pytest.CaptureFixture[str]) -> None:
@@ -192,6 +311,20 @@ def test_validate_rules_reports_missing_trusted_pack(capsys: pytest.CaptureFixtu
     stderr = capsys.readouterr().err
     assert "Error validating rules" in stderr
     assert str(missing) in stderr
+
+
+def test_missing_trusted_pack_error_redacts_secret_path(capsys: pytest.CaptureFixture[str]) -> None:
+    secret = "path-" + "secret-value-123456789"
+    missing = Path(f"/definitely/not/a/pack-password={secret}")
+    args = Namespace(rules_file=None, trusted_rule_pack=[str(missing)])
+
+    exit_code = validate_rules_command(args)
+
+    assert exit_code == 1
+    stderr = capsys.readouterr().err
+    assert "Error validating rules" in stderr
+    assert secret not in stderr
+    assert "password=<redacted>" in stderr
 
 
 def test_validate_rules_fails_on_bundled_legacy_promotion_blocker(

@@ -88,7 +88,7 @@ skill-scanner configure-policy -o my_policy.yaml
 
 | Preset | CEL / correlation | Description | Use when |
 |--------|-------------------|-------------|----------|
-| **strict** | shadow / on | Narrow allowlists, no deterministic suppressions, lower thresholds | Auditing untrusted / external skills, compliance |
+| **strict** | shadow / on | Narrow allowlists, no CEL suppression, lower thresholds | Auditing untrusted / external skills, compliance |
 | **balanced** | shadow / on | Sensible defaults, moderate filtering | CI/CD pipelines, everyday scanning |
 | **permissive** | off / off | Broad allowlists, aggressive suppression | Trusted internal skills, dev-time scanning |
 
@@ -124,7 +124,7 @@ The table below highlights the key differences between the three presets. Values
 | **Rule scoping: doc path dirs** | 2 (references, docs) | 11 (+ examples, fixtures, test, etc.) | 14 (+ tests, spec, samples, patterns, etc.) |
 | **Test credentials suppressed** | 0 (none) | 7 (Stripe test, JWT.io, placeholders) | 15 (+ AWS EXAMPLE, changeme, etc.) |
 | **Inert extensions** | 18 (default) | 18 (fonts, images, pyc) | 25 (+ mp3, mp4, wav, etc.) |
-| **Archive extensions** | 18 (default) | 18 (zip, tar, jar, docx, etc.) | 23 (+ whl, egg, deb, rpm, etc.) |
+| **Archive extensions** | 21 (default) | 21 (zip, tar, jar, docx, etc.) | 26 (+ whl, egg, nupkg, deb, rpm) |
 | **Code extensions** | 8 (default) | 8 (py, sh, rb, js, ts, php, etc.) | 17 (+ go, rs, java, swift, etc.) |
 | **Max file count** | 50 | 100 | 500 |
 | **Max file size** | 2 MB | 5 MB | 20 MB |
@@ -140,7 +140,7 @@ The table below highlights the key differences between the three presets. Values
 | **Analyzability LOW risk** | 95% | 90% | 80% |
 | **Analyzability MEDIUM risk** | 80% | 70% | 50% |
 | **Sensitive file patterns** | 5 (+ sudoers, .kube, .jks) | 5 (passwd, .ssh, .env, etc.) | 4 (narrower — passwd, .ssh only) |
-| **Severity overrides** | 3 (BINARY→MEDIUM, HIDDEN→MEDIUM, PYCACHE→MEDIUM) | none | 3 (ARCHIVE→LOW, PACKAGE_INSTALL→LOW, JS FS access→MEDIUM) |
+| **Severity overrides** | 3 (BINARY→MEDIUM, HIDDEN→MEDIUM, PYCACHE→MEDIUM) | none | 2 (ARCHIVE→LOW, PACKAGE_INSTALL→LOW) |
 | **Disabled rules** | none | none | 8 (adds deep nesting, invalid name, capability/indirect prompt inflation, hidden glob, homoglyph, embedded shebang, JS network) |
 
 ---

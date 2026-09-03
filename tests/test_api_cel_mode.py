@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import io
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -23,6 +24,15 @@ from skill_scanner.core.cel.models import CelMode
 from skill_scanner.core.cel.runtime import CelRuntimeUnavailable
 from skill_scanner.core.models import Report, ScanResult
 from skill_scanner.core.scan_policy import ScanPolicy
+
+
+@pytest.fixture(autouse=True)
+def _allow_explicit_api_test_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        router,
+        "_ALLOWED_ROOTS",
+        [Path.cwd().resolve(), Path(tempfile.gettempdir()).resolve()],
+    )
 
 
 @pytest.mark.parametrize(

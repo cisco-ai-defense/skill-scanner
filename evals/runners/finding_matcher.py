@@ -76,6 +76,8 @@ _PROVENANCE_KEYS = frozenset(
         "fixture_sha256",
         "label_source",
         "scanner_independent",
+        "scanner_derived_label",
+        "sealed_hf_test_content_used_for_labeling",
         "label_provenance_sha256",
         "label_evidence_sha256",
     }
@@ -280,6 +282,8 @@ def label_provenance_sha256(provenance: Mapping[str, Any]) -> str:
             "label_source": provenance.get("label_source"),
             "license": provenance.get("license"),
             "scanner_independent": provenance.get("scanner_independent"),
+            "scanner_derived_label": provenance.get("scanner_derived_label"),
+            "sealed_hf_test_content_used_for_labeling": provenance.get("sealed_hf_test_content_used_for_labeling"),
             "source": provenance.get("source"),
         },
     )
@@ -342,6 +346,14 @@ def _validate_provenance(value: Any, fixture_dir: Path | None, document: Mapping
         raise EvaluationExpectationError("provenance.label_source must be one of: " + ", ".join(sorted(LABEL_SOURCES)))
     if value["scanner_independent"] is not True:
         raise EvaluationExpectationError("provenance.scanner_independent must be true")
+    if not isinstance(value["scanner_derived_label"], bool):
+        raise EvaluationExpectationError("provenance.scanner_derived_label must be boolean")
+    if not isinstance(value["sealed_hf_test_content_used_for_labeling"], bool):
+        raise EvaluationExpectationError("provenance.sealed_hf_test_content_used_for_labeling must be boolean")
+    if value["scanner_derived_label"]:
+        raise EvaluationExpectationError("provenance must not use scanner-derived labels")
+    if value["sealed_hf_test_content_used_for_labeling"]:
+        raise EvaluationExpectationError("provenance must not use sealed Hugging Face test content for labeling")
     normalized_source = re.sub(r"[^a-z0-9]+", "-", value["source"].casefold()).strip("-")
     if "scanner-derived" in normalized_source or "scanner-generated" in normalized_source:
         raise EvaluationExpectationError("provenance.source must not identify scanner-derived labels")

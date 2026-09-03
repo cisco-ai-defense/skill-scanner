@@ -113,7 +113,6 @@ _JS_UNTRUSTED_VALUE_RE = re.compile(
 _JS_SHELL_OPTION_RE = re.compile(r"\bshell\s*:\s*true\b", re.IGNORECASE)
 _JS_FUNCTION_RE = re.compile(r"\bfunction\s+(?P<name>[A-Za-z_$][\w$]*)\s*\((?P<parameters>[^)]*)\)\s*\{")
 _JS_IDENTIFIER_RE = re.compile(r"^[A-Za-z_$][\w$]*$")
-_JS_LITERAL_RE = re.compile(r"^(['\"])(?P<value>(?:\\.|(?!\1).)*)\1$", re.DOTALL)
 _JS_CONST_ASSIGNMENT_RE_TEMPLATE = r"(?m)\bconst\s+{identifier}\s*=\s*(?P<value>[^;\r\n]{{1,4096}})\s*;"
 _JS_SHELL_EXECUTABLES = frozenset(
     {"bash", "cmd", "cmd.exe", "dash", "fish", "powershell", "powershell.exe", "pwsh", "sh", "zsh"}
@@ -302,10 +301,19 @@ def _call_at_line(
 
 
 def _literal_value(expression: str) -> str | None:
-    match = _JS_LITERAL_RE.fullmatch(expression.strip())
-    if match is None:
+    """Return a complete quoted JS literal using a linear lexical scan."""
+
+    literal = expression.strip()
+    if len(literal) < 2 or literal[0] not in {"'", '"'} or literal[-1] != literal[0]:
         return None
-    value = match.group("value")
+    quote = literal[0]
+    # Preserve the former expression's permissive escape semantics exactly:
+    # an interior delimiter is valid only directly after a backslash. Other
+    # characters, including backslashes, are literal material.
+    if any(character == quote and literal[index - 1] != "\\" for index, character in enumerate(literal[1:-1], 1)):
+        return None
+
+    value = literal[1:-1]
     if "${" in value:
         return None
     return value.replace("\\'", "'").replace('\\"', '"')

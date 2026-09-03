@@ -23,12 +23,92 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
+
+_RELEASE_CHAIN_WORKFLOWS = (
+    "release.yml",
+    "detection-release-gates.yml",
+    "detection-release-evidence.yml",
+    "update-homebrew.yml",
+)
 
 
 def _workflow(name: str) -> str:
     return (WORKFLOWS / name).read_text(encoding="utf-8")
+
+
+def _workflow_run_steps(name: str) -> list[tuple[str, str]]:
+    document = yaml.safe_load(_workflow(name))
+    return [
+        (str(step.get("name", "<unnamed>")), run)
+        for job in document["jobs"].values()
+        for step in job.get("steps", [])
+        if isinstance((run := step.get("run")), str)
+    ]
+
+
+def test_release_chain_never_interpolates_dispatch_inputs_into_shell_source() -> None:
+    for workflow_name in _RELEASE_CHAIN_WORKFLOWS:
+        for step_name, run in _workflow_run_steps(workflow_name):
+            assert "${{ inputs." not in run, (workflow_name, step_name)
+            assert "${{ github.event.inputs." not in run, (workflow_name, step_name)
+
+
+@pytest.mark.parametrize(
+    "release_ref",
+    (
+        "$(touch${IFS}PWNED)",
+        "release`touch${IFS}PWNED`",
+        "release;touch${IFS}PWNED",
+    ),
+)
+def test_exact_release_tag_guard_treats_valid_shell_metacharacters_as_data(
+    tmp_path: Path,
+    release_ref: str,
+) -> None:
+    """A valid Git ref is not necessarily safe to splice into shell source."""
+
+    resolve_job = yaml.safe_load(_workflow("release.yml"))["jobs"]["resolve-release"]
+    resolve_step = next(step for step in resolve_job["steps"] if step.get("name") == "Resolve exact tag commit")
+    script = resolve_step["run"]
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Release Test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "release-test@example.invalid"], cwd=tmp_path, check=True)
+    (tmp_path / "tracked").write_text("release\n", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "release"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "tag", release_ref], cwd=tmp_path, check=True)
+    release_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    environment = {
+        "PATH": str(Path(shutil.which("git") or "/usr/bin/git").parent) + ":/usr/bin:/bin",
+        "RELEASE_REF": release_ref,
+        "WORKFLOW_REF": f"refs/tags/{release_ref}",
+        "WORKFLOW_SHA": release_sha,
+    }
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (tmp_path / "PWNED").exists()
 
 
 def test_supported_python_versions_are_exercised_in_ci() -> None:
@@ -102,9 +182,15 @@ def test_publication_depends_on_same_revision_detection_gate() -> None:
     assert "corpus_artifact_run_id:" in release
     assert "public_corpus_artifact:" in release
     assert "release-detection-gates:" in release
+    resolve_job = release.split("resolve-release:", 1)[1].split("release-detection-gates:", 1)[0]
     gate_job = release.split("release-detection-gates:", 1)[1].split("build-platform-wheels:", 1)[0]
     assert "uses: ./.github/workflows/detection-release-gates.yml" in gate_job
-    assert "release_sha: ${{ needs.resolve-release.outputs.release_sha }}" in gate_job
+    assert "WORKFLOW_REF: ${{ github.ref }}" in resolve_job
+    assert "WORKFLOW_SHA: ${{ github.sha }}" in resolve_job
+    assert '[[ "$WORKFLOW_REF" != "refs/tags/$RELEASE_REF" ]]' in resolve_job
+    assert '[[ "$release_sha" != "$WORKFLOW_SHA" ]]' in resolve_job
+    assert "release workflow must be dispatched from the exact release tag" in resolve_job
+    assert "release_sha: ${{ github.sha }}" in gate_job
     assert "corpus_artifact_run_id: ${{ inputs.corpus_artifact_run_id }}" in gate_job
     assert "public_corpus_artifact: ${{ inputs.public_corpus_artifact }}" in gate_job
 
@@ -112,8 +198,9 @@ def test_publication_depends_on_same_revision_detection_gate() -> None:
     publish_job = release.split("pypi-publish:", 1)[1]
     assert "- release-detection-gates" in build_job
     assert "- release-detection-gates" in publish_job
-    assert "ref: ${{ needs.resolve-release.outputs.release_sha }}" in build_job
-    assert "ref: ${{ needs.resolve-release.outputs.release_sha }}" in publish_job
+    assert "ref: ${{ github.sha }}" in build_job
+    assert "ref: ${{ github.sha }}" in publish_job
+    assert "needs.resolve-release.outputs.release_sha" not in release
 
     assert "ref: ${{ inputs.release_sha }}" in detection
     assert "Corpus evidence workflow run does not target the exact release commit" in detection
@@ -122,7 +209,8 @@ def test_publication_depends_on_same_revision_detection_gate() -> None:
     assert 'artifact_workflow_path" != ".github/workflows/detection-release-evidence.yml"' in detection
     assert 'artifact_event" != "workflow_dispatch"' in detection
     assert "EXPECTED_PUBLIC_ARTIFACT: detection-release-evidence-${{ inputs.release_sha }}" in detection
-    assert '--expected-source-revision "${{ inputs.release_sha }}"' in detection
+    assert "EXPECTED_SOURCE_REVISION: ${{ inputs.release_sha }}" in detection
+    assert '--expected-source-revision "$EXPECTED_SOURCE_REVISION"' in detection
 
 
 def test_trusted_release_evidence_producer_is_pinned_offline_and_exact_sha() -> None:

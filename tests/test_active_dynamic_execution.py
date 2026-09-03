@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from pathlib import Path
 
 import yaml
@@ -28,7 +29,9 @@ from skill_scanner.core.analyzers.static import StaticAnalyzer
 from skill_scanner.core.models import Severity, Skill, SkillFile, SkillManifest, ThreatCategory
 from skill_scanner.core.rules.active_dynamic_execution import (
     MAX_DOCUMENT_BYTES,
+    MAX_INLINE_CHARS,
     RULE_ID,
+    _is_pure_prohibition,
     check_active_dynamic_execution,
     find_active_dynamic_execution,
 )
@@ -147,6 +150,22 @@ eval(payload);
 
     assert find_active_dynamic_execution(skill) == []
     assert check_active_dynamic_execution(skill) == []
+
+
+def test_long_coordinated_prohibition_is_parsed_without_regex_backtracking() -> None:
+    prefix = "Don't call eval(payload),"
+    repeated = " or call eval(payload),"
+    suffix = " unexpected"
+    repetitions = (MAX_INLINE_CHARS - len(prefix) - len(suffix)) // len(repeated)
+    line = prefix + repeated * repetitions + suffix
+
+    started = time.perf_counter()
+    assert _is_pure_prohibition(line) is False
+    assert time.perf_counter() - started < 1.0
+
+
+def test_complete_coordinated_prohibition_keeps_existing_semantics() -> None:
+    assert _is_pure_prohibition("12) Never use `eval(payload)`, or call os.system(command)!") is True
 
 
 def test_bold_example_label_scopes_untyped_regex_fence_as_inert(tmp_path: Path) -> None:

@@ -46,10 +46,10 @@ Tests scanner accuracy against a curated set of skills with known ground truth.
 
 ```bash
 # Static analyzers only (default)
-uv run python evals/runners/benchmark_runner.py
+uv run --no-sync python evals/runners/benchmark_runner.py
 
 # Save JSON results
-uv run python evals/runners/benchmark_runner.py --output results.json
+uv run --no-sync python evals/runners/benchmark_runner.py --output results.json
 ```
 
 ### How It Works
@@ -83,14 +83,14 @@ Compares default, strict, and permissive policies (plus any custom policies in
 
 ```bash
 # Default run (all policies, markdown + JSON output)
-uv run python evals/runners/policy_benchmark.py
+uv run --no-sync python evals/runners/policy_benchmark.py
 
 # Single policy
-uv run python evals/runners/policy_benchmark.py \
+uv run --no-sync python evals/runners/policy_benchmark.py \
   --policies evals/policies/04_compliance_audit.yaml
 
 # Custom corpus path
-uv run python evals/runners/policy_benchmark.py \
+uv run --no-sync python evals/runners/policy_benchmark.py \
   --corpus /path/to/skills
 ```
 
@@ -102,31 +102,31 @@ model tag alone is accepted only for non-authoritative exploration.
 
 ```bash
 # Static analyzers only
-uv run python evals/runners/eval_runner.py --test-skills-dir evals/skills
+uv run --no-sync python evals/runners/eval_runner.py --test-skills-dir evals/skills
 
 # With the local Ollama LLM analyzer (hosted providers are rejected)
-uv run python evals/runners/eval_runner.py \
+uv run --no-sync python evals/runners/eval_runner.py \
   --test-skills-dir evals/skills --use-llm \
   --ollama-model ollama/qwen3.5:9b-mlx \
   --ollama-model-digest "$OLLAMA_MODEL_DIGEST" \
   --ollama-base-url http://127.0.0.1:11434
 
 # With Meta-Analyzer (false-positive filtering)
-uv run python evals/runners/eval_runner.py \
+uv run --no-sync python evals/runners/eval_runner.py \
   --test-skills-dir evals/skills --use-llm --use-meta \
   --ollama-model ollama/qwen3.5:9b-mlx \
   --ollama-model-digest "$OLLAMA_MODEL_DIGEST" \
   --ollama-base-url http://127.0.0.1:11434 --meta-seed 0
 
 # Compare with/without Meta-Analyzer
-uv run python evals/runners/eval_runner.py \
+uv run --no-sync python evals/runners/eval_runner.py \
   --test-skills-dir evals/skills --use-llm --compare \
   --ollama-model ollama/qwen3.5:9b-mlx \
   --ollama-model-digest "$OLLAMA_MODEL_DIGEST" \
   --ollama-base-url http://127.0.0.1:11434 --meta-seed 0
 
 # Show AITech taxonomy codes
-uv run python evals/runners/eval_runner.py --test-skills-dir evals/skills --show-aitech
+uv run --no-sync python evals/runners/eval_runner.py --test-skills-dir evals/skills --show-aitech
 ```
 
 ## Reviewing Expected Findings
@@ -136,7 +136,7 @@ produces a scanner-observation report for an independent attester; it never
 rewrites an `_expected.json` file:
 
 ```bash
-uv run python evals/runners/update_expected_findings.py \
+uv run --no-sync python evals/runners/update_expected_findings.py \
   --test-skills-dir evals/skills --output evals/results/review-candidates.json
 ```
 
@@ -216,7 +216,7 @@ is never copied into this repository. Community and user-authored skills are
 out of scope, even when they share the same marketplace or cache root.
 
 ```bash
-uv run python evals/runners/official_bundled_skills_benchmark.py run \
+uv run --no-sync python evals/runners/official_bundled_skills_benchmark.py run \
   --profile evals/datasets/official-bundled-skills.profile.json \
   --lock evals/datasets/official-bundled-skills.lock.json \
   --output /absolute/path/to/official-goodware.json
@@ -267,7 +267,7 @@ separately; it never changes the hard public result.
 Run the two lock-pinned detector configurations without network access:
 
 ```bash
-uv run python evals/runners/public_dataset_benchmark.py \
+uv run --no-sync python evals/runners/public_dataset_benchmark.py \
   --snapshot-dir /absolute/path/to/frozen-snapshot \
   --dataset-id ProtectSkills/MaliciousSkillBench \
   --cel-mode shadow \
@@ -339,7 +339,7 @@ Administrator-approved schema-v2 packs can be measured as a third, explicitly
 non-blocking configuration by repeating `--trusted-rule-pack`:
 
 ```bash
-uv run python evals/runners/public_dataset_benchmark.py \
+uv run --no-sync python evals/runners/public_dataset_benchmark.py \
   --snapshot-dir /absolute/path/to/frozen-snapshot \
   --dataset-id ProtectSkills/MaliciousSkillBench \
   --trusted-rule-pack /absolute/path/to/local-pack \
@@ -417,7 +417,7 @@ adapter. The manifest must freeze the model digest, rubric, prompt, content
 hashes, and two distinct pass seeds:
 
 ```bash
-uv run python evals/runners/independent_ollama_labeler.py \
+uv run --no-sync python evals/runners/independent_ollama_labeler.py \
   --manifest /absolute/path/labeling-manifest.json \
   --ollama-base-url http://127.0.0.1:11434 \
   --output /absolute/path/independent-labels.json
