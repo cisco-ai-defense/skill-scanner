@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+from skill_scanner.core.analyzers.llm_provider_config import DEFAULT_OLLAMA_BASE_URL, ProviderConfig
 from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
 
 
@@ -58,6 +58,42 @@ def test_primary_ollama_requests_disable_hidden_thinking() -> None:
         "api_base": "http://127.0.0.1:11434",
         "reasoning_effort": "none",
     }
+
+
+def test_primary_ollama_pins_default_loopback_despite_hostile_provider_env(monkeypatch) -> None:
+    """Ambient LiteLLM configuration cannot redirect an implicit Ollama route."""
+    monkeypatch.setenv("OLLAMA_API_BASE", "https://models.example.test")
+
+    config = ProviderConfig(model="ollama/test-model", provider="ollama")
+
+    assert config.base_url == DEFAULT_OLLAMA_BASE_URL
+    assert config.get_request_params()["api_base"] == DEFAULT_OLLAMA_BASE_URL
+
+
+def test_meta_ollama_pins_default_loopback_despite_hostile_provider_env(monkeypatch) -> None:
+    """The meta analyzer applies the same explicit local endpoint contract."""
+    captured: dict = {}
+    monkeypatch.setenv("OLLAMA_API_BASE", "https://models.example.test")
+    for name in (
+        "SKILL_SCANNER_META_LLM_API_KEY",
+        "SKILL_SCANNER_LLM_API_KEY",
+        "SKILL_SCANNER_META_LLM_BASE_URL",
+        "SKILL_SCANNER_LLM_BASE_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    async def fake_completion(**kwargs):
+        captured.update(kwargs)
+        message = SimpleNamespace(content='{"validated_findings": []}')
+        choice = SimpleNamespace(message=message, finish_reason="stop")
+        return SimpleNamespace(choices=[choice], usage=None)
+
+    monkeypatch.setattr("skill_scanner.core.analyzers.meta_analyzer.acompletion", fake_completion)
+    analyzer = MetaAnalyzer(model="ollama/test-model", max_tokens=256)
+    asyncio.run(analyzer._make_llm_request("system", "user"))
+
+    assert analyzer.base_url == DEFAULT_OLLAMA_BASE_URL
+    assert captured["api_base"] == DEFAULT_OLLAMA_BASE_URL
 
 
 def test_meta_ollama_requests_disable_hidden_thinking(monkeypatch) -> None:

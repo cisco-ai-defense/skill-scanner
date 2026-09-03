@@ -286,6 +286,8 @@ def test_ollama_rejects_nonliteral_or_ambiguous_endpoint(base_url: str) -> None:
 def test_ollama_accepts_literal_loopback_endpoint(base_url: str) -> None:
     config = ProviderConfig(model="ollama/test", base_url=base_url, provider="ollama")
     assert config.is_ollama is True
+    assert config.base_url == base_url
+    assert config.get_request_params()["api_base"] == base_url
 
 
 def test_structured_primary_context_is_bounded_normalized_and_deterministic() -> None:

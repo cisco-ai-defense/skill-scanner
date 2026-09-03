@@ -280,14 +280,15 @@ jobs:
           }
           trap cleanup_firewall EXIT INT TERM
 
-          # The public runner calls build_core_analyzers without overrides;
-          # fail if its network-capable analyzer defaults ever change.
+          # The public runner uses the core-only factory, which excludes optional
+          # network analyzers. Also fail if the full factory's optional defaults
+          # ever change, so a future factory migration cannot enable them.
           uv run --no-sync python - <<'PY'
           import inspect
 
-          from skill_scanner.core.analyzer_factory import build_core_analyzers
+          from skill_scanner.core.analyzer_factory import build_analyzers
 
-          parameters = inspect.signature(build_core_analyzers).parameters
+          parameters = inspect.signature(build_analyzers).parameters
           if parameters["use_llm"].default is not False or parameters["use_osv"].default is not False:
               raise SystemExit("release benchmark would enable an LLM or OSV analyzer")
           PY

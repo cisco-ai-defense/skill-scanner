@@ -37,6 +37,8 @@ from .llm_request_options import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+
 
 def is_loopback_host(host: object) -> bool:
     """Return whether *host* is the literal 127.0.0.1 or ::1 address."""
@@ -67,6 +69,19 @@ def validate_ollama_base_url(base_url: str | None) -> None:
         raise ValueError("Ollama base URL must not contain credentials, a query, or a fragment")
     if parsed.path not in {"", "/"}:
         raise ValueError("Ollama base URL must not contain a path")
+
+
+def resolve_ollama_base_url(base_url: str | None) -> str:
+    """Return an explicit, validated endpoint for local Ollama requests.
+
+    LiteLLM also recognizes provider-specific environment variables such as
+    ``OLLAMA_API_BASE``.  Always supplying a scanner-owned endpoint prevents
+    those ambient values from redirecting skill content to a remote service.
+    """
+
+    effective_base_url = DEFAULT_OLLAMA_BASE_URL if base_url is None else base_url
+    validate_ollama_base_url(effective_base_url)
+    return effective_base_url
 
 
 # Check for Google GenAI availability
@@ -173,7 +188,7 @@ class ProviderConfig:
         self.is_gpt5 = "gpt-5" in model_lower
 
         if self.is_ollama:
-            validate_ollama_base_url(self.base_url)
+            self.base_url = resolve_ollama_base_url(self.base_url)
 
         # Determine if we should use Google SDK
         self.use_google_sdk = False

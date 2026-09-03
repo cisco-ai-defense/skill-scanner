@@ -249,6 +249,9 @@ def test_trusted_release_evidence_producer_is_pinned_offline_and_exact_sha() -> 
     assert "sudo iptables -I OUTPUT" in scan_step
     assert "sudo ip6tables -I OUTPUT" in scan_step
     assert "network isolation failed" in scan_step
+    assert "from skill_scanner.core.analyzer_factory import build_analyzers" in scan_step
+    assert "inspect.signature(build_analyzers).parameters" in scan_step
+    assert "inspect.signature(build_core_analyzers)" not in scan_step
     assert 'parameters["use_llm"].default is not False' in scan_step
     assert 'parameters["use_osv"].default is not False' in scan_step
     assert "credential-bearing environment survived scan preflight" in scan_step

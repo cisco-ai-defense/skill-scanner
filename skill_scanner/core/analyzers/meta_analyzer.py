@@ -55,7 +55,7 @@ from ..models import Finding, ScanResult, Severity, Skill, ThreatCategory
 from ..python_rule_inventory import meta_detected_rule_id
 from .base import BaseAnalyzer
 from .llm_prompt_builder import source_evidence_id
-from .llm_provider_config import LITELLM_AVAILABLE, ProviderConfig, validate_ollama_base_url
+from .llm_provider_config import LITELLM_AVAILABLE, ProviderConfig, resolve_ollama_base_url
 from .llm_request_handler import (
     _TEMPERATURE_UNSET,
     LLMRequestHandler,
@@ -860,7 +860,7 @@ class MetaAnalyzer(BaseAnalyzer):
         self.is_bedrock = bool(self.model and "bedrock/" in self.model)
         self.is_ollama = bool(self.model and self.model.lower().startswith("ollama/"))
         if self.is_ollama:
-            validate_ollama_base_url(self.base_url)
+            self.base_url = resolve_ollama_base_url(self.base_url)
 
         # Validate configuration
         if not self.api_key and not self.is_bedrock and not self.is_ollama:
