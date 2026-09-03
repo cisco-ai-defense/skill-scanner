@@ -578,6 +578,89 @@ def test_meta_routes_top_level_documentation_context_to_model(tmp_path: Path) ->
     assert len(result.validated_findings) == 1
 
 
+def test_non_ollama_meta_rejects_parseable_index_only_false_positive(tmp_path: Path) -> None:
+    analyzer = MetaAnalyzer(model="gpt-4o", api_key="test-key")
+    finding = _finding(context_kind="documentation")
+    evidence_id = _meta_evidence_id(finding)
+    invalid = _false_positive_meta(0, evidence_id)
+    invalid["false_positives"] = [{"_index": 0}]
+    analyzer._make_llm_request = AsyncMock(return_value=json.dumps(invalid))  # type: ignore[method-assign]
+
+    result = asyncio.run(analyzer.analyze_with_findings(_skill(tmp_path), [finding], ["static"]))
+
+    assert not analyzer.is_ollama
+    assert result.false_positives == []
+    assert len(result.validated_findings) == 1
+    assert result.validated_findings[0]["meta_analysis_degraded"] is True
+    assert [warning["code"] for warning in result.analysis_warnings] == ["META_BATCH_PARSE_FAILED"]
+    assert result.routing["contract_repair"] == {
+        "attempted": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "error_codes": {},
+    }
+
+
+def test_meta_evidence_allowlist_contains_only_rendered_artifacts(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "meta-budgeted-skill"
+    references_dir = skill_dir / "references"
+    references_dir.mkdir(parents=True)
+    skill_md = skill_dir / "SKILL.md"
+    skill_md.write_text("safe instructions", encoding="utf-8")
+    included_script = skill_dir / "included.py"
+    included_script.write_text("pass", encoding="utf-8")
+    oversized_script = skill_dir / "oversized.py"
+    oversized_script.write_text("x" * 9, encoding="utf-8")
+    notes = skill_dir / "notes.txt"
+    notes.write_text("notes", encoding="utf-8")
+    referenced = references_dir / "guide.md"
+    referenced.write_text("reference", encoding="utf-8")
+    skill = Skill(
+        directory=skill_dir,
+        manifest=SkillManifest(name="meta-budgeted", description="meta-budgeted"),
+        skill_md_path=skill_md,
+        instruction_body="safe instructions",
+        files=[
+            SkillFile(included_script, "included.py", "python", size_bytes=4),
+            SkillFile(oversized_script, "oversized.py", "python", size_bytes=9),
+            SkillFile(notes, "notes.txt", "other", size_bytes=5),
+            SkillFile(referenced, "references/guide.md", "markdown", size_bytes=9),
+        ],
+        referenced_files=["references/guide.md"],
+    )
+    analyzer = MetaAnalyzer(model="ollama/test", base_url="http://127.0.0.1:11434")
+    analyzer.llm_policy.max_code_file_chars = 8
+    analyzer.llm_policy.meta_budget_multiplier = 1.0
+
+    context, skipped = analyzer._build_skill_context(skill)
+
+    included_id = source_evidence_id("included.py")
+    assert analyzer._allowed_evidence_ids == {
+        source_evidence_id("MANIFEST"),
+        source_evidence_id("SKILL.md"),
+        included_id,
+    }
+    assert f"evidence_id={included_id}" in context
+    for omitted_path in ("oversized.py", "notes.txt", "references/guide.md"):
+        assert f"evidence_id={source_evidence_id(omitted_path)}" not in context
+        assert source_evidence_id(omitted_path) not in analyzer._allowed_evidence_ids
+    assert [item["path"] for item in skipped] == ["oversized.py"]
+
+
+def test_meta_finding_allowlist_contains_only_rendered_evidence_ids() -> None:
+    analyzer = MetaAnalyzer(model="ollama/test", base_url="http://127.0.0.1:11434")
+    finding = _finding()
+    metadata_ids = [source_evidence_id(f"artifact-{index}") for index in range(16)]
+    finding.metadata = {"evidence_ids": metadata_ids}
+
+    serialized = json.loads(analyzer._serialize_findings([finding]))
+
+    rendered_ids = set(serialized[0]["evidence_ids"])
+    assert len(rendered_ids) == 16
+    assert analyzer._allowed_evidence_ids == rendered_ids
+    assert {_meta_evidence_id(finding), *metadata_ids} - rendered_ids
+
+
 @pytest.mark.parametrize("assessment_defect", ["missing", "extra"])
 def test_local_meta_repairs_nested_assessment_contract_once(tmp_path: Path, assessment_defect: str) -> None:
     analyzer = MetaAnalyzer(

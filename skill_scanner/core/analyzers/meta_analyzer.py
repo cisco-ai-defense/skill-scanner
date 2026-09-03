@@ -907,6 +907,7 @@ class MetaAnalyzer(BaseAnalyzer):
         # Load prompts
         self._load_prompts()
         self._allowed_evidence_ids: set[str] = set()
+        self._skill_context_evidence_ids: set[str] = set()
         self.last_routing: dict[str, Any] = {}
         self._contract_repair_totals = _empty_contract_repair_telemetry()
         self._analysis_contract_repair = _empty_contract_repair_telemetry()
@@ -1030,22 +1031,8 @@ Respond with JSON containing your analysis following the required schema."""
         """
         self._llm_usage = _empty_token_usage()
         self._analysis_contract_repair = _empty_contract_repair_telemetry()
-        skill_files = getattr(skill, "files", [])
-        if not isinstance(skill_files, list):
-            skill_files = []
-        referenced_files = getattr(skill, "referenced_files", [])
-        if not isinstance(referenced_files, list):
-            referenced_files = []
-        self._allowed_evidence_ids = {
-            source_evidence_id("MANIFEST"),
-            source_evidence_id("SKILL.md"),
-            *(
-                source_evidence_id(file.relative_path)
-                for file in skill_files
-                if isinstance(getattr(file, "relative_path", None), str)
-            ),
-            *(source_evidence_id(path) for path in referenced_files if isinstance(path, str)),
-        }
+        self._allowed_evidence_ids = set()
+        self._skill_context_evidence_ids = set()
 
         if not findings:
             self.last_routing = {
@@ -1300,6 +1287,7 @@ Respond with JSON containing your analysis following the required schema."""
     ) -> MetaAnalysisResult:
         """Analyze one global-indexed batch, narrowing only on truncation."""
         batch_findings = [findings[index] for index in indices]
+        self._allowed_evidence_ids = set(self._skill_context_evidence_ids)
         findings_data = self._serialize_findings(batch_findings, indices=indices)
         user_prompt = self._build_user_prompt(
             skill=skill,
@@ -1641,6 +1629,7 @@ Respond with JSON containing your analysis following the required schema."""
 
         lines: list[str] = []
         skipped: list[dict] = []
+        included_evidence_ids: set[str] = set()
         total_size = 0
 
         lines.append(f"## Skill: {skill.name}")
@@ -1649,6 +1638,7 @@ Respond with JSON containing your analysis following the required schema."""
 
         # Manifest info
         lines.append(f"### Manifest [evidence_id={source_evidence_id('MANIFEST')}]")
+        included_evidence_ids.add(source_evidence_id("MANIFEST"))
         if not bool(getattr(skill, "manifest_complete", True)):
             lines.append("- Metadata status: incomplete and untrusted")
             lines.append("- Capability declarations: unavailable; do not infer absence")
@@ -1679,6 +1669,8 @@ Respond with JSON containing your analysis following the required schema."""
             lines.append("*(instruction body excluded — exceeds budget)*")
         else:
             lines.append(f"```markdown\n{skill.instruction_body}\n```")
+            if skill.instruction_body:
+                included_evidence_ids.add(source_evidence_id("SKILL.md"))
             total_size += instruction_size
         lines.append("")
 
@@ -1735,8 +1727,10 @@ Respond with JSON containing your analysis following the required schema."""
                     )
                     continue
 
-                lines.append(f"\n#### {f.relative_path} [evidence_id={source_evidence_id(str(f.relative_path))}]")
+                evidence_id = source_evidence_id(str(f.relative_path))
+                lines.append(f"\n#### {f.relative_path} [evidence_id={evidence_id}]")
                 lines.append(f"```{file_ext.lstrip('.') or 'text'}\n{content}\n```")
+                included_evidence_ids.add(evidence_id)
                 total_size += file_size
             except Exception:
                 pass
@@ -1750,6 +1744,8 @@ Respond with JSON containing your analysis following the required schema."""
                 lines.append(f"- {ref}")
             lines.append("")
 
+        self._skill_context_evidence_ids = included_evidence_ids
+        self._allowed_evidence_ids = set(included_evidence_ids)
         return "\n".join(lines), skipped
 
     def _serialize_findings(self, findings: list[Finding], indices: list[int] | None = None) -> str:
@@ -1767,7 +1763,8 @@ Respond with JSON containing your analysis following the required schema."""
                 evidence_ids.update(
                     item for item in metadata_ids[:16] if isinstance(item, str) and _EVIDENCE_ID_RE.fullmatch(item)
                 )
-            self._allowed_evidence_ids.update(evidence_ids)
+            rendered_evidence_ids = sorted(evidence_ids)[:16]
+            self._allowed_evidence_ids.update(rendered_evidence_ids)
             findings_list.append(
                 {
                     "_index": index,
@@ -1781,7 +1778,7 @@ Respond with JSON containing your analysis following the required schema."""
                     "line_number": f.line_number,
                     "snippet": f.snippet[:200] if f.snippet else None,
                     "analyzer": f.analyzer[:64] if f.analyzer else None,
-                    "evidence_ids": sorted(evidence_ids)[:16],
+                    "evidence_ids": rendered_evidence_ids,
                 }
             )
         return json.dumps(findings_list, indent=2)
@@ -1978,8 +1975,7 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
             json_data = self._extract_json_from_response(response)
             if not isinstance(json_data, dict):
                 raise ValueError("Meta-analysis response must be a JSON object")
-            if self.is_ollama:
-                self._validate_ollama_meta_contract(json_data, expected_indices=set(original_indices))
+            self._validate_meta_contract(json_data, expected_indices=set(original_indices))
 
             list_fields = (
                 "validated_findings",
@@ -2101,13 +2097,13 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
 
         raise ValueError("No valid JSON found in response")
 
-    def _validate_ollama_meta_contract(
+    def _validate_meta_contract(
         self,
         value: dict[str, Any],
         *,
         expected_indices: set[int],
     ) -> None:
-        """Reject local Meta output that echoes findings without a named delta."""
+        """Reject Meta output that echoes findings without a named delta."""
 
         required_fields = {
             "validated_findings",
