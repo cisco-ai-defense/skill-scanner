@@ -1212,10 +1212,11 @@ class _StraightLineShellScanner:
                 if isinstance(expression, ast.Name) and expression.id in state.exec_names:
                     self._record_dynamic_exec(expression)
                 self._scan_eager_dynamic_exec_calls(expression, state)
-            if getattr(statement, "type_params", ()):
+            for type_parameter in getattr(statement, "type_params", ()):
                 # Generic class bases and keywords execute inside the type-
-                # parameter scope, where an outer alias can be shadowed.
-                state.clear()
+                # parameter scope. Rebind only its declared names so an
+                # unrelated type parameter cannot hide a real outer call.
+                state.rebind(type_parameter.name)
             for expression in statement.bases:
                 self._scan_eager_dynamic_exec_calls(expression, state)
             for keyword in statement.keywords:

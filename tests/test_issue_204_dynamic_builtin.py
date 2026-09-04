@@ -348,6 +348,27 @@ def test_generic_class_type_parameter_shadows_exec_alias_in_header(make_skill, d
     assert _eval_findings(make_skill, source) == []
 
 
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "class Loader[T](_runner(payload)):\n    pass",
+        "class Loader[T](metaclass=_runner(payload)):\n    pass",
+    ],
+    ids=["base", "keyword"],
+)
+@pytest.mark.skipif(
+    "type_params" not in getattr(ast.ClassDef, "_fields", ()),
+    reason="class type parameters require Python 3.12+",
+)
+def test_unrelated_generic_class_parameter_keeps_exec_alias_in_header(make_skill, definition: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{definition}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+
+
 def test_alias_invocation_in_assert_test_is_detected(make_skill) -> None:
     source = "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nassert _runner(payload)\n"
 
