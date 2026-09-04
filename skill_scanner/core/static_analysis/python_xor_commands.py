@@ -30,6 +30,7 @@ from dataclasses import dataclass
 
 MAX_XOR_SOURCE_BYTES = 1024 * 1024
 MAX_XOR_AST_NODES = 50_000
+MAX_XOR_SCOPE_DEPTH = 32
 MAX_XOR_BINDINGS = 4_096
 MAX_XOR_CANDIDATES = 256
 MAX_XOR_IDENTIFIER_CHARS = 128
@@ -214,6 +215,112 @@ def _is_literal_option(expression: ast.expr) -> bool:
     return True
 
 
+def _definition_eager_nodes(
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Lambda,
+) -> tuple[ast.AST, ...]:
+    """Return definition expressions evaluated in the enclosing scope."""
+
+    eager: list[ast.AST] = []
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        eager.extend(node.decorator_list)
+        eager.extend(node.args.defaults)
+        eager.extend(default for default in node.args.kw_defaults if default is not None)
+        eager.extend(type_parameter for type_parameter in getattr(node, "type_params", ()))
+        annotated_arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        if node.args.vararg is not None:
+            annotated_arguments.append(node.args.vararg)
+        if node.args.kwarg is not None:
+            annotated_arguments.append(node.args.kwarg)
+        eager.extend(argument.annotation for argument in annotated_arguments if argument.annotation is not None)
+        if node.returns is not None:
+            eager.append(node.returns)
+    elif isinstance(node, ast.ClassDef):
+        eager.extend(node.decorator_list)
+        eager.extend(node.bases)
+        eager.extend(keyword.value for keyword in node.keywords)
+        eager.extend(type_parameter for type_parameter in getattr(node, "type_params", ()))
+    else:
+        eager.extend(node.args.defaults)
+        eager.extend(default for default in node.args.kw_defaults if default is not None)
+    return tuple(eager)
+
+
+def _scope_unsafe_builtins(
+    body: list[ast.stmt],
+    arguments: ast.arguments | None = None,
+    type_parameters: tuple[ast.AST, ...] = (),
+) -> frozenset[str]:
+    """Find lexical bindings that prevent proving the decoder's builtin calls."""
+
+    watched_names = _REQUIRED_BUILTINS | {"__builtins__"}
+    bound_names: set[str] = set()
+    if arguments is not None:
+        function_arguments = [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]
+        if arguments.vararg is not None:
+            function_arguments.append(arguments.vararg)
+        if arguments.kwarg is not None:
+            function_arguments.append(arguments.kwarg)
+        bound_names.update(argument.arg for argument in function_arguments if argument.arg in watched_names)
+    for type_parameter in type_parameters:
+        type_parameter_name = getattr(type_parameter, "name", None)
+        if isinstance(type_parameter_name, str) and type_parameter_name in watched_names:
+            bound_names.add(type_parameter_name)
+
+    pending: list[ast.AST] = list(reversed(body))
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name in watched_names:
+                bound_names.add(node.name)
+            pending.extend(_definition_eager_nodes(node))
+            continue
+        if isinstance(node, ast.Lambda):
+            pending.extend(_definition_eager_nodes(node))
+            continue
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+            # Comprehension iteration variables have their own implicit scope,
+            # while named expressions in the eager parts bind outside it.
+            if isinstance(node, ast.DictComp):
+                pending.extend((node.key, node.value))
+            else:
+                pending.append(node.elt)
+            for generator in node.generators:
+                pending.append(generator.iter)
+                pending.extend(generator.ifs)
+            continue
+        if isinstance(node, ast.Name) and node.id in watched_names and isinstance(node.ctx, (ast.Store, ast.Del)):
+            bound_names.add(node.id)
+            continue
+        if isinstance(node, ast.Import):
+            bound_names.update(
+                local_name
+                for imported in node.names
+                if (local_name := imported.asname or imported.name.split(".", 1)[0]) in watched_names
+            )
+        elif isinstance(node, ast.ImportFrom):
+            if any(imported.name == "*" for imported in node.names):
+                bound_names.update(watched_names)
+            else:
+                bound_names.update(
+                    local_name
+                    for imported in node.names
+                    if (local_name := imported.asname or imported.name) in watched_names
+                )
+        elif isinstance(node, ast.ExceptHandler) and node.name in watched_names:
+            bound_names.add(node.name)
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            bound_names.update(name for name in node.names if name in watched_names)
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name in watched_names:
+            bound_names.add(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest in watched_names:
+            bound_names.add(node.rest)
+        pending.extend(ast.iter_child_nodes(node))
+
+    if "__builtins__" in bound_names:
+        return _REQUIRED_BUILTINS
+    return frozenset(bound_names & _REQUIRED_BUILTINS)
+
+
 def _name_call(expression: ast.expr, name: str, *, argument_count: int) -> ast.Call | None:
     if not isinstance(expression, ast.Call):
         return None
@@ -365,15 +472,29 @@ class _StraightLineXorScanner:
         self.candidate_keys: set[tuple[int, str, str]] = set()
 
     def scan(self, tree: ast.Module) -> None:
-        self._scan_body(tree.body)
+        self._scan_body(
+            tree.body,
+            depth=0,
+            unavailable_builtins=frozenset(),
+            nested_unavailable_builtins=_scope_unsafe_builtins(tree.body),
+        )
 
-    def _scan_body(self, body: list[ast.stmt]) -> None:
-        if len(self.candidates) >= MAX_XOR_CANDIDATES:
+    def _scan_body(
+        self,
+        body: list[ast.stmt],
+        *,
+        depth: int,
+        unavailable_builtins: frozenset[str],
+        nested_unavailable_builtins: frozenset[str] | None = None,
+    ) -> None:
+        if depth > MAX_XOR_SCOPE_DEPTH or len(self.candidates) >= MAX_XOR_CANDIDATES:
             return
+        if nested_unavailable_builtins is None:
+            nested_unavailable_builtins = unavailable_builtins
         facts = _ScopeFacts(
             decoders={},
             identities={},
-            safe_builtins=set(_REQUIRED_BUILTINS),
+            safe_builtins=set(_REQUIRED_BUILTINS - unavailable_builtins),
             poisoned_modules=set(),
         )
 
@@ -382,6 +503,16 @@ class _StraightLineXorScanner:
                 return
 
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                function_unavailable_builtins = nested_unavailable_builtins | _scope_unsafe_builtins(
+                    statement.body,
+                    statement.args,
+                    tuple(getattr(statement, "type_params", ())),
+                )
+                self._scan_body(
+                    statement.body,
+                    depth=depth + 1,
+                    unavailable_builtins=function_unavailable_builtins,
+                )
                 self._invalidate_name(statement.name, facts)
                 decoder = _match_repeating_xor_decoder(statement)
                 if decoder is not None and statement.name not in _REQUIRED_BUILTINS:
@@ -432,8 +563,12 @@ class _StraightLineXorScanner:
                 continue
 
             if isinstance(statement, ast.Return):
-                # The recognizer scans a module body.  ``ast.parse`` accepts a
-                # top-level return even though executable Python rejects it.
+                if depth > 0:
+                    call = self._direct_call(statement.value)
+                    if call is not None:
+                        self._record_call(call, facts)
+                # A return ends the straight-line path.  At module depth,
+                # ``ast.parse`` accepts it even though Python cannot execute it.
                 return
 
             if isinstance(statement, ast.Raise):
@@ -457,7 +592,43 @@ class _StraightLineXorScanner:
 
             # Class bodies, conditionals, loops, exception handlers, and all
             # other compound flow are intentionally outside this recognizer.
+            # Their delayed function children are independent scopes, though,
+            # and can be scanned without interpreting the enclosing flow.
+            self._scan_nested_function_scopes(
+                statement,
+                depth=depth,
+                unavailable_builtins=nested_unavailable_builtins,
+            )
             self._clear_after_unknown_effect(facts)
+
+    def _scan_nested_function_scopes(
+        self,
+        root: ast.AST,
+        *,
+        depth: int,
+        unavailable_builtins: frozenset[str],
+    ) -> None:
+        """Scan delayed functions nested below unsupported compound flow."""
+
+        pending = list(reversed(tuple(ast.iter_child_nodes(root))))
+        while pending and len(self.candidates) < MAX_XOR_CANDIDATES:
+            node = pending.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                function_unavailable_builtins = unavailable_builtins | _scope_unsafe_builtins(
+                    node.body,
+                    node.args,
+                    tuple(getattr(node, "type_params", ())),
+                )
+                self._scan_body(
+                    node.body,
+                    depth=depth + 1,
+                    unavailable_builtins=function_unavailable_builtins,
+                )
+                # The recursive body scan owns every scope below this one.
+                continue
+            if isinstance(node, ast.Lambda):
+                continue
+            pending.extend(reversed(tuple(ast.iter_child_nodes(node))))
 
     def _record_call(self, call: ast.Call, facts: _ScopeFacts) -> bool:
         identity = self._resolve_identity(call.func, facts.identities)

@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from textwrap import indent
+
 import pytest
 
 from skill_scanner.core.analyzers.pipeline_analyzer import PipelineAnalyzer
@@ -89,6 +91,10 @@ def _findings(analyzer, make_skill, source: str, rule_id: str, *, path: str = "s
     return [finding for finding in analyzer.analyze(skill) if finding.rule_id == rule_id]
 
 
+def _function_source(source: str, *, header: str = "def main():") -> str:
+    return f"{header}\n{indent(source, '    ')}"
+
+
 def test_issue_reproduction_recovers_both_canonical_high_findings(make_skill):
     source = _decoder_source()
     skill = make_skill({"scripts/main.py": source})
@@ -156,6 +162,80 @@ def test_standard_import_before_decoder_preserves_both_findings(make_skill):
     assert len(shell) == len(pipeline) == 1
     assert shell[0].metadata["matched_pattern"] == "python_ast:literal_shell_true"
     assert shell[0].severity is pipeline[0].severity is Severity.HIGH
+
+
+@pytest.mark.parametrize("header", ["def main():", "async def main():"])
+def test_self_contained_function_scope_recovers_decoded_pipeline(make_skill, header):
+    source = _function_source(_decoder_source(), header=header)
+
+    candidates = python_xor_commands.find_decoded_python_commands(source)
+    flows = _findings(PipelineAnalyzer(), make_skill, source, _PIPELINE_RULE)
+
+    assert [(candidate.line_number, candidate.command, candidate.api_name) for candidate in candidates] == [
+        (10, _COMMAND, "subprocess.run")
+    ]
+    assert len(flows) == 1
+    assert flows[0].line_number == 10
+    assert flows[0].snippet == _COMMAND
+    assert flows[0].metadata["analysis_basis"] == "bounded_python_repeating_xor"
+
+
+def test_nested_function_scopes_are_scanned_recursively():
+    source = _function_source(_function_source(_decoder_source(), header="def inner():"), header="def outer():")
+
+    candidates = python_xor_commands.find_decoded_python_commands(source)
+
+    assert [(candidate.line_number, candidate.command) for candidate in candidates] == [(11, _COMMAND)]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "class Runner:\n"
+        "    bytes = replacement\n" + indent(_function_source(_decoder_source(), header="def main(self):"), "    "),
+        "if enabled:\n" + indent(_function_source(_decoder_source()), "    "),
+        _function_source(
+            _decoder_source().replace(
+                "subprocess.run(_sk_dec(",
+                "return subprocess.run(_sk_dec(",
+            )
+        ),
+    ],
+)
+def test_delayed_function_scope_is_found_in_compound_flow_and_terminal_return(source):
+    candidates = python_xor_commands.find_decoded_python_commands(source)
+
+    assert [(candidate.command, candidate.api_name) for candidate in candidates] == [(_COMMAND, "subprocess.run")]
+
+
+def test_function_scope_does_not_inherit_delayed_outer_identities():
+    source = _decoder_source(call="def main():\n    subprocess.run(_sk_dec({ciphertext}), shell=True)")
+
+    assert python_xor_commands.find_decoded_python_commands(source) == ()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        _function_source(_decoder_source(), header="def main(bytes):"),
+        _function_source(_decoder_source() + "\nbytes = bytearray"),
+        "bytes = bytearray\n" + _function_source(_decoder_source()),
+        _function_source(
+            _function_source(_decoder_source(), header="def inner():"),
+            header="def outer(enumerate):",
+        ),
+        _function_source(_decoder_source() + "\n[(len := replacement) for item in ()]"),
+    ],
+)
+def test_delayed_scope_rejects_lexically_shadowed_decoder_builtins(source):
+    assert python_xor_commands.find_decoded_python_commands(source) == ()
+
+
+def test_function_scope_depth_limit_fails_closed(monkeypatch):
+    source = _function_source(_decoder_source())
+    monkeypatch.setattr(python_xor_commands, "MAX_XOR_SCOPE_DEPTH", 0)
+
+    assert python_xor_commands.find_decoded_python_commands(source) == ()
 
 
 def test_decoded_pipeline_keeps_plaintext_rule_semantics(make_skill):
