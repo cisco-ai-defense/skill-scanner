@@ -41,6 +41,27 @@ if os.path.exists({path_name}):
     assert matches[0].metadata["resolved_path"] == "/home/user/.aws/credentials"
 
 
+@pytest.mark.parametrize("path_name", ["config_path", "ss"])
+def test_exact_sensitive_concat_bypasses_only_regex_alias_exclusions(make_skill, path_name):
+    source = f"{path_name} = '/etc/' + 'passwd'\nopen({path_name})\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 2
+    assert matches[0].metadata["matched_pattern"] == _SEMANTIC_PATTERN
+    assert matches[0].metadata["resolved_path"] == "/etc/passwd"
+
+
+@pytest.mark.parametrize("path_name", ["config_path", "ss"])
+def test_benign_exact_path_stays_clean_for_equivalent_aliases(make_skill, path_name):
+    source = f"{path_name} = '/tmp/' + 'public.txt'\nopen({path_name})\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
 @pytest.mark.parametrize("path_name", ["credentials_path", "ss"])
 def test_exact_unresolved_issue_variant_is_name_invariant(make_skill, path_name):
     source = f"""

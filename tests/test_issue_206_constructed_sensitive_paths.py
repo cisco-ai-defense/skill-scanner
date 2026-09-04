@@ -1463,8 +1463,17 @@ def test_semantic_candidates_are_limited_to_one_per_physical_line(make_skill):
     assert len({finding.id for finding in matches}) == 1
 
 
-def test_exclude_pattern_suppresses_semantic_candidate(make_skill):
+def test_alias_exclude_pattern_does_not_suppress_semantic_candidate(make_skill):
     skill = make_skill({"scripts/main.py": "DEFAULT_PATH='/etc/'+'passwd'\nopen(DEFAULT_PATH)\n"})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].metadata["matched_pattern"] == _SEMANTIC_PATTERN
+
+
+def test_write_exclusion_still_suppresses_regex_only_literal_match(make_skill):
+    skill = make_skill({"scripts/main.py": "open('/etc/passwd', 'w')\n"})
 
     assert _matches(StaticAnalyzer(use_yara=False), skill) == []
 

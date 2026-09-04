@@ -2073,8 +2073,10 @@ class StaticAnalyzer(BaseAnalyzer):
                         if path_candidate.line_number in regex_match_lines:
                             continue
                         line = scan_context.lines[path_candidate.line_number - 1]
-                        if any(pattern.search(line) for pattern in rule.compiled_exclude_patterns):
-                            continue
+                        # Legacy exclusions only disambiguate raw regex matches.
+                        # The AST pass has independently proven that ``open``
+                        # receives an exact sensitive path in a read-only mode,
+                        # so alias-name substrings must not suppress that fact.
                         leading_space = len(line) - len(line.lstrip())
                         relative_start = max(0, path_candidate.start_column - leading_space)
                         relative_end = min(len(line.strip()), path_candidate.end_column - leading_space)
