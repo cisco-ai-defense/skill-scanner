@@ -1183,6 +1183,43 @@ class _StraightLineShellScanner:
             state.clear()
             return
 
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Decorator expressions are evaluated top-to-bottom, followed by
+            # positional defaults and keyword-only defaults. Function bodies
+            # and annotations are deliberately not claimed: bodies are delayed
+            # and annotation timing differs across supported Python versions.
+            eager_expressions = [
+                *statement.decorator_list,
+                *statement.args.defaults,
+                *(default for default in statement.args.kw_defaults if default is not None),
+            ]
+            for expression in eager_expressions:
+                self._scan_eager_dynamic_exec_calls(expression, state)
+            state.clear()
+            return
+
+        if isinstance(statement, ast.ClassDef):
+            # Class decorator expressions run before the base/keyword
+            # expressions. The class namespace and decorator applications are
+            # unsupported effect boundaries after those mandatory inputs.
+            for expression in statement.decorator_list:
+                self._scan_eager_dynamic_exec_calls(expression, state)
+            for expression in statement.bases:
+                self._scan_eager_dynamic_exec_calls(expression, state)
+            for keyword in statement.keywords:
+                self._scan_eager_dynamic_exec_calls(keyword.value, state)
+                if keyword.arg is None:
+                    state.clear()
+            state.clear()
+            return
+
+        if isinstance(statement, ast.Assert):
+            # The test is mandatory in normal execution; the message is only
+            # evaluated conditionally and is therefore not claimed.
+            self._scan_eager_dynamic_exec_calls(statement.test, state)
+            state.clear()
+            return
+
         if isinstance(statement, ast.Pass):
             return
 
