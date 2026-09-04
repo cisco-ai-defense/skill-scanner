@@ -442,14 +442,28 @@ class _StraightLineSensitiveReadScanner:
                     open_available = False
                 continue
 
-            if isinstance(statement, (ast.Import, ast.ImportFrom)):
-                bindings.clear()
-                os_available = (
-                    isinstance(statement, ast.Import)
-                    and len(statement.names) == 1
-                    and statement.names[0].name == "os"
-                    and statement.names[0].asname is None
-                )
+            if isinstance(statement, ast.Import):
+                for imported in statement.names:
+                    local_name = _bound_import_name(imported)
+                    bindings.pop(local_name, None)
+                    if local_name == "os":
+                        os_available = imported.name == "os" or (
+                            imported.asname is None and imported.name.startswith("os.")
+                        )
+                if _node_binds_name(statement, "open"):
+                    open_available = False
+                continue
+
+            if isinstance(statement, ast.ImportFrom):
+                if any(imported.name == "*" for imported in statement.names):
+                    bindings.clear()
+                    os_available = False
+                else:
+                    for imported in statement.names:
+                        local_name = imported.asname or imported.name
+                        bindings.pop(local_name, None)
+                        if local_name == "os":
+                            os_available = False
                 if _node_binds_name(statement, "open"):
                     open_available = False
                 continue

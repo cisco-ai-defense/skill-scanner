@@ -148,6 +148,30 @@ def load():
     assert len(_matches(StaticAnalyzer(use_yara=False), skill)) == 1
 
 
+def test_unrelated_import_does_not_erase_reviewed_os_identity(make_skill):
+    source = """
+import os
+import json
+
+path = os.path.join('/etc', 'passwd')
+with open(path) as handle:
+    value = json.load(handle)
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].metadata["resolved_path"] == "/etc/passwd"
+
+
+def test_import_rebinding_os_invalidates_path_join_identity(make_skill):
+    source = "import os\nimport plugin as os\npath=os.path.join('/etc','passwd')\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
 @pytest.mark.parametrize(
     "source",
     [
