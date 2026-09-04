@@ -4,6 +4,7 @@
 """Regression coverage for dynamic ``builtins.exec`` construction."""
 
 import ast
+import sys
 
 import pytest
 
@@ -11,6 +12,7 @@ from skill_scanner.core.analyzers.static import StaticAnalyzer
 from skill_scanner.core.models import Severity, ThreatCategory
 from skill_scanner.core.scan_policy import ScanPolicy
 from skill_scanner.core.static_analysis.python_shell_semantics import (
+    MAX_PYTHON_SHELL_BINDINGS,
     MAX_PYTHON_SHELL_EAGER_EXPR_NODES,
     find_python_shell_candidates,
 )
@@ -369,6 +371,281 @@ def test_unrelated_generic_class_parameter_keeps_exec_alias_in_header(make_skill
     assert findings[0].line_number == 3
 
 
+def test_module_exec_alias_invoked_in_eager_class_body_is_detected(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "class Loader:\n"
+        "    _runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 4
+
+
+def test_private_class_name_does_not_inherit_unmangled_module_exec_alias(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "__runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "class Loader:\n"
+        "    __runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize("alias", ["_runner", "__runner__"])
+def test_nonprivate_class_name_keeps_module_exec_alias(make_skill, alias: str) -> None:
+    source = (
+        "import builtins\n"
+        f"{alias} = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "class Loader:\n"
+        f"    {alias}(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 4
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_count"),
+    [
+        ("    _runner(payload)\n    _runner = None\n", 1),
+        ("    _runner = None\n    _runner(payload)\n", 0),
+    ],
+    ids=["call-before-local-shadow", "local-shadow-before-call"],
+)
+def test_class_body_exec_alias_respects_source_order(make_skill, body: str, expected_count: int) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nclass Loader:\n{body}"
+
+    assert len(_eval_findings(make_skill, source)) == expected_count
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected_count"),
+    [("a", 0), ("YQ==", 1)],
+    ids=["invalid-decode-stops-class-body", "valid-decode-continues-class-body"],
+)
+def test_literal_base64_decode_controls_later_class_body_exec(
+    make_skill,
+    literal: str,
+    expected_count: int,
+) -> None:
+    source = (
+        "import base64, builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "class Loader:\n"
+        f"    payload = base64.b64decode('{literal}')\n"
+        "    _runner(payload)\n"
+    )
+
+    assert len(_eval_findings(make_skill, source)) == expected_count
+
+
+def test_nested_class_body_uses_module_fallback_not_outer_class_locals(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "class Outer:\n"
+        "    _runner = None\n"
+        "    class Inner:\n"
+        "        _runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 6
+
+
+def test_nested_class_body_does_not_inherit_outer_class_exec_alias(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "module_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "_runner = None\n"
+        "class Outer:\n"
+        "    _runner = module_runner\n"
+        "    class Inner:\n"
+        "        _runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "    _runner(payload)\n    global _runner\n",
+        "    global harmless\n    _runner(payload)\n",
+    ],
+    ids=["compiler-invalid-order", "bounded-global-scope"],
+)
+def test_class_global_scope_is_outside_bounded_body_scan(make_skill, body: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nclass Loader:\n{body}"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_class_local_getattr_delete_respects_shadowed_module_fallback(make_skill) -> None:
+    source = (
+        "getattr = None\n"
+        "import builtins\n"
+        "class Loader:\n"
+        "    getattr = None\n"
+        "    del getattr\n"
+        "    _runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "    _runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_unbound_class_delete_stops_before_later_exec_alias(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "shadowed = None\n"
+        "class Loader:\n"
+        "    del shadowed\n"
+        "    _runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    "compiler_name",
+    [
+        "__module__",
+        "__qualname__",
+        *(["__firstlineno__"] if sys.version_info >= (3, 13) else []),
+    ],
+)
+def test_compiler_seeded_class_name_shadows_module_exec_alias(make_skill, compiler_name: str) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"{compiler_name} = _runner\n"
+        "class Loader:\n"
+        f"    {compiler_name}(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_class_module_name_preserves_rebound_module_name_exec_identity(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "__name__ = _runner\n"
+        "class Loader:\n"
+        "    __module__(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 5
+
+
+@pytest.mark.parametrize(
+    "cell_name",
+    [
+        "__class__",
+        *(["__classdict__"] if sys.version_info >= (3, 12) else []),
+        *(["__conditional_annotations__"] if sys.version_info >= (3, 14) else []),
+    ],
+)
+def test_nested_class_implicit_cell_shadows_module_exec_alias(make_skill, cell_name: str) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"{cell_name} = _runner\n"
+        "class Outer:\n"
+        "    class Inner:\n"
+        f"        {cell_name}(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_class_docstring_shadows_module_exec_alias(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "__doc__ = _runner\n"
+        "class Loader:\n"
+        "    'class documentation'\n"
+        "    __doc__(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_class_without_docstring_keeps_module_doc_fallback(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "__doc__ = _runner\n"
+        "class Loader:\n"
+        "    __doc__(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 5
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="class annotations use deferred machinery on 3.14+")
+def test_compiler_seeded_class_annotations_shadow_module_exec_alias(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "__annotations__ = _runner\n"
+        "class Loader:\n"
+        "    value: int\n"
+        "    __annotations__(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_future_class_annotations_seed_mapping_before_body(make_skill) -> None:
+    source = (
+        "from __future__ import annotations\n"
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "__annotations__ = _runner\n"
+        "class Loader:\n"
+        "    __annotations__(payload)\n"
+        "    value: int\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="uses Python 3.14 class annotation bookkeeping")
+def test_class_annotation_bookkeeping_is_fresh_from_module_binding(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "__conditional_annotations__ = None\n"
+        "class Loader:\n"
+        "    value: int\n"
+        "    _runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 6
+
+
 def test_alias_invocation_in_assert_test_is_detected(make_skill) -> None:
     source = "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nassert _runner(payload)\n"
 
@@ -376,6 +653,606 @@ def test_alias_invocation_in_assert_test_is_detected(make_skill) -> None:
 
     assert len(findings) == 1
     assert findings[0].line_number == 3
+
+
+@pytest.mark.parametrize(
+    ("statement", "expected_line"),
+    [
+        ("try:\n    _runner(payload)\nexcept Exception:\n    pass", 4),
+        ("try:\n    pass\nfinally:\n    _runner(payload)", 6),
+        ("global harmless\n_runner(payload)", 4),
+        ("value = 0\nvalue += _runner(payload)", 4),
+        ("if True:\n    _runner(payload)", 4),
+        ("while True:\n    _runner(payload)\n    break", 4),
+        ("if False:\n    pass\nelse:\n    _runner(payload)", 6),
+        ("assert False, _runner(payload)", 3),
+        ("getattr += _runner(payload)", 3),
+        ("if True:\n    getattr = None\n    _runner(payload)", 5),
+        ("if True:\n    getattr = _runner\n    getattr(payload)", 5),
+    ],
+    ids=[
+        "try-body-prefix",
+        "try-finally-prefix",
+        "module-global-declaration",
+        "augassign-bound-name-value",
+        "literal-true-if-body",
+        "literal-true-while-body",
+        "literal-false-if-else",
+        "literal-false-assert-message",
+        "builtin-getattr-augassign",
+        "nested-getattr-rebind-keeps-existing-alias",
+        "nested-getattr-copy-keeps-exec-provenance",
+    ],
+)
+def test_alias_invocation_in_guaranteed_statement_position_is_detected(
+    make_skill,
+    statement: str,
+    expected_line: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+def test_future_feature_binding_is_known_for_augassign(make_skill) -> None:
+    source = (
+        "from __future__ import annotations\n"
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "annotations += _runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 4
+
+
+@pytest.mark.parametrize(
+    ("statement", "expected_line"),
+    [
+        ("_runner(payload).field += 1", 3),
+        ("container = []\ncontainer[_runner(payload)] += 1", 4),
+    ],
+    ids=["attribute-target", "subscript-target"],
+)
+def test_alias_invocation_in_augassign_target_is_detected(
+    make_skill,
+    statement: str,
+    expected_line: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+@pytest.mark.parametrize(
+    ("statement", "expected_line"),
+    [
+        ("_runner(payload).field = 0", 3),
+        ("container = []\ncontainer[_runner(payload)] = 0", 4),
+        (
+            "container = []\nalias = container[alias(payload)] = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))",
+            4,
+        ),
+        ("del _runner(payload).field", 3),
+        ("container = []\ndel container[_runner(payload)]", 4),
+        ("known = 0\ndel known, _runner(payload).field", 4),
+        ("getattr[_runner(payload)] = 0", 3),
+        ("del getattr[_runner(payload)]", 3),
+    ],
+    ids=[
+        "assign-attribute",
+        "assign-subscript",
+        "chained-assign",
+        "delete-attribute",
+        "delete-subscript",
+        "delete-after-known-name",
+        "builtin-getattr-assign-target",
+        "builtin-getattr-delete-target",
+    ],
+)
+def test_alias_invocation_in_assignment_target_address_is_detected(
+    make_skill,
+    statement: str,
+    expected_line: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+def test_delete_stops_before_target_after_unbound_name(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "del missing, _runner(payload).field\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_delete_does_not_treat_builtin_getattr_as_namespace_bound(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "del getattr, _runner(payload).field\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "missing[_runner(payload)] = 0",
+        "missing[_runner(payload)]: int = 0",
+        "missing[_runner(payload)] += 1",
+        "del missing[_runner(payload)]",
+        "container = []\ncontainer[missing:_runner(payload)] = 0",
+        "container = []\ncontainer[missing, _runner(payload)] = 0",
+    ],
+    ids=["assign", "annassign", "augassign", "delete", "slice", "tuple-index"],
+)
+def test_target_address_stops_before_alias_after_unbound_name(make_skill, statement: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "value = missing\nvalue += _runner(payload)",
+        "container = [missing]\ncontainer[_runner(payload)] = 0",
+        "container = (missing,)\ndel container[_runner(payload)]",
+    ],
+    ids=["augassign-target", "assignment-target", "delete-target"],
+)
+def test_unproven_rhs_does_not_create_known_target(make_skill, statement: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_unproven_parenthesized_annassign_rhs_does_not_create_known_target(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "(alias): object = missing\n"
+        "alias += _runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "base64.b64decode('a')[_runner(payload)] = 0",
+        "container = []\ncontainer[_runner(payload)]: int = base64.b64decode('a')",
+        "decoded = base64.b64decode('a')\ndecoded += _runner(payload)",
+    ],
+    ids=["target-address", "annotated-target-address", "later-known-binding"],
+)
+def test_invalid_literal_base64_decode_does_not_prove_later_evaluation(make_skill, statement: str) -> None:
+    source = f"import base64, builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_valid_literal_base64_decode_allows_annotated_target_address(make_skill) -> None:
+    source = (
+        "import base64, builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "container = []\n"
+        "container[_runner(payload)]: int = base64.b64decode('YQ==')\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 4
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="annotations are deferred by default on Python 3.14+")
+@pytest.mark.parametrize(
+    ("literal", "expected_count"),
+    [("a", 0), ("YQ==", 1)],
+    ids=["invalid-stops-before-annotation", "valid-reaches-annotation"],
+)
+def test_literal_base64_decode_controls_eager_name_annotation(
+    make_skill,
+    literal: str,
+    expected_count: int,
+) -> None:
+    source = (
+        "import base64, builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"alias: _runner(payload) = base64.b64decode('{literal}')\n"
+    )
+
+    assert len(_eval_findings(make_skill, source)) == expected_count
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected_count"),
+    [("a", 0), ("YQ==", 1)],
+    ids=["invalid-stops-expression", "valid-continues-expression"],
+)
+def test_literal_base64_decode_controls_later_tuple_evaluation(
+    make_skill,
+    literal: str,
+    expected_count: int,
+) -> None:
+    source = (
+        "import base64, builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"result = (base64.b64decode('{literal}'), _runner(payload))\n"
+    )
+
+    assert len(_eval_findings(make_skill, source)) == expected_count
+
+
+@pytest.mark.parametrize(
+    "assignment",
+    [
+        "alias = _runner\nalias(payload)",
+        "_runner = _runner\n_runner(payload)",
+    ],
+    ids=["new-name", "self-assignment"],
+)
+def test_dynamic_exec_provenance_survives_plain_name_copy(make_skill, assignment: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{assignment}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 4
+
+
+@pytest.mark.parametrize(
+    ("assignment", "receiver"),
+    [
+        ("bi = builtins", "bi"),
+        ("bi = bi2 = builtins", "bi2"),
+        ("(bi): object = builtins", "bi"),
+    ],
+    ids=["plain", "chained", "parenthesized-annotated"],
+)
+def test_builtins_provenance_survives_name_copy(make_skill, assignment: str, receiver: str) -> None:
+    source = (
+        "import builtins\n"
+        f"{assignment}\n"
+        f"_runner = getattr({receiver}, ''.join(['e', 'x', 'e', 'c']))\n"
+        "_runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 4
+
+
+def test_base64_provenance_survives_name_copy(make_skill) -> None:
+    source = (
+        "import base64, builtins\n"
+        "decoder = base64\n"
+        "decoded = decoder.b64decode('just a test')\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "_runner(decoded)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 5
+
+
+@pytest.mark.parametrize(
+    "setup",
+    [
+        "lookup = getattr",
+        "lookup = getattr\ngetattr = None",
+        "(lookup): object = getattr",
+    ],
+    ids=["plain", "captured-before-rebind", "parenthesized-annotated"],
+)
+def test_builtin_getattr_provenance_survives_name_copy(make_skill, setup: str) -> None:
+    source = f"import builtins\n{setup}\n_runner = lookup(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == source.count("\n")
+
+
+def test_deleting_module_getattr_binding_restores_builtin_provenance(make_skill) -> None:
+    source = (
+        "getattr = None\n"
+        "del getattr\n"
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "_runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 5
+
+
+def test_arbitrary_effect_does_not_restore_builtin_provenance(make_skill) -> None:
+    source = "mutate()\nimport builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    ("source_prefix", "assignment"),
+    [
+        ("", "(alias): object = _runner"),
+        ("from __future__ import annotations\n", "(alias): object = _runner"),
+        ("", "(alias): object = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))"),
+        (
+            "from __future__ import annotations\n",
+            "(alias): object = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))",
+        ),
+    ],
+    ids=["eager-copy", "deferred-copy", "eager-initial-lookup", "deferred-initial-lookup"],
+)
+def test_dynamic_exec_provenance_survives_parenthesized_annotated_name_assignment(
+    make_skill,
+    source_prefix: str,
+    assignment: str,
+) -> None:
+    source = (
+        source_prefix
+        + "import builtins\n"
+        + "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        + f"{assignment}\n"
+        + "alias(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == source.count("\n")
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="Python 3.14 defers module annotation storage")
+def test_eager_simple_annotated_copy_does_not_cross_user_annotation_mapping(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        + "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        + "alias: object = _runner\n"
+        + "alias(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_future_simple_annotated_copy_does_not_cross_user_annotation_mapping(make_skill) -> None:
+    source = (
+        "from __future__ import annotations\n"
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "alias: object = _runner\n"
+        "alias(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="Python 3.14+ defers module annotation storage")
+def test_deferred_simple_annotated_lookup_keeps_exec_provenance(make_skill) -> None:
+    source = "import builtins\nalias: object = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nalias(payload)\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="uses Python 3.14 deferred module annotations")
+def test_rebound_conditional_annotations_stops_before_later_exec(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "__conditional_annotations__ = None\n"
+        "value: int = 1\n"
+        "_runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="uses Python 3.14 deferred module annotations")
+def test_conditional_annotations_rebind_does_not_hide_prior_exec(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "_runner(payload)\n"
+        "__conditional_annotations__ = None\n"
+        "value: int = 1\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="annotations are deferred by default on Python 3.14+")
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "value: _runner(payload)",
+        "(value): _runner(payload)",
+        "def load(value: _runner(payload)):\n    pass",
+    ],
+    ids=["annotated-assignment", "parenthesized-annotated-assignment", "function-parameter"],
+)
+def test_dynamic_exec_in_eager_annotation_is_detected(make_skill, definition: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{definition}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+
+
+@pytest.mark.parametrize(
+    ("statement", "expected_line"),
+    [
+        ("_runner(payload).field: int", 3),
+        ("_runner(payload).field: int = 0", 3),
+        ("container = []\ncontainer[_runner(payload)]: int", 4),
+        ("container = []\ncontainer[_runner(payload)]: int = 0", 4),
+    ],
+    ids=["attribute", "attribute-with-value", "subscript", "subscript-with-value"],
+)
+def test_dynamic_exec_in_annotated_target_address_is_detected(
+    make_skill,
+    statement: str,
+    expected_line: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="annotations are deferred by default on Python 3.14+")
+@pytest.mark.parametrize(
+    ("statement", "expected_line"),
+    [
+        ("container = None\ncontainer.field: _runner(payload)", 4),
+        ("container = []\nkey = 0\ncontainer[key]: _runner(payload)", 5),
+    ],
+    ids=["attribute", "subscript"],
+)
+def test_dynamic_exec_in_valueless_nonsimple_annotation_is_detected(
+    make_skill,
+    statement: str,
+    expected_line: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="annotations are deferred by default on Python 3.14+")
+@pytest.mark.parametrize(
+    ("definition", "expected_count"),
+    [
+        ("def load(value: mutate(), /, other: _runner(payload)):\n    pass", 1),
+        ("def load(value: _runner(payload), /, other: mutate()):\n    pass", 0),
+    ],
+    ids=["regular-arg-before-positional-only", "regular-arg-effect-before-positional-only"],
+)
+def test_eager_function_annotations_follow_compiler_order(
+    make_skill,
+    definition: str,
+    expected_count: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{definition}\n"
+
+    assert len(_eval_findings(make_skill, source)) == expected_count
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "value: _runner(payload)",
+        "(value): _runner(payload)",
+        "def load(value: _runner(payload)):\n    pass",
+    ],
+    ids=["annotated-assignment", "parenthesized-annotated-assignment", "function-parameter"],
+)
+def test_future_annotations_do_not_execute_dynamic_exec(make_skill, definition: str) -> None:
+    source = (
+        "from __future__ import annotations\n"
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"{definition}\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="annotations are deferred by default on Python 3.14+")
+@pytest.mark.skipif(
+    "type_params" not in getattr(ast.FunctionDef, "_fields", ()),
+    reason="function type parameters require Python 3.12+",
+)
+@pytest.mark.parametrize(
+    ("type_parameter", "expected_count"),
+    [("_runner", 0), ("T", 1)],
+    ids=["shadowing-type-parameter", "unrelated-type-parameter"],
+)
+def test_generic_function_annotation_uses_type_parameter_scope(
+    make_skill,
+    type_parameter: str,
+    expected_count: int,
+) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"def load[{type_parameter}](value: _runner(payload)):\n"
+        "    pass\n"
+    )
+
+    assert len(_eval_findings(make_skill, source)) == expected_count
+
+
+def test_guaranteed_prefix_nesting_limit_is_enforced(make_skill) -> None:
+    nested = "_runner(payload)"
+    for _ in range(34):
+        nested = "if True:\n" + "\n".join(f"    {line}" for line in nested.splitlines())
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{nested}\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_guaranteed_prefix_binding_limit_is_enforced() -> None:
+    assignments = "\n".join(f"    value_{index} = 0" for index in range(MAX_PYTHON_SHELL_BINDINGS + 10))
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "if True:\n"
+        f"{assignments}\n"
+        "    _runner(payload)\n"
+    )
+
+    assert find_python_shell_candidates(source) == ()
+
+
+def test_class_compiler_bindings_are_charged_before_body_scan() -> None:
+    assignments = "\n".join(f"value_{index} = 0" for index in range(MAX_PYTHON_SHELL_BINDINGS - 5))
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"{assignments}\n"
+        "class Loader:\n"
+        "    _runner(payload)\n"
+    )
+
+    assert find_python_shell_candidates(source) == ()
 
 
 def test_eager_expression_traversal_limit_is_enforced(make_skill) -> None:
@@ -483,7 +1360,7 @@ def test_dynamic_exec_alias_is_not_duplicated_when_policy_keeps_raw_findings(mak
         "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nglobals()['_runner'] = safe\n_runner(payload)\n",
         "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nmutate()\n_runner(payload)\n",
         "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nif enabled:\n    _runner(payload)\n",
-        "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nawait _runner(payload)\n",
+        "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\ndel _runner\n_runner(payload)\n",
         "def run():\n    import builtins\n    runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n    runner(payload)\n",
     ],
     ids=[
@@ -512,7 +1389,7 @@ def test_dynamic_exec_alias_is_not_duplicated_when_policy_keeps_raw_findings(mak
         "callable-replaced-via-globals",
         "effect-after-binding",
         "compound-invocation",
-        "awaited-module-invocation",
+        "deleted-alias-invocation",
         "delayed-function-scope",
     ],
 )
@@ -567,5 +1444,56 @@ def test_dynamic_exec_respects_rule_file_types(make_skill, tmp_path) -> None:
 
 def test_malformed_python_is_ignored_without_crashing(make_skill) -> None:
     source = "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c'])\n_runner(payload)\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "import builtins\n"
+            "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+            "from __future__ import annotations\n"
+            "_runner(payload)\n"
+        ),
+        (
+            "import builtins\n"
+            "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+            "if True:\n"
+            "    from __future__ import annotations\n"
+            "    _runner(payload)\n"
+        ),
+        (
+            "from __future__ import made_up_feature\n"
+            "import builtins\n"
+            "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+            "_runner(payload)\n"
+        ),
+        (
+            "import builtins\n"
+            "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+            "class Loader:\n"
+            "    _runner(payload)\n"
+            "    return\n"
+        ),
+        (
+            "import builtins\n"
+            "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+            "def load(value, value, default=_runner(payload)):\n"
+            "    pass\n"
+        ),
+    ],
+    ids=[
+        "late-future-import",
+        "nested-future-import",
+        "unknown-future-feature",
+        "class-return",
+        "duplicate-parameter",
+    ],
+)
+def test_compiler_invalid_source_is_ignored(make_skill, source: str) -> None:
+    with pytest.raises(SyntaxError):
+        compile(source, "<test>", "exec")
 
     assert _eval_findings(make_skill, source) == []

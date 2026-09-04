@@ -26,6 +26,8 @@ shares hard resource limits across outer and embedded syntax trees.
 from __future__ import annotations
 
 import ast
+import base64 as _stdlib_base64
+import binascii
 import re
 import sys
 from collections.abc import Sequence
@@ -53,6 +55,7 @@ _PYTHON_C_RUN_KEYWORDS = _PYTHON_C_BASE_KEYWORDS | {"check"}
 _OS_SYSTEM_IDENTITY = "callable:os.system"
 _TEMPLATE_STR_TYPE = getattr(ast, "TemplateStr", None)
 _INTERPOLATION_TYPE = getattr(ast, "Interpolation", None)
+_ANNOTATIONS_DEFERRED_BY_DEFAULT = sys.version_info >= (3, 14)
 _PYTHON_FUTURE_FEATURES = frozenset(
     {
         "absolute_import",
@@ -236,7 +239,32 @@ class _DynamicExecState:
     builtins_names: set[str] = field(default_factory=set)
     base64_names: set[str] = field(default_factory=set)
     exec_names: set[str] = field(default_factory=set)
-    getattr_is_builtin: bool = True
+    known_bound_names: set[str] = field(default_factory=set)
+    getattr_names: set[str] = field(default_factory=lambda: {"getattr"})
+    annotations_are_deferred: bool = _ANNOTATIONS_DEFERRED_BY_DEFAULT
+    future_annotations: bool = False
+    conditional_annotations_intact: bool = True
+    class_namespace: bool = False
+    allow_invalid_decode_carryover: bool = True
+    hard_invalidated: bool = False
+
+    def clone(self) -> _DynamicExecState:
+        """Copy bounded provenance for one independently executed namespace."""
+
+        return _DynamicExecState(
+            enabled=self.enabled,
+            builtins_names=set(self.builtins_names),
+            base64_names=set(self.base64_names),
+            exec_names=set(self.exec_names),
+            known_bound_names=set(self.known_bound_names),
+            getattr_names=set(self.getattr_names),
+            annotations_are_deferred=self.annotations_are_deferred,
+            future_annotations=self.future_annotations,
+            conditional_annotations_intact=self.conditional_annotations_intact,
+            class_namespace=self.class_namespace,
+            allow_invalid_decode_carryover=self.allow_invalid_decode_carryover,
+            hard_invalidated=self.hard_invalidated,
+        )
 
     def clear(self) -> None:
         """Invalidate every fact after unsupported syntax or effects."""
@@ -244,20 +272,40 @@ class _DynamicExecState:
         self.builtins_names.clear()
         self.base64_names.clear()
         self.exec_names.clear()
-        self.getattr_is_builtin = False
+        self.known_bound_names.clear()
+        self.getattr_names.clear()
+        self.hard_invalidated = True
 
     def rebind(self, name: str) -> None:
         """Forget provenance replaced by one ordinary name binding."""
 
+        if _ANNOTATIONS_DEFERRED_BY_DEFAULT and name == "__conditional_annotations__":
+            # Python 3.14's default deferred module annotations append their
+            # target names to this compiler-created set.  A user binding can
+            # make that bookkeeping dispatch arbitrary code or fail before
+            # the following statement is reached.
+            self.conditional_annotations_intact = False
         self.builtins_names.discard(name)
         self.base64_names.discard(name)
         self.exec_names.discard(name)
-        if name == "getattr":
-            self.getattr_is_builtin = False
+        self.known_bound_names.discard(name)
+        self.getattr_names.discard(name)
 
     @property
     def binding_count(self) -> int:
-        return len(self.builtins_names) + len(self.base64_names) + len(self.exec_names)
+        return (
+            len(self.builtins_names)
+            + len(self.base64_names)
+            + len(self.exec_names)
+            + len(self.known_bound_names)
+            + len(self.getattr_names)
+        )
+
+    def is_active(self) -> bool:
+        # Ordinary rebinding can temporarily hide builtin ``getattr`` and a
+        # later proven deletion can expose it again.  Arbitrary effects, by
+        # contrast, permanently invalidate every claim in this narrow pass.
+        return self.enabled and not self.hard_invalidated
 
 
 def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...]:
@@ -281,15 +329,23 @@ def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...
         )
         if not budget.consume_tree(tree):
             return ()
-        # ``ast.parse`` accepts some trees (such as duplicate keywords or a
-        # top-level return) that CPython will never execute. Charge the parsed
-        # tree before asking the compiler to do any additional recursive work.
-        compile(source, "<unknown>", "exec", dont_inherit=True)
+        _validate_python_module(tree)
         scanner = _StraightLineShellScanner(source, budget)
         scanner.scan(tree)
     except (MemoryError, OverflowError, RecursionError, SyntaxError, TypeError, UnicodeError, ValueError):
         return ()
     return tuple(scanner.candidates)
+
+
+def _validate_python_module(tree: ast.Module) -> None:
+    """Apply compiler-only syntax checks to an already bounded syntax tree."""
+
+    # ``ast.parse`` intentionally omits checks performed by the symbol-table
+    # and code-generation stages (for example future-import placement,
+    # duplicate parameters, or ``return`` in a class body). Creating and
+    # immediately discarding a code object validates those rules; scanned code
+    # is never executed.
+    compile(tree, "<skill-scanner>", "exec", dont_inherit=True, optimize=0)
 
 
 def find_named_shell_true_calls(source: str) -> tuple[PythonShellBoolCandidate, ...]:
@@ -319,6 +375,27 @@ def _is_side_effect_free(expression: ast.expr | None) -> bool:
             continue
         # Dict and set construction can call attacker-controlled ``__hash__``
         # methods.  Treat both as side-effect boundaries even without unpacking.
+        return False
+    return True
+
+
+def _is_guaranteed_inert_value(expression: ast.expr, state: _DynamicExecState) -> bool:
+    """Return whether evaluating a narrow inert value cannot fail on a name load."""
+
+    pending = [expression]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.Constant):
+            continue
+        if isinstance(node, ast.Name):
+            if node.id not in state.known_bound_names and node.id not in state.getattr_names:
+                return False
+            continue
+        if isinstance(node, (ast.List, ast.Tuple)):
+            if any(isinstance(element, ast.Starred) for element in node.elts):
+                return False
+            pending.extend(node.elts)
+            continue
         return False
     return True
 
@@ -374,12 +451,11 @@ def _literal_joined_exec(expression: ast.expr) -> bool:
 def _is_dynamic_exec_lookup(expression: ast.expr, state: _DynamicExecState) -> bool:
     return bool(
         state.enabled
-        and state.getattr_is_builtin
         and isinstance(expression, ast.Call)
         and not expression.keywords
         and len(expression.args) == 2
         and isinstance(expression.func, ast.Name)
-        and expression.func.id == "getattr"
+        and expression.func.id in state.getattr_names
         and isinstance(expression.args[0], ast.Name)
         and expression.args[0].id in state.builtins_names
         and _literal_joined_exec(expression.args[1])
@@ -402,6 +478,22 @@ def _is_literal_base64_decode(expression: ast.expr, state: _DynamicExecState) ->
     )
 
 
+def _literal_base64_decode_completes(expression: ast.expr, state: _DynamicExecState) -> bool:
+    """Return whether the reviewed literal decode is guaranteed not to raise."""
+
+    if not _is_literal_base64_decode(expression, state):
+        return False
+    assert isinstance(expression, ast.Call)
+    literal = expression.args[0]
+    assert isinstance(literal, ast.Constant)
+    assert isinstance(literal.value, (str, bytes))
+    try:
+        _stdlib_base64.b64decode(literal.value)
+    except (binascii.Error, UnicodeError, ValueError):
+        return False
+    return True
+
+
 def _has_inert_literal_hash(expression: ast.expr) -> bool:
     """Return whether hashing this literal cannot dispatch user code."""
 
@@ -414,6 +506,48 @@ def _has_inert_literal_hash(expression: ast.expr) -> bool:
         str,
         type(None),
     )
+
+
+def _class_body_scope_flags(body: list[ast.stmt]) -> tuple[bool, bool]:
+    """Return whether one class block declares globals or nonlocals."""
+
+    has_global = False
+    has_nonlocal = False
+    pending: list[ast.AST] = list(reversed(body))
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.Global):
+            has_global = True
+            continue
+        if isinstance(node, ast.Nonlocal):
+            has_nonlocal = True
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            # Their eager headers belong to this class execution, but a scope
+            # declaration can occur only in their delayed/nested code block.
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+    return has_global, has_nonlocal
+
+
+def _class_body_has_annotation(body: list[ast.stmt]) -> bool:
+    """Recognize annotations that make CPython seed a class-local mapping."""
+
+    pending: list[ast.AST] = list(reversed(body))
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.AnnAssign):
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+    return False
+
+
+def _is_class_private_name(name: str) -> bool:
+    """Return whether a source name is subject to class-name mangling."""
+
+    return name.startswith("__") and not name.endswith("__") and any(character != "_" for character in name[2:])
 
 
 class _StraightLineShellScanner:
@@ -1087,10 +1221,18 @@ class _StraightLineShellScanner:
 
         return _BodyScanResult(poisoned_modules)
 
-    def _scan_dynamic_exec_statement(self, statement: ast.stmt, state: _DynamicExecState) -> None:
+    def _scan_dynamic_exec_statement(
+        self,
+        statement: ast.stmt,
+        state: _DynamicExecState,
+        *,
+        dynamic_depth: int = 0,
+        class_body_base: _DynamicExecState | None = None,
+        scan_nested_class_bodies: bool = True,
+    ) -> None:
         """Advance the narrow module-level issue-#204 provenance state."""
 
-        if not state.enabled:
+        if not state.is_active():
             return
 
         if isinstance(statement, ast.Import):
@@ -1100,6 +1242,7 @@ class _StraightLineShellScanner:
             for imported in statement.names:
                 local_name = imported.asname or imported.name.split(".", 1)[0]
                 state.rebind(local_name)
+                state.known_bound_names.add(local_name)
                 if imported.name == "builtins":
                     state.builtins_names.add(local_name)
                 elif imported.name == "base64":
@@ -1114,6 +1257,12 @@ class _StraightLineShellScanner:
                     imported.name in _PYTHON_FUTURE_FEATURES and imported.asname is None for imported in statement.names
                 )
             ):
+                for imported in statement.names:
+                    state.rebind(imported.name)
+                    state.known_bound_names.add(imported.name)
+                if any(imported.name == "annotations" for imported in statement.names):
+                    state.annotations_are_deferred = True
+                    state.future_annotations = True
                 return
             state.clear()
             return
@@ -1121,8 +1270,24 @@ class _StraightLineShellScanner:
         if isinstance(statement, ast.Assign):
             targets = _name_targets(statement.targets)
             dynamic_exec = _is_dynamic_exec_lookup(statement.value, state)
+            copied_builtins = isinstance(statement.value, ast.Name) and statement.value.id in state.builtins_names
+            copied_base64 = isinstance(statement.value, ast.Name) and statement.value.id in state.base64_names
+            copied_exec = isinstance(statement.value, ast.Name) and statement.value.id in state.exec_names
+            copied_getattr = isinstance(statement.value, ast.Name) and statement.value.id in state.getattr_names
             literal_base64_decode = _is_literal_base64_decode(statement.value, state)
-            if not dynamic_exec and not literal_base64_decode and not _is_side_effect_free(statement.value):
+            literal_base64_completes = literal_base64_decode and _literal_base64_decode_completes(
+                statement.value,
+                state,
+            )
+            # Issue #204 explicitly requires the static danger signal even
+            # for its invalid placeholder payload.  Carry existing provenance
+            # across that exact decode shape, but never use a failing decode
+            # as proof that its target or a later address is reachable.
+            inert_value = copied_getattr or _is_guaranteed_inert_value(
+                statement.value,
+                state,
+            )
+            if not dynamic_exec and not literal_base64_decode and not inert_value:
                 self._scan_eager_dynamic_exec_calls(statement.value, state)
                 # An arbitrary call can mutate the shared builtins module
                 # without loading a tracked local alias (for example through
@@ -1131,19 +1296,160 @@ class _StraightLineShellScanner:
                 # across this execution boundary.
                 state.clear()
                 return
+            if literal_base64_decode and not literal_base64_completes and not state.allow_invalid_decode_carryover:
+                state.clear()
+                return
             if targets is None:
+                if literal_base64_decode and not literal_base64_completes:
+                    state.clear()
+                    return
+                for target in statement.targets:
+                    if isinstance(target, ast.Name):
+                        state.rebind(target.id)
+                        state.known_bound_names.add(target.id)
+                        if len(target.id) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS:
+                            if copied_builtins:
+                                state.builtins_names.add(target.id)
+                            if copied_base64:
+                                state.base64_names.add(target.id)
+                            if dynamic_exec or copied_exec:
+                                state.exec_names.add(target.id)
+                            if copied_getattr:
+                                state.getattr_names.add(target.id)
+                    elif isinstance(target, (ast.Attribute, ast.Subscript)):
+                        # The RHS has completed before each chained target's
+                        # address and store are evaluated.
+                        self._scan_eager_dynamic_exec_calls(target, state, require_known_names=True)
+                    else:
+                        # Unpacking may dispatch iteration before any nested
+                        # target address is reached.
+                        state.clear()
+                    if not state.is_active():
+                        break
                 state.clear()
                 return
             for name in targets:
                 state.rebind(name)
-                if dynamic_exec and len(name) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS:
-                    state.exec_names.add(name)
+                if dynamic_exec or inert_value or literal_base64_completes:
+                    state.known_bound_names.add(name)
+                if len(name) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS:
+                    if copied_builtins:
+                        state.builtins_names.add(name)
+                    if copied_base64:
+                        state.base64_names.add(name)
+                    if dynamic_exec or copied_exec:
+                        state.exec_names.add(name)
+                    if copied_getattr:
+                        state.getattr_names.add(name)
             return
 
         if isinstance(statement, ast.AnnAssign):
-            if statement.value is not None:
+            dynamic_exec = statement.value is not None and _is_dynamic_exec_lookup(statement.value, state)
+            copied_builtins = (
+                isinstance(statement.target, ast.Name)
+                and isinstance(statement.value, ast.Name)
+                and statement.value.id in state.builtins_names
+            )
+            copied_base64 = (
+                isinstance(statement.target, ast.Name)
+                and isinstance(statement.value, ast.Name)
+                and statement.value.id in state.base64_names
+            )
+            copied_getattr = (
+                isinstance(statement.target, ast.Name)
+                and isinstance(statement.value, ast.Name)
+                and statement.value.id in state.getattr_names
+            )
+            copied_exec = (
+                isinstance(statement.target, ast.Name)
+                and isinstance(statement.value, ast.Name)
+                and statement.value.id in state.exec_names
+            )
+            literal_base64_decode = statement.value is not None and _is_literal_base64_decode(statement.value, state)
+            literal_base64_completes = (
+                statement.value is not None
+                and literal_base64_decode
+                and _literal_base64_decode_completes(statement.value, state)
+            )
+            inert_value = statement.value is not None and (
+                copied_getattr
+                or _is_guaranteed_inert_value(
+                    statement.value,
+                    state,
+                )
+            )
+            if statement.value is not None and not dynamic_exec and not literal_base64_decode and not inert_value:
                 self._scan_eager_dynamic_exec_calls(statement.value, state)
+                state.clear()
+                return
+            if not state.is_active():
+                return
+            if literal_base64_decode and not literal_base64_completes:
+                # An annotated assignment evaluates its RHS before either
+                # storing the target or evaluating an eager annotation.  The
+                # issue's invalid placeholder decode is a narrow carry-over
+                # exception only for ordinary assignments; here it proves
+                # that neither of those later steps is reached.
+                state.clear()
+                return
+            if isinstance(statement.target, ast.Name) and statement.value is not None:
+                state.rebind(statement.target.id)
+                if dynamic_exec or inert_value or literal_base64_completes:
+                    state.known_bound_names.add(statement.target.id)
+                if len(statement.target.id) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS:
+                    if copied_builtins:
+                        state.builtins_names.add(statement.target.id)
+                    if copied_base64:
+                        state.base64_names.add(statement.target.id)
+                    if dynamic_exec or copied_exec:
+                        state.exec_names.add(statement.target.id)
+                    if copied_getattr:
+                        state.getattr_names.add(statement.target.id)
+            if isinstance(statement.target, ast.Name):
+                if not state.annotations_are_deferred:
+                    self._scan_eager_dynamic_exec_calls(statement.annotation, state)
+                if statement.simple and (state.future_annotations or not _ANNOTATIONS_DEFERRED_BY_DEFAULT):
+                    # Python 3.11-3.13, and future-string mode on 3.14,
+                    # subsequently dispatch through the module's potentially
+                    # user-controlled ``__annotations__`` mapping.
+                    state.clear()
+                elif statement.simple and not state.conditional_annotations_intact:
+                    # Python 3.14's default module-annotation bookkeeping is
+                    # no longer proven to complete after a user rebind.
+                    state.clear()
+            else:
+                if statement.value is None:
+                    # Without a value, Python evaluates only the target's
+                    # address components before an eager annotation; it does
+                    # not dispatch an attribute/subscript load or store.
+                    self._scan_dynamic_exec_annotation_address(statement.target, state)
+                    if state.is_active() and not state.annotations_are_deferred:
+                        self._scan_eager_dynamic_exec_calls(statement.annotation, state)
+                else:
+                    # With a value, the target store precedes the annotation
+                    # and is an arbitrary-effect boundary.
+                    self._scan_eager_dynamic_exec_calls(
+                        statement.target,
+                        state,
+                        require_known_names=True,
+                    )
+                    state.clear()
+            return
+
+        if isinstance(statement, ast.AugAssign):
+            if isinstance(statement.target, ast.Name) and (
+                statement.target.id in state.known_bound_names or statement.target.id in state.getattr_names
+            ):
+                self._scan_eager_dynamic_exec_calls(statement.value, state)
+            elif not isinstance(statement.target, ast.Name):
+                # Attribute/subscript address expressions run before their
+                # target load; that load is an effect boundary before the RHS.
+                self._scan_eager_dynamic_exec_calls(statement.target, state, require_known_names=True)
             state.clear()
+            return
+
+        if isinstance(statement, ast.Delete):
+            self._scan_dynamic_exec_delete_targets(statement.targets, state)
             return
 
         if isinstance(statement, ast.Expr):
@@ -1162,6 +1468,15 @@ class _StraightLineShellScanner:
 
         if isinstance(statement, (ast.If, ast.While)):
             self._scan_eager_dynamic_exec_calls(statement.test, state)
+            if isinstance(statement.test, ast.Constant) and type(statement.test.value) is bool:
+                selected_body = statement.body if statement.test.value else statement.orelse
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    selected_body,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
             state.clear()
             return
 
@@ -1183,11 +1498,30 @@ class _StraightLineShellScanner:
             state.clear()
             return
 
+        if isinstance(statement, (ast.Try, ast.TryStar)):
+            self._scan_guaranteed_dynamic_exec_prefix(
+                statement.body,
+                state,
+                depth=dynamic_depth + 1,
+                class_body_base=class_body_base,
+                scan_nested_class_bodies=scan_nested_class_bodies,
+            )
+            if isinstance(statement, ast.Try) and state.is_active() and not statement.handlers and not statement.orelse:
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.finalbody,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+            state.clear()
+            return
+
         if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
             # Decorator expressions are evaluated top-to-bottom, followed by
             # positional defaults and keyword-only defaults. Function bodies
-            # and annotations are deliberately not claimed: bodies are delayed
-            # and annotation timing differs across supported Python versions.
+            # are delayed; annotations are eager only on runtimes where Python
+            # has not deferred them by default and no future import opts in.
             for expression in statement.decorator_list:
                 if isinstance(expression, ast.Name) and expression.id in state.exec_names:
                     # A bare decorator is captured now and invoked after the
@@ -1201,6 +1535,29 @@ class _StraightLineShellScanner:
             ]
             for expression in eager_defaults:
                 self._scan_eager_dynamic_exec_calls(expression, state)
+            for type_parameter in getattr(statement, "type_params", ()):
+                # Generic-function annotations execute in the type-parameter
+                # scope on runtimes where annotations are still eager.
+                state.rebind(type_parameter.name)
+            if not state.annotations_are_deferred:
+                # Mirror CPython's compiler order, which visits regular
+                # positional annotations before positional-only annotations.
+                annotated_arguments = [
+                    *statement.args.args,
+                    *statement.args.posonlyargs,
+                ]
+                if statement.args.vararg is not None:
+                    annotated_arguments.append(statement.args.vararg)
+                annotated_arguments.extend(statement.args.kwonlyargs)
+                if statement.args.kwarg is not None:
+                    annotated_arguments.append(statement.args.kwarg)
+                annotations = [
+                    argument.annotation for argument in annotated_arguments if argument.annotation is not None
+                ]
+                if statement.returns is not None:
+                    annotations.append(statement.returns)
+                for annotation in annotations:
+                    self._scan_eager_dynamic_exec_calls(annotation, state)
             state.clear()
             return
 
@@ -1223,24 +1580,193 @@ class _StraightLineShellScanner:
                 self._scan_eager_dynamic_exec_calls(keyword.value, state)
                 if keyword.arg is None:
                     state.clear()
+
+            has_global, has_nonlocal = _class_body_scope_flags(statement.body)
+            default_namespace = not (
+                statement.decorator_list
+                or statement.bases
+                or statement.keywords
+                or getattr(statement, "type_params", [])
+            )
+            if (
+                scan_nested_class_bodies
+                and default_namespace
+                and not has_global
+                and not has_nonlocal
+                and state.is_active()
+            ):
+                # An ordinary class body executes eagerly. Its LOAD_NAME
+                # fallback sees module bindings, but a nested class body must
+                # never inherit ordinary locals from the enclosing class.
+                module_state = (class_body_base or state).clone()
+                class_state = module_state.clone()
+                class_state.class_namespace = True
+                class_state.allow_invalid_decode_carryover = False
+                inherited_names = (
+                    class_state.builtins_names
+                    | class_state.base64_names
+                    | class_state.exec_names
+                    | class_state.known_bound_names
+                    | class_state.getattr_names
+                )
+                for name in inherited_names:
+                    if _is_class_private_name(name):
+                        # The class bytecode loads the mangled spelling, not
+                        # this module-level source name. Omitting the possible
+                        # mangled fallback is conservative and avoids an FP.
+                        class_state.rebind(name)
+                compiler_names = {"__module__", "__qualname__"}
+                if class_body_base is not None:
+                    # Nested class code can close over these implicit cells
+                    # from its enclosing class instead of using module fallback.
+                    compiler_names.add("__class__")
+                    if sys.version_info >= (3, 12):
+                        compiler_names.add("__classdict__")
+                    if sys.version_info >= (3, 14):
+                        compiler_names.add("__conditional_annotations__")
+                if sys.version_info >= (3, 13):
+                    compiler_names.add("__firstlineno__")
+                if (
+                    statement.body
+                    and isinstance(statement.body[0], ast.Expr)
+                    and isinstance(statement.body[0].value, ast.Constant)
+                    and type(statement.body[0].value.value) is str
+                ):
+                    compiler_names.add("__doc__")
+                if (
+                    not _ANNOTATIONS_DEFERRED_BY_DEFAULT or class_state.future_annotations
+                ) and _class_body_has_annotation(statement.body):
+                    compiler_names.add("__annotations__")
+                for name in compiler_names:
+                    class_state.rebind(name)
+                    class_state.known_bound_names.add(name)
+                if _ANNOTATIONS_DEFERRED_BY_DEFAULT:
+                    # Every class receives fresh 3.14 annotation bookkeeping;
+                    # a module rebind (or implicit nested cell) cannot poison it.
+                    class_state.conditional_annotations_intact = True
+                # CPython initializes class ``__module__`` by loading the
+                # module's current ``__name__`` value, so preserve reviewed
+                # identity when user code has explicitly rebound that name.
+                if "__name__" in module_state.builtins_names:
+                    class_state.builtins_names.add("__module__")
+                if "__name__" in module_state.base64_names:
+                    class_state.base64_names.add("__module__")
+                if "__name__" in module_state.exec_names:
+                    class_state.exec_names.add("__module__")
+                if "__name__" in module_state.getattr_names:
+                    class_state.getattr_names.add("__module__")
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.body,
+                    class_state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=module_state,
+                    scan_nested_class_bodies=True,
+                )
             state.clear()
             return
 
         if isinstance(statement, ast.Assert):
-            # The test is mandatory in normal execution; the message is only
-            # evaluated conditionally and is therefore not claimed.
+            # The test is mandatory in normal execution.  The message is only
+            # proven to execute when that test is the literal false value.
             self._scan_eager_dynamic_exec_calls(statement.test, state)
+            if isinstance(statement.test, ast.Constant) and statement.test.value is False and statement.msg is not None:
+                self._scan_eager_dynamic_exec_calls(statement.msg, state)
             state.clear()
             return
 
-        if isinstance(statement, ast.Pass):
+        if isinstance(statement, (ast.Global, ast.Pass)):
             return
 
-        # No claims cross definitions, unsupported control flow, annotations,
-        # deletion, mutation, or another unsupported execution boundary.
+        # No claims cross definitions, unsupported control flow, deletion,
+        # mutation, or another unsupported execution boundary.
         state.clear()
 
-    def _scan_eager_dynamic_exec_calls(self, expression: ast.expr, state: _DynamicExecState) -> None:
+    def _scan_guaranteed_dynamic_exec_prefix(
+        self,
+        body: list[ast.stmt],
+        state: _DynamicExecState,
+        *,
+        depth: int,
+        class_body_base: _DynamicExecState | None = None,
+        scan_nested_class_bodies: bool = True,
+    ) -> None:
+        """Scan the source-ordered prefix reached before unsupported flow."""
+
+        if depth > MAX_PYTHON_SHELL_SCOPE_DEPTH or state.binding_count > MAX_PYTHON_SHELL_BINDINGS:
+            state.clear()
+            return
+        for statement in body:
+            self._scan_dynamic_exec_statement(
+                statement,
+                state,
+                dynamic_depth=depth,
+                class_body_base=class_body_base,
+                scan_nested_class_bodies=scan_nested_class_bodies,
+            )
+            if state.binding_count > MAX_PYTHON_SHELL_BINDINGS:
+                state.clear()
+            if not state.is_active():
+                return
+
+    def _scan_dynamic_exec_delete_targets(
+        self,
+        targets: list[ast.expr],
+        state: _DynamicExecState,
+    ) -> None:
+        """Scan delete targets in source order up to the first effectful target."""
+
+        pending = list(reversed(targets))
+        visited = 0
+        while pending:
+            target = pending.pop()
+            visited += 1
+            if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+                state.clear()
+                return
+            if isinstance(target, ast.Name):
+                if state.class_namespace:
+                    # DELETE_NAME never deletes the module fallback. Tracking
+                    # which locals exist would require a separate namespace
+                    # overlay, so stop rather than infer past the deletion.
+                    state.clear()
+                    return
+                if target.id not in state.known_bound_names:
+                    state.clear()
+                    return
+                state.rebind(target.id)
+                if target.id == "getattr":
+                    state.getattr_names.add("getattr")
+                continue
+            if isinstance(target, (ast.List, ast.Tuple)):
+                pending.extend(reversed(target.elts))
+                continue
+            self._scan_eager_dynamic_exec_calls(target, state, require_known_names=True)
+            return
+
+    def _scan_dynamic_exec_annotation_address(
+        self,
+        target: ast.expr,
+        state: _DynamicExecState,
+    ) -> None:
+        """Scan a valueless non-simple annotation's address components."""
+
+        if isinstance(target, ast.Attribute):
+            self._scan_eager_dynamic_exec_calls(target.value, state, require_known_names=True)
+            return
+        if isinstance(target, ast.Subscript):
+            self._scan_eager_dynamic_exec_calls(target.value, state, require_known_names=True)
+            if state.is_active():
+                self._scan_eager_dynamic_exec_calls(target.slice, state, require_known_names=True)
+            return
+        state.clear()
+
+    def _scan_eager_dynamic_exec_calls(
+        self,
+        expression: ast.expr,
+        state: _DynamicExecState,
+        *,
+        require_known_names: bool = False,
+    ) -> None:
         """Record aliases in bounded subexpressions that are certainly evaluated."""
 
         # ``None`` is a post-evaluation effect boundary.  Keeping traversal
@@ -1261,6 +1787,8 @@ class _StraightLineShellScanner:
             if isinstance(current, ast.Call):
                 self._record_direct_dynamic_exec_call(current, state)
                 if _is_literal_base64_decode(current, state):
+                    if not _literal_base64_decode_completes(current, state):
+                        state.clear()
                     continue
                 call_children: list[ast.AST | None] = [current.func]
                 # CPython evaluates every positional/starred argument before
@@ -1414,7 +1942,16 @@ class _StraightLineShellScanner:
                 pending.extend(reversed(slice_children))
                 continue
 
-            if isinstance(current, (ast.Constant, ast.Name)):
+            if isinstance(current, ast.Name):
+                if (
+                    require_known_names
+                    and current.id not in state.known_bound_names
+                    and current.id not in state.getattr_names
+                ):
+                    state.clear()
+                continue
+
+            if isinstance(current, ast.Constant):
                 continue
 
             # Delayed/conditional children and every other unreviewed
@@ -2311,7 +2848,7 @@ class _StraightLineShellScanner:
             tree = ast.parse(payload)
             if not self.budget.consume_tree(tree):
                 return
-            compile(payload, "<embedded-python-c>", "exec", dont_inherit=True)
+            _validate_python_module(tree)
         except (MemoryError, OverflowError, RecursionError, SyntaxError, TypeError, UnicodeError, ValueError):
             return
         method_name = function_identity.rsplit(".", 1)[-1]
