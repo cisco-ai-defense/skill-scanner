@@ -1986,16 +1986,38 @@ class StaticAnalyzer(BaseAnalyzer):
                         leading_space = len(line) - len(line.lstrip())
                         relative_start = max(0, candidate.start_column - leading_space)
                         relative_end = min(len(line.strip()), candidate.end_column - leading_space)
-                        overlaps_regex = any(
-                            match.get("line_number") == candidate.line_number
-                            and isinstance(match.get("match_start"), int)
-                            and isinstance(match.get("match_end"), int)
-                            and relative_start < match["match_end"]
-                            and match["match_start"] < relative_end
-                            for match in matches
+                        equivalent_spans = (
+                            (candidate.line_number, candidate.start_column, candidate.end_column),
+                            *getattr(candidate, "equivalent_regex_spans", ()),
                         )
-                        if overlaps_regex:
-                            continue
+
+                        def overlaps_semantic_evidence(match: dict[str, Any]) -> bool:
+                            match_line_number = match.get("line_number")
+                            match_start = match.get("match_start")
+                            match_end = match.get("match_end")
+                            if (
+                                match.get("pattern_index") is None
+                                or not isinstance(match_line_number, int)
+                                or not isinstance(match_start, int)
+                                or not isinstance(match_end, int)
+                                or not 1 <= match_line_number <= len(scan_context.lines)
+                            ):
+                                return False
+                            match_line = scan_context.lines[match_line_number - 1]
+                            match_leading_space = len(match_line) - len(match_line.lstrip())
+                            absolute_start = match_start + match_leading_space
+                            absolute_end = match_end + match_leading_space
+                            return any(
+                                span_line == match_line_number
+                                and span_start < absolute_end
+                                and absolute_start < span_end
+                                for span_line, span_start, span_end in equivalent_spans
+                            )
+
+                        # Syntax-aware evidence wins over an equivalent broad
+                        # regex, including a raw regex hit inside a Python -c
+                        # payload whose displayed anchor is the outer call.
+                        matches = [match for match in matches if not overlaps_semantic_evidence(match)]
                         context_kind, polarity = scan_context.classify_match(
                             candidate.line_number - 1,
                             skill_file.relative_path,
@@ -4296,6 +4318,8 @@ class StaticAnalyzer(BaseAnalyzer):
                 f.snippet or "",
                 f.metadata.get("matched_pattern"),
                 f.metadata.get("matched_text"),
+                f.metadata.get("signature_match_start"),
+                f.metadata.get("signature_match_end"),
             )
             if key in seen:
                 continue
@@ -4374,8 +4398,12 @@ class StaticAnalyzer(BaseAnalyzer):
             else None
         )
 
+        occurrence = (
+            f"{match.get('file_path', 'unknown')}:{match.get('line_number', 0)}:"
+            f"{signature_match_start}:{signature_match_end}"
+        )
         return Finding(
-            id=self._generate_finding_id(rule.id, f"{match.get('file_path', 'unknown')}:{match.get('line_number', 0)}"),
+            id=self._generate_finding_id(rule.id, occurrence),
             rule_id=rule.id,
             category=rule.category,
             severity=rule.severity,

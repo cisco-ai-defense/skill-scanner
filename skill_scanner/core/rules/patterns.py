@@ -319,7 +319,13 @@ def _build_signature_line_contexts(lines: Sequence[str]) -> tuple[tuple[bool, bo
 def _signature_line_contexts(content: str) -> list[tuple[bool, bool]]:
     """Return structural context flags without retaining source text."""
 
-    return list(_build_signature_line_contexts(content.split("\n")))
+    return list(_build_signature_line_contexts(_split_universal_newlines(content)))
+
+
+def _split_universal_newlines(content: str) -> tuple[str, ...]:
+    """Match Python's LF/CRLF/CR source lines while preserving a trailing line."""
+
+    return tuple(content.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -343,7 +349,7 @@ class SignatureScanContext:
     )
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "lines", tuple(self.content.split("\n")))
+        object.__setattr__(self, "lines", _split_universal_newlines(self.content))
 
     def line_context(self, zero_based_line: int) -> tuple[bool, bool]:
         """Return cached fence/section flags for one physical line."""

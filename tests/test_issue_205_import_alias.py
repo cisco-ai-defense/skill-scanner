@@ -365,8 +365,9 @@ def test_embedded_later_poisoning_keeps_only_the_earlier_evidence(make_skill):
     assert matches[0].metadata["matched_pattern"] == _EMBEDDED_PATTERN
 
 
-def test_unicode_prefix_uses_character_offsets_for_outer_evidence(make_skill):
-    source = f"import subprocess\ncafé = 1; subprocess.run(['python', '-c', {_PAYLOAD!r}])\n"
+@pytest.mark.parametrize("newline", ["\n", "\r", "\r\n"], ids=["lf", "cr", "crlf"])
+def test_unicode_prefix_uses_character_offsets_for_outer_evidence(make_skill, newline):
+    source = newline.join(["import subprocess", f"café = 1; subprocess.run(['python', '-c', {_PAYLOAD!r}])", ""])
 
     matches = _semantic_findings(make_skill, source)
 
@@ -516,3 +517,324 @@ def test_expression_depth_limit_drops_overdeep_candidate(monkeypatch):
     source = "import os as o\nresult = [[[o.system('id')]]]\n"
 
     assert python_shell_semantics.find_python_shell_candidates(source) == ()
+
+
+@pytest.mark.parametrize("keyword", ["def", "async def"])
+def test_embedded_unused_function_body_is_deferred(make_skill, keyword):
+    payload = f"{keyword} launch():\n    import os as o\n    o.system('id')"
+
+    assert not _semantic_findings(make_skill, _python_c_source(payload))
+
+
+def test_embedded_function_default_still_executes_at_definition_time(make_skill):
+    payload = "import os as o\ndef launch(value=o.system('id')): pass"
+
+    matches = _semantic_findings(make_skill, _python_c_source(payload))
+
+    assert len(matches) == 1
+    assert matches[0].metadata["matched_pattern"] == _EMBEDDED_PATTERN
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="annotations are deferred on Python 3.14+")
+@pytest.mark.parametrize(
+    ("source", "line_number"),
+    [
+        ("import os as o\nx: o.system('id') = 1\n", 2),
+        ("import os as o\nx: o.system('id')\n", 2),
+        ("import os as o\nclass C:\n    x: o.system('id') = 1\n", 3),
+    ],
+    ids=["module-value", "module-annotation-only", "class-value"],
+)
+def test_module_and_class_annotations_execute_after_the_store(make_skill, source, line_number):
+    matches = _semantic_findings(make_skill, source)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == line_number
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import os as o\no: o.system('id') = 1\n",
+        "from __future__ import annotations\nimport os as o\nx: o.system('id') = 1\n",
+        "def launch():\n    import os as o\n    x: o.system('id') = 1\n",
+    ],
+    ids=["store-hides-alias", "future-annotations", "function-local-annotation"],
+)
+def test_non_runtime_annotations_do_not_create_alias_findings(make_skill, source):
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_eager_class_body_resolves_enclosing_global_alias(make_skill):
+    source = "import os as o\nclass Runner:\n    o.system('id')\n"
+
+    matches = _semantic_findings(make_skill, source)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 3
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import os as o\nclass Outer:\n    o = object()\n    class Inner:\n        o.system('id')\n",
+        "import os as o\n@mutate()\nclass Runner:\n    o.system('id')\n",
+        "import os as o\nclass Runner(Base):\n    o.system('id')\n",
+    ],
+    ids=["nested-class-local", "decorator-effect", "base-protocol"],
+)
+def test_class_body_does_not_inherit_unproven_aliases(make_skill, source):
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import os as o\no.system(input())\n",
+        "from os import system as execute\nexecute(build_command())\n",
+        "from os import system as run\nrun((run := 'id'))\n",
+        "import os as o\nconsume(x=mutate(), *[o.system('id')])\n",
+    ],
+    ids=["module-alias", "callable-alias", "callee-captured", "star-before-keyword"],
+)
+def test_resolved_callee_is_recorded_before_effectful_arguments(make_skill, source):
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_positional_expansion_invalidates_alias_before_keyword_value(make_skill):
+    source = "import os as o\nconsume(x=o.system('id'), *mutate())\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize(
+    ("initial", "later", "expected"),
+    [("True", "False", 1), ("False", "True", 0)],
+    ids=["snapshot-true", "snapshot-false"],
+)
+def test_named_shell_flag_is_snapshotted_at_keyword_evaluation(make_skill, initial, later, expected):
+    source = f"import subprocess\nenabled = {initial}\nsubprocess.run([], shell=enabled, later=(enabled := {later}))\n"
+
+    assert len(_semantic_findings(make_skill, source)) == expected
+
+
+def test_reviewed_subprocess_name_argument_invalidates_later_alias(make_skill):
+    source = "import os as o\nimport subprocess as sp\nsp.run([command])\no.system('id')\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize(
+    "nested",
+    [
+        "if True:\n    import os as o\n    o.system('id')",
+        "if False:\n    pass\nelse:\n    import os as o\n    o.system('id')",
+        "while True:\n    import os as o\n    o.system('id')\n    break",
+        "while False:\n    pass\nelse:\n    import os as o\n    o.system('id')",
+        "for _ in [1]:\n    import os as o\n    o.system('id')",
+        "for _ in '':\n    pass\nelse:\n    import os as o\n    o.system('id')",
+        "try:\n    import os as o\n    o.system('id')\nexcept Exception:\n    pass",
+        "try:\n    raise RuntimeError\nexcept:\n    import os as o\n    o.system('id')",
+        "try:\n    pass\nelse:\n    import os as o\n    o.system('id')",
+        "try:\n    pass\nfinally:\n    import os as o\n    o.system('id')",
+        "class Runner:\n    import os as o\n    o.system('id')",
+    ],
+)
+def test_poisoned_module_state_reaches_nested_runtime_suites(make_skill, nested):
+    source = f"import os\nos.system = fake\n{nested}\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_binding_limit_poisons_discarded_module_identity(make_skill, monkeypatch):
+    monkeypatch.setattr(python_shell_semantics, "MAX_PYTHON_SHELL_BINDINGS", 1)
+    source = "import os, subprocess\nos.system = fake\nimport os as o\no.system('id')\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import os as o\nif True:\n    o.system('id')\n",
+        "import os as o\nwhile True:\n    o.system('id')\n    break\n",
+        "import os as o\nfor _ in [1]:\n    o.system('id')\n",
+        "import os as o\ntry:\n    raise RuntimeError\nexcept:\n    o.system('id')\n",
+        "import os as o\ntry:\n    pass\nexcept:\n    pass\nelse:\n    o.system('id')\n",
+        "import os as o\ntry:\n    pass\nfinally:\n    o.system('id')\n",
+        "import os as o\nmatch 1:\n    case _ if o.system('id'):\n        pass\n",
+    ],
+)
+def test_guaranteed_runtime_suites_retain_alias_facts(make_skill, source):
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import os as o\nif []:\n    o.system('id')\n",
+        "import os as o\nif True:\n    pass\nelse:\n    o.system('id')\n",
+        "import os as o\nfor _ in '':\n    o.system('id')\n",
+        "import os as o\nwhile False:\n    o.system('id')\n",
+        "for _ in [1]:\n    import os as o\n    break\n    o.system('id')\n",
+        "for _ in [1]:\n    import os as o\n    continue\n    o.system('id')\n",
+    ],
+)
+def test_unreachable_suite_calls_are_pruned(make_skill, source):
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "(lambda value=None: o.system('id'))()",
+        "[o.system('id') for _ in [1] for item in [1]]",
+        "{1: o.system('id')}",
+    ],
+    ids=["immediate-defaulted-lambda", "multi-generator-comprehension", "dict-value-order"],
+)
+def test_additional_eager_expression_positions_are_scanned(make_skill, expression):
+    source = f"import os as o\nresult = {expression}\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "assert o.system('id')",
+        "holder[o.system('id')] = 1",
+        "del holder[o.system('id')]",
+        "holder[o.system('id')] += 1",
+        "value += o.system('id')",
+    ],
+    ids=["assert", "assignment-target", "delete-target", "augassign-target", "augassign-rhs"],
+)
+def test_additional_eager_statement_positions_are_scanned(make_skill, statement):
+    source = f"import os as o\n{statement}\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_failing_comprehension_destructuring_does_not_reach_element(make_skill):
+    source = "import os as o\n[o.system('id') for left, right in [1]]\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize("multiline", [False, True], ids=["one-line", "multiline"])
+def test_payload_suffix_regex_is_replaced_by_stronger_semantic_finding(make_skill, multiline):
+    payload = "import os as chaos; chaos.system('id')"
+    source = (
+        _python_c_source(payload) if multiline else f"import subprocess as sp; sp.run(['python', '-c', {payload!r}])\n"
+    )
+
+    matches = _shell_findings(make_skill, source)
+
+    assert len(matches) == 1
+    assert matches[0].metadata["matched_pattern"] == _EMBEDDED_PATTERN
+
+
+def test_unresolved_suffix_name_is_not_a_legacy_os_system_match(make_skill):
+    assert not _shell_findings(make_skill, "chaos.system('id')\n")
+
+
+def test_distinct_same_line_alias_sinks_keep_occurrence_identity(make_skill):
+    source = "import os as a, os as b; a.system('first'); b.system('second')\n"
+
+    matches = _shell_findings(make_skill, source)
+
+    assert len(matches) == 2
+    assert len({finding.id for finding in matches}) == 2
+    assert len({finding.metadata["signature_match_start"] for finding in matches}) == 2
+
+
+def test_distinct_same_line_named_shell_sinks_keep_occurrence_identity(make_skill):
+    source = (
+        "import subprocess; enabled = True; subprocess.run([], shell=enabled); subprocess.call([], shell=enabled)\n"
+    )
+
+    matches = _shell_findings(make_skill, source)
+
+    assert len(matches) == 2
+    assert len({finding.id for finding in matches}) == 2
+
+
+@pytest.mark.parametrize(
+    "middle",
+    [
+        "if True:\n    pass",
+        "if False:\n    o.system('unreachable')",
+        "while False:\n    o.system('unreachable')",
+        "for _ in '':\n    o.system('unreachable')",
+        "try:\n    pass\nexcept:\n    pass",
+        "try:\n    raise RuntimeError\nexcept:\n    pass",
+    ],
+)
+def test_inert_deterministic_compound_preserves_later_alias(make_skill, middle):
+    source = f"import os as o\n{middle}\no.system('id')\n"
+
+    matches = _semantic_findings(make_skill, source)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == len(source.splitlines())
+
+
+def test_mutually_exclusive_branch_poison_does_not_suppress_other_branch(make_skill):
+    source = "if condition:\n    import os\n    os.system = fake\nelse:\n    import os as o\n    o.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_deferred_function_poison_does_not_escape_to_module(make_skill):
+    source = "def unused():\n    import os\n    os.system = fake\nimport os as o\no.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="generic type parameters require Python 3.12+")
+def test_generic_class_type_parameter_shadows_alias_in_base(make_skill):
+    source = "import os as o\nclass Runner[o](o.system('id')): pass\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_class_mapping_expansion_invalidates_alias_before_later_keyword(make_skill):
+    source = "import os as o\nclass Runner(**mapping, marker=o.system('id')): pass\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="annotations are deferred on Python 3.14+")
+@pytest.mark.parametrize(
+    ("annotations", "expected"),
+    [
+        ("left: mutate(), /, right: o.system('id')", 1),
+        ("left: o.system('id'), /, right: mutate()", 0),
+    ],
+)
+def test_function_annotation_evaluation_uses_cpython_parameter_order(make_skill, annotations, expected):
+    source = f"import os as o\ndef launch({annotations}): pass\n"
+
+    assert len(_semantic_findings(make_skill, source)) == expected
+
+
+@pytest.mark.parametrize(
+    "terminal_suite",
+    [
+        "if True:\n        return",
+        "while False:\n        pass\n    else:\n        return",
+        "for _ in '':\n        pass\n    else:\n        raise RuntimeError",
+        "try:\n        return\n    finally:\n        pass",
+    ],
+)
+def test_selected_terminal_suite_prunes_following_function_code(make_skill, terminal_suite):
+    source = f"def launch():\n    {terminal_suite}\n    import os as o\n    o.system('unreachable')\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_safe_return_keeps_alias_visible_to_finally(make_skill):
+    source = "def launch():\n    import os as o\n    try: return\n    finally: o.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1

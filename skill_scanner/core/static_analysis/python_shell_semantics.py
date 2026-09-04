@@ -32,6 +32,7 @@ import re
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 MAX_PYTHON_SHELL_SOURCE_BYTES = 1024 * 1024
 MAX_PYTHON_SHELL_AST_NODES = 50_000
@@ -49,6 +50,10 @@ _PYTHON_C_RUN_KEYWORDS = _PYTHON_C_BASE_KEYWORDS | {"check"}
 _OS_SYSTEM_IDENTITY = "callable:os.system"
 _PYTHON_EXECUTABLE_RE = re.compile(r"python(?:3(?:\.\d+)?)?(?:\.exe)?", re.IGNORECASE)
 _RAW_OS_SYSTEM_CALL_RE = re.compile(r"\bos\.system\s*\(")
+_LEGACY_OS_SYSTEM_CALL_RE = re.compile(r"os\.system\s*\(")
+
+_ScopeKind = Literal["module", "function", "class"]
+_FlowKind = Literal["normal", "return", "raise", "break", "continue"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +87,7 @@ class PythonOsSystemCandidate:
     start_column: int
     end_column: int
     embedded_method_name: str | None = None
+    equivalent_regex_spans: tuple[tuple[int, int, int], ...] = ()
 
     @property
     def matched_pattern(self) -> str:
@@ -113,6 +119,7 @@ class _ExpressionScanState:
     external_names: set[str]
     scope_depth: int
     evidence_anchor: ast.expr | None
+    equivalent_regex_spans: tuple[tuple[int, int, int], ...]
     embedded_method_name: str | None
 
 
@@ -154,6 +161,14 @@ class _AnalysisBudget:
         return True
 
 
+@dataclass(slots=True)
+class _BodyScanResult:
+    """Poison and control-flow state returned by one bounded suite scan."""
+
+    poisoned_modules: set[str]
+    flow: _FlowKind = "normal"
+
+
 def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...]:
     """Find bounded, straight-line positive evidence for reviewed shell sinks.
 
@@ -168,9 +183,6 @@ def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...
         if len(source.encode("utf-8")) > MAX_PYTHON_SHELL_SOURCE_BYTES:
             return ()
         tree = ast.parse(source)
-        # ``ast.parse`` accepts some trees (such as duplicate keywords or a
-        # top-level return) that CPython will never execute.
-        compile(source, "<unknown>", "exec", dont_inherit=True)
         budget = _AnalysisBudget(
             remaining_nodes=MAX_PYTHON_SHELL_AST_NODES,
             remaining_embedded_bytes=MAX_PYTHON_SHELL_EMBEDDED_BYTES,
@@ -178,6 +190,10 @@ def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...
         )
         if not budget.consume_tree(tree):
             return ()
+        # ``ast.parse`` accepts some trees (such as duplicate keywords or a
+        # top-level return) that CPython will never execute. Charge the parsed
+        # tree before asking the compiler to do any additional recursive work.
+        compile(source, "<unknown>", "exec", dont_inherit=True)
         scanner = _StraightLineShellScanner(source, budget)
         scanner.scan(tree)
     except (MemoryError, OverflowError, RecursionError, SyntaxError, TypeError, UnicodeError, ValueError):
@@ -236,7 +252,7 @@ def _name_targets(targets: list[ast.expr]) -> tuple[str, ...] | None:
 class _StraightLineShellScanner:
     def __init__(self, source: str, budget: _AnalysisBudget) -> None:
         self.source = source
-        self.lines = source.split("\n")
+        self.lines = source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
         self.budget = budget
         self.candidates: list[PythonShellCandidate] = []
         self.candidate_keys: set[tuple[int, int, int, str]] = set()
@@ -253,25 +269,38 @@ class _StraightLineShellScanner:
             and any(imported.name == "annotations" for imported in statement.names)
             for statement in tree.body
         )
-        self._scan_body(tree.body, depth=0, evidence_anchor=None, embedded_method_name=None)
+        self._scan_body(
+            tree.body,
+            depth=0,
+            scope_kind="module",
+            evidence_anchor=None,
+            equivalent_regex_spans=(),
+            embedded_method_name=None,
+        )
 
     def _scan_body(
         self,
         body: list[ast.stmt],
         *,
         depth: int,
+        scope_kind: _ScopeKind,
         evidence_anchor: ast.expr | None,
+        equivalent_regex_spans: tuple[tuple[int, int, int], ...],
         embedded_method_name: str | None,
-    ) -> None:
+        initial_bool_bindings: dict[str, bool] | None = None,
+        initial_identities: dict[str, str] | None = None,
+        poisoned_modules: set[str] | None = None,
+    ) -> _BodyScanResult:
+        if poisoned_modules is None:
+            poisoned_modules = set()
         if depth > MAX_PYTHON_SHELL_SCOPE_DEPTH or len(self.candidates) >= MAX_PYTHON_SHELL_CANDIDATES:
-            return
+            return _BodyScanResult(poisoned_modules)
 
         external_names = {
             name for statement in body if isinstance(statement, (ast.Global, ast.Nonlocal)) for name in statement.names
         }
-        bool_bindings: dict[str, bool] = {}
-        identities: dict[str, str] = {}
-        poisoned_modules: set[str] = set()
+        bool_bindings = dict(initial_bool_bindings or {})
+        identities = dict(initial_identities or {})
         expression_state = _ExpressionScanState(
             bool_bindings=bool_bindings,
             identities=identities,
@@ -279,23 +308,56 @@ class _StraightLineShellScanner:
             external_names=external_names,
             scope_depth=depth,
             evidence_anchor=evidence_anchor,
+            equivalent_regex_spans=equivalent_regex_spans,
             embedded_method_name=embedded_method_name,
         )
 
+        def scan_nested_body(
+            nested_body: list[ast.stmt],
+            *,
+            inherit_facts: bool = False,
+            shadow_target: ast.expr | None = None,
+            isolate_poison: bool = False,
+        ) -> _BodyScanResult:
+            if not nested_body:
+                nested_poison = set(poisoned_modules) if isolate_poison else poisoned_modules
+                return _BodyScanResult(nested_poison)
+            nested_bools = dict(bool_bindings) if inherit_facts else None
+            nested_identities = dict(identities) if inherit_facts else None
+            if shadow_target is not None and nested_bools is not None and nested_identities is not None:
+                for name in self._target_names(shadow_target):
+                    nested_bools.pop(name, None)
+                    nested_identities.pop(name, None)
+            return self._scan_body(
+                nested_body,
+                depth=depth + 1,
+                scope_kind=scope_kind,
+                evidence_anchor=evidence_anchor,
+                equivalent_regex_spans=equivalent_regex_spans,
+                embedded_method_name=embedded_method_name,
+                initial_bool_bindings=nested_bools,
+                initial_identities=nested_identities,
+                poisoned_modules=set(poisoned_modules) if isolate_poison else poisoned_modules,
+            )
+
         for statement in body:
             if len(self.candidates) >= MAX_PYTHON_SHELL_CANDIDATES:
-                return
+                return _BodyScanResult(poisoned_modules)
 
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self._scan_definition_expressions(statement, expression_state)
                 # Delayed scopes receive no outer identities: a module alias
                 # may be rebound before the function is ever called.
-                self._scan_body(
-                    statement.body,
-                    depth=depth + 1,
-                    evidence_anchor=evidence_anchor,
-                    embedded_method_name=embedded_method_name,
-                )
+                if evidence_anchor is None:
+                    self._scan_body(
+                        statement.body,
+                        depth=depth + 1,
+                        scope_kind="function",
+                        evidence_anchor=None,
+                        equivalent_regex_spans=(),
+                        embedded_method_name=None,
+                        poisoned_modules=set(poisoned_modules),
+                    )
                 # Defaults, annotations, and decorators may run while the
                 # definition is evaluated, so outer facts do not cross it.
                 self._poison_known_modules(identities, poisoned_modules)
@@ -306,27 +368,48 @@ class _StraightLineShellScanner:
             if isinstance(statement, ast.Import):
                 bool_bindings.clear()
                 self._apply_import(statement, identities, poisoned_modules)
-                self._enforce_binding_limit(bool_bindings, identities)
+                self._enforce_binding_limit(bool_bindings, identities, poisoned_modules)
                 continue
 
             if isinstance(statement, ast.ImportFrom):
                 bool_bindings.clear()
                 self._apply_import_from(statement, identities, poisoned_modules)
-                self._enforce_binding_limit(bool_bindings, identities)
+                self._enforce_binding_limit(bool_bindings, identities, poisoned_modules)
                 continue
 
             if isinstance(statement, ast.ClassDef):
-                self._scan_expressions(
-                    [*statement.decorator_list, *statement.bases, *(keyword.value for keyword in statement.keywords)],
-                    expression_state,
+                header_is_safe = self._scan_expressions(statement.decorator_list, expression_state)
+                type_parameter_names = self._type_parameter_names(statement)
+                for name in type_parameter_names:
+                    bool_bindings.pop(name, None)
+                    identities.pop(name, None)
+                header_is_safe = self._scan_expressions(statement.bases, expression_state) and header_is_safe
+                for keyword in statement.keywords:
+                    header_is_safe = self._scan_expression(keyword.value, expression_state) and header_is_safe
+                    if keyword.arg is None:
+                        # Expanding a class keyword mapping can invoke arbitrary
+                        # mapping protocols before later keywords are evaluated.
+                        self._clear_expression_facts(expression_state)
+                        header_is_safe = False
+                inherit_class_facts = (
+                    header_is_safe
+                    and scope_kind != "class"
+                    and not statement.bases
+                    and not statement.keywords
+                    and not type_parameter_names
                 )
                 # Class bodies execute in their own namespace, while methods
                 # are delayed scopes that do not close over class bindings.
                 self._scan_body(
                     statement.body,
                     depth=depth + 1,
+                    scope_kind="class",
                     evidence_anchor=evidence_anchor,
+                    equivalent_regex_spans=equivalent_regex_spans,
                     embedded_method_name=embedded_method_name,
+                    initial_bool_bindings=bool_bindings if inherit_class_facts else None,
+                    initial_identities=identities if inherit_class_facts else None,
+                    poisoned_modules=poisoned_modules,
                 )
                 self._poison_known_modules(identities, poisoned_modules)
                 bool_bindings.clear()
@@ -336,6 +419,8 @@ class _StraightLineShellScanner:
             if isinstance(statement, ast.Assign):
                 value = _exact_bool(statement.value, bool_bindings)
                 expression_is_safe = self._scan_expression(statement.value, expression_state)
+                for target in statement.targets:
+                    expression_is_safe = self._scan_assignment_target(target, expression_state) and expression_is_safe
                 self._poison_module_targets(statement.targets, identities, poisoned_modules)
                 targets = _name_targets(statement.targets)
                 if targets is None or not expression_is_safe:
@@ -346,37 +431,38 @@ class _StraightLineShellScanner:
                     identities.pop(name, None)
                     if name not in external_names and value is not None:
                         bool_bindings[name] = value
-                self._enforce_binding_limit(bool_bindings, identities)
+                self._enforce_binding_limit(bool_bindings, identities, poisoned_modules)
                 continue
 
             if isinstance(statement, ast.AnnAssign):
                 value = _exact_bool(statement.value, bool_bindings) if statement.value is not None else None
                 expression_is_safe = self._scan_expression(statement.value, expression_state)
+                expression_is_safe = (
+                    self._scan_assignment_target(statement.target, expression_state) and expression_is_safe
+                )
                 self._poison_module_targets([statement.target], identities, poisoned_modules)
-                if (
-                    not isinstance(statement.target, ast.Name)
-                    or not _is_side_effect_free(statement.annotation)
-                    or not expression_is_safe
-                ):
-                    if not _is_side_effect_free(statement.annotation) or not _is_side_effect_free(statement.value):
+                if not isinstance(statement.target, ast.Name):
+                    if not expression_is_safe:
                         self._clear_expression_facts(expression_state)
                     continue
-                if statement.value is None:
-                    # A simple annotation-only declaration evaluates its
-                    # annotation but does not rebind the declared name.
-                    continue
                 name = statement.target.id
-                bool_bindings.pop(name, None)
-                identities.pop(name, None)
-                if name not in external_names and value is not None:
-                    bool_bindings[name] = value
-                self._enforce_binding_limit(bool_bindings, identities)
+                if statement.value is not None:
+                    # CPython stores the RHS before evaluating an eager module
+                    # or class annotation, so a same-name store hides an alias.
+                    bool_bindings.pop(name, None)
+                    identities.pop(name, None)
+                    if expression_is_safe and name not in external_names and value is not None:
+                        bool_bindings[name] = value
+                annotation_is_safe = True
+                if scope_kind in {"module", "class"} and not self.annotations_are_deferred:
+                    annotation_is_safe = self._scan_expression(statement.annotation, expression_state)
+                if not expression_is_safe or not annotation_is_safe:
+                    self._clear_expression_facts(expression_state)
+                self._enforce_binding_limit(bool_bindings, identities, poisoned_modules)
                 continue
 
             if isinstance(statement, ast.Expr):
                 expression_is_safe = self._scan_expression(statement.value, expression_state)
-                if not _is_side_effect_free(statement.value):
-                    bool_bindings.clear()
                 if not expression_is_safe:
                     self._clear_expression_facts(expression_state)
                 continue
@@ -389,12 +475,25 @@ class _StraightLineShellScanner:
                     else [terminal_expression]
                 )
                 self._scan_expressions(expressions, expression_state)
-                return
+                return _BodyScanResult(poisoned_modules, "return" if isinstance(statement, ast.Return) else "raise")
+
+            if isinstance(statement, ast.Assert):
+                truth = self._known_truth(statement.test, bool_bindings)
+                test_is_safe = self._scan_expression(statement.test, expression_state)
+                if truth is False:
+                    self._scan_expression(statement.msg, expression_state)
+                    return _BodyScanResult(poisoned_modules, "raise")
+                if truth is None or not test_is_safe:
+                    self._clear_expression_facts(expression_state)
+                continue
 
             if isinstance(statement, ast.Delete):
+                targets_are_safe = True
+                for target in statement.targets:
+                    targets_are_safe = self._scan_assignment_target(target, expression_state) and targets_are_safe
                 self._poison_module_targets(statement.targets, identities, poisoned_modules)
                 targets = _name_targets(statement.targets)
-                if targets is None:
+                if targets is None or not targets_are_safe:
                     bool_bindings.clear()
                     identities.clear()
                 else:
@@ -406,66 +505,222 @@ class _StraightLineShellScanner:
             if isinstance(statement, ast.Pass):
                 continue
 
-            if isinstance(statement, (ast.If, ast.While)):
-                self._scan_expression(statement.test, expression_state)
-            elif isinstance(statement, (ast.For, ast.AsyncFor)):
-                self._scan_expression(statement.iter, expression_state)
-            elif isinstance(statement, (ast.With, ast.AsyncWith)):
+            if isinstance(statement, ast.Break):
+                return _BodyScanResult(poisoned_modules, "break")
+
+            if isinstance(statement, ast.Continue):
+                return _BodyScanResult(poisoned_modules, "continue")
+
+            if isinstance(statement, ast.If):
+                truth = self._known_truth(statement.test, bool_bindings)
+                header_is_safe = self._scan_expression(statement.test, expression_state)
+                selected_body: list[ast.stmt] | None = None
+                selected_result: _BodyScanResult | None = None
+                if truth is not None:
+                    selected_body = statement.body if truth else statement.orelse
+                    selected_result = scan_nested_body(
+                        selected_body,
+                        inherit_facts=header_is_safe,
+                    )
+                else:
+                    branch_results = [
+                        scan_nested_body(statement.body, isolate_poison=True),
+                        scan_nested_body(statement.orelse, isolate_poison=True),
+                    ]
+                    poisoned_modules.update(*(result.poisoned_modules for result in branch_results))
+                if selected_body is None or not header_is_safe or not self._body_is_inert(selected_body):
+                    self._poison_known_modules(identities, poisoned_modules)
+                    bool_bindings.clear()
+                    identities.clear()
+                if selected_result is not None and selected_result.flow != "normal":
+                    return _BodyScanResult(poisoned_modules, selected_result.flow)
+                continue
+
+            if isinstance(statement, ast.While):
+                truth = self._known_truth(statement.test, bool_bindings)
+                header_is_safe = self._scan_expression(statement.test, expression_state)
+                while_result: _BodyScanResult | None = None
+                if truth is False:
+                    while_result = scan_nested_body(statement.orelse, inherit_facts=header_is_safe)
+                elif truth is True:
+                    while_result = scan_nested_body(statement.body, inherit_facts=header_is_safe)
+                    if not isinstance(statement.test, ast.Constant):
+                        scan_nested_body(statement.orelse)
+                else:
+                    scan_nested_body(statement.body)
+                    scan_nested_body(statement.orelse)
+                if truth is not False or not header_is_safe or not self._body_is_inert(statement.orelse):
+                    self._poison_known_modules(identities, poisoned_modules)
+                    bool_bindings.clear()
+                    identities.clear()
+                if while_result is not None and while_result.flow in {"return", "raise"}:
+                    return _BodyScanResult(poisoned_modules, while_result.flow)
+                continue
+
+            if isinstance(statement, (ast.For, ast.AsyncFor)):
+                iterable_is_empty = self._known_iterable_empty(statement.iter)
+                header_is_safe = self._scan_expression(statement.iter, expression_state)
+                body_result: _BodyScanResult | None = None
+                else_result: _BodyScanResult | None = None
+                if iterable_is_empty is True:
+                    else_result = scan_nested_body(statement.orelse, inherit_facts=header_is_safe)
+                elif (
+                    iterable_is_empty is False
+                    and isinstance(statement, ast.For)
+                    and isinstance(statement.target, ast.Name)
+                ):
+                    body_result = scan_nested_body(
+                        statement.body,
+                        inherit_facts=header_is_safe,
+                        shadow_target=statement.target,
+                    )
+                    if body_result.flow != "break":
+                        else_result = scan_nested_body(statement.orelse)
+                elif iterable_is_empty is None:
+                    branch_results = [
+                        scan_nested_body(statement.body, isolate_poison=True),
+                        scan_nested_body(statement.orelse, isolate_poison=True),
+                    ]
+                    poisoned_modules.update(*(result.poisoned_modules for result in branch_results))
+                if iterable_is_empty is not True or not header_is_safe or not self._body_is_inert(statement.orelse):
+                    self._poison_known_modules(identities, poisoned_modules)
+                    bool_bindings.clear()
+                    identities.clear()
+                if body_result is not None and body_result.flow in {"return", "raise"}:
+                    return _BodyScanResult(poisoned_modules, body_result.flow)
+                if else_result is not None and else_result.flow in {"return", "raise"}:
+                    return _BodyScanResult(poisoned_modules, else_result.flow)
+                continue
+
+            if isinstance(statement, (ast.With, ast.AsyncWith)):
                 for item in statement.items:
                     self._scan_expression(item.context_expr, expression_state)
-                    # __enter__ can change later name/attribute resolution.
+                    # Context-manager entry can change later name resolution.
                     self._clear_expression_facts(expression_state)
-            elif isinstance(statement, ast.Match):
-                self._scan_expression(statement.subject, expression_state)
-
-            nested_bodies: list[list[ast.stmt]] | None = None
-            if isinstance(statement, ast.If):
-                if isinstance(statement.test, ast.Constant):
-                    nested_bodies = [statement.body if bool(statement.test.value) else statement.orelse]
-                else:
-                    nested_bodies = [statement.body, statement.orelse]
-            elif isinstance(statement, (ast.For, ast.AsyncFor)):
-                definitely_empty = (
-                    (isinstance(statement.iter, (ast.List, ast.Tuple, ast.Set)) and not statement.iter.elts)
-                    or isinstance(statement.iter, ast.Dict)
-                    and not statement.iter.keys
-                )
-                nested_bodies = [statement.orelse] if definitely_empty else [statement.body, statement.orelse]
-            elif isinstance(statement, ast.While):
-                if isinstance(statement.test, ast.Constant) and not bool(statement.test.value):
-                    nested_bodies = [statement.orelse]
-                else:
-                    nested_bodies = [statement.body, statement.orelse]
-            elif isinstance(statement, (ast.With, ast.AsyncWith)):
-                nested_bodies = [statement.body]
-            elif isinstance(statement, (ast.Try, ast.TryStar)):
-                nested_bodies = [
-                    statement.body,
-                    *(handler.body for handler in statement.handlers),
-                    statement.orelse,
-                    statement.finalbody,
-                ]
-            elif isinstance(statement, ast.Match):
-                nested_bodies = [case.body for case in statement.cases]
-
-            if nested_bodies is not None:
-                # A compound header can execute arbitrary code, so no outer
-                # fact is safe to carry inward.  Self-contained nested suites
-                # still receive their own bounded source-ordered scan.
-                for nested_body in nested_bodies:
-                    if nested_body:
-                        self._scan_body(
-                            nested_body,
-                            depth=depth + 1,
-                            evidence_anchor=evidence_anchor,
-                            embedded_method_name=embedded_method_name,
-                        )
+                    self._scan_assignment_target(item.optional_vars, expression_state)
+                scan_nested_body(statement.body)
                 self._poison_known_modules(identities, poisoned_modules)
                 bool_bindings.clear()
                 identities.clear()
                 continue
 
+            if isinstance(statement, (ast.Try, ast.TryStar)):
+                explicit_safe_raise = bool(
+                    statement.body
+                    and isinstance(statement.body[0], ast.Raise)
+                    and _is_side_effect_free(statement.body[0].exc)
+                    and _is_side_effect_free(statement.body[0].cause)
+                )
+                direct_safe_return = bool(
+                    statement.body
+                    and isinstance(statement.body[0], ast.Return)
+                    and _is_side_effect_free(statement.body[0].value)
+                )
+                inert_try_body = bool(statement.body) and all(isinstance(item, ast.Pass) for item in statement.body)
+                if explicit_safe_raise:
+                    for handler in statement.handlers:
+                        if not self._scan_expression(handler.type, expression_state):
+                            break
+                body_result = scan_nested_body(statement.body, inherit_facts=True)
+                alternative_results: list[_BodyScanResult] = []
+                guaranteed_handler: ast.ExceptHandler | None = None
+                if explicit_safe_raise:
+                    guaranteed_handler = next((handler for handler in statement.handlers if handler.type is None), None)
+                for handler in statement.handlers:
+                    alternative_results.append(
+                        scan_nested_body(
+                            handler.body,
+                            inherit_facts=handler is guaranteed_handler,
+                            isolate_poison=True,
+                        )
+                    )
+                    if handler is guaranteed_handler:
+                        break
+                if not explicit_safe_raise:
+                    alternative_results.append(
+                        scan_nested_body(
+                            statement.orelse,
+                            inherit_facts=inert_try_body,
+                            isolate_poison=True,
+                        )
+                    )
+                if alternative_results:
+                    poisoned_modules.update(*(result.poisoned_modules for result in alternative_results))
+                handler_is_inert = guaranteed_handler is not None and all(
+                    isinstance(item, ast.Pass) for item in guaranteed_handler.body
+                )
+                handler_path_is_safe = guaranteed_handler is not None and all(
+                    _is_side_effect_free(handler.type)
+                    for handler in statement.handlers[: statement.handlers.index(guaranteed_handler)]
+                )
+                finally_result = scan_nested_body(
+                    statement.finalbody,
+                    inherit_facts=inert_try_body
+                    or direct_safe_return
+                    or bool(explicit_safe_raise and handler_is_inert and handler_path_is_safe),
+                )
+                try_preserves_facts = (
+                    inert_try_body
+                    and self._body_is_inert(statement.orelse)
+                    and self._body_is_inert(statement.finalbody)
+                ) or (
+                    bool(explicit_safe_raise and handler_is_inert and handler_path_is_safe)
+                    and self._body_is_inert(statement.finalbody)
+                )
+                if not try_preserves_facts:
+                    self._poison_known_modules(identities, poisoned_modules)
+                    bool_bindings.clear()
+                    identities.clear()
+                if finally_result.flow != "normal":
+                    return _BodyScanResult(poisoned_modules, finally_result.flow)
+                if body_result.flow == "return":
+                    return _BodyScanResult(poisoned_modules, "return")
+                if inert_try_body:
+                    else_result = alternative_results[-1] if alternative_results else body_result
+                    if else_result.flow != "normal":
+                        return _BodyScanResult(poisoned_modules, else_result.flow)
+                elif explicit_safe_raise and guaranteed_handler is not None:
+                    handler_index = statement.handlers.index(guaranteed_handler)
+                    if handler_index < len(alternative_results) and alternative_results[handler_index].flow != "normal":
+                        return _BodyScanResult(poisoned_modules, alternative_results[handler_index].flow)
+                elif body_result.flow == "raise" and not statement.handlers:
+                    return _BodyScanResult(poisoned_modules, "raise")
+                continue
+
+            if isinstance(statement, ast.Match):
+                subject_is_safe = self._scan_expression(statement.subject, expression_state)
+                case_results: list[_BodyScanResult] = []
+                match_result: _BodyScanResult | None = None
+                for index, case in enumerate(statement.cases):
+                    irrefutable = self._is_irrefutable_pattern(case.pattern)
+                    if index == 0 and irrefutable:
+                        guard_truth = self._known_truth(case.guard, bool_bindings) if case.guard is not None else True
+                        guard_is_safe = self._scan_expression(case.guard, expression_state)
+                        if guard_truth is not False:
+                            match_result = scan_nested_body(
+                                case.body,
+                                inherit_facts=subject_is_safe and guard_is_safe and guard_truth is True,
+                                isolate_poison=True,
+                            )
+                            case_results.append(match_result)
+                        if case.guard is None or guard_truth is True:
+                            break
+                        continue
+                    case_results.append(scan_nested_body(case.body, isolate_poison=True))
+                    if irrefutable and case.guard is None:
+                        break
+                if case_results:
+                    poisoned_modules.update(*(result.poisoned_modules for result in case_results))
+                self._poison_known_modules(identities, poisoned_modules)
+                bool_bindings.clear()
+                identities.clear()
+                if match_result is not None and match_result.flow != "normal":
+                    return _BodyScanResult(poisoned_modules, match_result.flow)
+                continue
+
             if isinstance(statement, ast.AugAssign):
+                self._scan_assignment_target(statement.target, expression_state, load_before_store=True)
+                self._scan_expression(statement.value, expression_state)
                 self._poison_module_targets([statement.target], identities, poisoned_modules)
 
             # Calls hidden in unsupported expressions, augmented assignments,
@@ -476,25 +731,84 @@ class _StraightLineShellScanner:
             bool_bindings.clear()
             identities.clear()
 
+        return _BodyScanResult(poisoned_modules)
+
+    def _scan_assignment_target(
+        self,
+        target: ast.expr | None,
+        state: _ExpressionScanState,
+        *,
+        load_before_store: bool = False,
+    ) -> bool:
+        """Scan expressions evaluated while assigning or deleting a target."""
+
+        if target is None or isinstance(target, ast.Name):
+            return True
+        if isinstance(target, ast.Attribute):
+            self._scan_expression(target.value, state)
+            # Attribute load/store can dispatch a descriptor or custom setter.
+            self._clear_expression_facts(state)
+            return False
+        if isinstance(target, ast.Subscript):
+            self._scan_expression(target.value, state)
+            self._scan_expression(target.slice, state)
+            # Subscription load/store can invoke arbitrary user protocols.
+            self._clear_expression_facts(state)
+            return False
+        if isinstance(target, ast.Starred):
+            return self._scan_assignment_target(target.value, state, load_before_store=load_before_store)
+        if isinstance(target, (ast.List, ast.Tuple)):
+            # Iterable unpacking itself occurs before the component stores.
+            self._clear_expression_facts(state)
+            for element in target.elts:
+                self._scan_assignment_target(element, state, load_before_store=load_before_store)
+            return False
+        self._clear_expression_facts(state)
+        return False
+
+    @staticmethod
+    def _target_names(target: ast.expr) -> set[str]:
+        return {node.id for node in ast.walk(target) if isinstance(node, ast.Name)}
+
+    @staticmethod
+    def _type_parameter_names(statement: ast.AST) -> set[str]:
+        return {
+            name
+            for parameter in getattr(statement, "type_params", ())
+            if isinstance((name := getattr(parameter, "name", None)), str)
+        }
+
+    @staticmethod
+    def _is_irrefutable_pattern(pattern: ast.pattern) -> bool:
+        return isinstance(pattern, ast.MatchAs) and pattern.pattern is None
+
+    @staticmethod
+    def _body_is_inert(body: list[ast.stmt]) -> bool:
+        return all(isinstance(statement, ast.Pass) for statement in body)
+
     def _scan_definition_expressions(
         self,
         statement: ast.FunctionDef | ast.AsyncFunctionDef,
         state: _ExpressionScanState,
     ) -> None:
-        expressions: list[ast.expr | None] = [*statement.decorator_list]
-        expressions.extend(statement.args.defaults)
-        expressions.extend(statement.args.kw_defaults)
+        self._scan_expressions(statement.decorator_list, state)
+        self._scan_expressions(statement.args.defaults, state)
+        self._scan_expressions(statement.args.kw_defaults, state)
+        for name in self._type_parameter_names(statement):
+            state.bool_bindings.pop(name, None)
+            state.identities.pop(name, None)
         if not self.annotations_are_deferred:
             parameters = [
-                *statement.args.posonlyargs,
                 *statement.args.args,
+                *statement.args.posonlyargs,
                 statement.args.vararg,
                 *statement.args.kwonlyargs,
                 statement.args.kwarg,
             ]
-            expressions.extend(parameter.annotation for parameter in parameters if parameter is not None)
-            expressions.append(statement.returns)
-        self._scan_expressions(expressions, state)
+            self._scan_expressions(
+                [*(parameter.annotation for parameter in parameters if parameter is not None), statement.returns],
+                state,
+            )
 
     def _scan_expressions(self, expressions: Sequence[ast.expr | None], state: _ExpressionScanState) -> bool:
         all_safe = True
@@ -544,18 +858,28 @@ class _StraightLineShellScanner:
         if isinstance(expression, (ast.List, ast.Tuple)):
             all_safe = True
             for element in expression.elts:
-                all_safe = scan(element.value if isinstance(element, ast.Starred) else element) and all_safe
-                if isinstance(element, ast.Starred):
+                element_is_safe = scan(element.value if isinstance(element, ast.Starred) else element)
+                all_safe = element_is_safe and all_safe
+                if isinstance(element, ast.Starred) and (
+                    not element_is_safe or self._known_iterable_empty(element.value) is None
+                ):
                     self._clear_expression_facts(state)
                     all_safe = False
             return all_safe
-        if isinstance(expression, (ast.Set, ast.Dict)):
-            children = [child for child in ast.iter_child_nodes(expression) if isinstance(child, ast.expr)]
-            for child in children:
-                scan(child)
+        if isinstance(expression, ast.Set):
+            for element in expression.elts:
+                scan(element)
                 # Hashing/insertion can dispatch attacker-controlled methods.
                 self._clear_expression_facts(state)
-            return not children
+            return not expression.elts
+        if isinstance(expression, ast.Dict):
+            for key, value in zip(expression.keys, expression.values, strict=True):
+                if key is not None:
+                    scan(key)
+                scan(value)
+                # Key hashing or ** mapping expansion happens after each pair.
+                self._clear_expression_facts(state)
+            return not expression.values
         if isinstance(expression, ast.BoolOp):
             all_safe = True
             for index, bool_value in enumerate(expression.values):
@@ -582,60 +906,60 @@ class _StraightLineShellScanner:
             function_identity = self._resolve_identity(expression.func, state.identities)
             reviewed_spelling = function_identity is not None or self._is_reviewed_call_spelling(expression.func)
             function_is_safe = reviewed_spelling or scan(expression.func)
+            if function_identity == _OS_SYSTEM_IDENTITY and (
+                self._is_alias_spelling(expression.func)
+                or (state.evidence_anchor is not None and self.allow_embedded_canonical)
+            ):
+                # Python captures the callee before evaluating any argument.
+                # Keep that positive sink evidence even if a later argument
+                # mutates the alias or otherwise invalidates following facts.
+                self._record_os_system(
+                    state.evidence_anchor or expression.func,
+                    embedded_method_name=state.embedded_method_name,
+                    equivalent_regex_spans=state.equivalent_regex_spans,
+                )
             arguments_are_safe = True
-            call_values = [(value, isinstance(value, ast.Starred)) for value in expression.args] + [
-                (keyword.value, keyword.arg is None) for keyword in expression.keywords
-            ]
-            call_values.sort(key=lambda item: (getattr(item[0], "lineno", 0), getattr(item[0], "col_offset", 0)))
-            for call_value, expands in call_values:
+            for call_value in expression.args:
+                expands = isinstance(call_value, ast.Starred)
                 arguments_are_safe = (
                     scan(call_value.value if isinstance(call_value, ast.Starred) else call_value) and arguments_are_safe
                 )
                 if expands:
                     self._clear_expression_facts(state)
                     arguments_are_safe = False
+            shell_binding: tuple[str, bool | None] | None = None
+            for keyword in expression.keywords:
+                keyword_is_safe = scan(keyword.value)
+                arguments_are_safe = keyword_is_safe and arguments_are_safe
+                if (
+                    keyword.arg == "shell"
+                    and isinstance(keyword.value, ast.Name)
+                    and len(keyword.value.id) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS
+                ):
+                    shell_binding = (keyword.value.id, state.bool_bindings.get(keyword.value.id))
+                    self._record_named_shell_flag(expression, shell_binding)
+                if keyword.arg is None:
+                    self._clear_expression_facts(state)
+                    arguments_are_safe = False
             if reviewed_spelling and function_is_safe and arguments_are_safe:
                 preserves_facts = self._record_call(
                     expression,
                     state.bool_bindings,
-                    state.identities,
+                    function_identity,
                     depth=state.scope_depth,
                     evidence_anchor=state.evidence_anchor,
-                    embedded_method_name=state.embedded_method_name,
                 )
                 if preserves_facts:
                     return True
-            if isinstance(expression.func, ast.Lambda) and self._zero_argument_lambda(expression):
-                scan(expression.func.body)
+            if isinstance(expression.func, ast.Lambda) and self._lambda_call_binds(expression):
+                lambda_state = self._lambda_body_state(state, expression.func)
+                self._scan_expression(expression.func.body, lambda_state, expression_depth + 1)
             self._clear_expression_facts(state)
             return False
         if isinstance(expression, ast.Lambda):
             return self._scan_expressions([*expression.args.defaults, *expression.args.kw_defaults], state)
         if isinstance(expression, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
-            first = expression.generators[0]
-            iterable_is_empty = self._known_iterable_empty(first.iter)
-            iterable_is_safe = scan(first.iter)
-            if isinstance(expression, ast.GeneratorExp) or iterable_is_empty is True:
-                if iterable_is_empty is None:
-                    self._clear_expression_facts(state)
-                return iterable_is_safe and iterable_is_empty is not None
-            local_state = self._comprehension_state(state, first.target)
-            if iterable_is_empty is None:
-                self._clear_expression_facts(local_state)
-            conditions_are_true = len(expression.generators) == 1
-            for condition in first.ifs:
-                truth = self._known_truth(condition, local_state.bool_bindings)
-                self._scan_expression(condition, local_state, expression_depth + 1)
-                conditions_are_true = conditions_are_true and truth is True
-                if truth is False:
-                    break
-            if conditions_are_true:
-                result_values: list[ast.expr] = (
-                    [expression.key, expression.value] if isinstance(expression, ast.DictComp) else [expression.elt]
-                )
-                self._scan_expressions(result_values, local_state)
-            self._clear_expression_facts(state)
-            return False
+            return self._scan_comprehension(expression, state, expression_depth)
         if isinstance(expression, ast.Compare):
             scan(expression.left)
             for comparator in expression.comparators:
@@ -646,6 +970,62 @@ class _StraightLineShellScanner:
         for nested in ast.iter_child_nodes(expression):
             if isinstance(nested, ast.expr):
                 scan(nested)
+        self._clear_expression_facts(state)
+        return False
+
+    def _scan_comprehension(
+        self,
+        expression: ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp,
+        state: _ExpressionScanState,
+        expression_depth: int,
+    ) -> bool:
+        """Scan only comprehension stages proven to execute in source order."""
+
+        first = expression.generators[0]
+        first_empty = self._known_iterable_empty(first.iter)
+        first_is_safe = self._scan_expression(first.iter, state, expression_depth + 1)
+        if isinstance(expression, ast.GeneratorExp):
+            if first_empty is None or not first_is_safe:
+                self._clear_expression_facts(state)
+                return False
+            return True
+
+        def scan_stage(index: int, stage_state: _ExpressionScanState, iterable_already_scanned: bool) -> None:
+            generator = expression.generators[index]
+            iterable_is_empty = self._known_iterable_empty(generator.iter)
+            iterable_is_safe = (
+                first_is_safe
+                if iterable_already_scanned
+                else self._scan_expression(generator.iter, stage_state, expression_depth + index + 1)
+            )
+            if generator.is_async:
+                self._clear_expression_facts(stage_state)
+                return
+            if iterable_is_empty is True:
+                return
+            if iterable_is_empty is None or not isinstance(generator.target, ast.Name):
+                self._clear_expression_facts(stage_state)
+                return
+            local_state = self._comprehension_state(stage_state, generator.target)
+            if not iterable_is_safe:
+                self._clear_expression_facts(local_state)
+            for condition in generator.ifs:
+                truth = self._known_truth(condition, local_state.bool_bindings)
+                self._scan_expression(condition, local_state, expression_depth + index + 1)
+                if truth is False:
+                    return
+                if truth is None:
+                    self._clear_expression_facts(local_state)
+                    return
+            if index + 1 < len(expression.generators):
+                scan_stage(index + 1, local_state, False)
+                return
+            result_values: list[ast.expr] = (
+                [expression.key, expression.value] if isinstance(expression, ast.DictComp) else [expression.elt]
+            )
+            self._scan_expressions(result_values, local_state)
+
+        scan_stage(0, state, True)
         self._clear_expression_facts(state)
         return False
 
@@ -665,20 +1045,99 @@ class _StraightLineShellScanner:
     @staticmethod
     def _known_iterable_empty(expression: ast.expr) -> bool | None:
         if isinstance(expression, (ast.List, ast.Tuple, ast.Set)):
-            return not expression.elts
+            for element in expression.elts:
+                if not isinstance(element, ast.Starred):
+                    return False
+                nested_empty = _StraightLineShellScanner._known_iterable_empty(element.value)
+                if nested_empty is None:
+                    return None
+                if nested_empty is False:
+                    return False
+            return True
         if isinstance(expression, ast.Dict):
-            return not expression.keys
+            for key, value in zip(expression.keys, expression.values, strict=True):
+                if key is not None:
+                    return False
+                nested_empty = _StraightLineShellScanner._known_iterable_empty(value)
+                if nested_empty is None:
+                    return None
+                if nested_empty is False:
+                    return False
+            return True
         if isinstance(expression, ast.Constant) and isinstance(expression.value, (str, bytes)):
             return not expression.value
         return None
 
     @staticmethod
-    def _zero_argument_lambda(call: ast.Call) -> bool:
-        if call.args or call.keywords or not isinstance(call.func, ast.Lambda):
+    def _lambda_call_binds(call: ast.Call) -> bool:
+        """Prove a direct lambda call binds without executing deferred code."""
+
+        if not isinstance(call.func, ast.Lambda):
             return False
         arguments = call.func.args
-        return not (
-            arguments.posonlyargs or arguments.args or arguments.vararg or arguments.kwonlyargs or arguments.kwarg
+        if any(isinstance(argument, ast.Starred) for argument in call.args) or any(
+            keyword.arg is None for keyword in call.keywords
+        ):
+            return False
+        pending: list[ast.AST] = [call.func.body]
+        while pending:
+            node = pending.pop()
+            if isinstance(node, (ast.Yield, ast.YieldFrom)):
+                return False
+            if isinstance(node, ast.Lambda):
+                continue
+            pending.extend(ast.iter_child_nodes(node))
+
+        positional = [*arguments.posonlyargs, *arguments.args]
+        if len(call.args) > len(positional) and arguments.vararg is None:
+            return False
+        bound = {parameter.arg for parameter in positional[: len(call.args)]}
+        normal_names = {parameter.arg for parameter in arguments.args}
+        kwonly_names = {parameter.arg for parameter in arguments.kwonlyargs}
+        posonly_names = {parameter.arg for parameter in arguments.posonlyargs}
+        for keyword in call.keywords:
+            name = keyword.arg
+            if name in normal_names or name in kwonly_names:
+                if name in bound:
+                    return False
+                bound.add(name)
+            elif name not in posonly_names and arguments.kwarg is None:
+                return False
+            elif name in posonly_names and arguments.kwarg is None:
+                return False
+
+        required_positional = positional[: len(positional) - len(arguments.defaults)]
+        if any(parameter.arg not in bound for parameter in required_positional):
+            return False
+        return all(
+            default is not None or parameter.arg in bound
+            for parameter, default in zip(arguments.kwonlyargs, arguments.kw_defaults, strict=True)
+        )
+
+    @staticmethod
+    def _lambda_body_state(state: _ExpressionScanState, expression: ast.Lambda) -> _ExpressionScanState:
+        bool_bindings = dict(state.bool_bindings)
+        identities = dict(state.identities)
+        parameters = [
+            *expression.args.posonlyargs,
+            *expression.args.args,
+            expression.args.vararg,
+            *expression.args.kwonlyargs,
+            expression.args.kwarg,
+        ]
+        for parameter in parameters:
+            if parameter is not None:
+                bool_bindings.pop(parameter.arg, None)
+                identities.pop(parameter.arg, None)
+        return _ExpressionScanState(
+            bool_bindings,
+            identities,
+            state.poisoned_modules,
+            state.external_names,
+            state.scope_depth + 1,
+            state.evidence_anchor,
+            state.equivalent_regex_spans,
+            state.embedded_method_name,
         )
 
     @staticmethod
@@ -707,6 +1166,7 @@ class _StraightLineShellScanner:
             state.external_names,
             state.scope_depth + 1,
             state.evidence_anchor,
+            state.equivalent_regex_spans,
             state.embedded_method_name,
         )
 
@@ -720,35 +1180,23 @@ class _StraightLineShellScanner:
         self,
         call: ast.Call,
         bool_bindings: dict[str, bool],
-        identities: dict[str, str],
+        function_identity: str | None,
         *,
         depth: int,
         evidence_anchor: ast.expr | None,
-        embedded_method_name: str | None,
     ) -> bool:
-        function_identity = self._resolve_identity(call.func, identities)
-
-        if function_identity == _OS_SYSTEM_IDENTITY and (
-            self._is_alias_spelling(call.func) or (evidence_anchor is not None and self.allow_embedded_canonical)
-        ):
-            self._record_os_system(
-                evidence_anchor or call.func,
-                embedded_method_name=embedded_method_name,
-            )
-
         if evidence_anchor is None:
-            self._record_named_shell_flag(call, bool_bindings)
             if function_identity in _SUBPROCESS_CALL_IDENTITIES:
                 self._scan_python_c_payload(call, function_identity, depth=depth)
 
         return function_identity in (_SUBPROCESS_CALL_IDENTITIES | {_OS_SYSTEM_IDENTITY}) and (
-            self._call_arguments_are_side_effect_free(call)
+            self._call_arguments_are_side_effect_free(call, bool_bindings)
         )
 
     def _record_named_shell_flag(
         self,
         call: ast.Call,
-        bindings: dict[str, bool],
+        shell_binding: tuple[str, bool | None],
     ) -> None:
         """Preserve #203's exact, unaliased subprocess ownership."""
 
@@ -761,27 +1209,9 @@ class _StraightLineShellScanner:
         ):
             return
 
-        shell_keywords = [keyword for keyword in call.keywords if keyword.arg == "shell"]
-        if len(shell_keywords) != 1 or any(keyword.arg is None for keyword in call.keywords):
+        variable_name, exact_value = shell_binding
+        if exact_value is not True:
             return
-        shell_keyword = shell_keywords[0]
-        if (
-            not isinstance(shell_keyword.value, ast.Name)
-            or len(shell_keyword.value.id) > MAX_PYTHON_SHELL_IDENTIFIER_CHARS
-            or bindings.get(shell_keyword.value.id) is not True
-        ):
-            return
-
-        # Positional arguments and earlier keyword values are evaluated before
-        # shell=. A call or overloaded operation there could mutate the name
-        # before Python reads it, so require inert values.
-        if any(not _is_side_effect_free(argument) for argument in call.args):
-            return
-        for keyword in call.keywords:
-            if keyword is shell_keyword:
-                break
-            if not _is_side_effect_free(keyword.value):
-                return
 
         span = self._source_span(function)
         if span is None:
@@ -793,11 +1223,17 @@ class _StraightLineShellScanner:
                 start_column=start_column,
                 end_column=end_column,
                 method_name=function.attr,
-                variable_name=shell_keyword.value.id,
+                variable_name=variable_name,
             )
         )
 
-    def _record_os_system(self, anchor: ast.expr, *, embedded_method_name: str | None) -> None:
+    def _record_os_system(
+        self,
+        anchor: ast.expr,
+        *,
+        embedded_method_name: str | None,
+        equivalent_regex_spans: tuple[tuple[int, int, int], ...],
+    ) -> None:
         span = self._source_span(anchor)
         if span is None:
             return
@@ -808,6 +1244,7 @@ class _StraightLineShellScanner:
                 start_column=start_column,
                 end_column=end_column,
                 embedded_method_name=embedded_method_name,
+                equivalent_regex_spans=equivalent_regex_spans,
             )
         )
 
@@ -822,9 +1259,9 @@ class _StraightLineShellScanner:
             return
         try:
             tree = ast.parse(payload)
-            compile(payload, "<embedded-python-c>", "exec", dont_inherit=True)
             if not self.budget.consume_tree(tree):
                 return
+            compile(payload, "<embedded-python-c>", "exec", dont_inherit=True)
         except (MemoryError, OverflowError, RecursionError, SyntaxError, TypeError, UnicodeError, ValueError):
             return
         method_name = function_identity.rsplit(".", 1)[-1]
@@ -832,6 +1269,7 @@ class _StraightLineShellScanner:
             raw_payload = ast.get_source_segment(self.source, payload_expression)
         except (MemoryError, UnicodeError):
             raw_payload = None
+        equivalent_regex_spans = self._raw_payload_regex_spans(payload_expression, raw_payload)
         previous_allowance = self.allow_embedded_canonical
         previous_annotations = self.annotations_are_deferred
         self.allow_embedded_canonical = raw_payload is None or _RAW_OS_SYSTEM_CALL_RE.search(raw_payload) is None
@@ -845,12 +1283,40 @@ class _StraightLineShellScanner:
             self._scan_body(
                 tree.body,
                 depth=depth + 1,
+                scope_kind="module",
                 evidence_anchor=call.func,
+                equivalent_regex_spans=equivalent_regex_spans,
                 embedded_method_name=method_name,
             )
         finally:
             self.allow_embedded_canonical = previous_allowance
             self.annotations_are_deferred = previous_annotations
+
+    def _raw_payload_regex_spans(
+        self,
+        payload_expression: ast.expr,
+        raw_payload: str | None,
+    ) -> tuple[tuple[int, int, int], ...]:
+        """Map legacy regex hits in a raw payload literal to outer-source spans."""
+
+        if raw_payload is None:
+            return ()
+        start_line = getattr(payload_expression, "lineno", 0)
+        byte_start = getattr(payload_expression, "col_offset", -1)
+        if not (1 <= start_line <= len(self.lines) and byte_start >= 0):
+            return ()
+        start_column = self._byte_to_character_column(self.lines[start_line - 1], byte_start)
+        if start_column is None:
+            return ()
+        spans: list[tuple[int, int, int]] = []
+        raw_lines = raw_payload.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        for offset, raw_line in enumerate(raw_lines):
+            base_column = start_column if offset == 0 else 0
+            for match in _LEGACY_OS_SYSTEM_CALL_RE.finditer(raw_line):
+                spans.append((start_line + offset, base_column + match.start(), base_column + match.end()))
+                if len(spans) >= MAX_PYTHON_SHELL_CANDIDATES:
+                    return tuple(spans)
+        return tuple(spans)
 
     @staticmethod
     def _constant_python_c_payload(call: ast.Call, function_identity: str) -> tuple[str, ast.expr] | None:
@@ -925,10 +1391,28 @@ class _StraightLineShellScanner:
         )
 
     @staticmethod
-    def _call_arguments_are_side_effect_free(call: ast.Call) -> bool:
-        return all(_is_side_effect_free(argument) for argument in call.args) and all(
-            keyword.arg is not None and _is_side_effect_free(keyword.value) for keyword in call.keywords
+    def _call_arguments_are_side_effect_free(call: ast.Call, bool_bindings: dict[str, bool] | None = None) -> bool:
+        bindings = bool_bindings or {}
+        return all(
+            _StraightLineShellScanner._is_inert_call_value(argument, bindings) for argument in call.args
+        ) and all(
+            keyword.arg is not None and _StraightLineShellScanner._is_inert_call_value(keyword.value, bindings)
+            for keyword in call.keywords
         )
+
+    @staticmethod
+    def _is_inert_call_value(expression: ast.expr, bool_bindings: dict[str, bool]) -> bool:
+        if isinstance(expression, ast.Constant):
+            return True
+        if isinstance(expression, ast.Name):
+            return expression.id in bool_bindings
+        if isinstance(expression, (ast.List, ast.Tuple)):
+            return all(
+                not isinstance(element, ast.Starred)
+                and _StraightLineShellScanner._is_inert_call_value(element, bool_bindings)
+                for element in expression.elts
+            )
+        return False
 
     @staticmethod
     def _identity_module(identity: str | None) -> str | None:
@@ -1025,15 +1509,20 @@ class _StraightLineShellScanner:
         if not (1 <= line_number <= len(self.lines) and end_line_number == line_number and 0 <= byte_start <= byte_end):
             return None
         line = self.lines[line_number - 1]
-        try:
-            encoded_line = line.encode("utf-8")
-            start_column = len(encoded_line[:byte_start].decode("utf-8"))
-            end_column = len(encoded_line[:byte_end].decode("utf-8"))
-        except UnicodeError:
+        start_column = self._byte_to_character_column(line, byte_start)
+        end_column = self._byte_to_character_column(line, byte_end)
+        if start_column is None or end_column is None:
             return None
         if end_column <= start_column:
             return None
         return line_number, start_column, end_column
+
+    @staticmethod
+    def _byte_to_character_column(line: str, byte_column: int) -> int | None:
+        try:
+            return len(line.encode("utf-8")[:byte_column].decode("utf-8"))
+        except UnicodeError:
+            return None
 
     def _append_candidate(self, candidate: PythonShellCandidate) -> None:
         key = (candidate.line_number, candidate.start_column, candidate.end_column, candidate.matched_pattern)
@@ -1042,8 +1531,14 @@ class _StraightLineShellScanner:
         self.candidates.append(candidate)
         self.candidate_keys.add(key)
 
-    @staticmethod
-    def _enforce_binding_limit(bindings: dict[str, bool], identities: dict[str, str]) -> None:
+    @classmethod
+    def _enforce_binding_limit(
+        cls,
+        bindings: dict[str, bool],
+        identities: dict[str, str],
+        poisoned_modules: set[str],
+    ) -> None:
         if len(bindings) + len(identities) > MAX_PYTHON_SHELL_BINDINGS:
+            cls._poison_known_modules(identities, poisoned_modules)
             bindings.clear()
             identities.clear()

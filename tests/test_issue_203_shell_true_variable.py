@@ -311,7 +311,7 @@ subprocess.run(["echo", "ok"], shell=True)
     assert matches[0].metadata["matched_pattern"] != "python_ast:named_shell_flag_is_true"
 
 
-def test_literal_and_named_call_on_one_line_keep_regex_ownership(make_skill):
+def test_literal_and_named_call_on_one_line_keep_distinct_occurrences(make_skill):
     skill = make_skill(
         {
             "scripts/main.py": """
@@ -327,8 +327,13 @@ subprocess.run("first", shell=True); subprocess.run("second", shell=enabled)
     analyzer.policy.rule_scoping.dedupe_duplicate_findings = False
     matches = _matches(analyzer, skill)
 
-    assert len(matches) == 1
-    assert matches[0].metadata["matched_pattern"] != "python_ast:named_shell_flag_is_true"
+    assert len(matches) == 2
+    assert len({match.id for match in matches}) == 2
+    assert {match.metadata["matched_pattern"] == "python_ast:named_shell_flag_is_true" for match in matches} == {
+        False,
+        True,
+    }
+    assert len({match.metadata["signature_match_start"] for match in matches}) == 2
 
 
 def test_example_path_uses_shared_signature_context(make_skill):
