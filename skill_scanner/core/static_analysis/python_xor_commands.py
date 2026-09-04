@@ -54,6 +54,9 @@ _SUBPROCESS_LITERAL_OPTIONS = {
             "process_group",
             "restore_signals",
             "start_new_session",
+            "stderr",
+            "stdin",
+            "stdout",
             "text",
             "umask",
             "universal_newlines",
@@ -70,6 +73,9 @@ _SUBPROCESS_LITERAL_OPTIONS = {
             "process_group",
             "restore_signals",
             "start_new_session",
+            "stderr",
+            "stdin",
+            "stdout",
             "text",
             "timeout",
             "umask",
@@ -89,12 +95,20 @@ _SUBPROCESS_LITERAL_OPTIONS = {
             "process_group",
             "restore_signals",
             "start_new_session",
+            "stderr",
+            "stdin",
+            "stdout",
             "text",
             "timeout",
             "umask",
             "universal_newlines",
         }
     ),
+}
+_SUBPROCESS_STREAM_OPTIONS = {
+    "stdin": frozenset({"DEVNULL", "PIPE"}),
+    "stdout": frozenset({"DEVNULL", "PIPE"}),
+    "stderr": frozenset({"DEVNULL", "PIPE", "STDOUT"}),
 }
 
 
@@ -213,6 +227,32 @@ def _is_literal_option(expression: ast.expr) -> bool:
             continue
         return False
     return True
+
+
+def _literal_option_truthiness(expression: ast.expr) -> bool | None:
+    """Return exact truthiness for the bounded literal option domain."""
+
+    if isinstance(expression, ast.Constant):
+        return bool(expression.value)
+    if isinstance(expression, (ast.List, ast.Tuple)) and not any(
+        isinstance(element, ast.Starred) for element in expression.elts
+    ):
+        return bool(expression.elts)
+    return None
+
+
+def _is_reviewed_stream_option(keyword: str, expression: ast.expr, facts: _ScopeFacts) -> bool:
+    """Accept only valid constants from an unmodified ``subprocess`` module."""
+
+    allowed_attributes = _SUBPROCESS_STREAM_OPTIONS.get(keyword)
+    return bool(
+        allowed_attributes is not None
+        and isinstance(expression, ast.Attribute)
+        and isinstance(expression.value, ast.Name)
+        and facts.identities.get(expression.value.id) == "module:subprocess"
+        and "subprocess" not in facts.poisoned_modules
+        and expression.attr in allowed_attributes
+    )
 
 
 def _definition_eager_nodes(
@@ -374,7 +414,7 @@ def _match_repeating_xor_decoder(function: ast.FunctionDef | ast.AsyncFunctionDe
         or len(function.name) > MAX_XOR_IDENTIFIER_CHARS
         or function.decorator_list
         or bool(getattr(function, "type_params", ()))
-        or function.returns is not None
+        or not _is_inert_expression(function.returns)
         or arguments.posonlyargs
         or len(arguments.args) != 1
         or arguments.vararg is not None
@@ -385,7 +425,7 @@ def _match_repeating_xor_decoder(function: ast.FunctionDef | ast.AsyncFunctionDe
     ):
         return None
     parameter = arguments.args[0]
-    if parameter.annotation is not None or len(parameter.arg) > MAX_XOR_IDENTIFIER_CHARS:
+    if not _is_inert_expression(parameter.annotation) or len(parameter.arg) > MAX_XOR_IDENTIFIER_CHARS:
         return None
 
     body = function.body
@@ -643,10 +683,24 @@ class _StraightLineXorScanner:
             keyword_names = [keyword.arg for keyword in call.keywords]
             if any(
                 keyword.arg not in ({"args", "shell"} | allowed_options)
-                or (keyword.arg not in {"args", "shell"} and not _is_literal_option(keyword.value))
+                or (
+                    keyword.arg in _SUBPROCESS_STREAM_OPTIONS
+                    and not _is_reviewed_stream_option(keyword.arg, keyword.value, facts)
+                )
+                or (
+                    keyword.arg not in ({"args", "shell"} | _SUBPROCESS_STREAM_OPTIONS.keys())
+                    and not _is_literal_option(keyword.value)
+                )
                 for keyword in call.keywords
             ) or len(keyword_names) != len(set(keyword_names)):
                 return False
+            if method_name == "run" and {"stdout", "stderr"} & set(keyword_names):
+                capture_output = next(
+                    (keyword.value for keyword in call.keywords if keyword.arg == "capture_output"),
+                    None,
+                )
+                if capture_output is not None and _literal_option_truthiness(capture_output) is not False:
+                    return False
             command_expression = self._single_command_argument(call)
             api_name = f"subprocess.{method_name}"
         else:

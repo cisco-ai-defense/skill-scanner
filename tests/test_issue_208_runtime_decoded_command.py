@@ -369,6 +369,102 @@ def test_decoder_accepts_commuted_xor_operands():
     assert [candidate.command for candidate in candidates] == [_COMMAND]
 
 
+@pytest.mark.parametrize("future_import", ["", "from __future__ import annotations\n"])
+def test_decoder_accepts_inert_parameter_and_return_annotations(future_import):
+    helper = """def _sk_dec(_x: bytes) -> str:
+    _k = b'M3z!\\x9cX.f'
+    return bytes(_c ^ _k[_i % len(_k)] for _i, _c in enumerate(_x)).decode('utf-8')"""
+
+    candidates = python_xor_commands.find_decoded_python_commands(future_import + _decoder_source(helper=helper))
+
+    assert [(candidate.command, candidate.api_name) for candidate in candidates] == [(_COMMAND, "subprocess.run")]
+
+
+@pytest.mark.parametrize("future_import", ["", "from __future__ import annotations\n"])
+@pytest.mark.parametrize(
+    "signature",
+    [
+        "def _sk_dec(_x: annotation()):",
+        "def _sk_dec(_x) -> annotation():",
+    ],
+)
+def test_decoder_rejects_effectful_parameter_and_return_annotations(future_import, signature):
+    helper = f"""{signature}
+    _k = b'M3z!\\x9cX.f'
+    return bytes(_c ^ _k[_i % len(_k)] for _i, _c in enumerate(_x)).decode('utf-8')"""
+
+    assert python_xor_commands.find_decoded_python_commands(future_import + _decoder_source(helper=helper)) == ()
+
+
+@pytest.mark.parametrize(
+    ("prefix", "call", "api_name"),
+    [
+        (
+            "import subprocess",
+            (
+                "subprocess.run(_sk_dec({ciphertext}), shell=True, stdin=subprocess.PIPE, "
+                "stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, capture_output=False)"
+            ),
+            "subprocess.run",
+        ),
+        (
+            "import subprocess as sp",
+            ("sp.call(_sk_dec({ciphertext}), shell=True, stdin=sp.DEVNULL, stdout=sp.PIPE, stderr=sp.STDOUT)"),
+            "subprocess.call",
+        ),
+        (
+            "import subprocess as sp\nfrom subprocess import Popen as launch",
+            ("launch(_sk_dec({ciphertext}), shell=True, stdin=sp.PIPE, stdout=sp.DEVNULL, stderr=sp.STDOUT)"),
+            "subprocess.Popen",
+        ),
+    ],
+)
+def test_decoder_accepts_reviewed_subprocess_stream_options(prefix, call, api_name):
+    candidates = python_xor_commands.find_decoded_python_commands(_decoder_source(prefix=prefix, call=call))
+
+    assert [(candidate.command, candidate.api_name) for candidate in candidates] == [(_COMMAND, api_name)]
+
+
+@pytest.mark.parametrize(
+    ("prefix", "option"),
+    [
+        ("other = None\nimport subprocess", "stdout=other.PIPE"),
+        ("import subprocess", "stdout=subprocess.UNKNOWN"),
+        ("import subprocess", "stdout=subprocess.constants.PIPE"),
+        ("import subprocess", "stdout=subprocess.PIPE()"),
+        ("import subprocess", "stdout=PIPE"),
+        ("import subprocess", "stdout=-1"),
+        ("import subprocess", "stdin=subprocess.STDOUT"),
+        ("import subprocess", "stdout=subprocess.STDOUT"),
+        ("import subprocess", "cwd=subprocess.PIPE"),
+        (
+            "from subprocess import run as launch\nimport subprocess as sp\nsp = replacement",
+            "stdout=sp.PIPE",
+        ),
+        (
+            "import subprocess as sp\nfrom subprocess import run as launch\nsp.PIPE = replacement",
+            "stdout=sp.PIPE",
+        ),
+        (
+            "import subprocess as sp\nfrom subprocess import run as launch\ndel sp.PIPE",
+            "stdout=sp.PIPE",
+        ),
+        (
+            "import subprocess as sp\nfrom subprocess import run as launch\nsetattr(sp, 'PIPE', replacement)",
+            "stdout=sp.PIPE",
+        ),
+        ("from subprocess import run as launch, PIPE", "stdout=PIPE"),
+        ("import subprocess", "capture_output=True, stdout=subprocess.PIPE"),
+        ("import subprocess", "capture_output=True, stderr=subprocess.DEVNULL"),
+    ],
+)
+def test_decoder_rejects_unresolved_or_incompatible_subprocess_stream_options(prefix, option):
+    sink = "launch" if "launch" in prefix else "subprocess.run"
+    call = f"{sink}(_sk_dec({{ciphertext}}), shell=True, {option})"
+
+    assert python_xor_commands.find_decoded_python_commands(_decoder_source(prefix=prefix, call=call)) == ()
+
+
 @pytest.mark.parametrize(
     "option",
     [
