@@ -102,6 +102,16 @@ def test_module_raise_of_alias_without_invocation_is_not_reported(make_skill) ->
     assert _eval_findings(make_skill, source) == []
 
 
+def test_direct_alias_invocation_in_raise_cause_is_detected(make_skill) -> None:
+    source = "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nraise RuntimeError from _runner(payload)\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+    assert findings[0].metadata["matched_pattern"] == _PATTERN
+
+
 def test_candidates_are_owned_by_their_canonical_rules(make_skill) -> None:
     source = """import builtins
 _runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))
