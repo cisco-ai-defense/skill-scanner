@@ -3,6 +3,9 @@
 
 """Regression coverage for constructed sensitive paths (issue #206)."""
 
+import ast
+import time
+
 import pytest
 
 from skill_scanner.core.analyzers import static as static_module
@@ -865,3 +868,374 @@ def test_oversized_source_is_ignored():
     source = "#" * (MAX_PYTHON_PATH_SOURCE_BYTES + 1)
 
     assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize(
+    "eager_escape",
+    [
+        "mutate(builtins)",
+        "with mutate(builtins):\n    pass",
+        "class C(mutate(builtins)):\n    pass",
+        "def f(value=mutate(builtins)):\n    pass",
+        "def f(value: mutate(builtins)):\n    pass",
+        "@mutate(builtins)\ndef f():\n    pass",
+        "with nullcontext(builtins) as helper:\n    helper.open = replacement",
+        "payload = {'runtime': builtins}",
+    ],
+    ids=[
+        "call-argument",
+        "with-context",
+        "class-base",
+        "function-default",
+        "function-annotation",
+        "decorator-factory",
+        "with-target",
+        "container",
+    ],
+)
+def test_eager_runtime_helper_escape_fails_closed(eager_escape):
+    source = f"import builtins\n{eager_escape}\npath='/etc/'+'passwd'\nopen(path)\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_runtime_helper_escape_preserves_an_earlier_read():
+    source = "path='/etc/'+'passwd'\nopen(path)\nimport builtins\nmutate(builtins)\n"
+
+    assert [candidate.line_number for candidate in find_constructed_sensitive_file_reads(source)] == [2]
+
+
+def test_immediate_lambda_runtime_mutation_fails_closed():
+    source = """\
+import builtins
+(lambda: setattr(builtins, 'open', replacement))()
+path = '/etc/' + 'passwd'
+open(path)
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize(
+    "callee",
+    [
+        "[(lambda: setattr(builtins, 'open', replacement))][0]",
+        "(lambda: setattr(builtins, 'open', replacement)).__call__",
+        "((lambda: setattr(builtins, 'open', replacement)) if enabled else noop)",
+    ],
+    ids=["subscript", "dunder-call", "conditional"],
+)
+def test_wrapped_immediate_lambda_runtime_mutation_fails_closed(callee):
+    source = f"import builtins\n{callee}()\npath='/etc/'+'passwd'\nopen(path)\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_immediate_lambda_parameter_shadow_does_not_escape_helper():
+    source = """\
+import builtins
+(lambda builtins: consume(builtins))(safe)
+path = '/etc/' + 'passwd'
+open(path)
+"""
+
+    assert [candidate.line_number for candidate in find_constructed_sensitive_file_reads(source)] == [4]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "builtins.__dict__['open'] = replacement",
+        "bi.__dict__['open'] = replacement",
+        "builtins.__dict__.update(open=replacement)",
+        "vars(builtins).update(open=replacement)",
+    ],
+    ids=["dict", "aliased-dict", "dict-update", "vars-update"],
+)
+def test_runtime_helper_mapping_mutation_fails_closed(mutation):
+    source = f"import builtins\nimport builtins as bi\n{mutation}\npath='/etc/'+'passwd'\nopen(path)\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_imported_builtins_mapping_fails_closed():
+    source = (
+        "from builtins import __dict__ as namespace\nnamespace['open']=replacement\npath='/etc/'+'passwd'\nopen(path)\n"
+    )
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize(
+    "setup",
+    [
+        "vars()['open']=replacement",
+        "locals()['open']=replacement",
+        "vars().update(open=replacement)",
+        "locals().__setitem__('open', replacement)",
+        "from builtins import vars as helper\nhelper()['open']=replacement",
+        "helper=vars\nhelper()['open']=replacement",
+        "helper=(vars,)[0]\nhelper()['open']=replacement",
+        "helper=(lambda: vars)()\nhelper()['open']=replacement",
+        "helper=vars if enabled else safe\nhelper()['open']=replacement",
+    ],
+    ids=[
+        "vars",
+        "locals",
+        "vars-update",
+        "locals-setitem",
+        "imported-vars",
+        "assigned-vars",
+        "tuple-alias",
+        "lambda-alias",
+        "conditional-alias",
+    ],
+)
+def test_runtime_namespace_mapping_mutation_fails_closed(setup):
+    source = f"{setup}\npath='/etc/'+'passwd'\nopen(path)\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize("shadow", ["globals=lambda: {}", "import plugin as globals"])
+def test_deleting_globals_shadow_fails_closed(shadow):
+    source = f"{shadow}\ndel globals\nglobals()['open']=replacement\npath='/etc/'+'passwd'\nopen(path)\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_augassign_address_effect_precedes_rhs_read():
+    source = """\
+import builtins
+values[setattr(builtins, 'open', replacement)] += open('/etc/' + 'passwd')
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_augassign_runtime_target_store_follows_rhs_read():
+    source = "import builtins\npath='/etc/'+'passwd'\nbuiltins.open += open(path)\n"
+
+    assert [candidate.line_number for candidate in find_constructed_sensitive_file_reads(source)] == [3]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """\
+import builtins as helper
+class Outer:
+    helper = object()
+    class Inner:
+        helper.open = replacement
+    path = '/etc/' + 'passwd'
+    handle = open(path)
+""",
+        """\
+class Outer:
+    globals = lambda: {}
+    class Inner:
+        globals()['open'] = replacement
+    path = '/etc/' + 'passwd'
+    handle = open(path)
+""",
+        """\
+import builtins
+class C:
+    global helper
+    helper = builtins
+helper.open = replacement
+path = '/etc/' + 'passwd'
+open(path)
+""",
+        """\
+class C:
+    global helper
+    import builtins as helper
+helper.open = replacement
+path = '/etc/' + 'passwd'
+open(path)
+""",
+        """\
+class C:
+    global open
+    open = replacement
+path = '/etc/' + 'passwd'
+open(path)
+""",
+        """\
+import builtins
+class C:
+    helper = builtins
+C.helper.open = replacement
+path = '/etc/' + 'passwd'
+open(path)
+""",
+        """\
+import builtins as helper
+class C:
+    helper = holder
+    del helper
+    helper.open = replacement
+    path = '/etc/' + 'passwd'
+    handle = open(path)
+""",
+        """\
+import builtins as helper
+class C:
+    helper = holder
+    [setattr(helper, 'open', replacement) for _ in (1,)]
+    path = '/etc/' + 'passwd'
+    handle = open(path)
+""",
+    ],
+    ids=[
+        "nested-class-shadow",
+        "nested-class-globals-shadow",
+        "global-alias-export",
+        "global-import-export",
+        "global-open-export",
+        "class-attribute-escape",
+        "class-delete-fallback",
+        "class-comprehension-fallback",
+    ],
+)
+def test_ambiguous_class_runtime_provenance_fails_closed(source):
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_inline_lambda_class_decorator_applies_after_class_body():
+    source = """\
+import builtins
+@(lambda cls: (setattr(builtins, 'open', replacement), cls)[1])
+class C:
+    path = '/etc/' + 'shadow'
+    handle = open(path)
+path = '/etc/' + 'passwd'
+open(path)
+"""
+
+    assert [candidate.line_number for candidate in find_constructed_sensitive_file_reads(source)] == [5]
+
+
+def test_inline_lambda_function_decorator_invalidates_delayed_body():
+    source = """\
+import builtins
+@(lambda function: (setattr(builtins, 'open', replacement), function)[1])
+def load():
+    path = '/etc/' + 'shadow'
+    return open(path)
+path = '/etc/' + 'passwd'
+open(path)
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize(
+    "decorator",
+    [
+        "[(lambda function: (setattr(builtins, 'open', replacement), function)[1])][0]",
+        "((lambda function: (setattr(builtins, 'open', replacement), function)[1]) if enabled else identity)",
+        "(decorator := (lambda function: (setattr(builtins, 'open', replacement), function)[1]))",
+        "((lambda: (lambda function: (setattr(builtins, 'open', replacement), function)[1]))())",
+    ],
+    ids=["subscript", "conditional", "walrus", "factory"],
+)
+def test_wrapped_lambda_decorator_invalidates_delayed_body(decorator):
+    source = f"import builtins\n@{decorator}\ndef load():\n    path='/etc/'+'passwd'\n    return open(path)\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize(
+    "header",
+    ["class C(Base):", "class C(metaclass=Meta):", "class C(**{'metaclass': Meta}):"],
+)
+def test_unreviewed_class_namespace_provider_fails_closed(header):
+    source = f"{header}\n    path='/etc/'+'passwd'\n    handle=open(path)\npath='/etc/'+'shadow'\nopen(path)\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize("import_position", ["before", "after"])
+def test_delayed_function_runtime_helper_alias_fails_closed(import_position):
+    definition = "def load():\n    helper.open=replacement\n    path='/etc/'+'passwd'\n    return open(path)"
+    import_line = "import builtins as helper"
+    source = f"{import_line}\n{definition}\n" if import_position == "before" else f"{definition}\n{import_line}\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize(
+    "compound",
+    [
+        "for helper in []:\n    pass",
+        "while False:\n    helper = safe",
+        "try:\n    pass\nexcept Exception as helper:\n    pass",
+        "match value:\n    case helper:\n        pass",
+    ],
+    ids=["empty-for", "false-while", "unused-handler", "nonmatching-case"],
+)
+def test_unsupported_conditional_runtime_helper_binding_fails_closed(compound):
+    source = f"import builtins as helper\n{compound}\nhelper.open=replacement\npath='/etc/'+'passwd'\nopen(path)\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_runtime_provenance_budget_exhaustion_voids_earlier_candidates(monkeypatch):
+    monkeypatch.setattr(sensitive_reads, "MAX_PYTHON_PATH_RUNTIME_PROVENANCE_WORK", 8)
+    source = "path='/etc/'+'passwd'\nopen(path)\nvalue=(1, 2, 3, 4, 5)\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_runtime_alias_edge_overflow_stops_before_scanning(monkeypatch):
+    monkeypatch.setattr(sensitive_reads, "MAX_PYTHON_PATH_BINDINGS", 1)
+
+    def fail_if_scanned(*_args, **_kwargs):
+        raise AssertionError("an exhausted provenance preflight must not scan")
+
+    monkeypatch.setattr(sensitive_reads._StraightLineSensitiveReadScanner, "scan", fail_if_scanned)
+
+    assert find_constructed_sensitive_file_reads("first=value\nsecond=value\n") == ()
+
+
+def test_runtime_budget_is_not_attached_to_shared_ast_singletons():
+    first = ast.parse("first + second")
+    second = ast.parse("third + fourth")
+
+    sensitive_reads._prepare_bounded_ast(first)
+    sensitive_reads._prepare_bounded_ast(second)
+    first_expression = first.body[0]
+    second_expression = second.body[0]
+
+    assert isinstance(first_expression, ast.Expr)
+    assert isinstance(second_expression, ast.Expr)
+    assert isinstance(first_expression.value, ast.BinOp)
+    assert isinstance(second_expression.value, ast.BinOp)
+    assert first_expression.value.op is second_expression.value.op
+    assert not hasattr(first_expression.value.op, sensitive_reads._RUNTIME_BUDGET_ATTR)
+
+
+def test_runtime_provenance_work_is_bounded_for_adversarial_aliases():
+    aliases = ["import builtins as helper0", *(f"helper{i}=helper{i - 1}" for i in range(1, 63))]
+    source = "\n".join(aliases) + "\n"
+    for depth in range(10):
+        source += "    " * depth + "with manager:\n"
+    indent = "    " * 10
+    source += indent + "values=(" + ",".join("0" for _ in range(20_000)) + ",)\n"
+    source += indent + "path='/etc/'+'passwd'\n" + indent + "open(path)\n"
+
+    started = time.monotonic()
+    candidates = find_constructed_sensitive_file_reads(source)
+
+    assert candidates == ()
+    assert time.monotonic() - started < 3
+
+
+def test_unrelated_name_aliases_do_not_consume_runtime_helper_limit():
+    aliases = "\n".join(f"name{i}=value{i}" for i in range(100))
+    source = aliases + "\npath='/etc/'+'passwd'\nopen(path)\n"
+
+    assert [candidate.line_number for candidate in find_constructed_sensitive_file_reads(source)] == [102]

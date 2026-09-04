@@ -39,6 +39,7 @@ MAX_PYTHON_PATH_VALUE_DEPTH = 24
 MAX_PYTHON_PATH_STRING_CHARS = 4_096
 MAX_PYTHON_PATH_JOIN_PARTS = 32
 MAX_PYTHON_PATH_RUNTIME_HELPER_ALIASES = 64
+MAX_PYTHON_PATH_RUNTIME_PROVENANCE_WORK = 250_000
 
 _READ_ONLY_MODES = frozenset({"r", "rb", "br", "rt", "tr"})
 _OPEN_KEYWORDS = frozenset({"buffering", "closefd", "encoding", "errors", "file", "mode", "newline", "opener"})
@@ -55,6 +56,27 @@ class PythonSensitiveFileReadCandidate:
     end_column: int
 
 
+@dataclass(slots=True)
+class _RuntimeProvenanceBudget:
+    remaining: int
+    possible_helpers: set[str]
+    exhausted: bool = False
+
+    def visit(self) -> bool:
+        if self.remaining <= 0:
+            self.exhausted = True
+            return False
+        self.remaining -= 1
+        return True
+
+    def is_exhausted(self) -> bool:
+        return self.exhausted
+
+
+_RUNTIME_BUDGET_ATTR = "_skill_scanner_runtime_budget"
+_AST_SINGLETON_TYPES = (ast.boolop, ast.cmpop, ast.expr_context, ast.operator, ast.unaryop)
+
+
 def find_constructed_sensitive_file_reads(
     source: str,
     filename: str = "<unknown>",
@@ -69,24 +91,83 @@ def find_constructed_sensitive_file_reads(
         tree = ast.parse(source, filename=filename)
     except (MemoryError, RecursionError, SyntaxError, UnicodeError, ValueError):
         return ()
-    if not _ast_is_bounded(tree):
+    runtime_budget = _prepare_bounded_ast(tree)
+    if runtime_budget is None or runtime_budget.is_exhausted():
         return ()
 
-    scanner = _StraightLineSensitiveReadScanner(source)
+    scanner = _StraightLineSensitiveReadScanner(source, runtime_budget)
     scanner.scan(tree)
+    if runtime_budget.is_exhausted():
+        return ()
     return tuple(scanner.candidates)
 
 
-def _ast_is_bounded(tree: ast.AST) -> bool:
+def _prepare_bounded_ast(tree: ast.AST) -> _RuntimeProvenanceBudget | None:
+    budget = _RuntimeProvenanceBudget(
+        MAX_PYTHON_PATH_RUNTIME_PROVENANCE_WORK,
+        {"__builtins__"},
+    )
+    alias_edges: dict[str, list[str]] = {}
+    edge_count = 0
     pending = [tree]
     count = 0
     while pending:
         node = pending.pop()
         count += 1
         if count > MAX_PYTHON_PATH_AST_NODES:
-            return False
+            return None
+        # CPython shares context/operator singleton instances across parses.
+        # Their owning expressions are charged, so leave these leaf nodes
+        # untagged rather than leaking one scan's budget into another.
+        if not isinstance(node, _AST_SINGLETON_TYPES):
+            setattr(node, _RUNTIME_BUDGET_ATTR, budget)
+        if isinstance(node, ast.Import):
+            budget.possible_helpers.update(
+                _bound_import_name(imported) for imported in node.names if imported.name == "builtins"
+            )
+        elif (
+            isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Name)
+            and all(isinstance(target, ast.Name) for target in node.targets)
+        ):
+            targets = [target.id for target in node.targets if isinstance(target, ast.Name)]
+            alias_edges.setdefault(node.value.id, []).extend(targets)
+            edge_count += len(targets)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and isinstance(node.value, ast.Name):
+            alias_edges.setdefault(node.value.id, []).append(node.target.id)
+            edge_count += 1
+        if (
+            edge_count > MAX_PYTHON_PATH_BINDINGS
+            or len(budget.possible_helpers) > MAX_PYTHON_PATH_RUNTIME_HELPER_ALIASES
+        ):
+            budget.exhausted = True
+            return budget
         pending.extend(ast.iter_child_nodes(node))
-    return True
+
+    pending_names = list(budget.possible_helpers)
+    for source_name in pending_names:
+        if not budget.visit():
+            return budget
+        for target_name in alias_edges.get(source_name, ()):
+            if target_name in budget.possible_helpers:
+                continue
+            if len(budget.possible_helpers) >= MAX_PYTHON_PATH_RUNTIME_HELPER_ALIASES:
+                budget.exhausted = True
+                return budget
+            budget.possible_helpers.add(target_name)
+            pending_names.append(target_name)
+    return budget
+
+
+def _visit_runtime_node(node: ast.AST) -> bool:
+    budget = getattr(node, _RUNTIME_BUDGET_ATTR, None)
+    return not isinstance(budget, _RuntimeProvenanceBudget) or budget.visit()
+
+
+def _possible_runtime_helpers(node: ast.AST, *, include_globals: bool = False) -> set[str]:
+    budget = getattr(node, _RUNTIME_BUDGET_ATTR, None)
+    names = set(budget.possible_helpers) if isinstance(budget, _RuntimeProvenanceBudget) else {"__builtins__"}
+    return names | ({"globals"} if include_globals else set())
 
 
 def _bounded_string(value: str) -> str | None:
@@ -171,6 +252,8 @@ def _node_binds_name(root: ast.AST, name: str) -> bool:
     pending = [root]
     while pending:
         node = pending.pop()
+        if not _visit_runtime_node(node):
+            return True
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             if node.name == name:
                 return True
@@ -219,6 +302,8 @@ def _target_may_replace_runtime_open(
     builtins_names: set[str],
     globals_is_builtin: bool,
 ) -> bool:
+    if not _visit_runtime_node(target):
+        return True
     if (
         isinstance(target, ast.Attribute)
         and target.attr == "open"
@@ -231,10 +316,25 @@ def _target_may_replace_runtime_open(
         if isinstance(receiver, ast.Name) and receiver.id in builtins_names:
             return True
         if (
+            isinstance(receiver, ast.Attribute)
+            and receiver.attr == "__dict__"
+            and isinstance(receiver.value, ast.Name)
+            and receiver.value.id in builtins_names
+        ):
+            return True
+        if (
             globals_is_builtin
             and isinstance(receiver, ast.Call)
             and isinstance(receiver.func, ast.Name)
             and receiver.func.id == "globals"
+            and not receiver.args
+            and not receiver.keywords
+        ):
+            return True
+        if (
+            isinstance(receiver, ast.Call)
+            and isinstance(receiver.func, ast.Name)
+            and receiver.func.id in {"locals", "vars"}
             and not receiver.args
             and not receiver.keywords
         ):
@@ -258,6 +358,33 @@ def _target_may_replace_runtime_open(
     return False
 
 
+def _augassign_target_evaluation_invalidates_runtime_open(
+    target: ast.AST,
+    builtins_names: set[str],
+    globals_is_builtin: bool,
+) -> bool:
+    """Inspect only the address computation that precedes an AugAssign RHS."""
+
+    if isinstance(target, ast.Name):
+        return False
+    # The reviewed runtime-open receivers themselves are inert; their final
+    # store happens after the RHS. A subscript index still runs first.
+    expressions: list[ast.AST]
+    if _target_may_replace_runtime_open(target, builtins_names, globals_is_builtin):
+        expressions = [target.slice] if isinstance(target, ast.Subscript) else []
+    elif isinstance(target, ast.Attribute):
+        expressions = [target.value]
+    elif isinstance(target, ast.Subscript):
+        expressions = [target.value, target.slice]
+    else:
+        expressions = [target]
+    return any(
+        _node_may_replace_runtime_open(expression, builtins_names, globals_is_builtin)
+        or _node_escapes_runtime_identity(expression, builtins_names, globals_is_builtin)
+        for expression in expressions
+    )
+
+
 def _node_may_replace_runtime_open(
     root: ast.AST,
     builtins_names: set[str],
@@ -268,6 +395,8 @@ def _node_may_replace_runtime_open(
     pending = [root]
     while pending:
         node = pending.pop()
+        if not _visit_runtime_node(node):
+            return True
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             # Definitions do not execute their bodies at the definition site.
             pending.extend(_definition_eager_nodes(node))
@@ -300,21 +429,6 @@ def _node_may_replace_runtime_open(
     return False
 
 
-def _node_imports_runtime_helper(root: ast.AST) -> bool:
-    """Find eager ``builtins`` imports inside an unsupported compound."""
-
-    pending = [root]
-    while pending:
-        node = pending.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            pending.extend(_definition_eager_nodes(node))
-            continue
-        if isinstance(node, ast.Import) and any(imported.name == "builtins" for imported in node.names):
-            return True
-        pending.extend(ast.iter_child_nodes(node))
-    return False
-
-
 def _assigned_runtime_helper_names(statement: ast.stmt, builtins_names: set[str]) -> tuple[str, ...]:
     """Return simple names directly assigned a reviewed builtins identity."""
 
@@ -334,12 +448,53 @@ def _assigned_runtime_helper_names(statement: ast.stmt, builtins_names: set[str]
     return ()
 
 
+def _lambda_runtime_helpers(node: ast.Lambda, builtins_names: set[str]) -> set[str]:
+    """Discard helper names local to an immediately invoked lambda."""
+
+    local_names = {
+        argument.arg
+        for argument in (
+            *node.args.posonlyargs,
+            *node.args.args,
+            *node.args.kwonlyargs,
+            *([node.args.vararg] if node.args.vararg is not None else []),
+            *([node.args.kwarg] if node.args.kwarg is not None else []),
+        )
+    }
+    local_names.update(name for name in builtins_names if _node_binds_name(node.body, name))
+    return builtins_names - local_names
+
+
+def _nested_lambdas_load_runtime_helper(root: ast.AST, builtins_names: set[str]) -> bool:
+    """Inspect lambdas selected through an eager callable/decorator expression."""
+
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if not _visit_runtime_node(node):
+            return True
+        if isinstance(node, ast.Lambda):
+            lambda_names = _lambda_runtime_helpers(node, builtins_names)
+            if _node_loads_runtime_helper(node.body, lambda_names):
+                return True
+            pending.extend(_definition_eager_nodes(node))
+            pending.append(node.body)
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+    return False
+
+
 def _node_loads_runtime_helper(root: ast.AST, builtins_names: set[str]) -> bool:
     """Return whether eager evaluation loads a reviewed builtins identity."""
 
     pending = [root]
     while pending:
         node = pending.pop()
+        if not _visit_runtime_node(node):
+            return True
+        if isinstance(node, ast.Call):
+            if _nested_lambdas_load_runtime_helper(node.func, builtins_names):
+                return True
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             pending.extend(_definition_eager_nodes(node))
             continue
@@ -349,25 +504,26 @@ def _node_loads_runtime_helper(root: ast.AST, builtins_names: set[str]) -> bool:
     return False
 
 
-def _node_may_bind_loaded_runtime_helper(root: ast.AST, builtins_names: set[str]) -> bool:
-    """Find an eager named binding alongside a loaded helper identity."""
+def _node_escapes_runtime_identity(
+    root: ast.AST,
+    builtins_names: set[str],
+    globals_is_builtin: bool,
+) -> bool:
+    identity_names = builtins_names | {"locals", "vars"}
+    if globals_is_builtin:
+        identity_names.add("globals")
+    return _node_loads_runtime_helper(root, identity_names)
 
-    pending = [root]
-    has_named_binding = False
-    has_runtime_helper_load = False
-    while pending:
-        node = pending.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            pending.extend(_definition_eager_nodes(node))
-            continue
-        has_named_binding = has_named_binding or isinstance(node, ast.NamedExpr)
-        has_runtime_helper_load = has_runtime_helper_load or (
-            isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in builtins_names
-        )
-        if has_named_binding and has_runtime_helper_load:
-            return True
-        pending.extend(ast.iter_child_nodes(node))
-    return False
+
+def _decorator_application_escapes_runtime_helper(
+    statement: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+    builtins_names: set[str],
+    globals_is_builtin: bool,
+) -> bool:
+    """Recognize effects of a directly expressed lambda decorator."""
+
+    identity_names = builtins_names | ({"globals"} if globals_is_builtin else set())
+    return any(_nested_lambdas_load_runtime_helper(decorator, identity_names) for decorator in statement.decorator_list)
 
 
 def _advance_runtime_helper_identities(
@@ -390,6 +546,11 @@ def _advance_runtime_helper_identities(
                 globals_is_builtin = False
         return globals_is_builtin, True
     if isinstance(statement, ast.ImportFrom):
+        if statement.module == "builtins" and any(
+            imported.name in {"__dict__", "globals", "locals", "vars"} for imported in statement.names
+        ):
+            builtins_names.clear()
+            return False, False
         if any(imported.name == "*" for imported in statement.names):
             builtins_names.clear()
             return False, True
@@ -400,17 +561,21 @@ def _advance_runtime_helper_identities(
                 globals_is_builtin = False
         return globals_is_builtin, True
 
-    if _node_may_bind_loaded_runtime_helper(statement, builtins_names):
+    if isinstance(statement, ast.Delete) and (
+        _node_binds_name(statement, "globals") or any(_node_binds_name(statement, name) for name in builtins_names)
+    ):
         builtins_names.clear()
         return False, False
-
     assigned_runtime_helpers = _assigned_runtime_helper_names(statement, builtins_names)
-    assignment_value = statement.value if isinstance(statement, (ast.Assign, ast.AnnAssign)) else None
-    if (
-        assignment_value is not None
-        and not assigned_runtime_helpers
-        and _node_loads_runtime_helper(assignment_value, builtins_names)
-    ):
+    if assigned_runtime_helpers:
+        unsupported_load = isinstance(statement, ast.AnnAssign) and _node_escapes_runtime_identity(
+            statement.annotation,
+            builtins_names,
+            globals_is_builtin,
+        )
+    else:
+        unsupported_load = _node_escapes_runtime_identity(statement, builtins_names, globals_is_builtin)
+    if unsupported_load:
         builtins_names.clear()
         return False, False
     for builtins_name in tuple(builtins_names):
@@ -434,6 +599,36 @@ def _scope_binds_open(body: list[ast.stmt]) -> bool:
     return any(_node_binds_name(statement, "open") for statement in body)
 
 
+def _class_body_has_runtime_provenance_hazard(body: list[ast.stmt]) -> bool:
+    """Fail closed when class-namespace flow can escape or hide identities."""
+
+    if not body:
+        return False
+    identity_names = _possible_runtime_helpers(body[0], include_globals=True)
+    if any(
+        not isinstance(statement, (ast.Global, ast.Nonlocal))
+        and any(_node_binds_name(statement, name) for name in identity_names)
+        for statement in body
+    ):
+        return True
+    pending: list[ast.AST] = list(body)
+    declares_external_open = False
+    while pending:
+        node = pending.pop()
+        if not _visit_runtime_node(node):
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(node, (ast.Global, ast.Nonlocal)) and "open" in node.names:
+            declares_external_open = True
+            break
+        pending.extend(ast.iter_child_nodes(node))
+    return declares_external_open and any(
+        not isinstance(statement, (ast.Global, ast.Nonlocal)) and _node_binds_name(statement, "open")
+        for statement in body
+    )
+
+
 def _scope_may_shadow_open(body: list[ast.stmt]) -> bool:
     """Return whether a scope can stop resolving the runtime builtin ``open``."""
 
@@ -455,6 +650,10 @@ def _invalidate_runtime_helper_bindings(
     return globals_is_builtin
 
 
+def _class_namespace_is_unreviewed(statement: ast.ClassDef) -> bool:
+    return bool(statement.bases) or any(keyword.arg in {None, "metaclass"} for keyword in statement.keywords)
+
+
 def _runtime_open_state_before_child(
     statement: ast.stmt,
     builtins_names: set[str],
@@ -468,9 +667,11 @@ def _runtime_open_state_before_child(
     namespace_open_bound = False
     if isinstance(statement, ast.ClassDef):
         eager_nodes = _definition_eager_nodes(statement)
-        runtime_open_unavailable = any(
-            _node_may_replace_runtime_open(node, child_names, child_globals_is_builtin) for node in eager_nodes
-        ) or any(_node_may_bind_loaded_runtime_helper(node, child_names) for node in eager_nodes)
+        runtime_open_unavailable = (
+            _class_namespace_is_unreviewed(statement)
+            or any(_node_may_replace_runtime_open(node, child_names, child_globals_is_builtin) for node in eager_nodes)
+            or any(_node_escapes_runtime_identity(node, child_names, child_globals_is_builtin) for node in eager_nodes)
+        )
         namespace_open_bound = any(_node_binds_name(node, "open") for node in eager_nodes)
         child_globals_is_builtin = _invalidate_runtime_helper_bindings(
             eager_nodes,
@@ -482,7 +683,7 @@ def _runtime_open_state_before_child(
             statement.test,
             child_names,
             child_globals_is_builtin,
-        ) or _node_may_bind_loaded_runtime_helper(statement.test, child_names)
+        ) or _node_escapes_runtime_identity(statement.test, child_names, child_globals_is_builtin)
         namespace_open_bound = _node_binds_name(statement.test, "open")
         child_globals_is_builtin = _invalidate_runtime_helper_bindings(
             (statement.test,),
@@ -498,7 +699,11 @@ def _runtime_open_state_before_child(
                     child_names,
                     child_globals_is_builtin,
                 )
-                or _node_may_bind_loaded_runtime_helper(item.context_expr, child_names)
+                or _node_escapes_runtime_identity(
+                    item.context_expr,
+                    child_names,
+                    child_globals_is_builtin,
+                )
             )
             namespace_open_bound = namespace_open_bound or _node_binds_name(item.context_expr, "open")
             child_globals_is_builtin = _invalidate_runtime_helper_bindings(
@@ -508,10 +713,18 @@ def _runtime_open_state_before_child(
             )
             if item.optional_vars is None:
                 continue
-            runtime_open_unavailable = runtime_open_unavailable or _target_may_replace_runtime_open(
-                item.optional_vars,
-                child_names,
-                child_globals_is_builtin,
+            runtime_open_unavailable = (
+                runtime_open_unavailable
+                or _target_may_replace_runtime_open(
+                    item.optional_vars,
+                    child_names,
+                    child_globals_is_builtin,
+                )
+                or _node_escapes_runtime_identity(
+                    item.optional_vars,
+                    child_names,
+                    child_globals_is_builtin,
+                )
             )
             namespace_open_bound = namespace_open_bound or _node_binds_name(item.optional_vars, "open")
             child_globals_is_builtin = _invalidate_runtime_helper_bindings(
@@ -539,7 +752,7 @@ def _summarize_runtime_open_effects(
             eager_nodes = _definition_eager_nodes(statement)
             if any(_node_may_replace_runtime_open(node, builtins_names, globals_is_builtin) for node in eager_nodes):
                 return True, builtins_names, globals_is_builtin, True
-            if any(_node_may_bind_loaded_runtime_helper(node, builtins_names) for node in eager_nodes):
+            if any(_node_escapes_runtime_identity(node, builtins_names, globals_is_builtin) for node in eager_nodes):
                 return False, set(), False, False
             class_names = set(builtins_names)
             class_globals_is_builtin = globals_is_builtin
@@ -556,6 +769,14 @@ def _summarize_runtime_open_effects(
             )
             if replaced or not complete:
                 return replaced, builtins_names, globals_is_builtin, complete
+            if _class_namespace_is_unreviewed(statement) or _class_body_has_runtime_provenance_hazard(statement.body):
+                return False, set(), False, False
+            if _decorator_application_escapes_runtime_helper(
+                statement,
+                builtins_names,
+                globals_is_builtin,
+            ):
+                return False, set(), False, False
             builtins_names.discard(statement.name)
             if statement.name == "globals":
                 globals_is_builtin = False
@@ -564,7 +785,7 @@ def _summarize_runtime_open_effects(
         if isinstance(statement, ast.If):
             if _node_may_replace_runtime_open(statement.test, builtins_names, globals_is_builtin):
                 return True, builtins_names, globals_is_builtin, True
-            if _node_may_bind_loaded_runtime_helper(statement.test, builtins_names):
+            if _node_escapes_runtime_identity(statement.test, builtins_names, globals_is_builtin):
                 return False, set(), False, False
             branch_names = set(builtins_names)
             branch_globals_is_builtin = _invalidate_runtime_helper_bindings(
@@ -601,7 +822,11 @@ def _summarize_runtime_open_effects(
             for item in statement.items:
                 if _node_may_replace_runtime_open(item.context_expr, builtins_names, globals_is_builtin):
                     return True, builtins_names, globals_is_builtin, True
-                if _node_may_bind_loaded_runtime_helper(item.context_expr, builtins_names):
+                if _node_escapes_runtime_identity(
+                    item.context_expr,
+                    builtins_names,
+                    globals_is_builtin,
+                ):
                     return False, set(), False, False
                 globals_is_builtin = _invalidate_runtime_helper_bindings(
                     (item.context_expr,),
@@ -616,6 +841,12 @@ def _summarize_runtime_open_effects(
                     globals_is_builtin,
                 ):
                     return True, builtins_names, globals_is_builtin, True
+                if _node_escapes_runtime_identity(
+                    item.optional_vars,
+                    builtins_names,
+                    globals_is_builtin,
+                ):
+                    return False, set(), False, False
                 globals_is_builtin = _invalidate_runtime_helper_bindings(
                     (item.optional_vars,),
                     builtins_names,
@@ -632,7 +863,10 @@ def _summarize_runtime_open_effects(
             continue
 
         if isinstance(statement, (ast.For, ast.AsyncFor, ast.While, ast.Try, ast.TryStar, ast.Match)) and (
-            _node_imports_runtime_helper(statement) or _node_loads_runtime_helper(statement, builtins_names)
+            _node_escapes_runtime_identity(statement, builtins_names, globals_is_builtin)
+            or any(
+                _node_binds_name(statement, name) for name in _possible_runtime_helpers(statement, include_globals=True)
+            )
         ):
             # Helper identities can cross iterations and exception edges.
             # This rule does not interpret those flows, so fail closed.
@@ -640,6 +874,14 @@ def _summarize_runtime_open_effects(
 
         if _node_may_replace_runtime_open(statement, builtins_names, globals_is_builtin):
             return True, builtins_names, globals_is_builtin, True
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+            _decorator_application_escapes_runtime_helper(
+                statement,
+                builtins_names,
+                globals_is_builtin,
+            )
+        ):
+            return False, set(), False, False
         globals_is_builtin, identities_complete = _advance_runtime_helper_identities(
             statement,
             builtins_names,
@@ -651,9 +893,10 @@ def _summarize_runtime_open_effects(
 
 
 def _scope_may_replace_runtime_open(body: list[ast.stmt]) -> bool:
+    builtins_names = _possible_runtime_helpers(body[0]) if body else {"__builtins__"}
     replaced, _, _, complete = _summarize_runtime_open_effects(
         body,
-        {"__builtins__"},
+        builtins_names,
         True,
     )
     return replaced or not complete
@@ -694,10 +937,11 @@ def _is_direct_os_path_join(node: ast.Call) -> bool:
 
 
 class _StraightLineSensitiveReadScanner:
-    def __init__(self, source: str) -> None:
+    def __init__(self, source: str, runtime_budget: _RuntimeProvenanceBudget) -> None:
         self.lines = source.split("\n")
         self.candidates: list[PythonSensitiveFileReadCandidate] = []
         self.candidate_lines: set[int] = set()
+        self.runtime_budget = runtime_budget
 
     def scan(self, tree: ast.Module) -> None:
         # Module code executes eagerly, so an early call can still resolve the
@@ -732,7 +976,11 @@ class _StraightLineSensitiveReadScanner:
         eager_lexical_open_available = (
             builtin_open if eager_lexical_builtin_open is None else eager_lexical_builtin_open
         )
-        builtins_names = set(initial_runtime_helpers) if initial_runtime_helpers is not None else {"__builtins__"}
+        builtins_names = (
+            set(initial_runtime_helpers)
+            if initial_runtime_helpers is not None
+            else set(self.runtime_budget.possible_helpers)
+        )
         globals_is_builtin = initial_globals_is_builtin
         pending_runtime_open_invalidation = False
         external_names = {
@@ -756,7 +1004,27 @@ class _StraightLineSensitiveReadScanner:
                 eager_lexical_open_available = False
                 pending_runtime_open_invalidation = False
 
-            statement_binds_open = _node_binds_name(statement, "open")
+            statement_binds_open = not isinstance(statement, (ast.Global, ast.Nonlocal)) and _node_binds_name(
+                statement,
+                "open",
+            )
+            exact_class_helper = (
+                isinstance(statement, ast.Import)
+                and any(imported.name == "builtins" for imported in statement.names)
+                or bool(_assigned_runtime_helper_names(statement, builtins_names))
+            )
+            class_identity_diverges = (
+                class_scope
+                and not isinstance(
+                    statement,
+                    (ast.Global, ast.Nonlocal),
+                )
+                and not exact_class_helper
+                and any(
+                    _node_binds_name(statement, name)
+                    for name in _possible_runtime_helpers(statement, include_globals=True)
+                )
+            )
             statement_runtime_helpers = set(builtins_names)
             statement_globals_is_builtin = globals_is_builtin
             (
@@ -780,6 +1048,12 @@ class _StraightLineSensitiveReadScanner:
                 # The statement's supported reads happen before assignment
                 # targets and child-body effects. Delayed code can observe the
                 # mutation, while the current statement keeps its prior value.
+                delayed_open_available = False
+                pending_runtime_open_invalidation = True
+            if class_identity_diverges:
+                # Methods, nested classes, and comprehensions skip this class
+                # namespace. A local shadow therefore makes the shared runtime
+                # helper provenance ambiguous from the following statement.
                 delayed_open_available = False
                 pending_runtime_open_invalidation = True
 
@@ -924,6 +1198,14 @@ class _StraightLineSensitiveReadScanner:
                 continue
 
             if isinstance(statement, ast.AugAssign):
+                if _augassign_target_evaluation_invalidates_runtime_open(
+                    statement.target,
+                    statement_runtime_helpers,
+                    statement_globals_is_builtin,
+                ):
+                    open_available = False
+                    delayed_open_available = False
+                    eager_lexical_open_available = False
                 if self._record_direct_open(statement.value, bindings, os_available, open_available):
                     bindings.clear()
                     os_available = False
@@ -978,7 +1260,11 @@ class _StraightLineSensitiveReadScanner:
                         item.context_expr,
                         with_runtime_helpers,
                         with_globals_is_builtin,
-                    ) or _node_may_bind_loaded_runtime_helper(item.context_expr, with_runtime_helpers)
+                    ) or _node_escapes_runtime_identity(
+                        item.context_expr,
+                        with_runtime_helpers,
+                        with_globals_is_builtin,
+                    )
                     if context_invalidates_runtime_open:
                         open_available = False
                         delayed_open_available = False
@@ -993,6 +1279,14 @@ class _StraightLineSensitiveReadScanner:
                     if item.optional_vars is None:
                         continue
                     if _target_may_replace_runtime_open(
+                        item.optional_vars,
+                        with_runtime_helpers,
+                        with_globals_is_builtin,
+                    ):
+                        open_available = False
+                        delayed_open_available = False
+                        eager_lexical_open_available = False
+                    if _node_escapes_runtime_identity(
                         item.optional_vars,
                         with_runtime_helpers,
                         with_globals_is_builtin,
