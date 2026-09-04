@@ -86,6 +86,22 @@ def test_direct_alias_invocation_in_assignment_value_is_detected(make_skill, inv
     assert findings[0].metadata["matched_pattern"] == _PATTERN
 
 
+def test_direct_alias_invocation_in_module_raise_is_detected(make_skill) -> None:
+    source = "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nraise _runner(payload)\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+    assert findings[0].metadata["matched_pattern"] == _PATTERN
+
+
+def test_module_raise_of_alias_without_invocation_is_not_reported(make_skill) -> None:
+    source = "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nraise _runner\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
 def test_candidates_are_owned_by_their_canonical_rules(make_skill) -> None:
     source = """import builtins
 _runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))

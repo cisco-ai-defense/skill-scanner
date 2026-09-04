@@ -1110,6 +1110,12 @@ class _StraightLineShellScanner:
                 state.clear()
             return
 
+        if isinstance(statement, ast.Raise):
+            if statement.exc is not None:
+                self._record_direct_dynamic_exec_call(statement.exc, state)
+            state.clear()
+            return
+
         if isinstance(statement, ast.Pass):
             return
 
