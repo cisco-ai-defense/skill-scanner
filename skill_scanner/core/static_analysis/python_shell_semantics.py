@@ -1077,16 +1077,28 @@ class _StraightLineShellScanner:
                 state.clear()
                 return
 
+            if self._record_direct_dynamic_exec_call(statement.value, state):
+                state.clear()
+                return
+
             dynamic_exec = _is_dynamic_exec_lookup(statement.value, state)
             for name in _bound_names(statement.value):
                 state.rebind(name)
             if not dynamic_exec and not _is_side_effect_free(statement.value):
                 state.exec_names.clear()
-                state.builtins_names.difference_update(_loaded_names(statement.value))
+                loaded_names = _loaded_names(statement.value)
+                if loaded_names & state.builtins_names:
+                    state.builtins_names.clear()
             for name in targets:
                 state.rebind(name)
                 if dynamic_exec and len(name) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS:
                     state.exec_names.add(name)
+            return
+
+        if isinstance(statement, ast.AnnAssign):
+            if statement.value is not None:
+                self._record_direct_dynamic_exec_call(statement.value, state)
+            state.clear()
             return
 
         if isinstance(statement, ast.Expr):
@@ -1104,6 +1116,16 @@ class _StraightLineShellScanner:
         # No claims cross definitions, control flow, annotations, deletion,
         # mutation, or another unsupported execution boundary.
         state.clear()
+
+    def _record_direct_dynamic_exec_call(self, expression: ast.expr, state: _DynamicExecState) -> bool:
+        if (
+            not isinstance(expression, ast.Call)
+            or not isinstance(expression.func, ast.Name)
+            or expression.func.id not in state.exec_names
+        ):
+            return False
+        self._record_dynamic_exec(expression.func)
+        return True
 
     def _scan_assignment_target(
         self,
