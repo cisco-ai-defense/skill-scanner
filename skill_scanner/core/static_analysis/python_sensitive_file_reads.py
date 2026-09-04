@@ -179,19 +179,55 @@ def _node_binds_name(root: ast.AST, name: str) -> bool:
     return False
 
 
-def _target_may_replace_runtime_open(target: ast.AST) -> bool:
-    if isinstance(target, ast.Attribute) and target.attr == "open":
+def _target_may_replace_runtime_open(
+    target: ast.AST,
+    builtins_names: set[str],
+    globals_is_builtin: bool,
+) -> bool:
+    if (
+        isinstance(target, ast.Attribute)
+        and target.attr == "open"
+        and isinstance(target.value, ast.Name)
+        and target.value.id in builtins_names
+    ):
         return True
     if isinstance(target, ast.Subscript) and isinstance(target.slice, ast.Constant) and target.slice.value == "open":
-        return True
+        receiver = target.value
+        if isinstance(receiver, ast.Name) and receiver.id in builtins_names:
+            return True
+        if (
+            globals_is_builtin
+            and isinstance(receiver, ast.Call)
+            and isinstance(receiver.func, ast.Name)
+            and receiver.func.id == "globals"
+            and not receiver.args
+            and not receiver.keywords
+        ):
+            return True
+        if (
+            isinstance(receiver, ast.Call)
+            and isinstance(receiver.func, ast.Name)
+            and receiver.func.id == "vars"
+            and len(receiver.args) == 1
+            and not receiver.keywords
+            and isinstance(receiver.args[0], ast.Name)
+            and receiver.args[0].id in builtins_names
+        ):
+            return True
     if isinstance(target, (ast.List, ast.Tuple)):
-        return any(_target_may_replace_runtime_open(element) for element in target.elts)
+        return any(
+            _target_may_replace_runtime_open(element, builtins_names, globals_is_builtin) for element in target.elts
+        )
     if isinstance(target, ast.Starred):
-        return _target_may_replace_runtime_open(target.value)
+        return _target_may_replace_runtime_open(target.value, builtins_names, globals_is_builtin)
     return False
 
 
-def _node_may_replace_runtime_open(root: ast.AST) -> bool:
+def _node_may_replace_runtime_open(
+    root: ast.AST,
+    builtins_names: set[str],
+    globals_is_builtin: bool,
+) -> bool:
     """Recognize explicit global/builtin ``open`` replacement syntax."""
 
     pending = [root]
@@ -200,19 +236,26 @@ def _node_may_replace_runtime_open(root: ast.AST) -> bool:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             # Definitions do not execute their bodies at the definition site.
             continue
-        if isinstance(node, ast.Assign) and any(_target_may_replace_runtime_open(target) for target in node.targets):
-            return True
-        if isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and _target_may_replace_runtime_open(
-            node.target
+        if isinstance(node, ast.Assign) and any(
+            _target_may_replace_runtime_open(target, builtins_names, globals_is_builtin) for target in node.targets
         ):
             return True
-        if isinstance(node, ast.Delete) and any(_target_may_replace_runtime_open(target) for target in node.targets):
+        if isinstance(
+            node,
+            (ast.AnnAssign, ast.AugAssign, ast.NamedExpr),
+        ) and _target_may_replace_runtime_open(node.target, builtins_names, globals_is_builtin):
+            return True
+        if isinstance(node, ast.Delete) and any(
+            _target_may_replace_runtime_open(target, builtins_names, globals_is_builtin) for target in node.targets
+        ):
             return True
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
             and node.func.id in {"delattr", "setattr"}
             and len(node.args) >= 2
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id in builtins_names
             and isinstance(node.args[1], ast.Constant)
             and node.args[1].value == "open"
         ):
@@ -221,12 +264,57 @@ def _node_may_replace_runtime_open(root: ast.AST) -> bool:
     return False
 
 
+def _advance_runtime_helper_identities(
+    statement: ast.stmt,
+    builtins_names: set[str],
+    globals_is_builtin: bool,
+) -> bool:
+    """Update only source-ordered identities used to validate open mutation."""
+
+    if isinstance(statement, ast.Import):
+        for imported in statement.names:
+            local_name = _bound_import_name(imported)
+            builtins_names.discard(local_name)
+            if imported.name == "builtins":
+                builtins_names.add(local_name)
+            if local_name == "globals":
+                globals_is_builtin = False
+        return globals_is_builtin
+    if isinstance(statement, ast.ImportFrom):
+        if any(imported.name == "*" for imported in statement.names):
+            builtins_names.clear()
+            return False
+        for imported in statement.names:
+            local_name = imported.asname or imported.name
+            builtins_names.discard(local_name)
+            if local_name == "globals":
+                globals_is_builtin = False
+        return globals_is_builtin
+
+    for builtins_name in tuple(builtins_names):
+        if _node_binds_name(statement, builtins_name):
+            builtins_names.discard(builtins_name)
+    if globals_is_builtin and _node_binds_name(statement, "globals"):
+        return False
+    return globals_is_builtin
+
+
 def _scope_may_shadow_open(body: list[ast.stmt]) -> bool:
-    return any(_node_binds_name(statement, "open") or _node_may_replace_runtime_open(statement) for statement in body)
+    return any(_node_binds_name(statement, "open") for statement in body) or _scope_may_replace_runtime_open(body)
 
 
 def _scope_may_replace_runtime_open(body: list[ast.stmt]) -> bool:
-    return any(_node_may_replace_runtime_open(statement) for statement in body)
+    builtins_names = {"__builtins__"}
+    globals_is_builtin = True
+    for statement in body:
+        if _node_may_replace_runtime_open(statement, builtins_names, globals_is_builtin):
+            return True
+        globals_is_builtin = _advance_runtime_helper_identities(
+            statement,
+            builtins_names,
+            globals_is_builtin,
+        )
+    return False
 
 
 def _function_can_use_builtin_open(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -296,6 +384,8 @@ class _StraightLineSensitiveReadScanner:
         os_available = False
         open_available = builtin_open
         delayed_open_available = delayed_builtin_open
+        builtins_names = {"__builtins__"}
+        globals_is_builtin = True
         external_names = {
             name for statement in body if isinstance(statement, (ast.Global, ast.Nonlocal)) for name in statement.names
         }
@@ -304,9 +394,14 @@ class _StraightLineSensitiveReadScanner:
             if len(self.candidates) >= MAX_PYTHON_PATH_CANDIDATES:
                 return
 
-            if _node_may_replace_runtime_open(statement):
+            if _node_may_replace_runtime_open(statement, builtins_names, globals_is_builtin):
                 open_available = False
                 delayed_open_available = False
+            globals_is_builtin = _advance_runtime_helper_identities(
+                statement,
+                builtins_names,
+                globals_is_builtin,
+            )
 
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 # Delayed scopes receive no path or import facts. The only

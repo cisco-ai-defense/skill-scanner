@@ -244,6 +244,26 @@ def test_explicit_runtime_open_replacement_invalidates_builtin(make_skill, repla
     assert _matches(StaticAnalyzer(use_yara=False), skill) == []
 
 
+def test_unrelated_open_attribute_does_not_disable_builtin_detection(make_skill):
+    source = "settings.open = False\npath='/etc/'+'passwd'\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 3
+
+
+def test_shadowed_globals_helper_does_not_disable_builtin_detection(make_skill):
+    source = "globals=lambda: {}\nglobals()['open']=safe\npath='/etc/'+'passwd'\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 4
+
+
 def test_pathlib_and_purepath_are_out_of_scope(make_skill):
     skill = make_skill(
         {
