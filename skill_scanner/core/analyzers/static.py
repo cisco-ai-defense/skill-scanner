@@ -21,11 +21,9 @@ Static pattern analyzer for detecting security vulnerabilities.
 import ast
 import configparser
 import hashlib
-import io
 import logging
 import pickletools
 import re
-import tokenize
 import tomllib
 import unicodedata
 from collections.abc import Iterator
@@ -60,7 +58,7 @@ from ...core.rules.yara_behavior_context import classify_yara_behavior_context
 from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
 from ...core.static_analysis.comment_stripping import comment_stripped_lines
-from ...core.static_analysis.python_shell_semantics import find_named_shell_true_calls
+from ...core.static_analysis.python_shell_semantics import find_python_shell_candidates
 from ...core.static_analysis.url_classifier import classify_url, extract_urls
 from ...data import DATA_DIR
 from ...threats.threats import ThreatMapping
@@ -1963,7 +1961,7 @@ class StaticAnalyzer(BaseAnalyzer):
 
             is_doc = self._is_doc_file(skill_file.relative_path)
             scan_context = SignatureScanContext(content)
-            named_shell_candidates = None
+            python_shell_candidates = None
 
             for rule in rules:
                 # Skip rules scoped out of documentation files
@@ -1979,10 +1977,10 @@ class StaticAnalyzer(BaseAnalyzer):
                     and skill_file.file_type == "python"
                     and self._is_rule_enabled(rule.id)
                 ):
-                    if named_shell_candidates is None:
-                        named_shell_candidates = find_named_shell_true_calls(content)
+                    if python_shell_candidates is None:
+                        python_shell_candidates = find_python_shell_candidates(content)
                     regex_match_lines = {match.get("line_number") for match in matches}
-                    for candidate in named_shell_candidates:
+                    for candidate in python_shell_candidates:
                         if candidate.line_number in regex_match_lines:
                             continue
                         line = scan_context.lines[candidate.line_number - 1]
@@ -2005,7 +2003,7 @@ class StaticAnalyzer(BaseAnalyzer):
                                 "pattern_index": None,
                                 "match_start": relative_start,
                                 "match_end": relative_end,
-                                "matched_pattern": "python_ast:named_shell_flag_is_true",
+                                "matched_pattern": candidate.matched_pattern,
                                 "matched_text": candidate.evidence,
                                 "file_path": skill_file.relative_path,
                                 "context_kind": context_kind,
@@ -2017,269 +2015,6 @@ class StaticAnalyzer(BaseAnalyzer):
                         if self._python_loop_has_exit(content, match["line_number"]):
                             continue
                     findings.append(self._create_finding_from_match(rule, match))
-
-            if skill_file.file_type == "python":
-                alias_findings = self._scan_python_import_aliases(content, skill_file.relative_path)
-                if is_doc:
-                    alias_findings = [f for f in alias_findings if f.rule_id not in skip_in_docs]
-                findings.extend(alias_findings)
-
-        return findings
-
-    def _scan_python_import_aliases(self, content: str, file_path: str) -> list[Finding]:
-        """Apply command-injection signatures to aliased Python modules.
-
-        The signature scanner intentionally operates on source text, which also
-        catches Python snippets embedded in ``subprocess.run`` command strings.
-        Resolve module aliases from both the AST and textual snippets so the
-        same behavior is preserved for ``import os as alias`` inside a command
-        payload as well as normal Python code.
-        """
-        aliases: dict[str, str] = {}
-        try:
-            tree = ast.parse(content, filename=file_path)
-        except (SyntaxError, ValueError):
-            tree = None
-
-        if tree is not None:
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Import):
-                    continue
-                for imported in node.names:
-                    module = imported.name.split(".", 1)[0]
-                    if module in {"os", "subprocess"} and imported.asname:
-                        aliases[imported.asname] = module
-
-        # Command payloads can contain a complete Python snippet as a string,
-        # which is not represented in the outer AST.  Keep this deliberately
-        # narrow and require an explicit aliased import before matching calls.
-        for match in re.finditer(r"\bimport\s+(os|subprocess)\s+as\s+([A-Za-z_]\w*)\b", content):
-            aliases[match.group(2)] = match.group(1)
-
-        findings: list[Finding] = []
-        ast_call_starts: set[int] = set()
-        line_offsets = [0]
-        for line in content.splitlines(keepends=True):
-            line_offsets.append(line_offsets[-1] + len(line))
-
-        def add_match(rule_id: str, start: int, matched_text: str, pattern: str) -> None:
-            rule = self.rule_loader.rules_by_id.get(rule_id)
-            if rule is None:
-                return
-            line_number = content.count("\n", 0, start) + 1
-            lines = content.splitlines()
-            line = lines[line_number - 1].strip() if lines else ""
-            findings.append(
-                self._create_finding_from_match(
-                    rule,
-                    {
-                        "line_number": line_number,
-                        "line_content": line,
-                        "matched_pattern": pattern,
-                        "matched_text": matched_text,
-                        "file_path": file_path,
-                    },
-                )
-            )
-
-        def has_dynamic_fstring(source: str) -> bool:
-            """Return whether source contains an interpolated f-string token."""
-            fstring_start = getattr(tokenize, "FSTRING_START", None)
-            fstring_middle = getattr(tokenize, "FSTRING_MIDDLE", None)
-            fstring_end = getattr(tokenize, "FSTRING_END", None)
-            in_fstring = False
-            try:
-                tokens = tokenize.generate_tokens(io.StringIO(source).readline)
-                for token in tokens:
-                    if token.type == tokenize.STRING:
-                        prefix = re.match(r"(?i)^([rubf]*)[\"']", token.string)
-                        if not prefix or "f" not in prefix.group(1).lower():
-                            continue
-                        body = token.string[prefix.end() : -1]
-                        if re.search(r"(?<!\{)\{(?!\{)", body):
-                            return True
-                        continue
-                    if fstring_start is not None and token.type == fstring_start:
-                        in_fstring = True
-                        continue
-                    if not in_fstring:
-                        continue
-                    if fstring_end is not None and token.type == fstring_end:
-                        in_fstring = False
-                        continue
-                    if token.type == tokenize.OP and token.string == "{":
-                        return True
-                    if (
-                        fstring_middle is not None
-                        and token.type == fstring_middle
-                        and re.search(r"(?<!\{)\{[^{}]+\}(?!\})", token.string)
-                    ):
-                        return True
-            except (tokenize.TokenError, IndentationError):
-                return False
-            return False
-
-        def has_top_level_shell_true(source: str) -> bool:
-            """Return whether a call's outer arguments contain literal ``shell=True``."""
-            try:
-                expression = ast.parse(source, mode="eval")
-            except (SyntaxError, ValueError):
-                expression = None
-            if isinstance(expression, ast.Expression) and isinstance(expression.body, ast.Call):
-                return any(
-                    keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True
-                    for keyword in expression.body.keywords
-                )
-
-            open_index = source.find("(")
-            if open_index == -1:
-                return False
-
-            brackets: list[str] = []
-            quote: str | None = None
-            escaped = False
-            i = open_index + 1
-            while i < len(source):
-                char = source[i]
-                if quote:
-                    if escaped:
-                        escaped = False
-                    elif char == "\\":
-                        escaped = True
-                    elif len(quote) == 3 and source.startswith(quote, i):
-                        i += len(quote)
-                        quote = None
-                        continue
-                    elif len(quote) == 1 and char == quote:
-                        quote = None
-                    i += 1
-                    continue
-
-                if char == "#":
-                    newline = source.find("\n", i)
-                    if newline == -1:
-                        return False
-                    i = newline + 1
-                    continue
-                if char in "'\"":
-                    if source.startswith(char * 3, i):
-                        quote = char * 3
-                        i += 3
-                    else:
-                        quote = char
-                        i += 1
-                    continue
-                if char in "([{":
-                    brackets.append(char)
-                elif char in ")]}":
-                    if not brackets:
-                        return False
-                    brackets.pop()
-                elif not brackets and source.startswith("shell", i):
-                    before = source[i - 1] if i else ""
-                    after = source[i + len("shell")] if i + len("shell") < len(source) else ""
-                    if (not (before.isalnum() or before == "_")) and not (after.isalnum() or after == "_"):
-                        if re.match(r"shell\s*=\s*True\s*(?:,|\)|#|$)", source[i:]):
-                            return True
-                i += 1
-            return False
-
-        def find_matching_paren(open_index: int) -> int | None:
-            depth = 0
-            quote: str | None = None
-            escaped = False
-            i = open_index
-            while i < len(content):
-                char = content[i]
-                if quote:
-                    if escaped:
-                        escaped = False
-                    elif char == "\\":
-                        escaped = True
-                    elif len(quote) == 3 and content.startswith(quote, i):
-                        i += 2
-                        quote = None
-                    elif len(quote) == 1 and char == quote:
-                        quote = None
-                elif char in "'\"":
-                    if content.startswith(char * 3, i):
-                        quote = char * 3
-                        i += 2
-                    else:
-                        quote = char
-                elif char == "#":
-                    newline = content.find("\n", i)
-                    if newline == -1:
-                        return None
-                    i = newline
-                elif char == "(":
-                    depth += 1
-                elif char == ")":
-                    depth -= 1
-                    if depth == 0:
-                        return i + 1
-                i += 1
-            return None
-
-        # Parsed calls are authoritative for normal Python and correctly handle
-        # nested arguments such as ``sp.run(build_command(value), shell=True)``.
-        if tree is not None:
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-                    continue
-                if not isinstance(node.func.value, ast.Name):
-                    continue
-                resolved_module = aliases.get(node.func.value.id)
-                method = node.func.attr
-                if resolved_module not in {"os", "subprocess"}:
-                    continue
-                if resolved_module == "os" and method != "system":
-                    continue
-                if resolved_module == "subprocess" and method not in {"call", "run", "Popen"}:
-                    continue
-                if node.end_lineno is None or node.end_col_offset is None:
-                    continue
-                start = line_offsets[node.lineno - 1] + node.col_offset
-                matched_text = ast.get_source_segment(content, node)
-                if matched_text is None:
-                    matched_text = f"{node.func.value.id}.{method}(...)"
-                ast_call_starts.add(start)
-                if resolved_module == "os":
-                    add_match("COMMAND_INJECTION_SHELL_TRUE", start, matched_text, "aliased os.system call")
-                elif any(
-                    keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True
-                    for keyword in node.keywords
-                ):
-                    add_match(
-                        "COMMAND_INJECTION_SHELL_TRUE", start, matched_text, "aliased subprocess call with shell=True"
-                    )
-                if any(isinstance(value, ast.JoinedStr) for value in ast.walk(node)):
-                    add_match(
-                        "COMMAND_INJECTION_OS_SYSTEM", start, matched_text, "aliased call with interpolated f-string"
-                    )
-
-        for alias, module in aliases.items():
-            escaped_alias = re.escape(alias)
-            methods = "system" if module == "os" else "(?:call|run|Popen)"
-            call_pattern = re.compile(rf"\b{escaped_alias}\.{methods}\s*\(")
-            for match in call_pattern.finditer(content):
-                call_end = find_matching_paren(match.end() - 1)
-                if call_end is None:
-                    continue
-                start = match.start()
-                if start in ast_call_starts:
-                    continue
-                call_text = content[start:call_end]
-                if module == "os":
-                    add_match("COMMAND_INJECTION_SHELL_TRUE", start, call_text, "aliased os.system call")
-                elif has_top_level_shell_true(call_text):
-                    add_match(
-                        "COMMAND_INJECTION_SHELL_TRUE", start, call_text, "aliased subprocess call with shell=True"
-                    )
-                if has_dynamic_fstring(call_text):
-                    add_match(
-                        "COMMAND_INJECTION_OS_SYSTEM", start, call_text, "aliased call with interpolated f-string"
-                    )
 
         return findings
 
