@@ -1973,13 +1973,16 @@ class StaticAnalyzer(BaseAnalyzer):
                     scan_context=scan_context,
                 )
                 if (
-                    rule.id == "COMMAND_INJECTION_SHELL_TRUE"
+                    rule.id in {"COMMAND_INJECTION_EVAL", "COMMAND_INJECTION_SHELL_TRUE"}
                     and skill_file.file_type == "python"
                     and self._is_rule_enabled(rule.id)
                 ):
                     if python_shell_candidates is None:
                         python_shell_candidates = find_python_shell_candidates(content)
-                    for candidate in python_shell_candidates:
+                    rule_candidates = (
+                        candidate for candidate in python_shell_candidates if candidate.rule_id == rule.id
+                    )
+                    for candidate in rule_candidates:
                         line = scan_context.lines[candidate.line_number - 1]
                         if any(pattern.search(line) for pattern in rule.compiled_exclude_patterns):
                             continue

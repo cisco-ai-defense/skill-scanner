@@ -14,15 +14,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Conservative positive evidence for Python shell execution.
+"""Conservative positive evidence for reviewed Python execution sinks.
 
-The signature pack already detects literal ``shell=True`` and ``os.system``
-spelling.  This module supplements those patterns with two small semantic
-cases: exact named boolean flags and import-resolved ``os.system`` aliases,
-including aliases inside a literal Python ``-c`` payload that is passed to a
-reviewed ``subprocess`` call.  It never executes source, does not infer through
-compound control flow, and shares hard resource limits across outer and
-embedded syntax trees.
+The signature pack already detects literal ``shell=True``, ``os.system``, and
+``exec`` spelling. This module supplements those patterns with exact named
+boolean flags, import-resolved ``os.system`` aliases, and the issue-#204
+literal-join construction of ``builtins.exec``. It never executes source and
+shares hard resource limits across outer and embedded syntax trees.
 """
 
 from __future__ import annotations
@@ -31,7 +29,7 @@ import ast
 import re
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 MAX_PYTHON_SHELL_SOURCE_BYTES = 1024 * 1024
@@ -42,7 +40,11 @@ MAX_PYTHON_SHELL_SCOPE_DEPTH = 32
 MAX_PYTHON_SHELL_IDENTIFIER_CHARS = 128
 MAX_PYTHON_SHELL_EMBEDDED_BYTES = 256 * 1024
 MAX_PYTHON_SHELL_EMBEDDED_PAYLOADS = 64
+MAX_PYTHON_SHELL_JOIN_PARTS = 16
+MAX_PYTHON_SHELL_JOIN_CHARS = 32
 
+_SHELL_RULE_ID = "COMMAND_INJECTION_SHELL_TRUE"
+_EVAL_RULE_ID = "COMMAND_INJECTION_EVAL"
 _SUBPROCESS_METHODS = frozenset({"Popen", "call", "run"})
 _SUBPROCESS_CALL_IDENTITIES = frozenset(f"callable:subprocess.{method}" for method in _SUBPROCESS_METHODS)
 _PYTHON_C_BASE_KEYWORDS = frozenset({"args", "shell"})
@@ -65,6 +67,12 @@ class PythonShellBoolCandidate:
     end_column: int
     method_name: str
     variable_name: str
+
+    @property
+    def rule_id(self) -> str:
+        """Return the canonical signature rule that owns this candidate."""
+
+        return _SHELL_RULE_ID
 
     @property
     def matched_pattern(self) -> str:
@@ -90,6 +98,12 @@ class PythonOsSystemCandidate:
     equivalent_regex_spans: tuple[tuple[int, int, int], ...] = ()
 
     @property
+    def rule_id(self) -> str:
+        """Return the canonical signature rule that owns this candidate."""
+
+        return _SHELL_RULE_ID
+
+    @property
     def matched_pattern(self) -> str:
         """Return explicit semantic provenance for signature metadata."""
 
@@ -106,7 +120,35 @@ class PythonOsSystemCandidate:
         return "import-resolved alias invokes os.system(...)"
 
 
-PythonShellCandidate = PythonShellBoolCandidate | PythonOsSystemCandidate
+@dataclass(frozen=True, slots=True)
+class PythonDynamicExecCandidate:
+    """A proven invocation of the issue-#204 dynamic ``builtins.exec`` alias."""
+
+    line_number: int
+    start_column: int
+    end_column: int
+    variable_name: str
+
+    @property
+    def rule_id(self) -> str:
+        """Return the canonical signature rule that owns this candidate."""
+
+        return _EVAL_RULE_ID
+
+    @property
+    def matched_pattern(self) -> str:
+        """Return explicit semantic provenance for signature metadata."""
+
+        return "python_ast:getattr_joined_builtin_exec"
+
+    @property
+    def evidence(self) -> str:
+        """Return bounded evidence without retaining executed source."""
+
+        return f"{self.variable_name}(...) -> builtins.exec"
+
+
+PythonShellCandidate = PythonShellBoolCandidate | PythonOsSystemCandidate | PythonDynamicExecCandidate
 
 
 @dataclass(slots=True)
@@ -169,8 +211,37 @@ class _BodyScanResult:
     flow: _FlowKind = "normal"
 
 
+@dataclass(slots=True)
+class _DynamicExecState:
+    """Narrow module-scope provenance for the issue-#204 construction."""
+
+    enabled: bool
+    builtins_names: set[str] = field(default_factory=set)
+    exec_names: set[str] = field(default_factory=set)
+    getattr_is_builtin: bool = True
+
+    def clear(self) -> None:
+        """Invalidate every fact after unsupported syntax or effects."""
+
+        self.builtins_names.clear()
+        self.exec_names.clear()
+        self.getattr_is_builtin = False
+
+    def rebind(self, name: str) -> None:
+        """Forget provenance replaced by one ordinary name binding."""
+
+        self.builtins_names.discard(name)
+        self.exec_names.discard(name)
+        if name == "getattr":
+            self.getattr_is_builtin = False
+
+    @property
+    def binding_count(self) -> int:
+        return len(self.builtins_names) + len(self.exec_names)
+
+
 def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...]:
-    """Find bounded, straight-line positive evidence for reviewed shell sinks.
+    """Find bounded positive evidence for reviewed execution sinks.
 
     Literal values remain the regex signature's responsibility.  Invalid,
     binary-like, oversized, or structurally complex input simply produces no
@@ -249,6 +320,64 @@ def _name_targets(targets: list[ast.expr]) -> tuple[str, ...] | None:
     return tuple(names)
 
 
+def _bound_names(node: ast.AST) -> set[str]:
+    return {
+        child.id
+        for child in ast.walk(node)
+        if isinstance(child, ast.Name) and isinstance(child.ctx, (ast.Store, ast.Del))
+    }
+
+
+def _loaded_names(node: ast.AST) -> set[str]:
+    return {child.id for child in ast.walk(node) if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)}
+
+
+def _literal_joined_exec(expression: ast.expr) -> bool:
+    """Fold only ``''.join`` over a bounded literal list or tuple."""
+
+    if (
+        not isinstance(expression, ast.Call)
+        or expression.keywords
+        or len(expression.args) != 1
+        or not isinstance(expression.func, ast.Attribute)
+        or expression.func.attr != "join"
+        or not isinstance(expression.func.value, ast.Constant)
+        or expression.func.value.value != ""
+        or not isinstance(expression.args[0], (ast.List, ast.Tuple))
+    ):
+        return False
+
+    elements = expression.args[0].elts
+    if not elements or len(elements) > MAX_PYTHON_SHELL_JOIN_PARTS:
+        return False
+
+    parts: list[str] = []
+    result_length = 0
+    for element in elements:
+        if not isinstance(element, ast.Constant) or type(element.value) is not str:
+            return False
+        result_length += len(element.value)
+        if result_length > MAX_PYTHON_SHELL_JOIN_CHARS:
+            return False
+        parts.append(element.value)
+    return "".join(parts) == "exec"
+
+
+def _is_dynamic_exec_lookup(expression: ast.expr, state: _DynamicExecState) -> bool:
+    return bool(
+        state.enabled
+        and state.getattr_is_builtin
+        and isinstance(expression, ast.Call)
+        and not expression.keywords
+        and len(expression.args) == 2
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id == "getattr"
+        and isinstance(expression.args[0], ast.Name)
+        and expression.args[0].id in state.builtins_names
+        and _literal_joined_exec(expression.args[1])
+    )
+
+
 class _StraightLineShellScanner:
     def __init__(self, source: str, budget: _AnalysisBudget) -> None:
         self.source = source
@@ -311,6 +440,7 @@ class _StraightLineShellScanner:
             equivalent_regex_spans=equivalent_regex_spans,
             embedded_method_name=embedded_method_name,
         )
+        dynamic_exec_state = _DynamicExecState(enabled=depth == 0 and evidence_anchor is None)
 
         def scan_nested_body(
             nested_body: list[ast.stmt],
@@ -348,6 +478,10 @@ class _StraightLineShellScanner:
         for statement_index, statement in enumerate(body):
             if len(self.candidates) >= MAX_PYTHON_SHELL_CANDIDATES:
                 return _BodyScanResult(poisoned_modules)
+
+            self._scan_dynamic_exec_statement(statement, dynamic_exec_state)
+            if dynamic_exec_state.binding_count > MAX_PYTHON_SHELL_BINDINGS:
+                dynamic_exec_state.clear()
 
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self._scan_definition_expressions(statement, expression_state)
@@ -914,6 +1048,62 @@ class _StraightLineShellScanner:
             identities.clear()
 
         return _BodyScanResult(poisoned_modules)
+
+    def _scan_dynamic_exec_statement(self, statement: ast.stmt, state: _DynamicExecState) -> None:
+        """Advance the narrow module-level issue-#204 provenance state."""
+
+        if not state.enabled:
+            return
+
+        if isinstance(statement, ast.Import):
+            for imported in statement.names:
+                local_name = imported.asname or imported.name.split(".", 1)[0]
+                state.rebind(local_name)
+                if imported.name == "builtins":
+                    state.builtins_names.add(local_name)
+            return
+
+        if isinstance(statement, ast.ImportFrom):
+            if any(imported.name == "*" for imported in statement.names):
+                state.clear()
+                return
+            for imported in statement.names:
+                state.rebind(imported.asname or imported.name)
+            return
+
+        if isinstance(statement, ast.Assign):
+            targets = _name_targets(statement.targets)
+            if targets is None:
+                state.clear()
+                return
+
+            dynamic_exec = _is_dynamic_exec_lookup(statement.value, state)
+            for name in _bound_names(statement.value):
+                state.rebind(name)
+            if not dynamic_exec and not _is_side_effect_free(statement.value):
+                state.exec_names.clear()
+                state.builtins_names.difference_update(_loaded_names(statement.value))
+            for name in targets:
+                state.rebind(name)
+                if dynamic_exec and len(name) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS:
+                    state.exec_names.add(name)
+            return
+
+        if isinstance(statement, ast.Expr):
+            call = statement.value
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id in state.exec_names:
+                self._record_dynamic_exec(call.func)
+                state.clear()
+            elif not isinstance(statement.value, ast.Constant):
+                state.clear()
+            return
+
+        if isinstance(statement, ast.Pass):
+            return
+
+        # No claims cross definitions, control flow, annotations, deletion,
+        # mutation, or another unsupported execution boundary.
+        state.clear()
 
     def _scan_assignment_target(
         self,
@@ -1765,6 +1955,20 @@ class _StraightLineShellScanner:
                 end_column=end_column,
                 embedded_method_name=embedded_method_name,
                 equivalent_regex_spans=equivalent_regex_spans,
+            )
+        )
+
+    def _record_dynamic_exec(self, function: ast.Name) -> None:
+        span = self._source_span(function)
+        if span is None:
+            return
+        line_number, start_column, end_column = span
+        self._append_candidate(
+            PythonDynamicExecCandidate(
+                line_number=line_number,
+                start_column=start_column,
+                end_column=end_column,
+                variable_name=function.id,
             )
         )
 
