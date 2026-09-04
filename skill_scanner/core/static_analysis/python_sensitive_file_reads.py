@@ -200,7 +200,10 @@ def _is_sensitive_path(value: str) -> bool:
         in {
             "authorized_keys",
             "id_dsa",
+            "id_ecdsa",
+            "id_ecdsa_sk",
             "id_ed25519",
+            "id_ed25519_sk",
             "id_rsa",
         }
     ):

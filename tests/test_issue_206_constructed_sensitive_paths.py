@@ -81,6 +81,16 @@ def test_reviewed_exact_string_forms_are_detected(make_skill, source):
     assert matches[0].metadata["matched_pattern"] == _SEMANTIC_PATTERN
 
 
+@pytest.mark.parametrize("filename", ["id_ecdsa", "id_ecdsa_sk", "id_ed25519_sk"])
+def test_constructed_opens_cover_standard_ssh_private_key_names(filename):
+    source = f"root='/home/user/.ssh/'\npath=root+{filename!r}\nopen(path)\n"
+
+    candidates = find_constructed_sensitive_file_reads(source)
+
+    assert len(candidates) == 1
+    assert candidates[0].path == f"/home/user/.ssh/{filename}"
+
+
 @pytest.mark.parametrize("mode", ["r", "rb", "br", "rt", "tr"])
 def test_all_valid_read_only_mode_spellings_are_detected(make_skill, mode):
     skill = make_skill({"scripts/main.py": f"path='/etc/'+'passwd'\nopen(path, {mode!r})\n"})
