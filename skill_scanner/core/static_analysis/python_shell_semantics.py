@@ -42,6 +42,7 @@ MAX_PYTHON_SHELL_EMBEDDED_BYTES = 256 * 1024
 MAX_PYTHON_SHELL_EMBEDDED_PAYLOADS = 64
 MAX_PYTHON_SHELL_JOIN_PARTS = 16
 MAX_PYTHON_SHELL_JOIN_CHARS = 32
+MAX_PYTHON_SHELL_EAGER_EXPR_NODES = 4_096
 
 _SHELL_RULE_ID = "COMMAND_INJECTION_SHELL_TRUE"
 _EVAL_RULE_ID = "COMMAND_INJECTION_EVAL"
@@ -50,6 +51,20 @@ _SUBPROCESS_CALL_IDENTITIES = frozenset(f"callable:subprocess.{method}" for meth
 _PYTHON_C_BASE_KEYWORDS = frozenset({"args", "shell"})
 _PYTHON_C_RUN_KEYWORDS = _PYTHON_C_BASE_KEYWORDS | {"check"}
 _OS_SYSTEM_IDENTITY = "callable:os.system"
+_PYTHON_FUTURE_FEATURES = frozenset(
+    {
+        "absolute_import",
+        "annotations",
+        "barry_as_FLUFL",
+        "division",
+        "generator_stop",
+        "generators",
+        "nested_scopes",
+        "print_function",
+        "unicode_literals",
+        "with_statement",
+    }
+)
 _PYTHON_EXECUTABLE_RE = re.compile(r"python(?:3(?:\.\d+)?)?(?:\.exe)?", re.IGNORECASE)
 _RAW_OS_SYSTEM_CALL_RE = re.compile(r"\bos\.system\s*\(")
 _LEGACY_OS_SYSTEM_CALL_RE = re.compile(r"os\.system\s*\(")
@@ -323,14 +338,6 @@ def _name_targets(targets: list[ast.expr]) -> tuple[str, ...] | None:
     return tuple(names)
 
 
-def _bound_names(node: ast.AST) -> set[str]:
-    return {
-        child.id
-        for child in ast.walk(node)
-        if isinstance(child, ast.Name) and isinstance(child.ctx, (ast.Store, ast.Del))
-    }
-
-
 def _literal_joined_exec(expression: ast.expr) -> bool:
     """Fold only ``''.join`` over a bounded literal list or tuple."""
 
@@ -390,6 +397,20 @@ def _is_literal_base64_decode(expression: ast.expr, state: _DynamicExecState) ->
         and expression.func.value.id in state.base64_names
         and isinstance(expression.args[0], ast.Constant)
         and type(expression.args[0].value) in (str, bytes)
+    )
+
+
+def _has_inert_literal_hash(expression: ast.expr) -> bool:
+    """Return whether hashing this literal cannot dispatch user code."""
+
+    return isinstance(expression, ast.Constant) and type(expression.value) in (
+        bool,
+        bytes,
+        complex,
+        float,
+        int,
+        str,
+        type(None),
     )
 
 
@@ -1071,6 +1092,9 @@ class _StraightLineShellScanner:
             return
 
         if isinstance(statement, ast.Import):
+            if any(imported.name not in {"base64", "builtins"} for imported in statement.names):
+                state.clear()
+                return
             for imported in statement.names:
                 local_name = imported.asname or imported.name.split(".", 1)[0]
                 state.rebind(local_name)
@@ -1081,33 +1105,31 @@ class _StraightLineShellScanner:
             return
 
         if isinstance(statement, ast.ImportFrom):
-            if any(imported.name == "*" for imported in statement.names):
-                state.clear()
+            if (
+                statement.level == 0
+                and statement.module == "__future__"
+                and all(
+                    imported.name in _PYTHON_FUTURE_FEATURES and imported.asname is None for imported in statement.names
+                )
+            ):
                 return
-            for imported in statement.names:
-                state.rebind(imported.asname or imported.name)
+            state.clear()
             return
 
         if isinstance(statement, ast.Assign):
             targets = _name_targets(statement.targets)
-            if targets is None:
-                state.clear()
-                return
-
-            if self._record_direct_dynamic_exec_call(statement.value, state):
-                state.clear()
-                return
-
             dynamic_exec = _is_dynamic_exec_lookup(statement.value, state)
             literal_base64_decode = _is_literal_base64_decode(statement.value, state)
-            for name in _bound_names(statement.value):
-                state.rebind(name)
             if not dynamic_exec and not literal_base64_decode and not _is_side_effect_free(statement.value):
+                self._scan_eager_dynamic_exec_calls(statement.value, state)
                 # An arbitrary call can mutate the shared builtins module
                 # without loading a tracked local alias (for example through
                 # ``__import__('builtins')``).  Only the exact reviewed lookup
                 # and the issue's literal base64 decode are safe to carry
                 # across this execution boundary.
+                state.clear()
+                return
+            if targets is None:
                 state.clear()
                 return
             for name in targets:
@@ -1118,24 +1140,21 @@ class _StraightLineShellScanner:
 
         if isinstance(statement, ast.AnnAssign):
             if statement.value is not None:
-                self._record_direct_dynamic_exec_call(statement.value, state)
+                self._scan_eager_dynamic_exec_calls(statement.value, state)
             state.clear()
             return
 
         if isinstance(statement, ast.Expr):
-            call = statement.value
-            if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id in state.exec_names:
-                self._record_dynamic_exec(call.func)
-                state.clear()
-            elif not isinstance(statement.value, ast.Constant):
+            if not isinstance(statement.value, ast.Constant):
+                self._scan_eager_dynamic_exec_calls(statement.value, state)
                 state.clear()
             return
 
         if isinstance(statement, ast.Raise):
             if statement.exc is not None:
-                self._record_direct_dynamic_exec_call(statement.exc, state)
+                self._scan_eager_dynamic_exec_calls(statement.exc, state)
             if statement.cause is not None:
-                self._record_direct_dynamic_exec_call(statement.cause, state)
+                self._scan_eager_dynamic_exec_calls(statement.cause, state)
             state.clear()
             return
 
@@ -1145,6 +1164,152 @@ class _StraightLineShellScanner:
         # No claims cross definitions, control flow, annotations, deletion,
         # mutation, or another unsupported execution boundary.
         state.clear()
+
+    def _scan_eager_dynamic_exec_calls(self, expression: ast.expr, state: _DynamicExecState) -> None:
+        """Record aliases in bounded subexpressions that are certainly evaluated."""
+
+        # ``None`` is a post-evaluation effect boundary.  Keeping traversal
+        # iterative avoids recursion on attacker-controlled expression depth.
+        pending: list[ast.AST | None] = [expression]
+        visited = 0
+        while pending:
+            current = pending.pop()
+            if current is None:
+                state.clear()
+                continue
+
+            visited += 1
+            if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+                state.clear()
+                return
+
+            if isinstance(current, ast.Call):
+                self._record_direct_dynamic_exec_call(current, state)
+                if _is_literal_base64_decode(current, state):
+                    continue
+                arguments: list[tuple[ast.expr, bool]] = [
+                    (argument.value, True) if isinstance(argument, ast.Starred) else (argument, False)
+                    for argument in current.args
+                ]
+                arguments.extend((keyword.value, keyword.arg is None) for keyword in current.keywords)
+                arguments.sort(key=lambda item: (item[0].lineno, item[0].col_offset))
+                call_children: list[ast.AST | None] = [current.func]
+                for argument, expansion_boundary in arguments:
+                    call_children.append(argument)
+                    if expansion_boundary:
+                        call_children.append(None)
+                call_children.append(None)
+                pending.extend(reversed(call_children))
+                continue
+
+            if isinstance(current, (ast.List, ast.Tuple)):
+                pending.extend(reversed(current.elts))
+                continue
+
+            if isinstance(current, ast.Dict):
+                dict_children: list[ast.AST | None] = []
+                for key, value in zip(current.keys, current.values, strict=True):
+                    if key is None:
+                        dict_children.extend((value, None))
+                        break
+                    dict_children.extend((key, value))
+                    if not _has_inert_literal_hash(key):
+                        dict_children.append(None)
+                        break
+                pending.extend(reversed(dict_children))
+                continue
+
+            if isinstance(current, ast.Set):
+                set_children: list[ast.AST | None] = []
+                for element in current.elts:
+                    set_children.append(element)
+                    if not _has_inert_literal_hash(element):
+                        set_children.append(None)
+                        break
+                pending.extend(reversed(set_children))
+                continue
+
+            if isinstance(current, ast.BoolOp):
+                bool_children: list[ast.AST | None] = []
+                for index, value in enumerate(current.values):
+                    bool_children.append(value)
+                    if index == len(current.values) - 1:
+                        break
+                    if not isinstance(value, ast.Constant) or type(value.value) is not bool:
+                        bool_children.append(None)
+                        break
+                    continues = value.value if isinstance(current.op, ast.And) else not value.value
+                    if not continues:
+                        break
+                pending.extend(reversed(bool_children))
+                continue
+
+            if isinstance(current, ast.IfExp):
+                if isinstance(current.test, ast.Constant) and type(current.test.value) is bool:
+                    pending.append(current.body if current.test.value else current.orelse)
+                else:
+                    pending.append(None)
+                    pending.append(current.test)
+                continue
+
+            if isinstance(current, ast.NamedExpr):
+                pending.append(None)
+                pending.append(current.value)
+                continue
+
+            if isinstance(current, ast.JoinedStr):
+                pending.extend(reversed(current.values))
+                continue
+
+            if isinstance(current, ast.FormattedValue):
+                pending.append(None)
+                if current.format_spec is not None:
+                    pending.append(current.format_spec)
+                pending.append(current.value)
+                continue
+
+            if isinstance(current, ast.Compare):
+                pending.append(None)
+                pending.append(current.comparators[0])
+                pending.append(current.left)
+                continue
+
+            if isinstance(current, ast.Starred):
+                pending.append(None)
+                pending.append(current.value)
+                continue
+
+            if isinstance(current, ast.BinOp):
+                pending.append(None)
+                pending.extend((current.right, current.left))
+                continue
+
+            if isinstance(current, ast.UnaryOp):
+                pending.append(None)
+                pending.append(current.operand)
+                continue
+
+            if isinstance(current, ast.Attribute):
+                pending.append(None)
+                pending.append(current.value)
+                continue
+
+            if isinstance(current, ast.Subscript):
+                pending.append(None)
+                pending.extend((current.slice, current.value))
+                continue
+
+            if isinstance(current, ast.Slice):
+                slice_children = [child for child in (current.lower, current.upper, current.step) if child is not None]
+                pending.extend(reversed(slice_children))
+                continue
+
+            if isinstance(current, (ast.Constant, ast.Name)):
+                continue
+
+            # Lambda bodies, generators/comprehensions, conditional branches,
+            # and every other unreviewed expression are not claimed.
+            state.clear()
 
     def _record_direct_dynamic_exec_call(self, expression: ast.expr, state: _DynamicExecState) -> bool:
         if (

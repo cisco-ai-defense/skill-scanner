@@ -8,7 +8,10 @@ import pytest
 from skill_scanner.core.analyzers.static import StaticAnalyzer
 from skill_scanner.core.models import Severity, ThreatCategory
 from skill_scanner.core.scan_policy import ScanPolicy
-from skill_scanner.core.static_analysis.python_shell_semantics import find_python_shell_candidates
+from skill_scanner.core.static_analysis.python_shell_semantics import (
+    MAX_PYTHON_SHELL_EAGER_EXPR_NODES,
+    find_python_shell_candidates,
+)
 
 _EVAL_RULE_ID = "COMMAND_INJECTION_EVAL"
 _SHELL_RULE_ID = "COMMAND_INJECTION_SHELL_TRUE"
@@ -59,8 +62,9 @@ def test_reported_dynamic_exec_is_canonical_command_injection(make_skill) -> Non
     [
         "import builtins as bi\n_runner = getattr(bi, ''.join(('e', 'x', 'e', 'c')))\n_runner(payload)\n",
         "\"\"\"module documentation\"\"\"\nimport builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
+        "from __future__ import annotations\nimport builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
     ],
-    ids=["aliased-builtins-and-tuple", "inert-module-docstring"],
+    ids=["aliased-builtins-and-tuple", "inert-module-docstring", "future-import"],
 )
 def test_exact_positive_variants_remain_detectable(make_skill, source: str) -> None:
     findings = _eval_findings(make_skill, source)
@@ -102,6 +106,87 @@ def test_direct_alias_invocation_in_assignment_value_is_detected(make_skill, inv
     assert len(findings) == 1
     assert findings[0].line_number == 3
     assert findings[0].metadata["matched_pattern"] == _PATTERN
+
+
+@pytest.mark.parametrize(
+    "invocation",
+    [
+        "print(_runner(payload))",
+        "result = [_runner(payload)]",
+        "result = _runner(payload) if True else safe",
+        "result = _runner(payload) and safe",
+        "result = True and _runner(payload)",
+        "result = False or _runner(payload)",
+        "result = safe if _runner(payload) else other",
+        "result = {'payload': _runner(payload)}",
+        "result = {_runner(payload)}",
+        'result = f"{_runner(payload)}"',
+        "result = (captured := _runner(payload))",
+        "print(*_runner(payload))",
+        "print(**_runner(payload))",
+    ],
+    ids=[
+        "call-argument",
+        "list-element",
+        "selected-if-expression",
+        "first-bool-operand",
+        "proven-selected-and-operand",
+        "proven-selected-or-operand",
+        "if-expression-test",
+        "dict-value",
+        "set-element",
+        "formatted-value",
+        "named-expression-value",
+        "starred-call-argument",
+        "mapping-call-argument",
+    ],
+)
+def test_alias_invocation_in_definitely_eager_wrapper_is_detected(make_skill, invocation: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{invocation}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+    assert findings[0].metadata["matched_pattern"] == _PATTERN
+
+
+@pytest.mark.parametrize(
+    "invocation",
+    [
+        "delayed = lambda: _runner(payload)",
+        "delayed = (_runner(payload) for item in items)",
+        "result = [_runner(payload) for item in items]",
+        "result = False and _runner(payload)",
+        "result = True or _runner(payload)",
+        "result = _runner(payload) if False else safe",
+        "result = safe if True else _runner(payload)",
+        "result = _runner(payload) if condition else safe",
+        "result = [mutate(), _runner(payload)]",
+    ],
+    ids=[
+        "lambda",
+        "generator",
+        "list-comprehension",
+        "short-circuit-bool",
+        "short-circuit-or",
+        "unselected-if-body",
+        "unselected-if-else",
+        "conditional-if-body",
+        "prior-effect-invalidates-alias",
+    ],
+)
+def test_possibly_unevaluated_nested_alias_call_is_not_reported(make_skill, invocation: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{invocation}\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_eager_expression_traversal_limit_is_enforced(make_skill) -> None:
+    elements = ", ".join(("0",) * MAX_PYTHON_SHELL_EAGER_EXPR_NODES + ("_runner(payload)",))
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nresult = [{elements}]\n"
+
+    assert _eval_findings(make_skill, source) == []
 
 
 def test_direct_alias_invocation_in_module_raise_is_detected(make_skill) -> None:
@@ -190,6 +275,9 @@ def test_dynamic_exec_alias_is_not_duplicated_when_policy_keeps_raw_findings(mak
         "import builtins\nvars(builtins)['exec'] = print\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
         "import builtins\nimport builtins as bi\nx = setattr(bi, 'exec', print)\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
         "import builtins\nignored = setattr(__import__('builtins'), 'exec', print)\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
+        "import builtins\nimport plugin\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
+        "import builtins, plugin\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
+        "import builtins\nfrom plugin import hook\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
         "import builtins\ngetattr = safe_lookup\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
         "import builtins\nx = (getattr := safe_lookup)\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
         "import builtins\nx = (builtins := plugin)\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
@@ -216,6 +304,9 @@ def test_dynamic_exec_alias_is_not_duplicated_when_policy_keeps_raw_findings(mak
         "builtin-exec-replaced-via-vars",
         "one-of-multiple-builtins-aliases-mutates-exec",
         "builtin-exec-replaced-through-untracked-import",
+        "untrusted-import",
+        "mixed-multi-import",
+        "untrusted-import-from",
         "getattr-shadowed",
         "getattr-shadowed-by-named-expression",
         "builtins-shadowed-by-named-expression",
