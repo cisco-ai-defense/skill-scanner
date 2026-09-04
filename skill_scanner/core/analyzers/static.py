@@ -1984,7 +1984,13 @@ class StaticAnalyzer(BaseAnalyzer):
                     )
                     for candidate in rule_candidates:
                         line = scan_context.lines[candidate.line_number - 1]
-                        if any(pattern.search(line) for pattern in rule.compiled_exclude_patterns):
+                        # COMMAND_INJECTION_EVAL's legacy exclusions are
+                        # line-wide prose heuristics.  They still own regex
+                        # matches, but must not suppress an AST-proven call
+                        # merely because a trailing comment resembles prose.
+                        if rule.id != "COMMAND_INJECTION_EVAL" and any(
+                            pattern.search(line) for pattern in rule.compiled_exclude_patterns
+                        ):
                             continue
                         leading_space = len(line) - len(line.lstrip())
                         relative_start = max(0, candidate.start_column - leading_space)

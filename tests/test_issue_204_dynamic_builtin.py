@@ -69,6 +69,24 @@ def test_exact_positive_variants_remain_detectable(make_skill, source: str) -> N
     assert findings[0].metadata["matched_pattern"] == _PATTERN
 
 
+def test_ast_dynamic_exec_is_not_suppressed_by_legacy_line_exclusion(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "_runner(payload)  # use of exec(\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+    assert findings[0].metadata["matched_pattern"] == _PATTERN
+
+
+def test_legacy_line_exclusion_still_suppresses_nonsemantic_regex_match(make_skill) -> None:
+    assert _eval_findings(make_skill, "exec(payload)  # use of exec(\n") == []
+
+
 @pytest.mark.parametrize(
     "invocation",
     [
@@ -171,6 +189,7 @@ def test_dynamic_exec_alias_is_not_duplicated_when_policy_keeps_raw_findings(mak
         "import builtins\nglobals()['getattr'] = safe_lookup\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
         "import builtins\nvars(builtins)['exec'] = print\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
         "import builtins\nimport builtins as bi\nx = setattr(bi, 'exec', print)\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
+        "import builtins\nignored = setattr(__import__('builtins'), 'exec', print)\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
         "import builtins\ngetattr = safe_lookup\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
         "import builtins\nx = (getattr := safe_lookup)\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
         "import builtins\nx = (builtins := plugin)\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner(payload)\n",
@@ -196,6 +215,7 @@ def test_dynamic_exec_alias_is_not_duplicated_when_policy_keeps_raw_findings(mak
         "getattr-replaced-via-globals",
         "builtin-exec-replaced-via-vars",
         "one-of-multiple-builtins-aliases-mutates-exec",
+        "builtin-exec-replaced-through-untracked-import",
         "getattr-shadowed",
         "getattr-shadowed-by-named-expression",
         "builtins-shadowed-by-named-expression",

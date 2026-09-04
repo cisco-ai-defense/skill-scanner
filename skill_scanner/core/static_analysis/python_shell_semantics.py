@@ -217,6 +217,7 @@ class _DynamicExecState:
 
     enabled: bool
     builtins_names: set[str] = field(default_factory=set)
+    base64_names: set[str] = field(default_factory=set)
     exec_names: set[str] = field(default_factory=set)
     getattr_is_builtin: bool = True
 
@@ -224,6 +225,7 @@ class _DynamicExecState:
         """Invalidate every fact after unsupported syntax or effects."""
 
         self.builtins_names.clear()
+        self.base64_names.clear()
         self.exec_names.clear()
         self.getattr_is_builtin = False
 
@@ -231,13 +233,14 @@ class _DynamicExecState:
         """Forget provenance replaced by one ordinary name binding."""
 
         self.builtins_names.discard(name)
+        self.base64_names.discard(name)
         self.exec_names.discard(name)
         if name == "getattr":
             self.getattr_is_builtin = False
 
     @property
     def binding_count(self) -> int:
-        return len(self.builtins_names) + len(self.exec_names)
+        return len(self.builtins_names) + len(self.base64_names) + len(self.exec_names)
 
 
 def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...]:
@@ -328,10 +331,6 @@ def _bound_names(node: ast.AST) -> set[str]:
     }
 
 
-def _loaded_names(node: ast.AST) -> set[str]:
-    return {child.id for child in ast.walk(node) if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)}
-
-
 def _literal_joined_exec(expression: ast.expr) -> bool:
     """Fold only ``''.join`` over a bounded literal list or tuple."""
 
@@ -375,6 +374,22 @@ def _is_dynamic_exec_lookup(expression: ast.expr, state: _DynamicExecState) -> b
         and isinstance(expression.args[0], ast.Name)
         and expression.args[0].id in state.builtins_names
         and _literal_joined_exec(expression.args[1])
+    )
+
+
+def _is_literal_base64_decode(expression: ast.expr, state: _DynamicExecState) -> bool:
+    """Recognize the issue's inert literal decode without trusting arbitrary calls."""
+
+    return bool(
+        isinstance(expression, ast.Call)
+        and not expression.keywords
+        and len(expression.args) == 1
+        and isinstance(expression.func, ast.Attribute)
+        and expression.func.attr == "b64decode"
+        and isinstance(expression.func.value, ast.Name)
+        and expression.func.value.id in state.base64_names
+        and isinstance(expression.args[0], ast.Constant)
+        and type(expression.args[0].value) in (str, bytes)
     )
 
 
@@ -1061,6 +1076,8 @@ class _StraightLineShellScanner:
                 state.rebind(local_name)
                 if imported.name == "builtins":
                     state.builtins_names.add(local_name)
+                elif imported.name == "base64":
+                    state.base64_names.add(local_name)
             return
 
         if isinstance(statement, ast.ImportFrom):
@@ -1082,13 +1099,17 @@ class _StraightLineShellScanner:
                 return
 
             dynamic_exec = _is_dynamic_exec_lookup(statement.value, state)
+            literal_base64_decode = _is_literal_base64_decode(statement.value, state)
             for name in _bound_names(statement.value):
                 state.rebind(name)
-            if not dynamic_exec and not _is_side_effect_free(statement.value):
-                state.exec_names.clear()
-                loaded_names = _loaded_names(statement.value)
-                if loaded_names & state.builtins_names:
-                    state.builtins_names.clear()
+            if not dynamic_exec and not literal_base64_decode and not _is_side_effect_free(statement.value):
+                # An arbitrary call can mutate the shared builtins module
+                # without loading a tracked local alias (for example through
+                # ``__import__('builtins')``).  Only the exact reviewed lookup
+                # and the issue's literal base64 decode are safe to carry
+                # across this execution boundary.
+                state.clear()
+                return
             for name in targets:
                 state.rebind(name)
                 if dynamic_exec and len(name) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS:
