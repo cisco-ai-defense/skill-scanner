@@ -604,13 +604,18 @@ class _StraightLineShellScanner:
                 header_is_safe = self._scan_expression(statement.test, expression_state)
                 while_result: _BodyScanResult | None = None
                 condition_is_unchanged = False
+                body_preserves_facts = False
                 if truth is False:
                     while_result = scan_nested_body(statement.orelse, inherit_facts=header_is_safe)
                 elif truth is True:
                     while_result = scan_nested_body(statement.body, inherit_facts=header_is_safe)
-                    condition_is_unchanged = isinstance(statement.test, ast.Constant) or self._body_preserves_facts(
-                        statement.body, bool_bindings, identities
+                    body_preserves_facts = self._body_preserves_facts(
+                        statement.body,
+                        bool_bindings,
+                        identities,
+                        require_deterministic_control_flow=True,
                     )
+                    condition_is_unchanged = isinstance(statement.test, ast.Constant) or body_preserves_facts
                     if while_result.flow == "normal" and not isinstance(statement.test, ast.Constant):
                         scan_nested_body(statement.orelse)
                 else:
@@ -619,7 +624,16 @@ class _StraightLineShellScanner:
                         scan_nested_body(statement.orelse, isolate_poison=True),
                     ]
                     poisoned_modules.update(*(result.poisoned_modules for result in branch_results))
-                if truth is not False or not header_is_safe or not self._body_is_inert(statement.orelse):
+                preserves_after_break = bool(
+                    truth is True
+                    and header_is_safe
+                    and while_result is not None
+                    and while_result.flow == "break"
+                    and body_preserves_facts
+                )
+                if not preserves_after_break and (
+                    truth is not False or not header_is_safe or not self._body_is_inert(statement.orelse)
+                ):
                     self._poison_known_modules(identities, poisoned_modules)
                     bool_bindings.clear()
                     identities.clear()
@@ -662,7 +676,19 @@ class _StraightLineShellScanner:
                         scan_nested_body(statement.orelse, isolate_poison=True),
                     ]
                     poisoned_modules.update(*(result.poisoned_modules for result in branch_results))
-                if iterable_is_empty is not True or not header_is_safe or not self._body_is_inert(statement.orelse):
+                protected_names = bool_bindings.keys() | identities.keys()
+                preserves_after_inert_iteration = bool(
+                    iterable_is_empty is False
+                    and isinstance(statement, ast.For)
+                    and isinstance(statement.target, ast.Name)
+                    and statement.target.id not in protected_names
+                    and header_is_safe
+                    and self._body_is_inert(statement.body)
+                    and self._body_is_inert(statement.orelse)
+                )
+                if not preserves_after_inert_iteration and (
+                    iterable_is_empty is not True or not header_is_safe or not self._body_is_inert(statement.orelse)
+                ):
                     self._poison_known_modules(identities, poisoned_modules)
                     bool_bindings.clear()
                     identities.clear()
@@ -807,10 +833,14 @@ class _StraightLineShellScanner:
                 subject_is_safe = self._scan_expression(statement.subject, expression_state)
                 case_results: list[_BodyScanResult] = []
                 match_result: _BodyScanResult | None = None
+                match_preserves_facts = False
+                definite_miss_prefix = True
                 for case in statement.cases:
                     pattern_match = self._known_pattern_match(case.pattern, statement.subject, bool_bindings)
                     if pattern_match is False:
                         continue
+                    selected_after_definite_misses = definite_miss_prefix
+                    definite_miss_prefix = False
                     bound_names = self._pattern_bound_names(case.pattern)
                     guard_bools = dict(bool_bindings) if pattern_match is True and subject_is_safe else {}
                     guard_identities = dict(identities) if pattern_match is True and subject_is_safe else {}
@@ -845,12 +875,27 @@ class _StraightLineShellScanner:
                     case_results.append(case_result)
                     if pattern_match is True and guard_truth is True:
                         match_result = case_result
+                        protected_names = bool_bindings.keys() | identities.keys()
+                        match_preserves_facts = bool(
+                            selected_after_definite_misses
+                            and case.guard is None
+                            and subject_is_safe
+                            and case_result.flow == "normal"
+                            and protected_names.isdisjoint(bound_names)
+                            and self._body_preserves_facts(
+                                case.body,
+                                bool_bindings,
+                                identities,
+                                require_deterministic_control_flow=True,
+                            )
+                        )
                         break
                 if case_results:
                     poisoned_modules.update(*(result.poisoned_modules for result in case_results))
-                self._poison_known_modules(identities, poisoned_modules)
-                bool_bindings.clear()
-                identities.clear()
+                if not match_preserves_facts:
+                    self._poison_known_modules(identities, poisoned_modules)
+                    bool_bindings.clear()
+                    identities.clear()
                 if match_result is not None and match_result.flow != "normal":
                     return _BodyScanResult(poisoned_modules, match_result.flow)
                 continue
@@ -969,6 +1014,8 @@ class _StraightLineShellScanner:
         body: list[ast.stmt],
         bool_bindings: dict[str, bool],
         identities: dict[str, str],
+        *,
+        require_deterministic_control_flow: bool = False,
     ) -> bool:
         """Prove a tiny deterministic suite cannot mutate tracked facts."""
 
@@ -996,14 +1043,26 @@ class _StraightLineShellScanner:
                 if not _is_side_effect_free(statement.test):
                     return False
                 if truth is None:
+                    if require_deterministic_control_flow:
+                        return False
                     if statement.orelse and all(
-                        self._body_preserves_facts(branch, bool_bindings, identities)
+                        self._body_preserves_facts(
+                            branch,
+                            bool_bindings,
+                            identities,
+                            require_deterministic_control_flow=require_deterministic_control_flow,
+                        )
                         for branch in (statement.body, statement.orelse)
                     ):
                         continue
                     return False
                 selected = statement.body if truth else statement.orelse
-                if self._body_preserves_facts(selected, bool_bindings, identities):
+                if self._body_preserves_facts(
+                    selected,
+                    bool_bindings,
+                    identities,
+                    require_deterministic_control_flow=require_deterministic_control_flow,
+                ):
                     continue
             return False
         return True

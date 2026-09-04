@@ -1205,3 +1205,109 @@ def test_immediate_lambda_seeds_exact_identity_parameters(make_skill, source):
 )
 def test_immediate_lambda_does_not_invent_identity(make_skill, source):
     assert not _semantic_findings(make_skill, source)
+
+
+def test_known_nonempty_inert_for_preserves_unrelated_alias(make_skill):
+    source = "import os as o\nfor _ in [1]:\n    pass\no.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize(
+    "loop",
+    ["for _ in [1]:\n    o = fake", "for o in [1]:\n    pass"],
+    ids=["body-mutation", "target-rebinding"],
+)
+def test_known_nonempty_for_does_not_preserve_mutated_alias(make_skill, loop):
+    source = f"import os as o\n{loop}\no.system('not-os-system')\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_empty_for_body_mutation_is_unreachable(make_skill):
+    source = "import os as o\nfor _ in []:\n    o = fake\no.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_known_true_fact_preserving_break_preserves_alias(make_skill):
+    source = "import os as o\nwhile True:\n    break\no.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_known_true_break_does_not_preserve_mutated_alias(make_skill):
+    source = "import os as o\nwhile True:\n    o = fake\n    break\no.system('not-os-system')\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_known_true_break_skips_unreachable_else_before_later_alias_call(make_skill):
+    source = "import os as o\nwhile True:\n    break\nelse:\n    o.system('unreachable')\no.system('id')\n"
+
+    matches = _semantic_findings(make_skill, source)
+    assert len(matches) == 1
+    assert matches[0].line_number == 6
+
+
+def test_deterministic_guard_free_match_preserves_alias(make_skill):
+    source = "import os as o\nmatch 1:\n    case 1:\n        pass\no.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["case 1:\n        o = fake", "case o:\n        pass"],
+    ids=["body-mutation", "pattern-rebinding"],
+)
+def test_selected_match_case_does_not_preserve_mutated_alias(make_skill, case):
+    source = f"import os as o\nmatch 1:\n    {case}\no.system('not-os-system')\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_nonmatching_case_mutation_is_unreachable_before_selected_match(make_skill):
+    source = "import os as o\nmatch 1:\n    case 2:\n        o = fake\n    case 1:\n        pass\no.system('id')\n"
+
+    matches = _semantic_findings(make_skill, source)
+    assert len(matches) == 1
+    assert matches[0].line_number == 7
+
+
+@pytest.mark.parametrize(
+    "cases",
+    [
+        "case 1 if (o := False):\n        pass\n    case 1:\n        pass",
+        "case int():\n        o = fake\n    case 1:\n        pass",
+    ],
+    ids=["earlier-guard-mutation", "earlier-unknown-pattern"],
+)
+def test_selected_match_does_not_restore_facts_after_uncertain_prefix(make_skill, cases):
+    source = f"import os as o\nmatch 1:\n    {cases}\no.system('not-os-system')\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize(
+    "compound",
+    [
+        "while True:\n    if condition:\n        break\n    else:\n        break",
+        "match 1:\n    case 1:\n        if condition:\n            pass\n        else:\n            pass",
+    ],
+    ids=["while-break", "match-body"],
+)
+def test_continuation_proof_rejects_effectful_unknown_truth_test(make_skill, compound):
+    source = (
+        "class Mutator:\n"
+        "    def __bool__(self):\n"
+        "        import os\n"
+        "        os.system = print\n"
+        "        return True\n"
+        "condition = Mutator()\n"
+        "import os as o\n"
+        f"{compound}\n"
+        "o.system('not-os-system')\n"
+    )
+
+    assert not _semantic_findings(make_skill, source)
