@@ -124,6 +124,12 @@ def test_direct_alias_invocation_in_assignment_value_is_detected(make_skill, inv
         "result = (captured := _runner(payload))",
         "print(*_runner(payload))",
         "print(**_runner(payload))",
+        "result = (lambda value: value)(_runner(payload))",
+        "result = (lambda value=_runner(payload): value)()",
+        "result = [item for item in _runner(payload)]",
+        "result = {item for item in _runner(payload)}",
+        "result = {item: item for item in _runner(payload)}",
+        "result = (item for item in _runner(payload))",
     ],
     ids=[
         "call-argument",
@@ -139,6 +145,12 @@ def test_direct_alias_invocation_in_assignment_value_is_detected(make_skill, inv
         "named-expression-value",
         "starred-call-argument",
         "mapping-call-argument",
+        "lambda-call-argument",
+        "lambda-default",
+        "list-comprehension-first-iterable",
+        "set-comprehension-first-iterable",
+        "dict-comprehension-first-iterable",
+        "generator-first-iterable",
     ],
 )
 def test_alias_invocation_in_definitely_eager_wrapper_is_detected(make_skill, invocation: str) -> None:

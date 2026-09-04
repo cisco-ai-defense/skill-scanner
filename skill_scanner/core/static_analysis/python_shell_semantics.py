@@ -1272,6 +1272,23 @@ class _StraightLineShellScanner:
                 pending.append(current.value)
                 continue
 
+            if isinstance(current, ast.Lambda):
+                # Lambda bodies are delayed, while every default expression is
+                # evaluated immediately from left to right at creation time.
+                defaults = [*current.args.defaults, *(default for default in current.args.kw_defaults if default)]
+                defaults.sort(key=lambda default: (default.lineno, default.col_offset))
+                pending.extend(reversed(defaults))
+                continue
+
+            if isinstance(current, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+                # Python evaluates the first iterable when constructing every
+                # comprehension (including a generator expression). Iteration,
+                # filters, later iterables, and the result expression are not
+                # guaranteed, so no claim crosses that boundary.
+                pending.append(None)
+                pending.append(current.generators[0].iter)
+                continue
+
             if isinstance(current, ast.Compare):
                 pending.append(None)
                 pending.append(current.comparators[0])
@@ -1311,8 +1328,8 @@ class _StraightLineShellScanner:
             if isinstance(current, (ast.Constant, ast.Name)):
                 continue
 
-            # Lambda bodies, generators/comprehensions, conditional branches,
-            # and every other unreviewed expression are not claimed.
+            # Delayed/conditional children and every other unreviewed
+            # expression are not claimed.
             state.clear()
 
     def _record_direct_dynamic_exec_call(self, expression: ast.expr, state: _DynamicExecState) -> bool:
