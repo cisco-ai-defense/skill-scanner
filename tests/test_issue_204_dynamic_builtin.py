@@ -142,9 +142,12 @@ def test_direct_alias_invocation_in_assignment_value_is_detected(make_skill, inv
         "print(_runner(payload))",
         "result = [_runner(payload)]",
         "result = _runner(payload) if True else safe",
+        "result = _runner(payload) if 1 else safe",
         "result = _runner(payload) and safe",
         "result = True and _runner(payload)",
+        "result = 1 and _runner(payload)",
         "result = False or _runner(payload)",
+        "result = 0 or _runner(payload)",
         "result = safe if _runner(payload) else other",
         "result = {'payload': _runner(payload)}",
         "result = {_runner(payload)}",
@@ -163,9 +166,12 @@ def test_direct_alias_invocation_in_assignment_value_is_detected(make_skill, inv
         "call-argument",
         "list-element",
         "selected-if-expression",
+        "truthy-scalar-selected-if-expression",
         "first-bool-operand",
         "proven-selected-and-operand",
+        "truthy-scalar-selected-and-operand",
         "proven-selected-or-operand",
+        "false-scalar-selected-or-operand",
         "if-expression-test",
         "dict-value",
         "set-element",
@@ -198,9 +204,13 @@ def test_alias_invocation_in_definitely_eager_wrapper_is_detected(make_skill, in
         "delayed = (_runner(payload) for item in items)",
         "result = [_runner(payload) for item in items]",
         "result = False and _runner(payload)",
+        "result = 0 and _runner(payload)",
         "result = True or _runner(payload)",
+        "result = 1 or _runner(payload)",
         "result = _runner(payload) if False else safe",
+        "result = _runner(payload) if 0 else safe",
         "result = safe if True else _runner(payload)",
+        "result = safe if 1 else _runner(payload)",
         "result = _runner(payload) if condition else safe",
         "result = [mutate(), _runner(payload)]",
     ],
@@ -209,9 +219,13 @@ def test_alias_invocation_in_definitely_eager_wrapper_is_detected(make_skill, in
         "generator",
         "list-comprehension",
         "short-circuit-bool",
+        "false-scalar-short-circuit-and",
         "short-circuit-or",
+        "truthy-scalar-short-circuit-or",
         "unselected-if-body",
+        "false-scalar-unselected-if-body",
         "unselected-if-else",
+        "truthy-scalar-unselected-if-else",
         "conditional-if-body",
         "prior-effect-invalidates-alias",
     ],
@@ -687,9 +701,14 @@ def test_alias_invocation_in_assert_test_is_detected(make_skill) -> None:
         ("global harmless\n_runner(payload)", 4),
         ("value = 0\nvalue += _runner(payload)", 4),
         ("if True:\n    _runner(payload)", 4),
+        ("if 1:\n    _runner(payload)", 4),
         ("while True:\n    _runner(payload)\n    break", 4),
+        ("while 1:\n    _runner(payload)\n    break", 4),
+        ("while 0:\n    pass\nelse:\n    _runner(payload)", 6),
         ("if False:\n    pass\nelse:\n    _runner(payload)", 6),
+        ("if 0:\n    pass\nelse:\n    _runner(payload)", 6),
         ("assert False, _runner(payload)", 3),
+        ("assert 0, _runner(payload)", 3),
         ("getattr += _runner(payload)", 3),
         ("if True:\n    getattr = None\n    _runner(payload)", 5),
         ("if True:\n    getattr = _runner\n    getattr(payload)", 5),
@@ -700,9 +719,14 @@ def test_alias_invocation_in_assert_test_is_detected(make_skill) -> None:
         "module-global-declaration",
         "augassign-bound-name-value",
         "literal-true-if-body",
+        "truthy-number-if-body",
         "literal-true-while-body",
+        "truthy-number-while-body",
+        "false-number-while-else",
         "literal-false-if-else",
+        "false-number-if-else",
         "literal-false-assert-message",
+        "false-number-assert-message",
         "builtin-getattr-augassign",
         "nested-getattr-rebind-keeps-existing-alias",
         "nested-getattr-copy-keeps-exec-provenance",
@@ -719,6 +743,207 @@ def test_alias_invocation_in_guaranteed_statement_position_is_detected(
 
     assert len(findings) == 1
     assert findings[0].line_number == expected_line
+
+
+@pytest.mark.parametrize(
+    "test",
+    ["[missing]", "(mutate(),)", "{missing}", "{missing: 1}", "{'key': mutate()}"],
+    ids=["list-name", "tuple-call", "set-name", "dict-key", "dict-value-call"],
+)
+def test_effectful_or_failing_container_test_does_not_select_branch(make_skill, test: str) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"if {test}:\n"
+        "    _runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected_line"),
+    [
+        ("-1", 4),
+        ("--1", 4),
+        ("1.0", 4),
+        ("1j", 4),
+        ("'enabled'", 4),
+        ("b'enabled'", 4),
+        ("...", 4),
+        ("[1]", 4),
+        ("(1,)", 4),
+        ("{1}", 4),
+        ("{'enabled': 1}", 4),
+        ("0.0", 6),
+        ("0j", 6),
+        ("''", 6),
+        ("b''", 6),
+        ("None", 6),
+        ("[]", 6),
+        ("()", 6),
+        ("{}", 6),
+    ],
+    ids=[
+        "truthy-signed-int",
+        "truthy-repeated-sign",
+        "truthy-float",
+        "truthy-complex",
+        "truthy-string",
+        "truthy-bytes",
+        "truthy-ellipsis",
+        "truthy-list",
+        "truthy-tuple",
+        "truthy-set",
+        "truthy-dict",
+        "false-float",
+        "false-complex",
+        "false-string",
+        "false-bytes",
+        "false-none",
+        "false-list",
+        "false-tuple",
+        "false-dict",
+    ],
+)
+def test_inert_literal_selects_only_guaranteed_if_branch(
+    make_skill,
+    literal: str,
+    expected_line: int,
+) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"if {literal}:\n"
+        "    _runner(body_payload)\n"
+        "else:\n"
+        "    _runner(else_payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+@pytest.mark.parametrize(
+    ("statement", "expected_line"),
+    [
+        ("try:\n    raise\nfinally:\n    _runner(payload)", 6),
+        ("try:\n    alias = _runner\n    raise\nfinally:\n    alias(payload)", 7),
+        ("try:\n    if 1:\n        raise\nfinally:\n    _runner(payload)", 7),
+        ("try:\n    raise\n    _runner = safe\nfinally:\n    _runner(payload)", 7),
+        (
+            "try:\n    try:\n        raise\n    finally:\n        pass\nfinally:\n    _runner(payload)",
+            9,
+        ),
+        ("while True:\n    try:\n        break\n    finally:\n        _runner(payload)", 7),
+        ("while True:\n    try:\n        continue\n    finally:\n        _runner(payload)", 7),
+        ("try:\n    while True:\n        break\nfinally:\n    _runner(payload)", 7),
+        (
+            "while True:\n"
+            "    try:\n"
+            "        break\n"
+            "    except Exception:\n"
+            "        mutate()\n"
+            "    finally:\n"
+            "        _runner(payload)",
+            9,
+        ),
+        (
+            "while True:\n"
+            "    try:\n"
+            "        break\n"
+            "    except* Exception:\n"
+            "        mutate()\n"
+            "    finally:\n"
+            "        _runner(payload)",
+            9,
+        ),
+        (
+            "while True:\n"
+            "    try:\n"
+            "        continue\n"
+            "    except* Exception:\n"
+            "        mutate()\n"
+            "    finally:\n"
+            "        _runner(payload)",
+            9,
+        ),
+    ],
+    ids=[
+        "bare-raise",
+        "alias-created-before-raise",
+        "raise-in-guaranteed-branch",
+        "unreachable-rebind-after-raise",
+        "nested-finally",
+        "break-finally",
+        "continue-finally",
+        "loop-break-before-outer-finally",
+        "break-skips-handler-before-finally",
+        "break-skips-exception-group-handler-before-finally",
+        "continue-skips-exception-group-handler-before-finally",
+    ],
+)
+def test_inert_abrupt_exit_preserves_provenance_for_guaranteed_finally(
+    make_skill,
+    statement: str,
+    expected_line: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "try:\n    _runner = None\n    raise\nfinally:\n    _runner(payload)",
+        "try:\n    mutate()\n    raise\nfinally:\n    _runner(payload)",
+        "try:\n    raise\n    _runner(payload)\nfinally:\n    pass",
+        "try:\n    raise\nfinally:\n    _runner = None\n    _runner(payload)",
+        "try:\n    raise\nexcept RuntimeError:\n    mutate()\nfinally:\n    _runner(payload)",
+        "try:\n    raise\nfinally:\n    pass\n_runner(payload)",
+        "while True:\n    try:\n        break\n        _runner(payload)\n    finally:\n        pass",
+        "try:\n    while True:\n        continue\nfinally:\n    _runner(payload)",
+    ],
+    ids=[
+        "alias-rebound-before-raise",
+        "effect-before-raise",
+        "unreachable-call-after-raise",
+        "alias-rebound-in-finally",
+        "handler-may-mutate-alias",
+        "no-provenance-leak-after-try",
+        "unreachable-call-after-break",
+        "infinite-continue-before-outer-finally",
+    ],
+)
+def test_inert_abrupt_exit_does_not_restore_stale_or_unreachable_provenance(
+    make_skill,
+    statement: str,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_effectful_raise_does_not_restore_alias_for_finally(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "try:\n"
+        "    raise _runner(payload)\n"
+        "finally:\n"
+        "    _runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 4
 
 
 def test_future_feature_binding_is_known_for_augassign(make_skill) -> None:
@@ -1282,6 +1507,56 @@ def test_class_compiler_bindings_are_charged_before_body_scan() -> None:
 def test_eager_expression_traversal_limit_is_enforced(make_skill) -> None:
     elements = ", ".join(("0",) * MAX_PYTHON_SHELL_EAGER_EXPR_NODES + ("_runner(payload)",))
     source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nresult = [{elements}]\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_literal_truth_proof_accepts_an_expression_at_the_node_limit(make_skill) -> None:
+    elements = ", ".join(("0",) * (MAX_PYTHON_SHELL_EAGER_EXPR_NODES - 3))
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"result = _runner(payload) if [{elements}] else None\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+
+
+def test_literal_truth_proof_rejects_an_expression_over_the_node_limit(make_skill) -> None:
+    elements = ", ".join(("0",) * (MAX_PYTHON_SHELL_EAGER_EXPR_NODES - 2))
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"result = _runner(payload) if [{elements}] else None\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_signed_literal_truth_proof_accepts_an_expression_at_the_node_limit(make_skill) -> None:
+    signs = "-" * (MAX_PYTHON_SHELL_EAGER_EXPR_NODES - 3)
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"result = _runner(payload) if {signs}1 else None\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+
+
+def test_signed_literal_truth_proof_rejects_an_expression_over_the_node_limit(make_skill) -> None:
+    signs = "-" * (MAX_PYTHON_SHELL_EAGER_EXPR_NODES - 2)
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"result = _runner(payload) if {signs}1 else None\n"
+    )
 
     assert _eval_findings(make_skill, source) == []
 

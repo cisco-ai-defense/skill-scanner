@@ -32,6 +32,7 @@ import re
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Literal
 
 MAX_PYTHON_SHELL_SOURCE_BYTES = 1024 * 1024
@@ -76,6 +77,14 @@ _LEGACY_OS_SYSTEM_CALL_RE = re.compile(r"os\.system\s*\(")
 
 _ScopeKind = Literal["module", "function", "class"]
 _FlowKind = Literal["normal", "return", "raise", "break", "continue", "halt", "terminal"]
+
+
+class _InertAbruptExit(Enum):
+    """Effect-free control transfers that may cross a mandatory finalizer."""
+
+    RAISE = "raise"
+    BREAK = "break"
+    CONTINUE = "continue"
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +256,7 @@ class _DynamicExecState:
     class_namespace: bool = False
     allow_invalid_decode_carryover: bool = True
     hard_invalidated: bool = False
+    inert_exit: _InertAbruptExit | None = None
 
     def clone(self) -> _DynamicExecState:
         """Copy bounded provenance for one independently executed namespace."""
@@ -264,6 +274,7 @@ class _DynamicExecState:
             class_namespace=self.class_namespace,
             allow_invalid_decode_carryover=self.allow_invalid_decode_carryover,
             hard_invalidated=self.hard_invalidated,
+            inert_exit=self.inert_exit,
         )
 
     def clear(self) -> None:
@@ -275,6 +286,7 @@ class _DynamicExecState:
         self.known_bound_names.clear()
         self.getattr_names.clear()
         self.hard_invalidated = True
+        self.inert_exit = None
 
     def rebind(self, name: str) -> None:
         """Forget provenance replaced by one ordinary name binding."""
@@ -305,7 +317,17 @@ class _DynamicExecState:
         # Ordinary rebinding can temporarily hide builtin ``getattr`` and a
         # later proven deletion can expose it again.  Arbitrary effects, by
         # contrast, permanently invalidate every claim in this narrow pass.
+        return self.enabled and not self.hard_invalidated and self.inert_exit is None
+
+    def can_enter_finally(self) -> bool:
+        """Return whether retained facts are safe at a mandatory finalizer."""
+
         return self.enabled and not self.hard_invalidated
+
+    def enter_finally(self) -> None:
+        """Consume a pending control transfer while its finalizer executes."""
+
+        self.inert_exit = None
 
 
 def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...]:
@@ -379,25 +401,40 @@ def _is_side_effect_free(expression: ast.expr | None) -> bool:
     return True
 
 
-def _is_guaranteed_inert_value(expression: ast.expr, state: _DynamicExecState) -> bool:
-    """Return whether evaluating a narrow inert value cannot fail on a name load."""
+def _guaranteed_inert_value_node_count(
+    expression: ast.expr,
+    state: _DynamicExecState,
+    *,
+    max_nodes: int = MAX_PYTHON_SHELL_EAGER_EXPR_NODES,
+) -> int | None:
+    """Count one bounded inert value, or return ``None`` when it is unsupported."""
 
     pending = [expression]
+    visited = 0
     while pending:
         node = pending.pop()
+        visited += 1
+        if visited > max_nodes:
+            return None
         if isinstance(node, ast.Constant):
             continue
         if isinstance(node, ast.Name):
             if node.id not in state.known_bound_names and node.id not in state.getattr_names:
-                return False
+                return None
             continue
         if isinstance(node, (ast.List, ast.Tuple)):
             if any(isinstance(element, ast.Starred) for element in node.elts):
-                return False
+                return None
             pending.extend(node.elts)
             continue
-        return False
-    return True
+        return None
+    return visited
+
+
+def _is_guaranteed_inert_value(expression: ast.expr, state: _DynamicExecState) -> bool:
+    """Return whether evaluating a bounded inert value cannot fail on a name load."""
+
+    return _guaranteed_inert_value_node_count(expression, state) is not None
 
 
 def _exact_bool(expression: ast.expr, bindings: dict[str, bool]) -> bool | None:
@@ -405,6 +442,51 @@ def _exact_bool(expression: ast.expr, bindings: dict[str, bool]) -> bool | None:
         return expression.value
     if isinstance(expression, ast.Name):
         return bindings.get(expression.id)
+    return None
+
+
+def _guaranteed_literal_truth(expression: ast.expr, state: _DynamicExecState) -> bool | None:
+    """Truth-test a narrow literal whose construction cannot dispatch user code."""
+
+    if isinstance(expression, ast.Constant):
+        value = expression.value
+        if value is None or value is Ellipsis or type(value) in {bool, bytes, complex, float, int, str}:
+            return bool(value)
+        return None
+    signed_operand = expression
+    signed_nodes = 0
+    while isinstance(signed_operand, ast.UnaryOp) and isinstance(signed_operand.op, (ast.UAdd, ast.USub)):
+        signed_nodes += 1
+        if signed_nodes >= MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+            return None
+        signed_operand = signed_operand.operand
+    if (
+        signed_operand is not expression
+        and isinstance(signed_operand, ast.Constant)
+        and type(signed_operand.value) in {bool, complex, float, int}
+    ):
+        # Unary sign does not change whether a builtin numeric scalar is zero.
+        return bool(signed_operand.value)
+    if isinstance(expression, (ast.List, ast.Tuple)) and _is_guaranteed_inert_value(expression, state):
+        return bool(expression.elts)
+    if (
+        isinstance(expression, ast.Set)
+        and len(expression.elts) + 1 <= MAX_PYTHON_SHELL_EAGER_EXPR_NODES
+        and all(_has_inert_literal_hash(element) for element in expression.elts)
+    ):
+        return bool(expression.elts)
+    if isinstance(expression, ast.Dict):
+        visited = 1
+        for key, dict_value in zip(expression.keys, expression.values, strict=True):
+            if key is None or not _has_inert_literal_hash(key):
+                return None
+            visited += 1
+            remaining = MAX_PYTHON_SHELL_EAGER_EXPR_NODES - visited
+            value_nodes = _guaranteed_inert_value_node_count(dict_value, state, max_nodes=remaining)
+            if value_nodes is None:
+                return None
+            visited += value_nodes
+        return bool(expression.keys)
     return None
 
 
@@ -1459,6 +1541,12 @@ class _StraightLineShellScanner:
             return
 
         if isinstance(statement, ast.Raise):
+            if statement.exc is None and statement.cause is None:
+                # A bare raise transfers control without evaluating user code.
+                # Retain the current facts for a mandatory enclosing finally,
+                # while stopping this source-ordered prefix as unreachable.
+                state.inert_exit = _InertAbruptExit.RAISE
+                return
             if statement.exc is not None:
                 self._scan_eager_dynamic_exec_calls(statement.exc, state)
             if statement.cause is not None:
@@ -1466,10 +1554,19 @@ class _StraightLineShellScanner:
             state.clear()
             return
 
+        if isinstance(statement, ast.Break):
+            state.inert_exit = _InertAbruptExit.BREAK
+            return
+
+        if isinstance(statement, ast.Continue):
+            state.inert_exit = _InertAbruptExit.CONTINUE
+            return
+
         if isinstance(statement, (ast.If, ast.While)):
+            test_truth = _guaranteed_literal_truth(statement.test, state)
             self._scan_eager_dynamic_exec_calls(statement.test, state)
-            if isinstance(statement.test, ast.Constant) and type(statement.test.value) is bool:
-                selected_body = statement.body if statement.test.value else statement.orelse
+            if test_truth is not None and state.is_active():
+                selected_body = statement.body if test_truth else statement.orelse
                 self._scan_guaranteed_dynamic_exec_prefix(
                     selected_body,
                     state,
@@ -1477,6 +1574,19 @@ class _StraightLineShellScanner:
                     class_body_base=class_body_base,
                     scan_nested_class_bodies=scan_nested_class_bodies,
                 )
+            if state.inert_exit is not None:
+                if isinstance(statement, ast.While) and test_truth:
+                    if state.inert_exit is _InertAbruptExit.BREAK:
+                        # The first iteration is guaranteed and this break
+                        # completes the loop without entering its else suite.
+                        state.inert_exit = None
+                        return
+                    if state.inert_exit is _InertAbruptExit.CONTINUE:
+                        # A second iteration is reached, but no later exit is
+                        # proven by this bounded single-iteration scan.
+                        state.clear()
+                        return
+                return
             state.clear()
             return
 
@@ -1506,7 +1616,16 @@ class _StraightLineShellScanner:
                 class_body_base=class_body_base,
                 scan_nested_class_bodies=scan_nested_class_bodies,
             )
-            if isinstance(statement, ast.Try) and state.is_active() and not statement.handlers and not statement.orelse:
+            body_exit = state.inert_exit
+            loop_exit_skips_handlers = body_exit in {
+                _InertAbruptExit.BREAK,
+                _InertAbruptExit.CONTINUE,
+            }
+            if state.can_enter_finally() and (
+                loop_exit_skips_handlers
+                or (isinstance(statement, ast.Try) and not statement.handlers and not statement.orelse)
+            ):
+                state.enter_finally()
                 self._scan_guaranteed_dynamic_exec_prefix(
                     statement.finalbody,
                     state,
@@ -1514,6 +1633,11 @@ class _StraightLineShellScanner:
                     class_body_base=class_body_base,
                     scan_nested_class_bodies=scan_nested_class_bodies,
                 )
+                if state.inert_exit is not None:
+                    return
+                if body_exit is not None and state.is_active():
+                    state.inert_exit = body_exit
+                    return
             state.clear()
             return
 
@@ -1667,9 +1791,10 @@ class _StraightLineShellScanner:
 
         if isinstance(statement, ast.Assert):
             # The test is mandatory in normal execution.  The message is only
-            # proven to execute when that test is the literal false value.
+            # proven to execute when that test is a false inert literal.
+            test_truth = _guaranteed_literal_truth(statement.test, state)
             self._scan_eager_dynamic_exec_calls(statement.test, state)
-            if isinstance(statement.test, ast.Constant) and statement.test.value is False and statement.msg is not None:
+            if test_truth is False and state.is_active() and statement.msg is not None:
                 self._scan_eager_dynamic_exec_calls(statement.msg, state)
             state.clear()
             return
@@ -1840,18 +1965,23 @@ class _StraightLineShellScanner:
                     bool_children.append(value)
                     if index == len(current.values) - 1:
                         break
-                    if not isinstance(value, ast.Constant) or type(value.value) is not bool:
+                    value_truth = _guaranteed_literal_truth(value, state)
+                    if value_truth is None:
                         bool_children.append(None)
                         break
-                    continues = value.value if isinstance(current.op, ast.And) else not value.value
+                    continues = value_truth if isinstance(current.op, ast.And) else not value_truth
                     if not continues:
                         break
                 pending.extend(reversed(bool_children))
                 continue
 
             if isinstance(current, ast.IfExp):
-                if isinstance(current.test, ast.Constant) and type(current.test.value) is bool:
-                    pending.append(current.body if current.test.value else current.orelse)
+                test_truth = _guaranteed_literal_truth(current.test, state)
+                if test_truth is not None:
+                    # Retain the test in the traversal so the expression-wide
+                    # node budget includes both the proof and selected arm.
+                    pending.append(current.body if test_truth else current.orelse)
+                    pending.append(current.test)
                 else:
                     pending.append(None)
                     pending.append(current.test)
@@ -1923,6 +2053,25 @@ class _StraightLineShellScanner:
                 continue
 
             if isinstance(current, ast.UnaryOp):
+                if _guaranteed_literal_truth(current, state) is not None:
+                    # Charge the entire signed-literal chain in one pass. Do
+                    # not queue each suffix for re-proof, which would be
+                    # quadratic for an adversarially deep unary expression.
+                    signed_tail = current.operand
+                    while isinstance(signed_tail, ast.UnaryOp) and isinstance(
+                        signed_tail.op,
+                        (ast.UAdd, ast.USub),
+                    ):
+                        visited += 1
+                        if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+                            state.clear()
+                            return
+                        signed_tail = signed_tail.operand
+                    visited += 1
+                    if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+                        state.clear()
+                        return
+                    continue
                 pending.append(None)
                 pending.append(current.operand)
                 continue
