@@ -19,8 +19,9 @@
 The signature pack already owns literal sensitive paths. This module adds one
 small positive-evidence case: an exact string built through straight-line
 assignments, concatenation, or a reviewed ``os.path.join`` call reaches the
-built-in ``open`` in a proven read-only mode. Effects and compound flow erase
-all path facts rather than being interpreted.
+built-in ``open`` in a proven read-only mode. Effects and general compound flow
+erase all path facts; a canonical ``os.path.exists(exact_path)`` guard may carry
+unchanged facts into its body.
 """
 
 from __future__ import annotations
@@ -102,7 +103,7 @@ def find_constructed_sensitive_file_reads(
     source: str,
     filename: str = "<unknown>",
 ) -> tuple[PythonSensitiveFileReadCandidate, ...]:
-    """Find bounded, straight-line sensitive-path reads in Python source."""
+    """Find bounded, positively resolved sensitive-path reads in Python source."""
 
     if not source or "\x00" in source or len(source) > MAX_PYTHON_PATH_SOURCE_BYTES:
         return ()
@@ -2064,6 +2065,8 @@ class _StraightLineSensitiveReadScanner:
         class_scope: bool = False,
         function_scope: bool = False,
         allow_reviewed_json_imports: bool = True,
+        initial_bindings: dict[str, str] | None = None,
+        initial_os_available: bool = False,
         initial_os_module_names: set[str] | None = None,
         initial_os_path_names: set[str] | None = None,
         initial_runtime_helpers: set[str] | None = None,
@@ -2102,8 +2105,8 @@ class _StraightLineSensitiveReadScanner:
                 for statement in evaluated_body
             )
         )
-        bindings: dict[str, str] = {}
-        os_available = False
+        bindings = dict(initial_bindings or {})
+        os_available = initial_os_available
         os_module_names = set(initial_os_module_names or ())
         os_path_names = set(initial_os_path_names or ())
         open_available = builtin_open
@@ -2984,6 +2987,43 @@ class _StraightLineSensitiveReadScanner:
                 elif not self._expression_is_inert(statement.value, bindings, os_available):
                     bindings.clear()
                     os_available = False
+                if statement_binds_open:
+                    invalidate_namespace_open()
+                continue
+
+            if isinstance(statement, ast.If) and self._is_exact_path_exists_guard(
+                statement,
+                bindings,
+                os_available,
+            ):
+                # ``os.path.exists(exact_path)`` is a narrow, read-only guard.
+                # Carry the already-proven local facts into its body so a
+                # guarded ``with open(alias)`` is classified independently of
+                # the alias spelling. The state after the conditional is still
+                # discarded because the body may not execute.
+                body_open_available = (
+                    open_available and not child_runtime_open_unavailable and not child_namespace_open_bound
+                )
+                self._scan_body(
+                    statement.body,
+                    depth=depth + 1,
+                    builtin_open=body_open_available,
+                    delayed_builtin_open=(
+                        delayed_open_available and not child_runtime_open_unavailable and not child_namespace_open_bound
+                    ),
+                    class_scope=class_scope,
+                    function_scope=function_scope,
+                    allow_reviewed_json_imports=allow_reviewed_json_imports,
+                    initial_bindings=dict(bindings),
+                    initial_os_available=os_available,
+                    initial_os_module_names=statement_os_module_names,
+                    initial_os_path_names=statement_os_path_names,
+                    initial_runtime_helpers=child_runtime_helpers,
+                    initial_globals_is_builtin=child_globals_is_builtin,
+                    eager_lexical_builtin_open=(eager_lexical_open_available and not child_runtime_open_unavailable),
+                )
+                bindings.clear()
+                os_available = False
                 if statement_binds_open:
                     invalidate_namespace_open()
                 continue
@@ -4225,6 +4265,30 @@ class _StraightLineSensitiveReadScanner:
         if exact_value is not None:
             return True, exact_value
         return False, None
+
+    def _is_exact_path_exists_guard(
+        self,
+        statement: ast.If,
+        bindings: dict[str, str],
+        os_available: bool,
+    ) -> bool:
+        if statement.orelse or not os_available:
+            return False
+        test = statement.test
+        if (
+            not isinstance(test, ast.Call)
+            or len(test.args) != 1
+            or test.keywords
+            or isinstance(test.args[0], ast.Starred)
+        ):
+            return False
+        if not (
+            isinstance(test.func, ast.Attribute)
+            and test.func.attr == "exists"
+            and _is_reviewed_os_path_attribute(test.func)
+        ):
+            return False
+        return self._exact_string(test.args[0], bindings, os_available) is not None
 
     def _record_open(
         self,
