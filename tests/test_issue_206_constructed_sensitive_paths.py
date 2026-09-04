@@ -8,6 +8,7 @@ import pytest
 from skill_scanner.core.analyzers import static as static_module
 from skill_scanner.core.analyzers.static import StaticAnalyzer
 from skill_scanner.core.models import Severity, ThreatCategory
+from skill_scanner.core.static_analysis import python_sensitive_file_reads as sensitive_reads
 from skill_scanner.core.static_analysis.python_sensitive_file_reads import (
     MAX_PYTHON_PATH_SOURCE_BYTES,
     find_constructed_sensitive_file_reads,
@@ -263,6 +264,189 @@ def test_shadowed_open_is_not_treated_as_the_builtin(make_skill, source):
 )
 def test_explicit_runtime_open_replacement_invalidates_builtin(make_skill, replacement):
     source = f"{replacement}\npath='/etc/'+'passwd'\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+def test_runtime_helper_alias_limit_fails_closed(monkeypatch):
+    monkeypatch.setattr(sensitive_reads, "MAX_PYTHON_PATH_RUNTIME_HELPER_ALIASES", 2)
+    source = """\
+import builtins as first_builtins
+import builtins as second_builtins
+path = '/etc/' + 'passwd'
+open(path)
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "def configure(value=(open := lambda value: value)):\n    pass",
+        "@(open := (lambda function: function))\ndef configure():\n    pass",
+        "import builtins\ndef configure(value: setattr(builtins, 'open', lambda value: value)):\n    pass",
+        "class Configure((open := object)):\n    pass",
+        "class Configure(metaclass=(open := type)):\n    pass",
+        "configure = lambda value=(open := (lambda value: value)): None",
+    ],
+    ids=["default", "decorator", "annotation", "class-base", "class-keyword", "lambda-default"],
+)
+def test_eager_definition_expressions_that_replace_open_are_honored(make_skill, definition):
+    source = f"{definition}\npath='/etc/'+'passwd'\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+def test_open_binding_in_delayed_function_body_does_not_shadow_module_builtin(make_skill):
+    source = "def configure():\n    open=lambda value: value\npath='/etc/'+'passwd'\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 4
+
+
+def test_class_local_eager_open_binding_does_not_shadow_method_builtin(make_skill):
+    source = """\
+class Loader:
+    def configure(value=(open := lambda value: value)):
+        pass
+
+    def load(self):
+        path = '/etc/' + 'passwd'
+        return open(path)
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 7
+
+
+def test_with_body_open_binding_invalidates_later_builtin_assumption(make_skill):
+    source = "with context():\n    open=lambda value: value\npath='/etc/'+'passwd'\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+def test_class_with_open_binding_does_not_shadow_later_method_builtin(make_skill):
+    source = """\
+class Loader:
+    with manager:
+        open = lambda value: value
+    path = '/etc/' + 'passwd'
+    handle = open(path)
+
+    def load(self):
+        path = '/etc/' + 'shadow'
+        return open(path)
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 9
+    assert matches[0].metadata["resolved_path"] == "/etc/shadow"
+
+
+def test_class_with_runtime_open_replacement_invalidates_later_method_builtin(make_skill):
+    source = """\
+class Loader:
+    with manager:
+        import builtins as helper
+        helper.open = lambda value: value
+
+    def load(self):
+        path = '/etc/' + 'shadow'
+        return open(path)
+
+path = '/etc/' + 'passwd'
+open(path)
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+@pytest.mark.parametrize(
+    "compound",
+    [
+        "with manager:\n    with other:\n        import builtins as helper\n        helper.open = replacement",
+        "if enabled:\n    import builtins as helper\n    helper.open = replacement",
+    ],
+    ids=["nested-with", "conditional"],
+)
+def test_compound_runtime_open_replacement_invalidates_outer_builtin(make_skill, compound):
+    source = f"{compound}\npath='/etc/'+'passwd'\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+def test_runtime_helper_alias_from_with_body_is_tracked_afterward(make_skill):
+    source = """\
+with manager:
+    import builtins as helper
+helper.open = replacement
+path = '/etc/' + 'passwd'
+open(path)
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """\
+class Dummy:
+    pass
+helper = Dummy()
+for _ in (0, 1):
+    helper.open = replacement
+    import builtins as helper
+path = '/etc/' + 'passwd'
+open(path)
+""",
+        """\
+try:
+    import builtins as helper
+    raise RuntimeError
+except RuntimeError:
+    helper.open = replacement
+path = '/etc/' + 'passwd'
+open(path)
+""",
+    ],
+    ids=["loop-carried-alias", "exception-edge-alias"],
+)
+def test_unsupported_compound_runtime_helper_flow_fails_closed(make_skill, source):
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+def test_class_body_runtime_open_replacement_invalidates_outer_and_method_builtin(make_skill):
+    source = """\
+class Loader:
+    import builtins as helper
+    helper.open = lambda value: value
+
+    def load(self):
+        path = '/etc/' + 'shadow'
+        return open(path)
+
+path = '/etc/' + 'passwd'
+open(path)
+"""
     skill = make_skill({"scripts/main.py": source})
 
     assert _matches(StaticAnalyzer(use_yara=False), skill) == []

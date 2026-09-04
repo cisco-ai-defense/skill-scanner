@@ -38,6 +38,7 @@ MAX_PYTHON_PATH_SCOPE_DEPTH = 32
 MAX_PYTHON_PATH_VALUE_DEPTH = 24
 MAX_PYTHON_PATH_STRING_CHARS = 4_096
 MAX_PYTHON_PATH_JOIN_PARTS = 32
+MAX_PYTHON_PATH_RUNTIME_HELPER_ALIASES = 64
 
 _READ_ONLY_MODES = frozenset({"r", "rb", "br", "rt", "tr"})
 _OPEN_KEYWORDS = frozenset({"buffering", "closefd", "encoding", "errors", "file", "mode", "newline", "opener"})
@@ -132,6 +133,38 @@ def _bound_import_name(alias: ast.alias) -> str:
     return alias.asname or alias.name.split(".", 1)[0]
 
 
+def _definition_eager_nodes(
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Lambda,
+) -> tuple[ast.AST, ...]:
+    """Return expressions that may be evaluated when a definition is created."""
+
+    eager: list[ast.AST] = []
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        eager.extend(node.decorator_list)
+        arguments = node.args
+        for argument in (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs):
+            if argument.annotation is not None:
+                eager.append(argument.annotation)
+        if arguments.vararg is not None and arguments.vararg.annotation is not None:
+            eager.append(arguments.vararg.annotation)
+        if arguments.kwarg is not None and arguments.kwarg.annotation is not None:
+            eager.append(arguments.kwarg.annotation)
+        eager.extend(arguments.defaults)
+        eager.extend(default for default in arguments.kw_defaults if default is not None)
+        if node.returns is not None:
+            eager.append(node.returns)
+        eager.extend(getattr(node, "type_params", ()))
+    elif isinstance(node, ast.ClassDef):
+        eager.extend(node.decorator_list)
+        eager.extend(node.bases)
+        eager.extend(keyword.value for keyword in node.keywords)
+        eager.extend(getattr(node, "type_params", ()))
+    else:
+        eager.extend(node.args.defaults)
+        eager.extend(default for default in node.args.kw_defaults if default is not None)
+    return tuple(eager)
+
+
 def _node_binds_name(root: ast.AST, name: str) -> bool:
     """Find a conservative binding without recursively entering delayed scopes."""
 
@@ -141,8 +174,10 @@ def _node_binds_name(root: ast.AST, name: str) -> bool:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             if node.name == name:
                 return True
+            pending.extend(_definition_eager_nodes(node))
             continue
         if isinstance(node, ast.Lambda):
+            pending.extend(_definition_eager_nodes(node))
             continue
         if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
             # Comprehension targets are isolated on supported Python versions.
@@ -235,6 +270,7 @@ def _node_may_replace_runtime_open(
         node = pending.pop()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             # Definitions do not execute their bodies at the definition site.
+            pending.extend(_definition_eager_nodes(node))
             continue
         if isinstance(node, ast.Assign) and any(
             _target_may_replace_runtime_open(target, builtins_names, globals_is_builtin) for target in node.targets
@@ -264,57 +300,215 @@ def _node_may_replace_runtime_open(
     return False
 
 
+def _node_imports_runtime_helper(root: ast.AST) -> bool:
+    """Find eager ``builtins`` imports inside an unsupported compound."""
+
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            pending.extend(_definition_eager_nodes(node))
+            continue
+        if isinstance(node, ast.Import) and any(imported.name == "builtins" for imported in node.names):
+            return True
+        pending.extend(ast.iter_child_nodes(node))
+    return False
+
+
 def _advance_runtime_helper_identities(
     statement: ast.stmt,
     builtins_names: set[str],
     globals_is_builtin: bool,
-) -> bool:
-    """Update only source-ordered identities used to validate open mutation."""
+) -> tuple[bool, bool]:
+    """Update runtime-helper identities and report whether tracking stayed bounded."""
 
     if isinstance(statement, ast.Import):
         for imported in statement.names:
             local_name = _bound_import_name(imported)
             builtins_names.discard(local_name)
             if imported.name == "builtins":
+                if len(builtins_names) >= MAX_PYTHON_PATH_RUNTIME_HELPER_ALIASES:
+                    builtins_names.clear()
+                    return False, False
                 builtins_names.add(local_name)
             if local_name == "globals":
                 globals_is_builtin = False
-        return globals_is_builtin
+        return globals_is_builtin, True
     if isinstance(statement, ast.ImportFrom):
         if any(imported.name == "*" for imported in statement.names):
             builtins_names.clear()
-            return False
+            return False, True
         for imported in statement.names:
             local_name = imported.asname or imported.name
             builtins_names.discard(local_name)
             if local_name == "globals":
                 globals_is_builtin = False
-        return globals_is_builtin
+        return globals_is_builtin, True
 
     for builtins_name in tuple(builtins_names):
         if _node_binds_name(statement, builtins_name):
             builtins_names.discard(builtins_name)
     if globals_is_builtin and _node_binds_name(statement, "globals"):
+        return False, True
+    return globals_is_builtin, True
+
+
+def _scope_binds_open(body: list[ast.stmt]) -> bool:
+    """Return whether eager code binds ``open`` in the current namespace."""
+
+    return any(_node_binds_name(statement, "open") for statement in body)
+
+
+def _scope_may_shadow_open(body: list[ast.stmt]) -> bool:
+    """Return whether a scope can stop resolving the runtime builtin ``open``."""
+
+    return _scope_binds_open(body) or _scope_may_replace_runtime_open(body)
+
+
+def _invalidate_runtime_helper_bindings(
+    nodes: tuple[ast.AST, ...],
+    builtins_names: set[str],
+    globals_is_builtin: bool,
+) -> bool:
+    """Discard helper identities rebound by eagerly evaluated nodes."""
+
+    for builtins_name in tuple(builtins_names):
+        if any(_node_binds_name(node, builtins_name) for node in nodes):
+            builtins_names.discard(builtins_name)
+    if globals_is_builtin and any(_node_binds_name(node, "globals") for node in nodes):
         return False
     return globals_is_builtin
 
 
-def _scope_may_shadow_open(body: list[ast.stmt]) -> bool:
-    return any(_node_binds_name(statement, "open") for statement in body) or _scope_may_replace_runtime_open(body)
+def _summarize_runtime_open_effects(
+    body: list[ast.stmt],
+    builtins_names: set[str],
+    globals_is_builtin: bool,
+    *,
+    depth: int = 0,
+) -> tuple[bool, set[str], bool, bool]:
+    """Track helper aliases through the eager compound shapes used here."""
 
+    if depth > MAX_PYTHON_PATH_SCOPE_DEPTH:
+        return False, set(), False, False
 
-def _scope_may_replace_runtime_open(body: list[ast.stmt]) -> bool:
-    builtins_names = {"__builtins__"}
-    globals_is_builtin = True
     for statement in body:
+        if isinstance(statement, ast.ClassDef):
+            eager_nodes = _definition_eager_nodes(statement)
+            if any(_node_may_replace_runtime_open(node, builtins_names, globals_is_builtin) for node in eager_nodes):
+                return True, builtins_names, globals_is_builtin, True
+            class_names = set(builtins_names)
+            class_globals_is_builtin = globals_is_builtin
+            class_globals_is_builtin = _invalidate_runtime_helper_bindings(
+                eager_nodes,
+                class_names,
+                class_globals_is_builtin,
+            )
+            replaced, _, _, complete = _summarize_runtime_open_effects(
+                statement.body,
+                class_names,
+                class_globals_is_builtin,
+                depth=depth + 1,
+            )
+            if replaced or not complete:
+                return replaced, builtins_names, globals_is_builtin, complete
+            builtins_names.discard(statement.name)
+            if statement.name == "globals":
+                globals_is_builtin = False
+            continue
+
+        if isinstance(statement, ast.If):
+            if _node_may_replace_runtime_open(statement.test, builtins_names, globals_is_builtin):
+                return True, builtins_names, globals_is_builtin, True
+            branch_names = set(builtins_names)
+            branch_globals_is_builtin = _invalidate_runtime_helper_bindings(
+                (statement.test,),
+                branch_names,
+                globals_is_builtin,
+            )
+            merged_names: set[str] = set()
+            merged_globals_is_builtin = False
+            for branch in (statement.body, statement.orelse):
+                if branch:
+                    replaced, result_names, result_globals, complete = _summarize_runtime_open_effects(
+                        branch,
+                        set(branch_names),
+                        branch_globals_is_builtin,
+                        depth=depth + 1,
+                    )
+                else:
+                    replaced = False
+                    result_names = set(branch_names)
+                    result_globals = branch_globals_is_builtin
+                    complete = True
+                if replaced or not complete:
+                    return replaced, builtins_names, globals_is_builtin, complete
+                merged_names.update(result_names)
+                if len(merged_names) > MAX_PYTHON_PATH_RUNTIME_HELPER_ALIASES:
+                    return False, set(), False, False
+                merged_globals_is_builtin = merged_globals_is_builtin or result_globals
+            builtins_names = merged_names
+            globals_is_builtin = merged_globals_is_builtin
+            continue
+
+        if isinstance(statement, (ast.With, ast.AsyncWith)):
+            for item in statement.items:
+                if _node_may_replace_runtime_open(item.context_expr, builtins_names, globals_is_builtin):
+                    return True, builtins_names, globals_is_builtin, True
+                globals_is_builtin = _invalidate_runtime_helper_bindings(
+                    (item.context_expr,),
+                    builtins_names,
+                    globals_is_builtin,
+                )
+                if item.optional_vars is None:
+                    continue
+                if _target_may_replace_runtime_open(
+                    item.optional_vars,
+                    builtins_names,
+                    globals_is_builtin,
+                ):
+                    return True, builtins_names, globals_is_builtin, True
+                globals_is_builtin = _invalidate_runtime_helper_bindings(
+                    (item.optional_vars,),
+                    builtins_names,
+                    globals_is_builtin,
+                )
+            replaced, builtins_names, globals_is_builtin, complete = _summarize_runtime_open_effects(
+                statement.body,
+                builtins_names,
+                globals_is_builtin,
+                depth=depth + 1,
+            )
+            if replaced or not complete:
+                return replaced, builtins_names, globals_is_builtin, complete
+            continue
+
+        if isinstance(statement, (ast.For, ast.AsyncFor, ast.While, ast.Try, ast.TryStar, ast.Match)) and (
+            _node_imports_runtime_helper(statement)
+        ):
+            # Helper identities can cross iterations and exception edges.
+            # This rule does not interpret those flows, so fail closed.
+            return False, set(), False, False
+
         if _node_may_replace_runtime_open(statement, builtins_names, globals_is_builtin):
-            return True
-        globals_is_builtin = _advance_runtime_helper_identities(
+            return True, builtins_names, globals_is_builtin, True
+        globals_is_builtin, identities_complete = _advance_runtime_helper_identities(
             statement,
             builtins_names,
             globals_is_builtin,
         )
-    return False
+        if not identities_complete:
+            return False, builtins_names, globals_is_builtin, False
+    return False, builtins_names, globals_is_builtin, True
+
+
+def _scope_may_replace_runtime_open(body: list[ast.stmt]) -> bool:
+    replaced, _, _, complete = _summarize_runtime_open_effects(
+        body,
+        {"__builtins__"},
+        True,
+    )
+    return replaced or not complete
 
 
 def _function_can_use_builtin_open(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -390,18 +584,32 @@ class _StraightLineSensitiveReadScanner:
             name for statement in body if isinstance(statement, (ast.Global, ast.Nonlocal)) for name in statement.names
         }
 
+        def invalidate_namespace_open() -> None:
+            """Invalidate an ``open`` binding in this scope's namespace."""
+
+            nonlocal delayed_open_available, open_available
+            open_available = False
+            if not class_scope:
+                delayed_open_available = False
+
         for statement in body:
             if len(self.candidates) >= MAX_PYTHON_PATH_CANDIDATES:
                 return
 
-            if _node_may_replace_runtime_open(statement, builtins_names, globals_is_builtin):
+            statement_binds_open = _node_binds_name(statement, "open")
+            runtime_open_replaced, builtins_names, globals_is_builtin, identities_complete = (
+                _summarize_runtime_open_effects(
+                    [statement],
+                    builtins_names,
+                    globals_is_builtin,
+                )
+            )
+            if runtime_open_replaced:
                 open_available = False
                 delayed_open_available = False
-            globals_is_builtin = _advance_runtime_helper_identities(
-                statement,
-                builtins_names,
-                globals_is_builtin,
-            )
+            if not identities_complete:
+                open_available = False
+                delayed_open_available = False
 
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 # Delayed scopes receive no path or import facts. The only
@@ -418,8 +626,8 @@ class _StraightLineSensitiveReadScanner:
                 )
                 bindings.clear()
                 os_available = False
-                if statement.name == "open":
-                    open_available = False
+                if statement_binds_open:
+                    invalidate_namespace_open()
                 continue
 
             if isinstance(statement, ast.ClassDef):
@@ -427,19 +635,21 @@ class _StraightLineSensitiveReadScanner:
                 # namespace. Keep class-body sequential lookup separate from
                 # the enclosing lexical marker used by delayed code.
                 class_open_available = delayed_open_available if class_scope else open_available
+                class_replaces_runtime_open = _scope_may_replace_runtime_open(statement.body)
                 self._scan_body(
                     statement.body,
                     depth=depth + 1,
                     builtin_open=class_open_available,
-                    delayed_builtin_open=(
-                        delayed_open_available and not _scope_may_replace_runtime_open(statement.body)
-                    ),
+                    delayed_builtin_open=(delayed_open_available and not class_replaces_runtime_open),
                     class_scope=True,
                 )
                 bindings.clear()
                 os_available = False
-                if statement.name == "open":
+                if class_replaces_runtime_open:
                     open_available = False
+                    delayed_open_available = False
+                if statement_binds_open:
+                    invalidate_namespace_open()
                 continue
 
             if isinstance(statement, ast.Import):
@@ -450,8 +660,8 @@ class _StraightLineSensitiveReadScanner:
                         os_available = imported.name == "os" or (
                             imported.asname is None and imported.name.startswith("os.")
                         )
-                if _node_binds_name(statement, "open"):
-                    open_available = False
+                if statement_binds_open:
+                    invalidate_namespace_open()
                 continue
 
             if isinstance(statement, ast.ImportFrom):
@@ -464,21 +674,23 @@ class _StraightLineSensitiveReadScanner:
                         bindings.pop(local_name, None)
                         if local_name == "os":
                             os_available = False
-                if _node_binds_name(statement, "open"):
-                    open_available = False
+                if statement_binds_open:
+                    invalidate_namespace_open()
                 continue
 
             if isinstance(statement, ast.Assign):
                 if self._record_direct_open(statement.value, bindings, os_available, open_available):
                     bindings.clear()
                     os_available = False
-                    if any(_node_binds_name(target, "open") for target in statement.targets):
-                        open_available = False
+                    if statement_binds_open:
+                        invalidate_namespace_open()
                     continue
                 targets = _name_targets(statement.targets)
                 if targets is None:
                     bindings.clear()
                     os_available = False
+                    if statement_binds_open:
+                        invalidate_namespace_open()
                     continue
                 value = self._exact_string(statement.value, bindings, os_available)
                 if value is None and not self._expression_is_inert(statement.value, bindings, os_available):
@@ -493,6 +705,8 @@ class _StraightLineSensitiveReadScanner:
                     if name not in external_names and value is not None:
                         bindings[name] = value
                 self._enforce_binding_limit(bindings)
+                if statement_binds_open:
+                    invalidate_namespace_open()
                 continue
 
             if isinstance(statement, ast.AnnAssign):
@@ -504,8 +718,8 @@ class _StraightLineSensitiveReadScanner:
                 ):
                     bindings.clear()
                     os_available = False
-                    if _node_binds_name(statement.target, "open"):
-                        open_available = False
+                    if statement_binds_open:
+                        invalidate_namespace_open()
                     continue
                 if (
                     not isinstance(statement.target, ast.Name)
@@ -514,8 +728,8 @@ class _StraightLineSensitiveReadScanner:
                 ):
                     bindings.clear()
                     os_available = False
-                    if _node_binds_name(statement.target, "open"):
-                        open_available = False
+                    if statement_binds_open:
+                        invalidate_namespace_open()
                     continue
                 name = statement.target.id
                 value = self._exact_string(statement.value, bindings, os_available)
@@ -527,26 +741,30 @@ class _StraightLineSensitiveReadScanner:
                 if name not in external_names and value is not None:
                     bindings[name] = value
                 self._enforce_binding_limit(bindings)
+                if statement_binds_open:
+                    invalidate_namespace_open()
                 continue
 
             if isinstance(statement, ast.AugAssign):
                 target = statement.target
-                value: str | None = None
+                augmented_value: str | None = None
                 if isinstance(target, ast.Name) and isinstance(statement.op, ast.Add):
                     left = bindings.get(target.id)
                     right = self._exact_string(statement.value, bindings, os_available)
                     if left is not None and right is not None:
-                        value = _bounded_string(left + right)
+                        augmented_value = _bounded_string(left + right)
                 bindings.clear()
                 os_available = False
                 if isinstance(target, ast.Name):
                     if target.id == "open":
                         open_available = False
-                    if target.id not in external_names and value is not None:
-                        bindings[target.id] = value
+                    if target.id not in external_names and augmented_value is not None:
+                        bindings[target.id] = augmented_value
                 elif _node_binds_name(target, "open"):
                     open_available = False
                 self._enforce_binding_limit(bindings)
+                if statement_binds_open:
+                    invalidate_namespace_open()
                 continue
 
             if isinstance(statement, ast.Delete):
@@ -561,6 +779,8 @@ class _StraightLineSensitiveReadScanner:
                             os_available = False
                         if name == "open":
                             open_available = False
+                if statement_binds_open:
+                    invalidate_namespace_open()
                 continue
 
             if isinstance(statement, (ast.With, ast.AsyncWith)):
@@ -568,15 +788,26 @@ class _StraightLineSensitiveReadScanner:
                     self._record_direct_open(item.context_expr, bindings, os_available, open_available)
                     bindings.clear()
                     os_available = False
+                    if _node_binds_name(item.context_expr, "open"):
+                        invalidate_namespace_open()
                     if item.optional_vars is not None and _node_binds_name(item.optional_vars, "open"):
-                        open_available = False
+                        invalidate_namespace_open()
+                body_binds_open = _scope_binds_open(statement.body)
+                body_replaces_runtime_open = _scope_may_replace_runtime_open(statement.body)
+                body_delayed_open_available = delayed_open_available and not body_replaces_runtime_open
+                if body_binds_open and not class_scope:
+                    body_delayed_open_available = False
                 self._scan_body(
                     statement.body,
                     depth=depth + 1,
                     builtin_open=open_available,
-                    delayed_builtin_open=delayed_open_available,
+                    delayed_builtin_open=body_delayed_open_available,
                     class_scope=class_scope,
                 )
+                if body_binds_open or body_replaces_runtime_open:
+                    open_available = False
+                if body_replaces_runtime_open or (body_binds_open and not class_scope):
+                    delayed_open_available = False
                 continue
 
             if isinstance(statement, ast.Expr):
@@ -586,6 +817,8 @@ class _StraightLineSensitiveReadScanner:
                 elif not self._expression_is_inert(statement.value, bindings, os_available):
                     bindings.clear()
                     os_available = False
+                if statement_binds_open:
+                    invalidate_namespace_open()
                 continue
 
             if isinstance(statement, (ast.Return, ast.Raise)):
@@ -602,8 +835,8 @@ class _StraightLineSensitiveReadScanner:
 
             bindings.clear()
             os_available = False
-            if _node_binds_name(statement, "open"):
-                open_available = False
+            if statement_binds_open:
+                invalidate_namespace_open()
 
     def _exact_string(
         self,
