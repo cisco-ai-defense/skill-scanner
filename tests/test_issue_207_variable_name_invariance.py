@@ -108,6 +108,228 @@ if os.path.exists(q):
     assert matches[0].metadata["resolved_path"] == "/etc/passwd"
 
 
+@pytest.mark.parametrize("json_import", ["import json", "import json as codec"])
+def test_guard_preserves_reviewed_json_load_wrapper(json_import):
+    json_name = "codec" if "codec" in json_import else "json"
+    source = f"""\
+{json_import}
+import os
+path = '/etc/' + 'passwd'
+if os.path.exists(path):
+    data = {json_name}.load(open(path))
+"""
+
+    candidates = find_constructed_sensitive_file_reads(source)
+
+    assert [(candidate.path, candidate.line_number) for candidate in candidates] == [
+        ("/etc/passwd", 5),
+    ]
+
+
+def test_guarded_json_rebind_does_not_preserve_stale_module_provenance():
+    source = """\
+import json
+import os
+path = '/etc/' + 'passwd'
+if os.path.exists(path):
+    json = replacement
+    data = json.load(open(path))
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_guard_can_establish_reviewed_json_alias_in_source_order():
+    source = """\
+import os
+path = '/etc/' + 'passwd'
+if os.path.exists(path):
+    import json as codec
+    data = codec.load(open(path))
+"""
+
+    candidates = find_constructed_sensitive_file_reads(source)
+
+    assert [(candidate.path, candidate.line_number) for candidate in candidates] == [
+        ("/etc/passwd", 5),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("imports", "json_name"),
+    [
+        ("import json\nimport os.path", "json"),
+        ("import json\nfrom unittest.mock import patch\nimport os", "json"),
+        ("from __future__ import annotations\nimport json\nimport os", "json"),
+        ("import builtins, os.path, json as codec", "codec"),
+    ],
+    ids=["os-path", "patch", "future", "mixed-import"],
+)
+def test_reviewed_imports_preserve_guarded_json_provenance(imports, json_name):
+    source = f"""\
+{imports}
+path = '/etc/' + 'passwd'
+if os.path.exists(path):
+    {json_name}.load(open(path))
+"""
+
+    candidates = find_constructed_sensitive_file_reads(source)
+
+    assert [candidate.path for candidate in candidates] == ["/etc/passwd"]
+
+
+def test_reviewed_import_from_rebinding_retires_json_provenance():
+    source = """\
+import json
+from unittest.mock import patch as json
+import os
+path = '/etc/' + 'passwd'
+if os.path.exists(path):
+    json.load(open(path))
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize(
+    "unreviewed_import",
+    ["import attacker_hook", "from attacker_hook import marker"],
+    ids=["import", "import-from"],
+)
+@pytest.mark.parametrize(
+    "setup",
+    [
+        "import os\npath = '/etc/' + 'passwd'\n{unreviewed_import}",
+        "import os\n{unreviewed_import}\npath = '/etc/' + 'passwd'",
+        "{unreviewed_import}\nimport os\npath = '/etc/' + 'passwd'",
+    ],
+    ids=["after-path", "before-path", "before-reviewed-reimport"],
+)
+def test_unreviewed_import_invalidates_exists_guard_provenance(
+    unreviewed_import,
+    setup,
+):
+    source = f"""\
+{setup.format(unreviewed_import=unreviewed_import)}
+if os.path.exists(path):
+    open(path)
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_reviewed_os_path_import_preserves_positive_provenance():
+    source = """\
+import os.path
+path = os.path.join('/etc', 'passwd')
+if os.path.exists(path):
+    open(path)
+"""
+
+    candidates = find_constructed_sensitive_file_reads(source)
+
+    assert [(candidate.path, candidate.line_number) for candidate in candidates] == [
+        ("/etc/passwd", 4),
+    ]
+
+
+@pytest.mark.parametrize(
+    "compound_import",
+    [
+        "if True:\n    import attacker_hook",
+        "try:\n    import attacker_hook\nexcept ImportError:\n    pass",
+        "for _ in (0,):\n    import attacker_hook",
+    ],
+    ids=["if", "try", "for"],
+)
+def test_nested_unreviewed_import_invalidates_runtime_open_provenance(compound_import):
+    source = f"{compound_import}\nopen('/etc/' + 'passwd')\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize("call", ["poison()", "alias()"], ids=["direct", "alias"])
+def test_called_local_function_invalidates_runtime_open_provenance(call):
+    alias = "alias = poison\n" if call == "alias()" else ""
+    source = f"""\
+def poison(replacement=print):
+    import builtins
+    builtins.open = replacement
+{alias}{call}
+open('/etc/' + 'passwd')
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_dormant_local_function_does_not_invalidate_runtime_open_provenance():
+    source = """\
+def poison(replacement=print):
+    import builtins
+    builtins.open = replacement
+open('/etc/' + 'passwd')
+"""
+
+    assert [candidate.path for candidate in find_constructed_sensitive_file_reads(source)] == ["/etc/passwd"]
+
+
+def test_transitive_local_function_call_invalidates_runtime_open_provenance():
+    source = """\
+def poison(replacement=print):
+    import builtins
+    builtins.open = replacement
+def wrapper():
+    poison()
+wrapper()
+open('/etc/' + 'passwd')
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_static_method_call_invalidates_runtime_open_provenance():
+    source = """\
+class Hooks:
+    @staticmethod
+    def poison(replacement=print):
+        import builtins
+        builtins.open = replacement
+Hooks.poison()
+open('/etc/' + 'passwd')
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_called_function_global_open_rebinding_invalidates_provenance():
+    source = """\
+def poison():
+    global open
+    open = print
+poison()
+open('/etc/' + 'passwd')
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize(
+    "binding",
+    ["import builtins as open", "from unittest.mock import patch as open"],
+    ids=["import", "import-from"],
+)
+def test_called_function_external_open_import_rebinding_invalidates_provenance(binding):
+    source = f"""\
+def poison():
+    global open
+    {binding}
+poison()
+open('/etc/' + 'passwd')
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
 @pytest.mark.parametrize(
     "later_mutation",
     [
