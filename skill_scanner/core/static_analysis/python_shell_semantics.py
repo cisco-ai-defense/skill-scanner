@@ -1265,6 +1265,10 @@ class _StraightLineShellScanner:
                 pending.append(None)
                 if current.format_spec is not None:
                     pending.append(current.format_spec)
+                    if current.conversion != -1:
+                        # ``!s``, ``!r``, and ``!a`` invoke user-overridable
+                        # conversion before the format spec is evaluated.
+                        pending.append(None)
                 pending.append(current.value)
                 continue
 

@@ -182,6 +182,17 @@ def test_possibly_unevaluated_nested_alias_call_is_not_reported(make_skill, invo
     assert _eval_findings(make_skill, source) == []
 
 
+@pytest.mark.parametrize("conversion", ["s", "r", "a"])
+def test_fstring_conversion_invalidates_alias_before_format_spec(make_skill, conversion: str) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f'result = f"{{value!{conversion}:{{_runner(payload)}}}}"\n'
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
 def test_eager_expression_traversal_limit_is_enforced(make_skill) -> None:
     elements = ", ".join(("0",) * MAX_PYTHON_SHELL_EAGER_EXPR_NODES + ("_runner(payload)",))
     source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nresult = [{elements}]\n"
