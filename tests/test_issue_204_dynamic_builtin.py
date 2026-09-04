@@ -292,12 +292,84 @@ def test_possibly_unevaluated_nested_alias_call_is_not_reported(make_skill, invo
     assert _eval_findings(make_skill, source) == []
 
 
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "[_runner(payload) for item in (0,)]",
+        "{_runner(payload) for item in [0]}",
+        "{item: _runner(payload) for item in {0}}",
+        "{_runner(key_payload): item for item in {0: 1}}",
+        "[item for item in b'x' if _runner(payload)]",
+        "[_runner(payload) for item in 'x' if True]",
+    ],
+    ids=[
+        "list-result",
+        "set-result",
+        "dict-value",
+        "dict-key",
+        "filter",
+        "true-filter-result",
+    ],
+)
+def test_alias_invocation_in_guaranteed_first_comprehension_iteration_is_detected(
+    make_skill,
+    expression: str,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{expression}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "[_runner(payload) for item in ()]",
+        "[_runner(payload) for item in (0,) if False]",
+        "[_runner(payload) for _runner in (0,)]",
+        "[_runner(payload) for item in (mutate(),)]",
+        "[_runner(payload) for item in (0,) if mutate()]",
+        "(_runner(payload) for item in (0,))",
+        "[_runner(payload) for item in (0,) for nested in (0,)]",
+    ],
+    ids=[
+        "empty-iterable",
+        "false-filter",
+        "target-shadow",
+        "effectful-iterable",
+        "effectful-filter",
+        "delayed-generator",
+        "nested-generator",
+    ],
+)
+def test_unproven_or_unreachable_comprehension_result_is_not_reported(
+    make_skill,
+    expression: str,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{expression}\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
 def test_immediate_lambda_does_not_inherit_a_class_local_exec_alias(make_skill) -> None:
     source = (
         "import builtins\n"
         "class Loader:\n"
         "    _runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
         "    result = (lambda: _runner(payload))()\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_comprehension_does_not_inherit_a_class_local_exec_alias(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "class Loader:\n"
+        "    _runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "    result = [_runner(payload) for item in (0,)]\n"
     )
 
     assert _eval_findings(make_skill, source) == []
@@ -988,6 +1060,114 @@ def test_empty_literal_for_does_not_restore_invalidated_else_provenance(
     )
 
     assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    ("loop", "invocation", "expected_line"),
+    [
+        ("while False:\n    _runner(unreachable_payload)", "_runner(payload)", 5),
+        (
+            "while 0:\n    mutate()\nelse:\n    alias = _runner",
+            "alias(payload)",
+            7,
+        ),
+    ],
+    ids=["unreachable-body", "else-created-alias"],
+)
+def test_statically_false_while_preserves_selected_state(
+    make_skill,
+    loop: str,
+    invocation: str,
+    expected_line: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{loop}\n{invocation}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+@pytest.mark.parametrize("else_body", ["_runner = None", "mutate()"], ids=["rebind", "effect"])
+def test_statically_false_while_does_not_restore_invalidated_else_state(
+    make_skill,
+    else_body: str,
+) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "while False:\n"
+        "    pass\n"
+        "else:\n"
+        f"    {else_body}\n"
+        "_runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    "match_statement",
+    [
+        "match mutate():\n    case _:\n        _runner(payload)",
+        "match 1:\n    case _ if False:\n        _runner(payload)",
+        "match 1:\n    case _runner:\n        _runner(payload)",
+        "match 1:\n    case _:\n        mutate()\n        _runner(payload)",
+        "match 1:\n    case 1:\n        pass\n    case _:\n        _runner(payload)",
+        "match 1:\n    case _:\n        raise\n        _runner(payload)",
+    ],
+    ids=[
+        "effectful-subject",
+        "guarded-case",
+        "capture-shadows-alias",
+        "body-mutation",
+        "earlier-matching-case",
+        "unreachable-body-suffix",
+    ],
+)
+def test_unproven_or_unreachable_match_body_is_not_reported(
+    make_skill,
+    match_statement: str,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{match_statement}\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(("subject", "pattern"), [("1", "_"), ("[]", "item")], ids=["wildcard", "capture"])
+def test_alias_invocation_in_leading_irrefutable_match_body_is_detected(
+    make_skill,
+    subject: str,
+    pattern: str,
+) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"match {subject}:\n"
+        f"    case {pattern}:\n"
+        "        _runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 5
+
+
+def test_leading_irrefutable_match_scans_the_guaranteed_body_prefix(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "match 1:\n"
+        "    case _:\n"
+        "        alias = _runner\n"
+        "        alias(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 6
 
 
 @pytest.mark.parametrize("non_iterable", ["None", "False", "0", "0.0"])

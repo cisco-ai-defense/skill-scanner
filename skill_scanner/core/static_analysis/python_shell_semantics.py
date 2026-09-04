@@ -330,6 +330,13 @@ class _DynamicExecState:
         self.inert_exit = None
 
 
+@dataclass(frozen=True, slots=True)
+class _DynamicExecPlainTargetBinding:
+    """Deferred plain-name binding in one guaranteed comprehension iteration."""
+
+    name: str
+
+
 def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...]:
     """Find bounded positive evidence for reviewed execution sinks.
 
@@ -1676,9 +1683,11 @@ class _StraightLineShellScanner:
                         state.clear()
                         return
                 return
-            if isinstance(statement, ast.If) and test_truth is not None and state.is_active():
+            if test_truth is not None and state.is_active() and (isinstance(statement, ast.If) or not test_truth):
                 # A statically selected branch that completed without effects
                 # preserves its source-ordered bindings for the next statement.
+                # A false while test also proves that only its else suite ran;
+                # a true while may execute further unmodeled iterations.
                 return
             state.clear()
             return
@@ -1725,7 +1734,30 @@ class _StraightLineShellScanner:
             return
 
         if isinstance(statement, ast.Match):
+            subject_is_inert = _is_guaranteed_inert_value(statement.subject, state)
             self._scan_eager_dynamic_exec_calls(statement.subject, state)
+            if (
+                subject_is_inert
+                and state.is_active()
+                and statement.cases
+                and statement.cases[0].guard is None
+                and isinstance(statement.cases[0].pattern, ast.MatchAs)
+                and statement.cases[0].pattern.pattern is None
+            ):
+                # A leading wildcard or capture pattern is irrefutable and
+                # cannot dispatch user code. Scan its guaranteed body prefix,
+                # but retain the existing boundary after the match statement.
+                capture_name = statement.cases[0].pattern.name
+                if capture_name is not None:
+                    state.rebind(capture_name)
+                    state.known_bound_names.add(capture_name)
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.cases[0].body,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
             state.clear()
             return
 
@@ -2065,7 +2097,7 @@ class _StraightLineShellScanner:
 
         # ``None`` is a post-evaluation effect boundary.  Keeping traversal
         # iterative avoids recursion on attacker-controlled expression depth.
-        pending: list[ast.AST | None] = [expression]
+        pending: list[ast.AST | _DynamicExecPlainTargetBinding | None] = [expression]
         visited = 0
         while pending:
             current = pending.pop()
@@ -2077,6 +2109,11 @@ class _StraightLineShellScanner:
             if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
                 state.clear()
                 return
+
+            if isinstance(current, _DynamicExecPlainTargetBinding):
+                state.rebind(current.name)
+                state.known_bound_names.add(current.name)
+                continue
 
             if isinstance(current, ast.Call):
                 self._record_direct_dynamic_exec_call(current, state)
@@ -2200,12 +2237,46 @@ class _StraightLineShellScanner:
                 continue
 
             if isinstance(current, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
-                # Python evaluates the first iterable when constructing every
-                # comprehension (including a generator expression). Iteration,
-                # filters, later iterables, and the result expression are not
-                # guaranteed, so no claim crosses that boundary.
-                pending.append(None)
-                pending.append(current.generators[0].iter)
+                first_generator = current.generators[0]
+                guaranteed_iteration = (
+                    not isinstance(current, ast.GeneratorExp)
+                    and not state.class_namespace
+                    and len(current.generators) == 1
+                    and not first_generator.is_async
+                    and isinstance(first_generator.target, ast.Name)
+                    and _guaranteed_literal_iterable_truth(first_generator.iter, state) is True
+                )
+                if not guaranteed_iteration:
+                    # Constructing every comprehension evaluates its first
+                    # iterable. Generator bodies and unproven iterations remain
+                    # delayed or conditional, so no claim crosses the boundary.
+                    pending.append(None)
+                    pending.append(first_generator.iter)
+                    continue
+
+                assert isinstance(first_generator.target, ast.Name)
+                # A list/set/dict comprehension over an exact nonempty builtin
+                # literal necessarily enters its first synchronous iteration.
+                # A plain target binding cannot dispatch user code. Continue
+                # through each guaranteed filter and, when all are true, the
+                # result expression, then keep the existing scope/effect boundary.
+                comprehension_children: list[ast.AST | _DynamicExecPlainTargetBinding | None] = [
+                    first_generator.iter,
+                    _DynamicExecPlainTargetBinding(first_generator.target.id),
+                ]
+                reaches_result = True
+                for condition in first_generator.ifs:
+                    comprehension_children.append(condition)
+                    if _guaranteed_literal_truth(condition, state) is not True:
+                        reaches_result = False
+                        break
+                if reaches_result:
+                    if isinstance(current, ast.DictComp):
+                        comprehension_children.extend((current.key, current.value))
+                    else:
+                        comprehension_children.append(current.elt)
+                comprehension_children.append(None)
+                pending.extend(reversed(comprehension_children))
                 continue
 
             if isinstance(current, ast.Compare):
