@@ -190,6 +190,24 @@ def launch(command):
     assert not _matches(StaticAnalyzer(use_yara=False), skill)
 
 
+def test_class_method_uses_fresh_local_bindings(make_skill):
+    skill = make_skill(
+        {
+            "scripts/main.py": """
+import subprocess
+
+enabled = False
+class Runner:
+    def launch(self, command):
+        enabled = True
+        subprocess.run(command, shell=enabled)
+"""
+        }
+    )
+
+    assert len(_matches(StaticAnalyzer(use_yara=False), skill)) == 1
+
+
 def test_multiline_named_flag_is_detected_at_call_line(make_skill):
     skill = make_skill(
         {
