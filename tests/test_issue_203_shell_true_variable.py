@@ -3,6 +3,8 @@
 
 """Regression tests for named ``shell=True`` propagation (issue #203)."""
 
+import sys
+
 import pytest
 
 from skill_scanner.core.analyzers.static import StaticAnalyzer
@@ -292,7 +294,12 @@ subprocess.run(["echo", "ok"], shell=enabled)
         }
     )
 
-    assert not _matches(StaticAnalyzer(use_yara=False), skill)
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+    if sys.version_info >= (3, 14):
+        assert len(matches) == 1
+        assert matches[0].metadata["matched_pattern"] == "python_ast:named_shell_flag_is_true"
+    else:
+        assert not matches
 
 
 def test_literal_true_remains_a_single_regex_finding(make_skill):
