@@ -354,6 +354,41 @@ class SignatureScanContext:
             object.__setattr__(self, "_line_contexts", contexts)
         return contexts[zero_based_line]
 
+    def classify_match(
+        self,
+        zero_based_line: int,
+        file_path: str | None,
+        *,
+        match_start: int,
+        match_end: int,
+        additional_active_match: bool = False,
+    ) -> tuple[str, str]:
+        """Classify a syntax-aware match with the signature context policy."""
+
+        if (
+            isinstance(zero_based_line, bool)
+            or not isinstance(zero_based_line, int)
+            or not 0 <= zero_based_line < len(self.lines)
+            or isinstance(match_start, bool)
+            or not isinstance(match_start, int)
+            or isinstance(match_end, bool)
+            or not isinstance(match_end, int)
+        ):
+            return "unknown", "unknown"
+        line = self.lines[zero_based_line]
+        if not 0 <= match_start <= match_end <= len(line):
+            return "unknown", "unknown"
+        in_fence, negative_example_section = self.line_context(zero_based_line)
+        return _classify_signature_context(
+            line,
+            file_path,
+            in_fence=in_fence,
+            negative_example_section=negative_example_section,
+            match_start=match_start,
+            match_end=match_end,
+            additional_active_match=additional_active_match,
+        )
+
 
 def _has_additional_pattern_match(
     patterns: list[re.Pattern[str]],
@@ -472,12 +507,9 @@ class SecurityRule:
                     leading_space = len(line) - len(line.lstrip())
                     relative_match_start = max(0, match.start() - leading_space)
                     relative_match_end = min(len(stripped_line), match.end() - leading_space)
-                    in_fence, negative_example_section = scan_context.line_context(line_num - 1)
-                    context_kind, polarity = _classify_signature_context(
-                        line,
+                    context_kind, polarity = scan_context.classify_match(
+                        line_num - 1,
                         file_path,
-                        in_fence=in_fence,
-                        negative_example_section=negative_example_section,
                         match_start=match.start(),
                         match_end=match.end(),
                         additional_active_match=_has_additional_pattern_match(
@@ -527,14 +559,13 @@ class SecurityRule:
                 line_start = content.rfind("\n", 0, match.start()) + 1
                 relative_start = match.start() - line_start
                 relative_end = min(len(snippet), match.end() - line_start)
-                in_fence, negative_example_section = scan_context.line_context(start_line - 1)
-                context_kind, polarity = _classify_signature_context(
-                    snippet,
+                context_line = lines[start_line - 1]
+                context_end = min(len(context_line), max(relative_start, match.end() - line_start))
+                context_kind, polarity = scan_context.classify_match(
+                    start_line - 1,
                     file_path,
-                    in_fence=in_fence,
-                    negative_example_section=negative_example_section,
                     match_start=relative_start,
-                    match_end=relative_end,
+                    match_end=context_end,
                     additional_active_match=False,
                 )
                 result = {
