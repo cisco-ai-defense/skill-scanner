@@ -159,6 +159,15 @@ class _StraightLineShellScanner:
                 bindings.clear()
                 continue
 
+            if isinstance(statement, ast.ClassDef):
+                # Class bodies execute in their own namespace, while methods
+                # are delayed scopes that do not close over class bindings.
+                # A fresh recursive scan models both without leaking facts in
+                # either direction.
+                self._scan_body(statement.body, depth=depth + 1)
+                bindings.clear()
+                continue
+
             if isinstance(statement, ast.Assign):
                 call = self._direct_call(statement.value)
                 if call is not None:
