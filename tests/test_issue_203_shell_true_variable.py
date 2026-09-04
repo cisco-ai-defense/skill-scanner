@@ -17,6 +17,14 @@ def _matches(analyzer: StaticAnalyzer, skill) -> list:
     return [finding for finding in analyzer.analyze(skill) if finding.rule_id == _RULE_ID]
 
 
+def _nested_suite_source(body: list[str], depth: int) -> str:
+    lines = ["import subprocess"]
+    lines.extend(f"{'    ' * level}if True:" for level in range(depth))
+    indentation = "    " * depth
+    lines.extend(f"{indentation}{line}" for line in body)
+    return "\n".join(lines) + "\n"
+
+
 def test_named_true_shell_flag_is_detected_with_canonical_rule(make_skill):
     skill = make_skill(
         {
@@ -228,6 +236,71 @@ subprocess.run(
     matches = _matches(StaticAnalyzer(use_yara=False), skill)
     assert len(matches) == 1
     assert matches[0].line_number == 5
+
+
+@pytest.mark.parametrize("method", ["call", "run", "Popen"])
+@pytest.mark.parametrize("depth", [1, 4, 6], ids=["shallow", "deep", "deeper"])
+def test_indented_multiline_regex_overlap_keeps_one_semantic_finding(make_skill, method, depth):
+    source = _nested_suite_source(
+        [
+            "enabled = True",
+            f"subprocess.{method}(",
+            "    # shell=True is a regex decoy; the executed value is the name below.",
+            '    ["echo", "ok"],',
+            "    shell=enabled,",
+            ")",
+        ],
+        depth,
+    )
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].metadata["matched_pattern"] == "python_ast:named_shell_flag_is_true"
+
+
+def test_multiline_scan_content_offsets_are_stripped_line_relative():
+    indentation = " " * 20
+    source = f"{indentation}subprocess.run(\n{indentation}    shell=True,\n{indentation})\n"
+    analyzer = StaticAnalyzer(use_yara=False)
+    rule = next(rule for rule in analyzer.rule_loader.get_rules_for_file_type("python") if rule.id == _RULE_ID)
+
+    matches = rule.scan_content(source, "scripts/main.py", scan_context=SignatureScanContext(source))
+
+    assert len(matches) == 1
+    assert matches[0]["match_start"] == 0
+    assert matches[0]["match_end"] == len("subprocess.run(")
+
+
+def test_deep_multiline_overlap_keeps_distinct_shell_sinks(make_skill):
+    source = _nested_suite_source(
+        [
+            "enabled = True",
+            "subprocess.run(",
+            "    # shell=True is a regex decoy.",
+            '    ["first"],',
+            "    shell=enabled,",
+            ")",
+            "subprocess.call(",
+            "    # shell=True is another regex decoy.",
+            '    ["second"],',
+            "    shell=enabled,",
+            ")",
+            "subprocess.Popen(",
+            '    ["third"],',
+            "    shell=True,",
+            ")",
+        ],
+        6,
+    )
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 3
+    assert len({match.id for match in matches}) == 3
+    assert sum(match.metadata["matched_pattern"] == "python_ast:named_shell_flag_is_true" for match in matches) == 2
 
 
 def test_split_line_subprocess_attribute_is_ignored(make_skill):
