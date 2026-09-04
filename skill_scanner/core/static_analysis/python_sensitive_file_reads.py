@@ -315,6 +315,61 @@ def _node_imports_runtime_helper(root: ast.AST) -> bool:
     return False
 
 
+def _assigned_runtime_helper_names(statement: ast.stmt, builtins_names: set[str]) -> tuple[str, ...]:
+    """Return simple names directly assigned a reviewed builtins identity."""
+
+    if isinstance(statement, ast.Assign):
+        if not isinstance(statement.value, ast.Name) or statement.value.id not in builtins_names:
+            return ()
+        if not all(isinstance(target, ast.Name) for target in statement.targets):
+            return ()
+        return tuple(target.id for target in statement.targets if isinstance(target, ast.Name))
+    if (
+        isinstance(statement, ast.AnnAssign)
+        and isinstance(statement.target, ast.Name)
+        and isinstance(statement.value, ast.Name)
+        and statement.value.id in builtins_names
+    ):
+        return (statement.target.id,)
+    return ()
+
+
+def _node_loads_runtime_helper(root: ast.AST, builtins_names: set[str]) -> bool:
+    """Return whether eager evaluation loads a reviewed builtins identity."""
+
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            pending.extend(_definition_eager_nodes(node))
+            continue
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in builtins_names:
+            return True
+        pending.extend(ast.iter_child_nodes(node))
+    return False
+
+
+def _node_may_bind_loaded_runtime_helper(root: ast.AST, builtins_names: set[str]) -> bool:
+    """Find an eager named binding alongside a loaded helper identity."""
+
+    pending = [root]
+    has_named_binding = False
+    has_runtime_helper_load = False
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            pending.extend(_definition_eager_nodes(node))
+            continue
+        has_named_binding = has_named_binding or isinstance(node, ast.NamedExpr)
+        has_runtime_helper_load = has_runtime_helper_load or (
+            isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in builtins_names
+        )
+        if has_named_binding and has_runtime_helper_load:
+            return True
+        pending.extend(ast.iter_child_nodes(node))
+    return False
+
+
 def _advance_runtime_helper_identities(
     statement: ast.stmt,
     builtins_names: set[str],
@@ -345,11 +400,31 @@ def _advance_runtime_helper_identities(
                 globals_is_builtin = False
         return globals_is_builtin, True
 
+    if _node_may_bind_loaded_runtime_helper(statement, builtins_names):
+        builtins_names.clear()
+        return False, False
+
+    assigned_runtime_helpers = _assigned_runtime_helper_names(statement, builtins_names)
+    assignment_value = statement.value if isinstance(statement, (ast.Assign, ast.AnnAssign)) else None
+    if (
+        assignment_value is not None
+        and not assigned_runtime_helpers
+        and _node_loads_runtime_helper(assignment_value, builtins_names)
+    ):
+        builtins_names.clear()
+        return False, False
     for builtins_name in tuple(builtins_names):
         if _node_binds_name(statement, builtins_name):
             builtins_names.discard(builtins_name)
     if globals_is_builtin and _node_binds_name(statement, "globals"):
-        return False, True
+        globals_is_builtin = False
+    for assigned_name in assigned_runtime_helpers:
+        if assigned_name in builtins_names:
+            continue
+        if len(builtins_names) >= MAX_PYTHON_PATH_RUNTIME_HELPER_ALIASES:
+            builtins_names.clear()
+            return False, False
+        builtins_names.add(assigned_name)
     return globals_is_builtin, True
 
 
@@ -380,6 +455,73 @@ def _invalidate_runtime_helper_bindings(
     return globals_is_builtin
 
 
+def _runtime_open_state_before_child(
+    statement: ast.stmt,
+    builtins_names: set[str],
+    globals_is_builtin: bool,
+) -> tuple[bool, bool, set[str], bool]:
+    """Resolve runtime-helper effects evaluated before an eager child body."""
+
+    child_names = set(builtins_names)
+    child_globals_is_builtin = globals_is_builtin
+    runtime_open_unavailable = False
+    namespace_open_bound = False
+    if isinstance(statement, ast.ClassDef):
+        eager_nodes = _definition_eager_nodes(statement)
+        runtime_open_unavailable = any(
+            _node_may_replace_runtime_open(node, child_names, child_globals_is_builtin) for node in eager_nodes
+        ) or any(_node_may_bind_loaded_runtime_helper(node, child_names) for node in eager_nodes)
+        namespace_open_bound = any(_node_binds_name(node, "open") for node in eager_nodes)
+        child_globals_is_builtin = _invalidate_runtime_helper_bindings(
+            eager_nodes,
+            child_names,
+            child_globals_is_builtin,
+        )
+    elif isinstance(statement, ast.If):
+        runtime_open_unavailable = _node_may_replace_runtime_open(
+            statement.test,
+            child_names,
+            child_globals_is_builtin,
+        ) or _node_may_bind_loaded_runtime_helper(statement.test, child_names)
+        namespace_open_bound = _node_binds_name(statement.test, "open")
+        child_globals_is_builtin = _invalidate_runtime_helper_bindings(
+            (statement.test,),
+            child_names,
+            child_globals_is_builtin,
+        )
+    elif isinstance(statement, (ast.With, ast.AsyncWith)):
+        for item in statement.items:
+            runtime_open_unavailable = (
+                runtime_open_unavailable
+                or _node_may_replace_runtime_open(
+                    item.context_expr,
+                    child_names,
+                    child_globals_is_builtin,
+                )
+                or _node_may_bind_loaded_runtime_helper(item.context_expr, child_names)
+            )
+            namespace_open_bound = namespace_open_bound or _node_binds_name(item.context_expr, "open")
+            child_globals_is_builtin = _invalidate_runtime_helper_bindings(
+                (item.context_expr,),
+                child_names,
+                child_globals_is_builtin,
+            )
+            if item.optional_vars is None:
+                continue
+            runtime_open_unavailable = runtime_open_unavailable or _target_may_replace_runtime_open(
+                item.optional_vars,
+                child_names,
+                child_globals_is_builtin,
+            )
+            namespace_open_bound = namespace_open_bound or _node_binds_name(item.optional_vars, "open")
+            child_globals_is_builtin = _invalidate_runtime_helper_bindings(
+                (item.optional_vars,),
+                child_names,
+                child_globals_is_builtin,
+            )
+    return runtime_open_unavailable, namespace_open_bound, child_names, child_globals_is_builtin
+
+
 def _summarize_runtime_open_effects(
     body: list[ast.stmt],
     builtins_names: set[str],
@@ -397,6 +539,8 @@ def _summarize_runtime_open_effects(
             eager_nodes = _definition_eager_nodes(statement)
             if any(_node_may_replace_runtime_open(node, builtins_names, globals_is_builtin) for node in eager_nodes):
                 return True, builtins_names, globals_is_builtin, True
+            if any(_node_may_bind_loaded_runtime_helper(node, builtins_names) for node in eager_nodes):
+                return False, set(), False, False
             class_names = set(builtins_names)
             class_globals_is_builtin = globals_is_builtin
             class_globals_is_builtin = _invalidate_runtime_helper_bindings(
@@ -420,6 +564,8 @@ def _summarize_runtime_open_effects(
         if isinstance(statement, ast.If):
             if _node_may_replace_runtime_open(statement.test, builtins_names, globals_is_builtin):
                 return True, builtins_names, globals_is_builtin, True
+            if _node_may_bind_loaded_runtime_helper(statement.test, builtins_names):
+                return False, set(), False, False
             branch_names = set(builtins_names)
             branch_globals_is_builtin = _invalidate_runtime_helper_bindings(
                 (statement.test,),
@@ -455,6 +601,8 @@ def _summarize_runtime_open_effects(
             for item in statement.items:
                 if _node_may_replace_runtime_open(item.context_expr, builtins_names, globals_is_builtin):
                     return True, builtins_names, globals_is_builtin, True
+                if _node_may_bind_loaded_runtime_helper(item.context_expr, builtins_names):
+                    return False, set(), False, False
                 globals_is_builtin = _invalidate_runtime_helper_bindings(
                     (item.context_expr,),
                     builtins_names,
@@ -484,7 +632,7 @@ def _summarize_runtime_open_effects(
             continue
 
         if isinstance(statement, (ast.For, ast.AsyncFor, ast.While, ast.Try, ast.TryStar, ast.Match)) and (
-            _node_imports_runtime_helper(statement)
+            _node_imports_runtime_helper(statement) or _node_loads_runtime_helper(statement, builtins_names)
         ):
             # Helper identities can cross iterations and exception edges.
             # This rule does not interpret those flows, so fail closed.
@@ -570,6 +718,9 @@ class _StraightLineSensitiveReadScanner:
         builtin_open: bool,
         delayed_builtin_open: bool,
         class_scope: bool = False,
+        initial_runtime_helpers: set[str] | None = None,
+        initial_globals_is_builtin: bool = True,
+        eager_lexical_builtin_open: bool | None = None,
     ) -> None:
         if depth > MAX_PYTHON_PATH_SCOPE_DEPTH or len(self.candidates) >= MAX_PYTHON_PATH_CANDIDATES:
             return
@@ -578,8 +729,12 @@ class _StraightLineSensitiveReadScanner:
         os_available = False
         open_available = builtin_open
         delayed_open_available = delayed_builtin_open
-        builtins_names = {"__builtins__"}
-        globals_is_builtin = True
+        eager_lexical_open_available = (
+            builtin_open if eager_lexical_builtin_open is None else eager_lexical_builtin_open
+        )
+        builtins_names = set(initial_runtime_helpers) if initial_runtime_helpers is not None else {"__builtins__"}
+        globals_is_builtin = initial_globals_is_builtin
+        pending_runtime_open_invalidation = False
         external_names = {
             name for statement in body if isinstance(statement, (ast.Global, ast.Nonlocal)) for name in statement.names
         }
@@ -596,7 +751,24 @@ class _StraightLineSensitiveReadScanner:
             if len(self.candidates) >= MAX_PYTHON_PATH_CANDIDATES:
                 return
 
+            if pending_runtime_open_invalidation:
+                open_available = False
+                eager_lexical_open_available = False
+                pending_runtime_open_invalidation = False
+
             statement_binds_open = _node_binds_name(statement, "open")
+            statement_runtime_helpers = set(builtins_names)
+            statement_globals_is_builtin = globals_is_builtin
+            (
+                child_runtime_open_unavailable,
+                child_namespace_open_bound,
+                child_runtime_helpers,
+                child_globals_is_builtin,
+            ) = _runtime_open_state_before_child(
+                statement,
+                statement_runtime_helpers,
+                statement_globals_is_builtin,
+            )
             runtime_open_replaced, builtins_names, globals_is_builtin, identities_complete = (
                 _summarize_runtime_open_effects(
                     [statement],
@@ -604,12 +776,12 @@ class _StraightLineSensitiveReadScanner:
                     globals_is_builtin,
                 )
             )
-            if runtime_open_replaced:
-                open_available = False
+            if runtime_open_replaced or not identities_complete:
+                # The statement's supported reads happen before assignment
+                # targets and child-body effects. Delayed code can observe the
+                # mutation, while the current statement keeps its prior value.
                 delayed_open_available = False
-            if not identities_complete:
-                open_available = False
-                delayed_open_available = False
+                pending_runtime_open_invalidation = True
 
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 # Delayed scopes receive no path or import facts. The only
@@ -634,7 +806,9 @@ class _StraightLineSensitiveReadScanner:
                 # A method or nested class skips the surrounding class
                 # namespace. Keep class-body sequential lookup separate from
                 # the enclosing lexical marker used by delayed code.
-                class_open_available = delayed_open_available if class_scope else open_available
+                class_open_available = (eager_lexical_open_available if class_scope else open_available) and not (
+                    child_runtime_open_unavailable or (child_namespace_open_bound and not class_scope)
+                )
                 class_replaces_runtime_open = _scope_may_replace_runtime_open(statement.body)
                 self._scan_body(
                     statement.body,
@@ -642,12 +816,16 @@ class _StraightLineSensitiveReadScanner:
                     builtin_open=class_open_available,
                     delayed_builtin_open=(delayed_open_available and not class_replaces_runtime_open),
                     class_scope=True,
+                    initial_runtime_helpers=child_runtime_helpers,
+                    initial_globals_is_builtin=child_globals_is_builtin,
+                    eager_lexical_builtin_open=class_open_available,
                 )
                 bindings.clear()
                 os_available = False
                 if class_replaces_runtime_open:
                     open_available = False
                     delayed_open_available = False
+                    eager_lexical_open_available = False
                 if statement_binds_open:
                     invalidate_namespace_open()
                 continue
@@ -746,6 +924,12 @@ class _StraightLineSensitiveReadScanner:
                 continue
 
             if isinstance(statement, ast.AugAssign):
+                if self._record_direct_open(statement.value, bindings, os_available, open_available):
+                    bindings.clear()
+                    os_available = False
+                    if statement_binds_open:
+                        invalidate_namespace_open()
+                    continue
                 target = statement.target
                 augmented_value: str | None = None
                 if isinstance(target, ast.Name) and isinstance(statement.op, ast.Add):
@@ -784,30 +968,67 @@ class _StraightLineSensitiveReadScanner:
                 continue
 
             if isinstance(statement, (ast.With, ast.AsyncWith)):
+                with_runtime_helpers = set(statement_runtime_helpers)
+                with_globals_is_builtin = statement_globals_is_builtin
                 for item in statement.items:
                     self._record_direct_open(item.context_expr, bindings, os_available, open_available)
                     bindings.clear()
                     os_available = False
+                    context_invalidates_runtime_open = _node_may_replace_runtime_open(
+                        item.context_expr,
+                        with_runtime_helpers,
+                        with_globals_is_builtin,
+                    ) or _node_may_bind_loaded_runtime_helper(item.context_expr, with_runtime_helpers)
+                    if context_invalidates_runtime_open:
+                        open_available = False
+                        delayed_open_available = False
+                        eager_lexical_open_available = False
+                    with_globals_is_builtin = _invalidate_runtime_helper_bindings(
+                        (item.context_expr,),
+                        with_runtime_helpers,
+                        with_globals_is_builtin,
+                    )
                     if _node_binds_name(item.context_expr, "open"):
                         invalidate_namespace_open()
-                    if item.optional_vars is not None and _node_binds_name(item.optional_vars, "open"):
+                    if item.optional_vars is None:
+                        continue
+                    if _target_may_replace_runtime_open(
+                        item.optional_vars,
+                        with_runtime_helpers,
+                        with_globals_is_builtin,
+                    ):
+                        open_available = False
+                        delayed_open_available = False
+                        eager_lexical_open_available = False
+                    with_globals_is_builtin = _invalidate_runtime_helper_bindings(
+                        (item.optional_vars,),
+                        with_runtime_helpers,
+                        with_globals_is_builtin,
+                    )
+                    if _node_binds_name(item.optional_vars, "open"):
                         invalidate_namespace_open()
                 body_binds_open = _scope_binds_open(statement.body)
                 body_replaces_runtime_open = _scope_may_replace_runtime_open(statement.body)
+                body_open_available = open_available
                 body_delayed_open_available = delayed_open_available and not body_replaces_runtime_open
                 if body_binds_open and not class_scope:
                     body_delayed_open_available = False
                 self._scan_body(
                     statement.body,
                     depth=depth + 1,
-                    builtin_open=open_available,
+                    builtin_open=body_open_available,
                     delayed_builtin_open=body_delayed_open_available,
                     class_scope=class_scope,
+                    initial_runtime_helpers=with_runtime_helpers,
+                    initial_globals_is_builtin=with_globals_is_builtin,
+                    eager_lexical_builtin_open=eager_lexical_open_available,
                 )
                 if body_binds_open or body_replaces_runtime_open:
                     open_available = False
                 if body_replaces_runtime_open or (body_binds_open and not class_scope):
                     delayed_open_available = False
+                if body_replaces_runtime_open:
+                    eager_lexical_open_available = False
                 continue
 
             if isinstance(statement, ast.Expr):

@@ -269,6 +269,54 @@ def test_explicit_runtime_open_replacement_invalidates_builtin(make_skill, repla
     assert _matches(StaticAnalyzer(use_yara=False), skill) == []
 
 
+@pytest.mark.parametrize(
+    "alias_assignment",
+    [
+        "helper = builtins",
+        "helper: object = builtins",
+        "first = builtins\nhelper = first",
+    ],
+    ids=["assignment", "annotated-assignment", "alias-chain"],
+)
+def test_assigned_runtime_helper_alias_invalidates_builtin(make_skill, alias_assignment):
+    source = f"import builtins\n{alias_assignment}\nhelper.open = replacement\npath='/etc/'+'passwd'\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+def test_rebound_assigned_runtime_helper_is_not_trusted(make_skill):
+    source = """\
+import builtins
+helper = builtins
+helper = holder
+helper.open = replacement
+path = '/etc/' + 'passwd'
+open(path)
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 6
+
+
+@pytest.mark.parametrize(
+    "alias_assignment",
+    [
+        "(helper,) = (builtins,)",
+        "helper = (builtins,)[0]",
+    ],
+    ids=["destructuring", "subscript"],
+)
+def test_unsupported_runtime_helper_alias_assignment_fails_closed(make_skill, alias_assignment):
+    source = f"import builtins\n{alias_assignment}\nhelper.open=replacement\npath='/etc/'+'passwd'\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
 def test_runtime_helper_alias_limit_fails_closed(monkeypatch):
     monkeypatch.setattr(sensitive_reads, "MAX_PYTHON_PATH_RUNTIME_HELPER_ALIASES", 2)
     source = """\
@@ -279,6 +327,32 @@ open(path)
 """
 
     assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_assigned_runtime_helper_alias_limit_fails_closed(monkeypatch):
+    monkeypatch.setattr(sensitive_reads, "MAX_PYTHON_PATH_RUNTIME_HELPER_ALIASES", 2)
+    source = "import builtins\nhelper=builtins\npath='/etc/'+'passwd'\nopen(path)\n"
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "builtins.open = open(path)",
+        "builtins.open: object = open(path)",
+        "builtins.open += open(path)",
+    ],
+    ids=["assignment", "annotated-assignment", "augmented-assignment"],
+)
+def test_runtime_open_replacement_records_supported_rhs_read_first(make_skill, replacement):
+    source = f"import builtins\npath='/etc/'+'passwd'\n{replacement}\nopen(path)\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 3
 
 
 @pytest.mark.parametrize(
@@ -425,8 +499,16 @@ except RuntimeError:
 path = '/etc/' + 'passwd'
 open(path)
 """,
+        """\
+import builtins
+for _ in (1,):
+    helper = builtins
+    helper.open = replacement
+path = '/etc/' + 'passwd'
+open(path)
+""",
     ],
-    ids=["loop-carried-alias", "exception-edge-alias"],
+    ids=["loop-carried-alias", "exception-edge-alias", "loop-assigned-alias"],
 )
 def test_unsupported_compound_runtime_helper_flow_fails_closed(make_skill, source):
     skill = make_skill({"scripts/main.py": source})
@@ -450,6 +532,207 @@ open(path)
     skill = make_skill({"scripts/main.py": source})
 
     assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_line"),
+    [
+        (
+            """\
+with manager:
+    import builtins
+    path = '/etc/' + 'passwd'
+    open(path)
+    if False:
+        builtins.open = replacement
+""",
+            4,
+        ),
+        (
+            """\
+class Loader:
+    import builtins
+    path = '/etc/' + 'passwd'
+    handle = open(path)
+    builtins.open = replacement
+""",
+            4,
+        ),
+        (
+            """\
+async def load():
+    async with manager:
+        import builtins
+        path = '/etc/' + 'passwd'
+        open(path)
+        builtins.open = replacement
+""",
+            5,
+        ),
+    ],
+    ids=["with-dead-nested-mutation", "class", "async-with"],
+)
+def test_child_body_read_precedes_later_runtime_open_replacement(make_skill, source, expected_line):
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == expected_line
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """\
+import builtins
+with manager:
+    builtins.open = replacement
+    path = '/etc/' + 'passwd'
+    open(path)
+""",
+        """\
+import builtins
+class Loader:
+    builtins.open = replacement
+    path = '/etc/' + 'passwd'
+    handle = open(path)
+""",
+    ],
+    ids=["with", "class"],
+)
+def test_child_body_runtime_open_replacement_precedes_later_read(make_skill, source):
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "class Loader((open := object)):\n    path='/etc/'+'passwd'\n    handle=open(path)",
+        "@(open := (lambda cls: cls))\nclass Loader:\n    path='/etc/'+'passwd'\n    handle=open(path)",
+    ],
+    ids=["base", "decorator"],
+)
+def test_eager_class_open_binding_applies_before_class_body(make_skill, definition):
+    skill = make_skill({"scripts/main.py": f"{definition}\n"})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+def test_nested_class_skips_outer_class_eager_open_binding(make_skill):
+    source = """\
+class Outer:
+    @(open := (lambda cls: cls))
+    class Inner:
+        path = '/etc/' + 'passwd'
+        handle = open(path)
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 5
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "builtins.open = replacement",
+        "with manager:\n        builtins.open = replacement",
+    ],
+    ids=["direct", "with-body"],
+)
+def test_nested_class_read_precedes_later_outer_runtime_replacement(make_skill, replacement):
+    source = f"""\
+class Outer:
+    import builtins
+    class Inner:
+        path = '/etc/' + 'passwd'
+        handle = open(path)
+        def load(self):
+            path = '/etc/' + 'shadow'
+            return open(path)
+    {replacement}
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 5
+
+
+def test_outer_runtime_replacement_precedes_nested_class_read(make_skill):
+    source = """\
+class Outer:
+    import builtins
+    builtins.open = replacement
+    class Inner:
+        path = '/etc/' + 'passwd'
+        handle = open(path)
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """\
+import builtins
+with (helper := builtins, manager)[1]:
+    helper.open = replacement
+path = '/etc/' + 'passwd'
+open(path)
+""",
+        """\
+import builtins
+def configure(value=(helper := builtins)):
+    pass
+helper.open = replacement
+path = '/etc/' + 'passwd'
+open(path)
+""",
+    ],
+    ids=["with-context", "function-default"],
+)
+def test_eager_runtime_helper_alias_expression_fails_closed(make_skill, source):
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "with (setattr(builtins, 'open', replacement) or manager), open('/etc/' + 'passwd'):",
+        "with manager as builtins.open, open('/etc/' + 'passwd'):",
+    ],
+    ids=["context-expression", "optional-target"],
+)
+def test_with_header_runtime_open_replacement_precedes_later_context_read(make_skill, header):
+    source = f"import builtins\n{header}\n    pass\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+def test_with_header_read_precedes_later_runtime_open_replacement(make_skill):
+    source = """\
+import builtins
+with open('/etc/' + 'passwd'), manager as builtins.open:
+    pass
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 2
 
 
 def test_unrelated_open_attribute_does_not_disable_builtin_detection(make_skill):
