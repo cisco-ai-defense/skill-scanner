@@ -1160,11 +1160,34 @@ class _StraightLineShellScanner:
             state.clear()
             return
 
+        if isinstance(statement, (ast.If, ast.While)):
+            self._scan_eager_dynamic_exec_calls(statement.test, state)
+            state.clear()
+            return
+
+        if isinstance(statement, ast.For):
+            self._scan_eager_dynamic_exec_calls(statement.iter, state)
+            state.clear()
+            return
+
+        if isinstance(statement, ast.With):
+            for item in statement.items:
+                self._scan_eager_dynamic_exec_calls(item.context_expr, state)
+                # Entering each context can dispatch arbitrary user code before
+                # the next context expression is evaluated.
+                state.clear()
+            return
+
+        if isinstance(statement, ast.Match):
+            self._scan_eager_dynamic_exec_calls(statement.subject, state)
+            state.clear()
+            return
+
         if isinstance(statement, ast.Pass):
             return
 
-        # No claims cross definitions, control flow, annotations, deletion,
-        # mutation, or another unsupported execution boundary.
+        # No claims cross definitions, unsupported control flow, annotations,
+        # deletion, mutation, or another unsupported execution boundary.
         state.clear()
 
     def _scan_eager_dynamic_exec_calls(self, expression: ast.expr, state: _DynamicExecState) -> None:

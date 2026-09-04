@@ -249,6 +249,26 @@ def test_starred_exec_call_runs_before_textually_earlier_keyword_effect(make_ski
     assert findings[0].line_number == 3
 
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "if _runner(payload):\n    pass",
+        "while _runner(payload):\n    break",
+        "for item in _runner(payload):\n    pass",
+        "with _runner(payload):\n    pass",
+        "match _runner(payload):\n    case _:\n        pass",
+    ],
+    ids=["if-test", "while-test", "for-iterable", "with-context", "match-subject"],
+)
+def test_alias_invocation_in_mandatory_compound_header_is_detected(make_skill, statement: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+
+
 def test_eager_expression_traversal_limit_is_enforced(make_skill) -> None:
     elements = ", ".join(("0",) * MAX_PYTHON_SHELL_EAGER_EXPR_NODES + ("_runner(payload)",))
     source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\nresult = [{elements}]\n"
