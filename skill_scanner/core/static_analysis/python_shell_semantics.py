@@ -375,6 +375,13 @@ class _StraightLineShellScanner:
                     for name in self._function_shadowed_names(statement):
                         invoked_bools.pop(name, None)
                         invoked_identities.pop(name, None)
+                    self._seed_zero_arg_function_defaults(
+                        statement,
+                        bool_bindings,
+                        identities,
+                        invoked_bools,
+                        invoked_identities,
+                    )
                     self._scan_body(
                         statement.body,
                         depth=depth + 1,
@@ -468,7 +475,7 @@ class _StraightLineShellScanner:
                     identities.pop(name, None)
                     if name not in external_names and value is not None:
                         bool_bindings[name] = value
-                    elif name not in external_names and identity_value is not None:
+                    elif identity_value is not None:
                         identities[name] = identity_value
                 self._enforce_binding_limit(bool_bindings, identities, poisoned_modules)
                 continue
@@ -1088,6 +1095,32 @@ class _StraightLineShellScanner:
             pending.extend(ast.iter_child_nodes(node))
         return names
 
+    def _seed_zero_arg_function_defaults(
+        self,
+        statement: ast.FunctionDef,
+        source_bools: dict[str, bool],
+        source_identities: dict[str, str],
+        body_bools: dict[str, bool],
+        body_identities: dict[str, str],
+    ) -> None:
+        positional = [*statement.args.posonlyargs, *statement.args.args]
+        default_parameters = positional[len(positional) - len(statement.args.defaults) :]
+        defaults = [
+            *zip(default_parameters, statement.args.defaults, strict=True),
+            *(
+                (parameter, default)
+                for parameter, default in zip(statement.args.kwonlyargs, statement.args.kw_defaults, strict=True)
+                if default is not None
+            ),
+        ]
+        for parameter, default in defaults:
+            exact_bool = _exact_bool(default, source_bools)
+            exact_identity = self._resolve_identity(default, source_identities)
+            if exact_bool is not None:
+                body_bools[parameter.arg] = exact_bool
+            elif exact_identity is not None:
+                body_identities[parameter.arg] = exact_identity
+
     @classmethod
     def _literal_for_target_binds(cls, target: ast.expr, iterable: ast.expr) -> bool:
         if not isinstance(iterable, (ast.List, ast.Tuple)) or not iterable.elts:
@@ -1520,8 +1553,11 @@ class _StraightLineShellScanner:
         for parameter, argument in zip(positional, call.args, strict=False):
             bound_names.add(parameter.arg)
             exact_value = _exact_bool(argument, state.bool_bindings)
+            exact_identity = _StraightLineShellScanner._resolve_identity(argument, state.identities)
             if exact_value is not None:
                 bool_bindings[parameter.arg] = exact_value
+            elif exact_identity is not None:
+                identities[parameter.arg] = exact_identity
         keyword_parameters = {
             parameter.arg: parameter for parameter in [*expression.args.args, *expression.args.kwonlyargs]
         }
@@ -1530,21 +1566,30 @@ class _StraightLineShellScanner:
                 continue
             bound_names.add(keyword.arg)
             exact_value = _exact_bool(keyword.value, state.bool_bindings)
+            exact_identity = _StraightLineShellScanner._resolve_identity(keyword.value, state.identities)
             if exact_value is not None:
                 bool_bindings[keyword.arg] = exact_value
+            elif exact_identity is not None:
+                identities[keyword.arg] = exact_identity
         default_parameters = positional[len(positional) - len(expression.args.defaults) :]
         for parameter, positional_default in zip(default_parameters, expression.args.defaults, strict=True):
             if parameter.arg in bound_names:
                 continue
             exact_value = _exact_bool(positional_default, state.bool_bindings)
+            exact_identity = _StraightLineShellScanner._resolve_identity(positional_default, state.identities)
             if exact_value is not None:
                 bool_bindings[parameter.arg] = exact_value
+            elif exact_identity is not None:
+                identities[parameter.arg] = exact_identity
         for parameter, keyword_default in zip(expression.args.kwonlyargs, expression.args.kw_defaults, strict=True):
             if parameter.arg in bound_names or keyword_default is None:
                 continue
             exact_value = _exact_bool(keyword_default, state.bool_bindings)
+            exact_identity = _StraightLineShellScanner._resolve_identity(keyword_default, state.identities)
             if exact_value is not None:
                 bool_bindings[parameter.arg] = exact_value
+            elif exact_identity is not None:
+                identities[parameter.arg] = exact_identity
         return _ExpressionScanState(
             bool_bindings,
             identities,

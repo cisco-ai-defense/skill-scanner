@@ -1134,3 +1134,74 @@ def test_tracked_true_loop_mutated_false_before_continue_can_fall_through(make_s
     )
 
     assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "from os import system as s\ndef launch(run=s):\n run('id')\nlaunch()",
+        "import os as o\ndef launch(module=o):\n module.system('id')\nlaunch()",
+        "from os import system as s\ndef launch(run=s):\n s = fake\n run('id')\nlaunch()",
+    ],
+    ids=["callable", "module", "definition-time-snapshot"],
+)
+def test_directly_called_embedded_function_seeds_identity_defaults(make_skill, payload):
+    assert len(_semantic_findings(make_skill, _python_c_source(payload))) == 1
+
+
+def test_directly_called_embedded_function_unknown_default_is_not_identity(make_skill):
+    payload = "def launch(run=fake):\n run('id')\nlaunch()"
+
+    assert not _semantic_findings(make_skill, _python_c_source(payload))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def launch():\n global run\n from os import system\n run = system\n run('id')\n",
+        (
+            "def outer():\n"
+            " run = None\n"
+            " def launch():\n"
+            "  nonlocal run\n"
+            "  from os import system\n"
+            "  run = system\n"
+            "  run('id')\n"
+        ),
+    ],
+    ids=["global", "nonlocal"],
+)
+def test_declared_external_assignment_establishes_exact_identity(make_skill, source):
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_declared_external_identity_rebind_respects_source_order(make_skill):
+    source = "def launch():\n global run\n from os import system\n run = system\n run = fake\n run('not-os-system')\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from os import system as s\n(lambda run: run('id'))(s)\n",
+        "from os import system as s\n(lambda run: run('id'))(run=s)\n",
+        "from os import system as s\n(lambda run=s: run('id'))()\n",
+        "import os as o\n(lambda module: module.system('id'))(o)\n",
+    ],
+    ids=["positional-callable", "keyword-callable", "default-callable", "positional-module"],
+)
+def test_immediate_lambda_seeds_exact_identity_parameters(make_skill, source):
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "(lambda run: run('not-os-system'))(unknown)\n",
+        "from os import system as s\n(lambda run=s: run('not-os-system'))(fake)\n",
+    ],
+    ids=["unknown-argument", "explicit-argument-overrides-default"],
+)
+def test_immediate_lambda_does_not_invent_identity(make_skill, source):
+    assert not _semantic_findings(make_skill, source)
