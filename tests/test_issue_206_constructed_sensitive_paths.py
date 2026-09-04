@@ -161,6 +161,57 @@ def test_delayed_scopes_do_not_inherit_module_path_or_import_facts(make_skill, s
     assert _matches(StaticAnalyzer(use_yara=False), skill) == []
 
 
+def test_eager_module_read_preceding_late_open_binding_is_detected(make_skill):
+    source = "path='/etc/'+'passwd'\nopen(path)\nopen=lambda value: value\n"
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 2
+
+
+def test_class_attribute_named_open_does_not_shadow_method_builtin(make_skill):
+    source = """
+class Loader:
+    open = lambda value: value
+
+    def load(self):
+        path = '/etc/' + 'passwd'
+        return open(path)
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 7
+
+
+def test_comprehension_target_does_not_shadow_enclosing_builtin(make_skill):
+    source = """
+def load():
+    [None for open in ()]
+    path = '/etc/' + 'passwd'
+    return open(path)
+"""
+    skill = make_skill({"scripts/main.py": source})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].line_number == 5
+
+
+def test_exact_string_augmented_assignment_is_detected(make_skill):
+    skill = make_skill({"scripts/main.py": "path='/etc/'\npath += 'passwd'\nopen(path)\n"})
+
+    matches = _matches(StaticAnalyzer(use_yara=False), skill)
+
+    assert len(matches) == 1
+    assert matches[0].metadata["resolved_path"] == "/etc/passwd"
+
+
 @pytest.mark.parametrize(
     "source",
     [
@@ -173,6 +224,21 @@ def test_delayed_scopes_do_not_inherit_module_path_or_import_facts(make_skill, s
     ],
 )
 def test_shadowed_open_is_not_treated_as_the_builtin(make_skill, source):
+    skill = make_skill({"scripts/main.py": source})
+
+    assert _matches(StaticAnalyzer(use_yara=False), skill) == []
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "globals()['open'] = lambda value: value",
+        "import builtins\nbuiltins.open = lambda value: value",
+        "import builtins as bi\nsetattr(bi, 'open', lambda value: value)",
+    ],
+)
+def test_explicit_runtime_open_replacement_invalidates_builtin(make_skill, replacement):
+    source = f"{replacement}\npath='/etc/'+'passwd'\nopen(path)\n"
     skill = make_skill({"scripts/main.py": source})
 
     assert _matches(StaticAnalyzer(use_yara=False), skill) == []

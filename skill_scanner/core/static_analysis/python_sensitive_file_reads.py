@@ -144,6 +144,19 @@ def _node_binds_name(root: ast.AST, name: str) -> bool:
             continue
         if isinstance(node, ast.Lambda):
             continue
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+            # Comprehension targets are isolated on supported Python versions.
+            # Their iterable/filter/value expressions can still contain a
+            # named expression that binds in the enclosing scope, so traverse
+            # every eager expression but never the generator targets.
+            if isinstance(node, ast.DictComp):
+                pending.extend((node.key, node.value))
+            else:
+                pending.append(node.elt)
+            for generator in node.generators:
+                pending.append(generator.iter)
+                pending.extend(generator.ifs)
+            continue
         if isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
             return True
         if isinstance(node, ast.Import) and any(_bound_import_name(alias) == name for alias in node.names):
@@ -164,6 +177,56 @@ def _node_binds_name(root: ast.AST, name: str) -> bool:
             return True
         pending.extend(ast.iter_child_nodes(node))
     return False
+
+
+def _target_may_replace_runtime_open(target: ast.AST) -> bool:
+    if isinstance(target, ast.Attribute) and target.attr == "open":
+        return True
+    if isinstance(target, ast.Subscript) and isinstance(target.slice, ast.Constant) and target.slice.value == "open":
+        return True
+    if isinstance(target, (ast.List, ast.Tuple)):
+        return any(_target_may_replace_runtime_open(element) for element in target.elts)
+    if isinstance(target, ast.Starred):
+        return _target_may_replace_runtime_open(target.value)
+    return False
+
+
+def _node_may_replace_runtime_open(root: ast.AST) -> bool:
+    """Recognize explicit global/builtin ``open`` replacement syntax."""
+
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            # Definitions do not execute their bodies at the definition site.
+            continue
+        if isinstance(node, ast.Assign) and any(_target_may_replace_runtime_open(target) for target in node.targets):
+            return True
+        if isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and _target_may_replace_runtime_open(
+            node.target
+        ):
+            return True
+        if isinstance(node, ast.Delete) and any(_target_may_replace_runtime_open(target) for target in node.targets):
+            return True
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in {"delattr", "setattr"}
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "open"
+        ):
+            return True
+        pending.extend(ast.iter_child_nodes(node))
+    return False
+
+
+def _scope_may_shadow_open(body: list[ast.stmt]) -> bool:
+    return any(_node_binds_name(statement, "open") or _node_may_replace_runtime_open(statement) for statement in body)
+
+
+def _scope_may_replace_runtime_open(body: list[ast.stmt]) -> bool:
+    return any(_node_may_replace_runtime_open(statement) for statement in body)
 
 
 def _function_can_use_builtin_open(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -207,16 +270,32 @@ class _StraightLineSensitiveReadScanner:
         self.candidate_lines: set[int] = set()
 
     def scan(self, tree: ast.Module) -> None:
-        module_uses_builtin_open = not any(_node_binds_name(statement, "open") for statement in tree.body)
-        self._scan_body(tree.body, depth=0, builtin_open=module_uses_builtin_open)
+        # Module code executes eagerly, so an early call can still resolve the
+        # builtin before a later module assignment. Delayed functions are more
+        # conservative because they can run after all module statements.
+        self._scan_body(
+            tree.body,
+            depth=0,
+            builtin_open=True,
+            delayed_builtin_open=not _scope_may_shadow_open(tree.body),
+        )
 
-    def _scan_body(self, body: list[ast.stmt], *, depth: int, builtin_open: bool) -> None:
+    def _scan_body(
+        self,
+        body: list[ast.stmt],
+        *,
+        depth: int,
+        builtin_open: bool,
+        delayed_builtin_open: bool,
+        class_scope: bool = False,
+    ) -> None:
         if depth > MAX_PYTHON_PATH_SCOPE_DEPTH or len(self.candidates) >= MAX_PYTHON_PATH_CANDIDATES:
             return
 
         bindings: dict[str, str] = {}
         os_available = False
         open_available = builtin_open
+        delayed_open_available = delayed_builtin_open
         external_names = {
             name for statement in body if isinstance(statement, (ast.Global, ast.Nonlocal)) for name in statement.names
         }
@@ -225,14 +304,22 @@ class _StraightLineSensitiveReadScanner:
             if len(self.candidates) >= MAX_PYTHON_PATH_CANDIDATES:
                 return
 
+            if _node_may_replace_runtime_open(statement):
+                open_available = False
+                delayed_open_available = False
+
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 # Delayed scopes receive no path or import facts. The only
                 # inherited marker prevents a module/enclosing ``open``
                 # binding from being mistaken for the built-in.
+                function_open_available = delayed_open_available and _function_can_use_builtin_open(statement)
                 self._scan_body(
                     statement.body,
                     depth=depth + 1,
-                    builtin_open=open_available and _function_can_use_builtin_open(statement),
+                    builtin_open=function_open_available,
+                    delayed_builtin_open=(
+                        function_open_available and not _scope_may_replace_runtime_open(statement.body)
+                    ),
                 )
                 bindings.clear()
                 os_available = False
@@ -241,7 +328,19 @@ class _StraightLineSensitiveReadScanner:
                 continue
 
             if isinstance(statement, ast.ClassDef):
-                self._scan_body(statement.body, depth=depth + 1, builtin_open=open_available)
+                # A method or nested class skips the surrounding class
+                # namespace. Keep class-body sequential lookup separate from
+                # the enclosing lexical marker used by delayed code.
+                class_open_available = delayed_open_available if class_scope else open_available
+                self._scan_body(
+                    statement.body,
+                    depth=depth + 1,
+                    builtin_open=class_open_available,
+                    delayed_builtin_open=(
+                        delayed_open_available and not _scope_may_replace_runtime_open(statement.body)
+                    ),
+                    class_scope=True,
+                )
                 bindings.clear()
                 os_available = False
                 if statement.name == "open":
@@ -321,6 +420,26 @@ class _StraightLineSensitiveReadScanner:
                 self._enforce_binding_limit(bindings)
                 continue
 
+            if isinstance(statement, ast.AugAssign):
+                target = statement.target
+                value: str | None = None
+                if isinstance(target, ast.Name) and isinstance(statement.op, ast.Add):
+                    left = bindings.get(target.id)
+                    right = self._exact_string(statement.value, bindings, os_available)
+                    if left is not None and right is not None:
+                        value = _bounded_string(left + right)
+                bindings.clear()
+                os_available = False
+                if isinstance(target, ast.Name):
+                    if target.id == "open":
+                        open_available = False
+                    if target.id not in external_names and value is not None:
+                        bindings[target.id] = value
+                elif _node_binds_name(target, "open"):
+                    open_available = False
+                self._enforce_binding_limit(bindings)
+                continue
+
             if isinstance(statement, ast.Delete):
                 targets = _name_targets(statement.targets)
                 if targets is None:
@@ -342,7 +461,13 @@ class _StraightLineSensitiveReadScanner:
                     os_available = False
                     if item.optional_vars is not None and _node_binds_name(item.optional_vars, "open"):
                         open_available = False
-                self._scan_body(statement.body, depth=depth + 1, builtin_open=open_available)
+                self._scan_body(
+                    statement.body,
+                    depth=depth + 1,
+                    builtin_open=open_available,
+                    delayed_builtin_open=delayed_open_available,
+                    class_scope=class_scope,
+                )
                 continue
 
             if isinstance(statement, ast.Expr):
