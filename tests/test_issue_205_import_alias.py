@@ -1120,3 +1120,17 @@ def test_immediate_lambda_seeds_exact_bool_parameters(make_skill, enabled, lambd
     source = f"import subprocess\nenabled = {enabled!r}\n{lambda_call}\n"
 
     assert len(_semantic_findings(make_skill, source)) == expected_count
+
+
+def test_tracked_true_loop_mutated_false_before_continue_can_fall_through(make_skill):
+    source = (
+        "def launch():\n"
+        "    flag = True\n"
+        "    while flag:\n"
+        "        flag = False\n"
+        "        continue\n"
+        "    import os as o\n"
+        "    o.system('id')\n"
+    )
+
+    assert len(_semantic_findings(make_skill, source)) == 1

@@ -596,10 +596,14 @@ class _StraightLineShellScanner:
                 truth = self._known_truth(statement.test, bool_bindings)
                 header_is_safe = self._scan_expression(statement.test, expression_state)
                 while_result: _BodyScanResult | None = None
+                condition_is_unchanged = False
                 if truth is False:
                     while_result = scan_nested_body(statement.orelse, inherit_facts=header_is_safe)
                 elif truth is True:
                     while_result = scan_nested_body(statement.body, inherit_facts=header_is_safe)
+                    condition_is_unchanged = isinstance(statement.test, ast.Constant) or self._body_preserves_facts(
+                        statement.body, bool_bindings, identities
+                    )
                     if while_result.flow == "normal" and not isinstance(statement.test, ast.Constant):
                         scan_nested_body(statement.orelse)
                 else:
@@ -617,9 +621,6 @@ class _StraightLineShellScanner:
                 if truth is True and while_result is not None:
                     if while_result.flow == "halt":
                         return _BodyScanResult(poisoned_modules, "halt")
-                    condition_is_unchanged = isinstance(statement.test, ast.Constant) or self._body_preserves_facts(
-                        statement.body, bool_bindings, identities
-                    )
                     if (while_result.flow == "continue" and condition_is_unchanged) or (
                         while_result.flow == "normal" and self._body_is_inert(statement.body) and condition_is_unchanged
                     ):
