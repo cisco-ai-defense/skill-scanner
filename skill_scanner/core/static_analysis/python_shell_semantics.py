@@ -448,6 +448,19 @@ def _exact_bool(expression: ast.expr, bindings: dict[str, bool]) -> bool | None:
 def _guaranteed_literal_truth(expression: ast.expr, state: _DynamicExecState) -> bool | None:
     """Truth-test a narrow literal whose construction cannot dispatch user code."""
 
+    negated_operand = expression
+    negations = 0
+    while isinstance(negated_operand, ast.UnaryOp) and isinstance(negated_operand.op, ast.Not):
+        negations += 1
+        if negations >= MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+            return None
+        negated_operand = negated_operand.operand
+    if negated_operand is not expression:
+        operand_truth = _guaranteed_literal_truth(negated_operand, state)
+        if operand_truth is None:
+            return None
+        return operand_truth if negations % 2 == 0 else not operand_truth
+
     if isinstance(expression, ast.Constant):
         value = expression.value
         if value is None or value is Ellipsis or type(value) in {bool, bytes, complex, float, int, str}:
@@ -488,6 +501,60 @@ def _guaranteed_literal_truth(expression: ast.expr, state: _DynamicExecState) ->
             visited += value_nodes
         return bool(expression.keys)
     return None
+
+
+def _guaranteed_literal_iterable_truth(
+    expression: ast.expr,
+    state: _DynamicExecState,
+) -> bool | None:
+    """Return whether an exact inert builtin iterable is nonempty."""
+
+    if isinstance(expression, ast.Constant):
+        if type(expression.value) not in {bytes, str}:
+            return None
+    elif not isinstance(expression, (ast.Dict, ast.List, ast.Set, ast.Tuple)):
+        return None
+    return _guaranteed_literal_truth(expression, state)
+
+
+def _immediate_zero_argument_lambda_body(
+    expression: ast.Call,
+    state: _DynamicExecState,
+) -> ast.expr | None:
+    """Return one safely eager direct-lambda body, or ``None``."""
+
+    if (
+        state.class_namespace
+        or not isinstance(expression.func, ast.Lambda)
+        or expression.args
+        or expression.keywords
+        or expression.func.args.posonlyargs
+        or expression.func.args.args
+        or expression.func.args.vararg is not None
+        or expression.func.args.kwonlyargs
+        or expression.func.args.kwarg is not None
+    ):
+        return None
+
+    pending: list[ast.AST] = [expression.func.body]
+    visited = 0
+    while pending:
+        node = pending.pop()
+        visited += 1
+        if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+            return None
+        if isinstance(node, ast.Lambda):
+            # A nested lambda's body has its own delayed scope, but its
+            # defaults execute immediately in this lambda's scope.
+            defaults = [*node.args.defaults, *(default for default in node.args.kw_defaults if default)]
+            pending.extend(defaults)
+            continue
+        if isinstance(node, (ast.NamedExpr, ast.Yield, ast.YieldFrom)):
+            # A walrus creates lambda-local bindings for the whole body, while
+            # either yield form makes invocation return an unstarted generator.
+            return None
+        pending.extend(ast.iter_child_nodes(node))
+    return expression.func.body
 
 
 def _name_targets(targets: list[ast.expr]) -> tuple[str, ...] | None:
@@ -542,6 +609,28 @@ def _is_dynamic_exec_lookup(expression: ast.expr, state: _DynamicExecState) -> b
         and expression.args[0].id in state.builtins_names
         and _literal_joined_exec(expression.args[1])
     )
+
+
+def _dynamic_exec_callable_anchor(
+    expression: ast.expr,
+    state: _DynamicExecState,
+) -> ast.Name | None:
+    """Return the source anchor for one bounded reviewed exec callable."""
+
+    callable_expression = expression
+    call_attributes = 0
+    while isinstance(callable_expression, ast.Attribute) and callable_expression.attr == "__call__":
+        call_attributes += 1
+        if call_attributes > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+            return None
+        callable_expression = callable_expression.value
+    if isinstance(callable_expression, ast.Name) and callable_expression.id in state.exec_names:
+        return callable_expression
+    if not _is_dynamic_exec_lookup(callable_expression, state):
+        return None
+    assert isinstance(callable_expression, ast.Call)
+    assert isinstance(callable_expression.func, ast.Name)
+    return callable_expression.func
 
 
 def _is_literal_base64_decode(expression: ast.expr, state: _DynamicExecState) -> bool:
@@ -1587,11 +1676,43 @@ class _StraightLineShellScanner:
                         state.clear()
                         return
                 return
+            if isinstance(statement, ast.If) and test_truth is not None and state.is_active():
+                # A statically selected branch that completed without effects
+                # preserves its source-ordered bindings for the next statement.
+                return
             state.clear()
             return
 
         if isinstance(statement, ast.For):
+            iterable_truth = _guaranteed_literal_iterable_truth(statement.iter, state)
             self._scan_eager_dynamic_exec_calls(statement.iter, state)
+            if iterable_truth is False and state.is_active():
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.orelse,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+                if state.inert_exit is not None:
+                    return
+                if state.is_active():
+                    # No target assignment occurs for an exact empty builtin
+                    # iterable. An inert else suite therefore preserves its
+                    # possibly updated facts for the following statement.
+                    return
+            elif iterable_truth is True and state.is_active() and isinstance(statement.target, ast.Name):
+                # Assigning the first element to a plain name cannot dispatch
+                # user code. Every supported nonempty literal enters its body.
+                state.rebind(statement.target.id)
+                state.known_bound_names.add(statement.target.id)
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.body,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
             state.clear()
             return
 
@@ -1617,14 +1738,54 @@ class _StraightLineShellScanner:
                 scan_nested_class_bodies=scan_nested_class_bodies,
             )
             body_exit = state.inert_exit
-            loop_exit_skips_handlers = body_exit in {
+            body_completed_normally = state.is_active()
+            guaranteed_handler_selected = False
+            if body_completed_normally:
+                # An effect-free body completed normally, so exception
+                # handlers are unreachable and the else suite is mandatory.
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.orelse,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+                body_exit = state.inert_exit
+            elif (
+                isinstance(statement, ast.Try)
+                and body_exit is _InertAbruptExit.RAISE
+                and len(statement.handlers) == 1
+                and statement.handlers[0].type is None
+                and statement.handlers[0].name is None
+                and state.can_enter_finally()
+            ):
+                # A lone bare handler catches either a re-raised exception or
+                # the RuntimeError produced by ``raise`` without an active
+                # exception, without evaluating a user-controlled matcher.
+                guaranteed_handler_selected = True
+                state.inert_exit = None
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.handlers[0].body,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+                body_exit = state.inert_exit
+
+            exit_skips_handlers = body_exit in {
                 _InertAbruptExit.BREAK,
                 _InertAbruptExit.CONTINUE,
-            }
-            if state.can_enter_finally() and (
-                loop_exit_skips_handlers
-                or (isinstance(statement, ast.Try) and not statement.handlers and not statement.orelse)
-            ):
+            } or (
+                body_exit is _InertAbruptExit.RAISE
+                and (
+                    body_completed_normally
+                    or guaranteed_handler_selected
+                    or (isinstance(statement, ast.Try) and not statement.handlers)
+                )
+            )
+            normal_completion = state.is_active()
+            if state.can_enter_finally() and (normal_completion or exit_skips_handlers):
                 state.enter_finally()
                 self._scan_guaranteed_dynamic_exec_prefix(
                     statement.finalbody,
@@ -1638,6 +1799,10 @@ class _StraightLineShellScanner:
                 if body_exit is not None and state.is_active():
                     state.inert_exit = body_exit
                     return
+                if state.is_active():
+                    # Every modeled component completed normally without an
+                    # effect boundary, so retain its resulting provenance.
+                    return
             state.clear()
             return
 
@@ -1647,11 +1812,13 @@ class _StraightLineShellScanner:
             # are delayed; annotations are eager only on runtimes where Python
             # has not deferred them by default and no future import opts in.
             for expression in statement.decorator_list:
-                if isinstance(expression, ast.Name) and expression.id in state.exec_names:
+                dynamic_exec_anchor = _dynamic_exec_callable_anchor(expression, state)
+                if dynamic_exec_anchor is not None:
                     # A bare decorator is captured now and invoked after the
                     # function object is created, even if a later expression
                     # rebinds its source name.
-                    self._record_dynamic_exec(expression)
+                    self._record_dynamic_exec(dynamic_exec_anchor)
+                    continue
                 self._scan_eager_dynamic_exec_calls(expression, state)
             eager_defaults = [
                 *statement.args.defaults,
@@ -1690,8 +1857,10 @@ class _StraightLineShellScanner:
             # expressions. The class namespace and decorator applications are
             # unsupported effect boundaries after those mandatory inputs.
             for expression in statement.decorator_list:
-                if isinstance(expression, ast.Name) and expression.id in state.exec_names:
-                    self._record_dynamic_exec(expression)
+                dynamic_exec_anchor = _dynamic_exec_callable_anchor(expression, state)
+                if dynamic_exec_anchor is not None:
+                    self._record_dynamic_exec(dynamic_exec_anchor)
+                    continue
                 self._scan_eager_dynamic_exec_calls(expression, state)
             for type_parameter in getattr(statement, "type_params", ()):
                 # Generic class bases and keywords execute inside the type-
@@ -1928,6 +2097,9 @@ class _StraightLineShellScanner:
                     call_children.append(keyword.value)
                     if keyword.arg is None:
                         call_children.append(None)
+                immediate_lambda_body = _immediate_zero_argument_lambda_body(current, state)
+                if immediate_lambda_body is not None:
+                    call_children.append(immediate_lambda_body)
                 call_children.append(None)
                 pending.extend(reversed(call_children))
                 continue
@@ -2054,23 +2226,20 @@ class _StraightLineShellScanner:
 
             if isinstance(current, ast.UnaryOp):
                 if _guaranteed_literal_truth(current, state) is not None:
-                    # Charge the entire signed-literal chain in one pass. Do
+                    # Charge the entire literal-unary chain in one pass. Do
                     # not queue each suffix for re-proof, which would be
                     # quadratic for an adversarially deep unary expression.
-                    signed_tail = current.operand
-                    while isinstance(signed_tail, ast.UnaryOp) and isinstance(
-                        signed_tail.op,
-                        (ast.UAdd, ast.USub),
+                    literal_tail = current.operand
+                    while isinstance(literal_tail, ast.UnaryOp) and isinstance(
+                        literal_tail.op,
+                        (ast.Not, ast.UAdd, ast.USub),
                     ):
                         visited += 1
                         if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
                             state.clear()
                             return
-                        signed_tail = signed_tail.operand
-                    visited += 1
-                    if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
-                        state.clear()
-                        return
+                        literal_tail = literal_tail.operand
+                    pending.append(literal_tail)
                     continue
                 pending.append(None)
                 pending.append(current.operand)
@@ -2110,14 +2279,10 @@ class _StraightLineShellScanner:
     def _record_direct_dynamic_exec_call(self, expression: ast.expr, state: _DynamicExecState) -> bool:
         if not isinstance(expression, ast.Call):
             return False
-        if isinstance(expression.func, ast.Name) and expression.func.id in state.exec_names:
-            self._record_dynamic_exec(expression.func)
-            return True
-        if not _is_dynamic_exec_lookup(expression.func, state):
+        anchor = _dynamic_exec_callable_anchor(expression.func, state)
+        if anchor is None:
             return False
-        assert isinstance(expression.func, ast.Call)
-        assert isinstance(expression.func.func, ast.Name)
-        self._record_dynamic_exec(expression.func.func)
+        self._record_dynamic_exec(anchor)
         return True
 
     def _scan_assignment_target(

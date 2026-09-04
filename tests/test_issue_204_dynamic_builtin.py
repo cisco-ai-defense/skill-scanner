@@ -89,6 +89,48 @@ def test_dynamic_exec_lookup_invoked_without_temporary_alias_is_detected(make_sk
 
 
 @pytest.mark.parametrize(
+    ("source", "expected_line", "expected_text"),
+    [
+        (
+            "import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n_runner.__call__(payload)\n",
+            3,
+            "_runner(...) -> builtins.exec",
+        ),
+        (
+            "import builtins\ngetattr(builtins, ''.join(['e', 'x', 'e', 'c'])).__call__(payload)\n",
+            2,
+            "getattr(...) -> builtins.exec",
+        ),
+        (
+            "import builtins\n"
+            "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+            "_runner.__call__.__call__(payload)\n",
+            3,
+            "_runner(...) -> builtins.exec",
+        ),
+        (
+            "import builtins\ngetattr(builtins, ''.join(['e', 'x', 'e', 'c'])).__call__.__call__(payload)\n",
+            2,
+            "getattr(...) -> builtins.exec",
+        ),
+    ],
+    ids=["tracked-alias", "inline-lookup", "chained-alias", "chained-inline-lookup"],
+)
+def test_dynamic_exec_call_protocol_invocation_is_detected(
+    make_skill,
+    source: str,
+    expected_line: int,
+    expected_text: str,
+) -> None:
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+    assert findings[0].metadata["matched_pattern"] == _PATTERN
+    assert findings[0].metadata["matched_text"] == expected_text
+
+
+@pytest.mark.parametrize(
     "source",
     [
         "import builtins\ngetattr(plugin, ''.join(['e', 'x', 'e', 'c']))(payload)\n",
@@ -157,6 +199,7 @@ def test_direct_alias_invocation_in_assignment_value_is_detected(make_skill, inv
         "print(**_runner(payload))",
         "result = (lambda value: value)(_runner(payload))",
         "result = (lambda value=_runner(payload): value)()",
+        "result = (lambda: _runner(payload))()",
         "result = [item for item in _runner(payload)]",
         "result = {item for item in _runner(payload)}",
         "result = {item: item for item in _runner(payload)}",
@@ -181,6 +224,7 @@ def test_direct_alias_invocation_in_assignment_value_is_detected(make_skill, inv
         "mapping-call-argument",
         "lambda-call-argument",
         "lambda-default",
+        "immediately-invoked-zero-argument-lambda",
         "list-comprehension-first-iterable",
         "set-comprehension-first-iterable",
         "dict-comprehension-first-iterable",
@@ -203,6 +247,12 @@ def test_alias_invocation_in_definitely_eager_wrapper_is_detected(make_skill, in
         "delayed = lambda: _runner(payload)",
         "delayed = (_runner(payload) for item in items)",
         "result = [_runner(payload) for item in items]",
+        "result = (lambda required: _runner(payload))()",
+        "result = (lambda: _runner(payload))(unexpected)",
+        "result = (lambda: (_runner(payload), (yield 1)))()",
+        "result = (lambda: (_runner(payload), (_runner := print)))()",
+        "result = (lambda: (_runner(payload), (lambda value=(_runner := print): None)))()",
+        "result = (lambda: (_runner(payload), (lambda value=(yield 1): None)))()",
         "result = False and _runner(payload)",
         "result = 0 and _runner(payload)",
         "result = True or _runner(payload)",
@@ -218,6 +268,12 @@ def test_alias_invocation_in_definitely_eager_wrapper_is_detected(make_skill, in
         "lambda",
         "generator",
         "list-comprehension",
+        "lambda-missing-required-argument",
+        "zero-argument-lambda-given-an-argument",
+        "generator-lambda-body-is-delayed",
+        "lambda-walrus-makes-alias-local",
+        "nested-lambda-default-walrus-binds-outer-lambda",
+        "nested-lambda-default-yield-makes-outer-generator",
         "short-circuit-bool",
         "false-scalar-short-circuit-and",
         "short-circuit-or",
@@ -232,6 +288,17 @@ def test_alias_invocation_in_definitely_eager_wrapper_is_detected(make_skill, in
 )
 def test_possibly_unevaluated_nested_alias_call_is_not_reported(make_skill, invocation: str) -> None:
     source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{invocation}\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_immediate_lambda_does_not_inherit_a_class_local_exec_alias(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "class Loader:\n"
+        "    _runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "    result = (lambda: _runner(payload))()\n"
+    )
 
     assert _eval_findings(make_skill, source) == []
 
@@ -343,6 +410,91 @@ def test_alias_invocation_in_eager_definition_expression_is_detected(
 
     assert len(findings) == 1
     assert findings[0].line_number == expected_line
+
+
+@pytest.mark.parametrize(
+    ("decorator", "definition", "expected_text"),
+    [
+        (
+            "@getattr(builtins, ''.join(['e', 'x', 'e', 'c']))",
+            "def load():\n    pass",
+            "getattr(...) -> builtins.exec",
+        ),
+        (
+            "@getattr(builtins, ''.join(['e', 'x', 'e', 'c'])).__call__",
+            "async def load():\n    pass",
+            "getattr(...) -> builtins.exec",
+        ),
+        (
+            "@getattr(builtins, ''.join(['e', 'x', 'e', 'c'])).__call__.__call__",
+            "class Loader:\n    pass",
+            "getattr(...) -> builtins.exec",
+        ),
+        ("@_runner.__call__", "def load():\n    pass", "_runner(...) -> builtins.exec"),
+        ("@_runner.__call__.__call__", "class Loader:\n    pass", "_runner(...) -> builtins.exec"),
+    ],
+    ids=["direct-function", "direct-async-call", "direct-class-chained", "alias-call", "alias-chained"],
+)
+def test_dynamic_exec_callable_decorator_is_detected(
+    make_skill,
+    decorator: str,
+    definition: str,
+    expected_text: str,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{decorator}\n{definition}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+    assert findings[0].metadata["matched_text"] == expected_text
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "def load(value=_runner(payload)):\n    pass",
+        "class Loader(_runner(payload)):\n    pass",
+    ],
+    ids=["function-default", "class-base"],
+)
+def test_direct_dynamic_exec_decorator_preserves_later_definition_inputs(
+    make_skill,
+    definition: str,
+) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "@getattr(builtins, ''.join(['e', 'x', 'e', 'c'])).__call__\n"
+        f"{definition}\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert [finding.line_number for finding in findings] == [3, 4]
+
+
+@pytest.mark.parametrize(
+    "decorator",
+    [
+        "@getattr(plugin, ''.join(['e', 'x', 'e', 'c']))",
+        "@getattr(builtins, ''.join(['e', 'v', 'a', 'l']))",
+        "@getattr(builtins, ''.join(['e', 'x', 'e', 'c'])).other.__call__",
+    ],
+    ids=["unreviewed-receiver", "different-name", "intervening-attribute"],
+)
+def test_unreviewed_dynamic_exec_decorator_is_not_claimed(make_skill, decorator: str) -> None:
+    source = f"import builtins\n{decorator}\ndef load():\n    pass\n"
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_shadowed_getattr_dynamic_exec_decorator_is_not_claimed(make_skill) -> None:
+    source = (
+        "import builtins\ngetattr = safe\n@getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\ndef load():\n    pass\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
 
 
 def test_effectful_decorator_precedes_function_default(make_skill) -> None:
@@ -698,11 +850,19 @@ def test_alias_invocation_in_assert_test_is_detected(make_skill) -> None:
     [
         ("try:\n    _runner(payload)\nexcept Exception:\n    pass", 4),
         ("try:\n    pass\nfinally:\n    _runner(payload)", 6),
+        ("try:\n    pass\nexcept Exception:\n    pass\nelse:\n    _runner(payload)", 8),
+        ("try:\n    pass\nexcept Exception:\n    pass\nfinally:\n    _runner(payload)", 8),
+        ("try:\n    pass\nexcept* Exception:\n    pass\nelse:\n    _runner(payload)", 8),
+        ("try:\n    pass\nexcept* Exception:\n    pass\nfinally:\n    _runner(payload)", 8),
         ("global harmless\n_runner(payload)", 4),
         ("value = 0\nvalue += _runner(payload)", 4),
         ("if True:\n    _runner(payload)", 4),
+        ("if not False:\n    _runner(payload)", 4),
+        ("if not not True:\n    _runner(payload)", 4),
+        ("if not [0]:\n    pass\nelse:\n    _runner(payload)", 6),
         ("if 1:\n    _runner(payload)", 4),
         ("while True:\n    _runner(payload)\n    break", 4),
+        ("while not 0:\n    _runner(payload)\n    break", 4),
         ("while 1:\n    _runner(payload)\n    break", 4),
         ("while 0:\n    pass\nelse:\n    _runner(payload)", 6),
         ("if False:\n    pass\nelse:\n    _runner(payload)", 6),
@@ -716,11 +876,19 @@ def test_alias_invocation_in_assert_test_is_detected(make_skill) -> None:
     ids=[
         "try-body-prefix",
         "try-finally-prefix",
+        "inert-try-else",
+        "inert-try-finally-with-handler",
+        "inert-try-star-else",
+        "inert-try-star-finally",
         "module-global-declaration",
         "augassign-bound-name-value",
         "literal-true-if-body",
+        "not-false-if-body",
+        "double-not-true-if-body",
+        "not-nonempty-list-else",
         "truthy-number-if-body",
         "literal-true-while-body",
+        "not-zero-while-body",
         "truthy-number-while-body",
         "false-number-while-else",
         "literal-false-if-else",
@@ -745,10 +913,170 @@ def test_alias_invocation_in_guaranteed_statement_position_is_detected(
     assert findings[0].line_number == expected_line
 
 
+@pytest.mark.parametrize("iterable", ["()", "[]", "{}", "''", "b''"])
+def test_empty_literal_for_executes_guaranteed_else(make_skill, iterable: str) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"for item in {iterable}:\n"
+        "    pass\n"
+        "else:\n"
+        "    _runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 6
+
+
+@pytest.mark.parametrize("iterable", ["()", "[]", "{}", "''", "b''"])
+def test_empty_literal_for_preserves_provenance_after_loop(make_skill, iterable: str) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"for item in {iterable}:\n"
+        "    pass\n"
+        "_runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 5
+
+
+@pytest.mark.parametrize(
+    ("loop", "invocation", "expected_line"),
+    [
+        ("for _runner in ():\n    pass", "_runner(payload)", 5),
+        ("for item in ():\n    pass\nelse:\n    alias = _runner", "alias(payload)", 7),
+    ],
+    ids=["skipped-target-rebind", "else-created-alias"],
+)
+def test_empty_literal_for_preserves_exact_resulting_bindings(
+    make_skill,
+    loop: str,
+    invocation: str,
+    expected_line: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{loop}\n{invocation}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+@pytest.mark.parametrize(
+    "else_body",
+    ["_runner = None", "mutate()"],
+    ids=["rebind", "effect"],
+)
+def test_empty_literal_for_does_not_restore_invalidated_else_provenance(
+    make_skill,
+    else_body: str,
+) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "for item in ():\n"
+        "    pass\n"
+        "else:\n"
+        f"    {else_body}\n"
+        "_runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize("non_iterable", ["None", "False", "0", "0.0"])
+def test_falsey_non_iterable_for_does_not_reach_else(make_skill, non_iterable: str) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"for item in {non_iterable}:\n"
+        "    pass\n"
+        "else:\n"
+        "    _runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize("iterable", ["(0,)", "[0]", "{0}", "{0: 1}", "'x'", "b'x'"])
+def test_nonempty_literal_for_executes_guaranteed_first_iteration(make_skill, iterable: str) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"for item in {iterable}:\n"
+        "    _runner(payload)\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 4
+
+
+def test_nonempty_literal_for_target_rebinding_invalidates_exec_alias(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "for _runner in (0,):\n"
+        "    _runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    ("branch", "invocation", "expected_line"),
+    [
+        ("if True:\n    pass", "_runner(payload)", 5),
+        ("if False:\n    mutate()\nelse:\n    pass", "_runner(payload)", 7),
+        ("if True:\n    alias = _runner", "alias(payload)", 5),
+    ],
+    ids=["true-body", "false-else", "updated-alias"],
+)
+def test_completed_deterministic_if_preserves_provenance(
+    make_skill,
+    branch: str,
+    invocation: str,
+    expected_line: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{branch}\n{invocation}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+def test_completed_deterministic_if_preserves_exec_rebinding(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "if True:\n"
+        "    _runner = None\n"
+        "_runner(payload)\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
 @pytest.mark.parametrize(
     "test",
-    ["[missing]", "(mutate(),)", "{missing}", "{missing: 1}", "{'key': mutate()}"],
-    ids=["list-name", "tuple-call", "set-name", "dict-key", "dict-value-call"],
+    [
+        "[missing]",
+        "(mutate(),)",
+        "{missing}",
+        "{missing: 1}",
+        "{'key': mutate()}",
+        "not condition",
+        "not mutate()",
+    ],
+    ids=["list-name", "tuple-call", "set-name", "dict-key", "dict-value-call", "not-name", "not-call"],
 )
 def test_effectful_or_failing_container_test_does_not_select_branch(make_skill, test: str) -> None:
     source = (
@@ -896,6 +1224,71 @@ def test_inert_abrupt_exit_preserves_provenance_for_guaranteed_finally(
 
     assert len(findings) == 1
     assert findings[0].line_number == expected_line
+
+
+@pytest.mark.parametrize(
+    ("statement", "expected_line"),
+    [
+        ("try:\n    raise\nexcept:\n    pass\nfinally:\n    _runner(payload)", 8),
+        ("try:\n    raise\nexcept:\n    _runner(payload)\nfinally:\n    pass", 6),
+        (
+            "try:\n    raise\nexcept:\n    alias = _runner\nfinally:\n    alias(payload)",
+            8,
+        ),
+        ("try:\n    raise\nexcept:\n    raise\nfinally:\n    _runner(payload)", 8),
+        (
+            "try:\n    raise\nexcept:\n    pass\nfinally:\n    pass\n_runner(payload)",
+            9,
+        ),
+        ("try:\n    pass\nfinally:\n    pass\n_runner(payload)", 7),
+    ],
+    ids=[
+        "caught-raise-finally",
+        "caught-raise-handler",
+        "handler-alias-finally",
+        "handler-reraise-finally",
+        "caught-raise-continuation",
+        "normal-try-continuation",
+    ],
+)
+def test_inert_try_path_preserves_guaranteed_exec_provenance(
+    make_skill,
+    statement: str,
+    expected_line: int,
+) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == expected_line
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "try:\n    raise\nexcept:\n    _runner = None\nfinally:\n    _runner(payload)",
+        "try:\n    raise\nexcept:\n    mutate()\nfinally:\n    _runner(payload)",
+        "try:\n    raise\nexcept RuntimeError:\n    pass\nfinally:\n    _runner(payload)",
+        ("try:\n    raise\nexcept RuntimeError:\n    pass\nexcept:\n    pass\nfinally:\n    _runner(payload)"),
+        "try:\n    raise\nexcept* BaseException:\n    pass\nfinally:\n    _runner(payload)",
+        "try:\n    raise ValueError()\nexcept:\n    pass\nfinally:\n    _runner(payload)",
+        "try:\n    raise\nexcept:\n    pass\nelse:\n    _runner(payload)",
+    ],
+    ids=[
+        "handler-rebind",
+        "handler-effect",
+        "typed-handler",
+        "preceding-typed-handler",
+        "exception-group-handler",
+        "effectful-raise",
+        "unreachable-else",
+    ],
+)
+def test_unproven_raise_handler_flow_does_not_claim_exec(make_skill, statement: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{statement}\n"
+
+    assert _eval_findings(make_skill, source) == []
 
 
 @pytest.mark.parametrize(
@@ -1536,8 +1929,25 @@ def test_literal_truth_proof_rejects_an_expression_over_the_node_limit(make_skil
     assert _eval_findings(make_skill, source) == []
 
 
-def test_signed_literal_truth_proof_accepts_an_expression_at_the_node_limit(make_skill) -> None:
-    signs = "-" * (MAX_PYTHON_SHELL_EAGER_EXPR_NODES - 3)
+def _literal_unary_test_node_limit(monkeypatch: pytest.MonkeyPatch) -> int:
+    """Keep the unary boundary test below CPython 3.11's parser recursion cap."""
+
+    if sys.version_info >= (3, 12):
+        return MAX_PYTHON_SHELL_EAGER_EXPR_NODES
+    node_limit = 128
+    monkeypatch.setattr(
+        "skill_scanner.core.static_analysis.python_shell_semantics.MAX_PYTHON_SHELL_EAGER_EXPR_NODES",
+        node_limit,
+    )
+    return node_limit
+
+
+def test_signed_literal_truth_proof_accepts_an_expression_at_the_node_limit(
+    make_skill,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    node_limit = _literal_unary_test_node_limit(monkeypatch)
+    signs = "-" * (node_limit - 3)
     source = (
         "import builtins\n"
         "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
@@ -1550,12 +1960,53 @@ def test_signed_literal_truth_proof_accepts_an_expression_at_the_node_limit(make
     assert findings[0].line_number == 3
 
 
-def test_signed_literal_truth_proof_rejects_an_expression_over_the_node_limit(make_skill) -> None:
-    signs = "-" * (MAX_PYTHON_SHELL_EAGER_EXPR_NODES - 2)
+def test_signed_literal_truth_proof_rejects_an_expression_over_the_node_limit(
+    make_skill,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    node_limit = _literal_unary_test_node_limit(monkeypatch)
+    signs = "-" * (node_limit - 2)
     source = (
         "import builtins\n"
         "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
         f"result = _runner(payload) if {signs}1 else None\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_not_literal_truth_proof_accepts_an_expression_at_the_node_limit(
+    make_skill,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    node_limit = _literal_unary_test_node_limit(monkeypatch)
+    negation_count = node_limit - 3
+    literal = "False" if negation_count % 2 else "True"
+    condition = "not " * negation_count + literal
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"result = _runner(payload) if {condition} else None\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+
+
+def test_not_literal_truth_proof_rejects_an_expression_over_the_node_limit(
+    make_skill,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    node_limit = _literal_unary_test_node_limit(monkeypatch)
+    negation_count = node_limit - 2
+    literal = "False" if negation_count % 2 else "True"
+    condition = "not " * negation_count + literal
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        f"result = _runner(payload) if {condition} else None\n"
     )
 
     assert _eval_findings(make_skill, source) == []

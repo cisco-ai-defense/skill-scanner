@@ -2023,6 +2023,14 @@ class StaticAnalyzer(BaseAnalyzer):
                                 for span_line, span_start, span_end in equivalent_spans
                             )
 
+                        if rule.id == "COMMAND_INJECTION_EVAL" and any(
+                            overlaps_semantic_evidence(match) for match in matches
+                        ):
+                            # A canonical spelled exec call remains owned by
+                            # the legacy syntax-aware match. The semantic pass
+                            # supplements only dynamically constructed calls.
+                            continue
+
                         # Syntax-aware evidence wins over an equivalent broad
                         # regex, including a raw regex hit inside a Python -c
                         # payload whose displayed anchor is the outer call.
