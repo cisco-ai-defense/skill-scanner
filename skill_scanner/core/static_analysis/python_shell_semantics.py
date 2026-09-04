@@ -53,7 +53,7 @@ _RAW_OS_SYSTEM_CALL_RE = re.compile(r"\bos\.system\s*\(")
 _LEGACY_OS_SYSTEM_CALL_RE = re.compile(r"os\.system\s*\(")
 
 _ScopeKind = Literal["module", "function", "class"]
-_FlowKind = Literal["normal", "return", "raise", "break", "continue"]
+_FlowKind = Literal["normal", "return", "raise", "break", "continue", "halt", "terminal"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,6 +317,7 @@ class _StraightLineShellScanner:
             *,
             inherit_facts: bool = False,
             shadow_target: ast.expr | None = None,
+            shadow_names: set[str] | None = None,
             isolate_poison: bool = False,
         ) -> _BodyScanResult:
             if not nested_body:
@@ -326,6 +327,10 @@ class _StraightLineShellScanner:
             nested_identities = dict(identities) if inherit_facts else None
             if shadow_target is not None and nested_bools is not None and nested_identities is not None:
                 for name in self._target_names(shadow_target):
+                    nested_bools.pop(name, None)
+                    nested_identities.pop(name, None)
+            if shadow_names and nested_bools is not None and nested_identities is not None:
+                for name in shadow_names:
                     nested_bools.pop(name, None)
                     nested_identities.pop(name, None)
             return self._scan_body(
@@ -340,12 +345,13 @@ class _StraightLineShellScanner:
                 poisoned_modules=set(poisoned_modules) if isolate_poison else poisoned_modules,
             )
 
-        for statement in body:
+        for statement_index, statement in enumerate(body):
             if len(self.candidates) >= MAX_PYTHON_SHELL_CANDIDATES:
                 return _BodyScanResult(poisoned_modules)
 
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self._scan_definition_expressions(statement, expression_state)
+                definition_is_inert = self._plain_function_definition_is_inert(statement)
                 # Delayed scopes receive no outer identities: a module alias
                 # may be rebound before the function is ever called.
                 if evidence_anchor is None:
@@ -358,11 +364,30 @@ class _StraightLineShellScanner:
                         embedded_method_name=None,
                         poisoned_modules=set(poisoned_modules),
                     )
+                elif (
+                    isinstance(statement, ast.FunctionDef)
+                    and definition_is_inert
+                    and statement_index + 1 < len(body)
+                    and self._is_direct_zero_arg_call(statement, body[statement_index + 1])
+                ):
+                    self._scan_body(
+                        statement.body,
+                        depth=depth + 1,
+                        scope_kind="function",
+                        evidence_anchor=evidence_anchor,
+                        equivalent_regex_spans=equivalent_regex_spans,
+                        embedded_method_name=embedded_method_name,
+                        poisoned_modules=poisoned_modules,
+                    )
                 # Defaults, annotations, and decorators may run while the
                 # definition is evaluated, so outer facts do not cross it.
-                self._poison_known_modules(identities, poisoned_modules)
-                bool_bindings.clear()
-                identities.clear()
+                if definition_is_inert:
+                    bool_bindings.pop(statement.name, None)
+                    identities.pop(statement.name, None)
+                else:
+                    self._poison_known_modules(identities, poisoned_modules)
+                    bool_bindings.clear()
+                    identities.clear()
                 continue
 
             if isinstance(statement, ast.Import):
@@ -411,13 +436,18 @@ class _StraightLineShellScanner:
                     initial_identities=identities if inherit_class_facts else None,
                     poisoned_modules=poisoned_modules,
                 )
-                self._poison_known_modules(identities, poisoned_modules)
-                bool_bindings.clear()
-                identities.clear()
+                if inherit_class_facts and self._body_is_inert(statement.body):
+                    bool_bindings.pop(statement.name, None)
+                    identities.pop(statement.name, None)
+                else:
+                    self._poison_known_modules(identities, poisoned_modules)
+                    bool_bindings.clear()
+                    identities.clear()
                 continue
 
             if isinstance(statement, ast.Assign):
                 value = _exact_bool(statement.value, bool_bindings)
+                identity_value = self._resolve_identity(statement.value, identities)
                 expression_is_safe = self._scan_expression(statement.value, expression_state)
                 for target in statement.targets:
                     expression_is_safe = self._scan_assignment_target(target, expression_state) and expression_is_safe
@@ -431,11 +461,16 @@ class _StraightLineShellScanner:
                     identities.pop(name, None)
                     if name not in external_names and value is not None:
                         bool_bindings[name] = value
+                    elif name not in external_names and identity_value is not None:
+                        identities[name] = identity_value
                 self._enforce_binding_limit(bool_bindings, identities, poisoned_modules)
                 continue
 
             if isinstance(statement, ast.AnnAssign):
                 value = _exact_bool(statement.value, bool_bindings) if statement.value is not None else None
+                identity_value = (
+                    self._resolve_identity(statement.value, identities) if statement.value is not None else None
+                )
                 expression_is_safe = self._scan_expression(statement.value, expression_state)
                 expression_is_safe = (
                     self._scan_assignment_target(statement.target, expression_state) and expression_is_safe
@@ -453,6 +488,8 @@ class _StraightLineShellScanner:
                     identities.pop(name, None)
                     if expression_is_safe and name not in external_names and value is not None:
                         bool_bindings[name] = value
+                    elif expression_is_safe and name not in external_names and identity_value is not None:
+                        identities[name] = identity_value
                 annotation_is_safe = True
                 if scope_kind in {"module", "class"} and not self.annotations_are_deferred:
                     annotation_is_safe = self._scan_expression(statement.annotation, expression_state)
@@ -528,7 +565,19 @@ class _StraightLineShellScanner:
                         scan_nested_body(statement.orelse, isolate_poison=True),
                     ]
                     poisoned_modules.update(*(result.poisoned_modules for result in branch_results))
-                if selected_body is None or not header_is_safe or not self._body_is_inert(selected_body):
+                    branch_flows = {result.flow for result in branch_results}
+                    if branch_flows and branch_flows <= {"return", "raise", "halt", "terminal"}:
+                        flow = branch_results[0].flow if len(branch_flows) == 1 else "terminal"
+                        return _BodyScanResult(poisoned_modules, flow)
+                    if branch_flows == {"break"}:
+                        return _BodyScanResult(poisoned_modules, "break")
+                    if branch_flows == {"continue"}:
+                        return _BodyScanResult(poisoned_modules, "continue")
+                if (
+                    selected_body is None
+                    or not header_is_safe
+                    or not self._body_preserves_facts(selected_body, bool_bindings)
+                ):
                     self._poison_known_modules(identities, poisoned_modules)
                     bool_bindings.clear()
                     identities.clear()
@@ -544,17 +593,30 @@ class _StraightLineShellScanner:
                     while_result = scan_nested_body(statement.orelse, inherit_facts=header_is_safe)
                 elif truth is True:
                     while_result = scan_nested_body(statement.body, inherit_facts=header_is_safe)
-                    if not isinstance(statement.test, ast.Constant):
+                    if while_result.flow == "normal" and not isinstance(statement.test, ast.Constant):
                         scan_nested_body(statement.orelse)
                 else:
-                    scan_nested_body(statement.body)
-                    scan_nested_body(statement.orelse)
+                    branch_results = [
+                        scan_nested_body(statement.body, isolate_poison=True),
+                        scan_nested_body(statement.orelse, isolate_poison=True),
+                    ]
+                    poisoned_modules.update(*(result.poisoned_modules for result in branch_results))
                 if truth is not False or not header_is_safe or not self._body_is_inert(statement.orelse):
                     self._poison_known_modules(identities, poisoned_modules)
                     bool_bindings.clear()
                     identities.clear()
-                if while_result is not None and while_result.flow in {"return", "raise"}:
+                if while_result is not None and while_result.flow in {"return", "raise", "terminal"}:
                     return _BodyScanResult(poisoned_modules, while_result.flow)
+                if truth is True and while_result is not None:
+                    if while_result.flow == "halt":
+                        return _BodyScanResult(poisoned_modules, "halt")
+                    condition_is_unchanged = isinstance(statement.test, ast.Constant) or self._body_preserves_facts(
+                        statement.body, bool_bindings
+                    )
+                    if (while_result.flow == "continue" and condition_is_unchanged) or (
+                        while_result.flow == "normal" and self._body_is_inert(statement.body) and condition_is_unchanged
+                    ):
+                        return _BodyScanResult(poisoned_modules, "halt")
                 continue
 
             if isinstance(statement, (ast.For, ast.AsyncFor)):
@@ -567,7 +629,10 @@ class _StraightLineShellScanner:
                 elif (
                     iterable_is_empty is False
                     and isinstance(statement, ast.For)
-                    and isinstance(statement.target, ast.Name)
+                    and (
+                        isinstance(statement.target, ast.Name)
+                        or self._literal_for_target_binds(statement.target, statement.iter)
+                    )
                 ):
                     body_result = scan_nested_body(
                         statement.body,
@@ -586,9 +651,9 @@ class _StraightLineShellScanner:
                     self._poison_known_modules(identities, poisoned_modules)
                     bool_bindings.clear()
                     identities.clear()
-                if body_result is not None and body_result.flow in {"return", "raise"}:
+                if body_result is not None and body_result.flow in {"return", "raise", "terminal", "halt"}:
                     return _BodyScanResult(poisoned_modules, body_result.flow)
-                if else_result is not None and else_result.flow in {"return", "raise"}:
+                if else_result is not None and else_result.flow in {"return", "raise", "terminal", "halt"}:
                     return _BodyScanResult(poisoned_modules, else_result.flow)
                 continue
 
@@ -611,36 +676,54 @@ class _StraightLineShellScanner:
                     and _is_side_effect_free(statement.body[0].exc)
                     and _is_side_effect_free(statement.body[0].cause)
                 )
+                simple_zero_division = self._starts_with_simple_zero_division(statement.body)
+                known_safe_raise = explicit_safe_raise or simple_zero_division
                 direct_safe_return = bool(
                     statement.body
                     and isinstance(statement.body[0], ast.Return)
                     and _is_side_effect_free(statement.body[0].value)
                 )
                 inert_try_body = bool(statement.body) and all(isinstance(item, ast.Pass) for item in statement.body)
-                if explicit_safe_raise:
+                if known_safe_raise:
                     for handler in statement.handlers:
                         if not self._scan_expression(handler.type, expression_state):
                             break
-                body_result = scan_nested_body(statement.body, inherit_facts=True)
+                body_result = (
+                    _BodyScanResult(poisoned_modules, "raise")
+                    if simple_zero_division
+                    else scan_nested_body(statement.body, inherit_facts=True)
+                )
                 alternative_results: list[_BodyScanResult] = []
                 guaranteed_handler: ast.ExceptHandler | None = None
-                if explicit_safe_raise:
+                if known_safe_raise:
                     guaranteed_handler = next((handler for handler in statement.handlers if handler.type is None), None)
-                for handler in statement.handlers:
-                    alternative_results.append(
-                        scan_nested_body(
-                            handler.body,
-                            inherit_facts=handler is guaranteed_handler,
-                            isolate_poison=True,
+                    for handler in statement.handlers:
+                        alternative_results.append(
+                            scan_nested_body(
+                                handler.body,
+                                inherit_facts=handler is guaranteed_handler,
+                                isolate_poison=True,
+                            )
                         )
-                    )
-                    if handler is guaranteed_handler:
-                        break
-                if not explicit_safe_raise:
+                        if handler is guaranteed_handler:
+                            break
+                elif body_result.flow == "terminal":
+                    for handler in statement.handlers:
+                        alternative_results.append(scan_nested_body(handler.body, isolate_poison=True))
+                elif body_result.flow not in {"return", "break", "continue", "halt"} and not inert_try_body:
+                    for handler in statement.handlers:
+                        alternative_results.append(scan_nested_body(handler.body, isolate_poison=True))
                     alternative_results.append(
                         scan_nested_body(
                             statement.orelse,
-                            inherit_facts=inert_try_body,
+                            isolate_poison=True,
+                        )
+                    )
+                elif inert_try_body:
+                    alternative_results.append(
+                        scan_nested_body(
+                            statement.orelse,
+                            inherit_facts=True,
                             isolate_poison=True,
                         )
                     )
@@ -653,18 +736,26 @@ class _StraightLineShellScanner:
                     _is_side_effect_free(handler.type)
                     for handler in statement.handlers[: statement.handlers.index(guaranteed_handler)]
                 )
-                finally_result = scan_nested_body(
-                    statement.finalbody,
-                    inherit_facts=inert_try_body
-                    or direct_safe_return
-                    or bool(explicit_safe_raise and handler_is_inert and handler_path_is_safe),
+                finally_result = (
+                    _BodyScanResult(poisoned_modules)
+                    if body_result.flow == "halt"
+                    else scan_nested_body(
+                        statement.finalbody,
+                        inherit_facts=inert_try_body
+                        or direct_safe_return
+                        or (
+                            body_result.flow in {"return", "break", "continue"}
+                            and self._body_preserves_facts(statement.body, bool_bindings)
+                        )
+                        or bool(known_safe_raise and handler_is_inert and handler_path_is_safe),
+                    )
                 )
                 try_preserves_facts = (
                     inert_try_body
                     and self._body_is_inert(statement.orelse)
                     and self._body_is_inert(statement.finalbody)
                 ) or (
-                    bool(explicit_safe_raise and handler_is_inert and handler_path_is_safe)
+                    bool(known_safe_raise and handler_is_inert and handler_path_is_safe)
                     and self._body_is_inert(statement.finalbody)
                 )
                 if not try_preserves_facts:
@@ -673,13 +764,15 @@ class _StraightLineShellScanner:
                     identities.clear()
                 if finally_result.flow != "normal":
                     return _BodyScanResult(poisoned_modules, finally_result.flow)
-                if body_result.flow == "return":
-                    return _BodyScanResult(poisoned_modules, "return")
+                if body_result.flow in {"return", "break", "continue", "halt"}:
+                    return _BodyScanResult(poisoned_modules, body_result.flow)
+                if body_result.flow == "terminal" and not statement.handlers:
+                    return _BodyScanResult(poisoned_modules, "terminal")
                 if inert_try_body:
                     else_result = alternative_results[-1] if alternative_results else body_result
                     if else_result.flow != "normal":
                         return _BodyScanResult(poisoned_modules, else_result.flow)
-                elif explicit_safe_raise and guaranteed_handler is not None:
+                elif known_safe_raise and guaranteed_handler is not None:
                     handler_index = statement.handlers.index(guaranteed_handler)
                     if handler_index < len(alternative_results) and alternative_results[handler_index].flow != "normal":
                         return _BodyScanResult(poisoned_modules, alternative_results[handler_index].flow)
@@ -691,23 +784,44 @@ class _StraightLineShellScanner:
                 subject_is_safe = self._scan_expression(statement.subject, expression_state)
                 case_results: list[_BodyScanResult] = []
                 match_result: _BodyScanResult | None = None
-                for index, case in enumerate(statement.cases):
-                    irrefutable = self._is_irrefutable_pattern(case.pattern)
-                    if index == 0 and irrefutable:
-                        guard_truth = self._known_truth(case.guard, bool_bindings) if case.guard is not None else True
-                        guard_is_safe = self._scan_expression(case.guard, expression_state)
-                        if guard_truth is not False:
-                            match_result = scan_nested_body(
-                                case.body,
-                                inherit_facts=subject_is_safe and guard_is_safe and guard_truth is True,
-                                isolate_poison=True,
-                            )
-                            case_results.append(match_result)
-                        if case.guard is None or guard_truth is True:
-                            break
+                for case in statement.cases:
+                    pattern_match = self._known_pattern_match(case.pattern, statement.subject, bool_bindings)
+                    if pattern_match is False:
                         continue
-                    case_results.append(scan_nested_body(case.body, isolate_poison=True))
-                    if irrefutable and case.guard is None:
+                    bound_names = self._pattern_bound_names(case.pattern)
+                    guard_bools = dict(bool_bindings) if pattern_match is True and subject_is_safe else {}
+                    guard_identities = dict(identities) if pattern_match is True and subject_is_safe else {}
+                    for name in bound_names:
+                        guard_bools.pop(name, None)
+                        guard_identities.pop(name, None)
+                    guard_poison = set(poisoned_modules)
+                    guard_state = _ExpressionScanState(
+                        bool_bindings=guard_bools,
+                        identities=guard_identities,
+                        poisoned_modules=guard_poison,
+                        external_names=external_names,
+                        scope_depth=depth + 1,
+                        evidence_anchor=evidence_anchor,
+                        equivalent_regex_spans=equivalent_regex_spans,
+                        embedded_method_name=embedded_method_name,
+                    )
+                    guard_truth = self._known_truth(case.guard, guard_bools) if case.guard is not None else True
+                    guard_is_safe = self._scan_expression(case.guard, guard_state)
+                    poisoned_modules.update(guard_poison)
+                    if guard_truth is False:
+                        continue
+                    case_result = scan_nested_body(
+                        case.body,
+                        inherit_facts=pattern_match is True
+                        and subject_is_safe
+                        and guard_is_safe
+                        and guard_truth is True,
+                        shadow_names=bound_names,
+                        isolate_poison=True,
+                    )
+                    case_results.append(case_result)
+                    if pattern_match is True and guard_truth is True:
+                        match_result = case_result
                         break
                 if case_results:
                     poisoned_modules.update(*(result.poisoned_modules for result in case_results))
@@ -783,8 +897,148 @@ class _StraightLineShellScanner:
         return isinstance(pattern, ast.MatchAs) and pattern.pattern is None
 
     @staticmethod
+    def _pattern_bound_names(pattern: ast.pattern) -> set[str]:
+        names: set[str] = set()
+        for node in ast.walk(pattern):
+            if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name is not None:
+                names.add(node.name)
+            elif isinstance(node, ast.MatchMapping) and node.rest is not None:
+                names.add(node.rest)
+        return names
+
+    @classmethod
+    def _known_pattern_match(
+        cls,
+        pattern: ast.pattern,
+        subject: ast.expr,
+        bool_bindings: dict[str, bool],
+    ) -> bool | None:
+        if isinstance(subject, ast.Constant):
+            subject_value: object = subject.value
+        elif isinstance(subject, ast.Name) and subject.id in bool_bindings:
+            subject_value = bool_bindings[subject.id]
+        else:
+            return None
+        if isinstance(pattern, ast.MatchAs) and pattern.pattern is None:
+            return True
+        if isinstance(pattern, ast.MatchSingleton):
+            return subject_value is pattern.value
+        if isinstance(pattern, ast.MatchValue) and isinstance(pattern.value, ast.Constant):
+            return bool(subject_value == pattern.value.value)
+        if isinstance(pattern, ast.MatchOr):
+            outcomes = [cls._known_pattern_match(option, subject, bool_bindings) for option in pattern.patterns]
+            if any(outcome is True for outcome in outcomes):
+                return True
+            if all(outcome is False for outcome in outcomes):
+                return False
+        return None
+
+    @staticmethod
     def _body_is_inert(body: list[ast.stmt]) -> bool:
-        return all(isinstance(statement, ast.Pass) for statement in body)
+        return all(
+            isinstance(statement, ast.Pass)
+            or (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant))
+            for statement in body
+        )
+
+    def _body_preserves_facts(self, body: list[ast.stmt], bool_bindings: dict[str, bool]) -> bool:
+        """Prove a tiny deterministic suite cannot mutate tracked facts."""
+
+        for statement in body:
+            if self._body_is_inert([statement]):
+                continue
+            if isinstance(statement, ast.Return):
+                return _is_side_effect_free(statement.value)
+            if isinstance(statement, ast.Raise):
+                return _is_side_effect_free(statement.exc) and _is_side_effect_free(statement.cause)
+            if isinstance(statement, (ast.Break, ast.Continue)):
+                return True
+            if isinstance(statement, ast.If):
+                truth = self._known_truth(statement.test, bool_bindings)
+                if truth is None or not _is_side_effect_free(statement.test):
+                    return False
+                selected = statement.body if truth else statement.orelse
+                if self._body_preserves_facts(selected, bool_bindings):
+                    continue
+            return False
+        return True
+
+    @staticmethod
+    def _starts_with_simple_zero_division(body: list[ast.stmt]) -> bool:
+        if not body or not isinstance(body[0], ast.Expr) or not isinstance(body[0].value, ast.BinOp):
+            return False
+        expression = body[0].value
+        return (
+            isinstance(expression.op, (ast.Div, ast.FloorDiv, ast.Mod))
+            and isinstance(expression.left, ast.Constant)
+            and type(expression.left.value) in {int, float, complex}
+            and isinstance(expression.right, ast.Constant)
+            and type(expression.right.value) in {int, float, complex}
+            and expression.right.value == 0
+        )
+
+    def _plain_function_definition_is_inert(self, statement: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        if statement.decorator_list or self._type_parameter_names(statement):
+            return False
+        expressions: list[ast.expr | None] = [*statement.args.defaults, *statement.args.kw_defaults]
+        if not self.annotations_are_deferred:
+            parameters = [
+                *statement.args.args,
+                *statement.args.posonlyargs,
+                statement.args.vararg,
+                *statement.args.kwonlyargs,
+                statement.args.kwarg,
+            ]
+            expressions.extend(parameter.annotation for parameter in parameters if parameter is not None)
+            expressions.append(statement.returns)
+        return all(_is_side_effect_free(expression) for expression in expressions)
+
+    @staticmethod
+    def _is_direct_zero_arg_call(statement: ast.FunctionDef, following: ast.stmt) -> bool:
+        if not (
+            isinstance(following, ast.Expr)
+            and isinstance(following.value, ast.Call)
+            and isinstance(following.value.func, ast.Name)
+            and following.value.func.id == statement.name
+            and not following.value.args
+            and not following.value.keywords
+        ):
+            return False
+        positional = [*statement.args.posonlyargs, *statement.args.args]
+        if len(statement.args.defaults) < len(positional) or any(
+            default is None for default in statement.args.kw_defaults
+        ):
+            return False
+        pending: list[ast.AST] = list(statement.body)
+        while pending:
+            node = pending.pop()
+            if isinstance(node, (ast.Yield, ast.YieldFrom)):
+                return False
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+            pending.extend(ast.iter_child_nodes(node))
+        return True
+
+    @classmethod
+    def _literal_for_target_binds(cls, target: ast.expr, iterable: ast.expr) -> bool:
+        if not isinstance(iterable, (ast.List, ast.Tuple)) or not iterable.elts:
+            return False
+        if any(isinstance(element, ast.Starred) for element in iterable.elts):
+            return False
+        return cls._literal_value_binds_target(target, iterable.elts[0])
+
+    @classmethod
+    def _literal_value_binds_target(cls, target: ast.expr, value: ast.expr) -> bool:
+        if isinstance(target, ast.Name):
+            return True
+        if not isinstance(target, (ast.List, ast.Tuple)) or not isinstance(value, (ast.List, ast.Tuple)):
+            return False
+        if any(isinstance(element, ast.Starred) for element in target.elts) or len(target.elts) != len(value.elts):
+            return False
+        return all(
+            cls._literal_value_binds_target(target_element, value_element)
+            for target_element, value_element in zip(target.elts, value.elts, strict=True)
+        )
 
     def _scan_definition_expressions(
         self,
@@ -842,12 +1096,15 @@ class _StraightLineShellScanner:
             return True
         if isinstance(expression, ast.NamedExpr):
             exact_value = _exact_bool(expression.value, state.bool_bindings)
+            identity_value = self._resolve_identity(expression.value, state.identities)
             is_safe = scan(expression.value)
             name = expression.target.id
             state.bool_bindings.pop(name, None)
             state.identities.pop(name, None)
             if is_safe and exact_value is not None and name not in state.external_names:
                 state.bool_bindings[name] = exact_value
+            elif is_safe and identity_value is not None and name not in state.external_names:
+                state.identities[name] = identity_value
             return is_safe
         if isinstance(expression, ast.Attribute):
             if self._resolve_identity(expression, state.identities) is not None:
@@ -867,19 +1124,33 @@ class _StraightLineShellScanner:
                     all_safe = False
             return all_safe
         if isinstance(expression, ast.Set):
+            has_unpack = any(isinstance(element, ast.Starred) for element in expression.elts)
             for element in expression.elts:
-                scan(element)
-                # Hashing/insertion can dispatch attacker-controlled methods.
+                scan(element.value if isinstance(element, ast.Starred) else element)
+                if has_unpack:
+                    # SET_UPDATE can dispatch before a later display segment.
+                    self._clear_expression_facts(state)
+            if expression.elts and not has_unpack:
+                # BUILD_SET hashes only after every element expression ran.
                 self._clear_expression_facts(state)
             return not expression.elts
         if isinstance(expression, ast.Dict):
+            has_unpack = any(key is None for key in expression.keys)
             for key, value in zip(expression.keys, expression.values, strict=True):
                 if key is not None:
                     scan(key)
                 scan(value)
-                # Key hashing or ** mapping expansion happens after each pair.
+                if has_unpack:
+                    # DICT_UPDATE can dispatch before a later display segment.
+                    self._clear_expression_facts(state)
+            if expression.values and not has_unpack:
+                # BUILD_MAP hashes only after every key/value expression ran.
                 self._clear_expression_facts(state)
             return not expression.values
+        if isinstance(expression, ast.UnaryOp) and isinstance(expression.op, ast.Not):
+            truth = self._known_truth(expression, state.bool_bindings)
+            operand_is_safe = scan(expression.operand)
+            return truth is not None and operand_is_safe
         if isinstance(expression, ast.BoolOp):
             all_safe = True
             for index, bool_value in enumerate(expression.values):
@@ -906,28 +1177,19 @@ class _StraightLineShellScanner:
             function_identity = self._resolve_identity(expression.func, state.identities)
             reviewed_spelling = function_identity is not None or self._is_reviewed_call_spelling(expression.func)
             function_is_safe = reviewed_spelling or scan(expression.func)
-            if function_identity == _OS_SYSTEM_IDENTITY and (
-                self._is_alias_spelling(expression.func)
-                or (state.evidence_anchor is not None and self.allow_embedded_canonical)
-            ):
-                # Python captures the callee before evaluating any argument.
-                # Keep that positive sink evidence even if a later argument
-                # mutates the alias or otherwise invalidates following facts.
-                self._record_os_system(
-                    state.evidence_anchor or expression.func,
-                    embedded_method_name=state.embedded_method_name,
-                    equivalent_regex_spans=state.equivalent_regex_spans,
-                )
             arguments_are_safe = True
+            invocation_is_possible = True
             for call_value in expression.args:
-                expands = isinstance(call_value, ast.Starred)
                 arguments_are_safe = (
                     scan(call_value.value if isinstance(call_value, ast.Starred) else call_value) and arguments_are_safe
                 )
-                if expands:
+                if isinstance(call_value, ast.Starred):
+                    if self._starred_expansion_definitely_fails(call_value.value):
+                        invocation_is_possible = False
                     self._clear_expression_facts(state)
                     arguments_are_safe = False
             shell_binding: tuple[str, bool | None] | None = None
+            keyword_names: set[str] = set()
             for keyword in expression.keywords:
                 keyword_is_safe = scan(keyword.value)
                 arguments_are_safe = keyword_is_safe and arguments_are_safe
@@ -937,10 +1199,35 @@ class _StraightLineShellScanner:
                     and len(keyword.value.id) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS
                 ):
                     shell_binding = (keyword.value.id, state.bool_bindings.get(keyword.value.id))
-                    self._record_named_shell_flag(expression, shell_binding)
                 if keyword.arg is None:
+                    unpacked_names = self._literal_keyword_names(keyword.value)
+                    if unpacked_names is None or not keyword_names.isdisjoint(unpacked_names):
+                        invocation_is_possible = False
+                    else:
+                        keyword_names.update(unpacked_names)
                     self._clear_expression_facts(state)
                     arguments_are_safe = False
+                elif keyword.arg in keyword_names:
+                    invocation_is_possible = False
+                else:
+                    keyword_names.add(keyword.arg)
+            if (
+                invocation_is_possible
+                and function_identity == _OS_SYSTEM_IDENTITY
+                and (
+                    self._is_alias_spelling(expression.func)
+                    or (state.evidence_anchor is not None and self.allow_embedded_canonical)
+                )
+            ):
+                # Python captures the callee before evaluating arguments, but
+                # a provably failing expansion never reaches the invocation.
+                self._record_os_system(
+                    state.evidence_anchor or expression.func,
+                    embedded_method_name=state.embedded_method_name,
+                    equivalent_regex_spans=state.equivalent_regex_spans,
+                )
+            if invocation_is_possible and shell_binding is not None:
+                self._record_named_shell_flag(expression, shell_binding)
             if reviewed_spelling and function_is_safe and arguments_are_safe:
                 preserves_facts = self._record_call(
                     expression,
@@ -981,11 +1268,14 @@ class _StraightLineShellScanner:
     ) -> bool:
         """Scan only comprehension stages proven to execute in source order."""
 
+        if state.scope_depth + expression_depth + len(expression.generators) > MAX_PYTHON_SHELL_SCOPE_DEPTH:
+            self._clear_expression_facts(state)
+            return False
         first = expression.generators[0]
         first_empty = self._known_iterable_empty(first.iter)
         first_is_safe = self._scan_expression(first.iter, state, expression_depth + 1)
         if isinstance(expression, ast.GeneratorExp):
-            if first_empty is None or not first_is_safe:
+            if first.is_async or first_empty is None or not first_is_safe:
                 self._clear_expression_facts(state)
                 return False
             return True
@@ -1034,13 +1324,36 @@ class _StraightLineShellScanner:
         exact = _exact_bool(expression, bindings)
         if exact is not None:
             return exact
+        if isinstance(expression, ast.UnaryOp) and isinstance(expression.op, ast.Not):
+            operand = expression.operand
+            operand_truth = _exact_bool(operand, bindings)
+            if operand_truth is None and isinstance(operand, ast.Constant):
+                operand_truth = bool(operand.value)
+            if operand_truth is None and isinstance(operand, (ast.List, ast.Tuple, ast.Set, ast.Dict)):
+                operand_empty = _StraightLineShellScanner._known_iterable_empty(operand)
+                operand_truth = None if operand_empty is None else not operand_empty
+            return None if operand_truth is None else not operand_truth
         if isinstance(expression, ast.Constant):
             return bool(expression.value)
-        if isinstance(expression, (ast.List, ast.Tuple, ast.Set)):
-            return bool(expression.elts)
-        if isinstance(expression, ast.Dict):
-            return bool(expression.keys)
+        if isinstance(expression, (ast.List, ast.Tuple, ast.Set, ast.Dict)):
+            is_empty = _StraightLineShellScanner._known_iterable_empty(expression)
+            return None if is_empty is None else not is_empty
         return None
+
+    @staticmethod
+    def _starred_expansion_definitely_fails(expression: ast.expr) -> bool:
+        return isinstance(expression, ast.Constant) and not isinstance(expression.value, (str, bytes))
+
+    @staticmethod
+    def _literal_keyword_names(expression: ast.expr) -> set[str] | None:
+        if not isinstance(expression, ast.Dict):
+            return None
+        names: set[str] = set()
+        for key in expression.keys:
+            if key is None or not isinstance(key, ast.Constant) or type(key.value) is not str:
+                return None
+            names.add(key.value)
+        return names
 
     @staticmethod
     def _known_iterable_empty(expression: ast.expr) -> bool | None:
@@ -1371,6 +1684,8 @@ class _StraightLineShellScanner:
     def _resolve_identity(expression: ast.expr, identities: dict[str, str]) -> str | None:
         if isinstance(expression, ast.Name):
             return identities.get(expression.id)
+        if isinstance(expression, ast.NamedExpr):
+            return _StraightLineShellScanner._resolve_identity(expression.value, identities)
         if not isinstance(expression, ast.Attribute) or not isinstance(expression.value, ast.Name):
             return None
         module_identity = identities.get(expression.value.id)

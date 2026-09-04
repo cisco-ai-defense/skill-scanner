@@ -702,6 +702,52 @@ def test_additional_eager_expression_positions_are_scanned(make_skill, expressio
 @pytest.mark.parametrize(
     "statement",
     [
+        "if [*[]]: o.system('unreachable')",
+        "[*[]] and o.system('unreachable')",
+    ],
+    ids=["if", "boolop"],
+)
+def test_starred_empty_literals_are_falsey(make_skill, statement):
+    assert not _semantic_findings(make_skill, f"import os as o\n{statement}\n")
+
+
+def test_async_generator_failure_does_not_preserve_alias_for_later_code(make_skill):
+    source = "import os as o\nvalues = (item async for item in [])\no.system('unreachable')\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize(
+    ("mapping", "expected_count"),
+    [("{'shell': False}", 0), ("{'cwd': None}", 1)],
+    ids=["duplicate-shell", "nonconflicting"],
+)
+def test_named_shell_flag_waits_for_keyword_expansion_validation(make_skill, mapping, expected_count):
+    source = f"import subprocess\nenabled = True\nsubprocess.run([], shell=enabled, **{mapping})\n"
+
+    assert len(_semantic_findings(make_skill, source)) == expected_count
+
+
+def test_provably_failing_star_expansion_does_not_report_alias_invocation(make_skill):
+    source = "from os import system as run\nrun(*None)\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize(
+    "display",
+    ["{evil, o.system('id')}", "{evil: 0, 1: o.system('id')}"],
+    ids=["set", "dict"],
+)
+def test_display_expressions_run_before_hashing(make_skill, display):
+    source = f"evil = object()\nimport os as o\n{display}\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
         "assert o.system('id')",
         "holder[o.system('id')] = 1",
         "del holder[o.system('id')]",
@@ -838,3 +884,164 @@ def test_safe_return_keeps_alias_visible_to_finally(make_skill):
     source = "def launch():\n    import os as o\n    try: return\n    finally: o.system('id')\n"
 
     assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize("loop_body", ["pass", "continue"])
+def test_constant_true_loop_prunes_following_code(make_skill, loop_body):
+    source = f"def launch():\n    while True:\n        {loop_body}\n    import os as o\n    o.system('unreachable')\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize("loop_body", ["break", "return"])
+def test_tracked_true_loop_skips_unreachable_else(make_skill, loop_body):
+    source = (
+        "def launch():\n"
+        "    flag = True\n"
+        "    while flag:\n"
+        f"        {loop_body}\n"
+        "    else:\n"
+        "        import os as o\n"
+        "        o.system('unreachable')\n"
+    )
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize("transfer", ["break", "continue"])
+def test_try_finally_propagates_loop_transfer(make_skill, transfer):
+    source = (
+        "for _ in [1]:\n"
+        "    try:\n"
+        f"        {transfer}\n"
+        "    finally:\n"
+        "        pass\n"
+        "    import os as o\n"
+        "    o.system('unreachable')\n"
+    )
+
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_selected_safe_terminal_keeps_alias_visible_to_finally(make_skill):
+    source = (
+        "def launch():\n    import os as o\n    try:\n        if True: return\n    finally:\n        o.system('id')\n"
+    )
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_literal_destructuring_reaches_known_nonempty_for_body(make_skill):
+    source = "for left, right in [(1, 2)]:\n    import os as o\n    o.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_unknown_while_poison_isolated_from_zero_iteration_else(make_skill):
+    source = (
+        "while condition:\n"
+        "    import os\n"
+        "    os.system = fake\n"
+        "    break\n"
+        "else:\n"
+        "    import os as o\n"
+        "    o.system('id')\n"
+    )
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_exact_literal_match_scans_guard_with_outer_alias(make_skill):
+    source = "import os as o\nmatch 1:\n    case 1 if o.system('id'):\n        pass\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["case o if o.system('id'):\n        pass", "case o:\n        o.system('id')"],
+    ids=["guard", "body"],
+)
+def test_match_capture_shadows_outer_alias(make_skill, case):
+    source = f"import os as o\nmatch 1:\n    {case}\n"
+
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_known_not_expression_controls_reachability(make_skill):
+    positive = "import os as o\nnot False and o.system('id')\n"
+    negative = "import os as o\nwhile not True:\n    o.system('unreachable')\n"
+
+    assert len(_semantic_findings(make_skill, positive)) == 1
+    assert not _semantic_findings(make_skill, negative)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import os as o\ntry:\n    pass\nexcept:\n    o.system('unreachable')\n",
+        "def launch():\n    import os as o\n    try: return\n    except: o.system('unreachable')\n",
+    ],
+)
+def test_impossible_try_handlers_are_not_scanned(make_skill, source):
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_simple_zero_division_reaches_exception_type(make_skill):
+    source = "import os as o\ntry:\n    1 / 0\nexcept o.system('id'):\n    pass\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_both_terminal_if_arms_prune_following_code(make_skill):
+    source = (
+        "def launch(condition):\n"
+        "    if condition:\n"
+        "        return\n"
+        "    else:\n"
+        "        raise RuntimeError\n"
+        "    import os as o\n"
+        "    o.system('unreachable')\n"
+    )
+
+    assert not _semantic_findings(make_skill, source)
+
+
+@pytest.mark.parametrize(
+    "assignment",
+    ["alias = o", "o = o", "alias: object = o", "alias = (o := o)"],
+    ids=["copy", "self", "annotated", "walrus"],
+)
+def test_identity_preserving_assignment_keeps_alias(make_skill, assignment):
+    called_name = "o" if assignment == "o = o" else "alias"
+    source = f"import os as o\n{assignment}\n{called_name}.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_callable_self_assignment_keeps_alias(make_skill):
+    source = "from os import system as run\nrun = run\nrun('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize("definition", ["def idle(): pass", "class Idle: pass"])
+def test_inert_definition_preserves_unrelated_alias(make_skill, definition):
+    source = f"import os as o\n{definition}\no.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_directly_called_embedded_function_executes_body(make_skill):
+    payload = "def launch():\n import os as o\n o.system('id')\nlaunch()"
+
+    assert len(_semantic_findings(make_skill, _python_c_source(payload))) == 1
+
+
+def test_comprehension_depth_bound_retains_prior_candidate():
+    source = "import os as o\no.system('first')\n[value" + " for value in [1]" * 1_000 + "]\n"
+
+    candidates = python_shell_semantics.find_python_shell_candidates(source)
+
+    assert len(candidates) == 1
+    assert candidates[0].line_number == 2
