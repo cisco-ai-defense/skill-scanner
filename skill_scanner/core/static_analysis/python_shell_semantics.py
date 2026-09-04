@@ -1959,13 +1959,16 @@ class _StraightLineShellScanner:
             state.clear()
 
     def _record_direct_dynamic_exec_call(self, expression: ast.expr, state: _DynamicExecState) -> bool:
-        if (
-            not isinstance(expression, ast.Call)
-            or not isinstance(expression.func, ast.Name)
-            or expression.func.id not in state.exec_names
-        ):
+        if not isinstance(expression, ast.Call):
             return False
-        self._record_dynamic_exec(expression.func)
+        if isinstance(expression.func, ast.Name) and expression.func.id in state.exec_names:
+            self._record_dynamic_exec(expression.func)
+            return True
+        if not _is_dynamic_exec_lookup(expression.func, state):
+            return False
+        assert isinstance(expression.func, ast.Call)
+        assert isinstance(expression.func.func, ast.Name)
+        self._record_dynamic_exec(expression.func.func)
         return True
 
     def _scan_assignment_target(

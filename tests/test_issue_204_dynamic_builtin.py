@@ -77,6 +77,30 @@ def test_exact_positive_variants_remain_detectable(make_skill, source: str) -> N
     assert findings[0].metadata["matched_pattern"] == _PATTERN
 
 
+def test_dynamic_exec_lookup_invoked_without_temporary_alias_is_detected(make_skill) -> None:
+    source = "import builtins\ngetattr(builtins, ''.join(['e', 'x', 'e', 'c']))(payload)\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 2
+    assert findings[0].metadata["matched_pattern"] == _PATTERN
+    assert findings[0].metadata["matched_text"] == "getattr(...) -> builtins.exec"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import builtins\ngetattr(plugin, ''.join(['e', 'x', 'e', 'c']))(payload)\n",
+        "import builtins\ngetattr(builtins, ''.join(['e', 'v', 'a', 'l']))(payload)\n",
+        "import builtins\ngetattr = safe\ngetattr(builtins, ''.join(['e', 'x', 'e', 'c']))(payload)\n",
+    ],
+    ids=["unreviewed-receiver", "different-name", "shadowed-getattr"],
+)
+def test_unreviewed_direct_dynamic_exec_lookups_are_not_claimed(make_skill, source: str) -> None:
+    assert _eval_findings(make_skill, source) == []
+
+
 def test_ast_dynamic_exec_is_not_suppressed_by_legacy_line_exclusion(make_skill) -> None:
     source = (
         "import builtins\n"
