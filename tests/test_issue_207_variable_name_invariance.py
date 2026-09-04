@@ -108,6 +108,97 @@ if os.path.exists(q):
     assert matches[0].metadata["resolved_path"] == "/etc/passwd"
 
 
+@pytest.mark.parametrize(
+    "later_mutation",
+    [
+        "builtins.open = replacement",
+        "if False:\n        builtins.open = replacement",
+    ],
+    ids=["direct", "dead-nested"],
+)
+def test_guarded_read_precedes_later_runtime_open_mutation(later_mutation):
+    source = (
+        "import builtins\n"
+        "import os\n"
+        "path = '/etc/' + 'passwd'\n"
+        "if os.path.exists(path):\n"
+        "    open(path)\n"
+        f"    {later_mutation}\n"
+    )
+
+    assert [candidate.line_number for candidate in find_constructed_sensitive_file_reads(source)] == [5]
+
+
+def test_guarded_runtime_open_mutation_precedes_later_read():
+    source = """\
+import builtins
+import os
+path = '/etc/' + 'passwd'
+if os.path.exists(path):
+    builtins.open = replacement
+    open(path)
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
+def test_guarded_runtime_open_mutation_suppresses_only_later_read():
+    source = """\
+import builtins
+import os
+path = '/etc/' + 'passwd'
+if os.path.exists(path):
+    open(path)
+    builtins.open = replacement
+    open(path)
+"""
+
+    assert [candidate.line_number for candidate in find_constructed_sensitive_file_reads(source)] == [5]
+
+
+@pytest.mark.parametrize(
+    "shadow",
+    [
+        "import builtins as helper\nhelper = lambda: None",
+        "globals = lambda: {}",
+    ],
+    ids=["rebound-helper", "shadowed-globals"],
+)
+def test_guarded_body_preserves_shadowed_runtime_helper_state(shadow):
+    helper_mutation = "helper.open = replacement" if "helper" in shadow else "globals()['open'] = replacement"
+    source = (
+        f"{shadow}\n"
+        "import os\n"
+        "path = '/etc/' + 'passwd'\n"
+        "if os.path.exists(path):\n"
+        f"    {helper_mutation}\n"
+        "    guarded_path = '/etc/' + 'shadow'\n"
+        "    open(guarded_path)\n"
+    )
+
+    candidates = find_constructed_sensitive_file_reads(source)
+
+    assert len(candidates) == 1
+    assert candidates[0].path == "/etc/shadow"
+
+
+def test_guarded_nested_class_uses_lexical_runtime_helper_state():
+    source = """\
+import builtins as helper
+import os
+path = '/etc/' + 'passwd'
+if os.path.exists(path):
+    class Outer:
+        helper = object()
+        class Inner:
+            helper.open = replacement
+            nested_path = '/etc/' + 'shadow'
+            handle = open(nested_path)
+"""
+
+    assert find_constructed_sensitive_file_reads(source) == ()
+
+
 def test_exists_check_without_open_is_not_reported(make_skill):
     source = "import os\np='/etc/'+'passwd'\nif os.path.exists(p):\n    available=True\n"
     skill = make_skill({"scripts/main.py": source})
