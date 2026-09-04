@@ -3,6 +3,8 @@
 
 """Regression coverage for dynamic ``builtins.exec`` construction."""
 
+import ast
+
 import pytest
 
 from skill_scanner.core.analyzers.static import StaticAnalyzer
@@ -203,6 +205,48 @@ def test_fstring_conversion_invalidates_alias_before_format_spec(make_skill, con
     )
 
     assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    "invocation",
+    [
+        'result = t"{_runner(payload)}"',
+        'result = t"{value:{_runner(payload)}}"',
+        'result = t"{value!r:{_runner(payload)}}"',
+    ],
+    ids=["value", "format-spec", "stored-conversion-before-format-spec"],
+)
+@pytest.mark.skipif(not hasattr(ast, "TemplateStr"), reason="template strings require Python 3.14+")
+def test_template_string_interpolations_are_eager(make_skill, invocation: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{invocation}\n"
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
+
+
+def test_starred_arguments_run_before_textually_earlier_keywords(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "wrapper(value=_runner(payload), *mutate())\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_starred_exec_call_runs_before_textually_earlier_keyword_effect(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "wrapper(value=mutate(), *_runner(payload))\n"
+    )
+
+    findings = _eval_findings(make_skill, source)
+
+    assert len(findings) == 1
+    assert findings[0].line_number == 3
 
 
 def test_eager_expression_traversal_limit_is_enforced(make_skill) -> None:

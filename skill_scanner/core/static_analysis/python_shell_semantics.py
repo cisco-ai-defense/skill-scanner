@@ -51,6 +51,8 @@ _SUBPROCESS_CALL_IDENTITIES = frozenset(f"callable:subprocess.{method}" for meth
 _PYTHON_C_BASE_KEYWORDS = frozenset({"args", "shell"})
 _PYTHON_C_RUN_KEYWORDS = _PYTHON_C_BASE_KEYWORDS | {"check"}
 _OS_SYSTEM_IDENTITY = "callable:os.system"
+_TEMPLATE_STR_TYPE = getattr(ast, "TemplateStr", None)
+_INTERPOLATION_TYPE = getattr(ast, "Interpolation", None)
 _PYTHON_FUTURE_FEATURES = frozenset(
     {
         "absolute_import",
@@ -1187,16 +1189,18 @@ class _StraightLineShellScanner:
                 self._record_direct_dynamic_exec_call(current, state)
                 if _is_literal_base64_decode(current, state):
                     continue
-                arguments: list[tuple[ast.expr, bool]] = [
-                    (argument.value, True) if isinstance(argument, ast.Starred) else (argument, False)
-                    for argument in current.args
-                ]
-                arguments.extend((keyword.value, keyword.arg is None) for keyword in current.keywords)
-                arguments.sort(key=lambda item: (item[0].lineno, item[0].col_offset))
                 call_children: list[ast.AST | None] = [current.func]
-                for argument, expansion_boundary in arguments:
-                    call_children.append(argument)
-                    if expansion_boundary:
+                # CPython evaluates every positional/starred argument before
+                # keyword expressions, even when a keyword is textually before
+                # a later ``*arg``.
+                for argument in current.args:
+                    if isinstance(argument, ast.Starred):
+                        call_children.extend((argument.value, None))
+                    else:
+                        call_children.append(argument)
+                for keyword in current.keywords:
+                    call_children.append(keyword.value)
+                    if keyword.arg is None:
                         call_children.append(None)
                 call_children.append(None)
                 pending.extend(reversed(call_children))
@@ -1259,6 +1263,18 @@ class _StraightLineShellScanner:
 
             if isinstance(current, ast.JoinedStr):
                 pending.extend(reversed(current.values))
+                continue
+
+            if _TEMPLATE_STR_TYPE is not None and isinstance(current, _TEMPLATE_STR_TYPE):
+                pending.extend(reversed(current.values))
+                continue
+
+            if _INTERPOLATION_TYPE is not None and isinstance(current, _INTERPOLATION_TYPE):
+                if current.format_spec is not None:
+                    pending.append(current.format_spec)
+                # Unlike an f-string conversion, a t-string conversion is
+                # stored as interpolation metadata and is not invoked here.
+                pending.append(current.value)
                 continue
 
             if isinstance(current, ast.FormattedValue):
