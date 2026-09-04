@@ -1045,3 +1045,78 @@ def test_comprehension_depth_bound_retains_prior_candidate():
 
     assert len(candidates) == 1
     assert candidates[0].line_number == 2
+
+
+def test_nested_safe_raise_reaches_guaranteed_handler_with_outer_alias(make_skill):
+    source = (
+        "def launch():\n"
+        "    import os as o\n"
+        "    try:\n"
+        "        if True: raise RuntimeError\n"
+        "    except:\n"
+        "        o.system('id')\n"
+    )
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_nested_safe_raise_does_not_scan_impossible_try_else(make_skill):
+    source = (
+        "def launch():\n"
+        "    try:\n"
+        "        if True: raise RuntimeError\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "    else:\n"
+        "        import os as o\n"
+        "        o.system('unreachable')\n"
+    )
+
+    assert not _semantic_findings(make_skill, source)
+
+
+def test_mixed_safe_terminal_try_keeps_outer_alias_for_finally(make_skill):
+    source = (
+        "def launch(condition):\n"
+        "    import os as o\n"
+        "    try:\n"
+        "        if condition: return\n"
+        "        else: raise RuntimeError\n"
+        "    finally:\n"
+        "        o.system('id')\n"
+    )
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+@pytest.mark.parametrize(
+    "compound",
+    ["if True:\n    x = 1", "try:\n    x = 1\nexcept:\n    pass"],
+    ids=["if", "try"],
+)
+def test_safe_assignment_compound_preserves_unrelated_alias(make_skill, compound):
+    source = f"import os as o\n{compound}\no.system('id')\n"
+
+    assert len(_semantic_findings(make_skill, source)) == 1
+
+
+def test_directly_called_embedded_function_inherits_outer_alias(make_skill):
+    payload = "import os as o\ndef launch():\n o.system('id')\nlaunch()"
+
+    assert len(_semantic_findings(make_skill, _python_c_source(payload))) == 1
+
+
+@pytest.mark.parametrize(
+    ("enabled", "lambda_call", "expected_count"),
+    [
+        (True, "(lambda value: subprocess.run([], shell=value))(enabled)", 1),
+        (False, "(lambda value: subprocess.run([], shell=value))(enabled)", 0),
+        (True, "(lambda value=enabled: subprocess.run([], shell=value))()", 1),
+        (False, "(lambda value=enabled: subprocess.run([], shell=value))()", 0),
+    ],
+    ids=["argument-true", "argument-false", "default-true", "default-false"],
+)
+def test_immediate_lambda_seeds_exact_bool_parameters(make_skill, enabled, lambda_call, expected_count):
+    source = f"import subprocess\nenabled = {enabled!r}\n{lambda_call}\n"
+
+    assert len(_semantic_findings(make_skill, source)) == expected_count

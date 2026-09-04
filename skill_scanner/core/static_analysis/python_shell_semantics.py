@@ -370,6 +370,11 @@ class _StraightLineShellScanner:
                     and statement_index + 1 < len(body)
                     and self._is_direct_zero_arg_call(statement, body[statement_index + 1])
                 ):
+                    invoked_bools = dict(bool_bindings)
+                    invoked_identities = dict(identities)
+                    for name in self._function_shadowed_names(statement):
+                        invoked_bools.pop(name, None)
+                        invoked_identities.pop(name, None)
                     self._scan_body(
                         statement.body,
                         depth=depth + 1,
@@ -377,6 +382,8 @@ class _StraightLineShellScanner:
                         evidence_anchor=evidence_anchor,
                         equivalent_regex_spans=equivalent_regex_spans,
                         embedded_method_name=embedded_method_name,
+                        initial_bool_bindings=invoked_bools,
+                        initial_identities=invoked_identities,
                         poisoned_modules=poisoned_modules,
                     )
                 # Defaults, annotations, and decorators may run while the
@@ -576,7 +583,7 @@ class _StraightLineShellScanner:
                 if (
                     selected_body is None
                     or not header_is_safe
-                    or not self._body_preserves_facts(selected_body, bool_bindings)
+                    or not self._body_preserves_facts(selected_body, bool_bindings, identities)
                 ):
                     self._poison_known_modules(identities, poisoned_modules)
                     bool_bindings.clear()
@@ -611,7 +618,7 @@ class _StraightLineShellScanner:
                     if while_result.flow == "halt":
                         return _BodyScanResult(poisoned_modules, "halt")
                     condition_is_unchanged = isinstance(statement.test, ast.Constant) or self._body_preserves_facts(
-                        statement.body, bool_bindings
+                        statement.body, bool_bindings, identities
                     )
                     if (while_result.flow == "continue" and condition_is_unchanged) or (
                         while_result.flow == "normal" and self._body_is_inert(statement.body) and condition_is_unchanged
@@ -683,7 +690,6 @@ class _StraightLineShellScanner:
                     and isinstance(statement.body[0], ast.Return)
                     and _is_side_effect_free(statement.body[0].value)
                 )
-                inert_try_body = bool(statement.body) and all(isinstance(item, ast.Pass) for item in statement.body)
                 if known_safe_raise:
                     for handler in statement.handlers:
                         if not self._scan_expression(handler.type, expression_state):
@@ -693,9 +699,16 @@ class _StraightLineShellScanner:
                     if simple_zero_division
                     else scan_nested_body(statement.body, inherit_facts=True)
                 )
+                body_preserves_facts = self._body_preserves_facts(statement.body, bool_bindings, identities)
+                safe_raise_path = known_safe_raise or (body_result.flow == "raise" and body_preserves_facts)
+                safe_normal_body = body_result.flow == "normal" and body_preserves_facts
+                if safe_raise_path and not known_safe_raise:
+                    for handler in statement.handlers:
+                        if not self._scan_expression(handler.type, expression_state):
+                            break
                 alternative_results: list[_BodyScanResult] = []
                 guaranteed_handler: ast.ExceptHandler | None = None
-                if known_safe_raise:
+                if safe_raise_path:
                     guaranteed_handler = next((handler for handler in statement.handlers if handler.type is None), None)
                     for handler in statement.handlers:
                         alternative_results.append(
@@ -710,7 +723,10 @@ class _StraightLineShellScanner:
                 elif body_result.flow == "terminal":
                     for handler in statement.handlers:
                         alternative_results.append(scan_nested_body(handler.body, isolate_poison=True))
-                elif body_result.flow not in {"return", "break", "continue", "halt"} and not inert_try_body:
+                elif body_result.flow == "raise":
+                    for handler in statement.handlers:
+                        alternative_results.append(scan_nested_body(handler.body, isolate_poison=True))
+                elif body_result.flow not in {"return", "break", "continue", "halt"} and not safe_normal_body:
                     for handler in statement.handlers:
                         alternative_results.append(scan_nested_body(handler.body, isolate_poison=True))
                     alternative_results.append(
@@ -719,7 +735,7 @@ class _StraightLineShellScanner:
                             isolate_poison=True,
                         )
                     )
-                elif inert_try_body:
+                elif safe_normal_body:
                     alternative_results.append(
                         scan_nested_body(
                             statement.orelse,
@@ -741,21 +757,20 @@ class _StraightLineShellScanner:
                     if body_result.flow == "halt"
                     else scan_nested_body(
                         statement.finalbody,
-                        inherit_facts=inert_try_body
+                        inherit_facts=(safe_normal_body and self._body_is_inert(statement.orelse))
                         or direct_safe_return
-                        or (
-                            body_result.flow in {"return", "break", "continue"}
-                            and self._body_preserves_facts(statement.body, bool_bindings)
-                        )
-                        or bool(known_safe_raise and handler_is_inert and handler_path_is_safe),
+                        or (body_result.flow in {"return", "break", "continue"} and body_preserves_facts)
+                        or bool(safe_raise_path and not statement.handlers)
+                        or bool(safe_raise_path and handler_is_inert and handler_path_is_safe)
+                        or bool(body_result.flow == "terminal" and body_preserves_facts and not statement.handlers),
                     )
                 )
                 try_preserves_facts = (
-                    inert_try_body
+                    safe_normal_body
                     and self._body_is_inert(statement.orelse)
                     and self._body_is_inert(statement.finalbody)
                 ) or (
-                    bool(known_safe_raise and handler_is_inert and handler_path_is_safe)
+                    bool(safe_raise_path and handler_is_inert and handler_path_is_safe)
                     and self._body_is_inert(statement.finalbody)
                 )
                 if not try_preserves_facts:
@@ -768,11 +783,11 @@ class _StraightLineShellScanner:
                     return _BodyScanResult(poisoned_modules, body_result.flow)
                 if body_result.flow == "terminal" and not statement.handlers:
                     return _BodyScanResult(poisoned_modules, "terminal")
-                if inert_try_body:
+                if safe_normal_body:
                     else_result = alternative_results[-1] if alternative_results else body_result
                     if else_result.flow != "normal":
                         return _BodyScanResult(poisoned_modules, else_result.flow)
-                elif known_safe_raise and guaranteed_handler is not None:
+                elif safe_raise_path and guaranteed_handler is not None:
                     handler_index = statement.handlers.index(guaranteed_handler)
                     if handler_index < len(alternative_results) and alternative_results[handler_index].flow != "normal":
                         return _BodyScanResult(poisoned_modules, alternative_results[handler_index].flow)
@@ -941,7 +956,12 @@ class _StraightLineShellScanner:
             for statement in body
         )
 
-    def _body_preserves_facts(self, body: list[ast.stmt], bool_bindings: dict[str, bool]) -> bool:
+    def _body_preserves_facts(
+        self,
+        body: list[ast.stmt],
+        bool_bindings: dict[str, bool],
+        identities: dict[str, str],
+    ) -> bool:
         """Prove a tiny deterministic suite cannot mutate tracked facts."""
 
         for statement in body:
@@ -953,12 +973,29 @@ class _StraightLineShellScanner:
                 return _is_side_effect_free(statement.exc) and _is_side_effect_free(statement.cause)
             if isinstance(statement, (ast.Break, ast.Continue)):
                 return True
+            if isinstance(statement, ast.Assign):
+                targets = _name_targets(statement.targets)
+                protected_names = bool_bindings.keys() | identities.keys()
+                if (
+                    targets is not None
+                    and not protected_names.intersection(targets)
+                    and _is_side_effect_free(statement.value)
+                ):
+                    continue
+                return False
             if isinstance(statement, ast.If):
                 truth = self._known_truth(statement.test, bool_bindings)
-                if truth is None or not _is_side_effect_free(statement.test):
+                if not _is_side_effect_free(statement.test):
+                    return False
+                if truth is None:
+                    if statement.orelse and all(
+                        self._body_preserves_facts(branch, bool_bindings, identities)
+                        for branch in (statement.body, statement.orelse)
+                    ):
+                        continue
                     return False
                 selected = statement.body if truth else statement.orelse
-                if self._body_preserves_facts(selected, bool_bindings):
+                if self._body_preserves_facts(selected, bool_bindings, identities):
                     continue
             return False
         return True
@@ -1018,6 +1055,37 @@ class _StraightLineShellScanner:
                 continue
             pending.extend(ast.iter_child_nodes(node))
         return True
+
+    @staticmethod
+    def _function_shadowed_names(statement: ast.FunctionDef) -> set[str]:
+        names = {
+            parameter.arg
+            for parameter in (
+                *statement.args.posonlyargs,
+                *statement.args.args,
+                *statement.args.kwonlyargs,
+            )
+        }
+        if statement.args.vararg is not None:
+            names.add(statement.args.vararg.arg)
+        if statement.args.kwarg is not None:
+            names.add(statement.args.kwarg.arg)
+        pending: list[ast.AST] = list(statement.body)
+        while pending:
+            node = pending.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(node.name)
+                continue
+            if isinstance(node, ast.Lambda):
+                continue
+            if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                names.add(node.id)
+            elif isinstance(node, ast.Import):
+                names.update(alias.asname or alias.name.partition(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                names.update(alias.asname or alias.name for alias in node.names if alias.name != "*")
+            pending.extend(ast.iter_child_nodes(node))
+        return names
 
     @classmethod
     def _literal_for_target_binds(cls, target: ast.expr, iterable: ast.expr) -> bool:
@@ -1239,7 +1307,7 @@ class _StraightLineShellScanner:
                 if preserves_facts:
                     return True
             if isinstance(expression.func, ast.Lambda) and self._lambda_call_binds(expression):
-                lambda_state = self._lambda_body_state(state, expression.func)
+                lambda_state = self._lambda_body_state(state, expression.func, expression)
                 self._scan_expression(expression.func.body, lambda_state, expression_depth + 1)
             self._clear_expression_facts(state)
             return False
@@ -1428,7 +1496,11 @@ class _StraightLineShellScanner:
         )
 
     @staticmethod
-    def _lambda_body_state(state: _ExpressionScanState, expression: ast.Lambda) -> _ExpressionScanState:
+    def _lambda_body_state(
+        state: _ExpressionScanState,
+        expression: ast.Lambda,
+        call: ast.Call,
+    ) -> _ExpressionScanState:
         bool_bindings = dict(state.bool_bindings)
         identities = dict(state.identities)
         parameters = [
@@ -1442,6 +1514,36 @@ class _StraightLineShellScanner:
             if parameter is not None:
                 bool_bindings.pop(parameter.arg, None)
                 identities.pop(parameter.arg, None)
+        positional = [*expression.args.posonlyargs, *expression.args.args]
+        bound_names: set[str] = set()
+        for parameter, argument in zip(positional, call.args, strict=False):
+            bound_names.add(parameter.arg)
+            exact_value = _exact_bool(argument, state.bool_bindings)
+            if exact_value is not None:
+                bool_bindings[parameter.arg] = exact_value
+        keyword_parameters = {
+            parameter.arg: parameter for parameter in [*expression.args.args, *expression.args.kwonlyargs]
+        }
+        for keyword in call.keywords:
+            if keyword.arg is None or keyword.arg not in keyword_parameters:
+                continue
+            bound_names.add(keyword.arg)
+            exact_value = _exact_bool(keyword.value, state.bool_bindings)
+            if exact_value is not None:
+                bool_bindings[keyword.arg] = exact_value
+        default_parameters = positional[len(positional) - len(expression.args.defaults) :]
+        for parameter, positional_default in zip(default_parameters, expression.args.defaults, strict=True):
+            if parameter.arg in bound_names:
+                continue
+            exact_value = _exact_bool(positional_default, state.bool_bindings)
+            if exact_value is not None:
+                bool_bindings[parameter.arg] = exact_value
+        for parameter, keyword_default in zip(expression.args.kwonlyargs, expression.args.kw_defaults, strict=True):
+            if parameter.arg in bound_names or keyword_default is None:
+                continue
+            exact_value = _exact_bool(keyword_default, state.bool_bindings)
+            if exact_value is not None:
+                bool_bindings[parameter.arg] = exact_value
         return _ExpressionScanState(
             bool_bindings,
             identities,
