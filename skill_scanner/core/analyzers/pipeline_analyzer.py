@@ -38,6 +38,7 @@ from urllib.parse import urlsplit
 
 from ..models import Finding, Severity, Skill, SkillFile, ThreatCategory
 from ..scan_policy import ScanPolicy
+from ..static_analysis.python_xor_commands import find_decoded_python_commands
 from .base import BaseAnalyzer
 
 
@@ -74,6 +75,7 @@ class PipelineChain:
     nodes: list[CommandNode] = field(default_factory=list)
     source_file: str = ""
     line_number: int = 0
+    analysis_basis: str | None = None
 
 
 _SHELL_CODE_BLOCK_PATTERN = re.compile(
@@ -261,6 +263,8 @@ class PipelineAnalyzer(BaseAnalyzer):
                 content = sf.read_content()
                 if content:
                     pipelines.extend(self._extract_pipelines(content, sf.relative_path))
+                    if sf.file_type == "python":
+                        pipelines.extend(self._extract_decoded_python_pipelines(content, sf.relative_path))
                     if Path(sf.relative_path).suffix.lower() == ".ps1":
                         pipelines.extend(self._extract_script_pipelines(content, sf.relative_path))
 
@@ -291,7 +295,13 @@ class PipelineAnalyzer(BaseAnalyzer):
                 normalized = normalized[2:]
             key = (chain.source_file, normalized)
             prev = by_key.get(key)
-            if prev is None or chain.line_number < prev.line_number:
+            decoded_preference = chain.analysis_basis is not None
+            previous_decoded_preference = prev is not None and prev.analysis_basis is not None
+            if (
+                prev is None
+                or (decoded_preference and not previous_decoded_preference)
+                or (decoded_preference == previous_decoded_preference and chain.line_number < prev.line_number)
+            ):
                 by_key[key] = chain
         return list(by_key.values())
 
@@ -324,6 +334,25 @@ class PipelineAnalyzer(BaseAnalyzer):
             chain = self._parse_pipeline(line, source_file, line_number)
             if chain and len(chain.nodes) >= 2:
                 pipelines.append(chain)
+        return pipelines
+
+    def _extract_decoded_python_pipelines(self, content: str, source_file: str) -> list[PipelineChain]:
+        """Extract pipelines from structurally proven repeating-XOR commands."""
+
+        pipelines: list[PipelineChain] = []
+        for candidate in find_decoded_python_commands(content):
+            for raw in candidate.command.split("\n"):
+                line = raw.strip()
+                if not line or line.startswith("#") or "|" not in line:
+                    continue
+                chain = self._parse_pipeline(
+                    line,
+                    source_file,
+                    candidate.line_number,
+                    analysis_basis=candidate.analysis_basis,
+                )
+                if chain and len(chain.nodes) >= 2:
+                    pipelines.append(chain)
         return pipelines
 
     @staticmethod
@@ -398,14 +427,26 @@ class PipelineAnalyzer(BaseAnalyzer):
             parts.append(remainder)
         return parts
 
-    def _parse_pipeline(self, raw: str, source_file: str, line_number: int) -> PipelineChain | None:
+    def _parse_pipeline(
+        self,
+        raw: str,
+        source_file: str,
+        line_number: int,
+        *,
+        analysis_basis: str | None = None,
+    ) -> PipelineChain | None:
         """Parse a pipeline string into a chain of CommandNodes."""
         # Split by pipe, respecting quotes (fixes jq expression false positives)
         parts = self._split_pipeline(raw)
         if len(parts) < 2:
             return None
 
-        chain = PipelineChain(raw=raw, source_file=source_file, line_number=line_number)
+        chain = PipelineChain(
+            raw=raw,
+            source_file=source_file,
+            line_number=line_number,
+            analysis_basis=analysis_basis,
+        )
 
         for part in parts:
             part = part.strip()
@@ -640,11 +681,16 @@ class PipelineAnalyzer(BaseAnalyzer):
                             " (Note: found in documentation file - may be instructional rather than executable.)"
                         )
 
+                    finding_context = f"{chain.source_file}:{chain.line_number}:{i}"
+                    if chain.analysis_basis is not None:
+                        # Multiple decoded command lines share the outer call
+                        # location.  Bind their stable IDs to the recovered
+                        # runtime pipeline without changing legacy IDs.
+                        finding_context = f"{finding_context}:{chain.raw}"
+
                     findings.append(
                         Finding(
-                            id=self._generate_finding_id(
-                                "PIPELINE_TAINT", f"{chain.source_file}:{chain.line_number}:{i}"
-                            ),
+                            id=self._generate_finding_id("PIPELINE_TAINT", finding_context),
                             rule_id="PIPELINE_TAINT_FLOW",
                             category=ThreatCategory.DATA_EXFILTRATION,
                             severity=severity,
@@ -665,6 +711,9 @@ class PipelineAnalyzer(BaseAnalyzer):
                                 "chain_length": len(chain.nodes),
                                 "in_documentation": bool(is_doc),
                                 "behavior_category": behavior_category.value,
+                                **(
+                                    {"analysis_basis": chain.analysis_basis} if chain.analysis_basis is not None else {}
+                                ),
                                 "semantic_facts": self._pipeline_semantic_facts(
                                     chain,
                                     sink_index=i,
