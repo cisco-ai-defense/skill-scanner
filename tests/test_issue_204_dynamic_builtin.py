@@ -275,10 +275,22 @@ def test_alias_invocation_in_mandatory_compound_header_is_detected(make_skill, s
         ("def load(value=_runner(payload)):\n    pass", 3),
         ("async def load(value=_runner(payload)):\n    pass", 3),
         ("@_runner(payload)\ndef load():\n    pass", 3),
+        ("@_runner\ndef load():\n    pass", 3),
+        ("@_runner\nclass Loader:\n    pass", 3),
+        ("@_runner\n@mutate()\ndef load():\n    pass", 3),
         ("class Loader(_runner(payload)):\n    pass", 3),
         ("class Loader(metaclass=_runner(payload)):\n    pass", 3),
     ],
-    ids=["default", "async-default", "decorator", "class-base", "class-keyword"],
+    ids=[
+        "default",
+        "async-default",
+        "called-decorator",
+        "bare-function-decorator",
+        "bare-class-decorator",
+        "captured-bare-decorator-before-effect",
+        "class-base",
+        "class-keyword",
+    ],
 )
 def test_alias_invocation_in_eager_definition_expression_is_detected(
     make_skill,
@@ -301,6 +313,37 @@ def test_effectful_decorator_precedes_function_default(make_skill) -> None:
         "def load(value=_runner(payload)):\n"
         "    pass\n"
     )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+def test_effectful_decorator_precedes_bare_exec_decorator(make_skill) -> None:
+    source = (
+        "import builtins\n"
+        "_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n"
+        "@mutate()\n"
+        "@_runner\n"
+        "def load():\n"
+        "    pass\n"
+    )
+
+    assert _eval_findings(make_skill, source) == []
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "class Loader[_runner](_runner(payload)):\n    pass",
+        "class Loader[_runner](metaclass=_runner(payload)):\n    pass",
+    ],
+    ids=["base", "keyword"],
+)
+@pytest.mark.skipif(
+    "type_params" not in getattr(ast.ClassDef, "_fields", ()),
+    reason="class type parameters require Python 3.12+",
+)
+def test_generic_class_type_parameter_shadows_exec_alias_in_header(make_skill, definition: str) -> None:
+    source = f"import builtins\n_runner = getattr(builtins, ''.join(['e', 'x', 'e', 'c']))\n{definition}\n"
 
     assert _eval_findings(make_skill, source) == []
 

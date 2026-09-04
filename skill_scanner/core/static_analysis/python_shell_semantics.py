@@ -1188,12 +1188,18 @@ class _StraightLineShellScanner:
             # positional defaults and keyword-only defaults. Function bodies
             # and annotations are deliberately not claimed: bodies are delayed
             # and annotation timing differs across supported Python versions.
-            eager_expressions = [
-                *statement.decorator_list,
+            for expression in statement.decorator_list:
+                if isinstance(expression, ast.Name) and expression.id in state.exec_names:
+                    # A bare decorator is captured now and invoked after the
+                    # function object is created, even if a later expression
+                    # rebinds its source name.
+                    self._record_dynamic_exec(expression)
+                self._scan_eager_dynamic_exec_calls(expression, state)
+            eager_defaults = [
                 *statement.args.defaults,
                 *(default for default in statement.args.kw_defaults if default is not None),
             ]
-            for expression in eager_expressions:
+            for expression in eager_defaults:
                 self._scan_eager_dynamic_exec_calls(expression, state)
             state.clear()
             return
@@ -1203,7 +1209,13 @@ class _StraightLineShellScanner:
             # expressions. The class namespace and decorator applications are
             # unsupported effect boundaries after those mandatory inputs.
             for expression in statement.decorator_list:
+                if isinstance(expression, ast.Name) and expression.id in state.exec_names:
+                    self._record_dynamic_exec(expression)
                 self._scan_eager_dynamic_exec_calls(expression, state)
+            if getattr(statement, "type_params", ()):
+                # Generic class bases and keywords execute inside the type-
+                # parameter scope, where an outer alias can be shadowed.
+                state.clear()
             for expression in statement.bases:
                 self._scan_eager_dynamic_exec_calls(expression, state)
             for keyword in statement.keywords:
