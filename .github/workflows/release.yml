@@ -96,6 +96,7 @@ jobs:
         run: uv build --wheel --out-dir dist
 
       - name: Verify wheel tag, manifest, architecture, and native execution
+        shell: bash
         env:
           VERSION: ${{ inputs.version }}
         run: >-
