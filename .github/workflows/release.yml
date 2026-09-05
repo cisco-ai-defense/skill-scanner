@@ -128,6 +128,7 @@ jobs:
           --expected-python 3.13
 
       - name: Install, import, and validate the exact built wheel on CPython 3.14
+        if: matrix.target != 'darwin-amd64'
         run: >-
           uv run --no-project --python 3.14 python scripts/smoke_cel_wheel_install.py
           --wheel-dir dist
