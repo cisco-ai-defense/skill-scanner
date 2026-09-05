@@ -100,7 +100,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: >-
-          uv run python scripts/verify_cel_wheel.py
+          uv run --no-project python scripts/verify_cel_wheel.py
           --wheel-dir dist
           --target ${{ matrix.target }}
           --project-version "$VERSION"
@@ -191,7 +191,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64; do
-            uv run python scripts/verify_cel_wheel.py \
+            uv run --no-project python scripts/verify_cel_wheel.py \
               --wheel-dir dist \
               --target "$target" \
               --project-version "$VERSION"
