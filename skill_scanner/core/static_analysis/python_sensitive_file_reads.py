@@ -19,8 +19,9 @@
 The signature pack already owns literal sensitive paths. This module adds one
 small positive-evidence case: an exact string built through straight-line
 assignments, concatenation, or a reviewed ``os.path.join`` call reaches the
-built-in ``open`` in a proven read-only mode. Effects and compound flow erase
-all path facts rather than being interpreted.
+built-in ``open`` in a proven read-only mode. Effects and general compound flow
+erase all path facts; a canonical ``os.path.exists(exact_path)`` guard may carry
+unchanged facts into its body.
 """
 
 from __future__ import annotations
@@ -102,7 +103,7 @@ def find_constructed_sensitive_file_reads(
     source: str,
     filename: str = "<unknown>",
 ) -> tuple[PythonSensitiveFileReadCandidate, ...]:
-    """Find bounded, straight-line sensitive-path reads in Python source."""
+    """Find bounded, positively resolved sensitive-path reads in Python source."""
 
     if not source or "\x00" in source or len(source) > MAX_PYTHON_PATH_SOURCE_BYTES:
         return ()
@@ -1035,6 +1036,10 @@ def _node_may_replace_runtime_open(
             # Definitions do not execute their bodies at the definition site.
             pending.extend(_definition_eager_nodes(node))
             continue
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and not _is_reviewed_static_import(node):
+            # Arbitrary imported module code can replace the process-wide
+            # built-in even without a local helper reference.
+            return True
         if isinstance(node, ast.Assign) and any(
             _target_may_replace_runtime_open(target, builtins_names, globals_is_builtin) for target in node.targets
         ):
@@ -1809,10 +1814,14 @@ def _is_reviewed_patch_import(node: ast.AST) -> bool:
 def _is_reviewed_static_import(node: ast.AST) -> bool:
     """Recognize imports whose identities are explicitly modeled here."""
 
-    return _is_reviewed_patch_import(node) or (
-        isinstance(node, ast.Import)
-        and bool(node.names)
-        and all(imported.name in {"builtins", "json", "os"} for imported in node.names)
+    return (
+        _is_reviewed_patch_import(node)
+        or (isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == "__future__")
+        or (
+            isinstance(node, ast.Import)
+            and bool(node.names)
+            and all(imported.name in {"builtins", "json", "os", "os.path"} for imported in node.names)
+        )
     )
 
 
@@ -2064,8 +2073,12 @@ class _StraightLineSensitiveReadScanner:
         class_scope: bool = False,
         function_scope: bool = False,
         allow_reviewed_json_imports: bool = True,
+        initial_bindings: dict[str, str] | None = None,
+        initial_os_available: bool = False,
         initial_os_module_names: set[str] | None = None,
         initial_os_path_names: set[str] | None = None,
+        initial_reviewed_json_modules: set[str] | None = None,
+        initial_reviewed_callable_names: set[str] | None = None,
         initial_runtime_helpers: set[str] | None = None,
         initial_globals_is_builtin: bool = True,
         eager_lexical_builtin_open: bool | None = None,
@@ -2102,8 +2115,8 @@ class _StraightLineSensitiveReadScanner:
                 for statement in evaluated_body
             )
         )
-        bindings: dict[str, str] = {}
-        os_available = False
+        bindings = dict(initial_bindings or {})
+        os_available = initial_os_available
         os_module_names = set(initial_os_module_names or ())
         os_path_names = set(initial_os_path_names or ())
         open_available = builtin_open
@@ -2121,8 +2134,8 @@ class _StraightLineSensitiveReadScanner:
         pending_os_path_join_invalidation = False
         patch_factory_names: set[str] = set()
         patch_factory_import_available = self.runtime_budget.patch_import_cache_trusted
-        reviewed_json_modules: set[str] = set()
-        reviewed_callable_names: set[str] = set()
+        reviewed_json_modules = set(initial_reviewed_json_modules or ())
+        reviewed_callable_names = set(initial_reviewed_callable_names or ())
         definitely_bound_names: set[str] = set()
         definitely_deleted_names: set[str] = set()
         external_names = {
@@ -2150,6 +2163,7 @@ class _StraightLineSensitiveReadScanner:
                 os_available = False
                 pending_os_path_join_invalidation = False
 
+            entry_reviewed_json_import_available = self.reviewed_json_import_available
             annotation_is_eager = not function_scope and not self.runtime_budget.annotations_are_deferred
             evaluated_statement = self._evaluated_statement_view(
                 statement,
@@ -2542,13 +2556,25 @@ class _StraightLineSensitiveReadScanner:
                 continue
 
             if isinstance(statement, ast.Import):
+                static_import_is_reviewed = _is_reviewed_static_import(statement)
+                if not static_import_is_reviewed:
+                    # Importing arbitrary module code can mutate cached stdlib
+                    # modules or ``builtins.open`` before the next statement.
+                    # Do not carry any positive path or runtime provenance
+                    # across that execution boundary.
+                    bindings.clear()
+                    os_available = False
+                    self.os_path_join_available = False
+                    open_available = False
+                    delayed_open_available = False
+                    eager_lexical_open_available = False
+                    pending_os_path_join_invalidation = False
+                    pending_runtime_open_invalidation = False
                 if _import_exposes_patch_runtime(statement):
                     patch_factory_names.clear()
                     patch_factory_import_available = False
                 reviewed_json_import = (
-                    allow_reviewed_json_imports
-                    and self.reviewed_json_import_available
-                    and all(imported.name in {"builtins", "json", "os"} for imported in statement.names)
+                    allow_reviewed_json_imports and self.reviewed_json_import_available and static_import_is_reviewed
                 )
                 if not reviewed_json_import:
                     reviewed_json_modules.clear()
@@ -2567,7 +2593,22 @@ class _StraightLineSensitiveReadScanner:
                 continue
 
             if isinstance(statement, ast.ImportFrom):
-                reviewed_json_modules.clear()
+                static_import_is_reviewed = _is_reviewed_static_import(statement)
+                if not static_import_is_reviewed:
+                    # As with an arbitrary plain import, executing an
+                    # unmodeled module invalidates all positive runtime facts.
+                    bindings.clear()
+                    os_available = False
+                    self.os_path_join_available = False
+                    open_available = False
+                    delayed_open_available = False
+                    eager_lexical_open_available = False
+                    pending_os_path_join_invalidation = False
+                    pending_runtime_open_invalidation = False
+                if not (
+                    allow_reviewed_json_imports and self.reviewed_json_import_available and static_import_is_reviewed
+                ):
+                    reviewed_json_modules.clear()
                 patch_import_is_reviewed = patch_factory_import_available and not _import_exposes_patch_runtime(
                     statement
                 )
@@ -2582,6 +2623,7 @@ class _StraightLineSensitiveReadScanner:
                     for imported in statement.names:
                         local_name = imported.asname or imported.name
                         bindings.pop(local_name, None)
+                        reviewed_json_modules.discard(local_name)
                         if local_name == "os":
                             os_available = False
                         if (
@@ -2988,6 +3030,50 @@ class _StraightLineSensitiveReadScanner:
                     invalidate_namespace_open()
                 continue
 
+            if isinstance(statement, ast.If) and self._is_exact_path_exists_guard(
+                statement,
+                bindings,
+                os_available,
+            ):
+                # ``os.path.exists(exact_path)`` is a narrow, read-only guard.
+                # Carry the already-proven local facts into its body so a
+                # guarded ``with open(alias)`` is classified independently of
+                # the alias spelling. The state after the conditional is still
+                # discarded because the body may not execute.
+                body_open_available = (
+                    open_available and not child_runtime_open_unavailable and not child_namespace_open_bound
+                )
+                post_statement_reviewed_json_import_available = self.reviewed_json_import_available
+                self.reviewed_json_import_available = entry_reviewed_json_import_available
+                self._scan_body(
+                    statement.body,
+                    depth=depth + 1,
+                    builtin_open=body_open_available,
+                    delayed_builtin_open=(
+                        delayed_open_available and not child_runtime_open_unavailable and not child_namespace_open_bound
+                    ),
+                    class_scope=class_scope,
+                    function_scope=function_scope,
+                    allow_reviewed_json_imports=allow_reviewed_json_imports,
+                    initial_bindings=dict(bindings),
+                    initial_os_available=os_available,
+                    initial_os_module_names=statement_os_module_names,
+                    initial_os_path_names=statement_os_path_names,
+                    initial_reviewed_json_modules=current_reviewed_json_modules,
+                    initial_reviewed_callable_names=current_reviewed_callable_names,
+                    initial_runtime_helpers=child_runtime_helpers,
+                    initial_globals_is_builtin=child_globals_is_builtin,
+                    eager_lexical_builtin_open=(eager_lexical_open_available and not child_runtime_open_unavailable),
+                )
+                self.reviewed_json_import_available = (
+                    post_statement_reviewed_json_import_available and self.reviewed_json_import_available
+                )
+                bindings.clear()
+                os_available = False
+                if statement_binds_open:
+                    invalidate_namespace_open()
+                continue
+
             if isinstance(statement, ast.Return):
                 if statement.value is not None:
                     self._record_direct_open(
@@ -3311,6 +3397,10 @@ class _StraightLineSensitiveReadScanner:
                     return True
                 pending.extend(_definition_eager_nodes(node))
                 continue
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                if _is_reviewed_static_import(node):
+                    continue
+                return True
             if isinstance(node, ast.Lambda):
                 pending.extend(_definition_eager_nodes(node))
                 continue
@@ -4225,6 +4315,30 @@ class _StraightLineSensitiveReadScanner:
         if exact_value is not None:
             return True, exact_value
         return False, None
+
+    def _is_exact_path_exists_guard(
+        self,
+        statement: ast.If,
+        bindings: dict[str, str],
+        os_available: bool,
+    ) -> bool:
+        if statement.orelse or not os_available:
+            return False
+        test = statement.test
+        if (
+            not isinstance(test, ast.Call)
+            or len(test.args) != 1
+            or test.keywords
+            or isinstance(test.args[0], ast.Starred)
+        ):
+            return False
+        if not (
+            isinstance(test.func, ast.Attribute)
+            and test.func.attr == "exists"
+            and _is_reviewed_os_path_attribute(test.func)
+        ):
+            return False
+        return self._exact_string(test.args[0], bindings, os_available) is not None
 
     def _record_open(
         self,
