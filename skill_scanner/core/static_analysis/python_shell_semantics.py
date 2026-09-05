@@ -116,6 +116,24 @@ class PythonShellBoolCandidate:
         return f"subprocess.{self.method_name}(..., shell={self.variable_name})"
 
 
+class PythonShellLiteralCandidate(PythonShellBoolCandidate):
+    """A resolved subprocess call whose shell flag is literal ``True``."""
+
+    __slots__ = ()
+
+    @property
+    def matched_pattern(self) -> str:
+        """Return explicit semantic provenance for signature metadata."""
+
+        return "python_ast:literal_shell_true"
+
+    @property
+    def evidence(self) -> str:
+        """Return bounded evidence without retaining attacker-controlled source."""
+
+        return f"subprocess.{self.method_name}(..., shell=True)"
+
+
 @dataclass(frozen=True, slots=True)
 class PythonOsSystemCandidate:
     """An import-resolved ``os.system`` alias with outer-source evidence."""
@@ -383,7 +401,7 @@ def find_named_shell_true_calls(source: str) -> tuple[PythonShellBoolCandidate, 
     return tuple(
         candidate
         for candidate in find_python_shell_candidates(source)
-        if isinstance(candidate, PythonShellBoolCandidate)
+        if isinstance(candidate, PythonShellBoolCandidate) and not isinstance(candidate, PythonShellLiteralCandidate)
     )
 
 
@@ -2828,8 +2846,11 @@ class _StraightLineShellScanner:
                     embedded_method_name=state.embedded_method_name,
                     equivalent_regex_spans=state.equivalent_regex_spans,
                 )
-            if invocation_is_possible and shell_binding is not None:
-                self._record_named_shell_flag(expression, shell_binding)
+            if invocation_is_possible:
+                if state.evidence_anchor is None:
+                    self._record_literal_shell_flag(expression, function_identity)
+                if shell_binding is not None:
+                    self._record_named_shell_flag(expression, shell_binding)
             if reviewed_spelling and function_is_safe and arguments_are_safe:
                 preserves_facts = self._record_call(
                     expression,
@@ -3185,6 +3206,31 @@ class _StraightLineShellScanner:
                 end_column=end_column,
                 method_name=function.attr,
                 variable_name=variable_name,
+            )
+        )
+
+    def _record_literal_shell_flag(self, call: ast.Call, function_identity: str | None) -> None:
+        """Record an exact literal flag independently of command complexity."""
+
+        if function_identity not in _SUBPROCESS_CALL_IDENTITIES:
+            return
+        shell_keywords = [keyword for keyword in call.keywords if keyword.arg == "shell"]
+        if len(shell_keywords) != 1 or any(keyword.arg is None for keyword in call.keywords):
+            return
+        value = shell_keywords[0].value
+        if not isinstance(value, ast.Constant) or type(value.value) is not bool or value.value is not True:
+            return
+        span = self._source_span(call.func)
+        if span is None:
+            return
+        line_number, start_column, end_column = span
+        self._append_candidate(
+            PythonShellLiteralCandidate(
+                line_number=line_number,
+                start_column=start_column,
+                end_column=end_column,
+                method_name=function_identity.rsplit(".", 1)[-1],
+                variable_name="True",
             )
         )
 
