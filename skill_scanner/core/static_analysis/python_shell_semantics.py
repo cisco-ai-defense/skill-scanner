@@ -14,24 +14,25 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Conservative positive evidence for Python shell execution.
+"""Conservative positive evidence for reviewed Python execution sinks.
 
-The signature pack already detects literal ``shell=True`` and ``os.system``
-spelling.  This module supplements those patterns with two small semantic
-cases: exact named boolean flags and import-resolved ``os.system`` aliases,
-including aliases inside a literal Python ``-c`` payload that is passed to a
-reviewed ``subprocess`` call.  It never executes source, does not infer through
-compound control flow, and shares hard resource limits across outer and
-embedded syntax trees.
+The signature pack already detects literal ``shell=True``, ``os.system``, and
+``exec`` spelling. This module supplements those patterns with exact named
+boolean flags, import-resolved ``os.system`` aliases, and the issue-#204
+literal-join construction of ``builtins.exec``. It never executes source and
+shares hard resource limits across outer and embedded syntax trees.
 """
 
 from __future__ import annotations
 
 import ast
+import base64 as _stdlib_base64
+import binascii
 import re
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Literal
 
 MAX_PYTHON_SHELL_SOURCE_BYTES = 1024 * 1024
@@ -42,18 +43,48 @@ MAX_PYTHON_SHELL_SCOPE_DEPTH = 32
 MAX_PYTHON_SHELL_IDENTIFIER_CHARS = 128
 MAX_PYTHON_SHELL_EMBEDDED_BYTES = 256 * 1024
 MAX_PYTHON_SHELL_EMBEDDED_PAYLOADS = 64
+MAX_PYTHON_SHELL_JOIN_PARTS = 16
+MAX_PYTHON_SHELL_JOIN_CHARS = 32
+MAX_PYTHON_SHELL_EAGER_EXPR_NODES = 4_096
 
+_SHELL_RULE_ID = "COMMAND_INJECTION_SHELL_TRUE"
+_EVAL_RULE_ID = "COMMAND_INJECTION_EVAL"
 _SUBPROCESS_METHODS = frozenset({"Popen", "call", "run"})
 _SUBPROCESS_CALL_IDENTITIES = frozenset(f"callable:subprocess.{method}" for method in _SUBPROCESS_METHODS)
 _PYTHON_C_BASE_KEYWORDS = frozenset({"args", "shell"})
 _PYTHON_C_RUN_KEYWORDS = _PYTHON_C_BASE_KEYWORDS | {"check"}
 _OS_SYSTEM_IDENTITY = "callable:os.system"
+_TEMPLATE_STR_TYPE = getattr(ast, "TemplateStr", None)
+_INTERPOLATION_TYPE = getattr(ast, "Interpolation", None)
+_ANNOTATIONS_DEFERRED_BY_DEFAULT = sys.version_info >= (3, 14)
+_PYTHON_FUTURE_FEATURES = frozenset(
+    {
+        "absolute_import",
+        "annotations",
+        "barry_as_FLUFL",
+        "division",
+        "generator_stop",
+        "generators",
+        "nested_scopes",
+        "print_function",
+        "unicode_literals",
+        "with_statement",
+    }
+)
 _PYTHON_EXECUTABLE_RE = re.compile(r"python(?:3(?:\.\d+)?)?(?:\.exe)?", re.IGNORECASE)
 _RAW_OS_SYSTEM_CALL_RE = re.compile(r"\bos\.system\s*\(")
 _LEGACY_OS_SYSTEM_CALL_RE = re.compile(r"os\.system\s*\(")
 
 _ScopeKind = Literal["module", "function", "class"]
 _FlowKind = Literal["normal", "return", "raise", "break", "continue", "halt", "terminal"]
+
+
+class _InertAbruptExit(Enum):
+    """Effect-free control transfers that may cross a mandatory finalizer."""
+
+    RAISE = "raise"
+    BREAK = "break"
+    CONTINUE = "continue"
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +96,12 @@ class PythonShellBoolCandidate:
     end_column: int
     method_name: str
     variable_name: str
+
+    @property
+    def rule_id(self) -> str:
+        """Return the canonical signature rule that owns this candidate."""
+
+        return _SHELL_RULE_ID
 
     @property
     def matched_pattern(self) -> str:
@@ -79,6 +116,24 @@ class PythonShellBoolCandidate:
         return f"subprocess.{self.method_name}(..., shell={self.variable_name})"
 
 
+class PythonShellLiteralCandidate(PythonShellBoolCandidate):
+    """A resolved subprocess call whose shell flag is literal ``True``."""
+
+    __slots__ = ()
+
+    @property
+    def matched_pattern(self) -> str:
+        """Return explicit semantic provenance for signature metadata."""
+
+        return "python_ast:literal_shell_true"
+
+    @property
+    def evidence(self) -> str:
+        """Return bounded evidence without retaining attacker-controlled source."""
+
+        return f"subprocess.{self.method_name}(..., shell=True)"
+
+
 @dataclass(frozen=True, slots=True)
 class PythonOsSystemCandidate:
     """An import-resolved ``os.system`` alias with outer-source evidence."""
@@ -88,6 +143,12 @@ class PythonOsSystemCandidate:
     end_column: int
     embedded_method_name: str | None = None
     equivalent_regex_spans: tuple[tuple[int, int, int], ...] = ()
+
+    @property
+    def rule_id(self) -> str:
+        """Return the canonical signature rule that owns this candidate."""
+
+        return _SHELL_RULE_ID
 
     @property
     def matched_pattern(self) -> str:
@@ -106,7 +167,35 @@ class PythonOsSystemCandidate:
         return "import-resolved alias invokes os.system(...)"
 
 
-PythonShellCandidate = PythonShellBoolCandidate | PythonOsSystemCandidate
+@dataclass(frozen=True, slots=True)
+class PythonDynamicExecCandidate:
+    """A proven invocation of the issue-#204 dynamic ``builtins.exec`` alias."""
+
+    line_number: int
+    start_column: int
+    end_column: int
+    variable_name: str
+
+    @property
+    def rule_id(self) -> str:
+        """Return the canonical signature rule that owns this candidate."""
+
+        return _EVAL_RULE_ID
+
+    @property
+    def matched_pattern(self) -> str:
+        """Return explicit semantic provenance for signature metadata."""
+
+        return "python_ast:getattr_joined_builtin_exec"
+
+    @property
+    def evidence(self) -> str:
+        """Return bounded evidence without retaining executed source."""
+
+        return f"{self.variable_name}(...) -> builtins.exec"
+
+
+PythonShellCandidate = PythonShellBoolCandidate | PythonOsSystemCandidate | PythonDynamicExecCandidate
 
 
 @dataclass(slots=True)
@@ -169,8 +258,105 @@ class _BodyScanResult:
     flow: _FlowKind = "normal"
 
 
+@dataclass(slots=True)
+class _DynamicExecState:
+    """Narrow module-scope provenance for the issue-#204 construction."""
+
+    enabled: bool
+    builtins_names: set[str] = field(default_factory=set)
+    base64_names: set[str] = field(default_factory=set)
+    exec_names: set[str] = field(default_factory=set)
+    known_bound_names: set[str] = field(default_factory=set)
+    getattr_names: set[str] = field(default_factory=lambda: {"getattr"})
+    annotations_are_deferred: bool = _ANNOTATIONS_DEFERRED_BY_DEFAULT
+    future_annotations: bool = False
+    conditional_annotations_intact: bool = True
+    class_namespace: bool = False
+    allow_invalid_decode_carryover: bool = True
+    hard_invalidated: bool = False
+    inert_exit: _InertAbruptExit | None = None
+
+    def clone(self) -> _DynamicExecState:
+        """Copy bounded provenance for one independently executed namespace."""
+
+        return _DynamicExecState(
+            enabled=self.enabled,
+            builtins_names=set(self.builtins_names),
+            base64_names=set(self.base64_names),
+            exec_names=set(self.exec_names),
+            known_bound_names=set(self.known_bound_names),
+            getattr_names=set(self.getattr_names),
+            annotations_are_deferred=self.annotations_are_deferred,
+            future_annotations=self.future_annotations,
+            conditional_annotations_intact=self.conditional_annotations_intact,
+            class_namespace=self.class_namespace,
+            allow_invalid_decode_carryover=self.allow_invalid_decode_carryover,
+            hard_invalidated=self.hard_invalidated,
+            inert_exit=self.inert_exit,
+        )
+
+    def clear(self) -> None:
+        """Invalidate every fact after unsupported syntax or effects."""
+
+        self.builtins_names.clear()
+        self.base64_names.clear()
+        self.exec_names.clear()
+        self.known_bound_names.clear()
+        self.getattr_names.clear()
+        self.hard_invalidated = True
+        self.inert_exit = None
+
+    def rebind(self, name: str) -> None:
+        """Forget provenance replaced by one ordinary name binding."""
+
+        if _ANNOTATIONS_DEFERRED_BY_DEFAULT and name == "__conditional_annotations__":
+            # Python 3.14's default deferred module annotations append their
+            # target names to this compiler-created set.  A user binding can
+            # make that bookkeeping dispatch arbitrary code or fail before
+            # the following statement is reached.
+            self.conditional_annotations_intact = False
+        self.builtins_names.discard(name)
+        self.base64_names.discard(name)
+        self.exec_names.discard(name)
+        self.known_bound_names.discard(name)
+        self.getattr_names.discard(name)
+
+    @property
+    def binding_count(self) -> int:
+        return (
+            len(self.builtins_names)
+            + len(self.base64_names)
+            + len(self.exec_names)
+            + len(self.known_bound_names)
+            + len(self.getattr_names)
+        )
+
+    def is_active(self) -> bool:
+        # Ordinary rebinding can temporarily hide builtin ``getattr`` and a
+        # later proven deletion can expose it again.  Arbitrary effects, by
+        # contrast, permanently invalidate every claim in this narrow pass.
+        return self.enabled and not self.hard_invalidated and self.inert_exit is None
+
+    def can_enter_finally(self) -> bool:
+        """Return whether retained facts are safe at a mandatory finalizer."""
+
+        return self.enabled and not self.hard_invalidated
+
+    def enter_finally(self) -> None:
+        """Consume a pending control transfer while its finalizer executes."""
+
+        self.inert_exit = None
+
+
+@dataclass(frozen=True, slots=True)
+class _DynamicExecPlainTargetBinding:
+    """Deferred plain-name binding in one guaranteed comprehension iteration."""
+
+    name: str
+
+
 def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...]:
-    """Find bounded, straight-line positive evidence for reviewed shell sinks.
+    """Find bounded positive evidence for reviewed execution sinks.
 
     Literal values remain the regex signature's responsibility.  Invalid,
     binary-like, oversized, or structurally complex input simply produces no
@@ -190,15 +376,23 @@ def find_python_shell_candidates(source: str) -> tuple[PythonShellCandidate, ...
         )
         if not budget.consume_tree(tree):
             return ()
-        # ``ast.parse`` accepts some trees (such as duplicate keywords or a
-        # top-level return) that CPython will never execute. Charge the parsed
-        # tree before asking the compiler to do any additional recursive work.
-        compile(source, "<unknown>", "exec", dont_inherit=True)
+        _validate_python_module(tree)
         scanner = _StraightLineShellScanner(source, budget)
         scanner.scan(tree)
     except (MemoryError, OverflowError, RecursionError, SyntaxError, TypeError, UnicodeError, ValueError):
         return ()
     return tuple(scanner.candidates)
+
+
+def _validate_python_module(tree: ast.Module) -> None:
+    """Apply compiler-only syntax checks to an already bounded syntax tree."""
+
+    # ``ast.parse`` intentionally omits checks performed by the symbol-table
+    # and code-generation stages (for example future-import placement,
+    # duplicate parameters, or ``return`` in a class body). Creating and
+    # immediately discarding a code object validates those rules; scanned code
+    # is never executed.
+    compile(tree, "<skill-scanner>", "exec", dont_inherit=True, optimize=0)
 
 
 def find_named_shell_true_calls(source: str) -> tuple[PythonShellBoolCandidate, ...]:
@@ -207,7 +401,7 @@ def find_named_shell_true_calls(source: str) -> tuple[PythonShellBoolCandidate, 
     return tuple(
         candidate
         for candidate in find_python_shell_candidates(source)
-        if isinstance(candidate, PythonShellBoolCandidate)
+        if isinstance(candidate, PythonShellBoolCandidate) and not isinstance(candidate, PythonShellLiteralCandidate)
     )
 
 
@@ -232,12 +426,160 @@ def _is_side_effect_free(expression: ast.expr | None) -> bool:
     return True
 
 
+def _guaranteed_inert_value_node_count(
+    expression: ast.expr,
+    state: _DynamicExecState,
+    *,
+    max_nodes: int = MAX_PYTHON_SHELL_EAGER_EXPR_NODES,
+) -> int | None:
+    """Count one bounded inert value, or return ``None`` when it is unsupported."""
+
+    pending = [expression]
+    visited = 0
+    while pending:
+        node = pending.pop()
+        visited += 1
+        if visited > max_nodes:
+            return None
+        if isinstance(node, ast.Constant):
+            continue
+        if isinstance(node, ast.Name):
+            if node.id not in state.known_bound_names and node.id not in state.getattr_names:
+                return None
+            continue
+        if isinstance(node, (ast.List, ast.Tuple)):
+            if any(isinstance(element, ast.Starred) for element in node.elts):
+                return None
+            pending.extend(node.elts)
+            continue
+        return None
+    return visited
+
+
+def _is_guaranteed_inert_value(expression: ast.expr, state: _DynamicExecState) -> bool:
+    """Return whether evaluating a bounded inert value cannot fail on a name load."""
+
+    return _guaranteed_inert_value_node_count(expression, state) is not None
+
+
 def _exact_bool(expression: ast.expr, bindings: dict[str, bool]) -> bool | None:
     if isinstance(expression, ast.Constant) and type(expression.value) is bool:
         return expression.value
     if isinstance(expression, ast.Name):
         return bindings.get(expression.id)
     return None
+
+
+def _guaranteed_literal_truth(expression: ast.expr, state: _DynamicExecState) -> bool | None:
+    """Truth-test a narrow literal whose construction cannot dispatch user code."""
+
+    negated_operand = expression
+    negations = 0
+    while isinstance(negated_operand, ast.UnaryOp) and isinstance(negated_operand.op, ast.Not):
+        negations += 1
+        if negations >= MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+            return None
+        negated_operand = negated_operand.operand
+    if negated_operand is not expression:
+        operand_truth = _guaranteed_literal_truth(negated_operand, state)
+        if operand_truth is None:
+            return None
+        return operand_truth if negations % 2 == 0 else not operand_truth
+
+    if isinstance(expression, ast.Constant):
+        value = expression.value
+        if value is None or value is Ellipsis or type(value) in {bool, bytes, complex, float, int, str}:
+            return bool(value)
+        return None
+    signed_operand = expression
+    signed_nodes = 0
+    while isinstance(signed_operand, ast.UnaryOp) and isinstance(signed_operand.op, (ast.UAdd, ast.USub)):
+        signed_nodes += 1
+        if signed_nodes >= MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+            return None
+        signed_operand = signed_operand.operand
+    if (
+        signed_operand is not expression
+        and isinstance(signed_operand, ast.Constant)
+        and type(signed_operand.value) in {bool, complex, float, int}
+    ):
+        # Unary sign does not change whether a builtin numeric scalar is zero.
+        return bool(signed_operand.value)
+    if isinstance(expression, (ast.List, ast.Tuple)) and _is_guaranteed_inert_value(expression, state):
+        return bool(expression.elts)
+    if (
+        isinstance(expression, ast.Set)
+        and len(expression.elts) + 1 <= MAX_PYTHON_SHELL_EAGER_EXPR_NODES
+        and all(_has_inert_literal_hash(element) for element in expression.elts)
+    ):
+        return bool(expression.elts)
+    if isinstance(expression, ast.Dict):
+        visited = 1
+        for key, dict_value in zip(expression.keys, expression.values, strict=True):
+            if key is None or not _has_inert_literal_hash(key):
+                return None
+            visited += 1
+            remaining = MAX_PYTHON_SHELL_EAGER_EXPR_NODES - visited
+            value_nodes = _guaranteed_inert_value_node_count(dict_value, state, max_nodes=remaining)
+            if value_nodes is None:
+                return None
+            visited += value_nodes
+        return bool(expression.keys)
+    return None
+
+
+def _guaranteed_literal_iterable_truth(
+    expression: ast.expr,
+    state: _DynamicExecState,
+) -> bool | None:
+    """Return whether an exact inert builtin iterable is nonempty."""
+
+    if isinstance(expression, ast.Constant):
+        if type(expression.value) not in {bytes, str}:
+            return None
+    elif not isinstance(expression, (ast.Dict, ast.List, ast.Set, ast.Tuple)):
+        return None
+    return _guaranteed_literal_truth(expression, state)
+
+
+def _immediate_zero_argument_lambda_body(
+    expression: ast.Call,
+    state: _DynamicExecState,
+) -> ast.expr | None:
+    """Return one safely eager direct-lambda body, or ``None``."""
+
+    if (
+        state.class_namespace
+        or not isinstance(expression.func, ast.Lambda)
+        or expression.args
+        or expression.keywords
+        or expression.func.args.posonlyargs
+        or expression.func.args.args
+        or expression.func.args.vararg is not None
+        or expression.func.args.kwonlyargs
+        or expression.func.args.kwarg is not None
+    ):
+        return None
+
+    pending: list[ast.AST] = [expression.func.body]
+    visited = 0
+    while pending:
+        node = pending.pop()
+        visited += 1
+        if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+            return None
+        if isinstance(node, ast.Lambda):
+            # A nested lambda's body has its own delayed scope, but its
+            # defaults execute immediately in this lambda's scope.
+            defaults = [*node.args.defaults, *(default for default in node.args.kw_defaults if default)]
+            pending.extend(defaults)
+            continue
+        if isinstance(node, (ast.NamedExpr, ast.Yield, ast.YieldFrom)):
+            # A walrus creates lambda-local bindings for the whole body, while
+            # either yield form makes invocation return an unstarted generator.
+            return None
+        pending.extend(ast.iter_child_nodes(node))
+    return expression.func.body
 
 
 def _name_targets(targets: list[ast.expr]) -> tuple[str, ...] | None:
@@ -247,6 +589,161 @@ def _name_targets(targets: list[ast.expr]) -> tuple[str, ...] | None:
             return None
         names.append(target.id)
     return tuple(names)
+
+
+def _literal_joined_exec(expression: ast.expr) -> bool:
+    """Fold only ``''.join`` over a bounded literal list or tuple."""
+
+    if (
+        not isinstance(expression, ast.Call)
+        or expression.keywords
+        or len(expression.args) != 1
+        or not isinstance(expression.func, ast.Attribute)
+        or expression.func.attr != "join"
+        or not isinstance(expression.func.value, ast.Constant)
+        or expression.func.value.value != ""
+        or not isinstance(expression.args[0], (ast.List, ast.Tuple))
+    ):
+        return False
+
+    elements = expression.args[0].elts
+    if not elements or len(elements) > MAX_PYTHON_SHELL_JOIN_PARTS:
+        return False
+
+    parts: list[str] = []
+    result_length = 0
+    for element in elements:
+        if not isinstance(element, ast.Constant) or type(element.value) is not str:
+            return False
+        result_length += len(element.value)
+        if result_length > MAX_PYTHON_SHELL_JOIN_CHARS:
+            return False
+        parts.append(element.value)
+    return "".join(parts) == "exec"
+
+
+def _is_dynamic_exec_lookup(expression: ast.expr, state: _DynamicExecState) -> bool:
+    return bool(
+        state.enabled
+        and isinstance(expression, ast.Call)
+        and not expression.keywords
+        and len(expression.args) == 2
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id in state.getattr_names
+        and isinstance(expression.args[0], ast.Name)
+        and expression.args[0].id in state.builtins_names
+        and _literal_joined_exec(expression.args[1])
+    )
+
+
+def _dynamic_exec_callable_anchor(
+    expression: ast.expr,
+    state: _DynamicExecState,
+) -> ast.Name | None:
+    """Return the source anchor for one bounded reviewed exec callable."""
+
+    callable_expression = expression
+    call_attributes = 0
+    while isinstance(callable_expression, ast.Attribute) and callable_expression.attr == "__call__":
+        call_attributes += 1
+        if call_attributes > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+            return None
+        callable_expression = callable_expression.value
+    if isinstance(callable_expression, ast.Name) and callable_expression.id in state.exec_names:
+        return callable_expression
+    if not _is_dynamic_exec_lookup(callable_expression, state):
+        return None
+    assert isinstance(callable_expression, ast.Call)
+    assert isinstance(callable_expression.func, ast.Name)
+    return callable_expression.func
+
+
+def _is_literal_base64_decode(expression: ast.expr, state: _DynamicExecState) -> bool:
+    """Recognize the issue's inert literal decode without trusting arbitrary calls."""
+
+    return bool(
+        isinstance(expression, ast.Call)
+        and not expression.keywords
+        and len(expression.args) == 1
+        and isinstance(expression.func, ast.Attribute)
+        and expression.func.attr == "b64decode"
+        and isinstance(expression.func.value, ast.Name)
+        and expression.func.value.id in state.base64_names
+        and isinstance(expression.args[0], ast.Constant)
+        and type(expression.args[0].value) in (str, bytes)
+    )
+
+
+def _literal_base64_decode_completes(expression: ast.expr, state: _DynamicExecState) -> bool:
+    """Return whether the reviewed literal decode is guaranteed not to raise."""
+
+    if not _is_literal_base64_decode(expression, state):
+        return False
+    assert isinstance(expression, ast.Call)
+    literal = expression.args[0]
+    assert isinstance(literal, ast.Constant)
+    assert isinstance(literal.value, (str, bytes))
+    try:
+        _stdlib_base64.b64decode(literal.value)
+    except (binascii.Error, UnicodeError, ValueError):
+        return False
+    return True
+
+
+def _has_inert_literal_hash(expression: ast.expr) -> bool:
+    """Return whether hashing this literal cannot dispatch user code."""
+
+    return isinstance(expression, ast.Constant) and type(expression.value) in (
+        bool,
+        bytes,
+        complex,
+        float,
+        int,
+        str,
+        type(None),
+    )
+
+
+def _class_body_scope_flags(body: list[ast.stmt]) -> tuple[bool, bool]:
+    """Return whether one class block declares globals or nonlocals."""
+
+    has_global = False
+    has_nonlocal = False
+    pending: list[ast.AST] = list(reversed(body))
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.Global):
+            has_global = True
+            continue
+        if isinstance(node, ast.Nonlocal):
+            has_nonlocal = True
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            # Their eager headers belong to this class execution, but a scope
+            # declaration can occur only in their delayed/nested code block.
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+    return has_global, has_nonlocal
+
+
+def _class_body_has_annotation(body: list[ast.stmt]) -> bool:
+    """Recognize annotations that make CPython seed a class-local mapping."""
+
+    pending: list[ast.AST] = list(reversed(body))
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.AnnAssign):
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+    return False
+
+
+def _is_class_private_name(name: str) -> bool:
+    """Return whether a source name is subject to class-name mangling."""
+
+    return name.startswith("__") and not name.endswith("__") and any(character != "_" for character in name[2:])
 
 
 class _StraightLineShellScanner:
@@ -311,6 +808,7 @@ class _StraightLineShellScanner:
             equivalent_regex_spans=equivalent_regex_spans,
             embedded_method_name=embedded_method_name,
         )
+        dynamic_exec_state = _DynamicExecState(enabled=depth == 0 and evidence_anchor is None)
 
         def scan_nested_body(
             nested_body: list[ast.stmt],
@@ -348,6 +846,10 @@ class _StraightLineShellScanner:
         for statement_index, statement in enumerate(body):
             if len(self.candidates) >= MAX_PYTHON_SHELL_CANDIDATES:
                 return _BodyScanResult(poisoned_modules)
+
+            self._scan_dynamic_exec_statement(statement, dynamic_exec_state)
+            if dynamic_exec_state.binding_count > MAX_PYTHON_SHELL_BINDINGS:
+                dynamic_exec_state.clear()
 
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self._scan_definition_expressions(statement, expression_state)
@@ -915,6 +1417,963 @@ class _StraightLineShellScanner:
 
         return _BodyScanResult(poisoned_modules)
 
+    def _scan_dynamic_exec_statement(
+        self,
+        statement: ast.stmt,
+        state: _DynamicExecState,
+        *,
+        dynamic_depth: int = 0,
+        class_body_base: _DynamicExecState | None = None,
+        scan_nested_class_bodies: bool = True,
+    ) -> None:
+        """Advance the narrow module-level issue-#204 provenance state."""
+
+        if not state.is_active():
+            return
+
+        if isinstance(statement, ast.Import):
+            if any(imported.name not in {"base64", "builtins"} for imported in statement.names):
+                state.clear()
+                return
+            for imported in statement.names:
+                local_name = imported.asname or imported.name.split(".", 1)[0]
+                state.rebind(local_name)
+                state.known_bound_names.add(local_name)
+                if imported.name == "builtins":
+                    state.builtins_names.add(local_name)
+                elif imported.name == "base64":
+                    state.base64_names.add(local_name)
+            return
+
+        if isinstance(statement, ast.ImportFrom):
+            if (
+                statement.level == 0
+                and statement.module == "__future__"
+                and all(
+                    imported.name in _PYTHON_FUTURE_FEATURES and imported.asname is None for imported in statement.names
+                )
+            ):
+                for imported in statement.names:
+                    state.rebind(imported.name)
+                    state.known_bound_names.add(imported.name)
+                if any(imported.name == "annotations" for imported in statement.names):
+                    state.annotations_are_deferred = True
+                    state.future_annotations = True
+                return
+            state.clear()
+            return
+
+        if isinstance(statement, ast.Assign):
+            targets = _name_targets(statement.targets)
+            dynamic_exec = _is_dynamic_exec_lookup(statement.value, state)
+            copied_builtins = isinstance(statement.value, ast.Name) and statement.value.id in state.builtins_names
+            copied_base64 = isinstance(statement.value, ast.Name) and statement.value.id in state.base64_names
+            copied_exec = isinstance(statement.value, ast.Name) and statement.value.id in state.exec_names
+            copied_getattr = isinstance(statement.value, ast.Name) and statement.value.id in state.getattr_names
+            literal_base64_decode = _is_literal_base64_decode(statement.value, state)
+            literal_base64_completes = literal_base64_decode and _literal_base64_decode_completes(
+                statement.value,
+                state,
+            )
+            # Issue #204 explicitly requires the static danger signal even
+            # for its invalid placeholder payload.  Carry existing provenance
+            # across that exact decode shape, but never use a failing decode
+            # as proof that its target or a later address is reachable.
+            inert_value = copied_getattr or _is_guaranteed_inert_value(
+                statement.value,
+                state,
+            )
+            if not dynamic_exec and not literal_base64_decode and not inert_value:
+                self._scan_eager_dynamic_exec_calls(statement.value, state)
+                # An arbitrary call can mutate the shared builtins module
+                # without loading a tracked local alias (for example through
+                # ``__import__('builtins')``).  Only the exact reviewed lookup
+                # and the issue's literal base64 decode are safe to carry
+                # across this execution boundary.
+                state.clear()
+                return
+            if literal_base64_decode and not literal_base64_completes and not state.allow_invalid_decode_carryover:
+                state.clear()
+                return
+            if targets is None:
+                if literal_base64_decode and not literal_base64_completes:
+                    state.clear()
+                    return
+                for target in statement.targets:
+                    if isinstance(target, ast.Name):
+                        state.rebind(target.id)
+                        state.known_bound_names.add(target.id)
+                        if len(target.id) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS:
+                            if copied_builtins:
+                                state.builtins_names.add(target.id)
+                            if copied_base64:
+                                state.base64_names.add(target.id)
+                            if dynamic_exec or copied_exec:
+                                state.exec_names.add(target.id)
+                            if copied_getattr:
+                                state.getattr_names.add(target.id)
+                    elif isinstance(target, (ast.Attribute, ast.Subscript)):
+                        # The RHS has completed before each chained target's
+                        # address and store are evaluated.
+                        self._scan_eager_dynamic_exec_calls(target, state, require_known_names=True)
+                    else:
+                        # Unpacking may dispatch iteration before any nested
+                        # target address is reached.
+                        state.clear()
+                    if not state.is_active():
+                        break
+                state.clear()
+                return
+            for name in targets:
+                state.rebind(name)
+                if dynamic_exec or inert_value or literal_base64_completes:
+                    state.known_bound_names.add(name)
+                if len(name) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS:
+                    if copied_builtins:
+                        state.builtins_names.add(name)
+                    if copied_base64:
+                        state.base64_names.add(name)
+                    if dynamic_exec or copied_exec:
+                        state.exec_names.add(name)
+                    if copied_getattr:
+                        state.getattr_names.add(name)
+            return
+
+        if isinstance(statement, ast.AnnAssign):
+            dynamic_exec = statement.value is not None and _is_dynamic_exec_lookup(statement.value, state)
+            copied_builtins = (
+                isinstance(statement.target, ast.Name)
+                and isinstance(statement.value, ast.Name)
+                and statement.value.id in state.builtins_names
+            )
+            copied_base64 = (
+                isinstance(statement.target, ast.Name)
+                and isinstance(statement.value, ast.Name)
+                and statement.value.id in state.base64_names
+            )
+            copied_getattr = (
+                isinstance(statement.target, ast.Name)
+                and isinstance(statement.value, ast.Name)
+                and statement.value.id in state.getattr_names
+            )
+            copied_exec = (
+                isinstance(statement.target, ast.Name)
+                and isinstance(statement.value, ast.Name)
+                and statement.value.id in state.exec_names
+            )
+            literal_base64_decode = statement.value is not None and _is_literal_base64_decode(statement.value, state)
+            literal_base64_completes = (
+                statement.value is not None
+                and literal_base64_decode
+                and _literal_base64_decode_completes(statement.value, state)
+            )
+            inert_value = statement.value is not None and (
+                copied_getattr
+                or _is_guaranteed_inert_value(
+                    statement.value,
+                    state,
+                )
+            )
+            if statement.value is not None and not dynamic_exec and not literal_base64_decode and not inert_value:
+                self._scan_eager_dynamic_exec_calls(statement.value, state)
+                state.clear()
+                return
+            if not state.is_active():
+                return
+            if literal_base64_decode and not literal_base64_completes:
+                # An annotated assignment evaluates its RHS before either
+                # storing the target or evaluating an eager annotation.  The
+                # issue's invalid placeholder decode is a narrow carry-over
+                # exception only for ordinary assignments; here it proves
+                # that neither of those later steps is reached.
+                state.clear()
+                return
+            if isinstance(statement.target, ast.Name) and statement.value is not None:
+                state.rebind(statement.target.id)
+                if dynamic_exec or inert_value or literal_base64_completes:
+                    state.known_bound_names.add(statement.target.id)
+                if len(statement.target.id) <= MAX_PYTHON_SHELL_IDENTIFIER_CHARS:
+                    if copied_builtins:
+                        state.builtins_names.add(statement.target.id)
+                    if copied_base64:
+                        state.base64_names.add(statement.target.id)
+                    if dynamic_exec or copied_exec:
+                        state.exec_names.add(statement.target.id)
+                    if copied_getattr:
+                        state.getattr_names.add(statement.target.id)
+            if isinstance(statement.target, ast.Name):
+                if not state.annotations_are_deferred:
+                    self._scan_eager_dynamic_exec_calls(statement.annotation, state)
+                if statement.simple and (state.future_annotations or not _ANNOTATIONS_DEFERRED_BY_DEFAULT):
+                    # Python 3.11-3.13, and future-string mode on 3.14,
+                    # subsequently dispatch through the module's potentially
+                    # user-controlled ``__annotations__`` mapping.
+                    state.clear()
+                elif statement.simple and not state.conditional_annotations_intact:
+                    # Python 3.14's default module-annotation bookkeeping is
+                    # no longer proven to complete after a user rebind.
+                    state.clear()
+            else:
+                if statement.value is None:
+                    # Without a value, Python evaluates only the target's
+                    # address components before an eager annotation; it does
+                    # not dispatch an attribute/subscript load or store.
+                    self._scan_dynamic_exec_annotation_address(statement.target, state)
+                    if state.is_active() and not state.annotations_are_deferred:
+                        self._scan_eager_dynamic_exec_calls(statement.annotation, state)
+                else:
+                    # With a value, the target store precedes the annotation
+                    # and is an arbitrary-effect boundary.
+                    self._scan_eager_dynamic_exec_calls(
+                        statement.target,
+                        state,
+                        require_known_names=True,
+                    )
+                    state.clear()
+            return
+
+        if isinstance(statement, ast.AugAssign):
+            if isinstance(statement.target, ast.Name) and (
+                statement.target.id in state.known_bound_names or statement.target.id in state.getattr_names
+            ):
+                self._scan_eager_dynamic_exec_calls(statement.value, state)
+            elif not isinstance(statement.target, ast.Name):
+                # Attribute/subscript address expressions run before their
+                # target load; that load is an effect boundary before the RHS.
+                self._scan_eager_dynamic_exec_calls(statement.target, state, require_known_names=True)
+            state.clear()
+            return
+
+        if isinstance(statement, ast.Delete):
+            self._scan_dynamic_exec_delete_targets(statement.targets, state)
+            return
+
+        if isinstance(statement, ast.Expr):
+            if not isinstance(statement.value, ast.Constant):
+                self._scan_eager_dynamic_exec_calls(statement.value, state)
+                state.clear()
+            return
+
+        if isinstance(statement, ast.Raise):
+            if statement.exc is None and statement.cause is None:
+                # A bare raise transfers control without evaluating user code.
+                # Retain the current facts for a mandatory enclosing finally,
+                # while stopping this source-ordered prefix as unreachable.
+                state.inert_exit = _InertAbruptExit.RAISE
+                return
+            if statement.exc is not None:
+                self._scan_eager_dynamic_exec_calls(statement.exc, state)
+            if statement.cause is not None:
+                self._scan_eager_dynamic_exec_calls(statement.cause, state)
+            state.clear()
+            return
+
+        if isinstance(statement, ast.Break):
+            state.inert_exit = _InertAbruptExit.BREAK
+            return
+
+        if isinstance(statement, ast.Continue):
+            state.inert_exit = _InertAbruptExit.CONTINUE
+            return
+
+        if isinstance(statement, (ast.If, ast.While)):
+            test_truth = _guaranteed_literal_truth(statement.test, state)
+            self._scan_eager_dynamic_exec_calls(statement.test, state)
+            if test_truth is not None and state.is_active():
+                selected_body = statement.body if test_truth else statement.orelse
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    selected_body,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+            if state.inert_exit is not None:
+                if isinstance(statement, ast.While) and test_truth:
+                    if state.inert_exit is _InertAbruptExit.BREAK:
+                        # The first iteration is guaranteed and this break
+                        # completes the loop without entering its else suite.
+                        state.inert_exit = None
+                        return
+                    if state.inert_exit is _InertAbruptExit.CONTINUE:
+                        # A second iteration is reached, but no later exit is
+                        # proven by this bounded single-iteration scan.
+                        state.clear()
+                        return
+                return
+            if test_truth is not None and state.is_active() and (isinstance(statement, ast.If) or not test_truth):
+                # A statically selected branch that completed without effects
+                # preserves its source-ordered bindings for the next statement.
+                # A false while test also proves that only its else suite ran;
+                # a true while may execute further unmodeled iterations.
+                return
+            state.clear()
+            return
+
+        if isinstance(statement, ast.For):
+            iterable_truth = _guaranteed_literal_iterable_truth(statement.iter, state)
+            self._scan_eager_dynamic_exec_calls(statement.iter, state)
+            if iterable_truth is False and state.is_active():
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.orelse,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+                if state.inert_exit is not None:
+                    return
+                if state.is_active():
+                    # No target assignment occurs for an exact empty builtin
+                    # iterable. An inert else suite therefore preserves its
+                    # possibly updated facts for the following statement.
+                    return
+            elif iterable_truth is True and state.is_active() and isinstance(statement.target, ast.Name):
+                # Assigning the first element to a plain name cannot dispatch
+                # user code. Every supported nonempty literal enters its body.
+                state.rebind(statement.target.id)
+                state.known_bound_names.add(statement.target.id)
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.body,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+            state.clear()
+            return
+
+        if isinstance(statement, ast.With):
+            for item in statement.items:
+                self._scan_eager_dynamic_exec_calls(item.context_expr, state)
+                # Entering each context can dispatch arbitrary user code before
+                # the next context expression is evaluated.
+                state.clear()
+            return
+
+        if isinstance(statement, ast.Match):
+            subject_is_inert = _is_guaranteed_inert_value(statement.subject, state)
+            self._scan_eager_dynamic_exec_calls(statement.subject, state)
+            if (
+                subject_is_inert
+                and state.is_active()
+                and statement.cases
+                and statement.cases[0].guard is None
+                and isinstance(statement.cases[0].pattern, ast.MatchAs)
+                and statement.cases[0].pattern.pattern is None
+            ):
+                # A leading wildcard or capture pattern is irrefutable and
+                # cannot dispatch user code. Scan its guaranteed body prefix,
+                # but retain the existing boundary after the match statement.
+                capture_name = statement.cases[0].pattern.name
+                if capture_name is not None:
+                    state.rebind(capture_name)
+                    state.known_bound_names.add(capture_name)
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.cases[0].body,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+            state.clear()
+            return
+
+        if isinstance(statement, (ast.Try, ast.TryStar)):
+            self._scan_guaranteed_dynamic_exec_prefix(
+                statement.body,
+                state,
+                depth=dynamic_depth + 1,
+                class_body_base=class_body_base,
+                scan_nested_class_bodies=scan_nested_class_bodies,
+            )
+            body_exit = state.inert_exit
+            body_completed_normally = state.is_active()
+            guaranteed_handler_selected = False
+            if body_completed_normally:
+                # An effect-free body completed normally, so exception
+                # handlers are unreachable and the else suite is mandatory.
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.orelse,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+                body_exit = state.inert_exit
+            elif (
+                isinstance(statement, ast.Try)
+                and body_exit is _InertAbruptExit.RAISE
+                and len(statement.handlers) == 1
+                and statement.handlers[0].type is None
+                and statement.handlers[0].name is None
+                and state.can_enter_finally()
+            ):
+                # A lone bare handler catches either a re-raised exception or
+                # the RuntimeError produced by ``raise`` without an active
+                # exception, without evaluating a user-controlled matcher.
+                guaranteed_handler_selected = True
+                state.inert_exit = None
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.handlers[0].body,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+                body_exit = state.inert_exit
+
+            exit_skips_handlers = body_exit in {
+                _InertAbruptExit.BREAK,
+                _InertAbruptExit.CONTINUE,
+            } or (
+                body_exit is _InertAbruptExit.RAISE
+                and (
+                    body_completed_normally
+                    or guaranteed_handler_selected
+                    or (isinstance(statement, ast.Try) and not statement.handlers)
+                )
+            )
+            normal_completion = state.is_active()
+            if state.can_enter_finally() and (normal_completion or exit_skips_handlers):
+                state.enter_finally()
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.finalbody,
+                    state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=class_body_base,
+                    scan_nested_class_bodies=scan_nested_class_bodies,
+                )
+                if state.inert_exit is not None:
+                    return
+                if body_exit is not None and state.is_active():
+                    state.inert_exit = body_exit
+                    return
+                if state.is_active():
+                    # Every modeled component completed normally without an
+                    # effect boundary, so retain its resulting provenance.
+                    return
+            state.clear()
+            return
+
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Decorator expressions are evaluated top-to-bottom, followed by
+            # positional defaults and keyword-only defaults. Function bodies
+            # are delayed; annotations are eager only on runtimes where Python
+            # has not deferred them by default and no future import opts in.
+            for expression in statement.decorator_list:
+                dynamic_exec_anchor = _dynamic_exec_callable_anchor(expression, state)
+                if dynamic_exec_anchor is not None:
+                    # A bare decorator is captured now and invoked after the
+                    # function object is created, even if a later expression
+                    # rebinds its source name.
+                    self._record_dynamic_exec(dynamic_exec_anchor)
+                    continue
+                self._scan_eager_dynamic_exec_calls(expression, state)
+            eager_defaults = [
+                *statement.args.defaults,
+                *(default for default in statement.args.kw_defaults if default is not None),
+            ]
+            for expression in eager_defaults:
+                self._scan_eager_dynamic_exec_calls(expression, state)
+            for type_parameter in getattr(statement, "type_params", ()):
+                # Generic-function annotations execute in the type-parameter
+                # scope on runtimes where annotations are still eager.
+                state.rebind(type_parameter.name)
+            if not state.annotations_are_deferred:
+                # Mirror CPython's compiler order, which visits regular
+                # positional annotations before positional-only annotations.
+                annotated_arguments = [
+                    *statement.args.args,
+                    *statement.args.posonlyargs,
+                ]
+                if statement.args.vararg is not None:
+                    annotated_arguments.append(statement.args.vararg)
+                annotated_arguments.extend(statement.args.kwonlyargs)
+                if statement.args.kwarg is not None:
+                    annotated_arguments.append(statement.args.kwarg)
+                annotations = [
+                    argument.annotation for argument in annotated_arguments if argument.annotation is not None
+                ]
+                if statement.returns is not None:
+                    annotations.append(statement.returns)
+                for annotation in annotations:
+                    self._scan_eager_dynamic_exec_calls(annotation, state)
+            state.clear()
+            return
+
+        if isinstance(statement, ast.ClassDef):
+            # Class decorator expressions run before the base/keyword
+            # expressions. The class namespace and decorator applications are
+            # unsupported effect boundaries after those mandatory inputs.
+            for expression in statement.decorator_list:
+                dynamic_exec_anchor = _dynamic_exec_callable_anchor(expression, state)
+                if dynamic_exec_anchor is not None:
+                    self._record_dynamic_exec(dynamic_exec_anchor)
+                    continue
+                self._scan_eager_dynamic_exec_calls(expression, state)
+            for type_parameter in getattr(statement, "type_params", ()):
+                # Generic class bases and keywords execute inside the type-
+                # parameter scope. Rebind only its declared names so an
+                # unrelated type parameter cannot hide a real outer call.
+                state.rebind(type_parameter.name)
+            for expression in statement.bases:
+                self._scan_eager_dynamic_exec_calls(expression, state)
+            for keyword in statement.keywords:
+                self._scan_eager_dynamic_exec_calls(keyword.value, state)
+                if keyword.arg is None:
+                    state.clear()
+
+            has_global, has_nonlocal = _class_body_scope_flags(statement.body)
+            default_namespace = not (
+                statement.decorator_list
+                or statement.bases
+                or statement.keywords
+                or getattr(statement, "type_params", [])
+            )
+            if (
+                scan_nested_class_bodies
+                and default_namespace
+                and not has_global
+                and not has_nonlocal
+                and state.is_active()
+            ):
+                # An ordinary class body executes eagerly. Its LOAD_NAME
+                # fallback sees module bindings, but a nested class body must
+                # never inherit ordinary locals from the enclosing class.
+                module_state = (class_body_base or state).clone()
+                class_state = module_state.clone()
+                class_state.class_namespace = True
+                class_state.allow_invalid_decode_carryover = False
+                inherited_names = (
+                    class_state.builtins_names
+                    | class_state.base64_names
+                    | class_state.exec_names
+                    | class_state.known_bound_names
+                    | class_state.getattr_names
+                )
+                for name in inherited_names:
+                    if _is_class_private_name(name):
+                        # The class bytecode loads the mangled spelling, not
+                        # this module-level source name. Omitting the possible
+                        # mangled fallback is conservative and avoids an FP.
+                        class_state.rebind(name)
+                compiler_names = {"__module__", "__qualname__"}
+                if class_body_base is not None:
+                    # Nested class code can close over these implicit cells
+                    # from its enclosing class instead of using module fallback.
+                    compiler_names.add("__class__")
+                    if sys.version_info >= (3, 12):
+                        compiler_names.add("__classdict__")
+                    if sys.version_info >= (3, 14):
+                        compiler_names.add("__conditional_annotations__")
+                if sys.version_info >= (3, 13):
+                    compiler_names.add("__firstlineno__")
+                if (
+                    statement.body
+                    and isinstance(statement.body[0], ast.Expr)
+                    and isinstance(statement.body[0].value, ast.Constant)
+                    and type(statement.body[0].value.value) is str
+                ):
+                    compiler_names.add("__doc__")
+                if (
+                    not _ANNOTATIONS_DEFERRED_BY_DEFAULT or class_state.future_annotations
+                ) and _class_body_has_annotation(statement.body):
+                    compiler_names.add("__annotations__")
+                for name in compiler_names:
+                    class_state.rebind(name)
+                    class_state.known_bound_names.add(name)
+                if _ANNOTATIONS_DEFERRED_BY_DEFAULT:
+                    # Every class receives fresh 3.14 annotation bookkeeping;
+                    # a module rebind (or implicit nested cell) cannot poison it.
+                    class_state.conditional_annotations_intact = True
+                # CPython initializes class ``__module__`` by loading the
+                # module's current ``__name__`` value, so preserve reviewed
+                # identity when user code has explicitly rebound that name.
+                if "__name__" in module_state.builtins_names:
+                    class_state.builtins_names.add("__module__")
+                if "__name__" in module_state.base64_names:
+                    class_state.base64_names.add("__module__")
+                if "__name__" in module_state.exec_names:
+                    class_state.exec_names.add("__module__")
+                if "__name__" in module_state.getattr_names:
+                    class_state.getattr_names.add("__module__")
+                self._scan_guaranteed_dynamic_exec_prefix(
+                    statement.body,
+                    class_state,
+                    depth=dynamic_depth + 1,
+                    class_body_base=module_state,
+                    scan_nested_class_bodies=True,
+                )
+            state.clear()
+            return
+
+        if isinstance(statement, ast.Assert):
+            # The test is mandatory in normal execution.  The message is only
+            # proven to execute when that test is a false inert literal.
+            test_truth = _guaranteed_literal_truth(statement.test, state)
+            self._scan_eager_dynamic_exec_calls(statement.test, state)
+            if test_truth is False and state.is_active() and statement.msg is not None:
+                self._scan_eager_dynamic_exec_calls(statement.msg, state)
+            state.clear()
+            return
+
+        if isinstance(statement, (ast.Global, ast.Pass)):
+            return
+
+        # No claims cross definitions, unsupported control flow, deletion,
+        # mutation, or another unsupported execution boundary.
+        state.clear()
+
+    def _scan_guaranteed_dynamic_exec_prefix(
+        self,
+        body: list[ast.stmt],
+        state: _DynamicExecState,
+        *,
+        depth: int,
+        class_body_base: _DynamicExecState | None = None,
+        scan_nested_class_bodies: bool = True,
+    ) -> None:
+        """Scan the source-ordered prefix reached before unsupported flow."""
+
+        if depth > MAX_PYTHON_SHELL_SCOPE_DEPTH or state.binding_count > MAX_PYTHON_SHELL_BINDINGS:
+            state.clear()
+            return
+        for statement in body:
+            self._scan_dynamic_exec_statement(
+                statement,
+                state,
+                dynamic_depth=depth,
+                class_body_base=class_body_base,
+                scan_nested_class_bodies=scan_nested_class_bodies,
+            )
+            if state.binding_count > MAX_PYTHON_SHELL_BINDINGS:
+                state.clear()
+            if not state.is_active():
+                return
+
+    def _scan_dynamic_exec_delete_targets(
+        self,
+        targets: list[ast.expr],
+        state: _DynamicExecState,
+    ) -> None:
+        """Scan delete targets in source order up to the first effectful target."""
+
+        pending = list(reversed(targets))
+        visited = 0
+        while pending:
+            target = pending.pop()
+            visited += 1
+            if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+                state.clear()
+                return
+            if isinstance(target, ast.Name):
+                if state.class_namespace:
+                    # DELETE_NAME never deletes the module fallback. Tracking
+                    # which locals exist would require a separate namespace
+                    # overlay, so stop rather than infer past the deletion.
+                    state.clear()
+                    return
+                if target.id not in state.known_bound_names:
+                    state.clear()
+                    return
+                state.rebind(target.id)
+                if target.id == "getattr":
+                    state.getattr_names.add("getattr")
+                continue
+            if isinstance(target, (ast.List, ast.Tuple)):
+                pending.extend(reversed(target.elts))
+                continue
+            self._scan_eager_dynamic_exec_calls(target, state, require_known_names=True)
+            return
+
+    def _scan_dynamic_exec_annotation_address(
+        self,
+        target: ast.expr,
+        state: _DynamicExecState,
+    ) -> None:
+        """Scan a valueless non-simple annotation's address components."""
+
+        if isinstance(target, ast.Attribute):
+            self._scan_eager_dynamic_exec_calls(target.value, state, require_known_names=True)
+            return
+        if isinstance(target, ast.Subscript):
+            self._scan_eager_dynamic_exec_calls(target.value, state, require_known_names=True)
+            if state.is_active():
+                self._scan_eager_dynamic_exec_calls(target.slice, state, require_known_names=True)
+            return
+        state.clear()
+
+    def _scan_eager_dynamic_exec_calls(
+        self,
+        expression: ast.expr,
+        state: _DynamicExecState,
+        *,
+        require_known_names: bool = False,
+    ) -> None:
+        """Record aliases in bounded subexpressions that are certainly evaluated."""
+
+        # ``None`` is a post-evaluation effect boundary.  Keeping traversal
+        # iterative avoids recursion on attacker-controlled expression depth.
+        pending: list[ast.AST | _DynamicExecPlainTargetBinding | None] = [expression]
+        visited = 0
+        while pending:
+            current = pending.pop()
+            if current is None:
+                state.clear()
+                continue
+
+            visited += 1
+            if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+                state.clear()
+                return
+
+            if isinstance(current, _DynamicExecPlainTargetBinding):
+                state.rebind(current.name)
+                state.known_bound_names.add(current.name)
+                continue
+
+            if isinstance(current, ast.Call):
+                self._record_direct_dynamic_exec_call(current, state)
+                if _is_literal_base64_decode(current, state):
+                    if not _literal_base64_decode_completes(current, state):
+                        state.clear()
+                    continue
+                call_children: list[ast.AST | None] = [current.func]
+                # CPython evaluates every positional/starred argument before
+                # keyword expressions, even when a keyword is textually before
+                # a later ``*arg``.
+                for argument in current.args:
+                    if isinstance(argument, ast.Starred):
+                        call_children.extend((argument.value, None))
+                    else:
+                        call_children.append(argument)
+                for keyword in current.keywords:
+                    call_children.append(keyword.value)
+                    if keyword.arg is None:
+                        call_children.append(None)
+                immediate_lambda_body = _immediate_zero_argument_lambda_body(current, state)
+                if immediate_lambda_body is not None:
+                    call_children.append(immediate_lambda_body)
+                call_children.append(None)
+                pending.extend(reversed(call_children))
+                continue
+
+            if isinstance(current, (ast.List, ast.Tuple)):
+                pending.extend(reversed(current.elts))
+                continue
+
+            if isinstance(current, ast.Dict):
+                dict_children: list[ast.AST | None] = []
+                for key, value in zip(current.keys, current.values, strict=True):
+                    if key is None:
+                        dict_children.extend((value, None))
+                        break
+                    dict_children.extend((key, value))
+                    if not _has_inert_literal_hash(key):
+                        dict_children.append(None)
+                        break
+                pending.extend(reversed(dict_children))
+                continue
+
+            if isinstance(current, ast.Set):
+                set_children: list[ast.AST | None] = []
+                for element in current.elts:
+                    set_children.append(element)
+                    if not _has_inert_literal_hash(element):
+                        set_children.append(None)
+                        break
+                pending.extend(reversed(set_children))
+                continue
+
+            if isinstance(current, ast.BoolOp):
+                bool_children: list[ast.AST | None] = []
+                for index, value in enumerate(current.values):
+                    bool_children.append(value)
+                    if index == len(current.values) - 1:
+                        break
+                    value_truth = _guaranteed_literal_truth(value, state)
+                    if value_truth is None:
+                        bool_children.append(None)
+                        break
+                    continues = value_truth if isinstance(current.op, ast.And) else not value_truth
+                    if not continues:
+                        break
+                pending.extend(reversed(bool_children))
+                continue
+
+            if isinstance(current, ast.IfExp):
+                test_truth = _guaranteed_literal_truth(current.test, state)
+                if test_truth is not None:
+                    # Retain the test in the traversal so the expression-wide
+                    # node budget includes both the proof and selected arm.
+                    pending.append(current.body if test_truth else current.orelse)
+                    pending.append(current.test)
+                else:
+                    pending.append(None)
+                    pending.append(current.test)
+                continue
+
+            if isinstance(current, ast.NamedExpr):
+                pending.append(None)
+                pending.append(current.value)
+                continue
+
+            if isinstance(current, ast.JoinedStr):
+                pending.extend(reversed(current.values))
+                continue
+
+            if _TEMPLATE_STR_TYPE is not None and isinstance(current, _TEMPLATE_STR_TYPE):
+                pending.extend(reversed(current.values))
+                continue
+
+            if _INTERPOLATION_TYPE is not None and isinstance(current, _INTERPOLATION_TYPE):
+                if current.format_spec is not None:
+                    pending.append(current.format_spec)
+                # Unlike an f-string conversion, a t-string conversion is
+                # stored as interpolation metadata and is not invoked here.
+                pending.append(current.value)
+                continue
+
+            if isinstance(current, ast.FormattedValue):
+                pending.append(None)
+                if current.format_spec is not None:
+                    pending.append(current.format_spec)
+                    if current.conversion != -1:
+                        # ``!s``, ``!r``, and ``!a`` invoke user-overridable
+                        # conversion before the format spec is evaluated.
+                        pending.append(None)
+                pending.append(current.value)
+                continue
+
+            if isinstance(current, ast.Lambda):
+                # Lambda bodies are delayed, while every default expression is
+                # evaluated immediately from left to right at creation time.
+                defaults = [*current.args.defaults, *(default for default in current.args.kw_defaults if default)]
+                defaults.sort(key=lambda default: (default.lineno, default.col_offset))
+                pending.extend(reversed(defaults))
+                continue
+
+            if isinstance(current, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+                first_generator = current.generators[0]
+                guaranteed_iteration = (
+                    not isinstance(current, ast.GeneratorExp)
+                    and not state.class_namespace
+                    and len(current.generators) == 1
+                    and not first_generator.is_async
+                    and isinstance(first_generator.target, ast.Name)
+                    and _guaranteed_literal_iterable_truth(first_generator.iter, state) is True
+                )
+                if not guaranteed_iteration:
+                    # Constructing every comprehension evaluates its first
+                    # iterable. Generator bodies and unproven iterations remain
+                    # delayed or conditional, so no claim crosses the boundary.
+                    pending.append(None)
+                    pending.append(first_generator.iter)
+                    continue
+
+                assert isinstance(first_generator.target, ast.Name)
+                # A list/set/dict comprehension over an exact nonempty builtin
+                # literal necessarily enters its first synchronous iteration.
+                # A plain target binding cannot dispatch user code. Continue
+                # through each guaranteed filter and, when all are true, the
+                # result expression, then keep the existing scope/effect boundary.
+                comprehension_children: list[ast.AST | _DynamicExecPlainTargetBinding | None] = [
+                    first_generator.iter,
+                    _DynamicExecPlainTargetBinding(first_generator.target.id),
+                ]
+                reaches_result = True
+                for condition in first_generator.ifs:
+                    comprehension_children.append(condition)
+                    if _guaranteed_literal_truth(condition, state) is not True:
+                        reaches_result = False
+                        break
+                if reaches_result:
+                    if isinstance(current, ast.DictComp):
+                        comprehension_children.extend((current.key, current.value))
+                    else:
+                        comprehension_children.append(current.elt)
+                comprehension_children.append(None)
+                pending.extend(reversed(comprehension_children))
+                continue
+
+            if isinstance(current, ast.Compare):
+                pending.append(None)
+                pending.append(current.comparators[0])
+                pending.append(current.left)
+                continue
+
+            if isinstance(current, ast.Starred):
+                pending.append(None)
+                pending.append(current.value)
+                continue
+
+            if isinstance(current, ast.BinOp):
+                pending.append(None)
+                pending.extend((current.right, current.left))
+                continue
+
+            if isinstance(current, ast.UnaryOp):
+                if _guaranteed_literal_truth(current, state) is not None:
+                    # Charge the entire literal-unary chain in one pass. Do
+                    # not queue each suffix for re-proof, which would be
+                    # quadratic for an adversarially deep unary expression.
+                    literal_tail = current.operand
+                    while isinstance(literal_tail, ast.UnaryOp) and isinstance(
+                        literal_tail.op,
+                        (ast.Not, ast.UAdd, ast.USub),
+                    ):
+                        visited += 1
+                        if visited > MAX_PYTHON_SHELL_EAGER_EXPR_NODES:
+                            state.clear()
+                            return
+                        literal_tail = literal_tail.operand
+                    pending.append(literal_tail)
+                    continue
+                pending.append(None)
+                pending.append(current.operand)
+                continue
+
+            if isinstance(current, ast.Attribute):
+                pending.append(None)
+                pending.append(current.value)
+                continue
+
+            if isinstance(current, ast.Subscript):
+                pending.append(None)
+                pending.extend((current.slice, current.value))
+                continue
+
+            if isinstance(current, ast.Slice):
+                slice_children = [child for child in (current.lower, current.upper, current.step) if child is not None]
+                pending.extend(reversed(slice_children))
+                continue
+
+            if isinstance(current, ast.Name):
+                if (
+                    require_known_names
+                    and current.id not in state.known_bound_names
+                    and current.id not in state.getattr_names
+                ):
+                    state.clear()
+                continue
+
+            if isinstance(current, ast.Constant):
+                continue
+
+            # Delayed/conditional children and every other unreviewed
+            # expression are not claimed.
+            state.clear()
+
+    def _record_direct_dynamic_exec_call(self, expression: ast.expr, state: _DynamicExecState) -> bool:
+        if not isinstance(expression, ast.Call):
+            return False
+        anchor = _dynamic_exec_callable_anchor(expression.func, state)
+        if anchor is None:
+            return False
+        self._record_dynamic_exec(anchor)
+        return True
+
     def _scan_assignment_target(
         self,
         target: ast.expr | None,
@@ -1387,8 +2846,11 @@ class _StraightLineShellScanner:
                     embedded_method_name=state.embedded_method_name,
                     equivalent_regex_spans=state.equivalent_regex_spans,
                 )
-            if invocation_is_possible and shell_binding is not None:
-                self._record_named_shell_flag(expression, shell_binding)
+            if invocation_is_possible:
+                if state.evidence_anchor is None:
+                    self._record_literal_shell_flag(expression, function_identity)
+                if shell_binding is not None:
+                    self._record_named_shell_flag(expression, shell_binding)
             if reviewed_spelling and function_is_safe and arguments_are_safe:
                 preserves_facts = self._record_call(
                     expression,
@@ -1747,6 +3209,31 @@ class _StraightLineShellScanner:
             )
         )
 
+    def _record_literal_shell_flag(self, call: ast.Call, function_identity: str | None) -> None:
+        """Record an exact literal flag independently of command complexity."""
+
+        if function_identity not in _SUBPROCESS_CALL_IDENTITIES:
+            return
+        shell_keywords = [keyword for keyword in call.keywords if keyword.arg == "shell"]
+        if len(shell_keywords) != 1 or any(keyword.arg is None for keyword in call.keywords):
+            return
+        value = shell_keywords[0].value
+        if not isinstance(value, ast.Constant) or type(value.value) is not bool or value.value is not True:
+            return
+        span = self._source_span(call.func)
+        if span is None:
+            return
+        line_number, start_column, end_column = span
+        self._append_candidate(
+            PythonShellLiteralCandidate(
+                line_number=line_number,
+                start_column=start_column,
+                end_column=end_column,
+                method_name=function_identity.rsplit(".", 1)[-1],
+                variable_name="True",
+            )
+        )
+
     def _record_os_system(
         self,
         anchor: ast.expr,
@@ -1768,6 +3255,20 @@ class _StraightLineShellScanner:
             )
         )
 
+    def _record_dynamic_exec(self, function: ast.Name) -> None:
+        span = self._source_span(function)
+        if span is None:
+            return
+        line_number, start_column, end_column = span
+        self._append_candidate(
+            PythonDynamicExecCandidate(
+                line_number=line_number,
+                start_column=start_column,
+                end_column=end_column,
+                variable_name=function.id,
+            )
+        )
+
     def _scan_python_c_payload(self, call: ast.Call, function_identity: str, *, depth: int) -> None:
         if not self._call_arguments_are_side_effect_free(call):
             return
@@ -1781,7 +3282,7 @@ class _StraightLineShellScanner:
             tree = ast.parse(payload)
             if not self.budget.consume_tree(tree):
                 return
-            compile(payload, "<embedded-python-c>", "exec", dont_inherit=True)
+            _validate_python_module(tree)
         except (MemoryError, OverflowError, RecursionError, SyntaxError, TypeError, UnicodeError, ValueError):
             return
         method_name = function_identity.rsplit(".", 1)[-1]
