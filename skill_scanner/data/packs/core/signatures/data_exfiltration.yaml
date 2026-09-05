@@ -65,8 +65,7 @@
     - "(?:open|read)\\s*\\([^)]*\\.(?:gnupg|netrc|pgpass)"
     # .env file actually being opened (not just Path reference)
     - "open\\s*\\([^)]*\\.env(?:\\.[A-Za-z0-9_-]+)?['\"]\\s*[,)]"
-    # Variable names with clear sensitive-file intent being opened
-    - "(?:open|read)\\s*\\([^)]*\\b(?:cred(?:ential)?s?_path|secret(?:s)?_path|key(?:s)?_path|token(?:s)?_path)\\b"
+    # Constructed paths and aliases are resolved by the bounded Python AST pass.
   exclude_patterns:
     # Path references (not actual file access)
     - "Path\\s*\\([^)]*\\.env"

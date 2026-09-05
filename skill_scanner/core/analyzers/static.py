@@ -58,7 +58,11 @@ from ...core.rules.yara_behavior_context import classify_yara_behavior_context
 from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
 from ...core.static_analysis.comment_stripping import comment_stripped_lines
-from ...core.static_analysis.python_shell_semantics import find_named_shell_true_calls
+from ...core.static_analysis.python_sensitive_file_reads import find_constructed_sensitive_file_reads
+from ...core.static_analysis.python_shell_semantics import (
+    PythonShellLiteralCandidate,
+    find_python_shell_candidates,
+)
 from ...core.static_analysis.url_classifier import classify_url, extract_urls
 from ...data import DATA_DIR
 from ...threats.threats import ThreatMapping
@@ -1961,7 +1965,8 @@ class StaticAnalyzer(BaseAnalyzer):
 
             is_doc = self._is_doc_file(skill_file.relative_path)
             scan_context = SignatureScanContext(content)
-            named_shell_candidates = None
+            python_shell_candidates = None
+            sensitive_file_candidates = None
 
             for rule in rules:
                 # Skip rules scoped out of documentation files
@@ -1973,22 +1978,68 @@ class StaticAnalyzer(BaseAnalyzer):
                     scan_context=scan_context,
                 )
                 if (
-                    rule.id == "COMMAND_INJECTION_SHELL_TRUE"
+                    rule.id in {"COMMAND_INJECTION_EVAL", "COMMAND_INJECTION_SHELL_TRUE"}
                     and skill_file.file_type == "python"
                     and self._is_rule_enabled(rule.id)
                 ):
-                    if named_shell_candidates is None:
-                        named_shell_candidates = find_named_shell_true_calls(content)
-                    regex_match_lines = {match.get("line_number") for match in matches}
-                    for candidate in named_shell_candidates:
-                        if candidate.line_number in regex_match_lines:
-                            continue
+                    if python_shell_candidates is None:
+                        python_shell_candidates = find_python_shell_candidates(content)
+                    rule_candidates = (
+                        candidate for candidate in python_shell_candidates if candidate.rule_id == rule.id
+                    )
+                    for candidate in rule_candidates:
                         line = scan_context.lines[candidate.line_number - 1]
-                        if any(pattern.search(line) for pattern in rule.compiled_exclude_patterns):
+                        # COMMAND_INJECTION_EVAL's legacy exclusions are
+                        # line-wide prose heuristics.  They still own regex
+                        # matches, but must not suppress an AST-proven call
+                        # merely because a trailing comment resembles prose.
+                        if rule.id != "COMMAND_INJECTION_EVAL" and any(
+                            pattern.search(line) for pattern in rule.compiled_exclude_patterns
+                        ):
                             continue
                         leading_space = len(line) - len(line.lstrip())
                         relative_start = max(0, candidate.start_column - leading_space)
                         relative_end = min(len(line.strip()), candidate.end_column - leading_space)
+                        equivalent_spans = (
+                            (candidate.line_number, candidate.start_column, candidate.end_column),
+                            *getattr(candidate, "equivalent_regex_spans", ()),
+                        )
+
+                        def overlaps_semantic_evidence(match: dict[str, Any]) -> bool:
+                            match_line_number = match.get("line_number")
+                            match_start = match.get("match_start")
+                            match_end = match.get("match_end")
+                            if (
+                                match.get("pattern_index") is None
+                                or not isinstance(match_line_number, int)
+                                or not isinstance(match_start, int)
+                                or not isinstance(match_end, int)
+                                or not 1 <= match_line_number <= len(scan_context.lines)
+                            ):
+                                return False
+                            match_line = scan_context.lines[match_line_number - 1]
+                            match_leading_space = len(match_line) - len(match_line.lstrip())
+                            absolute_start = match_start + match_leading_space
+                            absolute_end = match_end + match_leading_space
+                            return any(
+                                span_line == match_line_number
+                                and span_start < absolute_end
+                                and absolute_start < span_end
+                                for span_line, span_start, span_end in equivalent_spans
+                            )
+
+                        if (
+                            rule.id == "COMMAND_INJECTION_EVAL" or isinstance(candidate, PythonShellLiteralCandidate)
+                        ) and any(overlaps_semantic_evidence(match) for match in matches):
+                            # Canonical spelled calls remain owned by the
+                            # legacy syntax-aware match. The semantic pass
+                            # supplements only patterns the regex cannot see.
+                            continue
+
+                        # Syntax-aware evidence wins over an equivalent broad
+                        # regex, including a raw regex hit inside a Python -c
+                        # payload whose displayed anchor is the outer call.
+                        matches = [match for match in matches if not overlaps_semantic_evidence(match)]
                         context_kind, polarity = scan_context.classify_match(
                             candidate.line_number - 1,
                             skill_file.relative_path,
@@ -2003,8 +2054,51 @@ class StaticAnalyzer(BaseAnalyzer):
                                 "pattern_index": None,
                                 "match_start": relative_start,
                                 "match_end": relative_end,
-                                "matched_pattern": "python_ast:named_shell_flag_is_true",
+                                "matched_pattern": candidate.matched_pattern,
                                 "matched_text": candidate.evidence,
+                                "file_path": skill_file.relative_path,
+                                "context_kind": context_kind,
+                                "polarity": polarity,
+                            }
+                        )
+                if (
+                    rule.id == "DATA_EXFIL_SENSITIVE_FILES"
+                    and skill_file.file_type == "python"
+                    and self._is_rule_enabled(rule.id)
+                ):
+                    if sensitive_file_candidates is None:
+                        sensitive_file_candidates = find_constructed_sensitive_file_reads(
+                            content,
+                            skill_file.relative_path,
+                        )
+                    regex_match_lines = {match.get("line_number") for match in matches}
+                    for path_candidate in sensitive_file_candidates:
+                        if path_candidate.line_number in regex_match_lines:
+                            continue
+                        line = scan_context.lines[path_candidate.line_number - 1]
+                        # Legacy exclusions only disambiguate raw regex matches.
+                        # The AST pass has independently proven that ``open``
+                        # receives an exact sensitive path in a read-only mode,
+                        # so alias-name substrings must not suppress that fact.
+                        leading_space = len(line) - len(line.lstrip())
+                        relative_start = max(0, path_candidate.start_column - leading_space)
+                        relative_end = min(len(line.strip()), path_candidate.end_column - leading_space)
+                        context_kind, polarity = scan_context.classify_match(
+                            path_candidate.line_number - 1,
+                            skill_file.relative_path,
+                            match_start=path_candidate.start_column,
+                            match_end=path_candidate.end_column,
+                            additional_active_match=any(pattern.search(line) for pattern in rule.compiled_patterns),
+                        )
+                        matches.append(
+                            {
+                                "line_number": path_candidate.line_number,
+                                "line_content": line.strip(),
+                                "pattern_index": None,
+                                "match_start": relative_start,
+                                "match_end": relative_end,
+                                "matched_pattern": "python_ast:constructed_sensitive_file_read",
+                                "matched_text": path_candidate.path,
                                 "file_path": skill_file.relative_path,
                                 "context_kind": context_kind,
                                 "polarity": polarity,
@@ -2014,7 +2108,15 @@ class StaticAnalyzer(BaseAnalyzer):
                     if rule.id == "RESOURCE_ABUSE_INFINITE_LOOP" and skill_file.file_type == "python":
                         if self._python_loop_has_exit(content, match["line_number"]):
                             continue
-                    findings.append(self._create_finding_from_match(rule, match))
+                    finding = self._create_finding_from_match(rule, match)
+                    if match.get("matched_pattern") == "python_ast:constructed_sensitive_file_read":
+                        finding.metadata.update(
+                            {
+                                "detection_method": "ast_constructed_sensitive_file_read",
+                                "resolved_path": match.get("matched_text"),
+                            }
+                        )
+                    findings.append(finding)
 
         return findings
 
@@ -4289,6 +4391,8 @@ class StaticAnalyzer(BaseAnalyzer):
                 f.snippet or "",
                 f.metadata.get("matched_pattern"),
                 f.metadata.get("matched_text"),
+                f.metadata.get("signature_match_start"),
+                f.metadata.get("signature_match_end"),
             )
             if key in seen:
                 continue
@@ -4367,8 +4471,12 @@ class StaticAnalyzer(BaseAnalyzer):
             else None
         )
 
+        occurrence = (
+            f"{match.get('file_path', 'unknown')}:{match.get('line_number', 0)}:"
+            f"{signature_match_start}:{signature_match_end}"
+        )
         return Finding(
-            id=self._generate_finding_id(rule.id, f"{match.get('file_path', 'unknown')}:{match.get('line_number', 0)}"),
+            id=self._generate_finding_id(rule.id, occurrence),
             rule_id=rule.id,
             category=rule.category,
             severity=rule.severity,

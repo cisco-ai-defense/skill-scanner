@@ -319,7 +319,13 @@ def _build_signature_line_contexts(lines: Sequence[str]) -> tuple[tuple[bool, bo
 def _signature_line_contexts(content: str) -> list[tuple[bool, bool]]:
     """Return structural context flags without retaining source text."""
 
-    return list(_build_signature_line_contexts(content.split("\n")))
+    return list(_build_signature_line_contexts(_split_universal_newlines(content)))
+
+
+def _split_universal_newlines(content: str) -> tuple[str, ...]:
+    """Match Python's LF/CRLF/CR source lines while preserving a trailing line."""
+
+    return tuple(content.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -343,7 +349,7 @@ class SignatureScanContext:
     )
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "lines", tuple(self.content.split("\n")))
+        object.__setattr__(self, "lines", _split_universal_newlines(self.content))
 
     def line_context(self, zero_based_line: int) -> tuple[bool, bool]:
         """Return cached fence/section flags for one physical line."""
@@ -557,14 +563,16 @@ class SecurityRule:
                 start_line = content.count("\n", 0, match.start()) + 1
                 snippet = lines[start_line - 1].strip() if 0 <= start_line - 1 < len(lines) else ""
                 line_start = content.rfind("\n", 0, match.start()) + 1
-                relative_start = match.start() - line_start
-                relative_end = min(len(snippet), match.end() - line_start)
                 context_line = lines[start_line - 1]
-                context_end = min(len(context_line), max(relative_start, match.end() - line_start))
+                leading_space = len(context_line) - len(context_line.lstrip())
+                source_start = match.start() - line_start
+                relative_start = max(0, source_start - leading_space)
+                relative_end = min(len(snippet), max(relative_start, match.end() - line_start - leading_space))
+                context_end = min(len(context_line), max(source_start, match.end() - line_start))
                 context_kind, polarity = scan_context.classify_match(
                     start_line - 1,
                     file_path,
-                    match_start=relative_start,
+                    match_start=source_start,
                     match_end=context_end,
                     additional_active_match=False,
                 )
