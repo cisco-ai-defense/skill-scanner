@@ -59,7 +59,10 @@ from ...core.rules.yara_scanner import YaraScanner
 from ...core.scan_policy import ScanPolicy
 from ...core.static_analysis.comment_stripping import comment_stripped_lines
 from ...core.static_analysis.python_sensitive_file_reads import find_constructed_sensitive_file_reads
-from ...core.static_analysis.python_shell_semantics import find_python_shell_candidates
+from ...core.static_analysis.python_shell_semantics import (
+    PythonShellLiteralCandidate,
+    find_python_shell_candidates,
+)
 from ...core.static_analysis.url_classifier import classify_url, extract_urls
 from ...data import DATA_DIR
 from ...threats.threats import ThreatMapping
@@ -2025,12 +2028,12 @@ class StaticAnalyzer(BaseAnalyzer):
                                 for span_line, span_start, span_end in equivalent_spans
                             )
 
-                        if rule.id == "COMMAND_INJECTION_EVAL" and any(
-                            overlaps_semantic_evidence(match) for match in matches
-                        ):
-                            # A canonical spelled exec call remains owned by
-                            # the legacy syntax-aware match. The semantic pass
-                            # supplements only dynamically constructed calls.
+                        if (
+                            rule.id == "COMMAND_INJECTION_EVAL" or isinstance(candidate, PythonShellLiteralCandidate)
+                        ) and any(overlaps_semantic_evidence(match) for match in matches):
+                            # Canonical spelled calls remain owned by the
+                            # legacy syntax-aware match. The semantic pass
+                            # supplements only patterns the regex cannot see.
                             continue
 
                         # Syntax-aware evidence wins over an equivalent broad
