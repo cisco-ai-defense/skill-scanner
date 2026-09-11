@@ -93,6 +93,7 @@ jobs:
     permissions:
       security-events: write
       contents: read
+      actions: read
     steps:
       - name: Checkout caller repository
         uses: actions/checkout@v4
