@@ -694,3 +694,31 @@ severity_overrides: []
 #     - LAZY_LOAD_DEEP_NESTING     # We allow deep nesting
 #     - ARCHIVE_FILE_DETECTED      # Archives are expected in our skills
 disabled_rules: []
+
+# ---------------------------------------------------------------------------
+# Scoped suppressions – silence or downgrade a rule for named skills or paths
+# ---------------------------------------------------------------------------
+# Unlike `disabled_rules`, which switches a rule off for every skill in the run,
+# each entry here applies only where its selectors match.  Every entry needs at
+# least one selector (`skills` and/or `paths`); when both are given, both must
+# match.  Suppressed findings are kept out of verdicts, counters, and exit codes
+# but stay visible as `suppressed_findings` in JSON and as SARIF suppressions.
+#
+# `skills` globs match the skill name; `paths` globs match the file path
+# relative to the skill directory.  `*` and `?` do not cross a `/`; use `**` to
+# match any number of directories.
+#
+# Example:
+#   suppressions:
+#     - rule_id: HOMOGLYPH_ATTACK
+#       skills: ["docs-translator"]
+#       reason: "Skill legitimately contains Cyrillic prose"
+#       expires: 2026-12-31          # optional; the entry is inert afterwards
+#     - rule_id: ARCHIVE_FILE_DETECTED
+#       paths: ["**/fixtures/**/*.zip"]
+#       reason: "Test fixtures"
+#     - rule_id: PDF_STRUCTURAL_THREAT
+#       skills: ["report-builder"]
+#       severity: LOW                # downgrade instead of hiding
+#       reason: "Reviewed; downgraded, not hidden"
+suppressions: []

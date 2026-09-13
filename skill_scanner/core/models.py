@@ -221,6 +221,10 @@ class ScanResult:
     skill_name: str
     skill_directory: str
     findings: list[Finding] = field(default_factory=list)
+    # Findings removed by a scoped policy suppression.  Kept out of ``findings``
+    # so verdicts, counters, and exit codes reflect the post-suppression set,
+    # but retained here (and in SARIF) so the decision stays auditable.
+    suppressed_findings: list[Finding] = field(default_factory=list)
     scan_duration_seconds: float = 0.0
     analyzers_used: list[str] = field(default_factory=list)
     analyzers_failed: list[dict[str, str]] = field(default_factory=list)
@@ -278,6 +282,8 @@ class ScanResult:
             result["analyzers_failed"] = self.analyzers_failed
         if self.llm_usage:
             result["llm_usage"] = self.llm_usage
+        if self.suppressed_findings:
+            result["suppressed_findings"] = [f.to_dict() for f in self.suppressed_findings]
         return result
 
 

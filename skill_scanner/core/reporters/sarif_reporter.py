@@ -75,8 +75,9 @@ class SARIFReporter:
 
     def _generate_from_scan_result(self, result: ScanResult) -> dict[str, Any]:
         """Generate SARIF from a single ScanResult."""
-        rules = self._extract_rules(result.findings)
-        results = self._convert_findings(result.findings, result.skill_directory)
+        findings = [*result.findings, *result.suppressed_findings]
+        rules = self._extract_rules(findings)
+        results = self._convert_findings(findings, result.skill_directory)
 
         return {
             "$schema": self.SARIF_SCHEMA,
@@ -100,6 +101,7 @@ class SARIFReporter:
         all_findings = []
         for scan_result in report.scan_results:
             all_findings.extend(scan_result.findings)
+            all_findings.extend(scan_result.suppressed_findings)
         all_findings.extend(report.cross_skill_findings)
 
         rules = self._extract_rules(all_findings)
@@ -107,7 +109,10 @@ class SARIFReporter:
         # Create results with proper artifact locations
         all_results = []
         for scan_result in report.scan_results:
-            results = self._convert_findings(scan_result.findings, scan_result.skill_directory)
+            results = self._convert_findings(
+                [*scan_result.findings, *scan_result.suppressed_findings],
+                scan_result.skill_directory,
+            )
             all_results.extend(results)
         all_results.extend(self._convert_findings(report.cross_skill_findings))
 
@@ -252,9 +257,35 @@ class SARIFReporter:
                 "primaryLocationLineHash": finding.id,
             }
 
+            # A finding removed by a scoped policy suppression is reported as a
+            # suppressed SARIF result rather than omitted, so consumers such as
+            # GitHub Code Scanning show it as dismissed with its justification
+            # instead of silently losing it.
+            suppression = (finding.metadata or {}).get("suppression")
+            if isinstance(suppression, dict) and not suppression.get("severity"):
+                results.append(self._with_suppression(result, suppression))
+                continue
+
             results.append(result)
 
         return results
+
+    @staticmethod
+    def _with_suppression(result: dict[str, Any], suppression: dict[str, Any]) -> dict[str, Any]:
+        """Attach a SARIF ``suppressions`` entry describing a policy suppression."""
+        justification = str(suppression.get("reason") or "").strip()
+        selector = suppression.get("matched_skill") or suppression.get("matched_path") or ""
+        if not justification:
+            justification = (
+                f"Suppressed by scan policy (selector: {selector})" if selector else "Suppressed by scan policy"
+            )
+        result["suppressions"] = [
+            {
+                "kind": "external",
+                "justification": justification,
+            }
+        ]
+        return result
 
     def save_report(self, data: ScanResult | Report, output_path: str):
         """

@@ -455,3 +455,58 @@ class TestAnalyzerStatusInJSON:
         # JSON should be clean
         data = json.loads(stdout)
         assert "skill_name" in data
+
+
+# =============================================================================
+# Scoped Suppression Tests
+# =============================================================================
+class TestScopedSuppressions:
+    """A suppressed finding must not drive the exit code, but must stay visible."""
+
+    @staticmethod
+    def _policy(tmp_path: Path) -> Path:
+        policy_file = tmp_path / "scoped.yaml"
+        policy_file.write_text(
+            "suppressions:\n"
+            "  - rule_id: DATA_EXFIL_HTTP_POST\n"
+            '    skills: ["data-exfiltrator"]\n'
+            '    reason: "Reviewed in ticket-1234"\n'
+            "  - rule_id: COMMAND_INJECTION_EVAL\n"
+            '    skills: ["data-exfiltrator"]\n'
+            '    reason: "Reviewed in ticket-1234"\n',
+            encoding="utf-8",
+        )
+        return policy_file
+
+    def test_suppressed_critical_does_not_fail_the_build(self, test_skills_dir, tmp_path):
+        skill = test_skills_dir / "malicious" / "exfiltrator"
+        args = ["scan", str(skill), "--format", "json", "--fail-on-severity", "critical"]
+
+        _, _, baseline_code = run_cli(args)
+        assert baseline_code == 1, "the fixture must trip the CRITICAL gate without a policy"
+
+        stdout, _, code = run_cli([*args, "--policy", str(self._policy(tmp_path))])
+        assert code == 0
+
+        data = json.loads(stdout)
+        assert all(f["rule_id"] != "DATA_EXFIL_HTTP_POST" for f in data["findings"])
+        assert "DATA_EXFIL_HTTP_POST" in {f["rule_id"] for f in data["suppressed_findings"]}
+        assert data["scan_metadata"]["suppressions"]["suppressed"] == 2
+
+    def test_json_stays_clean_with_suppressions(self, test_skills_dir, tmp_path):
+        skill = test_skills_dir / "malicious" / "exfiltrator"
+        stdout, _, _ = run_cli(
+            ["scan", str(skill), "--format", "json", "--policy", str(self._policy(tmp_path))],
+        )
+        # Parses as a single JSON document — no status text leaked onto stdout.
+        assert json.loads(stdout)["skill_name"] == "data-exfiltrator"
+
+    def test_sarif_reports_the_suppression(self, test_skills_dir, tmp_path):
+        skill = test_skills_dir / "malicious" / "exfiltrator"
+        stdout, _, _ = run_cli(
+            ["scan", str(skill), "--format", "sarif", "--policy", str(self._policy(tmp_path))],
+        )
+        results = json.loads(stdout)["runs"][0]["results"]
+        suppressed = [r for r in results if "suppressions" in r]
+        assert {r["ruleId"] for r in suppressed} == {"DATA_EXFIL_HTTP_POST", "COMMAND_INJECTION_EVAL"}
+        assert suppressed[0]["suppressions"][0]["justification"] == "Reviewed in ticket-1234"

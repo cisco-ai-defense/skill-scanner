@@ -65,6 +65,18 @@ disabled_rules:
   - MANIFEST_DESCRIPTION_TOO_LONG
 ```
 
+### Silence a rule for one skill only
+
+```yaml
+suppressions:
+  - rule_id: HOMOGLYPH_ATTACK
+    skills: ["docs-translator"]
+    reason: "Skill legitimately contains Cyrillic prose"
+```
+
+The rule keeps firing on every other skill. Use this instead of widening
+`disabled_rules` when only one skill produces the false positive.
+
 ### Override a rule severity
 
 ```yaml
@@ -333,5 +345,33 @@ disabled_rules:
   - LAZY_LOAD_DEEP_NESTING
   - ARCHIVE_FILE_DETECTED
 ```
+
+</details>
+
+<details>
+<summary><strong>suppressions</strong> — Silence or downgrade a rule for named skills or paths</summary>
+
+| Field | Type | Default | Affects |
+|-------|------|---------|---------|
+| rule_id | str | required | The rule the entry applies to |
+| skills | list[str] | `[]` | Globs matched against the skill name |
+| paths | list[str] | `[]` | Globs matched against the skill-relative file path |
+| reason | str | `""` | Justification, surfaced in JSON and SARIF |
+| severity | str | none | Downgrade to this severity instead of suppressing |
+| expires | date | none | `YYYY-MM-DD`; the entry is inert afterwards |
+
+```yaml
+suppressions:
+  - rule_id: ARCHIVE_FILE_DETECTED
+    paths: ["**/fixtures/**/*.zip"]
+    reason: "Test fixtures"
+    expires: 2026-12-31
+```
+
+At least one selector is required; when both are given, both must match. `*`
+does not cross a `/` — use `**` for any depth. Suppressed findings leave
+`findings` (so verdicts and exit codes ignore them) but remain visible as
+`suppressed_findings` and as SARIF suppressions. Cross-skill findings are out of
+scope.
 
 </details>

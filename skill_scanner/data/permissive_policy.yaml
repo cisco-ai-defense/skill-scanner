@@ -595,3 +595,10 @@ disabled_rules:
   - embedded_shebang_in_binary
   # JS/TS network calls are extremely common; disable in permissive to minimise FPs
   - DATA_EXFIL_JS_NETWORK
+
+# ---------------------------------------------------------------------------
+# Scoped suppressions – narrow an exception to named skills or paths
+# ---------------------------------------------------------------------------
+# Preferred over widening `disabled_rules` when a rule is only noisy in one
+# place; see default_policy.yaml for the entry shape.
+suppressions: []

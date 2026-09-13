@@ -38,6 +38,7 @@ Every organisation has a different security bar. A **scan policy** captures what
   - [finding_output](#finding_output)
   - [severity_overrides](#severity_overrides)
   - [disabled_rules](#disabled_rules)
+  - [suppressions](#suppressions)
 - [Interactive Configurator (TUI)](#interactive-configurator-tui)
 - [Examples](#examples)
 
@@ -181,7 +182,7 @@ Then edit the generated file to add your trusted domains, extra benign dotfiles,
 
 - **Lists replace, don't append.** If you override `known_installer_domains`, include *all* domains you want — the default list is discarded.
 - **Use `severity_overrides` to tune, not disable.** Instead of disabling a noisy rule, consider demoting it to `LOW` or `INFO`.
-- **Use `disabled_rules` sparingly.** Disabled rules produce zero findings, which means zero visibility.
+- **Use `disabled_rules` sparingly.** Disabled rules produce zero findings, which means zero visibility. When a rule is only wrong in one place, reach for `suppressions` instead — it scopes the exception to the skills or paths it was reviewed for and keeps the rule live everywhere else.
 - **Version your policies.** Use `policy_version` and commit policies to your repo so changes are tracked.
 - **Keep ownership clean.** Use policy YAML for allowlists/thresholds/scoping, keep YARA/signatures for detection logic, and avoid duplicating the same decision in multiple layers.
 - **Keep optional packs explicit.** The core pack is always present; enable ATR
@@ -192,7 +193,7 @@ Then edit the generated file to add your trusted domains, extra benign dotfiles,
 
 - **ID conventions:** Keep signature IDs in `SCREAMING_SNAKE_CASE` (e.g. `DATA_EXFIL_HTTP_POST`) and YARA findings as `YARA_<rule_name>` (e.g. `YARA_code_execution_generic`).
 - **Severity strategy:** Use detector defaults for baseline severity; apply org-specific risk posture via `severity_overrides`.
-- **Scoping strategy:** Use `rule_scoping` for context-aware enablement (docs/code/SKILL.md), not `disabled_rules`.
+- **Scoping strategy:** Use `rule_scoping` for context-aware enablement (docs/code/SKILL.md), not `disabled_rules`. For an exception that belongs to one skill or one path rather than to a file category, use `suppressions`.
 - **Suppression strategy:** Put known placeholders and safe cleanup paths in policy (`credentials`, `system_cleanup`) instead of hardcoding in analyzers.
 
 ---
@@ -639,6 +640,63 @@ disabled_rules:
 **Impact:** Disabled rules are never evaluated. Use sparingly — prefer `severity_overrides` to demote rather than silence.
 
 **Important:** Do not list a rule in both `disabled_rules` and `rule_scoping`. If a rule is disabled, scoping entries for that rule are ignored.
+
+</details>
+
+<details>
+<summary>suppressions</summary>
+
+Silence — or downgrade — a rule for the skills and paths it was reviewed for,
+instead of switching it off for every skill in the run.
+
+```yaml
+suppressions:
+  - rule_id: HOMOGLYPH_ATTACK
+    skills: ["docs-translator"]
+    reason: "Skill legitimately contains Cyrillic prose"
+    expires: 2026-12-31
+
+  - rule_id: ARCHIVE_FILE_DETECTED
+    paths: ["**/fixtures/**/*.zip"]
+    reason: "Test fixtures"
+
+  - rule_id: PDF_STRUCTURAL_THREAT
+    skills: ["report-builder"]
+    paths: ["assets/*.pdf"]
+    severity: LOW
+    reason: "Reviewed; downgraded, not hidden"
+```
+
+**Fields:**
+
+| Field | Required | Meaning |
+|---|---|---|
+| `rule_id` | yes | The rule the entry applies to |
+| `skills` | one of the two | Globs matched against the skill name |
+| `paths` | one of the two | Globs matched against the file path, relative to the skill directory |
+| `reason` | no | Justification; surfaced in JSON and as the SARIF suppression justification |
+| `severity` | no | Downgrade to this severity and keep the finding, instead of suppressing it |
+| `expires` | no | ISO date (`YYYY-MM-DD`); after it the entry is inert and a warning is logged |
+
+**Matching:** patterns within one selector are ORed; when both `skills` and
+`paths` are given, both must match. `*` and `?` never cross a `/` — use `**` to
+span directories. Matching is case-insensitive and Windows separators are
+normalized.
+
+**Every entry needs at least one selector.** A selector-less entry is rejected at
+load time: it would be indistinguishable from `disabled_rules`.
+
+**Impact:** A suppressed finding is removed from `findings`, so it does not
+affect the verdict, the severity counters, or the exit code. It is *not*
+discarded:
+
+- it appears under `suppressed_findings` in JSON output,
+- the scan metadata gains a `suppressions` summary with per-entry counts,
+- SARIF emits it as a suppressed result (`"suppressions": [{"kind": "external", …}]`),
+  so GitHub Code Scanning shows it as dismissed rather than losing it.
+
+**Limitation:** cross-skill findings are never suppressed by a scoped entry —
+they have no owning skill and no real file path. Use `disabled_rules` for those.
 
 </details>
 

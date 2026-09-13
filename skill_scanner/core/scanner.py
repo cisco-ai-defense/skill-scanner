@@ -41,6 +41,7 @@ from .extractors.content_extractor import ContentExtractor
 from .loader import SkillLoader, SkillLoadError
 from .models import Finding, Report, ScanResult, Severity, Skill, SkillManifest, ThreatCategory
 from .scan_policy import ScanPolicy
+from .suppressions import apply_suppressions, build_suppression_summary
 
 if TYPE_CHECKING:
     from .rule_registry import RuleRegistry
@@ -622,6 +623,11 @@ class SkillScanner:
         """
         start_time = time.time()
 
+        # Findings removed by scoped policy suppressions, accumulated across
+        # both enforcement points, plus the entries that were already expired.
+        suppressed_findings: list[Finding] = []
+        expired_suppressions: set[str] = set()
+
         # Pre-processing: Extract archives and add extracted files to skill
         extraction_result = self.content_extractor.extract_skill_archives(skill.files)
         if extraction_result.extracted_files:
@@ -723,6 +729,12 @@ class SkillScanner:
                 ]
             if self.policy.disabled_rules:
                 all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
+            # Scoped suppressions run here for the same reason as disabled_rules:
+            # a candidate the operator has already excluded must never reach CEL,
+            # so CEL decision counts only describe findings that could be emitted.
+            all_findings = self._apply_scoped_suppressions(
+                all_findings, skill.name, suppressed_findings, expired_suppressions
+            )
 
             # Phase 1.5: Bounded CEL decision layer.  It sees only concrete
             # deterministic candidates and runs before any LLM-based pass so
@@ -874,6 +886,11 @@ class SkillScanner:
             # Global safety net: enforce disabled_rules across ALL analyzers
             if self.policy.disabled_rules:
                 all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
+            # Same safety net for scoped suppressions, covering findings that
+            # only exist after the LLM phase.
+            all_findings = self._apply_scoped_suppressions(
+                all_findings, skill.name, suppressed_findings, expired_suppressions
+            )
 
             # Apply severity overrides from policy
             self._apply_severity_overrides(all_findings)
@@ -887,6 +904,8 @@ class SkillScanner:
             # Attach policy fingerprint metadata for traceability (policy-controlled).
             policy_meta: dict[str, Any] = self._policy_fingerprint_metadata()
             policy_meta["cel"] = cel_telemetry.to_dict()
+            if suppressed_findings:
+                policy_meta["suppressions"] = build_suppression_summary(suppressed_findings)
             policy_meta["rule_contract"] = {
                 "status": "failed" if contract_invalid_ids else "passed",
                 "schema_version": 2,
@@ -918,6 +937,7 @@ class SkillScanner:
             skill_name=skill.name,
             skill_directory=str(skill_directory.absolute()),
             findings=all_findings,
+            suppressed_findings=suppressed_findings,
             scan_duration_seconds=scan_duration,
             analyzers_used=analyzer_names,
             analyzers_failed=analyzers_failed,
@@ -1067,9 +1087,16 @@ class SkillScanner:
         ``metadata['adjudication']['demoted_to']``) are exempt — the
         adjudicator's INFO verdict is load-bearing for downstream verdict
         computation and must not be re-raised by a per-rule override.
+
+        Findings already re-rated by a scoped suppression are exempt too: the
+        scoped entry is the more specific decision and must win over the
+        rule-wide one.
         """
         for finding in findings:
-            if (finding.metadata or {}).get("adjudication", {}).get("demoted_to"):
+            metadata = finding.metadata or {}
+            if metadata.get("adjudication", {}).get("demoted_to"):
+                continue
+            if metadata.get("suppression", {}).get("severity"):
                 continue
             override = self.policy.get_severity_override(finding.rule_id)
             if override:
@@ -1077,6 +1104,42 @@ class SkillScanner:
                     finding.severity = Severity(override)
                 except (ValueError, KeyError):
                     logger.warning("Invalid severity override '%s' for rule %s", override, finding.rule_id)
+
+    def _apply_scoped_suppressions(
+        self,
+        findings: list[Finding],
+        skill_name: str,
+        suppressed: list[Finding],
+        expired: set[str],
+    ) -> list[Finding]:
+        """Apply ``policy.suppressions`` and collect what was removed.
+
+        Suppressed findings are appended to *suppressed* rather than discarded,
+        so the scan result can report them; expired entries are reported once
+        per scan through *expired*.
+
+        Args:
+            findings: Candidate findings for this skill.
+            skill_name: Name the ``skills`` selectors are matched against.
+            suppressed: Accumulator for removed findings, mutated in place.
+            expired: Accumulator for already-warned expired rule IDs.
+
+        Returns:
+            The findings that survive suppression, in their original order.
+        """
+        if not self.policy.suppressions:
+            return findings
+
+        outcome = apply_suppressions(findings, self.policy.suppressions, skill_name)
+        suppressed.extend(outcome.suppressed)
+        for rule_id in sorted(outcome.expired_rule_ids - expired):
+            expired.add(rule_id)
+            logger.warning(
+                "Scoped suppression for rule %s has expired and is no longer applied; "
+                "remove it or extend its 'expires' date",
+                rule_id,
+            )
+        return outcome.kept
 
     @staticmethod
     def _normalize_snippet(snippet: str | None) -> str:
@@ -1502,7 +1565,10 @@ class SkillScanner:
                         failure["analyzer"],
                         failure["error"],
                     )
-                # Apply policy filters to cross-skill findings (mirrors _scan_single_skill lines 279-283)
+                # Apply policy filters to cross-skill findings (mirrors _scan_single_skill lines 279-283).
+                # Scoped suppressions deliberately do not apply here: a cross-skill
+                # finding has no owning skill and its file_path is a sentinel, so no
+                # skills/paths selector can describe it.
                 if self.policy.disabled_rules:
                     all_cross_findings = [f for f in all_cross_findings if f.rule_id not in self.policy.disabled_rules]
                 self._apply_severity_overrides(all_cross_findings)

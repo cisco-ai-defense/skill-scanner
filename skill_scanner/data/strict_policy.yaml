@@ -336,3 +336,9 @@ severity_overrides:
     reason: "Strict mode flags bytecode distribution at medium"
 
 disabled_rules: []
+
+# ---------------------------------------------------------------------------
+# Scoped suppressions – narrow an exception to named skills or paths
+# ---------------------------------------------------------------------------
+# Strict mode ships none; see default_policy.yaml for the entry shape.
+suppressions: []

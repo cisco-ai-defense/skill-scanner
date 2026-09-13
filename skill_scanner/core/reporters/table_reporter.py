@@ -70,6 +70,8 @@ class TableReporter:
             ["Total Findings", len(result.findings)],
             ["Scan Duration", f"{result.scan_duration_seconds:.2f}s"],
         ]
+        if result.suppressed_findings:
+            summary_data.insert(4, ["Suppressed by Policy", len(result.suppressed_findings)])
         lines.append(tabulate(summary_data, tablefmt=self.format_style))
         lines.append("")
 

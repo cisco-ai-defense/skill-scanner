@@ -51,6 +51,7 @@ import yaml
 
 from ..utils.file_utils import FileValidationError, read_text_strict
 from .cel.models import CelMode
+from .suppressions import SuppressionRule, suppression_from_dict
 
 logger = logging.getLogger(__name__)
 
@@ -470,6 +471,9 @@ class ScanPolicy:
     finding_output: FindingOutputPolicy = field(default_factory=FindingOutputPolicy)
     severity_overrides: list[SeverityOverride] = field(default_factory=list)
     disabled_rules: set[str] = field(default_factory=set)
+    # Scoped suppressions: silence or downgrade a rule for named skills/paths
+    # instead of disabling it for every skill in the run.
+    suppressions: list[SuppressionRule] = field(default_factory=list)
 
     # -----------------------------------------------------------------------
     # Convenience helpers
@@ -638,6 +642,7 @@ class ScanPolicy:
         fo = d.get("finding_output", {})
 
         severity_overrides = [SeverityOverride(**ovr) for ovr in d.get("severity_overrides", [])]
+        suppressions = [suppression_from_dict(entry) for entry in d.get("suppressions", [])]
 
         cel_mode_value = cel_policy.get("mode", "off")
         # PyYAML's YAML 1.1 resolver treats an unquoted ``off`` as False.
@@ -791,6 +796,7 @@ class ScanPolicy:
             ),
             severity_overrides=severity_overrides,
             disabled_rules=set(d.get("disabled_rules", [])),
+            suppressions=suppressions,
         )
 
     def _to_dict(self) -> dict[str, Any]:
@@ -912,4 +918,5 @@ class ScanPolicy:
                 {"rule_id": o.rule_id, "severity": o.severity, "reason": o.reason} for o in self.severity_overrides
             ],
             "disabled_rules": sorted(self.disabled_rules),
+            "suppressions": [s.to_dict() for s in self.suppressions],
         }

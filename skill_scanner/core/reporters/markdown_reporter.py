@@ -100,6 +100,8 @@ class MarkdownReporter:
         lines.append(f"- **Medium:** {len(result.get_findings_by_severity(Severity.MEDIUM))}")
         lines.append(f"- **Low:** {len(result.get_findings_by_severity(Severity.LOW))}")
         lines.append(f"- **Info:** {len(result.get_findings_by_severity(Severity.INFO))}")
+        if result.suppressed_findings:
+            lines.append(f"- **Suppressed by policy:** {len(result.suppressed_findings)}")
         lines.append("")
 
         # Findings

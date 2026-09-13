@@ -241,6 +241,60 @@ def test_sarif_reporter_multi_skill_github_compat(report: Report):
         assert "fixes" not in result
 
 
+def _suppressed_result() -> ScanResult:
+    hidden = Finding(
+        id="FIND-004",
+        rule_id="HOMOGLYPH_ATTACK",
+        category=ThreatCategory.OBFUSCATION,
+        severity=Severity.HIGH,
+        title="Mixed-script text",
+        description="Non-ASCII prose read as obfuscation.",
+        file_path="docs/guide.md",
+        analyzer="static",
+        metadata={"suppression": {"rule_id": "HOMOGLYPH_ATTACK", "reason": "Cyrillic prose", "matched_skill": "docs"}},
+    )
+    return ScanResult(
+        skill_name="docs",
+        skill_directory="/tmp/docs",
+        findings=_sample_findings(),
+        suppressed_findings=[hidden],
+        timestamp=datetime(2026, 1, 2, 3, 4, 5),
+    )
+
+
+def test_sarif_reporter_marks_policy_suppressed_findings():
+    """A scoped suppression must be reported as dismissed, not dropped (issue: scoped suppressions)."""
+    data = json.loads(SARIFReporter().generate_report(_suppressed_result()))
+
+    results = data["runs"][0]["results"]
+    suppressed = [r for r in results if "suppressions" in r]
+    assert len(suppressed) == 1
+    assert suppressed[0]["ruleId"] == "HOMOGLYPH_ATTACK"
+    assert suppressed[0]["suppressions"] == [{"kind": "external", "justification": "Cyrillic prose"}]
+
+    # The rule definition must travel with it, or the ruleId dangles.
+    assert "HOMOGLYPH_ATTACK" in {rule["id"] for rule in data["runs"][0]["tool"]["driver"]["rules"]}
+    # Unsuppressed findings are untouched.
+    assert all("suppressions" not in r for r in results if r["ruleId"] != "HOMOGLYPH_ATTACK")
+
+
+def test_sarif_reporter_emits_no_suppressions_by_default(scan_result: ScanResult):
+    data = json.loads(SARIFReporter().generate_report(scan_result))
+    assert all("suppressions" not in result for result in data["runs"][0]["results"])
+
+
+def test_json_reporter_omits_suppressed_findings_when_none(scan_result: ScanResult):
+    data = json.loads(JSONReporter().generate_report(scan_result))
+    assert "suppressed_findings" not in data
+
+
+def test_json_reporter_includes_suppressed_findings_when_present():
+    data = json.loads(JSONReporter().generate_report(_suppressed_result()))
+    assert [f["rule_id"] for f in data["suppressed_findings"]] == ["HOMOGLYPH_ATTACK"]
+    # Suppressed findings must not inflate the reported count.
+    assert data["findings_count"] == len(data["findings"])
+
+
 def _result_uris(sarif_output: str) -> list[str]:
     data = json.loads(sarif_output)
     return [
