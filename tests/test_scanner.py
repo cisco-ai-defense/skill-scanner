@@ -800,3 +800,89 @@ class TestSymlinkedSkillDiscovery:
         assert report.total_skills_scanned == 1
         assert len(report.scan_results) == 1
         assert report.scan_results[0].skill_name == "diagnose"
+
+
+def test_same_issue_merge_does_not_undo_a_scoped_re_rating(example_skills_dir):
+    """A deliberate re-rating must survive the merge that follows it.
+
+    ``_normalize_findings`` promotes the merge winner to the group's maximum
+    severity.  Left unguarded that silently restores the severity a scoped
+    suppression just lowered, while the finding's own audit record goes on
+    claiming the lower rating.
+    """
+    from skill_scanner.core.suppressions import suppression_from_dict
+
+    skill_dir = example_skills_dir / "safe" / "simple-formatter"
+    static_high = _mk_finding(
+        rule_id="RULE_STATIC_HIGH",
+        category=ThreatCategory.COMMAND_INJECTION,
+        severity=Severity.HIGH,
+        snippet="subprocess.run(cmd, shell=True)",
+        analyzer="static",
+    )
+    meta_medium = _mk_finding(
+        rule_id="META_VALIDATED",
+        category=ThreatCategory.COMMAND_INJECTION,
+        severity=Severity.MEDIUM,
+        snippet="subprocess.run(cmd, shell=True)",
+        analyzer="meta_analyzer",
+    )
+
+    policy = ScanPolicy.default()
+    policy.finding_output.dedupe_exact_findings = False
+    policy.finding_output.dedupe_same_issue_per_location = True
+    policy.suppressions = [
+        suppression_from_dict({"rule_id": "META_VALIDATED", "skills": ["*"], "severity": "LOW", "reason": "Reviewed"})
+    ]
+
+    scanner = SkillScanner(
+        analyzers=[
+            _StubAnalyzer("a1", [static_high], policy=policy),
+            _StubAnalyzer("a2", [meta_medium], policy=policy),
+        ],
+        policy=policy,
+    )
+    result = scanner.scan_skill(skill_dir)
+
+    assert len(result.findings) == 1
+    kept = result.findings[0]
+    assert kept.rule_id == "META_VALIDATED"
+    assert kept.severity == Severity.LOW
+    assert kept.metadata["suppression"]["previous_severity"] == "MEDIUM"
+    assert "deduped_original_severity" not in kept.metadata
+
+
+def test_same_issue_merge_does_not_undo_an_adjudicator_demotion(example_skills_dir):
+    """The adjudicator's verdict is exempt from severity overrides; the merge must agree."""
+    skill_dir = example_skills_dir / "safe" / "simple-formatter"
+    static_high = _mk_finding(
+        rule_id="RULE_STATIC_HIGH",
+        category=ThreatCategory.COMMAND_INJECTION,
+        severity=Severity.HIGH,
+        snippet="subprocess.run(cmd, shell=True)",
+        analyzer="static",
+    )
+    demoted = _mk_finding(
+        rule_id="META_VALIDATED",
+        category=ThreatCategory.COMMAND_INJECTION,
+        severity=Severity.INFO,
+        snippet="subprocess.run(cmd, shell=True)",
+        analyzer="meta_analyzer",
+    )
+    demoted.metadata["adjudication"] = {"demoted_to": "INFO"}
+
+    policy = ScanPolicy.default()
+    policy.finding_output.dedupe_exact_findings = False
+    policy.finding_output.dedupe_same_issue_per_location = True
+
+    scanner = SkillScanner(
+        analyzers=[
+            _StubAnalyzer("a1", [static_high], policy=policy),
+            _StubAnalyzer("a2", [demoted], policy=policy),
+        ],
+        policy=policy,
+    )
+    result = scanner.scan_skill(skill_dir)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].severity == Severity.INFO

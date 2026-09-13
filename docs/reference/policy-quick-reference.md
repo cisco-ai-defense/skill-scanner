@@ -349,7 +349,7 @@ disabled_rules:
 </details>
 
 <details>
-<summary><strong>suppressions</strong> — Silence or downgrade a rule for named skills or paths</summary>
+<summary><strong>suppressions</strong> — Silence or re-rate a rule for named skills or paths</summary>
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
@@ -357,7 +357,7 @@ disabled_rules:
 | skills | list[str] | `[]` | Globs matched against the skill name |
 | paths | list[str] | `[]` | Globs matched against the skill-relative file path |
 | reason | str | `""` | Justification, surfaced in JSON and SARIF |
-| severity | str | none | Downgrade to this severity instead of suppressing |
+| severity | str | none | Raise or lower the finding to this severity instead of suppressing it |
 | expires | date | none | `YYYY-MM-DD`; the entry is inert afterwards |
 
 ```yaml
@@ -365,7 +365,7 @@ suppressions:
   - rule_id: ARCHIVE_FILE_DETECTED
     paths: ["**/fixtures/**/*.zip"]
     reason: "Test fixtures"
-    expires: 2026-12-31
+    expires: 2030-12-31
 ```
 
 At least one selector is required; when both are given, both must match. `*`

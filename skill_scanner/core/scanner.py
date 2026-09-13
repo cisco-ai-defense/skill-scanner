@@ -231,6 +231,11 @@ class SkillScanner:
         # disables decisions but does not bypass pack validation.
         self.cel_gate = CelGate(resolved_cel_rules, self.policy.cel.mode)
 
+        # Expired scoped suppressions already warned about in the current scan.
+        # Scan-scoped rather than skill-scoped, so one stale entry produces one
+        # log line for a directory of skills, not one per skill.
+        self._warned_expired_suppressions: set[str] = set()
+
     @staticmethod
     def _cel_rules_from_registry(rule_registry: RuleRegistry | None) -> list[CelRule]:
         """Extract manifest CEL gates without coupling to pack loading.
@@ -356,6 +361,8 @@ class SkillScanner:
         """
         if not isinstance(skill_directory, Path):
             skill_directory = Path(skill_directory)
+
+        self._warned_expired_suppressions.clear()
 
         try:
             skill, load_telemetry = self._load_skill_for_scan(
@@ -624,9 +631,9 @@ class SkillScanner:
         start_time = time.time()
 
         # Findings removed by scoped policy suppressions, accumulated across
-        # both enforcement points, plus the entries that were already expired.
+        # both enforcement points.  Expired entries are warned about on the
+        # scanner instead, so a directory scan reports each one once.
         suppressed_findings: list[Finding] = []
-        expired_suppressions: set[str] = set()
 
         # Pre-processing: Extract archives and add extracted files to skill
         extraction_result = self.content_extractor.extract_skill_archives(skill.files)
@@ -732,9 +739,7 @@ class SkillScanner:
             # Scoped suppressions run here for the same reason as disabled_rules:
             # a candidate the operator has already excluded must never reach CEL,
             # so CEL decision counts only describe findings that could be emitted.
-            all_findings = self._apply_scoped_suppressions(
-                all_findings, skill.name, suppressed_findings, expired_suppressions
-            )
+            all_findings = self._apply_scoped_suppressions(all_findings, skill.name, suppressed_findings)
 
             # Phase 1.5: Bounded CEL decision layer.  It sees only concrete
             # deterministic candidates and runs before any LLM-based pass so
@@ -888,9 +893,7 @@ class SkillScanner:
                 all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
             # Same safety net for scoped suppressions, covering findings that
             # only exist after the LLM phase.
-            all_findings = self._apply_scoped_suppressions(
-                all_findings, skill.name, suppressed_findings, expired_suppressions
-            )
+            all_findings = self._apply_scoped_suppressions(all_findings, skill.name, suppressed_findings)
 
             # Apply severity overrides from policy
             self._apply_severity_overrides(all_findings)
@@ -924,7 +927,9 @@ class SkillScanner:
                     "demoted": len(demoted),
                     "audit": adjudicator_audit,
                 }
-            self._annotate_findings_with_policy(all_findings, policy_meta)
+            # Suppressed findings are first-class output, so they carry the same
+            # policy provenance as the ones that survived.
+            self._annotate_findings_with_policy([*all_findings, *suppressed_findings], policy_meta)
 
         finally:
             # Always cleanup temporary extraction directories, even if an
@@ -1110,19 +1115,19 @@ class SkillScanner:
         findings: list[Finding],
         skill_name: str,
         suppressed: list[Finding],
-        expired: set[str],
     ) -> list[Finding]:
         """Apply ``policy.suppressions`` and collect what was removed.
 
         Suppressed findings are appended to *suppressed* rather than discarded,
-        so the scan result can report them; expired entries are reported once
-        per scan through *expired*.
+        so the scan result can report them.  Each expired entry is warned about
+        once per scan: the set of already-warned rule IDs lives on the scanner
+        and is reset by ``scan_skill`` and ``scan_directory``, so a directory of
+        fifty skills does not repeat one deprecation notice fifty times.
 
         Args:
             findings: Candidate findings for this skill.
             skill_name: Name the ``skills`` selectors are matched against.
             suppressed: Accumulator for removed findings, mutated in place.
-            expired: Accumulator for already-warned expired rule IDs.
 
         Returns:
             The findings that survive suppression, in their original order.
@@ -1132,14 +1137,30 @@ class SkillScanner:
 
         outcome = apply_suppressions(findings, self.policy.suppressions, skill_name)
         suppressed.extend(outcome.suppressed)
-        for rule_id in sorted(outcome.expired_rule_ids - expired):
-            expired.add(rule_id)
+        for rule_id in sorted(outcome.expired_rule_ids - self._warned_expired_suppressions):
+            self._warned_expired_suppressions.add(rule_id)
             logger.warning(
                 "Scoped suppression for rule %s has expired and is no longer applied; "
                 "remove it or extend its 'expires' date",
                 rule_id,
             )
         return outcome.kept
+
+    @staticmethod
+    def _is_re_rated(finding: Finding) -> bool:
+        """Return whether an explicit decision already set this finding's severity.
+
+        A scoped suppression carrying ``severity`` and an adjudicator demotion
+        are both deliberate re-ratings of one finding.  Merging it with a
+        same-issue sibling must not quietly restore the group's maximum: that
+        would undo the decision while leaving its audit record claiming it
+        still holds.  ``_apply_severity_overrides`` already exempts the
+        adjudicator's verdict for the same reason.
+        """
+        metadata = finding.metadata or {}
+        if metadata.get("suppression", {}).get("severity"):
+            return True
+        return bool(metadata.get("adjudication", {}).get("demoted_to"))
 
     @staticmethod
     def _normalize_snippet(snippet: str | None) -> str:
@@ -1228,7 +1249,9 @@ class SkillScanner:
                 ),
             )
             max_severity = max((f.severity for f in group), key=self._severity_rank)
-            if self._severity_rank(max_severity) > self._severity_rank(winner.severity):
+            if self._severity_rank(max_severity) > self._severity_rank(winner.severity) and not self._is_re_rated(
+                winner
+            ):
                 winner.metadata["deduped_original_severity"] = winner.severity.value
                 winner.severity = max_severity
 
@@ -1501,6 +1524,8 @@ class SkillScanner:
         if not skills_directory.exists():
             raise FileNotFoundError(f"Directory does not exist: {skills_directory}")
 
+        self._warned_expired_suppressions.clear()
+
         skill_dirs = self._find_skill_directories(skills_directory, recursive, lenient=lenient, skill_file=skill_file)
         report = Report()
 
@@ -1565,7 +1590,8 @@ class SkillScanner:
                         failure["analyzer"],
                         failure["error"],
                     )
-                # Apply policy filters to cross-skill findings (mirrors _scan_single_skill lines 279-283).
+                # Apply policy filters to cross-skill findings, mirroring the
+                # per-skill safety net in _scan_single_skill_with_context.
                 # Scoped suppressions deliberately do not apply here: a cross-skill
                 # finding has no owning skill and its file_path is a sentinel, so no
                 # skills/paths selector can describe it.

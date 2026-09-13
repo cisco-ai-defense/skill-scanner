@@ -630,22 +630,51 @@ suppressions:
         result = _scan_skill(make_skill, policy, _noisy_files("alpha"), name="alpha")
         assert _SUPPRESSED_RULE in _rule_ids(result)
 
-    def test_severity_entry_downgrades_and_keeps_the_finding(self, make_skill, tmp_path):
+    def test_severity_entry_re_rates_and_keeps_the_finding(self, make_skill, tmp_path):
+        """The audit record must survive both enforcement points intact.
+
+        Suppression runs twice on the linear scan path — before CEL and again
+        after the LLM phase.  Asserting only the final severity hides a second
+        pass that rewrites ``previous_severity`` with the already re-rated
+        value, which is what makes the original rating unrecoverable.
+        """
         policy = _policy_with_suppressions(
             f"""
 suppressions:
   - rule_id: {_SUPPRESSED_RULE}
     skills: ["alpha"]
     severity: LOW
-    reason: "Reviewed; downgraded, not hidden"
+    reason: "Reviewed; re-rated, not hidden"
 """,
             tmp_path,
         )
         result = _scan_skill(make_skill, policy, _noisy_files("alpha"), name="alpha")
 
         assert result.suppressed_findings == []
-        downgraded = _findings_for(result, _SUPPRESSED_RULE)
-        assert downgraded and all(f.severity == Severity.LOW for f in downgraded)
+        re_rated = _findings_for(result, _SUPPRESSED_RULE)
+        assert re_rated and all(f.severity == Severity.LOW for f in re_rated)
+        assert all(f.metadata["suppression"]["previous_severity"] == "HIGH" for f in re_rated)
+
+    def test_suppressed_findings_carry_the_policy_fingerprint(self, make_skill, tmp_path):
+        """Suppressed findings are first-class output and need the same provenance."""
+        policy = _policy_with_suppressions(
+            f"""
+suppressions:
+  - rule_id: {_SUPPRESSED_RULE}
+    skills: ["alpha"]
+    reason: "Reviewed"
+""",
+            tmp_path,
+        )
+        assert policy.finding_output.attach_policy_fingerprint is True
+
+        result = _scan_skill(make_skill, policy, _noisy_files("alpha"), name="alpha")
+
+        suppressed = result.suppressed_findings
+        assert suppressed
+        for finding in suppressed:
+            assert len(finding.metadata["scan_policy_fingerprint_sha256"]) == 64
+            assert finding.metadata["scan_policy_name"] == policy.policy_name
 
     def test_scoped_severity_beats_the_global_override(self, make_skill, tmp_path):
         """The more specific decision must win over the rule-wide one."""
@@ -709,3 +738,28 @@ suppressions:
         assert result.suppressed_findings == []
         assert "suppressions" not in result.scan_metadata
         assert "suppressed_findings" not in result.to_dict()
+
+    def test_expired_entry_warns_once_per_scan_not_once_per_skill(self, make_skill, tmp_path, caplog):
+        """A stale entry is one deprecation notice, not one per skill scanned."""
+        import logging
+
+        policy = _policy_with_suppressions(
+            f"""
+suppressions:
+  - rule_id: {_SUPPRESSED_RULE}
+    skills: ["*"]
+    reason: "Temporary"
+    expires: 2020-01-01
+""",
+            tmp_path,
+        )
+        make_skill(_noisy_files("alpha"), name="alpha")
+        make_skill(_noisy_files("beta"), name="beta")
+
+        scanner = SkillScanner(analyzers=build_core_analyzers(policy), policy=policy)
+        with caplog.at_level(logging.WARNING, logger="skill_scanner.core.scanner"):
+            report = scanner.scan_directory(tmp_path, recursive=True)
+
+        assert report.total_skills_scanned == 2
+        expired_warnings = [r for r in caplog.records if "has expired and is no longer applied" in r.getMessage()]
+        assert len(expired_warnings) == 1

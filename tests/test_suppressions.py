@@ -155,7 +155,7 @@ class TestApplySuppressions:
         outcome = apply_suppressions([_finding(rule_id="OTHER_RULE")], [rule], "alpha")
         assert len(outcome.kept) == 1
 
-    def test_severity_entry_downgrades_instead_of_hiding(self):
+    def test_severity_entry_re_rates_instead_of_hiding(self):
         rule = suppression_from_dict(
             {"rule_id": "NOISY_RULE", "skills": ["alpha"], "severity": "LOW", "reason": "reviewed"}
         )
@@ -165,7 +165,52 @@ class TestApplySuppressions:
         assert len(outcome.kept) == 1
         kept = outcome.kept[0]
         assert kept.severity == Severity.LOW
-        assert kept.metadata["suppression"]["downgraded_from"] == "HIGH"
+        assert kept.metadata["suppression"]["previous_severity"] == "HIGH"
+
+    def test_severity_entry_can_raise_as_well_as_lower(self):
+        """The field re-rates in either direction; the docs say so."""
+        rule = suppression_from_dict({"rule_id": "NOISY_RULE", "skills": ["alpha"], "severity": "CRITICAL"})
+        outcome = apply_suppressions([_finding()], [rule], "alpha")
+
+        assert outcome.kept[0].severity == Severity.CRITICAL
+        assert outcome.kept[0].metadata["suppression"]["previous_severity"] == "HIGH"
+
+    def test_an_entry_applies_at_most_once_to_a_finding(self):
+        """The scanner runs this twice per skill; the second pass must not re-apply.
+
+        Rewriting the record on the second pass would read the already re-rated
+        severity and destroy the only copy of the original rating.
+        """
+        rule = suppression_from_dict(
+            {"rule_id": "NOISY_RULE", "skills": ["alpha"], "severity": "LOW", "reason": "reviewed"}
+        )
+        first = apply_suppressions([_finding()], [rule], "alpha")
+        second = apply_suppressions(first.kept, [rule], "alpha")
+
+        kept = second.kept[0]
+        assert kept.severity == Severity.LOW
+        assert kept.metadata["suppression"]["previous_severity"] == "HIGH"
+
+    def test_second_pass_does_not_re_rate_an_adjudicator_demotion(self):
+        """The adjudicator runs between the two passes and its verdict must hold."""
+        rule = suppression_from_dict({"rule_id": "NOISY_RULE", "skills": ["alpha"], "severity": "LOW"})
+        first = apply_suppressions([_finding()], [rule], "alpha")
+
+        demoted = first.kept[0]
+        demoted.severity = Severity.INFO
+        demoted.metadata["adjudication"] = {"demoted_to": "INFO"}
+
+        second = apply_suppressions([demoted], [rule], "alpha")
+        assert second.kept[0].severity == Severity.INFO
+
+    def test_second_pass_does_not_re_suppress_an_already_suppressed_finding(self):
+        rule = suppression_from_dict({"rule_id": "NOISY_RULE", "skills": ["alpha"], "reason": "reviewed"})
+        first = apply_suppressions([_finding()], [rule], "alpha")
+        assert len(first.suppressed) == 1
+
+        second = apply_suppressions(first.suppressed, [rule], "alpha")
+        assert second.suppressed == []
+        assert len(second.kept) == 1
 
     def test_expired_entry_is_inert_and_reported(self):
         rule = suppression_from_dict({"rule_id": "NOISY_RULE", "skills": ["alpha"], "expires": "2020-01-01"})

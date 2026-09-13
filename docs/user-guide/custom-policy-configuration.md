@@ -646,7 +646,7 @@ disabled_rules:
 <details>
 <summary>suppressions</summary>
 
-Silence — or downgrade — a rule for the skills and paths it was reviewed for,
+Silence — or re-rate — a rule for the skills and paths it was reviewed for,
 instead of switching it off for every skill in the run.
 
 ```yaml
@@ -654,7 +654,7 @@ suppressions:
   - rule_id: HOMOGLYPH_ATTACK
     skills: ["docs-translator"]
     reason: "Skill legitimately contains Cyrillic prose"
-    expires: 2026-12-31
+    expires: 2030-12-31
 
   - rule_id: ARCHIVE_FILE_DETECTED
     paths: ["**/fixtures/**/*.zip"]
@@ -664,7 +664,7 @@ suppressions:
     skills: ["report-builder"]
     paths: ["assets/*.pdf"]
     severity: LOW
-    reason: "Reviewed; downgraded, not hidden"
+    reason: "Reviewed; re-rated, not hidden"
 ```
 
 **Fields:**
@@ -675,7 +675,7 @@ suppressions:
 | `skills` | one of the two | Globs matched against the skill name |
 | `paths` | one of the two | Globs matched against the file path, relative to the skill directory |
 | `reason` | no | Justification; surfaced in JSON and as the SARIF suppression justification |
-| `severity` | no | Downgrade to this severity and keep the finding, instead of suppressing it |
+| `severity` | no | Re-rate the finding to this severity — raise or lower — and keep it, instead of suppressing it |
 | `expires` | no | ISO date (`YYYY-MM-DD`); after it the entry is inert and a warning is logged |
 
 **Matching:** patterns within one selector are ORed; when both `skills` and

@@ -222,18 +222,33 @@ class TestScanPolicyCustomisation:
         with pytest.raises(SuppressionConfigError, match="unknown key"):
             ScanPolicy.from_yaml(policy_file)
 
-    def test_scoped_suppressions_replace_preset_entries(self, tmp_path):
-        """Deep-merge replaces lists wholesale, same as severity_overrides."""
-        policy_file = tmp_path / "scoped.yaml"
-        policy_file.write_text(
-            textwrap.dedent("""\
-            suppressions:
-              - rule_id: ONLY_THIS
-                skills: ["alpha"]
-        """)
-        )
-        policy = ScanPolicy.from_yaml(policy_file)
+    def test_scoped_suppressions_replace_preset_entries(self):
+        """An overlay discards the base's entries rather than adding to them.
+
+        Pinned against a non-empty base directly: every shipped preset has
+        ``suppressions: []``, and against an empty base replacement and
+        concatenation produce the same list.
+        """
+        base = {"suppressions": [{"rule_id": "FROM_PRESET", "skills": ["*"]}]}
+        override = {"suppressions": [{"rule_id": "ONLY_THIS", "skills": ["alpha"]}]}
+
+        policy = ScanPolicy._from_dict(ScanPolicy._deep_merge(base, override))
         assert [s.rule_id for s in policy.suppressions] == ["ONLY_THIS"]
+
+    @pytest.mark.parametrize("key", ["suppressions", "severity_overrides", "disabled_rules"])
+    def test_list_section_present_with_no_value_loads_as_empty(self, tmp_path, key):
+        """Commenting out a block leaves a bare key; that must not be an error.
+
+        PyYAML parses a valueless key as None and the deep-merge replaces the
+        packaged default with it, so a get-default cannot catch this. Raising
+        TypeError here would also escape the ValueError contract the API maps
+        to a 400.
+        """
+        policy_file = tmp_path / "bare.yaml"
+        policy_file.write_text(f"{key}:\n")
+
+        policy = ScanPolicy.from_yaml(policy_file)
+        assert not getattr(policy, key)
 
     def test_empty_policy_gets_all_defaults(self, tmp_path):
         """An empty override file should result in all defaults."""

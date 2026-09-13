@@ -696,7 +696,7 @@ severity_overrides: []
 disabled_rules: []
 
 # ---------------------------------------------------------------------------
-# Scoped suppressions – silence or downgrade a rule for named skills or paths
+# Scoped suppressions – silence or re-rate a rule for named skills or paths
 # ---------------------------------------------------------------------------
 # Unlike `disabled_rules`, which switches a rule off for every skill in the run,
 # each entry here applies only where its selectors match.  Every entry needs at
@@ -713,12 +713,12 @@ disabled_rules: []
 #     - rule_id: HOMOGLYPH_ATTACK
 #       skills: ["docs-translator"]
 #       reason: "Skill legitimately contains Cyrillic prose"
-#       expires: 2026-12-31          # optional; the entry is inert afterwards
+#       expires: 2030-12-31          # optional; the entry is inert afterwards
 #     - rule_id: ARCHIVE_FILE_DETECTED
 #       paths: ["**/fixtures/**/*.zip"]
 #       reason: "Test fixtures"
 #     - rule_id: PDF_STRUCTURAL_THREAT
 #       skills: ["report-builder"]
-#       severity: LOW                # downgrade instead of hiding
-#       reason: "Reviewed; downgraded, not hidden"
+#       severity: LOW                # re-rate (raise or lower) instead of hiding
+#       reason: "Reviewed; re-rated, not hidden"
 suppressions: []

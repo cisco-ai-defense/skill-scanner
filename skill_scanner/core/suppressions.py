@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Scoped rule suppressions: silence or downgrade a rule for named skills or paths.
+Scoped rule suppressions: silence or re-rate a rule for named skills or paths.
 
 ``ScanPolicy.disabled_rules`` is keyed on the rule ID alone, so a single false
 positive in one skill forces the rule off for every skill in the run.  A
@@ -42,13 +42,16 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 logger = logging.getLogger(__name__)
 
-# Bounded aggregate evidence, mirroring CelTelemetry.record_suppressed_candidate.
-# A suppressed finding is absent from the final finding list, so the summary is
-# the only proof of what a policy removed; it must not grow without bound.
+# Bounded aggregate evidence.  A suppressed finding is absent from the final
+# finding list, so the summary is the only proof of what a policy removed; it
+# must not grow without bound.  Unlike CelTelemetry.record_suppressed_candidate,
+# which treats overflow as a contract violation and raises, this summary sheds
+# the overflowing entries and reports ``truncated``: a scan must not fail
+# because an operator's policy matched a great many findings.
 _MAX_SUMMARY_ENTRIES = 4096
 
-# Severities a scoped entry may downgrade (or raise) a finding to.  SAFE is
-# excluded: it is a "no findings" sentinel, not a finding severity.
+# Severities a scoped entry may re-rate a finding to, in either direction.  SAFE
+# is excluded: it is a "no findings" sentinel, not a finding severity.
 _ASSIGNABLE_SEVERITIES = frozenset(
     {
         Severity.CRITICAL.value,
@@ -78,8 +81,8 @@ class SuppressionRule:
         paths: Globs matched against the skill-relative file path.  Empty means
             "any file".
         reason: Free-text justification, surfaced in SARIF and in the summary.
-        severity: When set, the finding is downgraded to this severity and kept
-            instead of being suppressed.
+        severity: When set, the finding is re-rated to this severity — lower or
+            higher — and kept instead of being suppressed.
         expires: Last day the entry is active.  An expired entry is inert.
     """
 
@@ -286,9 +289,16 @@ def apply_suppressions(
 ) -> SuppressionOutcome:
     """Split *findings* into kept and suppressed according to *rules*.
 
-    Findings matched by an entry that carries a ``severity`` are downgraded in
+    Findings matched by an entry that carries a ``severity`` are re-rated in
     place and remain in ``kept``; every other match moves to ``suppressed`` and
     is annotated with ``metadata['suppression']`` so reporters can show why.
+
+    **At most one entry applies to a finding, once.** The scanner runs this
+    twice per skill — before CEL and again after the LLM phase — and a finding
+    already carrying ``metadata['suppression']`` is passed through untouched.
+    Without that guard the second pass would rewrite the audit record using the
+    already re-rated severity, losing the original rating, and would undo an
+    adjudicator demotion made between the two passes.
 
     Cross-skill findings are never suppressed: they carry no owning skill and no
     real path, so no scoped selector can describe them.
@@ -308,7 +318,8 @@ def apply_suppressions(
 
     for finding in findings:
         candidates = by_rule_id.get(finding.rule_id)
-        if not candidates or finding.file_path == CROSS_SKILL_PATH:
+        already_applied = "suppression" in (finding.metadata or {})
+        if not candidates or finding.file_path == CROSS_SKILL_PATH or already_applied:
             outcome.kept.append(finding)
             continue
 
@@ -321,7 +332,7 @@ def apply_suppressions(
             if rule.expires is not None:
                 record["expires"] = rule.expires.isoformat()
             if rule.severity:
-                record["downgraded_from"] = finding.severity.value
+                record["previous_severity"] = finding.severity.value
                 record["severity"] = rule.severity
                 finding.metadata["suppression"] = record
                 finding.severity = Severity(rule.severity)
@@ -340,8 +351,9 @@ def build_suppression_summary(suppressed: list[Finding]) -> dict[str, object]:
     """Build bounded aggregate evidence for ``scan_metadata['suppressions']``.
 
     Suppressed findings are absent from the finding list, so aggregate counts
-    are the only proof of what a policy removed.  Entries are capped the same
-    way CEL caps its suppressed-candidate evidence.
+    are the only proof of what a policy removed.  Distinct entries are capped at
+    ``_MAX_SUMMARY_ENTRIES``; past the cap the summary sheds entries and sets
+    ``truncated``, rather than raising the way CEL does on the same overflow.
     """
     per_entry: dict[tuple[str, str, str, str], int] = {}
     truncated = False

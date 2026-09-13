@@ -471,7 +471,7 @@ class ScanPolicy:
     finding_output: FindingOutputPolicy = field(default_factory=FindingOutputPolicy)
     severity_overrides: list[SeverityOverride] = field(default_factory=list)
     disabled_rules: set[str] = field(default_factory=set)
-    # Scoped suppressions: silence or downgrade a rule for named skills/paths
+    # Scoped suppressions: silence or re-rate a rule for named skills/paths
     # instead of disabling it for every skill in the run.
     suppressions: list[SuppressionRule] = field(default_factory=list)
 
@@ -641,8 +641,13 @@ class ScanPolicy:
         la = d.get("llm_analysis", {})
         fo = d.get("finding_output", {})
 
-        severity_overrides = [SeverityOverride(**ovr) for ovr in d.get("severity_overrides", [])]
-        suppressions = [suppression_from_dict(entry) for entry in d.get("suppressions", [])]
+        # ``or []`` rather than a get-default: a key present with no value parses
+        # to None under PyYAML, and _deep_merge replaces the packaged default
+        # with it.  A commented-out block under a bare key is an ordinary edit
+        # and must load as empty, not raise TypeError past the ValueError
+        # contract the API maps to a 400.
+        severity_overrides = [SeverityOverride(**ovr) for ovr in d.get("severity_overrides") or []]
+        suppressions = [suppression_from_dict(entry) for entry in d.get("suppressions") or []]
 
         cel_mode_value = cel_policy.get("mode", "off")
         # PyYAML's YAML 1.1 resolver treats an unquoted ``off`` as False.
@@ -795,7 +800,7 @@ class ScanPolicy:
                 attach_policy_fingerprint=fo.get("attach_policy_fingerprint", True),
             ),
             severity_overrides=severity_overrides,
-            disabled_rules=set(d.get("disabled_rules", [])),
+            disabled_rules=set(d.get("disabled_rules") or []),
             suppressions=suppressions,
         )
 
