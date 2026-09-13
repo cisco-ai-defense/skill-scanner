@@ -360,3 +360,35 @@ def test_sarif_reporter_uri_unchanged_when_skill_outside_scan_root(scan_result: 
     assert "scripts/decoder.py" in uris
     for uri in uris:
         assert ".." not in uri
+
+
+def _report_with_suppressions() -> Report:
+    aggregate = Report(timestamp=datetime(2026, 1, 2, 3, 6, 0))
+    aggregate.add_scan_result(_suppressed_result())
+    aggregate.add_scan_result(
+        ScanResult(
+            skill_name="clean",
+            skill_directory="/tmp/clean",
+            findings=[],
+            timestamp=datetime(2026, 1, 2, 3, 5, 0),
+        )
+    )
+    return aggregate
+
+
+def test_markdown_multi_skill_reports_suppressed_counts():
+    """A directory scan must show the same audit information a single scan does."""
+    output = MarkdownReporter().generate_report(_report_with_suppressions())
+    assert "- **Suppressed by policy:** 1" in output
+
+
+def test_table_multi_skill_reports_suppressed_counts():
+    output = TableReporter().generate_report(_report_with_suppressions())
+    assert "Suppressed by Policy" in output
+    assert "Suppressed" in output
+
+
+def test_multi_skill_reports_unchanged_without_suppressions(report: Report):
+    """The column and the row appear only when something was suppressed."""
+    assert "Suppressed" not in MarkdownReporter().generate_report(report)
+    assert "Suppressed" not in TableReporter().generate_report(report)

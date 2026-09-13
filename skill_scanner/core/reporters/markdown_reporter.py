@@ -166,6 +166,9 @@ class MarkdownReporter:
         lines.append(f"- **Medium:** {report.medium_count}")
         lines.append(f"- **Low:** {report.low_count}")
         lines.append(f"- **Info:** {report.info_count}")
+        total_suppressed = sum(len(r.suppressed_findings) for r in report.scan_results)
+        if total_suppressed:
+            lines.append(f"- **Suppressed by policy:** {total_suppressed}")
         lines.append("")
 
         # Individual skill results
@@ -179,6 +182,8 @@ class MarkdownReporter:
             lines.append("")
             lines.append(f"- **Max Severity:** {result.max_severity.value}")
             lines.append(f"- **Findings:** {len(result.findings)}")
+            if result.suppressed_findings:
+                lines.append(f"- **Suppressed by policy:** {len(result.suppressed_findings)}")
             lines.append(f"- **Directory:** {result.skill_directory}")
             lines.append("")
 
