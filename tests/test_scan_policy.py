@@ -272,6 +272,47 @@ class TestScanPolicyCustomisation:
         policy = ScanPolicy.from_yaml(policy_file)
         assert getattr(policy, key) is not None
 
+    @pytest.mark.parametrize(
+        ("yaml_body", "check"),
+        [
+            # A list under a nested key, all entries commented out.
+            ("hidden_files:\n  benign_dotfiles:\n    # - '.gitignore'\n", lambda p: p.hidden_files.benign_dotfiles),
+            # A scalar under a nested key.
+            ("file_limits:\n  max_file_count:\n", lambda p: p.file_limits.max_file_count == 100),
+            # A regex list two levels down.
+            ("rule_scoping:\n  doc_filename_patterns:\n", lambda p: p.rule_scoping.doc_filename_patterns is not None),
+        ],
+    )
+    def test_nested_key_present_with_no_value_falls_back_to_the_default(self, tmp_path, yaml_body, check):
+        """The bare-key contract holds at any depth, not just the top level.
+
+        `_deep_merge` recurses into a section and then replaces a nested list or
+        scalar with the None PyYAML parsed, which the section's own
+        `get(key, default)` cannot catch because the key is present.
+        """
+        policy_file = tmp_path / "nested.yaml"
+        policy_file.write_text(yaml_body)
+
+        assert check(ScanPolicy.from_yaml(policy_file))
+
+    def test_falsy_values_are_not_treated_as_absent(self, tmp_path):
+        """Stripping nulls must not also strip a deliberate 0, false or empty list."""
+        policy_file = tmp_path / "falsy.yaml"
+        policy_file.write_text(
+            textwrap.dedent("""\
+            file_limits:
+              max_file_count: 0
+            pipeline:
+              demote_in_docs: false
+            disabled_rules: []
+        """)
+        )
+        policy = ScanPolicy.from_yaml(policy_file)
+
+        assert policy.file_limits.max_file_count == 0
+        assert policy.pipeline.demote_in_docs is False
+        assert policy.disabled_rules == set()
+
     def test_empty_policy_gets_all_defaults(self, tmp_path):
         """An empty override file should result in all defaults."""
         policy_file = tmp_path / "empty.yaml"

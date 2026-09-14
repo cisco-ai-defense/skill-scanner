@@ -59,6 +59,28 @@ _MAX_PATTERN_LENGTH = 1000
 _MAX_POLICY_SIZE_BYTES = 1024 * 1024
 
 
+def _drop_null_values(value: Any) -> Any:
+    """Recursively remove mapping keys whose value is ``None``.
+
+    Commenting a block out under its key is an ordinary edit, and PyYAML parses
+    the leftover bare key as ``None``.  Every read in ``_from_dict`` is written
+    as ``get(key, default)``, which does not fire for a key that is present, so
+    the ``None`` reaches code expecting a list, a set or a mapping and raises
+    ``TypeError`` or ``AttributeError`` — outside the ``ValueError`` contract
+    the API maps to a 400, and at any nesting depth.
+
+    Stripping the nulls at load makes a bare key behave exactly like an absent
+    one, which is what the reader intended, so every default applies as written.
+    Doing it here rather than per-read also keeps falsy-but-meaningful values
+    (``0``, ``false``, ``[]``) intact, which a blanket ``or default`` would not.
+    """
+    if isinstance(value, dict):
+        return {k: _drop_null_values(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_drop_null_values(v) for v in value]
+    return value
+
+
 def _safe_compile(pattern: str, flags: int = 0, *, max_length: int = _MAX_PATTERN_LENGTH) -> re.Pattern | None:
     if len(pattern) > max_length:
         logger.warning("Regex pattern too long (%d chars), skipping: %.60s...", len(pattern), pattern)
@@ -572,7 +594,7 @@ class ScanPolicy:
         raw_value = yaml.safe_load(content) or {}
         if not isinstance(raw_value, dict):
             raise ValueError("Policy YAML root must be a mapping")
-        raw: dict[str, Any] = raw_value
+        raw: dict[str, Any] = _drop_null_values(raw_value)
 
         # If this IS the default file, just parse directly
         is_default = os.path.realpath(os.fspath(path)) == os.path.realpath(os.fspath(_DEFAULT_POLICY_PATH))
@@ -625,12 +647,10 @@ class ScanPolicy:
 
     @classmethod
     def _from_dict(cls, d: dict[str, Any]) -> ScanPolicy:
-        # ``or {}`` rather than a get-default throughout: a key present with no
-        # value parses to None under PyYAML, and _deep_merge replaces the
-        # packaged default with that None because the existing value is not a
-        # dict.  Commenting a block out under its key is an ordinary edit and
-        # must load as empty, not crash with AttributeError past the ValueError
-        # contract the API maps to a 400.
+        # ``or {}`` rather than a get-default: ``from_yaml`` already strips
+        # None-valued keys at any depth via _drop_null_values, so this is the
+        # backstop for callers that build the dict themselves and hand it
+        # straight to _from_dict.
         hf = d.get("hidden_files") or {}
         pl = d.get("pipeline") or {}
         ys = d.get("rule_scoping") or {}
