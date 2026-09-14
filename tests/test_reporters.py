@@ -363,8 +363,23 @@ def test_sarif_reporter_uri_unchanged_when_skill_outside_scan_root(scan_result: 
 
 
 def _report_with_suppressions() -> Report:
+    """Two suppressed findings, so the count differs from every other column."""
+    suppressed = _suppressed_result()
+    second = Finding(
+        id="FIND-005",
+        rule_id="ARCHIVE_FILE_DETECTED",
+        category=ThreatCategory.POLICY_VIOLATION,
+        severity=Severity.MEDIUM,
+        title="Archive in skill",
+        description="Archives are expected here.",
+        file_path="fixtures/sample.zip",
+        analyzer="static",
+        metadata={"suppression": {"rule_id": "ARCHIVE_FILE_DETECTED", "reason": "Test fixtures"}},
+    )
+    suppressed.suppressed_findings.append(second)
+
     aggregate = Report(timestamp=datetime(2026, 1, 2, 3, 6, 0))
-    aggregate.add_scan_result(_suppressed_result())
+    aggregate.add_scan_result(suppressed)
     aggregate.add_scan_result(
         ScanResult(
             skill_name="clean",
@@ -379,13 +394,23 @@ def _report_with_suppressions() -> Report:
 def test_markdown_multi_skill_reports_suppressed_counts():
     """A directory scan must show the same audit information a single scan does."""
     output = MarkdownReporter().generate_report(_report_with_suppressions())
-    assert "- **Suppressed by policy:** 1" in output
+    assert "- **Suppressed by policy:** 2" in output
 
 
 def test_table_multi_skill_reports_suppressed_counts():
-    output = TableReporter().generate_report(_report_with_suppressions())
-    assert "Suppressed by Policy" in output
-    assert "Suppressed" in output
+    output = TableReporter(format_style="plain").generate_report(_report_with_suppressions())
+
+    lines = output.splitlines()
+    summary_row = next(line for line in lines if line.startswith("Suppressed by Policy"))
+    assert summary_row.split()[-1] == "2"
+
+    # The fixture suppresses two findings so the count differs from every other
+    # number in the row; asserting the last column then cannot pass by matching
+    # a neighbouring one.
+    docs_row = next(line for line in lines if line.startswith("docs "))
+    clean_row = next(line for line in lines if line.startswith("clean "))
+    assert docs_row.split()[-1] == "2"
+    assert clean_row.split()[-1] == "0"
 
 
 def test_multi_skill_reports_unchanged_without_suppressions(report: Report):

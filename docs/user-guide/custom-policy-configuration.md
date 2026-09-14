@@ -203,7 +203,7 @@ Then edit the generated file to add your trusted domains, extra benign dotfiles,
 Click any section to expand its configuration keys and YAML examples.
 
 <details>
-<summary>Metadata</summary>
+<summary id="metadata">Metadata</summary>
 
 ```yaml
 policy_name: my-org              # Display name for reports
@@ -216,7 +216,7 @@ preset_base: strict              # Which preset this derives from (strict / bala
 </details>
 
 <details>
-<summary>cel</summary>
+<summary id="cel">cel</summary>
 
 Controls the typed CEL decision layer that runs after deterministic analyzers
 and before optional LLM analysis.
@@ -241,7 +241,7 @@ bundled finding. Use `--cel-mode` to override this setting for one invocation.
 </details>
 
 <details>
-<summary>hidden_files</summary>
+<summary id="hidden_files">hidden_files</summary>
 
 Controls which dotfiles and dot-directories are treated as benign (not flagged as hidden data).
 
@@ -261,7 +261,7 @@ hidden_files:
 </details>
 
 <details>
-<summary>pipeline</summary>
+<summary id="pipeline">pipeline</summary>
 
 Controls the pipeline taint analysis engine.
 
@@ -298,7 +298,7 @@ pipeline:
 </details>
 
 <details>
-<summary>rule_scoping</summary>
+<summary id="rule_scoping">rule_scoping</summary>
 
 Controls which rule sets (YARA and other analyzers) fire on which file categories.
 
@@ -331,7 +331,7 @@ rule_scoping:
 </details>
 
 <details>
-<summary>credentials</summary>
+<summary id="credentials">credentials</summary>
 
 Controls which well-known test credentials are automatically suppressed.
 
@@ -353,7 +353,7 @@ credentials:
 </details>
 
 <details>
-<summary>system_cleanup</summary>
+<summary id="system_cleanup">system_cleanup</summary>
 
 Controls which cleanup targets are considered safe when `rm -r`/`rm -rf` patterns are detected.
 
@@ -371,7 +371,7 @@ system_cleanup:
 </details>
 
 <details>
-<summary>file_classification</summary>
+<summary id="file_classification">file_classification</summary>
 
 Controls how file extensions are routed for analysis.
 
@@ -416,7 +416,7 @@ file_classification:
 </details>
 
 <details>
-<summary>file_limits</summary>
+<summary id="file_limits">file_limits</summary>
 
 Numeric thresholds for file inventory checks.
 
@@ -439,7 +439,7 @@ file_limits:
 </details>
 
 <details>
-<summary>analysis_thresholds</summary>
+<summary id="analysis_thresholds">analysis_thresholds</summary>
 
 Numeric thresholds for YARA and analyzability scoring.
 
@@ -468,7 +468,7 @@ analysis_thresholds:
 </details>
 
 <details>
-<summary>sensitive_files</summary>
+<summary id="sensitive_files">sensitive_files</summary>
 
 Regex patterns for file paths that upgrade taint in pipeline analysis.
 
@@ -487,7 +487,7 @@ sensitive_files:
 </details>
 
 <details>
-<summary>command_safety</summary>
+<summary id="command_safety">command_safety</summary>
 
 Controls which commands belong to each safety tier. The scanner uses a tiered evaluation to decide whether a `code_execution_generic` YARA finding should be suppressed (safe/caution) or kept (risky/dangerous).
 
@@ -524,7 +524,7 @@ command_safety:
 </details>
 
 <details>
-<summary>analyzers</summary>
+<summary id="analyzers">analyzers</summary>
 
 Enable or disable entire analysis passes.
 
@@ -541,7 +541,7 @@ analyzers:
 </details>
 
 <details>
-<summary>llm_analysis</summary>
+<summary id="llm_analysis">llm_analysis</summary>
 
 Controls prompt budget limits for the LLM analyzer and meta-analyzer. The meta-analyzer multiplies the base limits by `meta_budget_multiplier` so it always has more headroom for cross-correlation.
 
@@ -567,7 +567,7 @@ llm_analysis:
 </details>
 
 <details>
-<summary>finding_output</summary>
+<summary id="finding_output">finding_output</summary>
 
 Controls final finding dedupe behavior and metadata stamping.
 
@@ -604,7 +604,7 @@ Field behavior:
 </details>
 
 <details>
-<summary>severity_overrides</summary>
+<summary id="severity_overrides">severity_overrides</summary>
 
 Per-rule severity overrides — raise or lower any rule's severity without disabling it.
 
@@ -626,7 +626,7 @@ severity_overrides:
 </details>
 
 <details>
-<summary>disabled_rules</summary>
+<summary id="disabled_rules">disabled_rules</summary>
 
 Completely suppress specific rule IDs — they produce zero findings.
 
@@ -644,7 +644,7 @@ disabled_rules:
 </details>
 
 <details>
-<summary>suppressions</summary>
+<summary id="suppressions">suppressions</summary>
 
 Silence — or re-rate — a rule for the skills and paths it was reviewed for,
 instead of switching it off for every skill in the run.
