@@ -235,20 +235,42 @@ class TestScanPolicyCustomisation:
         policy = ScanPolicy._from_dict(ScanPolicy._deep_merge(base, override))
         assert [s.rule_id for s in policy.suppressions] == ["ONLY_THIS"]
 
-    @pytest.mark.parametrize("key", ["suppressions", "severity_overrides", "disabled_rules"])
-    def test_list_section_present_with_no_value_loads_as_empty(self, tmp_path, key):
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "hidden_files",
+            "pipeline",
+            "rule_scoping",
+            "credentials",
+            "system_cleanup",
+            "file_classification",
+            "file_limits",
+            "analysis_thresholds",
+            "sensitive_files",
+            "command_safety",
+            "analyzers",
+            "cel",
+            "adjudicator",
+            "llm_analysis",
+            "finding_output",
+            "severity_overrides",
+            "disabled_rules",
+            "suppressions",
+        ],
+    )
+    def test_section_present_with_no_value_loads_cleanly(self, tmp_path, key):
         """Commenting out a block leaves a bare key; that must not be an error.
 
         PyYAML parses a valueless key as None and the deep-merge replaces the
-        packaged default with it, so a get-default cannot catch this. Raising
-        TypeError here would also escape the ValueError contract the API maps
-        to a 400.
+        packaged default with it, so a get-default cannot catch this. The
+        resulting TypeError (list sections) or AttributeError (dict sections)
+        would also escape the ValueError contract the API maps to a 400.
         """
         policy_file = tmp_path / "bare.yaml"
         policy_file.write_text(f"{key}:\n")
 
         policy = ScanPolicy.from_yaml(policy_file)
-        assert not getattr(policy, key)
+        assert getattr(policy, key) is not None
 
     def test_empty_policy_gets_all_defaults(self, tmp_path):
         """An empty override file should result in all defaults."""

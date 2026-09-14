@@ -625,27 +625,28 @@ class ScanPolicy:
 
     @classmethod
     def _from_dict(cls, d: dict[str, Any]) -> ScanPolicy:
-        hf = d.get("hidden_files", {})
-        pl = d.get("pipeline", {})
-        ys = d.get("rule_scoping", {})
-        cr = d.get("credentials", {})
-        sc = d.get("system_cleanup", {})
-        fc = d.get("file_classification", {})
-        fl = d.get("file_limits", {})
-        at = d.get("analysis_thresholds", {})
-        sf = d.get("sensitive_files", {})
-        cs = d.get("command_safety", {})
-        az = d.get("analyzers", {})
-        cel_policy = d.get("cel", {})
-        aj = d.get("adjudicator", {})
-        la = d.get("llm_analysis", {})
-        fo = d.get("finding_output", {})
-
-        # ``or []`` rather than a get-default: a key present with no value parses
-        # to None under PyYAML, and _deep_merge replaces the packaged default
-        # with it.  A commented-out block under a bare key is an ordinary edit
-        # and must load as empty, not raise TypeError past the ValueError
+        # ``or {}`` rather than a get-default throughout: a key present with no
+        # value parses to None under PyYAML, and _deep_merge replaces the
+        # packaged default with that None because the existing value is not a
+        # dict.  Commenting a block out under its key is an ordinary edit and
+        # must load as empty, not crash with AttributeError past the ValueError
         # contract the API maps to a 400.
+        hf = d.get("hidden_files") or {}
+        pl = d.get("pipeline") or {}
+        ys = d.get("rule_scoping") or {}
+        cr = d.get("credentials") or {}
+        sc = d.get("system_cleanup") or {}
+        fc = d.get("file_classification") or {}
+        fl = d.get("file_limits") or {}
+        at = d.get("analysis_thresholds") or {}
+        sf = d.get("sensitive_files") or {}
+        cs = d.get("command_safety") or {}
+        az = d.get("analyzers") or {}
+        cel_policy = d.get("cel") or {}
+        aj = d.get("adjudicator") or {}
+        la = d.get("llm_analysis") or {}
+        fo = d.get("finding_output") or {}
+
         severity_overrides = [SeverityOverride(**ovr) for ovr in d.get("severity_overrides") or []]
         suppressions = [suppression_from_dict(entry) for entry in d.get("suppressions") or []]
 

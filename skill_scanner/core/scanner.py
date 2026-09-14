@@ -1147,20 +1147,21 @@ class SkillScanner:
         return outcome.kept
 
     @staticmethod
-    def _is_re_rated(finding: Finding) -> bool:
-        """Return whether an explicit decision already set this finding's severity.
+    def _mark_re_rating_superseded(finding: Finding) -> None:
+        """Record that a merge raised a finding past an explicit re-rating.
 
-        A scoped suppression carrying ``severity`` and an adjudicator demotion
-        are both deliberate re-ratings of one finding.  Merging it with a
-        same-issue sibling must not quietly restore the group's maximum: that
-        would undo the decision while leaving its audit record claiming it
-        still holds.  ``_apply_severity_overrides`` already exempts the
-        adjudicator's verdict for the same reason.
+        The same-issue merge collapses findings from different rules at one
+        location and keeps the group's highest severity, so a sibling's rating
+        can exceed a scoped re-rating of the winner.  That promotion is
+        correct: a scoped suppression matches one ``rule_id``, so a higher
+        sibling is by definition not covered by it, and dropping its severity
+        would hide an unsuppressed finding behind a decision that never
+        mentioned it.  What must not happen is the audit record going on
+        claiming a rating the finding no longer carries.
         """
-        metadata = finding.metadata or {}
-        if metadata.get("suppression", {}).get("severity"):
-            return True
-        return bool(metadata.get("adjudication", {}).get("demoted_to"))
+        suppression = (finding.metadata or {}).get("suppression")
+        if isinstance(suppression, dict) and suppression.get("severity"):
+            suppression["superseded_by_merge"] = True
 
     @staticmethod
     def _normalize_snippet(snippet: str | None) -> str:
@@ -1249,9 +1250,8 @@ class SkillScanner:
                 ),
             )
             max_severity = max((f.severity for f in group), key=self._severity_rank)
-            if self._severity_rank(max_severity) > self._severity_rank(winner.severity) and not self._is_re_rated(
-                winner
-            ):
+            if self._severity_rank(max_severity) > self._severity_rank(winner.severity):
+                self._mark_re_rating_superseded(winner)
                 winner.metadata["deduped_original_severity"] = winner.severity.value
                 winner.severity = max_severity
 

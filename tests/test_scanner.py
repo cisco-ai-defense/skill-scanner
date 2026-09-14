@@ -802,13 +802,14 @@ class TestSymlinkedSkillDiscovery:
         assert report.scan_results[0].skill_name == "diagnose"
 
 
-def test_same_issue_merge_does_not_undo_a_scoped_re_rating(example_skills_dir):
-    """A deliberate re-rating must survive the merge that follows it.
+def test_same_issue_merge_keeps_an_unsuppressed_sibling_severity(example_skills_dir):
+    """A scoped re-rating must not shield a higher finding it never covered.
 
-    ``_normalize_findings`` promotes the merge winner to the group's maximum
-    severity.  Left unguarded that silently restores the severity a scoped
-    suppression just lowered, while the finding's own audit record goes on
-    claiming the lower rating.
+    The merge collapses different rules at one location and keeps the group's
+    maximum severity.  A scoped suppression matches one ``rule_id``, so a higher
+    sibling is by definition outside that decision — exempting the whole group
+    on the winner's behalf would hide an unsuppressed HIGH behind a LOW and
+    return ``is_safe``.
     """
     from skill_scanner.core.suppressions import suppression_from_dict
 
@@ -846,43 +847,51 @@ def test_same_issue_merge_does_not_undo_a_scoped_re_rating(example_skills_dir):
 
     assert len(result.findings) == 1
     kept = result.findings[0]
-    assert kept.rule_id == "META_VALIDATED"
-    assert kept.severity == Severity.LOW
-    assert kept.metadata["suppression"]["previous_severity"] == "MEDIUM"
-    assert "deduped_original_severity" not in kept.metadata
+    assert kept.severity == Severity.HIGH
+    assert result.is_safe is False
+    # The record must not go on claiming a rating the finding no longer carries.
+    assert kept.metadata["suppression"]["severity"] == "LOW"
+    assert kept.metadata["suppression"]["superseded_by_merge"] is True
 
 
-def test_same_issue_merge_does_not_undo_an_adjudicator_demotion(example_skills_dir):
-    """The adjudicator's verdict is exempt from severity overrides; the merge must agree."""
+def test_same_issue_merge_leaves_a_re_rating_alone_without_a_higher_sibling(example_skills_dir):
+    """With nothing higher in the group there is no promotion to make."""
+    from skill_scanner.core.suppressions import suppression_from_dict
+
     skill_dir = example_skills_dir / "safe" / "simple-formatter"
-    static_high = _mk_finding(
-        rule_id="RULE_STATIC_HIGH",
+    static_low = _mk_finding(
+        rule_id="RULE_STATIC_LOW",
         category=ThreatCategory.COMMAND_INJECTION,
-        severity=Severity.HIGH,
+        severity=Severity.LOW,
         snippet="subprocess.run(cmd, shell=True)",
         analyzer="static",
     )
-    demoted = _mk_finding(
+    meta_medium = _mk_finding(
         rule_id="META_VALIDATED",
         category=ThreatCategory.COMMAND_INJECTION,
-        severity=Severity.INFO,
+        severity=Severity.MEDIUM,
         snippet="subprocess.run(cmd, shell=True)",
         analyzer="meta_analyzer",
     )
-    demoted.metadata["adjudication"] = {"demoted_to": "INFO"}
 
     policy = ScanPolicy.default()
     policy.finding_output.dedupe_exact_findings = False
     policy.finding_output.dedupe_same_issue_per_location = True
+    policy.suppressions = [
+        suppression_from_dict({"rule_id": "META_VALIDATED", "skills": ["*"], "severity": "LOW", "reason": "Reviewed"})
+    ]
 
     scanner = SkillScanner(
         analyzers=[
-            _StubAnalyzer("a1", [static_high], policy=policy),
-            _StubAnalyzer("a2", [demoted], policy=policy),
+            _StubAnalyzer("a1", [static_low], policy=policy),
+            _StubAnalyzer("a2", [meta_medium], policy=policy),
         ],
         policy=policy,
     )
     result = scanner.scan_skill(skill_dir)
 
     assert len(result.findings) == 1
-    assert result.findings[0].severity == Severity.INFO
+    kept = result.findings[0]
+    assert kept.severity == Severity.LOW
+    assert kept.metadata["suppression"]["previous_severity"] == "MEDIUM"
+    assert "superseded_by_merge" not in kept.metadata["suppression"]
