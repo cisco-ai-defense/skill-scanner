@@ -17,6 +17,7 @@
 """Regression tests for output-budgeted meta-analysis batching."""
 
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -267,3 +268,55 @@ async def test_parseable_index_only_batch_is_retained_as_degraded() -> None:
     assert all(item["meta_analysis_degraded"] is True for item in result.validated_findings)
     assert result.analysis_warnings[0]["code"] == "META_BATCH_PARSE_FAILED"
     assert analyzer._make_llm_request.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_ranking_omitting_false_positives_still_suppresses_them() -> None:
+    """A ranking that lists only the findings that survived is not a parse failure.
+
+    `priority_order` ranks what the model kept, so omitting a suppressed index is
+    a defensible reading of the contract. Treating it as malformed would degrade
+    the batch and retain every finding in it, false positives included.
+    """
+    analyzer = MetaAnalyzer(model="test-model", api_key="test-key", max_tokens=320)
+    analyzer._build_skill_context = MagicMock(return_value=("bounded context", []))
+    findings = _findings(3)
+
+    response = json.loads(_classification([0, 1, 2], alternate_false_positives=True))
+    # Index 1 is the false positive; the ranking covers the retained findings only.
+    response["priority_order"] = [item["_index"] for item in response["validated_findings"]]
+    analyzer._make_llm_request = AsyncMock(return_value=json.dumps(response))
+
+    result = await analyzer.analyze_with_findings(_skill(), findings, ["static"])
+
+    assert [item["_index"] for item in result.false_positives] == [1]
+    assert [item["_index"] for item in result.validated_findings] == [0, 2]
+    assert not any(item.get("meta_analysis_degraded") for item in result.validated_findings)
+    assert result.priority_order == [0, 2]
+    assert result.analysis_warnings == []
+    assert result.overall_risk_assessment["risk_level"] == "MEDIUM"
+
+
+@pytest.mark.asyncio
+async def test_unusable_ranking_is_normalized_without_degrading_the_batch(caplog: pytest.LogCaptureFixture) -> None:
+    """Duplicate, out-of-batch, non-integer, and missing ranks are all repaired."""
+    analyzer = MetaAnalyzer(model="test-model", api_key="test-key", max_tokens=320)
+    analyzer._build_skill_context = MagicMock(return_value=("bounded context", []))
+    findings = _findings(3)
+
+    response = json.loads(_classification([0, 1, 2]))
+    response["priority_order"] = [2, 2, 99, "0"]
+    analyzer._make_llm_request = AsyncMock(return_value=json.dumps(response))
+
+    with caplog.at_level(logging.WARNING, logger="skill_scanner.core.analyzers.meta_analyzer"):
+        result = await analyzer.analyze_with_findings(_skill(), findings, ["static"])
+
+    # Model order first, then the validated indices it never ranked.
+    assert result.priority_order == [2, 0, 1]
+    assert [item["_index"] for item in result.validated_findings] == [0, 1, 2]
+    assert not any(item.get("meta_analysis_degraded") for item in result.validated_findings)
+    # Logged, but not an analysis warning: a cosmetic field must not force the
+    # skill-level risk_level and verdict to UNKNOWN.
+    assert result.analysis_warnings == []
+    assert result.overall_risk_assessment["risk_level"] == "MEDIUM"
+    assert "unusable priority ranking" in caplog.text

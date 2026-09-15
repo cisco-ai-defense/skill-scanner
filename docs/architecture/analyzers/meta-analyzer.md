@@ -259,6 +259,8 @@ When a skill's findings span multiple batches (see [Analyzer Selection Guide](me
 
 The fourth case is the one to watch for: a batch can return syntactically valid JSON and still degrade the skill-level verdict to `UNKNOWN` if it simply fails to account for every finding it was given — no network or parsing failure required.
 
+`priority_order` is deliberately outside this set. It is a presentation-layer ranking rather than a classification, so a duplicated, incomplete, or out-of-batch entry is normalized in `_normalize_batch_result` — model order first, then any remaining validated indices in index order — and logged, never turned into an `analysis_warnings` entry. Rejecting the response over the ranking field would retain the entire batch unchanged, including the findings the model classified as false positives, and recording a warning for it would force the skill verdict to `UNKNOWN`; neither is warranted by a field that does not affect which findings are reported.
+
 Neither `risk_level` nor `skill_verdict` feed into `ScanResult.is_safe`, `max_severity`, or `--fail-on-severity` CI gating — they're reporting-layer signals read only by the Markdown and HTML reporters, which fall back to a severity-derived default when meta-analysis hasn't run.
 
 ### Finding Correlation

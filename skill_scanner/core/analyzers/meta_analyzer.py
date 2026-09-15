@@ -1455,11 +1455,32 @@ Respond with JSON containing your analysis following the required schema."""
         # values, and false-positive indices. Append any validated omissions in
         # global order so downstream ranking is total and deterministic.
         priority_order: list[int] = []
+        ranked: set[int] = set()
+        unusable_ranks = 0
         for index in result.priority_order:
-            if type(index) is int and index in validated and index not in priority_order:
+            if type(index) is not int or index not in expected or index in ranked:
+                unusable_ranks += 1
+                continue
+            ranked.add(index)
+            if index in validated:
                 priority_order.append(index)
-        priority_order.extend(index for index in sorted(validated) if index not in priority_order)
+        unranked = [index for index in sorted(validated) if index not in ranked]
+        priority_order.extend(unranked)
         result.priority_order = priority_order
+        # Ranking is not security-bearing, so a repair here is logged rather than
+        # recorded as an analysis warning: any warning forces the skill-level
+        # risk_level and verdict to UNKNOWN, which a cosmetic field must not do.
+        # Dropping false-positive indices is expected and not counted here.
+        if unusable_ranks or unranked:
+            logger.warning(
+                "Meta-analysis batch %d-%d supplied an unusable priority ranking "
+                "(%d invalid or duplicate entries, %d validated findings left unranked); "
+                "the ranking was normalized and the classifications were kept.",
+                expected_indices[0],
+                expected_indices[-1],
+                unusable_ranks,
+                len(unranked),
+            )
         return result
 
     def _degraded_batch_result(
@@ -2192,13 +2213,13 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
                 self._validate_meta_evidence_ids(entry.get("evidence_ids"))
         if classified != expected_indices:
             raise ValueError("Ollama Meta did not classify every expected index exactly once")
-        priority_order = value["priority_order"]
-        if (
-            any(type(index) is not int or index not in expected_indices for index in priority_order)
-            or len(priority_order) != len(set(priority_order))
-            or set(priority_order) != expected_indices
-        ):
-            raise ValueError("Ollama Meta priority_order contains invalid or duplicate indices")
+        # `priority_order` is deliberately not validated here. It is a
+        # presentation-layer ranking, and every index has already been accounted
+        # for exactly once by the classification checks above. A model that
+        # duplicates, omits, or invents an entry in the ranking is repaired
+        # deterministically by `_normalize_batch_result`; rejecting the response
+        # instead would degrade the whole batch and retain every finding in it,
+        # including the ones the model classified as false positives.
 
         for correlation in value["correlations"]:
             if not isinstance(correlation, dict):
