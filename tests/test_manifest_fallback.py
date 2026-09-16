@@ -279,6 +279,28 @@ def test_oversized_metadata_rejection_honors_scoped_suppression(tmp_path: Path) 
     assert result.scan_metadata["suppressions"]["suppressed"] == 1
 
 
+def test_contract_invalid_load_rejection_cannot_be_scoped_suppressed(tmp_path: Path) -> None:
+    oversized = tmp_path / "oversized"
+    oversized.mkdir()
+    (oversized / "SKILL.md").write_bytes(b"x" * 129)
+    policy = ScanPolicy.default()
+    policy.cel.mode = CelMode.OFF
+    policy.file_limits.max_loader_file_size_bytes = 128
+    policy.suppressions = [suppression_from_dict({"rule_id": "SKILL_LOAD_REJECTED_LIMIT", "skills": ["oversized"]})]
+
+    with SkillScanner(
+        analyzers=[],
+        policy=policy,
+        rule_registry=RuleRegistry(),
+        cel_rules=[],
+    ) as scanner:
+        result = scanner.scan_skill(oversized)
+
+    assert [finding.rule_id for finding in result.findings] == ["SKILL_LOAD_REJECTED_LIMIT"]
+    assert result.suppressed_findings == []
+    assert result.findings[0].metadata["rule_contract"]["status"] == "invalid"
+
+
 def test_loader_descriptor_size_check_preserves_closed_rejection_on_stat_race(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

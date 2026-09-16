@@ -557,6 +557,7 @@ class SkillScanner:
             [finding],
             synthetic_skill.name,
             suppressed_findings,
+            invalid_ids,
         )
         findings, cel_telemetry = self._apply_cel_with_contract(
             synthetic_skill,
@@ -744,7 +745,12 @@ class SkillScanner:
             # Scoped suppressions run here for the same reason as disabled_rules:
             # a candidate the operator has already excluded must never reach CEL,
             # so CEL decision counts only describe findings that could be emitted.
-            all_findings = self._apply_scoped_suppressions(all_findings, skill.name, suppressed_findings)
+            all_findings = self._apply_scoped_suppressions(
+                all_findings,
+                skill.name,
+                suppressed_findings,
+                contract_invalid_ids,
+            )
 
             # Phase 1.5: Bounded CEL decision layer.  It sees only concrete
             # deterministic candidates and runs before any LLM-based pass so
@@ -897,7 +903,12 @@ class SkillScanner:
             if self.policy.disabled_rules:
                 all_findings = [f for f in all_findings if f.rule_id not in self.policy.disabled_rules]
             # Cover findings created during the LLM phase.
-            all_findings = self._apply_scoped_suppressions(all_findings, skill.name, suppressed_findings)
+            all_findings = self._apply_scoped_suppressions(
+                all_findings,
+                skill.name,
+                suppressed_findings,
+                contract_invalid_ids,
+            )
 
             # Apply severity overrides from policy
             self._apply_severity_overrides(all_findings)
@@ -1118,6 +1129,7 @@ class SkillScanner:
         findings: list[Finding],
         skill_name: str,
         suppressed: list[Finding],
+        contract_invalid_ids: set[int],
     ) -> list[Finding]:
         """Apply scoped suppressions and collect removed findings.
 
@@ -1127,6 +1139,7 @@ class SkillScanner:
             findings: Candidate findings for this skill.
             skill_name: Name the ``skills`` selectors are matched against.
             suppressed: Accumulator for removed findings, mutated in place.
+            contract_invalid_ids: Object IDs that must remain active fail-open.
 
         Returns:
             The findings that survive suppression, in their original order.
@@ -1134,7 +1147,8 @@ class SkillScanner:
         if not self.policy.suppressions:
             return findings
 
-        outcome = apply_suppressions(findings, self.policy.suppressions, skill_name)
+        eligible = [finding for finding in findings if id(finding) not in contract_invalid_ids]
+        outcome = apply_suppressions(eligible, self.policy.suppressions, skill_name)
         suppressed.extend(outcome.suppressed)
         for entry_index, rule in outcome.expired_suppressions:
             if entry_index in self._warned_expired_suppressions:
@@ -1146,7 +1160,8 @@ class SkillScanner:
                 entry_index + 1,
                 rule.rule_id,
             )
-        return outcome.kept
+        kept_ids = {id(finding) for finding in outcome.kept}
+        return [finding for finding in findings if id(finding) in contract_invalid_ids or id(finding) in kept_ids]
 
     @staticmethod
     def _mark_re_rating_superseded(finding: Finding) -> None:

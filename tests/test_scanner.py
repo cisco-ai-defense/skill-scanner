@@ -25,9 +25,11 @@ import pytest
 
 from skill_scanner.core.analyzers.base import BaseAnalyzer
 from skill_scanner.core.models import Finding, Severity, ThreatCategory
+from skill_scanner.core.rule_registry import RuleRegistry
 from skill_scanner.core.scan_policy import ScanPolicy, SeverityOverride
 from skill_scanner.core.scanner import SkillScanner, scan_skill
 from skill_scanner.core.scanner import scan_directory as convenience_scan_directory
+from skill_scanner.core.suppressions import suppression_from_dict
 
 
 def _symlinks_available() -> bool:
@@ -818,8 +820,6 @@ class TestSymlinkedSkillDiscovery:
 
 
 def test_same_issue_merge_keeps_an_unsuppressed_sibling_severity(example_skills_dir):
-    from skill_scanner.core.suppressions import suppression_from_dict
-
     skill_dir = example_skills_dir / "safe" / "simple-formatter"
     static_high = _mk_finding(
         rule_id="RULE_STATIC_HIGH",
@@ -861,9 +861,31 @@ def test_same_issue_merge_keeps_an_unsuppressed_sibling_severity(example_skills_
     assert kept.metadata["suppression"]["superseded_by_merge"] is True
 
 
-def test_same_issue_merge_leaves_a_re_rating_alone_without_a_higher_sibling(example_skills_dir):
-    from skill_scanner.core.suppressions import suppression_from_dict
+def test_contract_invalid_finding_cannot_be_hidden_by_scoped_suppression(example_skills_dir):
+    skill_dir = example_skills_dir / "safe" / "simple-formatter"
+    invalid = _mk_finding(
+        rule_id="UNKNOWN_BUNDLED_RULE",
+        category=ThreatCategory.COMMAND_INJECTION,
+        severity=Severity.HIGH,
+        analyzer="scanner",
+    )
+    policy = ScanPolicy.default()
+    policy.suppressions = [suppression_from_dict({"rule_id": invalid.rule_id, "skills": ["simple-formatter"]})]
 
+    with SkillScanner(
+        analyzers=[_StubAnalyzer("scanner", [invalid], policy=policy)],
+        policy=policy,
+        rule_registry=RuleRegistry(),
+        cel_rules=[],
+    ) as scanner:
+        result = scanner.scan_skill(skill_dir)
+
+    assert result.findings == [invalid]
+    assert result.suppressed_findings == []
+    assert invalid.metadata["rule_contract"]["status"] == "invalid"
+
+
+def test_same_issue_merge_leaves_a_re_rating_alone_without_a_higher_sibling(example_skills_dir):
     skill_dir = example_skills_dir / "safe" / "simple-formatter"
     static_low = _mk_finding(
         rule_id="RULE_STATIC_LOW",
