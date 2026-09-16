@@ -14,8 +14,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for scoped suppression parsing and matching."""
-
 from datetime import date
 
 import pytest
@@ -45,8 +43,6 @@ def _finding(rule_id: str = "NOISY_RULE", file_path: str = "scripts/run.py") -> 
 
 
 class TestGlobMatch:
-    """Path globs must not silently widen a suppression."""
-
     def test_single_star_does_not_cross_a_separator(self):
         assert glob_match("assets/*.pdf", "assets/report.pdf")
         assert not glob_match("assets/*.pdf", "assets/nested/evil.pdf")
@@ -116,6 +112,20 @@ class TestSuppressionFromDict:
         with pytest.raises(SuppressionConfigError, match="ISO date"):
             suppression_from_dict({"rule_id": "R", "skills": ["a"], "expires": "next tuesday"})
 
+    @pytest.mark.parametrize(
+        ("entry", "message"),
+        [
+            ({"rule_id": "R", "skills": 42}, "must be a string or a list"),
+            ({"rule_id": "R", "skills": ["a", 42]}, "contains a non-string pattern"),
+            ({"rule_id": "R", "skills": ["a"], "expires": 42}, "must be an ISO date"),
+            (["not", "a", "mapping"], "must be mappings"),
+            ({"rule_id": "R", "skills": ["a"], "reason": 42}, "reason.*must be a string"),
+        ],
+    )
+    def test_invalid_field_types_are_rejected(self, entry: object, message: str):
+        with pytest.raises(SuppressionConfigError, match=message):
+            suppression_from_dict(entry)
+
     def test_expiry_accepts_iso_string_and_date(self):
         assert suppression_from_dict({"rule_id": "R", "skills": ["a"], "expires": "2030-01-31"}).expires == date(
             2030, 1, 31
@@ -168,7 +178,6 @@ class TestApplySuppressions:
         assert kept.metadata["suppression"]["previous_severity"] == "HIGH"
 
     def test_severity_entry_can_raise_as_well_as_lower(self):
-        """The field re-rates in either direction; the docs say so."""
         rule = suppression_from_dict({"rule_id": "NOISY_RULE", "skills": ["alpha"], "severity": "CRITICAL"})
         outcome = apply_suppressions([_finding()], [rule], "alpha")
 
@@ -176,11 +185,7 @@ class TestApplySuppressions:
         assert outcome.kept[0].metadata["suppression"]["previous_severity"] == "HIGH"
 
     def test_an_entry_applies_at_most_once_to_a_finding(self):
-        """The scanner runs this twice per skill; the second pass must not re-apply.
-
-        Rewriting the record on the second pass would read the already re-rated
-        severity and destroy the only copy of the original rating.
-        """
+        """Preserve the original severity when suppression runs twice."""
         rule = suppression_from_dict(
             {"rule_id": "NOISY_RULE", "skills": ["alpha"], "severity": "LOW", "reason": "reviewed"}
         )
@@ -192,7 +197,6 @@ class TestApplySuppressions:
         assert kept.metadata["suppression"]["previous_severity"] == "HIGH"
 
     def test_second_pass_does_not_re_rate_an_adjudicator_demotion(self):
-        """The adjudicator runs between the two passes and its verdict must hold."""
         rule = suppression_from_dict({"rule_id": "NOISY_RULE", "skills": ["alpha"], "severity": "LOW"})
         first = apply_suppressions([_finding()], [rule], "alpha")
 
@@ -218,7 +222,17 @@ class TestApplySuppressions:
 
         assert outcome.suppressed == []
         assert len(outcome.kept) == 1
-        assert outcome.expired_rule_ids == {"NOISY_RULE"}
+        assert outcome.expired_suppressions == [(0, rule)]
+
+    def test_expired_entries_with_the_same_rule_keep_their_policy_identity(self):
+        rules = [
+            suppression_from_dict({"rule_id": "NOISY_RULE", "skills": ["alpha"], "expires": "2020-01-01"}),
+            suppression_from_dict({"rule_id": "NOISY_RULE", "paths": ["scripts/*.py"], "expires": "2021-01-01"}),
+        ]
+
+        outcome = apply_suppressions([_finding()], rules, "alpha", today=date(2026, 1, 1))
+
+        assert outcome.expired_suppressions == [(0, rules[0]), (1, rules[1])]
 
     def test_entry_expiring_today_is_still_active(self):
         rule = suppression_from_dict({"rule_id": "NOISY_RULE", "skills": ["alpha"], "expires": "2026-01-01"})
@@ -265,3 +279,16 @@ class TestSuppressionSummary:
 
     def test_empty_summary_has_no_entries(self):
         assert build_suppression_summary([]) == {"suppressed": 0, "entries": []}
+
+    def test_summary_reports_truncation_without_dropping_the_total(self, monkeypatch):
+        monkeypatch.setattr("skill_scanner.core.suppressions._MAX_SUMMARY_ENTRIES", 1)
+        first = _finding(rule_id="FIRST")
+        first.metadata["suppression"] = {"rule_id": "FIRST", "matched_skill": "alpha"}
+        second = _finding(rule_id="SECOND")
+        second.metadata["suppression"] = {"rule_id": "SECOND", "matched_skill": "alpha"}
+
+        summary = build_suppression_summary([first, second])
+
+        assert summary["suppressed"] == 2
+        assert len(summary["entries"]) == 1
+        assert summary["truncated"] is True

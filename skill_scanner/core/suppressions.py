@@ -14,17 +14,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Scoped rule suppressions: silence or re-rate a rule for named skills or paths.
+"""Scoped rule suppressions for named skills or paths.
 
-``ScanPolicy.disabled_rules`` is keyed on the rule ID alone, so a single false
-positive in one skill forces the rule off for every skill in the run.  A
-``SuppressionRule`` narrows that decision to the skills and/or files it was
-actually reviewed for, and records why, so the suppression stays auditable
-instead of making the finding disappear without trace.
-
-Every entry must carry at least one selector.  A selector-less entry would be
-indistinguishable from ``disabled_rules`` and is rejected at policy-load time.
+Entries require a selector and retain audit metadata for hidden or re-rated
+findings.
 """
 
 from __future__ import annotations
@@ -42,12 +35,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 logger = logging.getLogger(__name__)
 
-# Bounded aggregate evidence.  A suppressed finding is absent from the final
-# finding list, so the summary is the only proof of what a policy removed; it
-# must not grow without bound.  Unlike CelTelemetry.record_suppressed_candidate,
-# which treats overflow as a contract violation and raises, this summary sheds
-# the overflowing entries and reports ``truncated``: a scan must not fail
-# because an operator's policy matched a great many findings.
+# Keep aggregate audit metadata bounded; report overflow as truncated rather
+# than failing the scan.
 _MAX_SUMMARY_ENTRIES = 4096
 
 # Severities a scoped entry may re-rate a finding to, in either direction.  SAFE
@@ -277,7 +266,7 @@ class SuppressionOutcome:
 
     kept: list[Finding] = field(default_factory=list)
     suppressed: list[Finding] = field(default_factory=list)
-    expired_rule_ids: set[str] = field(default_factory=set)
+    expired_suppressions: list[tuple[int, SuppressionRule]] = field(default_factory=list)
 
 
 def apply_suppressions(
@@ -287,21 +276,20 @@ def apply_suppressions(
     *,
     today: date | None = None,
 ) -> SuppressionOutcome:
-    """Split *findings* into kept and suppressed according to *rules*.
+    """Apply the first matching active suppression to each finding.
 
-    Findings matched by an entry that carries a ``severity`` are re-rated in
-    place and remain in ``kept``; every other match moves to ``suppressed`` and
-    is annotated with ``metadata['suppression']`` so reporters can show why.
+    A severity match re-rates the finding; other matches suppress it. Findings
+    with existing suppression metadata and cross-skill findings pass through
+    unchanged, preventing double application across scan phases.
 
-    **At most one entry applies to a finding, once.** The scanner runs this
-    twice per skill — before CEL and again after the LLM phase — and a finding
-    already carrying ``metadata['suppression']`` is passed through untouched.
-    Without that guard the second pass would rewrite the audit record using the
-    already re-rated severity, losing the original rating, and would undo an
-    adjudicator demotion made between the two passes.
+    Args:
+        findings: Findings to evaluate.
+        rules: Scoped suppression rules.
+        skill_name: Name matched by skill selectors.
+        today: Date used to evaluate expiry.
 
-    Cross-skill findings are never suppressed: they carry no owning skill and no
-    real path, so no scoped selector can describe them.
+    Returns:
+        Kept, suppressed, and expired-rule results.
     """
     outcome = SuppressionOutcome()
     if not rules:
@@ -310,9 +298,9 @@ def apply_suppressions(
 
     current_day = today or date.today()
     by_rule_id: dict[str, list[SuppressionRule]] = {}
-    for rule in rules:
+    for index, rule in enumerate(rules):
         if not rule.is_active(current_day):
-            outcome.expired_rule_ids.add(rule.rule_id)
+            outcome.expired_suppressions.append((index, rule))
             continue
         by_rule_id.setdefault(rule.rule_id, []).append(rule)
 
@@ -348,12 +336,10 @@ def apply_suppressions(
 
 
 def build_suppression_summary(suppressed: list[Finding]) -> dict[str, object]:
-    """Build bounded aggregate evidence for ``scan_metadata['suppressions']``.
+    """Build bounded audit metadata for suppressed findings.
 
-    Suppressed findings are absent from the finding list, so aggregate counts
-    are the only proof of what a policy removed.  Distinct entries are capped at
-    ``_MAX_SUMMARY_ENTRIES``; past the cap the summary sheds entries and sets
-    ``truncated``, rather than raising the way CEL does on the same overflow.
+    Distinct entries are capped at ``_MAX_SUMMARY_ENTRIES``; overflow sets
+    ``truncated`` instead of failing the scan.
     """
     per_entry: dict[tuple[str, str, str, str], int] = {}
     truncated = False

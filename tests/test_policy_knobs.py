@@ -558,15 +558,12 @@ def _policy_with_suppressions(yaml_body: str, tmp_path: Path) -> ScanPolicy:
 
 
 class TestScopedSuppressions:
-    """A scoped entry silences a rule where it was reviewed, and nowhere else."""
-
     def test_baseline_rule_fires_for_both_skills(self, make_skill):
         policy = ScanPolicy.default()
         assert _SUPPRESSED_RULE in _rule_ids(_scan_skill(make_skill, policy, _noisy_files("alpha"), name="alpha"))
         assert _SUPPRESSED_RULE in _rule_ids(_scan_skill(make_skill, policy, _noisy_files("beta"), name="beta"))
 
     def test_skill_selector_leaves_other_skills_covered(self, make_skill, tmp_path):
-        """The regression this feature exists for: one FP must not blind the rest."""
         policy = _policy_with_suppressions(
             f"""
 suppressions:
@@ -631,13 +628,7 @@ suppressions:
         assert _SUPPRESSED_RULE in _rule_ids(result)
 
     def test_severity_entry_re_rates_and_keeps_the_finding(self, make_skill, tmp_path):
-        """The audit record must survive both enforcement points intact.
-
-        Suppression runs twice on the linear scan path — before CEL and again
-        after the LLM phase.  Asserting only the final severity hides a second
-        pass that rewrites ``previous_severity`` with the already re-rated
-        value, which is what makes the original rating unrecoverable.
-        """
+        """Preserve the original severity across both enforcement passes."""
         policy = _policy_with_suppressions(
             f"""
 suppressions:
@@ -656,7 +647,6 @@ suppressions:
         assert all(f.metadata["suppression"]["previous_severity"] == "HIGH" for f in re_rated)
 
     def test_suppressed_findings_carry_the_policy_fingerprint(self, make_skill, tmp_path):
-        """Suppressed findings are first-class output and need the same provenance."""
         policy = _policy_with_suppressions(
             f"""
 suppressions:
@@ -677,7 +667,6 @@ suppressions:
             assert finding.metadata["scan_policy_name"] == policy.policy_name
 
     def test_scoped_severity_beats_the_global_override(self, make_skill, tmp_path):
-        """The more specific decision must win over the rule-wide one."""
         policy = _policy_with_suppressions(
             f"""
 severity_overrides:
@@ -715,7 +704,6 @@ suppressions:
         assert result.suppressed_findings == []
 
     def test_suppression_lowers_the_verdict_and_severity(self, make_skill, tmp_path):
-        """Verdicts and counters must reflect the post-suppression set."""
         policy = _policy_with_suppressions(
             """
 suppressions:
@@ -733,14 +721,12 @@ suppressions:
         assert len(result.suppressed_findings) >= 2
 
     def test_default_policy_emits_no_suppression_metadata(self, make_skill):
-        """With nothing configured the output must be unchanged."""
         result = _scan_skill(make_skill, ScanPolicy.default(), _noisy_files("alpha"), name="alpha")
         assert result.suppressed_findings == []
         assert "suppressions" not in result.scan_metadata
         assert "suppressed_findings" not in result.to_dict()
 
     def test_expired_entry_warns_once_per_scan_not_once_per_skill(self, make_skill, tmp_path, caplog):
-        """A stale entry is one deprecation notice, not one per skill scanned."""
         import logging
 
         policy = _policy_with_suppressions(
@@ -750,6 +736,10 @@ suppressions:
     skills: ["*"]
     reason: "Temporary"
     expires: 2020-01-01
+  - rule_id: {_SUPPRESSED_RULE}
+    paths: ["scripts/*.py"]
+    reason: "Separate expired entry"
+    expires: 2021-01-01
 """,
             tmp_path,
         )
@@ -762,4 +752,7 @@ suppressions:
 
         assert report.total_skills_scanned == 2
         expired_warnings = [r for r in caplog.records if "has expired and is no longer applied" in r.getMessage()]
-        assert len(expired_warnings) == 1
+        messages = [record.getMessage() for record in expired_warnings]
+        assert len(messages) == 2
+        assert "entry 1" in messages[0]
+        assert "entry 2" in messages[1]

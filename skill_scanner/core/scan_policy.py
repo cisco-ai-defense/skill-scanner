@@ -60,19 +60,10 @@ _MAX_POLICY_SIZE_BYTES = 1024 * 1024
 
 
 def _drop_null_values(value: Any) -> Any:
-    """Recursively remove mapping keys whose value is ``None``.
+    """Remove null mapping keys recursively.
 
-    Commenting a block out under its key is an ordinary edit, and PyYAML parses
-    the leftover bare key as ``None``.  Every read in ``_from_dict`` is written
-    as ``get(key, default)``, which does not fire for a key that is present, so
-    the ``None`` reaches code expecting a list, a set or a mapping and raises
-    ``TypeError`` or ``AttributeError`` — outside the ``ValueError`` contract
-    the API maps to a 400, and at any nesting depth.
-
-    Stripping the nulls at load makes a bare key behave exactly like an absent
-    one, which is what the reader intended, so every default applies as written.
-    Doing it here rather than per-read also keeps falsy-but-meaningful values
-    (``0``, ``false``, ``[]``) intact, which a blanket ``or default`` would not.
+    PyYAML parses a valueless key as ``None``. Treating it as absent lets policy
+    defaults apply without discarding other falsy values.
     """
     if isinstance(value, dict):
         return {k: _drop_null_values(v) for k, v in value.items() if v is not None}
@@ -647,10 +638,7 @@ class ScanPolicy:
 
     @classmethod
     def _from_dict(cls, d: dict[str, Any]) -> ScanPolicy:
-        # ``or {}`` rather than a get-default: ``from_yaml`` already strips
-        # None-valued keys at any depth via _drop_null_values, so this is the
-        # backstop for callers that build the dict themselves and hand it
-        # straight to _from_dict.
+        # Support direct callers that pass None for optional sections.
         hf = d.get("hidden_files") or {}
         pl = d.get("pipeline") or {}
         ys = d.get("rule_scoping") or {}

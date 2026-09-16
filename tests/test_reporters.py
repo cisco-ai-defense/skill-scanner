@@ -263,7 +263,6 @@ def _suppressed_result() -> ScanResult:
 
 
 def test_sarif_reporter_marks_policy_suppressed_findings():
-    """A scoped suppression must be reported as dismissed, not dropped (issue: scoped suppressions)."""
     data = json.loads(SARIFReporter().generate_report(_suppressed_result()))
 
     results = data["runs"][0]["results"]
@@ -274,8 +273,17 @@ def test_sarif_reporter_marks_policy_suppressed_findings():
 
     # The rule definition must travel with it, or the ruleId dangles.
     assert "HOMOGLYPH_ATTACK" in {rule["id"] for rule in data["runs"][0]["tool"]["driver"]["rules"]}
-    # Unsuppressed findings are untouched.
     assert all("suppressions" not in r for r in results if r["ruleId"] != "HOMOGLYPH_ATTACK")
+
+
+def test_sarif_reporter_builds_a_fallback_justification_from_the_selector():
+    result = _suppressed_result()
+    result.suppressed_findings[0].metadata["suppression"]["reason"] = ""
+
+    data = json.loads(SARIFReporter().generate_report(result))
+    suppressed = next(item for item in data["runs"][0]["results"] if "suppressions" in item)
+
+    assert suppressed["suppressions"][0]["justification"] == "Suppressed by scan policy (selector: docs)"
 
 
 def test_sarif_reporter_emits_no_suppressions_by_default(scan_result: ScanResult):
@@ -293,6 +301,17 @@ def test_json_reporter_includes_suppressed_findings_when_present():
     assert [f["rule_id"] for f in data["suppressed_findings"]] == ["HOMOGLYPH_ATTACK"]
     # Suppressed findings must not inflate the reported count.
     assert data["findings_count"] == len(data["findings"])
+
+
+def test_single_skill_text_reports_include_the_suppressed_count():
+    result = _suppressed_result()
+
+    markdown = MarkdownReporter().generate_report(result)
+    table = TableReporter(format_style="plain").generate_report(result)
+
+    assert "- **Suppressed by policy:** 1" in markdown
+    row = next(line for line in table.splitlines() if line.startswith("Suppressed by Policy"))
+    assert row.split()[-1] == "1"
 
 
 def _result_uris(sarif_output: str) -> list[str]:
@@ -392,13 +411,14 @@ def _report_with_suppressions() -> Report:
 
 
 def test_markdown_multi_skill_reports_suppressed_counts():
-    """A directory scan must show the same audit information a single scan does."""
     output = MarkdownReporter().generate_report(_report_with_suppressions())
     assert "- **Suppressed by policy:** 2" in output
 
 
 def test_table_multi_skill_reports_suppressed_counts():
-    output = TableReporter(format_style="plain").generate_report(_report_with_suppressions())
+    report = _report_with_suppressions()
+    report.add_cross_skill_findings([_sample_findings()[0]])
+    output = TableReporter(format_style="plain").generate_report(report)
 
     lines = output.splitlines()
     summary_row = next(line for line in lines if line.startswith("Suppressed by Policy"))
@@ -409,11 +429,12 @@ def test_table_multi_skill_reports_suppressed_counts():
     # a neighbouring one.
     docs_row = next(line for line in lines if line.startswith("docs "))
     clean_row = next(line for line in lines if line.startswith("clean "))
+    cross_skill_row = next(line for line in lines if line.startswith("[cross-skill] "))
     assert docs_row.split()[-1] == "2"
     assert clean_row.split()[-1] == "0"
+    assert cross_skill_row.split()[-1] == "0"
 
 
 def test_multi_skill_reports_unchanged_without_suppressions(report: Report):
-    """The column and the row appear only when something was suppressed."""
     assert "Suppressed" not in MarkdownReporter().generate_report(report)
     assert "Suppressed" not in TableReporter().generate_report(report)

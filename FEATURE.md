@@ -135,9 +135,6 @@ Implemented in `skill_scanner/core/scan_policy.py` with built-ins in `skill_scan
 - `sensitive_files`
 - `command_safety`
 - `analyzers`
-- `cel`
-- `adjudicator`
-- `llm_analysis`
 - `finding_output`
 - `severity_overrides`
 - `disabled_rules`

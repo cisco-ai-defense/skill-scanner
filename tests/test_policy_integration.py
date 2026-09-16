@@ -627,11 +627,6 @@ class TestCrossSkillPolicyIntegration:
         assert len(relay_findings) == 0, "CROSS_SKILL_DATA_RELAY should be suppressed by disabled_rules"
 
     def test_scoped_suppressions_do_not_apply_to_cross_skill_findings(self, tmp_path):
-        """A cross-skill finding has no owning skill, so no scoped selector can describe it.
-
-        Silencing one would require disabled_rules, which stays the documented
-        escape hatch for findings that are not attributable to a single skill.
-        """
         from skill_scanner.core.scan_policy import ScanPolicy
         from skill_scanner.core.scanner import SkillScanner
         from skill_scanner.core.suppressions import suppression_from_dict

@@ -270,6 +270,21 @@ def test_convenience_scan_skill_infers_policy_from_analyzers(example_skills_dir)
     assert matched[0].severity == Severity.LOW
 
 
+def test_rule_wide_override_does_not_raise_an_adjudicator_demotion():
+    policy = ScanPolicy.default()
+    policy.severity_overrides = [SeverityOverride(rule_id="RULE_POLICY_TEST", severity="HIGH", reason="test")]
+    finding = _mk_finding(
+        rule_id="RULE_POLICY_TEST",
+        category=ThreatCategory.COMMAND_INJECTION,
+        severity=Severity.INFO,
+    )
+    finding.metadata["adjudication"] = {"demoted_to": "INFO"}
+
+    SkillScanner(analyzers=[], policy=policy)._apply_severity_overrides([finding])
+
+    assert finding.severity == Severity.INFO
+
+
 def test_convenience_scan_directory_infers_policy_from_analyzers(example_skills_dir):
     """Convenience scan_directory should apply disabled_rules from analyzer policy."""
     policy = ScanPolicy.default()
@@ -803,14 +818,6 @@ class TestSymlinkedSkillDiscovery:
 
 
 def test_same_issue_merge_keeps_an_unsuppressed_sibling_severity(example_skills_dir):
-    """A scoped re-rating must not shield a higher finding it never covered.
-
-    The merge collapses different rules at one location and keeps the group's
-    maximum severity.  A scoped suppression matches one ``rule_id``, so a higher
-    sibling is by definition outside that decision — exempting the whole group
-    on the winner's behalf would hide an unsuppressed HIGH behind a LOW and
-    return ``is_safe``.
-    """
     from skill_scanner.core.suppressions import suppression_from_dict
 
     skill_dir = example_skills_dir / "safe" / "simple-formatter"
@@ -855,7 +862,6 @@ def test_same_issue_merge_keeps_an_unsuppressed_sibling_severity(example_skills_
 
 
 def test_same_issue_merge_leaves_a_re_rating_alone_without_a_higher_sibling(example_skills_dir):
-    """With nothing higher in the group there is no promotion to make."""
     from skill_scanner.core.suppressions import suppression_from_dict
 
     skill_dir = example_skills_dir / "safe" / "simple-formatter"

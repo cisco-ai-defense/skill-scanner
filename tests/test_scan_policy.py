@@ -174,7 +174,6 @@ class TestScanPolicyCustomisation:
         assert policy.get_severity_override("NONEXISTENT") is None
 
     def test_scoped_suppressions(self, tmp_path):
-        """An org that silences a rule for one skill and one path only."""
         policy_file = tmp_path / "scoped.yaml"
         policy_file.write_text(
             textwrap.dedent("""\
@@ -197,7 +196,6 @@ class TestScanPolicyCustomisation:
         assert policy.suppressions[1].severity == "LOW"
 
     def test_scoped_suppression_without_selector_is_rejected(self, tmp_path):
-        """A selector-less entry would duplicate disabled_rules; reject it loudly."""
         policy_file = tmp_path / "bad.yaml"
         policy_file.write_text(
             textwrap.dedent("""\
@@ -210,7 +208,6 @@ class TestScanPolicyCustomisation:
             ScanPolicy.from_yaml(policy_file)
 
     def test_scoped_suppression_typo_is_rejected(self, tmp_path):
-        """The loader has no schema, so an unknown key must not pass silently."""
         policy_file = tmp_path / "typo.yaml"
         policy_file.write_text(
             textwrap.dedent("""\
@@ -223,12 +220,7 @@ class TestScanPolicyCustomisation:
             ScanPolicy.from_yaml(policy_file)
 
     def test_scoped_suppressions_replace_preset_entries(self):
-        """An overlay discards the base's entries rather than adding to them.
-
-        Pinned against a non-empty base directly: every shipped preset has
-        ``suppressions: []``, and against an empty base replacement and
-        concatenation produce the same list.
-        """
+        """Use a non-empty base so replacement differs from concatenation."""
         base = {"suppressions": [{"rule_id": "FROM_PRESET", "skills": ["*"]}]}
         override = {"suppressions": [{"rule_id": "ONLY_THIS", "skills": ["alpha"]}]}
 
@@ -259,13 +251,6 @@ class TestScanPolicyCustomisation:
         ],
     )
     def test_section_present_with_no_value_loads_cleanly(self, tmp_path, key):
-        """Commenting out a block leaves a bare key; that must not be an error.
-
-        PyYAML parses a valueless key as None and the deep-merge replaces the
-        packaged default with it, so a get-default cannot catch this. The
-        resulting TypeError (list sections) or AttributeError (dict sections)
-        would also escape the ValueError contract the API maps to a 400.
-        """
         policy_file = tmp_path / "bare.yaml"
         policy_file.write_text(f"{key}:\n")
 
@@ -284,19 +269,12 @@ class TestScanPolicyCustomisation:
         ],
     )
     def test_nested_key_present_with_no_value_falls_back_to_the_default(self, tmp_path, yaml_body, check):
-        """The bare-key contract holds at any depth, not just the top level.
-
-        `_deep_merge` recurses into a section and then replaces a nested list or
-        scalar with the None PyYAML parsed, which the section's own
-        `get(key, default)` cannot catch because the key is present.
-        """
         policy_file = tmp_path / "nested.yaml"
         policy_file.write_text(yaml_body)
 
         assert check(ScanPolicy.from_yaml(policy_file))
 
     def test_falsy_values_are_not_treated_as_absent(self, tmp_path):
-        """Stripping nulls must not also strip a deliberate 0, false or empty list."""
         policy_file = tmp_path / "falsy.yaml"
         policy_file.write_text(
             textwrap.dedent("""\
@@ -341,7 +319,6 @@ class TestScanPolicyRoundTrip:
         assert reloaded.suppressions == original.suppressions
 
     def test_suppressions_survive_roundtrip(self, tmp_path):
-        """A scoped entry must reload byte-for-byte identical."""
         policy_file = tmp_path / "scoped.yaml"
         policy_file.write_text(
             textwrap.dedent("""\

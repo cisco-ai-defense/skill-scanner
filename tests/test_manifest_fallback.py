@@ -18,6 +18,7 @@ from skill_scanner.core.rule_registry import PackLoader, RuleRegistry
 from skill_scanner.core.scan_policy import ScanPolicy
 from skill_scanner.core.scanner import SkillScanner
 from skill_scanner.core.semantic.projector import ScanFactProjector
+from skill_scanner.core.suppressions import suppression_from_dict
 from skill_scanner.utils.file_utils import FileValidationError
 
 
@@ -241,6 +242,41 @@ def test_oversized_metadata_returns_a_closed_rejection_without_reading(
         "evaluation_ms",
     ):
         assert cel[field] == 0
+
+
+def test_oversized_metadata_rejection_honors_scoped_suppression(tmp_path: Path) -> None:
+    oversized = tmp_path / "oversized"
+    oversized.mkdir()
+    skill_file = oversized / "SKILL.md"
+    skill_file.write_bytes(b"x" * 129)
+    policy = ScanPolicy.default()
+    policy.cel.mode = CelMode.OFF
+    policy.file_limits.max_loader_file_size_bytes = 128
+    policy.suppressions = [
+        suppression_from_dict(
+            {
+                "rule_id": "SKILL_LOAD_REJECTED_LIMIT",
+                "skills": ["oversized"],
+                "reason": "Approved oversized fixture",
+            }
+        )
+    ]
+
+    with SkillScanner(
+        analyzers=[],
+        policy=policy,
+        rule_registry=PackLoader().build_registry(),
+    ) as scanner:
+        result = scanner.scan_skill(oversized)
+
+    assert result.findings == []
+    assert [finding.rule_id for finding in result.suppressed_findings] == ["SKILL_LOAD_REJECTED_LIMIT"]
+    assert result.suppressed_findings[0].metadata["suppression"] == {
+        "rule_id": "SKILL_LOAD_REJECTED_LIMIT",
+        "reason": "Approved oversized fixture",
+        "matched_skill": "oversized",
+    }
+    assert result.scan_metadata["suppressions"]["suppressed"] == 1
 
 
 def test_loader_descriptor_size_check_preserves_closed_rejection_on_stat_race(

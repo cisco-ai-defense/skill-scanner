@@ -155,8 +155,6 @@ class TableReporter:
             ["Low", report.low_count],
             ["Info", report.info_count],
         ]
-        # The suppressed column only appears when something was suppressed, so
-        # an ordinary scan's table is unchanged.
         total_suppressed = sum(len(r.suppressed_findings) for r in report.scan_results)
         if total_suppressed:
             summary_data.append(["Suppressed by Policy", total_suppressed])

@@ -461,8 +461,6 @@ class TestAnalyzerStatusInJSON:
 # Scoped Suppression Tests
 # =============================================================================
 class TestScopedSuppressions:
-    """A suppressed finding must not drive the exit code, but must stay visible."""
-
     @staticmethod
     def _policy(tmp_path: Path) -> Path:
         policy_file = tmp_path / "scoped.yaml"
@@ -498,7 +496,6 @@ class TestScopedSuppressions:
         stdout, _, _ = run_cli(
             ["scan", str(skill), "--format", "json", "--policy", str(self._policy(tmp_path))],
         )
-        # Parses as a single JSON document — no status text leaked onto stdout.
         assert json.loads(stdout)["skill_name"] == "data-exfiltrator"
 
     def test_sarif_reports_the_suppression(self, test_skills_dir, tmp_path):
