@@ -24,7 +24,7 @@ Skill Scanner uses [LiteLLM](https://github.com/BerriAI/litellm) under the hood,
 
 ### How do I choose which analyzers to enable?
 
-Start with the defaults — the three core analyzers handle common threats without configuration. Add `--use-osv` for known vulnerable Python pins and `--use-behavioral` for Python dataflow. Add `--use-llm` for semantic reasoning and `--enable-meta` for cross-correlation. Use `--adjudicate` when deterministic HIGH/CRITICAL literal-regex false positives need a demote-only LLM review. Enable VirusTotal or Cisco AI Defense for cloud-based binary and content scanning.
+Start with the defaults — the three core analyzers handle common threats without configuration. Add `--use-osv` for known vulnerable Python and JavaScript pins and `--use-behavioral` for Python dataflow. Add `--use-llm` for semantic reasoning and `--enable-meta` for cross-correlation. Use `--adjudicate` when deterministic HIGH/CRITICAL literal-regex false positives need a demote-only LLM review. Enable VirusTotal or Cisco AI Defense for cloud-based binary and content scanning.
 
 ### What is the adjudicator?
 

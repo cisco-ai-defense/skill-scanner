@@ -64,7 +64,7 @@ Each pass targets a different aspect of the skill package:
 | Script scanning | `_scan_scripts()` | Python/bash/other scripts against signatures |
 | Dynamic sensitive access | `_check_dynamic_sensitive_file_access()` | Dynamic glob/enumeration of credential and configuration paths |
 | Consistency | `_check_consistency()` | Mismatch between manifest claims and behavior, including allowed-tools enforcement |
-| Dependency pinning | `_check_dependency_pinning()` | Unpinned dependencies in `requirements*.txt`, `pyproject.toml`, `setup.cfg`, `setup.py`, `Pipfile`, and manifest metadata |
+| Dependency pinning | `_check_dependency_pinning()` | Unpinned dependencies in `requirements*.txt`, `pyproject.toml`, `setup.cfg`, `setup.py`, `Pipfile`, manifest metadata, and `package.json` (`^1.2.3`/`~1.2.3`/`>=1`/`*`/dist-tags are MEDIUM; `1.x`/`1.2.*` are LOW). Suppressed per ecosystem when a lockfile freezes that ecosystem's versions: Python lockfiles silence PyPI entries, JavaScript lockfiles silence npm entries |
 | Config file URLs | `_scan_config_files()` | URLs in config/settings/TOML files classified via the shared `url_classifier` |
 | Referenced files | `_scan_referenced_files()` | Files mentioned in SKILL.md instructions |
 | Binary files | `_check_binary_files()` | Extension/magic mismatch, archive detection, unknown binaries |

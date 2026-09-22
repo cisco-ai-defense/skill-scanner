@@ -791,7 +791,7 @@ rules:
       - LOW
     knobs:
       enabled: true
-    description: "Skill declares a dependency without a pinned (==) version"
+    description: "Skill declares a dependency without an exact pinned version"
 
   CONFIG_SUSPICIOUS_URL:
     source: python

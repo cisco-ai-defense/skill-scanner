@@ -67,6 +67,13 @@ from ...core.static_analysis.url_classifier import classify_url, extract_urls
 from ...data import DATA_DIR
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
+from .npm_manifest import (
+    DeclaredDependency,
+    classify_spec,
+    entries_from_package_json,
+    is_npm_manifest,
+    is_vendored,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2307,8 +2314,10 @@ class StaticAnalyzer(BaseAnalyzer):
 
         return findings
 
-    # Lockfiles whose presence means dependency versions are already resolved/frozen.
-    _LOCKFILE_NAMES = {"uv.lock", "poetry.lock", "pipfile.lock", "requirements.lock"}
+    # Lockfiles that freeze resolved versions.  Scoped per ecosystem: a lockfile
+    # speaks for its own package manager's manifests, not another's.
+    _PYTHON_LOCKFILE_NAMES = {"uv.lock", "poetry.lock", "pipfile.lock", "requirements.lock"}
+    _JS_LOCKFILE_NAMES = {"package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml"}
 
     # name[extras] followed by an optional version specifier.
     _REQUIREMENT_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(.*)$")
@@ -2493,6 +2502,61 @@ class StaticAnalyzer(BaseAnalyzer):
                     entries.append(("SKILL.md", None, str(declared_dep)))
         return entries
 
+    @staticmethod
+    def _collect_npm_entries(skill: Skill) -> list[DeclaredDependency]:
+        """Declared npm dependencies from every ``package.json`` in the skill."""
+        entries: list[DeclaredDependency] = []
+        for skill_file in skill.files:
+            if not is_npm_manifest(skill_file.relative_path):
+                continue
+            entries.extend(entries_from_package_json(skill_file.relative_path, skill_file.read_content()))
+        return entries
+
+    def _unpinned_dependency_finding(
+        self,
+        source_label: str,
+        line_number: int | None,
+        package_name: str,
+        status: str,
+        snippet: str | None,
+        pin_hint: str,
+        pin_example: str,
+    ) -> Finding:
+        """Build one unpinned/wildcard dependency finding."""
+        severity = Severity.LOW if status == "wildcard" else Severity.MEDIUM
+        if status == "wildcard":
+            detail = f"'{package_name}' is pinned to a wildcard version range"
+        else:
+            detail = f"'{package_name}' has no {pin_hint} version"
+        return Finding(
+            id=self._generate_finding_id(
+                "SUPPLY_CHAIN_UNPINNED_DEPENDENCY", f"{source_label}:{line_number}:{package_name}"
+            ),
+            rule_id="SUPPLY_CHAIN_UNPINNED_DEPENDENCY",
+            category=ThreatCategory.SUPPLY_CHAIN_ATTACK,
+            severity=severity,
+            title="Unpinned dependency",
+            description=(
+                f"Dependency {detail}. Unpinned dependencies in a skill package allow a later, "
+                f"potentially malicious release to be installed automatically (supply-chain risk)."
+            ),
+            file_path=source_label,
+            line_number=line_number,
+            snippet=snippet,
+            remediation=f"Pin the dependency to an exact version (e.g. {pin_example}).",
+            analyzer="static",
+            metadata={
+                "semantic_facts": {
+                    "evidence_kind": "dependency_declaration",
+                    "context_kind": "manifest" if source_label == "SKILL.md" else "dependency_file",
+                    "evidence_value_class": f"{status}_dependency",
+                    "evidence_count": 1,
+                    "signal_kind": "unpinned_dependency",
+                    "signals": [],
+                }
+            },
+        )
+
     def _check_dependency_pinning(self, skill: Skill) -> list[Finding]:
         """Flag dependencies declared without an exact pinned version.
 
@@ -2503,60 +2567,55 @@ class StaticAnalyzer(BaseAnalyzer):
         intentionally use ranges, so if a lockfile is present the versions are
         already frozen and we do not flag.
 
-        Sources checked: ``requirements*.txt``, ``pyproject.toml``
+        Sources checked -- PyPI: ``requirements*.txt``, ``pyproject.toml``
         (``[project]`` dependencies and optional-dependencies), ``setup.cfg``,
         ``setup.py`` (``install_requires``), ``Pipfile``, and a
-        ``dependencies`` list under manifest ``metadata``.
+        ``dependencies`` list under manifest ``metadata``.  npm:
+        ``package.json`` (``dependencies``, ``devDependencies`` and
+        ``optionalDependencies``).
         """
         findings: list[Finding] = []
+        # A lockfile inside an installed dependency freezes that package's tree,
+        # not this one's, so it must not suppress the skill's own manifests.
+        present = {Path(f.relative_path).name.lower() for f in skill.files if not is_vendored(f.relative_path)}
 
-        # A lockfile freezes the resolved versions, so ranges are intentional.
-        if any(Path(f.relative_path).name.lower() in self._LOCKFILE_NAMES for f in skill.files):
-            return findings
-
-        for source_label, line_number, raw in self._collect_requirement_entries(skill):
-            classified = self._classify_requirement(raw)
-            if classified is None:
-                continue
-            package_name, status = classified
-            if status == "pinned":
-                continue
-
-            severity = Severity.LOW if status == "wildcard" else Severity.MEDIUM
-            if status == "wildcard":
-                detail = f"'{package_name}' is pinned to a wildcard version range"
-            else:
-                detail = f"'{package_name}' has no pinned (==) version"
-            findings.append(
-                Finding(
-                    id=self._generate_finding_id(
-                        "SUPPLY_CHAIN_UNPINNED_DEPENDENCY", f"{source_label}:{line_number}:{package_name}"
-                    ),
-                    rule_id="SUPPLY_CHAIN_UNPINNED_DEPENDENCY",
-                    category=ThreatCategory.SUPPLY_CHAIN_ATTACK,
-                    severity=severity,
-                    title="Unpinned dependency",
-                    description=(
-                        f"Dependency {detail}. Unpinned dependencies in a skill package allow a later, "
-                        f"potentially malicious release to be installed automatically (supply-chain risk)."
-                    ),
-                    file_path=source_label,
-                    line_number=line_number,
-                    snippet=raw.strip() or None,
-                    remediation="Pin the dependency to an exact version (e.g. 'package==1.2.3').",
-                    analyzer="static",
-                    metadata={
-                        "semantic_facts": {
-                            "evidence_kind": "dependency_declaration",
-                            "context_kind": "manifest" if source_label == "SKILL.md" else "dependency_file",
-                            "evidence_value_class": f"{status}_dependency",
-                            "evidence_count": 1,
-                            "signal_kind": "unpinned_dependency",
-                            "signals": [],
-                        }
-                    },
+        # A lockfile makes ranges intentional -- for its own ecosystem only.
+        if present.isdisjoint(self._PYTHON_LOCKFILE_NAMES):
+            for source_label, line_number, raw in self._collect_requirement_entries(skill):
+                classified = self._classify_requirement(raw)
+                if classified is None:
+                    continue
+                package_name, status = classified
+                if status == "pinned":
+                    continue
+                findings.append(
+                    self._unpinned_dependency_finding(
+                        source_label,
+                        line_number,
+                        package_name,
+                        status,
+                        snippet=raw.strip() or None,
+                        pin_hint="pinned (==)",
+                        pin_example="'package==1.2.3'",
+                    )
                 )
-            )
+
+        if present.isdisjoint(self._JS_LOCKFILE_NAMES):
+            for entry in self._collect_npm_entries(skill):
+                status = classify_spec(entry.spec)
+                if status is None or status == "pinned":
+                    continue
+                findings.append(
+                    self._unpinned_dependency_finding(
+                        entry.source,
+                        entry.line_number,
+                        entry.name,
+                        status,
+                        snippet=f'"{entry.name}": "{entry.spec}"',
+                        pin_hint="exact",
+                        pin_example='\'"package": "1.2.3"\'',
+                    )
+                )
 
         return findings
 

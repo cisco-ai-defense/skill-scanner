@@ -17,7 +17,7 @@ This page helps you choose which optional analyzers to enable for your use case.
 | Cloud-based threat classification | AI Defense | `--use-aidefense` | Requires Cisco AI Defense API access |
 | Catch vague/risky skill descriptions | Trigger | `--use-trigger` | Lightweight; no external dependencies |
 | Python dataflow and cross-file analysis | Behavioral | `--use-behavioral` | CPU-intensive for large codebases |
-| Known-vulnerable dependency detection | OSV | `--use-osv` | Requires network; queries PyPI pins only (no API key) |
+| Known-vulnerable dependency detection | OSV | `--use-osv` | Requires network; queries pinned Python and JavaScript dependencies (no API key) |
 
 ## When to Use Each Analyzer
 
@@ -102,7 +102,7 @@ See [Behavioral Analyzer deep dive](behavioral-analyzer.md) for detection patter
 
 ### OSV Analyzer
 
-Best for: skills that declare pinned Python dependencies you want checked against known CVEs/advisories. Queries the free, open [OSV.dev](https://osv.dev) database — no API key required.
+Best for: skills that declare pinned Python or JavaScript dependencies you want checked against known CVEs/advisories. Only exact pins are queryable, and only direct dependencies are seen -- transitive ones are not resolved. Queries the free, open [OSV.dev](https://osv.dev) database — no API key required.
 
 ```bash
 skill-scanner scan ./my-skill --use-osv
