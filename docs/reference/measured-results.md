@@ -284,6 +284,25 @@ account for the pattern:
 So enabling it as a screen would penalise non-English and prompt-engineering skills while detecting
 essentially none of the labelled malicious ones.
 
+### Its flag rate does not move between populations, where ours does
+
+The same model over 60,000 of the gitskills records, CPU, 34 minutes:
+
+| Population | Flag rate at 0.5 | 95% interval |
+|---|---|---|
+| Hugging Face skill datasets (n=12,500) | 0.216% | [0.149%, 0.314%] |
+| gitskills (n=60,000) | 0.167% | [0.137%, 0.203%] |
+
+**Those intervals overlap**, so Prompt Guard's flag rate is statistically indistinguishable across two
+populations that this scanner separates clearly: our own MEDIUM+ rate is 3.76% [3.44, 4.11] against
+2.228% [2.164, 2.293] on the same pair, which does not overlap. The underlying score distribution does
+shift — mean probability 0.0066 on gitskills against 0.0343, about five times lower — but not enough to
+change how often anything crosses a usable threshold.
+
+A screen whose firing rate is flat across populations of visibly different composition is not tracking
+what those populations differ in. That is the same conclusion the labelled corpus gives, arrived at
+without labels.
+
 **This is a statement about fit, not about the model.** Prompt Guard detects prompt-injection and
 jailbreak attempts in text. Whether a skill is safe to install is a different question: a skill can be
 malicious through a download-and-execute chain or a credential sink without containing anything an
