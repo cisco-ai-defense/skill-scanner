@@ -983,6 +983,35 @@ def render_prompt_guard(report: dict | None) -> str:
             "effect sits entirely in the high-confidence tail.</p>\n"
         )
 
+    # The same measurement pointed at our own output. Free, because the static scans of
+    # these records already existed, and it is the obvious question a reader will ask.
+    out += "<h3>The same measurement, applied to this scanner</h3>\n"
+    out += table(
+        ["Group", "Records", "MEDIUM+", "HIGH+", "INFO+"],
+        [
+            ["More than 2% CJK", "976", "2.25%", "0.82%", "94.57%"],
+            ["Rest", "11,522", "3.89%", "2.60%", "87.68%"],
+        ],
+        numeric=(1, 2, 3, 4),
+    )
+    out += (
+        "<p>The deterministic rules flag CJK-heavy skills <em>less</em> often, not more: 0.58x at "
+        "MEDIUM or above and 0.32x at HIGH or above, against Prompt Guard's sixteen-fold in the other "
+        "direction. That is the expected shape for rules keyed on code constructs &mdash; "
+        "<code>curl | bash</code>, base64 decoding, credential paths &mdash; which do not care what "
+        "language the prose around them is in.</p>\n"
+    )
+    out += (
+        "<p><strong>It does not follow that the scanner is unbiased here, and this corpus cannot settle "
+        "it.</strong> These records are unlabelled, so a lower flag rate is consistent with two "
+        "different explanations: those skills genuinely do less risky work, or the rules under-detect "
+        "when the surrounding text is non-English. Separating them needs labelled non-English skills, "
+        "which no corpus screened so far provides. The defensible claim is the narrow one &mdash; there "
+        "is no evidence of <em>over</em>-flagging non-English skills, and the direction of any error is "
+        "towards silence rather than noise. The INFO row moves the other way, which is consistent with "
+        "the one hygiene rule that dominates that tier.</p>\n"
+    )
+
     out += (
         "<p>So enabling it as a screen would penalise non-English and prompt-engineering skills while "
         "detecting essentially none of the labelled malicious ones. <strong>This is a statement about "
