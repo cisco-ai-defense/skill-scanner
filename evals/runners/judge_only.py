@@ -198,11 +198,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--provider", default="openai-compatible")
     parser.add_argument("--endpoint", required=True, help="OpenAI-compatible base URL, e.g. http://127.0.0.1:8003/v1")
     parser.add_argument("--shard", default=None, help="'index/count', the same stride rule as the benchmark runner.")
+    parser.add_argument(
+        "--ids-file",
+        default=None,
+        help="Judge only these record ids, one per line; used to adjudicate a rule's flags early.",
+    )
     parser.add_argument("--workers", type=int, default=128)
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
 
     records = _load_records(Path(args.clean_root).expanduser(), args.corpus)
+    if args.ids_file:
+        wanted = {line.strip() for line in Path(args.ids_file).expanduser().read_text().splitlines() if line.strip()}
+        records = [r for r in records if r.record_id in wanted]
     if args.shard:
         index, _, count = args.shard.partition("/")
         records = [r for offset, r in enumerate(records) if offset % int(count) == int(index)]
