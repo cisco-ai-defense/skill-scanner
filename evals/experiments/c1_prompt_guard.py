@@ -70,13 +70,33 @@ WINDOW_OVERLAP = 128
 POSITIVE_LABELS = frozenset({"malicious", "contextually_risky", "obviously_malicious"})
 
 
-def load_model(model_id: str) -> tuple[Any, Any]:
+def select_device(requested: str) -> str:
+    """Resolve the device to run on, preferring an accelerator when one exists.
+
+    The model is small enough to run on CPU, so a missing GPU is not a blocker. It is
+    still worth using one when present: the throughput difference decides whether a
+    sweep over millions of records is hours or days.
+    """
+
+    import torch
+
+    if requested != "auto":
+        return requested
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def load_model(model_id: str, device: str = "cpu") -> tuple[Any, Any, str]:
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModelForSequenceClassification.from_pretrained(model_id)
     model.eval()
-    return tokenizer, model
+    model.to(device)
+    return tokenizer, model, device
 
 
 def read_skill_text(directory: Path) -> str:
@@ -119,12 +139,13 @@ def score_text(text: str, tokenizer: Any, model: Any, *, batch_size: int = 16) -
     if count == 0:
         return {"probability": None, "windows": 0, "reason": "tokenized to nothing"}
 
+    device = next(model.parameters()).device
     best = 0.0
     with torch.no_grad():
         for offset in range(0, count, batch_size):
-            batch = {"input_ids": input_ids[offset : offset + batch_size]}
+            batch = {"input_ids": input_ids[offset : offset + batch_size].to(device)}
             if attention_mask is not None:
-                batch["attention_mask"] = attention_mask[offset : offset + batch_size]
+                batch["attention_mask"] = attention_mask[offset : offset + batch_size].to(device)
             logits = model(**batch).logits
             # Binary head: index 1 is the malicious/jailbreak class.
             probs = torch.softmax(logits, dim=-1)[:, 1]
@@ -186,17 +207,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--corpus", action="append", dest="corpora", required=True)
     parser.add_argument("--model", default=MODEL_ID)
     parser.add_argument("--limit", type=int, default=0, help="0 means every record")
+    parser.add_argument(
+        "--device",
+        default="auto",
+        help="auto, cpu, cuda, or mps. auto prefers an accelerator when one is present.",
+    )
+    parser.add_argument("--batch-size", type=int, default=0, help="0 picks 16 on CPU and 128 otherwise.")
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
 
-    print(f"loading {args.model} on CPU", flush=True)
-    tokenizer, model = load_model(args.model)
+    device = select_device(args.device)
+    batch_size = args.batch_size or (16 if device == "cpu" else 128)
+    print(f"loading {args.model} on {device} (batch {batch_size})", flush=True)
+    tokenizer, model, device = load_model(args.model, device)
 
     report: dict[str, Any] = {
         "experiment": "c1-prompt-guard",
         "blocking": False,
         "model": args.model,
-        "device": "cpu",
+        "device": device,
+        "batch_size": batch_size,
         "hypothesis": "a prompt-injection classifier can screen skills for install risk",
         "scoring": {
             "window_tokens": WINDOW_TOKENS,
@@ -223,7 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         started = time.monotonic()
         for index, record in enumerate(records, start=1):
             text = read_skill_text(record.directory)
-            result = score_text(text, tokenizer, model)
+            result = score_text(text, tokenizer, model, batch_size=batch_size)
             rows.append(
                 {
                     "record_id": record.record_id,
