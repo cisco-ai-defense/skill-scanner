@@ -102,7 +102,8 @@ Of 196 malicious records still missed at MEDIUM+ by the three-pass judge:
 - 35 produce only an INFO finding. Those are **not** a calibration problem: every one is a record the
   judge never read — 31 `LLM_CONTEXT_BUDGET_EXCEEDED` and 4 `LLM_ANALYSIS_FAILED`.
 
-Nothing lands at LOW, so severity assignment is effectively bimodal.
+Nothing lands at LOW on this corpus, so severity assignment is effectively bimodal here. That is not a
+property of the scanner: on the gitskills sample below, 1.66% of records top out at LOW.
 
 ### Un-analysed skills pass the gate
 
@@ -157,11 +158,50 @@ On the population users actually scan, the shipped rules are roughly seven times
 above.
 
 The INFO row is the important one for tuning. Nearly every real skill receives an INFO finding, and
-nothing at all lands at LOW, so severity assignment is effectively bimodal. On MaliciousSkillBench,
+nothing at all lands at LOW on these two corpora, so severity assignment is effectively bimodal on them.
+The gitskills sample below shows that is corpus-specific rather than structural. On MaliciousSkillBench,
 moving the gate down to INFO looks attractive: it raises F1 from 81.4% to 83.2%. On real skills the
 same change would flag 88.2% of everything scanned. The MSB-only view would have justified a change
 that is unusable in production, which is the reason to keep an unlabelled real-world population in the
 evaluation set.
+
+## The real-world flag rate does not transfer between skill populations
+
+Corpus: 200,000 skills from `mvaccargiu/gitskills` (CC-BY-4.0), which indexes skills found in public
+git repositories. This is a *different population* from the two Hugging Face datasets behind the
+12,498-record benchmark above, which is the point of running it: sampling more from the same two
+sources tightens an interval, while sampling somewhere else tests whether the figure means anything.
+
+Static rules only, no model. 18.3 minutes on 16 cores at 182 records/second, 2 errors.
+
+| Threshold | gitskills (n=199,998) | HF skill datasets (n=12,498) |
+|---|---|---|
+| CRITICAL | 0.121% [0.106, 0.137] | 0.42% [0.32, 0.55] |
+| HIGH or above | 0.522% [0.491, 0.555] | 2.46% [2.20, 2.74] |
+| MEDIUM or above | **2.228% [2.164, 2.293]** | **3.76% [3.44, 4.11]** |
+| INFO or above | 96.971% | 88.21% |
+
+**The MEDIUM+ intervals do not overlap**, so the two populations genuinely differ and the earlier 3.76%
+is not a general "real-world false-positive rate". On git-sourced skills the rate is about 1.7x lower at
+MEDIUM+ and nearly 5x lower at HIGH+. The direction is favourable, but the lesson is that this figure
+has to be quoted with its population every time.
+
+Two things qualify the comparison, and both cut against treating gitskills as the better estimate:
+
+- **These are not all well-formed skills.** `SKILL_LOAD_FALLBACK_USED` fires on 16.89% of records, and
+  the run logged YAML frontmatter failures and missing `name`/`description` throughout. The dataset
+  indexes candidate Markdown files from repositories, so the population differs in kind and not only in
+  origin. A file that is barely a skill gives the security rules less to fire on.
+- **The INFO tier is even more dominated by one hygiene rule here.** `MANIFEST_MISSING_LICENSE` fires on
+  79.77% of records, which is what puts INFO+ at 97%. It remains a metadata check rather than a security
+  finding.
+
+Genuine security signals are correspondingly rare: taint flow on 0.16%, prompt-injection patterns on
+0.14%, and correlated network-execution chains on 0.10%.
+
+This sample also corrects an earlier reading. The LOW tier is not empty here: 1.66% of records top out
+at LOW, against none on MaliciousSkillBench or the Hugging Face corpora. The bimodal severity
+distribution noted above is a property of those corpora, not of the scanner.
 
 ## A System One model does not replace the judge in this framing
 
