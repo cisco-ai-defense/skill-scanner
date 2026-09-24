@@ -128,7 +128,10 @@ def probe(endpoint: str, model: str, state: str, question: str, *, timeout: int 
         "model": model,
         "messages": [
             {"role": "system", "content": INSTRUCTIONS + " Answer with exactly one word: true or false."},
-            {"role": "user", "content": f"{question}\n\n--- SKILL ---\n{state}\n--- END ---\n\nAnswer:"},
+            # Skill first, question last. All eight probes then share one prefix, so the
+            # prefix cache prefills the skill once instead of eight times; with the
+            # question first every probe re-read the whole skill.
+            {"role": "user", "content": f"--- SKILL ---\n{state}\n--- END ---\n\n{question}\n\nAnswer:"},
         ],
         "max_tokens": 1,
         "temperature": 0.0,

@@ -427,6 +427,44 @@ It is a metadata hygiene check rather than a security finding — the judge prom
 missing optional manifest metadata is not a security threat — so reporting it as hygiene would clear
 the INFO tier without affecting any gating decision.
 
+## A System One screen in front of the judge halves the false-positive rate
+
+Both models served locally on H200s: OpenJev (the System One weights) and Gemma 4 26B-A4B as
+the judge. Corpus: MaliciousSkillBench source-disjoint, 839 malicious and 545 benign.
+
+**The judge reproduces locally.** Single pass, core rules, meta off, MEDIUM+ on 1,376 usable
+records: F1 64.2%, precision 81.6%, recall 52.9%, FPR 18.2%. The Bedrock mantle measurement of
+the same model gave 61.2%, 81.5%, 49.0% and 17.6%, so local and hosted agree.
+
+Reaching that required a decoding fix. The first local run lost 46.5% of records to
+`finish_reason=length`: under grammar-constrained JSON the model emitted a valid object and
+then padded it with whitespace until it hit 8,192 tokens. Serving with
+`--structured-outputs-config '{"backend": "xgrammar", "disable_any_whitespace": true}'` took
+the failure rate to 0.6% (8 of 1,384). On eight records that had all failed, the patched
+server answered 8 of 8 and an unpatched control 4 of 8.
+
+**OpenJev asked choice questions, not `noul`.** Eight boolean threat probes, P(true) read from
+the next-token distribution with reasoning disabled. Its `prompt_injection` probe is the
+screen.
+
+**The cascade.** Jev screens every record and the judge runs only on those above a threshold.
+The threshold was chosen on one hash-selected half of the records (655) to keep recall within
+two points of the judge alone while skipping the most benign records, then reported on the
+other half (721):
+
+| On the held-out half | F1 | Precision | Recall | FPR | Judge calls |
+|---|---|---|---|---|---|
+| Judge alone | 61.2% | 76.2% | 51.1% | 23.1% | 100% |
+| Jev screen, then judge | **62.6%** | **86.1%** | 49.2% | **11.6%** | **60.7%** |
+
+The screen skips 70.7% of benign records. It is not only a cost saving: records the judge
+flags wrongly are often ones Jev scores as harmless, so the cascade vetoes judge false
+positives, and precision rises ten points for 1.9 points of recall. The max-probe and
+mean-probe screens are weaker (FPR 20.4% and 19.0%) and are not recommended.
+
+This is one corpus, split in half. It has not been measured on the other labelled corpora, so
+the threshold should not be assumed to transfer.
+
 ## Where the deterministic false positives come from
 
 Earlier work could only say that rule-level suppression buys at most +0.2 F1. That analysis
