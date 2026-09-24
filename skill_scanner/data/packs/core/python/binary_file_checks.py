@@ -48,6 +48,8 @@ def check_binary_files(skill: Skill, policy: ScanPolicy) -> list[Finding]:
                     "CRITICAL": Severity.CRITICAL,
                     "HIGH": Severity.HIGH,
                     "MEDIUM": Severity.MEDIUM,
+                    # Without this entry a LOW result fell through to the MEDIUM default.
+                    "LOW": Severity.LOW,
                 }
                 findings.append(
                     Finding(

@@ -2904,6 +2904,7 @@ class StaticAnalyzer(BaseAnalyzer):
                         "CRITICAL": Severity.CRITICAL,
                         "HIGH": Severity.HIGH,
                         "MEDIUM": Severity.MEDIUM,
+                        "LOW": Severity.LOW,
                     }
                     findings.append(
                         Finding(

@@ -186,6 +186,10 @@ _EXTENSION_FAMILY: dict[str, str] = {
 # Extension → expected Magika label(s) for label-level mismatch detection
 # ---------------------------------------------------------------------------
 
+# Markdown embeds other text formats (frontmatter, fenced code), so a text-level label
+# mismatch in these files is not evidence of disguise.
+_MARKDOWN_EXTENSIONS = frozenset({".md", ".markdown", ".mdx"})
+
 _EXTENSION_EXPECTED_LABELS: dict[str, frozenset[str]] = {
     ".py": frozenset({"python"}),
     ".sh": frozenset({"shell"}),
@@ -445,7 +449,8 @@ def check_extension_mismatch(
 
     Returns:
         Tuple of (severity, description, magic_match) if mismatch found,
-        None otherwise.  Severity is one of: "CRITICAL", "HIGH", "MEDIUM"
+        None otherwise.  Severity is one of: "CRITICAL", "HIGH", "MEDIUM", "LOW"
+        (LOW only for a text-level label mismatch inside Markdown).
     """
     shebang_exts = (
         set(shebang_compatible_extensions)
@@ -644,6 +649,21 @@ def _check_text_label_mismatch(
         return None
 
     name = file_path.name
+    if ext in _MARKDOWN_EXTENSIONS:
+        # Markdown is a container for other text formats, so a text or code label here
+        # is not the disguise this check exists to catch. A SKILL.md must open with YAML
+        # frontmatter, and a short skill reads to Magika as mostly YAML: on 200,000 real
+        # published skills that alone was 85% of every FILE_MAGIC_MISMATCH, the largest
+        # single source of MEDIUM findings. Binary content in a .md file never reaches
+        # this function -- it is a family mismatch and keeps its severity.
+        if actual_label == "yaml":
+            return None
+        return (
+            "LOW",
+            f"Markdown file '{name}' reads mostly as {magic.description} ({actual_label}). Markdown "
+            "commonly embeds code, so this is reported for visibility rather than as obfuscation.",
+            magic,
+        )
     return (
         "MEDIUM",
         f"File '{name}' extension ({ext}) suggests one format but Magika detected "

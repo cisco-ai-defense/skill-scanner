@@ -488,14 +488,15 @@ same thing the old one did.
 `correlation` is the only analyzer that fires *more* often on harmless records than malicious
 ones, and one rule accounts for almost all of it.
 
-**The worst rules by harmless fires, MEDIUM+:**
+**The worst rules by harmless fires**, counting every finding at MEDIUM or above whatever its
+exact severity:
 
-| Analyzer | Rule | Severity | Harmless | Malicious | Precision |
-|---|---|---|---|---|---|
-| correlation | `CORRELATED_NETWORK_EXECUTION_FLOW` | HIGH | 30 | 7 | **18.9%** |
-| pipeline | `PIPELINE_TAINT_FLOW` | HIGH | 9 | 7 | 43.8% |
-| static | `ACTIVE_DYNAMIC_EXECUTION` | HIGH | 4 | 18 | 81.8% |
-| correlation | `CORRELATED_SENSITIVE_NETWORK_FLOW` | HIGH | 4 | 22 | 84.6% |
+| Analyzer | Rule | Harmless | Malicious | Precision |
+|---|---|---|---|---|
+| correlation | `CORRELATED_NETWORK_EXECUTION_FLOW` | 31 | 7 | **18.4%** |
+| pipeline | `PIPELINE_TAINT_FLOW` | 10 | 9 | 47.4% |
+| correlation | `CORRELATED_SENSITIVE_NETWORK_FLOW` | 4 | 22 | 84.6% |
+| static | `ACTIVE_DYNAMIC_EXECUTION` | 4 | 18 | 81.8% |
 
 ### One rule change removes 61% of the deterministic false-positive rate
 

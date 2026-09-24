@@ -80,6 +80,7 @@ PAGES = (
     ("deterministic.html", "Deterministic baseline"),
     ("judged.html", "Judge and meta-judge"),
     ("cascade.html", "Small-model screens"),
+    ("large-scale.html", "Large-scale run"),
     ("cross-tool.html", "SkillSpector vs skill-scanner"),
     ("improvements.html", "Improving the scanner"),
     ("experiments.html", "Experiments"),
@@ -901,6 +902,219 @@ discriminate on a population where every answer is the same.</p>"""
     return page("Small-model screens", "cascade.html", body)
 
 
+def _metric_row(label: str, m: dict) -> list[str]:
+    return [
+        esc(label),
+        percent(m.get("f1")),
+        percent(m.get("precision")),
+        percent(m.get("recall")),
+        percent(m.get("fpr")),
+    ]
+
+
+def render_large_scale(report: dict | None) -> str:
+    """Results from running both models locally on 4x H200, and the full static corpus."""
+
+    title = "Large-scale run on local GPUs"
+    if not report:
+        return page(title, "large-scale.html", f"<h1>{title}</h1>\n" + missing("The large-scale run report"))
+
+    body = f"<h1>{title}</h1>\n"
+    hw = report.get("hardware") or {}
+    body += (
+        f"<p>Both models were served locally with vLLM on {esc(hw.get('gpus', 'four H200 GPUs'))}: "
+        "OpenJev, the System One weights, on two cards, and Gemma 4 26B-A4B as the LLM judge on the "
+        "other two, each as independent replicas because either model fits on one card. The "
+        "deterministic scanner ran on the host CPUs. Nothing left the cluster.</p>\n"
+    )
+
+    # --- judge reproduction and the decoding fix -------------------------------------
+    judge = report.get("judge") or {}
+    if judge:
+        body += "<h2>The judge reproduces locally, once a decoding fault is fixed</h2>\n"
+        body += table(
+            ["Judge", "F1", "Precision", "Recall", "FPR"],
+            [
+                _metric_row("Gemma 4 26B, local vLLM", judge.get("local") or {}),
+                _metric_row("Gemma 4 26B, Bedrock mantle (earlier)", judge.get("mantle") or {}),
+            ],
+            numeric=(1, 2, 3, 4),
+        )
+        fix = judge.get("decoding_fix") or {}
+        if fix:
+            body += (
+                f"<p>MaliciousSkillBench source-disjoint split, single pass, core rules, detection at "
+                f"MEDIUM or above. The two routes agree, which is what licenses using the local run for "
+                f"everything below.</p>\n"
+                f"<p>The first local run lost <strong>{percent(fix.get('before_rate'), 1)}</strong> of "
+                f"records ({count(fix.get('before_failed'))} of {count(fix.get('records'))}) to "
+                "<code>finish_reason=length</code>. Under grammar-constrained JSON decoding the model "
+                "emitted a complete object and then padded it with whitespace until it reached the "
+                "8,192-token limit. Serving with <code>disable_any_whitespace</code> took that to "
+                f"<strong>{percent(fix.get('after_rate'), 1)}</strong> ({count(fix.get('after_failed'))} "
+                f"records). On eight records that had all failed, the patched server answered "
+                f"{esc(fix.get('ab_patched'))} and an unpatched control {esc(fix.get('ab_control'))}.</p>\n"
+            )
+
+    # --- cascade --------------------------------------------------------------------
+    cascade = report.get("cascade") or {}
+    if cascade:
+        alone, casc = cascade.get("judge_alone") or {}, cascade.get("cascade") or {}
+        body += "<h2>A System One screen in front of the judge halves its false-positive rate</h2>\n"
+        body += (
+            "<p>OpenJev was asked eight boolean threat questions per skill, with the probability of "
+            "<em>true</em> read from its next-token distribution. Its <code>prompt_injection</code> "
+            "answer screens every record, and the judge runs only on those above a threshold. The "
+            f"threshold was chosen on one hash-selected half of the records ({count(cascade.get('select_n'))}) "
+            "to keep recall within two points of the judge alone while skipping the most benign "
+            f"records, and every figure below is from the other half ({count(cascade.get('eval_n'))}).</p>\n"
+        )
+        body += table(
+            ["Held-out half", "F1", "Precision", "Recall", "FPR", "Judge calls"],
+            [
+                _metric_row("Judge alone", alone) + ["100%"],
+                _metric_row("Jev screen, then judge", casc) + [percent(cascade.get("judge_calls"), 1)],
+            ],
+            numeric=(1, 2, 3, 4, 5),
+        )
+        body += grouped_bar_chart(
+            "Judge alone against the cascade, held-out half",
+            ["Precision", "Recall", "False-positive rate"],
+            [
+                ("Judge alone", [alone.get("precision"), alone.get("recall"), alone.get("fpr")]),
+                ("Jev screen, then judge", [casc.get("precision"), casc.get("recall"), casc.get("fpr")]),
+            ],
+            colours=("#8a9099", "#0b5fff"),
+        )
+        body += (
+            f"<p>The screen skips {percent(cascade.get('benign_skipped'), 1)} of benign records. It is not "
+            "only a cost saving: many records the judge flags wrongly are ones OpenJev scores as "
+            "harmless, so the cascade vetoes judge false positives and precision rises while recall "
+            "moves little. This is one corpus split in half; the threshold has not been measured on "
+            "the other labelled corpora and should not be assumed to transfer.</p>\n"
+        )
+        real = cascade.get("real_world") or {}
+        if real:
+            body += "<h3>The same cascade on real published skills</h3>\n"
+            body += table(
+                ["gitskills sample", "Records", "MEDIUM+ flag rate", "Judge calls"],
+                [
+                    [
+                        "Judge alone",
+                        count(real.get("records")),
+                        percent(real.get("judge_flag_rate"), 2),
+                        "100%",
+                    ],
+                    [
+                        "Jev screen, then judge",
+                        count(real.get("records")),
+                        percent(real.get("cascade_flag_rate"), 2),
+                        percent(real.get("judge_calls"), 1),
+                    ],
+                ],
+                numeric=(1, 2, 3),
+            )
+            body += (
+                "<p>These records are unlabelled, so a flag rate is an upper bound on the false-positive "
+                "rate rather than an exact one. The judge-call column is the operational number: the "
+                "share of real skills the screen still sends to the expensive model.</p>\n"
+            )
+
+    # --- deterministic FPR by analyzer ------------------------------------------------
+    det = report.get("deterministic") or {}
+    if det:
+        body += "<h2>Where the deterministic false positives come from</h2>\n"
+        body += (
+            "<p>Every finding was recorded with the analyzer that produced it and stored as Parquet, "
+            "queried with DuckDB. The record-level rates reproduce the published deterministic "
+            f"baseline ({percent(det.get('fpr_high'), 2)} false-positive rate at HIGH or above), which "
+            "checks that the new pipeline measures the same thing as the old one.</p>\n"
+        )
+        rows = det.get("by_analyzer") or []
+        if rows:
+            body += table(
+                ["Analyzer", "MEDIUM+ on harmless", "MEDIUM+ on malicious", "Harmless per malicious"],
+                [[esc(r["analyzer"]), count(r["harmless"]), count(r["malicious"]), f"{r['ratio']:.2f}"] for r in rows],
+                numeric=(1, 2, 3),
+            )
+        rules = det.get("worst_rules") or []
+        if rules:
+            body += table(
+                ["Analyzer", "Rule", "Harmless", "Malicious", "Precision"],
+                [
+                    [
+                        esc(r["analyzer"]),
+                        f"<code>{esc(r['rule_id'])}</code>",
+                        count(r["harmless"]),
+                        count(r["malicious"]),
+                        percent(r["precision"], 1),
+                    ]
+                    for r in rules
+                ],
+                numeric=(2, 3, 4),
+            )
+        demo = det.get("demotion") or []
+        if demo:
+            body += "<h3>One rule change removes most of the deterministic false-positive rate</h3>\n"
+            body += table(
+                ["Configuration", "F1", "Precision", "Recall", "FPR"],
+                [_metric_row(r["label"], r) for r in demo],
+                numeric=(1, 2, 3, 4),
+            )
+            body += (
+                "<p><code>correlation</code> is the only analyzer that fires more often on harmless records "
+                "than malicious ones, and one rule accounts for almost all of it. The earlier conclusion "
+                "that rule-level suppression could buy at most 0.2 F1 points came from data that recorded "
+                "only a record's set of rule ids, with no analyzer and no per-finding severity; it was a "
+                "limit of the data, not of the rules. F1 barely moves because deterministic recall is low "
+                "either way, so precision and false-positive rate are the metrics to read.</p>\n"
+            )
+
+    # --- full static corpus -----------------------------------------------------------
+    full = report.get("static_full") or {}
+    if full:
+        body += "<h2>Every usable skill in gitskills, static rules</h2>\n"
+        body += (
+            f"<p>{count(full.get('artifact_rows'))} artifact rows across {count(full.get('shards'))} "
+            f"parquet files; {count(full.get('records'))} carry fetched, deduplicated content and were "
+            "scanned. That is the whole usable corpus, not a sample.</p>\n"
+        )
+        tiers = full.get("tiers") or []
+        if tiers:
+            body += table(
+                ["Threshold", "Records", "Flag rate", "95% interval"],
+                [
+                    [
+                        esc(t["label"]),
+                        count(t["count"]),
+                        percent(t["rate"], 3),
+                        f"[{t['low'] * 100:.3f}%, {t['high'] * 100:.3f}%]",
+                    ]
+                    for t in tiers
+                ],
+                numeric=(1, 2),
+            )
+        top = full.get("top_rules") or []
+        if top:
+            body += table(
+                ["Rule at MEDIUM or above", "Records", "Rate"],
+                [[f"<code>{esc(r['rule_id'])}</code>", count(r["records"]), percent(r["rate"], 3)] for r in top],
+                numeric=(1, 2),
+            )
+            body += (
+                "<p>The ranking is what directs the next tuning pass, and it differs from the labelled "
+                "corpus: the rule that dominates real skills barely appears on MaliciousSkillBench, so "
+                "tuning against labelled data alone would not prioritise it.</p>\n"
+            )
+
+    notes = report.get("notes") or []
+    if notes:
+        body += "<h2>Measurement notes</h2>\n<ul>\n"
+        body += "".join(f"<li>{esc(n)}</li>\n" for n in notes)
+        body += "</ul>\n"
+    return page(title, "large-scale.html", body)
+
+
 def render_prompt_guard(report: dict | None) -> str:
     """Llama Prompt Guard 2 as a pre-filter: measured, and not adopted."""
 
@@ -1386,6 +1600,7 @@ def build(
     cross_tool: Path | None = None,
     improvements: Path | None = None,
     prompt_guard: Path | None = None,
+    large_scale: Path | None = None,
 ) -> dict[str, Any]:
     baseline_report = require_complete(load_json(baseline))
     judged_report = require_complete(load_json(judged))
@@ -1406,6 +1621,7 @@ def build(
     cross_tool_report = require_complete(load_json(cross_tool)) if cross_tool else None
     improvements_report = require_complete(load_json(improvements)) if improvements else None
     prompt_guard_report = require_complete(load_json(prompt_guard)) if prompt_guard else None
+    large_scale_report = require_complete(load_json(large_scale)) if large_scale else None
 
     output.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
@@ -1432,6 +1648,7 @@ def build(
                 prompt_guard_report,
             ),
         ),
+        ("large-scale.html", render_large_scale(large_scale_report)),
         ("cross-tool.html", render_cross_tool(cross_tool_report)),
         ("improvements.html", render_improvements(improvements_report)),
         ("experiments.html", render_experiments(e1_report, e3_report, findings_report)),
@@ -1487,6 +1704,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--cross-tool", type=Path, default=None)
     parser.add_argument("--improvements", type=Path, default=None)
     parser.add_argument("--prompt-guard", type=Path, default=None)
+    parser.add_argument("--large-scale", type=Path, default=None)
     parser.add_argument(
         "--judged-arm",
         action="append",
@@ -1518,6 +1736,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         cross_tool=args.cross_tool,
         improvements=args.improvements,
         prompt_guard=args.prompt_guard,
+        large_scale=args.large_scale,
     )
     print(json.dumps(summary, indent=2))
     for name, present in summary["present"].items():

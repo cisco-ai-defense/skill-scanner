@@ -55,7 +55,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +63,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from evals.lib.cross_tool import CleanCorpus  # noqa: E402
 
 # The eight threat families, matching the probe set that scored 0.67-0.98 AUC on the
 # hosted route, so the local numbers are comparable to it rather than a new design.
@@ -199,13 +198,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Repeatable. One per replica; records are spread across them round-robin.",
     )
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument(
+        "--shard",
+        action="append",
+        dest="shards",
+        default=None,
+        help="Repeatable 'index/count'. Same stride semantics as the benchmark runner's --shard, "
+        "so this selects exactly the records a judged run with the same shards scored.",
+    )
     parser.add_argument("--workers", type=int, default=64)
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
 
-    corpus = CleanCorpus.load(Path(args.clean_root).expanduser(), args.corpus)
-    records = list(corpus.records)
+    # Direct manifest read: CleanCorpus.load stats every record directory, which takes
+    # minutes per process over 1.88M records on a network filesystem.
+    from evals.runners.judge_only import _done_ids, _load_records
+
+    records = _load_records(Path(args.clean_root).expanduser(), args.corpus)
+    if args.shards:
+        wanted: set[tuple[int, int]] = set()
+        for spec in args.shards:
+            raw_index, _, raw_count = spec.partition("/")
+            wanted.add((int(raw_index), int(raw_count)))
+        # A record is kept if any requested shard selects it, using the runner's rule:
+        # offset in manifest order, modulo the shard count.
+        records = [r for offset, r in enumerate(records) if any(offset % c == i for i, c in wanted)]
     if args.limit:
         # Strided: these corpora are ordered harmless-first, so a prefix would select
         # one class only and the run would score an undefined population.
@@ -213,28 +231,48 @@ def main(argv: Sequence[str] | None = None) -> int:
         records = records[::step][: args.limit]
 
     endpoints = [e.rstrip("/") + "/v1/chat/completions" for e in args.endpoints]
-    print(f"{len(records)} records x {len(THREAT_PROBES)} probes over {len(endpoints)} replica(s)", flush=True)
-
     output = Path(args.output).expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
+    # Resumable: a multi-hour run appends as it goes and skips what is already written.
+    done = _done_ids(output)
+    todo = [r for r in records if r.record_id not in done]
+    print(
+        f"{len(records):,} records x {len(THREAT_PROBES)} probes over {len(endpoints)} replica(s); "
+        f"{len(done):,} already done, {len(todo):,} to run",
+        flush=True,
+    )
     started = time.monotonic()
-    done = 0
+    completed = 0
+    with output.open("a", encoding="utf-8") as handle, ThreadPoolExecutor(max_workers=args.workers) as pool:
+        # Bounded submission, so a 1.88M-record run does not hold every future at once.
+        pending: set[Any] = set()
+        iterator = iter(enumerate(todo))
 
-    with output.open("w", encoding="utf-8") as handle, ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = [
-            pool.submit(run_record, endpoints[index % len(endpoints)], args.model, record, args.timeout)
-            for index, record in enumerate(records)
-        ]
-        for future in futures:
-            row = future.result()
-            handle.write(json.dumps(row, sort_keys=True) + "\n")
-            done += 1
-            if done % 100 == 0:
-                rate = done / (time.monotonic() - started)
-                handle.flush()
-                print(f"  {done}/{len(records)}  {rate:.1f} rec/s", flush=True)
+        def submit_next() -> bool:
+            item = next(iterator, None)
+            if item is None:
+                return False
+            index, record = item
+            pending.add(pool.submit(run_record, endpoints[index % len(endpoints)], args.model, record, args.timeout))
+            return True
 
-    print(f"wrote {output} in {time.monotonic() - started:.1f}s")
+        for _ in range(args.workers * 2):
+            if not submit_next():
+                break
+        while pending:
+            finished, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for future in finished:
+                pending.discard(future)
+                handle.write(json.dumps(future.result(), sort_keys=True) + "\n")
+                completed += 1
+                if completed % 500 == 0:
+                    handle.flush()
+                    rate = completed / (time.monotonic() - started)
+                    eta = (len(todo) - completed) / rate / 3600 if rate else 0
+                    print(f"  {completed:,}/{len(todo):,}  {rate:.1f} rec/s  eta {eta:.1f}h", flush=True)
+                submit_next()
+
+    print(f"done: {completed:,} records in {time.monotonic() - started:.1f}s", flush=True)
     return 0
 
 

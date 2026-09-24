@@ -405,6 +405,10 @@ class LLMAnalyzer(BaseAnalyzer):
         # model contradicted itself; always zero unless repair is enabled.
         self.verdict_repairs: int = 0
 
+        # Counts findings whose optional AISubtech code was not a valid taxonomy code and
+        # was cleared rather than allowed to void the whole response.
+        self.taxonomy_repairs: int = 0
+
     @property
     def llm_usage(self) -> LLMTokenUsage:
         """Cumulative token usage from the most recent analyze() run."""
@@ -866,6 +870,7 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                 _add_token_usage(self._llm_usage, self.request_handler.last_usage)
                 analysis_result = self.response_parser.parse(response_content)
                 self._repair_primary_verdict(analysis_result)
+                self._repair_optional_taxonomy(analysis_result)
                 self._validate_primary_contract(analysis_result)
                 findings.extend(self._convert_to_findings(analysis_result, skill))
             else:
@@ -920,6 +925,34 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
         """
         raw = os.getenv("SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT", "")
         return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _repair_optional_taxonomy(self, analysis_result: dict[str, Any]) -> None:
+        """Clear an invalid optional AISubtech code instead of rejecting the response.
+
+        ``aisubtech`` is optional in the contract: ``None`` is a valid value. A model that
+        invents a sub-technique code has produced a finding that is otherwise well formed,
+        and the strict validator used to reject the entire response for it, discarding
+        every finding in it. Measured over real published skills with a local Gemma 4
+        judge, that voided 3.6% of analyses, nearly all of them for this one field.
+
+        Only the optional field is touched. The required AITech code, severity, category,
+        evidence ids and the verdict are still validated strictly, and a finding with an
+        invalid required field still fails the response.
+        """
+        findings = analysis_result.get("findings")
+        if not isinstance(findings, list):
+            return
+        for item in findings:
+            if not isinstance(item, dict) or "aisubtech" not in item:
+                continue
+            value = item.get("aisubtech")
+            if value is None:
+                continue
+            if isinstance(value, str) and value in cisco_ai_taxonomy.VALID_AISUBTECH_CODES:
+                continue
+            item["aisubtech"] = None
+            self.taxonomy_repairs += 1
+            logger.warning("cleared invalid optional AISubtech code %r on a primary finding", value)
 
     def _repair_primary_verdict(self, analysis_result: dict[str, Any]) -> None:
         """Escalate ``SAFE`` to ``SUSPICIOUS`` when findings were reported.
@@ -1042,6 +1075,7 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                 _add_token_usage(self._llm_usage, self.request_handler.last_usage)
                 analysis_result = self.response_parser.parse(response_content)
                 self._repair_primary_verdict(analysis_result)
+                self._repair_optional_taxonomy(analysis_result)
                 self._validate_primary_contract(analysis_result)
                 run_findings = self._convert_to_findings(analysis_result, skill)
                 all_run_findings.append(run_findings)

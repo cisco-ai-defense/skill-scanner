@@ -30,6 +30,7 @@ import hashlib
 import ipaddress
 import re
 import shlex
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
@@ -551,27 +552,7 @@ class PipelineAnalyzer(BaseAnalyzer):
 
     def _is_known_installer(self, raw_url: str) -> bool:
         """Match one parsed URL against exact/subdomain installer endpoints."""
-        endpoint = self._parse_http_endpoint(raw_url)
-        if endpoint is None:
-            return False
-        _, hostname, path = endpoint
-        for configured in self.policy.pipeline.known_installer_domains:
-            trusted_endpoint = self._parse_installer_policy_endpoint(configured)
-            if trusted_endpoint is None:
-                continue
-            trusted_hostname, path_prefix = trusted_endpoint
-            try:
-                trusted_is_ip = ipaddress.ip_address(trusted_hostname)
-            except ValueError:
-                host_matches = hostname == trusted_hostname or hostname.endswith(f".{trusted_hostname}")
-            else:
-                host_matches = hostname == trusted_is_ip.compressed.lower()
-            if not host_matches:
-                continue
-            if path_prefix and path != path_prefix and not path.startswith(f"{path_prefix}/"):
-                continue
-            return True
-        return False
+        return url_matches_known_installer(raw_url, self.policy.pipeline.known_installer_domains)
 
     def _is_instructional_skillmd_pipeline(self, chain: PipelineChain) -> bool:
         """Heuristic for installation examples embedded in SKILL.md."""
@@ -1627,3 +1608,35 @@ class PipelineAnalyzer(BaseAnalyzer):
                     return matched_lines
 
         return None  # Not all patterns matched in sequence
+
+
+def url_matches_known_installer(raw_url: str, installer_domains: Iterable[str]) -> bool:
+    """Whether ``raw_url`` falls under a configured known-installer endpoint.
+
+    An entry is a hostname with an optional path prefix: ``astral.sh`` trusts that host
+    and its subdomains, while ``raw.githubusercontent.com/nvm-sh`` trusts only nvm's
+    repository rather than all of GitHub's user content. Shared by the pipeline and
+    correlation analyzers so both apply one definition.
+    """
+
+    endpoint = PipelineAnalyzer._parse_http_endpoint(raw_url)
+    if endpoint is None:
+        return False
+    _, hostname, path = endpoint
+    for configured in installer_domains:
+        trusted_endpoint = PipelineAnalyzer._parse_installer_policy_endpoint(configured)
+        if trusted_endpoint is None:
+            continue
+        trusted_hostname, path_prefix = trusted_endpoint
+        try:
+            trusted_is_ip = ipaddress.ip_address(trusted_hostname)
+        except ValueError:
+            host_matches = hostname == trusted_hostname or hostname.endswith(f".{trusted_hostname}")
+        else:
+            host_matches = hostname == trusted_is_ip.compressed.lower()
+        if not host_matches:
+            continue
+        if path_prefix and path != path_prefix and not path.startswith(f"{path_prefix}/"):
+            continue
+        return True
+    return False

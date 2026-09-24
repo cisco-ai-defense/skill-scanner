@@ -39,6 +39,7 @@ def analyzer() -> LLMAnalyzer:
 
 def _prepared(analyzer: LLMAnalyzer) -> LLMAnalyzer:
     analyzer.verdict_repairs = 0
+    analyzer.taxonomy_repairs = 0
     return analyzer
 
 
@@ -188,3 +189,60 @@ class TestRepairIsEscalateOnly:
         for _ in range(3):
             analyzer._repair_primary_verdict({"verdict": "SAFE", "findings": [_finding()]})
         assert analyzer.verdict_repairs == 3
+
+
+class TestOptionalTaxonomyRepair:
+    """An invented optional AISubtech code must not void an otherwise valid analysis."""
+
+    @staticmethod
+    def _payload(aisubtech: object) -> dict:
+        return {
+            "verdict": "SUSPICIOUS",
+            "findings": [
+                {
+                    "severity": "MEDIUM",
+                    "verdict": "CONTEXTUAL_RISK",
+                    "category": "data_exfiltration",
+                    "confidence": "LOW",
+                    "evidence_ids": ["e1"],
+                    "aitech": "AITech-1.1",
+                    "aisubtech": aisubtech,
+                    "title": "note",
+                    "description": "d",
+                    "location": "SKILL.md:1",
+                    "evidence": "x",
+                    "remediation": "y",
+                }
+            ],
+            "overall_assessment": "fine",
+            "primary_threats": [],
+        }
+
+    def test_an_invented_code_is_cleared_and_the_response_validates(self, analyzer: LLMAnalyzer) -> None:
+        prepared = _prepared(analyzer)
+        prepared._allowed_evidence_ids = {"e1"}
+        payload = self._payload("AISubtech-99.99.99")
+        with pytest.raises(ValueError, match="AISubtech"):
+            prepared._validate_primary_contract(self._payload("AISubtech-99.99.99"))
+        prepared._repair_optional_taxonomy(payload)
+        assert payload["findings"][0]["aisubtech"] is None
+        assert prepared.taxonomy_repairs == 1
+        prepared._validate_primary_contract(payload)
+
+    def test_a_valid_code_is_left_alone(self, analyzer: LLMAnalyzer) -> None:
+        prepared = _prepared(analyzer)
+        payload = self._payload("AISubtech-1.1.1")
+        prepared._repair_optional_taxonomy(payload)
+        assert payload["findings"][0]["aisubtech"] == "AISubtech-1.1.1"
+        assert prepared.taxonomy_repairs == 0
+
+    def test_the_required_aitech_code_is_still_strict(self, analyzer: LLMAnalyzer) -> None:
+        # The repair is scoped to the optional field; an invalid required code must still
+        # fail the response rather than be silently rewritten.
+        prepared = _prepared(analyzer)
+        prepared._allowed_evidence_ids = {"e1"}
+        payload = self._payload(None)
+        payload["findings"][0]["aitech"] = "AITech-99.9"
+        prepared._repair_optional_taxonomy(payload)
+        with pytest.raises(ValueError, match="AITech"):
+            prepared._validate_primary_contract(payload)

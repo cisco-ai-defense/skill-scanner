@@ -49,6 +49,7 @@ from ..static_analysis.bash_taint_tracker import BashTaintType, analyze_bash_scr
 from ..static_analysis.javascript_dataflow import analyze_javascript_dataflow
 from ..static_analysis.url_classifier import classify_url, extract_urls
 from .base import BaseAnalyzer
+from .pipeline_analyzer import url_matches_known_installer
 
 _SCRIPT_TYPES = frozenset({"python", "bash", "javascript", "typescript"})
 _CONFIG_SUFFIXES = frozenset({".json", ".toml", ".yaml", ".yml", ".ini", ".cfg", ".conf"})
@@ -910,6 +911,7 @@ def _url_fact(url: str, file_path: str, *, direction: str = "inbound", method: s
     if domain_class == "unknown":
         domain_class = "external"
     return {
+        "url": url,
         "scheme": scheme,
         "host": host,
         "domain_class": domain_class,
@@ -3643,8 +3645,7 @@ class CorrelationAnalyzer(BaseAnalyzer):
     def _has_untrusted_or_dynamic_url(signals: _FileSignals) -> bool:
         return not signals.urls or any(url["domain_class"] != "legitimate" for url in signals.urls)
 
-    @classmethod
-    def _same_file_flow_severity(cls, signals: _FileSignals, flow: _Flow) -> Severity:
+    def _same_file_flow_severity(self, signals: _FileSignals, flow: _Flow) -> Severity:
         """Grade an exact same-file flow without erasing the candidate.
 
         Fetch-and-execute remains HIGH unless it is a fenced, documented
@@ -3654,15 +3655,45 @@ class CorrelationAnalyzer(BaseAnalyzer):
         Dynamic, insecure, mismatched, or undeclared providers remain HIGH.
         """
 
-        if (
+        if not (
             flow.source_class == "network"
             and flow.sink_class == "code_execution"
             and signals.evidence_kind == "fenced_code_flow"
-            and signals.role_kind == "documented_installer"
-            and cls._has_fixed_https_download(signals)
+            and self._has_fixed_https_download(signals)
         ):
+            return Severity.HIGH
+        if signals.role_kind == "documented_installer":
+            return Severity.MEDIUM
+        # Every download comes from a host the scanner already trusts: a curated,
+        # LOTS-aware registry or API host, or an entry in the policy's
+        # known_installer_domains. That list was honoured by the pipeline analyzer and
+        # ignored here, so the same `curl https://astral.sh/... | sh` was demoted to LOW by
+        # one analyzer and raised to HIGH by the other. MEDIUM keeps it visible.
+        if self._downloads_are_trusted(signals):
             return Severity.MEDIUM
         return Severity.HIGH
+
+    def _downloads_are_trusted(self, signals: _FileSignals) -> bool:
+        """Whether every download URL is on a legitimate host or a known installer."""
+
+        pipeline_policy = getattr(self.policy, "pipeline", None)
+        installers = (
+            pipeline_policy.known_installer_domains
+            if pipeline_policy is not None and getattr(pipeline_policy, "check_known_installers", False)
+            else set()
+        )
+        downloads = [event for event in signals.networks if event.downloads]
+        if not downloads:
+            return False
+        for event in downloads:
+            for url in event.urls:
+                if url.get("domain_class") == "legitimate":
+                    continue
+                if installers and url_matches_known_installer(str(url.get("url") or ""), installers):
+                    url["trusted_installer"] = True
+                    continue
+                return False
+        return True
 
     @staticmethod
     def _has_fixed_https_download(signals: _FileSignals) -> bool:
