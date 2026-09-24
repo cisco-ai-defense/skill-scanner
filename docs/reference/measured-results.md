@@ -427,6 +427,83 @@ It is a metadata hygiene check rather than a security finding — the judge prom
 missing optional manifest metadata is not a security threat — so reporting it as hygiene would clear
 the INFO tier without affecting any gating decision.
 
+## Where the deterministic false positives come from
+
+Earlier work could only say that rule-level suppression buys at most +0.2 F1. That analysis
+worked from a record's *set* of rule ids, which has no analyzer attribution and no per-finding
+severity. Recording one row per finding, with the analyzer that produced it, changes the
+answer.
+
+Corpus: MaliciousSkillBench source-disjoint, 839 malicious and 545 benign, shipped core pack,
+no model. The record-level figures reproduce the published baseline — 7.71% FPR and 7.39%
+recall at HIGH+ against 7.7% and 7.7% — which is the check that the new pipeline measures the
+same thing the old one did.
+
+**By analyzer, counting MEDIUM+ findings on harmless records:**
+
+| Analyzer | On harmless | On malicious | Ratio |
+|---|---|---|---|
+| correlation | 35 | 29 | **1.21** |
+| pipeline | 10 | 33 | 0.30 |
+| static | 10 | 30 | 0.33 |
+
+`correlation` is the only analyzer that fires *more* often on harmless records than malicious
+ones, and one rule accounts for almost all of it.
+
+**The worst rules by harmless fires, MEDIUM+:**
+
+| Analyzer | Rule | Severity | Harmless | Malicious | Precision |
+|---|---|---|---|---|---|
+| correlation | `CORRELATED_NETWORK_EXECUTION_FLOW` | HIGH | 30 | 7 | **18.9%** |
+| pipeline | `PIPELINE_TAINT_FLOW` | HIGH | 9 | 7 | 43.8% |
+| static | `ACTIVE_DYNAMIC_EXECUTION` | HIGH | 4 | 18 | 81.8% |
+| correlation | `CORRELATED_SENSITIVE_NETWORK_FLOW` | HIGH | 4 | 22 | 84.6% |
+
+### One rule change removes 61% of the deterministic false-positive rate
+
+Counterfactual, recomputed from the findings table by dropping a rule below the gate:
+
+| Configuration | F1 | Precision | Recall | FPR |
+|---|---|---|---|---|
+| Shipped, all rules | 13.5% | 58.2% | 7.6% | 8.44% |
+| Demote `CORRELATED_NETWORK_EXECUTION_FLOW` | 13.3% | **77.2%** | 7.3% | **3.30%** |
+| Also demote `PIPELINE_TAINT_FLOW` | 11.5% | 80.0% | 6.2% | 2.39% |
+
+Demoting the one rule cuts the false-positive rate from 8.44% to 3.30% and raises precision
+19 points, for three lost true positives. F1 moves −0.2 points, which is flat: the
+deterministic layer's recall is low either way, so F1 is insensitive here and precision is the
+metric that moves. Taking `PIPELINE_TAINT_FLOW` as well costs 1.4 points of recall for a
+further 0.9 of false-positive rate, which is a worse trade.
+
+This is the finding the earlier "suppression cannot help" conclusion missed, and it was
+missed because the data shape could not express it.
+
+### The labelled corpus does not surface the rule that matters most in production
+
+The same store over 200,000 gitskills records, MEDIUM+ by rule:
+
+| Rule | Records | Rate |
+|---|---|---|
+| `FILE_MAGIC_MISMATCH` | 3,080 | **1.540%** |
+| `PROMPT_INJECTION_IGNORE_INSTRUCTIONS` | 274 | 0.137% |
+| `CORRELATED_NETWORK_EXECUTION_FLOW` | 205 | 0.103% |
+| `PIPELINE_TAINT_FLOW` | 195 | 0.097% |
+
+`FILE_MAGIC_MISMATCH` produces three quarters of the 2.071% static MEDIUM+ rate on real
+skills, and it barely appears on MaliciousSkillBench. Tuning against the labelled corpus alone
+would never have prioritised it. It is unlabelled data, so these are flag rates rather than
+false-positive rates, but the ranking is what directs the next tuning pass.
+
+### A measurement artifact worth recording
+
+The first run of this analysis reported a 100% false-positive rate at HIGH+, driven entirely
+by `LOW_ANALYZABILITY` and `UNANALYZABLE_BINARY` firing on every record. The cause was the
+transfer, not the scanner: copying the corpus from macOS with `tar` carried an AppleDouble
+`._SKILL.md` resource fork into all 1,384 record directories, and the scanner correctly
+reported a hidden binary file in each one. Deleting the 2,763 sidecars restored agreement with
+the published baseline. A corpus that travels between platforms needs checking for
+platform-injected files before any figure from it is believed.
+
 ## What rule-level suppression cannot fix
 
 Suppressing any combination of up to four of the highest-volume rules changes F1 by at most +0.2

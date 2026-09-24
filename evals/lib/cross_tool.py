@@ -134,6 +134,7 @@ class ToolRow:
             "output_tokens": self.output_tokens,
             "error": self.error,
             "extra": dict(self.extra),
+            "findings": [dict(f) for f in self.findings],
         }
 
     @classmethod
@@ -158,6 +159,7 @@ class ToolRow:
             output_tokens=int(payload.get("output_tokens") or 0),
             error=payload.get("error"),
             extra=payload.get("extra") or {},
+            findings=tuple(payload.get("findings") or ()),
         )
 
 

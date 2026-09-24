@@ -195,7 +195,12 @@ _BEDROCK_MANTLE_UNSUPPORTED_SCHEMA_KEYWORDS = frozenset({"uniqueItems"})
 # judged request over a ``bedrock/`` model failed and the analyzer reported zero
 # tokens while the scan still returned static findings -- a failure that reads as a
 # quiet quality result rather than a broken provider.
-_BEDROCK_UNSUPPORTED_SCHEMA_KEYWORDS = frozenset({"maxItems", "minItems", "uniqueItems"})
+# Array cardinality keywords that constrained-decoding backends reject. Bedrock
+# Converse names them in an ``output_config.format.schema`` error; vLLM and other
+# xgrammar-backed OpenAI-compatible servers answer "Unimplemented keys". The bounds are
+# restated in the prompt, so stripping them keeps strict structured output rather than
+# degrading to plain JSON and losing the shape guarantee entirely.
+_UNSUPPORTED_SCHEMA_KEYWORDS = frozenset({"maxItems", "minItems", "uniqueItems"})
 
 # LiteLLM intentionally remains unloaded until an LLM request is made.  Its
 # module initialization may refresh a remote model-cost map, which must never
@@ -438,8 +443,10 @@ class LLMRequestHandler:
             return {"type": "json_object"}
 
         schema = self.response_schema
-        if getattr(self.provider_config, "is_bedrock", False) is True:
-            schema = self._sanitize_schema_for_bedrock(schema)
+        # Applied unconditionally. It was originally gated to Bedrock, which meant a
+        # locally served vLLM endpoint failed every judged request with
+        # "Grammar error: Unimplemented keys: [\"uniqueItems\"]" while Bedrock worked.
+        schema = self._sanitize_schema_for_constrained_decoding(schema)
 
         return {
             "type": "json_schema",
@@ -457,6 +464,11 @@ class LLMRequestHandler:
 
         error_msg = str(error).lower()
         if "response_format.json_schema" in error_msg:
+            return True
+
+        # xgrammar, behind vLLM and similar servers, reports unsupported schema keywords
+        # as a grammar error naming the keys.
+        if "grammar error" in error_msg or "unimplemented keys" in error_msg:
             return True
 
         # Bedrock names the offending field ``output_config.format.schema`` and never
@@ -609,7 +621,7 @@ class LLMRequestHandler:
         return f"{base}/chat/completions"
 
     @staticmethod
-    def _sanitize_schema_for_bedrock(schema: Any) -> Any:
+    def _sanitize_schema_for_constrained_decoding(schema: Any) -> Any:
         """Drop JSON Schema keywords the Bedrock Converse validator rejects.
 
         Stripping a cardinality bound loosens the contract slightly but keeps
@@ -619,16 +631,16 @@ class LLMRequestHandler:
         """
         if isinstance(schema, dict):
             return {
-                key: LLMRequestHandler._sanitize_schema_for_bedrock(value)
+                key: LLMRequestHandler._sanitize_schema_for_constrained_decoding(value)
                 for key, value in schema.items()
-                if key not in _BEDROCK_UNSUPPORTED_SCHEMA_KEYWORDS
+                if key not in _UNSUPPORTED_SCHEMA_KEYWORDS
             }
         if isinstance(schema, list):
-            return [LLMRequestHandler._sanitize_schema_for_bedrock(item) for item in schema]
+            return [LLMRequestHandler._sanitize_schema_for_constrained_decoding(item) for item in schema]
         return schema
 
     @staticmethod
-    def _sanitize_schema_for_bedrock_mantle(schema: Any) -> Any:
+    def _sanitize_schema_for_constrained_decoding_mantle(schema: Any) -> Any:
         """Drop JSON Schema keywords the mantle strict validator rejects.
 
         Mirrors ``_sanitize_schema_for_google``. Without this the scanner's own
@@ -638,12 +650,12 @@ class LLMRequestHandler:
         """
         if isinstance(schema, dict):
             return {
-                key: LLMRequestHandler._sanitize_schema_for_bedrock_mantle(value)
+                key: LLMRequestHandler._sanitize_schema_for_constrained_decoding_mantle(value)
                 for key, value in schema.items()
                 if key not in _BEDROCK_MANTLE_UNSUPPORTED_SCHEMA_KEYWORDS
             }
         if isinstance(schema, list):
-            return [LLMRequestHandler._sanitize_schema_for_bedrock_mantle(value) for value in schema]
+            return [LLMRequestHandler._sanitize_schema_for_constrained_decoding_mantle(value) for value in schema]
         return schema
 
     def _build_bedrock_mantle_response_format(self) -> dict[str, Any] | None:
@@ -653,7 +665,7 @@ class LLMRequestHandler:
             return response_format
 
         json_schema = dict(response_format["json_schema"])
-        json_schema["schema"] = self._sanitize_schema_for_bedrock_mantle(json_schema.get("schema"))
+        json_schema["schema"] = self._sanitize_schema_for_constrained_decoding_mantle(json_schema.get("schema"))
         return {"type": "json_schema", "json_schema": json_schema}
 
     def _build_bedrock_mantle_body(

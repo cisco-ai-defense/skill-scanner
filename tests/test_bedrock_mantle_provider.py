@@ -132,7 +132,7 @@ class TestSchemaSanitizing:
             "properties": {"tags": {"type": "array", "uniqueItems": True, "items": {"type": "string"}}},
             "uniqueItems": True,
         }
-        result = LLMRequestHandler._sanitize_schema_for_bedrock_mantle(schema)
+        result = LLMRequestHandler._sanitize_schema_for_constrained_decoding_mantle(schema)
         assert "uniqueItems" not in json.dumps(result)
         assert result["properties"]["tags"]["items"] == {"type": "string"}
 
@@ -143,7 +143,7 @@ class TestSchemaSanitizing:
             "required": ["a"],
             "properties": {"a": {"type": "string", "enum": ["x"], "description": "d"}},
         }
-        assert LLMRequestHandler._sanitize_schema_for_bedrock_mantle(schema) == schema
+        assert LLMRequestHandler._sanitize_schema_for_constrained_decoding_mantle(schema) == schema
 
     def test_scanner_schema_is_sent_strict_and_sanitized(self) -> None:
         handler = _handler()

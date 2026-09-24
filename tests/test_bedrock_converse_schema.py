@@ -56,13 +56,13 @@ def _handler(*, model: str = BEDROCK_MODEL, schema: dict | None = None) -> LLMRe
 
 class TestSchemaSanitizing:
     def test_cardinality_keywords_are_removed_recursively(self) -> None:
-        result = LLMRequestHandler._sanitize_schema_for_bedrock(_BOUNDED_ARRAY_SCHEMA)
+        result = LLMRequestHandler._sanitize_schema_for_constrained_decoding(_BOUNDED_ARRAY_SCHEMA)
         serialized = json.dumps(result)
         for keyword in ("maxItems", "minItems", "uniqueItems"):
             assert keyword not in serialized
 
     def test_structure_survives_sanitizing(self) -> None:
-        result = LLMRequestHandler._sanitize_schema_for_bedrock(_BOUNDED_ARRAY_SCHEMA)
+        result = LLMRequestHandler._sanitize_schema_for_constrained_decoding(_BOUNDED_ARRAY_SCHEMA)
         array = result["properties"]["evidence_ids"]
         # Losing a bound is acceptable; losing the type or the item shape would
         # defeat the point of using structured output at all.
@@ -78,11 +78,11 @@ class TestSchemaSanitizing:
             "required": ["verdict"],
             "properties": {"verdict": {"type": "string", "enum": ["SAFE"], "description": "d"}},
         }
-        assert LLMRequestHandler._sanitize_schema_for_bedrock(schema) == schema
+        assert LLMRequestHandler._sanitize_schema_for_constrained_decoding(schema) == schema
 
     def test_sanitizer_does_not_mutate_its_input(self) -> None:
         original = json.dumps(_BOUNDED_ARRAY_SCHEMA, sort_keys=True)
-        LLMRequestHandler._sanitize_schema_for_bedrock(_BOUNDED_ARRAY_SCHEMA)
+        LLMRequestHandler._sanitize_schema_for_constrained_decoding(_BOUNDED_ARRAY_SCHEMA)
         assert json.dumps(_BOUNDED_ARRAY_SCHEMA, sort_keys=True) == original
 
 
@@ -94,12 +94,32 @@ class TestResponseFormat:
         assert response_format["json_schema"]["strict"] is True
         assert "maxItems" not in json.dumps(response_format)
 
-    def test_non_bedrock_providers_keep_their_bounds(self) -> None:
-        # Only the Bedrock validator objects. Stripping bounds everywhere would
-        # weaken the contract against providers that honour it.
-        response_format = _handler(model="gpt-5.2")._build_response_format()
-        assert response_format is not None
-        assert "maxItems" in json.dumps(response_format)
+    def test_every_structured_output_route_strips_the_bounds(self) -> None:
+        """The keywords are stripped everywhere, not only on Bedrock.
+
+        This assertion is the reverse of what it was. The original reasoning was that
+        only the Bedrock validator objects, so stripping bounds elsewhere would weaken a
+        contract other providers honour. Serving the judge from a local vLLM endpoint
+        disproved it: every judged request failed with
+        ``Grammar error: Unimplemented keys: ["uniqueItems"]``, because xgrammar rejects
+        the same keywords Bedrock does. Keeping them buys nothing -- the bounds are
+        restated in the prompt -- and costs the whole semantic stage on any
+        constrained-decoding backend.
+        """
+        for model in ("gpt-5.2", "bedrock/anthropic.claude-haiku-4-5", "openai/gemma4"):
+            response_format = _handler(model=model)._build_response_format()
+            assert response_format is not None
+            serialized = json.dumps(response_format)
+            for keyword in ("maxItems", "minItems", "uniqueItems"):
+                assert keyword not in serialized, f"{keyword} survived for {model}"
+
+    def test_the_schema_still_constrains_shape_after_stripping(self) -> None:
+        # Stripping cardinality must not become stripping structure: the point of the
+        # fix was to keep strict structured output rather than fall back to plain JSON.
+        response_format = _handler(model="openai/gemma4")._build_response_format()
+        assert response_format["type"] == "json_schema"
+        assert response_format["json_schema"]["strict"] is True
+        assert "properties" in json.dumps(response_format)
 
 
 class TestFallbackDetection:
@@ -112,6 +132,20 @@ class TestFallbackDetection:
         error = Exception(
             'BedrockException - {"message":"The model returned the following errors: '
             "output_config.format.schema: For 'array' type, property 'maxItems' is not supported\"}"
+        )
+        assert handler._should_fallback_to_json_object(error, response_format) is True
+
+    def test_xgrammar_grammar_error_triggers_json_object_fallback(self) -> None:
+        """vLLM reports this as a grammar error naming the unimplemented keys.
+
+        Observed verbatim when serving the judge from a local vLLM endpoint. The
+        original detector looked for ``response_format.json_schema`` and the Bedrock
+        field name, so this wording fell through and the request failed outright.
+        """
+        handler = _handler(model="openai/gemma4")
+        response_format = handler._build_response_format()
+        error = Exception(
+            'litellm.BadRequestError: OpenAIException - Grammar error: Unimplemented keys: ["uniqueItems"]'
         )
         assert handler._should_fallback_to_json_object(error, response_format) is True
 
