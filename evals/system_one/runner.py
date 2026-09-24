@@ -248,7 +248,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     api_key = os.getenv(args.api_key_env, "")
     if not api_key:
-        print(f"{args.api_key_env} is not set", file=sys.stderr)
+        # Names the flag rather than interpolating the argument: the message never needs
+        # to carry anything derived from the credential's configuration.
+        print("the API key environment variable named by --api-key-env is not set", file=sys.stderr)
         return 1
 
     directories = sorted(path for path in args.corpus.iterdir() if path.is_dir())

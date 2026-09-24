@@ -93,6 +93,9 @@ INSTRUCTIONS = (
 # is against hosted runs that packed to a budget too.
 MAX_STATE_CHARS = 24_000
 
+# Attempts per probe for transient transport errors, with exponential backoff.
+_RETRIES = 10
+
 
 def read_state(directory: Path) -> tuple[str, bool]:
     parts: list[str] = []
@@ -139,10 +142,25 @@ def probe(endpoint: str, model: str, state: str, question: str, *, timeout: int 
         # Without this the first token is a reasoning preamble, not the answer.
         "chat_template_kwargs": {"enable_thinking": False},
     }
-    try:
-        decoded = _post(endpoint, payload, timeout)
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as error:
-        return {"p_true": None, "error": f"{type(error).__name__}: {error}"}
+    decoded = None
+    last_error: Exception | None = None
+    for attempt in range(_RETRIES):
+        try:
+            decoded = _post(endpoint, payload, timeout)
+            break
+        except urllib.error.HTTPError as error:
+            # A 4xx is deterministic -- retrying the same request cannot change it.
+            if 400 <= error.code < 500:
+                return {"p_true": None, "error": f"HTTP {error.code}"}
+            last_error = error
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as error:
+            last_error = error
+        # Transient: a server stalled compiling a kernel refuses connections for a few
+        # seconds. Without backoff the runner recorded each refusal as a finished record
+        # and raced through ~150,000 of them in minutes, every one of them junk.
+        time.sleep(min(2**attempt, 30))
+    if decoded is None:
+        return {"p_true": None, "error": f"{type(last_error).__name__}: {last_error}"}
 
     choice = (decoded.get("choices") or [{}])[0]
     entries = ((choice.get("logprobs") or {}).get("content") or [{}])[0].get("top_logprobs") or []
@@ -162,7 +180,9 @@ def probe(endpoint: str, model: str, state: str, question: str, *, timeout: int 
     return {"p_true": p_true / total, "mass_on_answer": total}
 
 
-def run_record(endpoint: str, model: str, record: Any, timeout: int) -> dict[str, Any]:
+def run_record(
+    endpoint: str, model: str, record: Any, timeout: int, probes: dict[str, str] | None = None
+) -> dict[str, Any]:
     state, truncated = read_state(record.directory)
     row: dict[str, Any] = {
         "record_id": record.record_id,
@@ -172,10 +192,11 @@ def run_record(endpoint: str, model: str, record: Any, timeout: int) -> dict[str
         "probes": {},
         "errors": 0,
     }
+    selected = probes or THREAT_PROBES
     if not state.strip():
-        row["errors"] = len(THREAT_PROBES)
+        row["errors"] = len(selected)
         return row
-    for name, question in THREAT_PROBES.items():
+    for name, question in selected.items():
         result = probe(endpoint, model, state, question, timeout=timeout)
         if result.get("p_true") is None:
             row["errors"] += 1
@@ -183,6 +204,21 @@ def run_record(endpoint: str, model: str, record: Any, timeout: int) -> dict[str
         else:
             row["probes"][name] = round(float(result["p_true"]), 6)
     return row
+
+
+def _answered_ids(output: Path) -> set[str]:
+    done: set[str] = set()
+    if not output.exists():
+        return done
+    with output.open(encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if not row.get("errors"):
+                done.add(row["record_id"])
+    return done
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -199,6 +235,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument(
+        "--probes",
+        default=None,
+        help="Comma-separated subset of threat probes. OpenJev is a hybrid Mamba model whose "
+        "prefix state vLLM cannot reuse, so every probe re-reads the whole skill; asking only "
+        "the probe the cascade screens on cuts the work per record accordingly.",
+    )
+    parser.add_argument(
         "--shard",
         action="append",
         dest="shards",
@@ -213,7 +256,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Direct manifest read: CleanCorpus.load stats every record directory, which takes
     # minutes per process over 1.88M records on a network filesystem.
-    from evals.runners.judge_only import _done_ids, _load_records
+    from evals.runners.judge_only import _load_records
 
     records = _load_records(Path(args.clean_root).expanduser(), args.corpus)
     if args.shards:
@@ -231,13 +274,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         records = records[::step][: args.limit]
 
     endpoints = [e.rstrip("/") + "/v1/chat/completions" for e in args.endpoints]
+    selected = THREAT_PROBES
+    if args.probes:
+        names = [n.strip() for n in args.probes.split(",") if n.strip()]
+        unknown = [n for n in names if n not in THREAT_PROBES]
+        if unknown:
+            parser.error(f"unknown probes: {unknown}")
+        selected = {n: THREAT_PROBES[n] for n in names}
     output = Path(args.output).expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
     # Resumable: a multi-hour run appends as it goes and skips what is already written.
-    done = _done_ids(output)
+    # Only genuine answers count as done: a row whose probes failed transiently is retried
+    # on the next run, and analysis keeps the latest genuine row per record.
+    done = _answered_ids(output)
     todo = [r for r in records if r.record_id not in done]
     print(
-        f"{len(records):,} records x {len(THREAT_PROBES)} probes over {len(endpoints)} replica(s); "
+        f"{len(records):,} records x {len(selected)} probes over {len(endpoints)} replica(s); "
         f"{len(done):,} already done, {len(todo):,} to run",
         flush=True,
     )
@@ -253,7 +305,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             if item is None:
                 return False
             index, record = item
-            pending.add(pool.submit(run_record, endpoints[index % len(endpoints)], args.model, record, args.timeout))
+            pending.add(
+                pool.submit(run_record, endpoints[index % len(endpoints)], args.model, record, args.timeout, selected)
+            )
             return True
 
         for _ in range(args.workers * 2):
