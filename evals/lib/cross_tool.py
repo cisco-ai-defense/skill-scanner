@@ -102,6 +102,11 @@ class ToolRow:
     output_tokens: int = 0
     error: str | None = None
     extra: Mapping[str, Any] = field(default_factory=dict)
+    # One entry per finding, carrying the analyzer that produced it. The aggregate
+    # fields above cannot answer "which analyzer is responsible for this false
+    # positive", which is the question a false-positive reduction pass asks first.
+    # Kept as plain dicts so a row stays JSON-serialisable.
+    findings: tuple[Mapping[str, Any], ...] = ()
 
     def flagged_at(self, threshold: str) -> bool:
         """Whether this row fired at or above ``threshold``."""

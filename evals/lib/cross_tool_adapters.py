@@ -370,6 +370,30 @@ def _status_counts(statuses: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def _finding_row(finding: Any) -> dict[str, Any]:
+    """Flatten one Finding to the fields a false-positive analysis needs.
+
+    ``analyzer`` is the point of this: reducing the deterministic false-positive rate
+    means knowing which analyzer and rule fired, not just that the record was flagged.
+    Snippets and descriptions are deliberately omitted -- they carry corpus content,
+    which the source licences forbid redistributing, and they are not needed to rank a
+    rule by how often it fires on harmless records.
+    """
+
+    category = getattr(finding, "category", None)
+    return {
+        "analyzer": str(getattr(finding, "analyzer", None) or "unknown"),
+        "rule_id": str(getattr(finding, "rule_id", "") or ""),
+        "category": str(getattr(category, "value", category) or ""),
+        "severity": _enum_value(getattr(finding, "severity", None)),
+        "file_path": getattr(finding, "file_path", None),
+        "line_number": getattr(finding, "line_number", None),
+        # Confidence lives in metadata for some analyzers and as an attribute for others.
+        "confidence": getattr(finding, "confidence", None)
+        or (getattr(finding, "metadata", None) or {}).get("confidence"),
+    }
+
+
 class SkillScannerAdapter:
     """Run this scanner over a record directory at full capability.
 
@@ -537,6 +561,10 @@ class SkillScannerAdapter:
         severities = [_enum_value(f.severity) for f in findings]
         rules = sorted({str(getattr(f, "rule_id", "") or "").strip() for f in findings} - {""})
         analyzers_used = list(getattr(result, "analyzers_used", None) or [])
+        # Per-finding detail, so a false-positive pass can attribute a flag to the
+        # analyzer and rule that produced it. The aggregate fields cannot: they collapse
+        # every finding on a record into one severity and a set of rule ids.
+        finding_rows = tuple(_finding_row(f) for f in findings)
 
         usage = getattr(result, "llm_usage", None) or {}
         capability_ok, capability_detail = self._check_capability(
@@ -562,6 +590,7 @@ class SkillScannerAdapter:
             input_tokens=int(usage.get("input_tokens") or 0) + self._meta_tokens[0],
             output_tokens=int(usage.get("output_tokens") or 0) + self._meta_tokens[1],
             error=None,
+            findings=finding_rows,
             extra={
                 "analyzers_used": analyzers_used,
                 "analyzers_failed": [dict(f) for f in (getattr(result, "analyzers_failed", None) or [])],
