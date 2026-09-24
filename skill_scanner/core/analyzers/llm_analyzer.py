@@ -153,6 +153,12 @@ class SecurityError(Exception):
     pass
 
 
+# _analyze_single does not raise on a provider, budget or contract failure: it records
+# last_error and returns an INFO finding saying it could not analyse. Unioned blindly,
+# that marker joins the semantic findings and a pass that read nothing looks like a pass
+# that found nothing.
+_DECOMPOSED_DIAGNOSTIC_RULES = frozenset({"LLM_ANALYSIS_FAILED", "LLM_CONTEXT_BUDGET_EXCEEDED"})
+
 _DECOMPOSED_SEVERITY_ORDER = ("SAFE", "INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
 
 # Verdicts weakest to strongest, so a union keeps the strongest rather than whichever
@@ -355,6 +361,9 @@ class LLMAnalyzer(BaseAnalyzer):
         # How many focuses actually completed on the most recent scan, so a partially
         # failed decomposition is visible rather than looking like a full one.
         self.last_decomposed_passes = 0
+        # Declared so a caller can distinguish a complete decomposition from one where
+        # some passes never read the skill.
+        self.last_decomposed_failures = 0
         # Skill-level assessment from the most recent analysis. Declared here rather than
         # only being assigned deep in _convert_to_findings, so the class contract is
         # explicit and a reader before the first scan sees defined values.
@@ -616,6 +625,9 @@ class LLMAnalyzer(BaseAnalyzer):
         assessments: list[str] = []
         threats: list[Any] = []
         ran = 0
+        failed = 0
+        pass_errors: list[str] = []
+        diagnostics: dict[tuple[str, ...], Finding] = {}
 
         try:
             for focus in self.prompt_builder.decomposed_focuses:
@@ -631,7 +643,36 @@ class LLMAnalyzer(BaseAnalyzer):
                         getattr(skill, "name", "unknown"),
                         error,
                     )
+                    failed += 1
+                    pass_errors.append(f"{type(error).__name__}: {error}")
                     continue
+
+                # A pass that returned only a diagnostic marker produced no judgement.
+                # Counting it as a success would let an unread skill read as a clean one.
+                returned_diagnostics = [
+                    finding
+                    for finding in findings
+                    if str(getattr(finding, "rule_id", "") or "") in _DECOMPOSED_DIAGNOSTIC_RULES
+                ]
+                if returned_diagnostics:
+                    failed += 1
+                    if self.last_error:
+                        pass_errors.append(str(self.last_error))
+                    for finding in returned_diagnostics:
+                        diagnostics.setdefault(_decomposed_finding_key(finding), finding)
+                    findings = [finding for finding in findings if finding not in returned_diagnostics]
+                    # Usage still counted: the request was billed even though it failed.
+                    _add_token_usage(total_usage, self._llm_usage)
+                    if not findings:
+                        continue
+                    ran += 1
+                    for finding in findings:
+                        key = _decomposed_finding_key(finding)
+                        existing = merged.get(key)
+                        if existing is None or _severity_rank(finding.severity) > _severity_rank(existing.severity):
+                            merged[key] = finding
+                    continue
+
                 ran += 1
                 # Read usage per pass: _analyze_single resets the counter on entry, so
                 # reading once at the end would report only the final pass.
@@ -652,7 +693,25 @@ class LLMAnalyzer(BaseAnalyzer):
             self.prompt_builder.threat_analysis_prompt = base_prompt
 
         self._llm_usage = total_usage
-        unioned = list(merged.values())
+
+        if merged:
+            # At least one pass judged the skill, so the coverage gap is reported through
+            # last_error rather than as a finding that would sit alongside real ones.
+            unioned = list(merged.values())
+        else:
+            # No pass produced a judgement. The diagnostic marker is the only honest
+            # result, and dropping it would report a skill nothing could read as clean.
+            unioned = list(diagnostics.values())
+
+        # last_error must reflect the run, not whichever pass happened to be last: a
+        # later success would otherwise clear an earlier failure, and a failing final
+        # pass would flag a run whose earlier passes produced findings.
+        if failed:
+            self.last_error = f"{failed} of {failed + ran} decomposed passes failed: " + "; ".join(
+                dict.fromkeys(pass_errors)
+            )
+        else:
+            self.last_error = None
         # Renumber so no two unioned findings share an id.
         for index, finding in enumerate(unioned):
             finding.id = f"llm_finding_{getattr(skill, 'name', 'skill')}_{index}"
@@ -662,6 +721,7 @@ class LLMAnalyzer(BaseAnalyzer):
         if assessments:
             self.last_overall_assessment = " ".join(assessments)
         self.last_decomposed_passes = ran
+        self.last_decomposed_failures = failed
         return unioned
 
     async def _analyze_single(self, skill: Skill) -> list[Finding]:
