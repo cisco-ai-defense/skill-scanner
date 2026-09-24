@@ -250,6 +250,31 @@ malicious through a download-and-execute chain or a credential sink without cont
 injection classifier would recognise. The model is doing its job; its job is not this one. It is not
 integrated.
 
+### The same measurement, applied to this scanner
+
+The CJK comparison above is worth running against our own output, on the same 12,498 records and the
+same 2% threshold. Static rules only, no model:
+
+| Group | Records | MEDIUM+ | HIGH+ | INFO+ |
+|---|---|---|---|---|
+| More than 2% CJK | 976 | 2.25% | 0.82% | 94.57% |
+| Rest | 11,522 | 3.89% | 2.60% | 87.68% |
+
+The deterministic rules flag CJK-heavy skills **less** often, not more: 0.58x at MEDIUM+ and 0.32x at
+HIGH+, against Prompt Guard's 16x in the other direction. That is the expected shape for rules keyed on
+code constructs — `curl | bash`, base64 decoding, credential paths — which do not care what language the
+prose around them is in.
+
+**It does not follow that the scanner is unbiased here, and the corpus cannot settle it.** These
+records are unlabelled, so a lower flag rate is consistent with two different explanations: those
+skills genuinely do less risky work, or the rules under-detect when the surrounding text is
+non-English. Distinguishing them needs labelled non-English skills, which no corpus screened so far
+provides. What can be said is the narrow claim: there is no evidence of *over*-flagging non-English
+skills, and the direction of any error is towards silence rather than noise.
+
+The INFO+ row moves the other way, 94.57% against 87.68%, which is consistent with
+`MANIFEST_MISSING_LICENSE` dominating that tier on more informally published skills.
+
 ## The meta-analyzer is off by default, and should stay that way
 
 The meta-analyzer arbitrates findings the other stages produced and can only demote. Measured on a
