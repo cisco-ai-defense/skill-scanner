@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import secrets
 import sys
 import urllib.error
@@ -107,6 +108,11 @@ def build_handler(*, endpoint: str, region: str, token: str, timeout: int) -> ty
             """
 
         def _refuse(self, status: int, message: str) -> None:
+            # Every refusal returns before reading the request body. With HTTP/1.1
+            # keep-alive the unread bytes stay in the socket and the next request on that
+            # connection is parsed starting mid-body, so a client that reuses connections
+            # sees spurious 400s. Closing is simpler than draining a body we rejected.
+            self.close_connection = True
             payload = json.dumps({"error": {"message": message}}).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
@@ -181,14 +187,20 @@ def main(argv: list[str] | None = None) -> int:
 
     token_path = Path(args.token_file).expanduser()
     if token_path.exists():
+        if token_path.stat().st_mode & 0o077:
+            parser.error(f"{token_path} is readable by other users; run chmod 600 on it first")
         token = token_path.read_text(encoding="utf-8").strip()
         if not token:
             parser.error(f"{token_path} is empty; delete it to have a token generated")
     else:
         token = secrets.token_urlsafe(32)
         token_path.parent.mkdir(parents=True, exist_ok=True)
-        token_path.write_text(token + "\n", encoding="utf-8")
-        token_path.chmod(0o600)
+        # Created 0600 by os.open rather than written and then chmod-ed: write_text
+        # applies the process umask, leaving the token readable by other local users for
+        # the moment between the two calls.
+        descriptor = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(token + "\n")
 
     endpoint = args.endpoint
     if endpoint is None:

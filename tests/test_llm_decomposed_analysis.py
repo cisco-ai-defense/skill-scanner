@@ -292,10 +292,11 @@ class TestMantleRequestBody:
 
 class TestMantleSigning:
     def test_configured_session_token_is_signed_with(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """An explicit token must reach the signature, not the one botocore resolved.
+        """An explicit token must reach the signature when botocore resolved none.
 
         A caller may supply only the session token and leave the key pair to the
-        environment. Signing with a stale token, or none, yields a signature AWS rejects.
+        environment. Botocore then resolves long-term keys with no token, and signing
+        without one yields a signature AWS rejects for a temporary credential.
         """
         from botocore.credentials import Credentials
 
@@ -316,7 +317,9 @@ class TestMantleSigning:
                 return None
 
             def get_credentials(self) -> Credentials:
-                return Credentials("AKIA", "secret", "stale-or-absent")
+                # Long-term keys: no token of their own, which is the only case where
+                # the configured token is unambiguously the right one to sign with.
+                return Credentials("AKIA", "secret", None)
 
         class FakeAuth:
             def __init__(self, credentials: Any, service: str, region: str) -> None:
@@ -339,3 +342,54 @@ class TestMantleSigning:
             handler._post_bedrock_mantle(b"{}")
 
         assert signed_with["token"] == "explicit-token"
+
+    def test_a_resolved_token_is_not_replaced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A token botocore resolved came paired with the key pair it returned.
+
+        ``aws_session_token`` also falls back to the ambient ``AWS_SESSION_TOKEN``, so a
+        named profile can resolve its own key pair and token while an unrelated token sits
+        in the environment. Splicing that ambient token onto the profile's key pair yields
+        a signature AWS rejects, so a resolved token must win.
+        """
+        from botocore.credentials import Credentials
+
+        from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+        from skill_scanner.core.analyzers.llm_request_handler import LLMRequestHandler
+
+        monkeypatch.setenv("AWS_SESSION_TOKEN", "ambient-token-from-another-session")
+        config = ProviderConfig(model="bedrock-mantle/google.gemma-4-26b-a4b", aws_profile="some-profile")
+        handler = LLMRequestHandler(provider_config=config, max_tokens=64)
+        assert config.aws_session_token == "ambient-token-from-another-session"
+
+        signed_with: dict[str, Any] = {}
+
+        class FakeSession:
+            def set_config_variable(self, *args: Any) -> None:
+                return None
+
+            def get_credentials(self) -> Credentials:
+                return Credentials("PROFILE_AKIA", "profile-secret", "profile-token")
+
+        class FakeAuth:
+            def __init__(self, credentials: Any, service: str, region: str) -> None:
+                signed_with["token"] = credentials.token
+                signed_with["access_key"] = credentials.access_key
+
+            def add_auth(self, request: Any) -> None:
+                request.headers["Authorization"] = "signed"
+
+        monkeypatch.setattr("botocore.session.Session", FakeSession)
+        monkeypatch.setattr("botocore.auth.SigV4Auth", FakeAuth)
+
+        class Boom(Exception):
+            pass
+
+        def explode(*args: Any, **kwargs: Any) -> None:
+            raise Boom
+
+        monkeypatch.setattr("urllib.request.urlopen", explode)
+        with pytest.raises(Boom):
+            handler._post_bedrock_mantle(b"{}")
+
+        assert signed_with["token"] == "profile-token"
+        assert signed_with["access_key"] == "PROFILE_AKIA"

@@ -182,3 +182,80 @@ class TestRequestShape:
         # The type only. A message could carry skill content or a credential.
         assert b"RuntimeError" in response
         assert b"secret-bearing detail" not in response
+
+
+class TestTokenFilePermissions:
+    def test_the_token_file_is_created_0600_rather_than_chmod_ed_afterwards(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Asserting the *creation* mode, because the final mode cannot tell them apart.
+
+        A write-then-chmod ends at 0600 too, so checking the resulting file would pass
+        either way. What matters is that the file is never briefly readable by other
+        local users, which means the mode has to be supplied at creation.
+        """
+        import os
+
+        token_path = tmp_path / "token"
+        modes: list[int] = []
+        real_open = os.open
+
+        def recording_open(path: Any, flags: int, mode: int = 0o777, **kwargs: Any) -> int:
+            if str(path) == str(token_path):
+                modes.append(mode)
+            return real_open(path, flags, mode, **kwargs)
+
+        monkeypatch.setattr(os, "open", recording_open)
+        monkeypatch.setattr(mantle_proxy, "ThreadingHTTPServer", None)
+        with pytest.raises(TypeError):
+            # The server cannot start; the token is written before that point.
+            mantle_proxy.main(["--token-file", str(token_path), "--endpoint", "https://example.invalid/x"])
+
+        assert modes == [0o600], f"token file created with mode(s) {[oct(m) for m in modes]}"
+
+    def test_an_existing_world_readable_token_is_refused(self, tmp_path: Path) -> None:
+        token_path = tmp_path / "token"
+        token_path.write_text("abc\n", encoding="utf-8")
+        token_path.chmod(0o644)
+        # Reusing a token other local users can read would let them drive the signer.
+        with pytest.raises(SystemExit):
+            mantle_proxy.main(["--token-file", str(token_path)])
+
+
+class TestConnectionHandling:
+    def test_a_refusal_closes_the_connection(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A refusal returns before reading the body.
+
+        Under HTTP/1.1 keep-alive the unread bytes stay in the socket, and the next
+        request on that connection is parsed starting mid-body. A client that reuses
+        connections then sees spurious errors, so the connection must be closed.
+        """
+
+        def forward(body: bytes, **_: Any) -> tuple[int, bytes]:
+            raise AssertionError("must not be reached")
+
+        handler_cls = mantle_proxy.build_handler(
+            endpoint="https://example.invalid/x", region="us-east-1", token="secret", timeout=5
+        )
+
+        class Probe(handler_cls):  # type: ignore[valid-type,misc]
+            def __init__(self) -> None:
+                # Constructed without a socket: only _refuse's bookkeeping is under test.
+                self.close_connection = False
+                self.headers = {}
+                self.sent: list[int] = []
+                self.wfile = __import__("io").BytesIO()
+
+            def send_response(self, code: int, message: str | None = None) -> None:
+                self.sent.append(code)
+
+            def send_header(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+            def end_headers(self) -> None:
+                return None
+
+        probe = Probe()
+        probe._refuse(401, "missing or incorrect proxy token")
+        assert probe.sent == [401]
+        assert probe.close_connection is True

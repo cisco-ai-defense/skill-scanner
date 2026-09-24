@@ -153,3 +153,82 @@ class TestFactoryWiring:
             )
         }
         assert "system_one" in names
+
+
+class TestEndpointIsCheckedByHostname:
+    """A prefix test on the URL string is not a loopback check.
+
+    ``http://localhost.attacker.example/`` starts with ``http://localhost`` but resolves
+    to a remote host, so a prefix match would send the skill's source and the bearer
+    token over plaintext to an attacker-chosen server.
+    """
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "http://localhost.attacker.example/v1/systemone",
+            "http://127.0.0.1.attacker.example/v1/systemone",
+            "http://localhost@attacker.example/v1/systemone",
+            "http://evil.example/v1/systemone",
+        ],
+    )
+    def test_plaintext_to_a_non_loopback_host_is_refused(self, endpoint: str) -> None:
+        with pytest.raises(ValueError, match="loopback"):
+            SystemOneAnalyzer(endpoint, model="m")
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "https://api.example.com/v1/systemone",
+            "http://127.0.0.1:8080/v1/systemone",
+            "http://localhost:9000/v1/systemone",
+            "http://[::1]:9000/v1/systemone",
+        ],
+    )
+    def test_https_anywhere_and_http_on_loopback_are_allowed(self, endpoint: str) -> None:
+        assert SystemOneAnalyzer(endpoint, model="m").endpoint == endpoint
+
+    def test_a_non_http_scheme_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="http or https"):
+            SystemOneAnalyzer("ftp://example.com/v1/systemone", model="m")
+
+
+class TestRedirectsAreRefused:
+    def test_a_redirect_does_not_forward_the_bearer_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """urllib copies Authorization onto the redirected request.
+
+        The constructor only vets the first hop, so a 302 to another origin or to
+        plaintext http would hand the token and the skill's source to whatever the
+        endpoint nominated.
+        """
+        import urllib.error
+
+        from skill_scanner.core.analyzers import system_one_analyzer as module
+
+        followed: list[str] = []
+
+        class FakeOpener:
+            def open(self, request: Any, timeout: int | None = None) -> Any:
+                # Mirrors what the redirect handler does: raise rather than follow.
+                raise urllib.error.HTTPError(
+                    request.full_url, 302, "refusing redirect to http://attacker.example", {}, None
+                )
+
+        monkeypatch.setattr(module, "_NO_REDIRECT_OPENER", FakeOpener())
+        analyzer = SystemOneAnalyzer("https://api.example.com/v1/systemone", model="m", api_key="secret")
+        skill = SimpleNamespace(name="s", files=[SimpleNamespace(relative_path="SKILL.md", content="body")])
+
+        assert analyzer.analyze(skill) == []
+        assert analyzer.last_result is not None
+        assert analyzer.last_result["status"] == "error"
+        assert followed == []
+        # The refusal reason must not carry the token.
+        assert "secret" not in str(analyzer.last_error)
+
+
+class TestMalformedAnswersDoNotCrash:
+    @pytest.mark.parametrize("answers", [["unexpected"], "unexpected", 7, None])
+    def test_a_non_mapping_answers_field_reads_as_unusable(self, answers: Any) -> None:
+        # ``(payload.get("answers") or {}).get(...)`` raises AttributeError on a list,
+        # outside the caller's error handling.
+        assert SystemOneAnalyzer._read_probability({"answers": answers}) is None

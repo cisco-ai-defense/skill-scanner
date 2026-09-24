@@ -88,6 +88,17 @@ coerce anything else, rather than manufacturing a number from a format error.
 the skill's source. `https` is required for any remote host; `http` is allowed on loopback
 so a locally served model can be used.
 
+The check parses the URL and compares the hostname against an exact allowlist, rather than
+testing the URL string for a prefix. `http://localhost.attacker.example/` begins with
+`http://localhost` but resolves to a remote host, so a prefix test would have sent skill
+content and the bearer token in clear text to a server the operator did not intend.
+
+**Redirects are refused, not followed.** `urllib` copies the `Authorization` header onto a
+redirected request, so a `302` from the configured endpoint to another origin — or to
+plaintext `http` — would hand the token and the skill's source to whatever that endpoint
+nominated. Vetting the endpoint only covers the first hop, so the second one is refused
+outright.
+
 **Oversize content is skipped, not truncated.** The budget is `MAX_STATE_BYTES = 24_000`,
 set well below a typical 16k-token limit at a pessimistic two bytes per token. A model
 that answers confidently about content it never saw is a fail-open, not a low score, so an

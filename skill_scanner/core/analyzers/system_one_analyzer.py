@@ -39,6 +39,7 @@ from __future__ import annotations
 import json
 import logging
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -46,6 +47,16 @@ from ..models import Finding, Skill
 from .base import BaseAnalyzer
 
 logger = logging.getLogger(__name__)
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Turn any redirect into an error instead of following it with credentials."""
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
+        raise urllib.error.HTTPError(req.full_url, code, f"refusing redirect to {newurl}", headers, fp)
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_RefuseRedirects)
 
 # Guarded well below a typical 16k-token prompt limit at a pessimistic two bytes per
 # token. Oversize content is skipped rather than truncated: a model that answers
@@ -65,6 +76,27 @@ SCREENING_INSTRUCTIONS = (
 )
 
 
+# Exact hostnames, compared after parsing. A prefix test on the URL string is not
+# equivalent: "http://localhost.attacker.example/" starts with "http://localhost" while
+# resolving to a remote host, which would put skill content and the bearer token on the
+# wire in clear text.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+
+
+def _require_safe_endpoint(endpoint: str) -> None:
+    """Allow https anywhere, and http only to a genuine loopback host."""
+
+    parsed = urllib.parse.urlsplit(endpoint)
+    if parsed.scheme == "https":
+        return
+    if parsed.scheme != "http":
+        raise ValueError(f"System One endpoint must use http or https, not {parsed.scheme!r}: {endpoint}")
+    if (parsed.hostname or "") not in LOOPBACK_HOSTS:
+        raise ValueError(
+            f"System One endpoint must be https, or http on loopback; refusing plaintext to a remote host: {endpoint}"
+        )
+
+
 class SystemOneAnalyzer(BaseAnalyzer):
     """Query a System One endpoint and record its calibrated probability.
 
@@ -82,13 +114,7 @@ class SystemOneAnalyzer(BaseAnalyzer):
         policy: Any = None,
     ) -> None:
         super().__init__("system_one", policy)
-        if not endpoint.startswith(("http://127.0.0.1", "http://localhost", "https://")):
-            # A plaintext endpoint off loopback would put skill content on the wire in
-            # clear text. Loopback is allowed so a locally served model can be used.
-            raise ValueError(
-                "System One endpoint must be https, or http on loopback; refusing "
-                f"plaintext to a remote host: {endpoint}"
-            )
+        _require_safe_endpoint(endpoint)
         self.endpoint = endpoint
         self.model = model
         self.api_key = api_key
@@ -177,7 +203,11 @@ class SystemOneAnalyzer(BaseAnalyzer):
             headers["Authorization"] = f"Bearer {self.api_key}"
         request = urllib.request.Request(self.endpoint, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
+            # No redirects. urllib copies the Authorization header onto the redirected
+            # request, so a 302 to another origin or to plaintext http would hand the
+            # bearer token and the skill's source to whatever the endpoint nominated.
+            # The endpoint check above only covers the first hop.
+            with _NO_REDIRECT_OPENER.open(request, timeout=self.timeout) as response:  # noqa: S310
                 decoded = json.loads(response.read())
             if not isinstance(decoded, dict):
                 raise ValueError("response was not a JSON object")
@@ -197,7 +227,12 @@ class SystemOneAnalyzer(BaseAnalyzer):
 
         if not isinstance(payload, dict):
             return None
-        answer = (payload.get("answers") or {}).get("malicious")
+        answers = payload.get("answers")
+        if not isinstance(answers, dict):
+            # A list or a string here would raise AttributeError on .get, outside the
+            # caller's error handling. An unexpected shape is unusable, not a crash.
+            return None
+        answer = answers.get("malicious")
         if not isinstance(answer, dict) or answer.get("type") != "noul":
             return None
         value = answer.get("noul")

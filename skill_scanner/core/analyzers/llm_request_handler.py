@@ -750,15 +750,20 @@ class LLMRequestHandler:
             )
 
         configured_token = self.provider_config.aws_session_token
-        if configured_token and credentials.token != configured_token:
+        frozen = credentials.get_frozen_credentials()
+        if configured_token and frozen.token is None:
             # A caller can supply the session token explicitly while leaving the access
             # key and secret to the environment, which is how the LiteLLM Bedrock path
-            # accepts them. Signing with the token botocore happened to resolve -- or
-            # with none at all -- produces a signature AWS rejects for a temporary
-            # credential, so the configured token wins.
+            # accepts them. Botocore resolves the key pair but no token, and signing
+            # without one produces a signature AWS rejects for a temporary credential.
+            #
+            # Only applied when botocore resolved *no* token. A token it did resolve came
+            # paired with that key pair -- from a profile, an instance role, or an
+            # assumed role -- and ``aws_session_token`` also falls back to the ambient
+            # AWS_SESSION_TOKEN, so overriding a resolved token could splice one
+            # session's token onto another's key pair and break every request.
             from botocore.credentials import Credentials
 
-            frozen = credentials.get_frozen_credentials()
             credentials = Credentials(frozen.access_key, frozen.secret_key, configured_token)
 
         url = self._bedrock_mantle_endpoint()
