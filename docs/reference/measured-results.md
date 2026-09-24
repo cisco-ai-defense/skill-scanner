@@ -226,7 +226,7 @@ Corpus: the same 12,500 published skills used for the flag-rate table above.
 
 | Threshold | Records flagged | Rate |
 |---|---|---|
-| 0.5 | 27 | 0.216% [0.149%, 0.314%] |
+| 0.5 | 27 | 0.216% [0.148%, 0.314%] |
 | 0.9 | 11 | 0.088% |
 | 0.99 | 3 | 0.024% |
 
