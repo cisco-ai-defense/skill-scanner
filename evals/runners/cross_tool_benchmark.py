@@ -36,6 +36,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import threading
@@ -128,6 +129,10 @@ def _read_token(path: str | None) -> str | None:
     return Path(os.path.expanduser(path)).read_text(encoding="utf-8").strip() or None
 
 
+# Models that the standard bedrock-runtime route cannot serve.
+_MANTLE_ONLY_MODELS = re.compile(r"^google\.gemma-4\b")
+
+
 def our_model_id(model: str | None) -> str | None:
     """Return ``model`` in the form our scanner expects.
 
@@ -139,7 +144,17 @@ def our_model_id(model: str | None) -> str | None:
 
     if not model:
         return None
-    return model if "/" in model else f"bedrock/{model}"
+    if "/" in model:
+        return model
+    if _MANTLE_ONLY_MODELS.match(model):
+        # Gemma 4 lives solely behind the mantle route. Prefixing it with plain
+        # "bedrock/" produces an id LiteLLM accepts and then fails on per request, so a
+        # whole arm runs, reports every record as capability-degraded, and the cause is
+        # only visible in the per-record log. Fail at startup instead.
+        raise SystemExit(
+            f"--model {model} is reachable only through the Bedrock mantle route; pass it as bedrock-mantle/{model}"
+        )
+    return f"bedrock/{model}"
 
 
 def build_adapter(tool: str, *, args: argparse.Namespace, use_llm: bool) -> Any:

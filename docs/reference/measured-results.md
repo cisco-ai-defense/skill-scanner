@@ -232,6 +232,48 @@ is model-agnostic and a future model may separate the classes. It is **advisory 
 a probability and cannot emit a finding, change a severity, or alter the verdict. Enabling it and
 demonstrating separation on a corpus is the precondition for anything acting on it. It does not transfer to its intended domain of agent and browser state decisions.
 
+## What enabling the judge costs on real skills
+
+Every judged figure above is from a labelled corpus. This is the judge on an unlabelled real-world
+population, which is the number that tells a user what turning it on will do to their own scans. Run
+through the Bedrock mantle route on Gemma 4 26B over a 1,000-record sample of the gitskills corpus, core
+rule pack, meta off as it ships.
+
+| Configuration | Population | MEDIUM+ | HIGH+ | LOW+ | INFO+ |
+|---|---|---|---|---|---|
+| Static rules only | 199,998 | 2.23% | 0.52% | 3.89% | 96.97% |
+| Plus the judge, meta off | 884 | **4.30% [3.15, 5.85]** | 0.23% [0.06, 0.82] | **70.93%** | 100% |
+
+Two things stand out, and one apparent finding is not one.
+
+**The judge roughly doubles the MEDIUM+ flag rate on a predominantly benign population**, 2.23% to
+4.30%. On labelled corpora the judge buys large recall gains; this is the other side of that trade,
+measured on the population users actually scan rather than inferred from it.
+
+**The LOW tier is where most of its output goes**: 3.89% to 70.93%. Roughly seven in ten real skills
+receive a LOW finding once the judge runs. Combined with the LOW tier being empty on MaliciousSkillBench,
+this settles the earlier "severity is effectively bimodal" observation as an artifact of that corpus. It
+also means LOW carries almost no information on real skills and should not be gated on.
+
+**HIGH+ does not fall.** It reads 0.23% judged against 0.52% static, but the judged interval is
+[0.06, 0.82] on 884 records and contains the static figure, so the two are indistinguishable at this
+sample size. Nothing here says the judge suppresses high-severity findings.
+
+### The caveat that bounds this
+
+The judge failed on **116 of 1,000 records (11.6%)**, reported as `analyzers_failed=llm_analyzer`, and
+those records are excluded rather than scored as clean. That exclusion is the honest choice, but it also
+means the estimate covers the records the judge could read. If failures correlate with size or
+complexity — and the context-budget failures documented above suggest they do — the true flag rate on
+the whole population is higher than 4.30%. The figure is a floor, not a point estimate.
+
+An arm with the meta-analyzer enabled was also run and is not reported as a comparison: it had a
+different usable population (999 records) and its responses mostly failed contract validation on this
+corpus and were retained unchanged, so the difference between the arms is not attributable to meta.
+
+Cost: 3.9M judge input tokens for 884 scored records, about 4,400 per skill, consistent with the
+single-pass figure measured on MaliciousSkillBench.
+
 ## Llama Prompt Guard 2 does not screen skills
 
 `meta-llama/Llama-Prompt-Guard-2-22M` was tested as a cheap pre-filter. It is a 22M-parameter
