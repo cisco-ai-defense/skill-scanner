@@ -192,6 +192,64 @@ is model-agnostic and a future model may separate the classes. It is **advisory 
 a probability and cannot emit a finding, change a severity, or alter the verdict. Enabling it and
 demonstrating separation on a corpus is the precondition for anything acting on it. It does not transfer to its intended domain of agent and browser state decisions.
 
+## Llama Prompt Guard 2 does not screen skills
+
+`meta-llama/Llama-Prompt-Guard-2-22M` was tested as a cheap pre-filter. It is a 22M-parameter
+DeBERTa-v2 classifier, 283 MB, with a 512-token context, so it needs no GPU: the run below is CPU-only
+and took 45 minutes for 12,500 skills on 16 cores. Each skill is split into 512-token windows
+overlapping by 128 and scored by its **maximum** window probability, which favours detection, so a low
+recall cannot be blamed on the chunking.
+
+Corpus: MaliciousSkillBench source-disjoint split, 839 malicious and 545 benign.
+
+| Threshold | Recall | Precision | FPR |
+|---|---|---|---|
+| 0.5 | 0.0% | 0.0% | 0.4% |
+| 0.8 | 0.0% | — | 0.0% |
+| 0.9 | 0.0% | — | 0.0% |
+
+It is effectively silent. Two of 1,384 records fire at 0.5 and **both are benign**. AUC is 0.611, so
+there is a faint signal and it points the right way — unlike the System One result below, which is
+inverted — but the probabilities never reach a threshold anything could act on.
+
+**One number here is misleading and worth stating explicitly.** Sweeping every threshold, the best
+achievable F1 is 77.4%, which is higher than the shipped single judge's 61.2% on the same corpus. That
+is an artifact of class balance, not a result. It occurs at a threshold of 0.0015 with a **89.0%
+false-positive rate**, which is very nearly "flag everything", and the corpus is 60.6% malicious. The
+trivial always-flag classifier scores 75.5% F1 here, so the model beats it by 1.9 points. At the
+judge's own operating point of 17.6% FPR its recall is 22.3% against the judge's 49.0%, and at a 1%
+false-positive rate its recall is 0.1%.
+
+### It is not merely inert: its confident firings are systematically wrong
+
+Corpus: the same 12,500 published skills used for the flag-rate table above.
+
+| Threshold | Records flagged | Rate |
+|---|---|---|
+| 0.5 | 27 | 0.216% [0.149%, 0.314%] |
+| 0.9 | 11 | 0.088% |
+| 0.99 | 3 | 0.024% |
+
+The three highest-scoring records — 0.998, 0.995 and 0.993 — are a Chinese-language novel-writing
+checklist, a conversation-memory skill, and a prompt optimizer. All three are benign, and two causes
+account for the pattern:
+
+- **Non-English text.** Skills containing more than 2% CJK characters (976 of 12,500) are flagged at
+  **1.64%** against **0.10%** for the rest, a 16-fold difference. Sixteen of the 27 flagged records are
+  CJK-heavy, though such skills are only 7.8% of the corpus. Mean scores are nearly identical
+  (0.036 against 0.034), so the effect is confined to the high-confidence tail.
+- **Skills whose purpose is to instruct a model.** A prompt-engineering skill reads like an
+  instruction-override attempt because directing a model *is* the product.
+
+So enabling it as a screen would penalise non-English and prompt-engineering skills while detecting
+essentially none of the labelled malicious ones.
+
+**This is a statement about fit, not about the model.** Prompt Guard detects prompt-injection and
+jailbreak attempts in text. Whether a skill is safe to install is a different question: a skill can be
+malicious through a download-and-execute chain or a credential sink without containing anything an
+injection classifier would recognise. The model is doing its job; its job is not this one. It is not
+integrated.
+
 ## The meta-analyzer is off by default, and should stay that way
 
 The meta-analyzer arbitrates findings the other stages produced and can only demote. Measured on a
