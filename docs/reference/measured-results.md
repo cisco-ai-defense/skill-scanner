@@ -543,6 +543,59 @@ reported a hidden binary file in each one. Deleting the 2,763 sidecars restored 
 the published baseline. A corpus that travels between platforms needs checking for
 platform-injected files before any figure from it is believed.
 
+## Tuning the deterministic scanner against real skills
+
+Three changes, each chosen from per-analyzer findings and each measured as an A/B against the
+previous scanner on the same records. On the labelled split no malicious record changed severity,
+so recall is unchanged throughout; every movement is a benign record moving down.
+
+| Change | Labelled HIGH+ FPR (install gate) | Labelled MEDIUM+ FPR | Real skills |
+|---|---|---|---|
+| Before | 7.71% | 8.44% | MEDIUM+ 4.428% on 19,966 |
+| Installer trust in correlation | **5.87%** | 8.44% | 0 records moved |
+| Markdown is a text container | 5.87% | 8.26% | MEDIUM+ **3.371%**; 213 moved down, 0 up |
+| Claims, not mentions, of Anthropic | 5.87% | **8.07%** | rule flags 4,460 -> 673 over 1.83M manifests |
+
+**Installer trust in correlation.** `CORRELATED_NETWORK_EXECUTION_FLOW` ignored the policy's
+`known_installer_domains`, so the pipeline analyzer demoted `curl https://astral.sh/... | sh` to LOW
+while the correlation analyzer raised the same line to HIGH. A fenced, fixed-HTTPS download whose
+every host is on the curated LOTS-aware legitimate list, or a configured installer, is now MEDIUM:
+reported, but no longer blocking. Path scoping is kept, so `raw.githubusercontent.com/nvm-sh` trusts
+nvm rather than every GitHub user, and one untrusted download in a block keeps every flow in it
+HIGH. Twenty-nine of the thirty-one benign firings failed the old installer test on a single
+condition, the role classifier.
+
+**Markdown is a text container.** 85% of all `FILE_MAGIC_MISMATCH` findings on real skills were a
+`SKILL.md` that Magika reads as YAML, because the skill format requires YAML frontmatter. A text or
+code label in Markdown is no longer a mismatch; binary content in a `.md` file still is. On the
+skills it used to flag, the LLM judge independently found nothing concerning in 96.1%.
+
+**Claims, not mentions.** `SOCIAL_ENG_ANTHROPIC_IMPERSONATION` fired on any skill containing the word
+"anthropic". It now fires on a claim of affiliation. The old exemption was a substring test that also
+exempted real claims -- "...applies fixes. Official Anthropic skill." passed because it contained
+"apply" -- and the new rule catches 221 such claims the old one missed.
+
+### Candidates measured and rejected
+
+- **Exempting read-only `find -exec`.** Twenty of 77 real skills flagged by `COMPOUND_FIND_EXEC` run
+  only read-only tools through `-exec`, but every one of the six malicious skills this rule catches
+  on the labelled split uses exactly those tools (`-exec file`, `-exec md5`) for reconnaissance. The
+  exemption would have removed all of its detections.
+- **Scoping `find` by search root.** Malicious skills search named directories and real skills most
+  often search `~`, so the root does not separate the classes.
+- **Trusting a host because it matches the skill's own name.** An attacker controls both, so it is not
+  a trust signal; ordinary unknown hosts stay HIGH for fetch-and-execute.
+- **Taking fetch-and-execute below MEDIUM.** A live fetch cannot prove its own integrity, and the
+  existing design keeps such behaviour visible and actionable.
+
+### What the labelled corpus cannot tell us
+
+`SUPPLY_CHAIN_UNPINNED_DEPENDENCY`, `YARA_jailbreak_generic`, `YARA_autonomy_abuse_generic` and
+`SECRET_CONNECTION_STRING` never fire on MaliciousSkillBench, whose records are a single `SKILL.md`
+with no dependency files, so there is no labelled evidence of what they catch. On real skills the
+judge clears 75% to 92% of their flags, but on 12 to 30 flags each. They are held for the full-corpus
+adjudication rather than changed on that sample.
+
 ## What rule-level suppression cannot fix
 
 Suppressing any combination of up to four of the highest-volume rules changes F1 by at most +0.2
