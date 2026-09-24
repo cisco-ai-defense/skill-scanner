@@ -636,3 +636,7 @@ options:
 ```
 
 </details>
+
+## `--llm-decompose`
+
+Run the LLM analyzer once per focus (declared purpose, policy surface, security behaviours) and union the findings, instead of one general pass. Raises recall where a single pass was missing findings, at roughly three times the model calls. Off by default. See [measured results](measured-results.md).

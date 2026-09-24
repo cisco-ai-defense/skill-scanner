@@ -170,6 +170,7 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 | OpenAI | `openai/gpt-4o` | |
 | OpenAI-compatible custom endpoint | `Cloud-Gemini-3.1-Pro` with `SKILL_SCANNER_LLM_PROVIDER=openai` | Uses `SKILL_SCANNER_LLM_BASE_URL` |
 | AWS Bedrock | `bedrock/anthropic.claude-sonnet-4-20250514-v1:0` | Requires `[bedrock]` extra or API key |
+| AWS Bedrock mantle | `bedrock-mantle/google.gemma-4-26b-a4b` | OpenAI-compatible Bedrock endpoint for models absent from `bedrock-runtime`. SigV4-signed with the same IAM credentials; requires the `[bedrock]` extra |
 | Google Vertex AI | `vertex_ai/gemini-2.5-pro` | Requires `[vertex]` extra |
 | Google AI Studio | `gemini/gemini-2.5-flash` | Requires `[google]` extra |
 | Azure OpenAI | `azure/my-deployment-name` | Requires `[azure]` extra |

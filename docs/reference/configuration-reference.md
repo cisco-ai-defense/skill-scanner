@@ -32,6 +32,7 @@ Primary settings for the LLM semantic analyzer.
 | `SKILL_SCANNER_LLM_MAX_TOKENS` | Positive integer output-token budget. Overrides the active policy's `llm_analysis.max_output_tokens` value. | `16384` |
 | `SKILL_SCANNER_LLM_REASONING_EFFORT` | Optional reasoning-depth control: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unset preserves the provider default. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. | `low` |
 | `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` | Skip json_schema and start in plain JSON mode for incompatible proxies. | `true` |
+| `SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT` | Opt-in repair for a self-contradicting model response. Some models return a `SAFE` package verdict together with a non-empty findings array, which the parser otherwise rejects, failing the analysis for that skill. When enabled the verdict is escalated to `SUSPICIOUS` and the findings are kept. Escalate-only: it never downgrades a verdict, so it cannot hide a detection. Off by default because it changes a model answer. | `1` |
 
 ## Meta Analyzer
 
@@ -45,6 +46,7 @@ Override LLM settings for the meta (cross-correlation) analyzer. Falls back to t
 | `SKILL_SCANNER_META_LLM_API_VERSION` | Meta-analyzer API version override. | `(falls back to LLM_API_VERSION)` |
 | `SKILL_SCANNER_META_LLM_MAX_TOKENS` | Positive integer meta-analysis output budget; falls back to `SKILL_SCANNER_LLM_MAX_TOKENS`. | `32768` |
 | `SKILL_SCANNER_META_LLM_REASONING_EFFORT` | Meta-analyzer reasoning-depth override; falls back to `SKILL_SCANNER_LLM_REASONING_EFFORT`. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. | `low` |
+| `SKILL_SCANNER_META_LLM_TEMPERATURE` | Meta-analyzer sampling temperature override. Lower values make the arbitration more repeatable; note that temperature 0 is not determinism, and replays of the same input can still differ. | `0` |
 
 ## AWS / Bedrock
 
@@ -55,6 +57,24 @@ Required when using a `bedrock/...` model with IAM credentials instead of an API
 | `AWS_REGION` | AWS region for Bedrock-backed flows. | `us-east-1` |
 | `AWS_PROFILE` | AWS credential profile for Bedrock IAM auth. | `my-bedrock-profile` |
 | `AWS_SESSION_TOKEN` | Optional AWS session token. | `(temporary STS token)` |
+
+### Bedrock mantle route
+
+Some Bedrock models are published only on the OpenAI-compatible *mantle* endpoint rather than on
+`bedrock-runtime`. Reach those with the `bedrock-mantle/` prefix, for example
+`bedrock-mantle/google.gemma-4-26b-a4b`. The route is signed with SigV4 against service name
+`bedrock`, so it uses the same IAM credentials as `bedrock/` and needs no API key. It is a separate
+provider because `bedrock/` signs against `bedrock-runtime`, which does not serve these models.
+
+Two properties of the route are worth knowing before debugging a failure:
+
+- Its strict schema validator rejects `uniqueItems`, which the scanner strips automatically.
+- A `json_object` request is refused unless a message contains the literal word `json`, which the
+  scanner ensures.
+
+Prompt caching is not applied on this route; `cached_tokens` stays at zero across identical requests,
+so cost planning should not assume it.
+
 
 ## Google / Vertex
 
@@ -103,6 +123,7 @@ Paths, allowlists, and other advanced settings.
 | `SKILL_SCANNER_ALLOWED_ROOTS` | Colon-delimited API allowlist for server-side scan targets, policy files, and custom-rule directories. When unset, the API can access only its process-private `0700` upload root. | `/srv/skills:/home/user/skills` |
 | `SKILL_SCANNER_TAXONOMY_PATH` | Path to a custom Cisco AI taxonomy YAML file (overridden by `--taxonomy`). | `/path/to/taxonomy.yaml` |
 | `SKILL_SCANNER_THREAT_MAPPING_PATH` | Path to a custom threat mapping YAML file (overridden by `--threat-mapping`). | `/path/to/threats.yaml` |
+| `SKILL_SCANNER_TRIAGE_AUTHOR` | Author recorded against a triage decision when `skill-scanner triage decide` is run without an explicit author. Used for the audit trail on a dismissal or confirmation, so decisions remain attributable. | `alice@example.com` |
 
 ## OSV Dependency Scanning
 

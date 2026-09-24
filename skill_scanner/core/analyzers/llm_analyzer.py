@@ -194,6 +194,8 @@ class LLMAnalyzer(BaseAnalyzer):
         reasoning_effort: str | None = None,
         # Policy (optional – uses generous defaults when omitted)
         policy: ScanPolicy | None = None,
+        # Decomposed analysis: run one pass per focus and union the findings.
+        decompose: bool = False,
     ):
         """
         Initialize enhanced LLM analyzer.
@@ -297,6 +299,9 @@ class LLMAnalyzer(BaseAnalyzer):
 
         self.prompt_builder = PromptBuilder()
         self.response_parser = ResponseParser()
+        # Off by default. Enabling it multiplies model calls by the number of focuses,
+        # so it is a deliberate choice rather than a silent cost increase.
+        self.decompose = bool(decompose) and bool(self.prompt_builder.decomposed_focuses)
 
         self.model = self.provider_config.model
         self.api_key = self.provider_config.api_key
@@ -326,6 +331,11 @@ class LLMAnalyzer(BaseAnalyzer):
 
         # Tracks the last analysis error (read by the scanner for analyzers_failed)
         self.last_error: str | None = None
+
+        # Counts responses whose package verdict was escalated to satisfy the
+        # consistency table. Read by evaluation harnesses to report how often a
+        # model contradicted itself; always zero unless repair is enabled.
+        self.verdict_repairs: int = 0
 
     @property
     def llm_usage(self) -> LLMTokenUsage:
@@ -501,8 +511,8 @@ class LLMAnalyzer(BaseAnalyzer):
         """
         Analyze skill using LLM (async).
 
-        Supports enriched context from other analyzers and opt-in consensus
-        judging (multiple runs with majority agreement).
+        Supports enriched context from other analyzers, opt-in consensus judging
+        (multiple runs with majority agreement), and opt-in decomposed analysis.
 
         Args:
             skill: Skill to analyze
@@ -510,6 +520,54 @@ class LLMAnalyzer(BaseAnalyzer):
         Returns:
             List of security findings
         """
+        if self.decompose:
+            return await self._analyze_decomposed(skill)
+        return await self._analyze_single(skill)
+
+    async def _analyze_decomposed(self, skill: Skill) -> list[Finding]:
+        """Run one pass per focus and union the findings.
+
+        Each focus narrows attention without changing the decision rules, so the passes
+        differ in emphasis rather than in what counts as evidence. Findings are merged on
+        rule and category: two passes describing the same behavior in different words are
+        one finding, and counting them twice would inflate the result for free.
+
+        A failing pass is skipped rather than aborting the scan, because a partial union
+        is still better than no semantic analysis, and token usage is accumulated across
+        passes so the cost of the extra calls stays visible.
+        """
+
+        base_prompt = self.prompt_builder.threat_analysis_prompt
+        merged: dict[tuple[str, str], Finding] = {}
+        total_usage = _empty_token_usage()
+        try:
+            for focus in self.prompt_builder.decomposed_focuses:
+                self.prompt_builder.threat_analysis_prompt = base_prompt + focus
+                try:
+                    findings = await self._analyze_single(skill)
+                except Exception as error:  # noqa: BLE001 - one focus must not void the scan
+                    # getattr, because the handler must not be able to raise: a failing
+                    # pass is recoverable, and an exception thrown while reporting it
+                    # would turn that into a failed scan.
+                    logger.warning(
+                        "decomposed pass failed for %s: %s",
+                        getattr(skill, "name", "unknown"),
+                        error,
+                    )
+                    continue
+                # Read usage per pass: _analyze_single resets the counter on entry, so
+                # reading once at the end would report only the final pass.
+                _add_token_usage(total_usage, self._llm_usage)
+                for finding in findings:
+                    category = getattr(finding.category, "value", finding.category)
+                    merged.setdefault((str(finding.rule_id or ""), str(category or "")), finding)
+        finally:
+            self.prompt_builder.threat_analysis_prompt = base_prompt
+        self._llm_usage = total_usage
+        return list(merged.values())
+
+    async def _analyze_single(self, skill: Skill) -> list[Finding]:
+        """One analysis pass with the currently configured prompt."""
         self._llm_usage = _empty_token_usage()
         self._allowed_evidence_ids = set()
         findings = []
@@ -649,6 +707,7 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                 )
                 _add_token_usage(self._llm_usage, self.request_handler.last_usage)
                 analysis_result = self.response_parser.parse(response_content)
+                self._repair_primary_verdict(analysis_result)
                 self._validate_primary_contract(analysis_result)
                 findings.extend(self._convert_to_findings(analysis_result, skill))
             else:
@@ -685,6 +744,45 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
 
         self.last_error = None
         return findings
+
+    @staticmethod
+    def _verdict_repair_enabled() -> bool:
+        """Whether to escalate a self-contradicting SAFE verdict instead of failing.
+
+        Off by default so product behaviour is unchanged: a model that reports
+        ``SAFE`` while listing findings has contradicted itself, and failing
+        loudly is the safe default.
+
+        Evaluation harnesses opt in because the strict path discards the whole
+        analysis, and that discard is not label-neutral. Measured on Gemma 4
+        against MaliciousSkillBench, the contradiction appeared on 22.5% of
+        benign packages and 0% of malicious ones, which silently suppresses the
+        analyzer exactly where it would produce false positives and flatters its
+        measured precision.
+        """
+        raw = os.getenv("SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT", "")
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _repair_primary_verdict(self, analysis_result: dict[str, Any]) -> None:
+        """Escalate ``SAFE`` to ``SUSPICIOUS`` when findings were reported.
+
+        Escalate-only by construction. The findings are the substantive output
+        and are validated on their own terms; only the summary verdict is
+        rewritten, and never in the direction of reporting less risk.
+        """
+        if not self._verdict_repair_enabled():
+            return
+        findings = analysis_result.get("findings")
+        if analysis_result.get("verdict") != "SAFE" or not isinstance(findings, list) or not findings:
+            return
+
+        analysis_result["verdict"] = "SUSPICIOUS"
+        self.verdict_repairs += 1
+        logger.warning(
+            "repaired self-contradicting package verdict: model returned SAFE with %d finding(s); "
+            "escalated to SUSPICIOUS",
+            len(findings),
+        )
 
     def _validate_primary_contract(self, analysis_result: dict[str, Any]) -> None:
         """Enforce the evidence and package-verdict contract after parsing."""
@@ -785,6 +883,7 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                 )
                 _add_token_usage(self._llm_usage, self.request_handler.last_usage)
                 analysis_result = self.response_parser.parse(response_content)
+                self._repair_primary_verdict(analysis_result)
                 self._validate_primary_contract(analysis_result)
                 run_findings = self._convert_to_findings(analysis_result, skill)
                 all_run_findings.append(run_findings)

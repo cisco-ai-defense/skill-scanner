@@ -60,6 +60,7 @@ Security scanning for AI agent skills. Detects prompt injection, data exfiltrati
 - [Output Formats](reference/output-formats.md) -- JSON, SARIF, Markdown, HTML, and table formats
 - [Policy Quick Reference](reference/policy-quick-reference.md) -- Compact policy section and knob reference
 - [Dependencies & LLM Providers](reference/dependencies-and-llm-providers.md) -- Supported providers and extras
+- [Measured Results](reference/measured-results.md) -- What the scanner scores, on which corpus, under which configuration
 
 ## Development
 

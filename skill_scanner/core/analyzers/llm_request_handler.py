@@ -70,6 +70,27 @@ def _extract_token_usage(response: Any) -> LLMTokenUsage:
     return {"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens}
 
 
+class _AttrView:
+    """Attribute access over a JSON mapping.
+
+    ``get_truncation_finish_reason`` and ``_extract_token_usage`` both read
+    provider responses with ``getattr``.  The Bedrock mantle route returns plain
+    JSON, so wrapping it here lets those helpers stay single-implementation
+    instead of growing a dict branch that could drift from the attribute one.
+    """
+
+    __slots__ = ("_data",)
+
+    def __init__(self, data: Any) -> None:
+        self._data = data if isinstance(data, dict) else {}
+
+    def __getattr__(self, name: str) -> Any:
+        value = self._data.get(name)
+        if isinstance(value, dict):
+            return _AttrView(value)
+        return value
+
+
 def _add_token_usage(total: LLMTokenUsage, delta: LLMTokenUsage) -> None:
     """Accumulate *delta* into *total* in-place."""
     total["input_tokens"] += delta["input_tokens"]
@@ -161,6 +182,20 @@ def get_truncation_finish_reason(choice: Any) -> str | None:
 
 
 logger = logging.getLogger(__name__)
+
+# JSON Schema keywords rejected by the Bedrock mantle strict-schema validator.
+# Verified against google.gemma-4-26b-a4b: the scanner schema is accepted once
+# ``uniqueItems`` is removed and needs no other change.
+_BEDROCK_MANTLE_UNSUPPORTED_SCHEMA_KEYWORDS = frozenset({"uniqueItems"})
+
+# The Bedrock Converse structured-output validator rejects array cardinality
+# keywords outright, answering with
+# ``output_config.format.schema: For 'array' type, property 'maxItems' is not
+# supported``.  Our response schema bounds ``evidence_ids``, so before this every
+# judged request over a ``bedrock/`` model failed and the analyzer reported zero
+# tokens while the scan still returned static findings -- a failure that reads as a
+# quiet quality result rather than a broken provider.
+_BEDROCK_UNSUPPORTED_SCHEMA_KEYWORDS = frozenset({"maxItems", "minItems", "uniqueItems"})
 
 # LiteLLM intentionally remains unloaded until an LLM request is made.  Its
 # module initialization may refresh a remote model-cost map, which must never
@@ -402,11 +437,15 @@ class LLMRequestHandler:
         if self._should_use_json_object():
             return {"type": "json_object"}
 
+        schema = self.response_schema
+        if getattr(self.provider_config, "is_bedrock", False) is True:
+            schema = self._sanitize_schema_for_bedrock(schema)
+
         return {
             "type": "json_schema",
             "json_schema": {
                 "name": "security_analysis_response",
-                "schema": self.response_schema,
+                "schema": schema,
                 "strict": True,
             },
         }
@@ -418,6 +457,12 @@ class LLMRequestHandler:
 
         error_msg = str(error).lower()
         if "response_format.json_schema" in error_msg:
+            return True
+
+        # Bedrock names the offending field ``output_config.format.schema`` and never
+        # mentions ``json_schema``, so the checks below missed it and the request
+        # failed outright instead of degrading.
+        if "output_config.format.schema" in error_msg:
             return True
 
         if "json_schema" in error_msg and any(
@@ -449,6 +494,12 @@ class LLMRequestHandler:
             Exception: If all retries exhausted
         """
         self._last_usage = _empty_token_usage()
+        # Compared with ``is True`` on purpose: a stand-in provider config (for
+        # example a MagicMock in tests) auto-creates truthy attributes, and a
+        # permissive check would silently divert those callers to the signed
+        # mantle client and attempt real AWS credential resolution.
+        if getattr(self.provider_config, "use_bedrock_mantle", False) is True:
+            return await self._make_bedrock_mantle_request(messages, context)
         if self.provider_config.use_google_sdk:
             # For Google SDK, combine system and user messages into a single prompt
             # Google SDK doesn't have separate system/user roles like OpenAI/Anthropic
@@ -542,6 +593,234 @@ class LLMRequestHandler:
 
                 # For other errors, don't retry
                 logger.error("LLM API error for %s: %s", context, e)
+                break
+
+        if last_exception is not None:
+            raise last_exception
+        raise RuntimeError("All retries exhausted")
+
+    def _bedrock_mantle_endpoint(self) -> str:
+        """Return the chat-completions URL for the configured mantle base."""
+        base = (self.provider_config.base_url or "").rstrip("/")
+        if not base:
+            raise ValueError("Bedrock mantle requires a base URL")
+        if base.endswith("/chat/completions"):
+            return base
+        return f"{base}/chat/completions"
+
+    @staticmethod
+    def _sanitize_schema_for_bedrock(schema: Any) -> Any:
+        """Drop JSON Schema keywords the Bedrock Converse validator rejects.
+
+        Stripping a cardinality bound loosens the contract slightly but keeps
+        strict structured output, which is what actually keeps finding parsing
+        reliable.  Falling back to ``json_object`` instead would lose the whole
+        structural guarantee to save a bound the prompt already states.
+        """
+        if isinstance(schema, dict):
+            return {
+                key: LLMRequestHandler._sanitize_schema_for_bedrock(value)
+                for key, value in schema.items()
+                if key not in _BEDROCK_UNSUPPORTED_SCHEMA_KEYWORDS
+            }
+        if isinstance(schema, list):
+            return [LLMRequestHandler._sanitize_schema_for_bedrock(item) for item in schema]
+        return schema
+
+    @staticmethod
+    def _sanitize_schema_for_bedrock_mantle(schema: Any) -> Any:
+        """Drop JSON Schema keywords the mantle strict validator rejects.
+
+        Mirrors ``_sanitize_schema_for_google``. Without this the scanner's own
+        response schema is refused with ``invalid_json_schema`` and the request
+        silently degrades to ``json_object``, losing the structural guarantee
+        that keeps finding parsing reliable.
+        """
+        if isinstance(schema, dict):
+            return {
+                key: LLMRequestHandler._sanitize_schema_for_bedrock_mantle(value)
+                for key, value in schema.items()
+                if key not in _BEDROCK_MANTLE_UNSUPPORTED_SCHEMA_KEYWORDS
+            }
+        if isinstance(schema, list):
+            return [LLMRequestHandler._sanitize_schema_for_bedrock_mantle(value) for value in schema]
+        return schema
+
+    def _build_bedrock_mantle_response_format(self) -> dict[str, Any] | None:
+        """Build a mantle-compatible response format."""
+        response_format = self._build_response_format()
+        if not response_format or response_format.get("type") != "json_schema":
+            return response_format
+
+        json_schema = dict(response_format["json_schema"])
+        json_schema["schema"] = self._sanitize_schema_for_bedrock_mantle(json_schema.get("schema"))
+        return {"type": "json_schema", "json_schema": json_schema}
+
+    def _build_bedrock_mantle_body(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        force_json_object: bool = False,
+    ) -> bytes:
+        """Serialize the OpenAI-compatible request body.
+
+        The exact bytes are returned because SigV4 signs the payload; the signed
+        body and the transmitted body must be byte-identical.
+        """
+        payload: dict[str, Any] = {
+            "model": self.provider_config.model,
+            "messages": messages,
+            "max_tokens": self.max_tokens,
+        }
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
+
+        response_format = {"type": "json_object"} if force_json_object else self._build_bedrock_mantle_response_format()
+        if response_format:
+            payload["response_format"] = response_format
+        if response_format and response_format.get("type") == "json_object":
+            payload["messages"] = self._ensure_json_mentioned(payload["messages"])
+
+        return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    @staticmethod
+    def _ensure_json_mentioned(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Guarantee the literal word "json" appears when using ``json_object``.
+
+        The mantle route rejects a ``json_object`` request whose messages never
+        mention JSON:
+
+            'messages' must contain the word 'json' in some form, to use
+            'response_format' of type 'json_object'.
+
+        That request is the schema-rejection fallback, so without this guard a
+        backend that refuses strict schemas fails twice and surfaces a confusing
+        400 instead of degrading cleanly.
+        """
+        if any("json" in (message.get("content") or "").lower() for message in messages):
+            return messages
+
+        adjusted = [dict(message) for message in messages]
+        for message in adjusted:
+            if message.get("role") == "system":
+                message["content"] = f"{message.get('content') or ''}\n\nRespond with a single JSON object.".strip()
+                return adjusted
+
+        adjusted.append({"role": "system", "content": "Respond with a single JSON object."})
+        return adjusted
+
+    def _post_bedrock_mantle(self, body: bytes) -> dict[str, Any]:
+        """SigV4-sign *body* and POST it to the mantle endpoint.
+
+        Synchronous on purpose; the caller runs it in an executor.  Uses stdlib
+        urllib so the mantle path adds no dependency beyond botocore, which the
+        Bedrock extra already requires.
+        """
+        import urllib.error
+        import urllib.request
+
+        from botocore.auth import SigV4Auth
+        from botocore.awsrequest import AWSRequest
+        from botocore.session import Session
+
+        from .llm_provider_config import BEDROCK_MANTLE_SIGV4_SERVICE
+
+        region = self.provider_config.aws_region or "us-east-1"
+        session = Session()
+        if self.provider_config.aws_profile:
+            session.set_config_variable("profile", self.provider_config.aws_profile)
+        credentials = session.get_credentials()
+        if credentials is None:
+            raise ValueError(
+                "No AWS credentials found for the Bedrock mantle endpoint. "
+                "Configure a profile, environment credentials, or an instance role."
+            )
+
+        url = self._bedrock_mantle_endpoint()
+        signed = AWSRequest(method="POST", url=url, data=body, headers={"Content-Type": "application/json"})
+        SigV4Auth(credentials.get_frozen_credentials(), BEDROCK_MANTLE_SIGV4_SERVICE, region).add_auth(signed)
+
+        request = urllib.request.Request(url, data=body, headers=dict(signed.headers), method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                raw = response.read()
+        except urllib.error.HTTPError as error:
+            detail = ""
+            try:
+                detail = error.read().decode("utf-8", errors="replace")[:500]
+            except Exception:  # noqa: BLE001 - diagnostic best effort only
+                detail = ""
+            raise RuntimeError(f"Bedrock mantle request failed with HTTP {error.code}: {detail}") from error
+
+        decoded = json.loads(raw.decode("utf-8"))
+        if not isinstance(decoded, dict):
+            raise RuntimeError("Bedrock mantle returned a non-object response")
+        return decoded
+
+    def _read_bedrock_mantle_content(self, payload: dict[str, Any], context: str) -> str:
+        """Validate the model pin, record usage, and return the message content."""
+        returned_model = payload.get("model")
+        expected_model = self.provider_config.model
+        if isinstance(returned_model, str) and returned_model != expected_model:
+            # The mantle catalogue has no listing route, so the model id is a
+            # pinned constant. A silent substitution would invalidate the run.
+            raise RuntimeError(f"Bedrock mantle served model {returned_model!r} but {expected_model!r} was requested")
+
+        view = _AttrView(payload)
+        self._last_usage = _extract_token_usage(view)
+
+        choices = payload.get("choices") or []
+        if not choices:
+            raise RuntimeError("Bedrock mantle returned no choices")
+        choice = choices[0]
+        self._raise_if_truncated(_AttrView(choice), context=context)
+        message = choice.get("message") or {}
+        content = message.get("content")
+        return content if isinstance(content, str) else ""
+
+    async def _make_bedrock_mantle_request(self, messages: list[dict[str, str]], context: str = "") -> str:
+        """Make a request against the SigV4-signed Bedrock mantle route."""
+        loop = asyncio.get_event_loop()
+        last_exception: Exception | None = None
+
+        for attempt in range(self.max_retries + 1):
+            body = self._build_bedrock_mantle_body(messages)
+            try:
+                payload = await loop.run_in_executor(None, self._post_bedrock_mantle, body)
+                return self._read_bedrock_mantle_content(payload, context)
+
+            except LLMResponseTruncatedError:
+                raise
+            except Exception as error:  # noqa: BLE001 - classified below
+                if self._should_fallback_to_json_object(error, self._build_bedrock_mantle_response_format()):
+                    logger.warning(
+                        "Structured output rejected for %s, retrying with plain JSON output",
+                        context,
+                    )
+                    self._use_plain_json_output = True
+                    retry_body = self._build_bedrock_mantle_body(messages, force_json_object=True)
+                    payload = await loop.run_in_executor(None, self._post_bedrock_mantle, retry_body)
+                    return self._read_bedrock_mantle_content(payload, context)
+
+                last_exception = error
+                error_msg = str(error).lower()
+                if any(
+                    keyword in error_msg
+                    for keyword in ["rate limit", "quota", "too many requests", "429", "throttling"]
+                ):
+                    if attempt < self.max_retries:
+                        delay = (2**attempt) * self.rate_limit_delay
+                        logger.warning(
+                            "Rate limit hit for %s, retrying in %ss (attempt %d/%d)",
+                            context,
+                            delay,
+                            attempt + 1,
+                            self.max_retries + 1,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+
+                logger.error("Bedrock mantle API error for %s: %s", context, error)
                 break
 
         if last_exception is not None:

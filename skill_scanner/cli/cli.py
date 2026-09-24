@@ -286,6 +286,7 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
         trusted_pack_dirs=trusted_pack_dirs or None,
         use_behavioral=getattr(args, "use_behavioral", False),
         use_llm=getattr(args, "use_llm", False),
+        llm_decompose=getattr(args, "llm_decompose", False),
         use_virustotal=getattr(args, "use_virustotal", False),
         vt_api_key=getattr(args, "vt_api_key", None),
         vt_upload_files=getattr(args, "vt_upload_files", False),
@@ -1239,6 +1240,16 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         choices=["anthropic", "openai", "openai-compatible"],
         default=None,
         help="LLM provider shortcut or explicit OpenAI-compatible override",
+    )
+    parser.add_argument(
+        "--llm-decompose",
+        action="store_true",
+        help=(
+            "Run the LLM analyzer once per focus (declared purpose, policy surface, security "
+            "behaviors) and union the findings, instead of one general pass. Raises recall where a "
+            "single pass was missing findings, at roughly three times the model calls. Measured "
+            "effect varies by corpus and model; see docs/reference/measured-results.md."
+        ),
     )
     parser.add_argument(
         "--llm-consensus-runs",

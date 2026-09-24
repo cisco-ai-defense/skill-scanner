@@ -7,4 +7,5 @@ Canonical technical reference for every CLI flag, API endpoint, environment vari
 - **[Configuration Reference](./configuration-reference.md)** -- Environment variables for LLM providers, analyzers, API keys, and feature toggles.
 - **[Output Formats](./output-formats.md)** -- Six output formats -- summary, JSON, Markdown, table, SARIF, and HTML -- with sample output and usage guidance.
 - **[Dependencies & LLM Providers](./dependencies-and-llm-providers.md)** -- Runtime dependencies, optional extras, supported LLM providers, and model naming conventions.
+- [Measured Results](measured-results.md) -- Benchmarked F1, precision, recall and false-positive rate per corpus
 - **[Policy Quick Reference](./policy-quick-reference.md)** -- Presets, section-by-section field reference, and copy-pasteable YAML for common policy tweaks.

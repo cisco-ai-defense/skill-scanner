@@ -41,10 +41,20 @@ def source_evidence_id(path: str) -> str:
 class PromptBuilder:
     """Builds analysis prompts with injection protection."""
 
+    # Focus sections for decomposed analysis, in the order they are asked.  Each
+    # narrows attention without changing the decision rules, so the passes differ in
+    # emphasis rather than in what counts as evidence.
+    DECOMPOSED_FOCUS_FILES = (
+        "focus_developer_intent.md",
+        "focus_policy_surface.md",
+        "focus_security_discovery.md",
+    )
+
     def __init__(self):
         """Initialize prompt builder and load prompts."""
         self.protection_rules = ""
         self.threat_analysis_prompt = ""
+        self.decomposed_focuses: tuple[str, ...] = ()
         self._load_prompts()
 
     def _load_prompts(self):
@@ -67,10 +77,20 @@ class PromptBuilder:
                 logger.warning("Threat analysis prompt not found at %s", threat_file)
                 self.threat_analysis_prompt = "Analyze for security threats."
 
+            focuses = []
+            for name in self.DECOMPOSED_FOCUS_FILES:
+                focus_file = prompts_dir / name
+                if focus_file.exists():
+                    focuses.append(focus_file.read_text(encoding="utf-8"))
+                else:
+                    logger.warning("Decomposed focus prompt not found at %s", focus_file)
+            self.decomposed_focuses = tuple(focuses)
+
         except Exception as e:
             logger.warning("Failed to load prompts: %s", e)
             self.protection_rules = "You are a security analyst analyzing agent skills."
             self.threat_analysis_prompt = "Analyze for security threats."
+            self.decomposed_focuses = ()
 
     def build_threat_analysis_prompt(
         self,

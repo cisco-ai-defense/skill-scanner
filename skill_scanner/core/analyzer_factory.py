@@ -114,6 +114,7 @@ def build_analyzers(
     llm_consensus_runs: int = 1,
     llm_max_tokens: int | None = None,
     llm_reasoning_effort: str | None = None,
+    llm_decompose: bool = False,
 ) -> list[BaseAnalyzer]:
     """Build the full analyzer list (core + optional).
 
@@ -138,6 +139,9 @@ def build_analyzers(
         llm_reasoning_effort: Optional reasoning-depth control. When *None*,
             LLM clients resolve ``SKILL_SCANNER_LLM_REASONING_EFFORT`` and
             otherwise preserve provider defaults.
+        llm_decompose: Run the LLM analyzer once per focus and union the
+            findings instead of one general pass. Off by default because it
+            multiplies model calls by the number of focuses.
 
     Returns:
         A list of analyzer instances ready to be passed to
@@ -190,6 +194,7 @@ def build_analyzers(
                 llm_user=llm_user,
                 reasoning_effort=llm_reasoning_effort,
                 policy=policy,
+                decompose=llm_decompose,
                 **extra_kwargs,
             )
             if llm_consensus_runs > 1:
