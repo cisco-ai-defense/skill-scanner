@@ -277,8 +277,15 @@ single-pass figure measured on MaliciousSkillBench.
 ## Llama Prompt Guard 2 does not screen skills
 
 `meta-llama/Llama-Prompt-Guard-2-22M` was tested as a cheap pre-filter. It is a 22M-parameter
-DeBERTa-v2 classifier, 283 MB, with a 512-token context, so it needs no GPU: the run below is CPU-only
-and took 45 minutes for 12,500 skills on 16 cores. Each skill is split into 512-token windows
+DeBERTa-v2 classifier, 283 MB, with a 512-token context, so it does not require a GPU: the large runs
+below are CPU-only and took 45 minutes for 12,500 skills on 16 cores.
+
+The source-disjoint measurement was also repeated on an Apple M4 Pro GPU through the Metal backend, and
+the result is device-independent: AUC 0.6117 against 0.6110 on CPU, identical flag rate, a maximum
+per-record probability difference of 1.6e-06 across 1,379 records, and **no** record changing side of the
+0.5 threshold. The 1.15x speed difference is expected for a model this small, where tokenization and
+Python overhead dominate the matrix work. A conclusion that moved with the backend would have been
+suspect; this one does not. Each skill is split into 512-token windows
 overlapping by 128 and scored by its **maximum** window probability, which favours detection, so a low
 recall cannot be blamed on the chunking.
 
