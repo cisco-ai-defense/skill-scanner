@@ -912,6 +912,83 @@ def _metric_row(label: str, m: dict) -> list[str]:
     ]
 
 
+def _render_full_corpus(full: dict) -> str:
+    """Every usable gitskills skill: deterministic before/after, the judge, adjudication, cascade."""
+
+    if not full:
+        return ""
+    det = full.get("deterministic") or {}
+    base, tuned = det.get("static-base") or {}, det.get("static-tuned") or {}
+    out = "<h2>Every usable skill: deterministic, judge and cascade</h2>\n"
+    if base and tuned:
+        out += (
+            f"<p>{count(base.get('records'))} real published skills, the whole usable gitskills corpus, "
+            "scanned with every deterministic analyzer before and after the tuning described on this "
+            f"page. {count(det.get('records_moved_down'))} records moved to a lower severity and "
+            f"{count(det.get('records_moved_up'))} to a higher one.</p>\n"
+        )
+        rows = []
+        for b, t in zip(base.get("tiers") or [], tuned.get("tiers") or []):
+            rows.append(
+                [
+                    esc(b["label"]),
+                    percent(b["rate"], 3),
+                    percent(t["rate"], 3),
+                    f"{(t['rate'] - b['rate']) / b['rate']:+.1%}" if b.get("rate") else "&mdash;",
+                ]
+            )
+        out += table(["Threshold", "Before tuning", "After tuning", "Relative change"], rows, numeric=(1, 2, 3))
+    judge = full.get("judge") or {}
+    if judge:
+        medium = next((t for t in judge.get("tiers") or [] if t["label"] == "MEDIUM or above"), {})
+        out += (
+            f"<p>The LLM judge read {count(judge.get('records'))} of them "
+            f"({count(judge.get('failed'))} could not be analysed and are excluded, not counted as clean) and "
+            f"flagged {percent(medium.get('rate'), 2)} at MEDIUM or above. The deterministic scanner or the judge "
+            f"together flag {percent(full.get('combined_flag_rate_det_or_judge'), 2)}.</p>\n"
+        )
+    adj = full.get("adjudication") or []
+    if adj:
+        out += "<h3>Which deterministic rules the judge disagrees with</h3>\n"
+        out += (
+            "<p>For every rule that fires at MEDIUM or above on at least twenty real skills, the share the "
+            "judge also flags. The judge is not ground truth &mdash; on the labelled split its own "
+            "false-positive rate is about 18% and its recall 53% &mdash; so this ranks rules for review "
+            "rather than measuring their error. Tuning decisions still have to pass the labelled-recall "
+            "check.</p>\n"
+        )
+        out += table(
+            ["Analyzer", "Rule", "Flags", "Judge agrees", "Judge clears"],
+            [
+                [
+                    esc(r["analyzer"]),
+                    f"<code>{esc(r['rule_id'])}</code>",
+                    count(r["flags"]),
+                    percent(r["judge_agrees"], 1),
+                    percent(r["judge_clears"], 1),
+                ]
+                for r in adj[:20]
+            ],
+            numeric=(2, 3, 4),
+        )
+    casc = full.get("cascade") or {}
+    if casc and "error" not in casc:
+        out += "<h3>The cascade over every skill</h3>\n"
+        out += table(
+            ["", "MEDIUM+ flag rate", "Judge calls"],
+            [
+                ["Judge alone", percent(casc.get("judge_flag_rate"), 2), "100%"],
+                [
+                    "OpenJev screen, then judge",
+                    percent(casc.get("cascade_flag_rate"), 2),
+                    percent(casc.get("judge_calls"), 1),
+                ],
+            ],
+            numeric=(1, 2),
+        )
+    return out
+
+
 def render_large_scale(report: dict | None) -> str:
     """Results from running both models locally on 4x H200, and the full static corpus."""
 
@@ -1106,6 +1183,8 @@ def render_large_scale(report: dict | None) -> str:
                 "corpus: the rule that dominates real skills barely appears on MaliciousSkillBench, so "
                 "tuning against labelled data alone would not prioritise it.</p>\n"
             )
+
+    body += _render_full_corpus(report.get("full") or {})
 
     notes = report.get("notes") or []
     if notes:
