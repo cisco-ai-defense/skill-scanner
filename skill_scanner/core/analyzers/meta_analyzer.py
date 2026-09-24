@@ -1958,7 +1958,24 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
             # actually protects the caller: schema enforcement was belt-and-braces, and
             # an unparsable response is still rejected rather than accepted.
             handler.response_schema = None
-            mantle_content = await handler.make_request(messages, context="meta-analysis")
+            try:
+                mantle_content = await handler.make_request(messages, context="meta-analysis")
+            except LLMResponseTruncatedError as error:
+                # _analyze_batch catches only MetaAnalysisTruncatedError. Left as the
+                # handler's own type, a truncated mantle response would escape that
+                # handling and surface as a generic failure, losing the retry-with-fewer
+                # -findings path that exists precisely for truncation.
+                _add_token_usage(self._llm_usage, handler.last_usage)
+                # Carry the original diagnostics across rather than inventing values:
+                # the retry path reports finish_reason, model and the token cap, and a
+                # placeholder there would misdescribe why the batch was cut short.
+                raise MetaAnalysisTruncatedError(
+                    str(error),
+                    finish_reason=error.finish_reason,
+                    model=error.model,
+                    max_tokens=error.max_tokens,
+                    context=error.context,
+                ) from error
             _add_token_usage(self._llm_usage, handler.last_usage)
             return mantle_content
 

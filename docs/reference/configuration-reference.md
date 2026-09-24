@@ -124,6 +124,7 @@ Paths, allowlists, and other advanced settings.
 | `SKILL_SCANNER_TAXONOMY_PATH` | Path to a custom Cisco AI taxonomy YAML file (overridden by `--taxonomy`). | `/path/to/taxonomy.yaml` |
 | `SKILL_SCANNER_THREAT_MAPPING_PATH` | Path to a custom threat mapping YAML file (overridden by `--threat-mapping`). | `/path/to/threats.yaml` |
 | `SKILL_SCANNER_TRIAGE_AUTHOR` | Author recorded against a triage decision when `skill-scanner triage decide` is run without an explicit author. Used for the audit trail on a dismissal or confirmation, so decisions remain attributable. | `alice@example.com` |
+| `SKILL_SCANNER_SYSTEM_ONE_API_KEY` | Bearer token for the optional System One screening endpoint (`--system-one-endpoint`). Read from the environment only, never from the command line. | `(provider token)` |
 
 ## OSV Dependency Scanning
 

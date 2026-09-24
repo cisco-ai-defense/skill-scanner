@@ -24,6 +24,8 @@ focuses.
 from __future__ import annotations
 
 import asyncio
+import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -165,3 +167,175 @@ class TestFocusPrompts:
             # recall by relaxing what counts as a finding.
             assert base in combined
             assert len(combined) > len(base)
+
+
+class TestUnionCorrectness:
+    """Regressions for three defects in the first version of the union."""
+
+    def test_distinct_findings_in_one_category_both_survive(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        analyzer = _analyzer(decompose=True)
+
+        async def fake_single(skill: Any) -> list[Finding]:
+            # rule_id is derived from the category, so these two share it. Keying the
+            # union on rule_id alone dropped one of them.
+            a = _finding("LLM_DATA_EXFILTRATION")
+            a.file_path, a.line_number, a.title = "a.py", 1, "sends token to host A"
+            b = _finding("LLM_DATA_EXFILTRATION")
+            b.file_path, b.line_number, b.title = "b.py", 9, "sends token to host B"
+            return [a, b]
+
+        monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
+        findings = asyncio.run(analyzer._analyze_decomposed(object()))
+        assert len(findings) == 2, "two distinct findings in one category must both survive"
+
+    def test_a_later_high_is_not_hidden_behind_an_earlier_low(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        analyzer = _analyzer(decompose=True)
+        calls = {"n": 0}
+
+        async def fake_single(skill: Any) -> list[Finding]:
+            calls["n"] += 1
+            finding = _finding("LLM_DATA_EXFILTRATION")
+            finding.file_path, finding.line_number, finding.title = "a.py", 1, "same finding"
+            # Same identity, escalating severity: the union must keep the worst, not the
+            # first, or a later HIGH disappears behind an earlier LOW.
+            finding.severity = Severity.LOW if calls["n"] == 1 else Severity.CRITICAL
+            return [finding]
+
+        monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
+        findings = asyncio.run(analyzer._analyze_decomposed(object()))
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
+    def test_unioned_findings_have_unique_ids(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        analyzer = _analyzer(decompose=True)
+        categories = [ThreatCategory.DATA_EXFILTRATION, ThreatCategory.OBFUSCATION, ThreatCategory.MALWARE]
+        calls = {"n": 0}
+
+        async def fake_single(skill: Any) -> list[Finding]:
+            # Every pass numbers its findings from zero, so without renumbering two
+            # different findings would both be exported as ..._0.
+            finding = _finding("R", categories[calls["n"] % len(categories)])
+            finding.id = "llm_finding_s_0"
+            finding.title = f"pass {calls['n']}"
+            calls["n"] += 1
+            return [finding]
+
+        monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
+        findings = asyncio.run(analyzer._analyze_decomposed(SimpleNamespace(name="s")))
+        ids = [f.id for f in findings]
+        assert len(ids) == len(set(ids)), f"ids must be unique after the union, got {ids}"
+
+    def test_package_verdict_keeps_the_strongest_across_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        analyzer = _analyzer(decompose=True)
+        sequence = ["MALICIOUS", "SAFE", "SAFE"]
+        calls = {"n": 0}
+
+        async def fake_single(skill: Any) -> list[Finding]:
+            analyzer.last_overall_verdict = sequence[calls["n"] % len(sequence)]
+            analyzer.last_primary_threats = [f"threat-{calls['n']}"]
+            calls["n"] += 1
+            return [_finding("R")]
+
+        monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
+        asyncio.run(analyzer._analyze_decomposed(object()))
+        # A trailing SAFE pass must not contradict a MALICIOUS finding the union kept.
+        assert analyzer.last_overall_verdict == "MALICIOUS"
+        assert len(analyzer.last_primary_threats) == len(sequence)
+
+    def test_completed_pass_count_is_recorded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        analyzer = _analyzer(decompose=True)
+        calls = {"n": 0}
+
+        async def fake_single(skill: Any) -> list[Finding]:
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("provider down")
+            return []
+
+        monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
+        asyncio.run(analyzer._analyze_decomposed(object()))
+        # A partially failed decomposition must be distinguishable from a complete one.
+        assert analyzer.last_decomposed_passes == len(analyzer.prompt_builder.decomposed_focuses) - 1
+
+
+class TestMantleRequestBody:
+    """The mantle route builds its own body, so controls must be carried explicitly."""
+
+    def test_reasoning_effort_reaches_the_mantle_body(self) -> None:
+        from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+        from skill_scanner.core.analyzers.llm_request_handler import LLMRequestHandler
+
+        config = ProviderConfig(model="bedrock-mantle/google.gemma-4-26b-a4b")
+        handler = LLMRequestHandler(provider_config=config, max_tokens=64, reasoning_effort="low")
+        body = json.loads(handler._build_bedrock_mantle_body([{"role": "user", "content": "hi"}]))
+        # Dropping it silently would make --llm-reasoning-effort a no-op on this route.
+        assert body["reasoning_effort"] == "low"
+
+    def test_disabled_reasoning_is_translated_not_dropped(self) -> None:
+        from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+        from skill_scanner.core.analyzers.llm_request_handler import LLMRequestHandler
+
+        config = ProviderConfig(model="bedrock-mantle/google.gemma-4-26b-a4b")
+        handler = LLMRequestHandler(provider_config=config, max_tokens=64, reasoning_effort="disabled")
+        body = json.loads(handler._build_bedrock_mantle_body([{"role": "user", "content": "hi"}]))
+        assert body["reasoning_effort"] == "none"
+
+    def test_no_reasoning_field_when_unset(self) -> None:
+        from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+        from skill_scanner.core.analyzers.llm_request_handler import LLMRequestHandler
+
+        config = ProviderConfig(model="bedrock-mantle/google.gemma-4-26b-a4b")
+        handler = LLMRequestHandler(provider_config=config, max_tokens=64)
+        body = json.loads(handler._build_bedrock_mantle_body([{"role": "user", "content": "hi"}]))
+        assert "reasoning_effort" not in body
+
+
+class TestMantleSigning:
+    def test_configured_session_token_is_signed_with(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An explicit token must reach the signature, not the one botocore resolved.
+
+        A caller may supply only the session token and leave the key pair to the
+        environment. Signing with a stale token, or none, yields a signature AWS rejects.
+        """
+        from botocore.credentials import Credentials
+
+        from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+        from skill_scanner.core.analyzers.llm_request_handler import LLMRequestHandler
+
+        monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
+        config = ProviderConfig(
+            model="bedrock-mantle/google.gemma-4-26b-a4b",
+            aws_session_token="explicit-token",
+        )
+        handler = LLMRequestHandler(provider_config=config, max_tokens=64)
+
+        signed_with: dict[str, Any] = {}
+
+        class FakeSession:
+            def set_config_variable(self, *args: Any) -> None:
+                return None
+
+            def get_credentials(self) -> Credentials:
+                return Credentials("AKIA", "secret", "stale-or-absent")
+
+        class FakeAuth:
+            def __init__(self, credentials: Any, service: str, region: str) -> None:
+                signed_with["token"] = credentials.token
+
+            def add_auth(self, request: Any) -> None:
+                request.headers["Authorization"] = "signed"
+
+        monkeypatch.setattr("botocore.session.Session", FakeSession)
+        monkeypatch.setattr("botocore.auth.SigV4Auth", FakeAuth)
+
+        class Boom(Exception):
+            pass
+
+        def explode(*args: Any, **kwargs: Any) -> None:
+            raise Boom
+
+        monkeypatch.setattr("urllib.request.urlopen", explode)
+        with pytest.raises(Boom):
+            handler._post_bedrock_mantle(b"{}")
+
+        assert signed_with["token"] == "explicit-token"

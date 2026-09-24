@@ -28,6 +28,8 @@ Skill Scanner layers complementary detection engines so that no single blind spo
 |----------|-------------|--------------|
 | **Behavioral Analyzer** | `--use-behavioral` | AST and control-flow dataflow analysis for Python |
 | **LLM Analyzer** | `--use-llm` | Semantic threat reasoning powered by LLM |
+| **Decomposed LLM Analysis** | `--llm-decompose` | One LLM pass per focus, findings unioned; higher recall at roughly 3x the model calls |
+| **System One Screening** | `--system-one-endpoint` + `--system-one-model` | Records a calibrated risk probability for triage. Advisory only: it cannot change a finding, a severity, or the verdict |
 | **Meta-Analyzer** | `--enable-meta` | Second-pass false-positive reduction across all findings |
 | **VirusTotal Analyzer** | `--use-virustotal` | Binary hash reputation and optional file uploads |
 | **AI Defense Analyzer** | `--use-aidefense` | Cisco cloud-based threat classification |

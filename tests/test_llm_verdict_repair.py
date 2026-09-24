@@ -97,17 +97,25 @@ class TestRepairWhenEnabled:
         assert analyzer.verdict_repairs == 1
 
     def test_repaired_payload_now_passes_validation(self, analyzer: LLMAnalyzer) -> None:
+        """The repair must make the payload *usable*, not merely change a string.
+
+        Asserting only that the verdict flipped would pass even if every other field
+        were still contract-invalid, so the payload is built valid in every other
+        respect and run through the real validator afterwards. The only defect is the
+        ``SAFE`` verdict alongside a finding, which is exactly what the repair exists
+        to correct.
+        """
         payload = {
             "verdict": "SAFE",
             "findings": [
                 {
                     "severity": "LOW",
                     "verdict": "CONTEXTUAL_RISK",
-                    "category": "other",
-                    "confidence": 50,
+                    "category": "data_exfiltration",
+                    "confidence": "LOW",
                     "evidence_ids": ["e1"],
-                    "aitech": "AITECH-0001",
-                    "aisubtech": "",
+                    "aitech": "AITech-1.1",
+                    "aisubtech": None,
                     "title": "note",
                     "description": "d",
                     "location": "SKILL.md:1",
@@ -118,9 +126,20 @@ class TestRepairWhenEnabled:
             "overall_assessment": "fine",
             "primary_threats": [],
         }
-        _prepared(analyzer)._repair_primary_verdict(payload)
-        # The repair's purpose is to make an otherwise-discarded analysis usable.
+        prepared = _prepared(analyzer)
+        # The validator rejects a cited evidence ID it never packed, so the ID this
+        # payload cites has to be one the request actually included.
+        prepared._allowed_evidence_ids = {"e1"}
+
+        with pytest.raises(ValueError, match="SAFE package verdict requires an empty findings array"):
+            prepared._validate_primary_contract(payload)
+
+        prepared._repair_primary_verdict(payload)
+
         assert payload["verdict"] == "SUSPICIOUS"
+        # The repair's purpose is to make an otherwise-discarded analysis usable, so the
+        # validator must now accept it.
+        prepared._validate_primary_contract(payload)
 
     def test_findings_are_never_modified(self, analyzer: LLMAnalyzer) -> None:
         findings = [_finding("HIGH")]

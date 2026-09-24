@@ -65,7 +65,9 @@ but a headline drawn from one model does not transfer to the other.
 
 ### Does it generalise?
 
-The same change measured per corpus on Gemma 4, detection at MEDIUM or above:
+Five specialized passes against one, measured per corpus on Gemma 4 26B, detection at MEDIUM or
+above. The `msb-source-disjoint` row is the five-pass arm, not the three-pass arm quoted earlier in
+this section:
 
 | Corpus (population) | F1 before → after | Recall before → after |
 |---|---|---|
@@ -157,7 +159,7 @@ above.
 The INFO row is the important one for tuning. Nearly every real skill receives an INFO finding, and
 nothing at all lands at LOW, so severity assignment is effectively bimodal. On MaliciousSkillBench,
 moving the gate down to INFO looks attractive: it raises F1 from 81.4% to 83.2%. On real skills the
-same change would flag 93.5% of everything scanned. The MSB-only view would have justified a change
+same change would flag 88.2% of everything scanned. The MSB-only view would have justified a change
 that is unusable in production, which is the reason to keep an unlabelled real-world population in the
 evaluation set.
 
@@ -183,7 +185,12 @@ malicious from benign skills here, and asking one question per detection type ad
 answers barely depend on the question.
 
 This is a negative result about using a small calibrated decision model as a security screen for
-skills. It does not transfer to its intended domain of agent and browser state decisions.
+skills.
+
+The integration ships anyway, as `--system-one-endpoint` and `--system-one-model`, because the protocol
+is model-agnostic and a future model may separate the classes. It is **advisory only**: the tier records
+a probability and cannot emit a finding, change a severity, or alter the verdict. Enabling it and
+demonstrating separation on a corpus is the precondition for anything acting on it. It does not transfer to its intended domain of agent and browser state decisions.
 
 ## The meta-analyzer is off by default, and should stay that way
 
@@ -240,8 +247,17 @@ needs a per-record judgement, not a policy change.
 
 The evaluation harness lives in `evals/`. It is deliberately outside the blocking release path: the
 release gate asserts that the analyzer factory keeps the judge off by default, and that assertion
-holds. See `evals/results/IMPROVEMENT_TASKS.md` for the current state of each thread, including the
-negative results.
+holds.
+
+The same-model comparison needs one extra piece. Gemma 4 26B is reachable only through the Bedrock
+mantle route, which authenticates with SigV4, and SkillSpector's OpenAI-compatible provider sends a
+static bearer token. `evals/lib/mantle_proxy.py` bridges that: it accepts chat completions on
+loopback, signs them, and forwards the body unchanged, so both tools send what their own code
+produced. It binds to loopback only and requires a shared token.
+
+`evals/results/` is not tracked, so the run tracker referenced during development is not in the
+repository. The negative results it recorded are written up in the sections above, and the full
+per-corpus tables are on the published Space linked at the top of this page.
 
 ## Related
 

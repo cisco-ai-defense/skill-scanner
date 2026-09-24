@@ -153,6 +153,56 @@ class SecurityError(Exception):
     pass
 
 
+_DECOMPOSED_SEVERITY_ORDER = ("SAFE", "INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+
+# Verdicts weakest to strongest, so a union keeps the strongest rather than whichever
+# pass happened to run last.
+_DECOMPOSED_VERDICT_ORDER = ("SAFE", "SUSPICIOUS", "MALICIOUS")
+
+
+def _severity_rank(severity: Any) -> int:
+    """Rank a severity, treating an unknown value as the weakest.
+
+    Unknown ranks lowest rather than raising: a newly added level must not be able to win
+    a collision by accident, and must not break a scan.
+    """
+
+    value = str(getattr(severity, "value", severity) or "").upper()
+    return _DECOMPOSED_SEVERITY_ORDER.index(value) if value in _DECOMPOSED_SEVERITY_ORDER else 0
+
+
+def _most_severe_verdict(verdicts: list[str]) -> str:
+    """Return the strongest verdict seen across decomposed passes."""
+
+    best = ""
+    best_rank = -1
+    for verdict in verdicts:
+        value = str(verdict or "").upper()
+        rank = _DECOMPOSED_VERDICT_ORDER.index(value) if value in _DECOMPOSED_VERDICT_ORDER else -1
+        if rank > best_rank:
+            best, best_rank = verdict, rank
+    return best
+
+
+def _decomposed_finding_key(finding: Finding) -> tuple[str, ...]:
+    """Identity for unioning findings across decomposed passes.
+
+    Deliberately more than the rule id. ``rule_id`` is derived from the category, so two
+    genuinely different findings in one category share it and keying on it alone would
+    drop one. Location and title separate them; title whitespace is normalised so a
+    reflowed line does not create a duplicate.
+    """
+
+    category = getattr(finding.category, "value", finding.category)
+    return (
+        str(finding.rule_id or ""),
+        str(category or ""),
+        str(finding.file_path or ""),
+        str(finding.line_number if finding.line_number is not None else ""),
+        " ".join(str(finding.title or "").split()).lower(),
+    )
+
+
 class LLMAnalyzer(BaseAnalyzer):
     """
     Production LLM analyzer using LLM as a judge.
@@ -302,6 +352,15 @@ class LLMAnalyzer(BaseAnalyzer):
         # Off by default. Enabling it multiplies model calls by the number of focuses,
         # so it is a deliberate choice rather than a silent cost increase.
         self.decompose = bool(decompose) and bool(self.prompt_builder.decomposed_focuses)
+        # How many focuses actually completed on the most recent scan, so a partially
+        # failed decomposition is visible rather than looking like a full one.
+        self.last_decomposed_passes = 0
+        # Skill-level assessment from the most recent analysis. Declared here rather than
+        # only being assigned deep in _convert_to_findings, so the class contract is
+        # explicit and a reader before the first scan sees defined values.
+        self.last_overall_assessment: str = ""
+        self.last_overall_verdict: str = ""
+        self.last_primary_threats: list[Any] = []
 
         self.model = self.provider_config.model
         self.api_key = self.provider_config.api_key
@@ -528,18 +587,36 @@ class LLMAnalyzer(BaseAnalyzer):
         """Run one pass per focus and union the findings.
 
         Each focus narrows attention without changing the decision rules, so the passes
-        differ in emphasis rather than in what counts as evidence. Findings are merged on
-        rule and category: two passes describing the same behavior in different words are
-        one finding, and counting them twice would inflate the result for free.
+        differ in emphasis rather than in what counts as evidence.
 
-        A failing pass is skipped rather than aborting the scan, because a partial union
-        is still better than no semantic analysis, and token usage is accumulated across
-        passes so the cost of the extra calls stays visible.
+        Three details are load-bearing for the union:
+
+        *Identity must not collapse distinct findings.* ``rule_id`` is derived from the
+        category, so keying on it alone would treat every finding in a category as the
+        same one and a later HIGH would hide behind an earlier LOW. The key therefore
+        includes location and title, and on a real collision the more severe finding wins
+        rather than the first seen.
+
+        *Ids must stay unique.* Each pass numbers its findings from zero, so ids are
+        reassigned after the union; ``Finding.id`` is the exported unique identifier.
+
+        *The package assessment must agree with the findings.* Each pass overwrites the
+        skill-level verdict, so the strongest verdict across passes is kept and the
+        primary threats merged. Otherwise a final SAFE pass could contradict a HIGH
+        finding the union retained.
+
+        A failing pass is skipped rather than aborting the scan, and token usage is
+        accumulated per pass so the cost of the extra calls stays visible.
         """
 
         base_prompt = self.prompt_builder.threat_analysis_prompt
-        merged: dict[tuple[str, str], Finding] = {}
+        merged: dict[tuple[str, ...], Finding] = {}
         total_usage = _empty_token_usage()
+        verdicts: list[str] = []
+        assessments: list[str] = []
+        threats: list[Any] = []
+        ran = 0
+
         try:
             for focus in self.prompt_builder.decomposed_focuses:
                 self.prompt_builder.threat_analysis_prompt = base_prompt + focus
@@ -555,16 +632,37 @@ class LLMAnalyzer(BaseAnalyzer):
                         error,
                     )
                     continue
+                ran += 1
                 # Read usage per pass: _analyze_single resets the counter on entry, so
                 # reading once at the end would report only the final pass.
                 _add_token_usage(total_usage, self._llm_usage)
+                if self.last_overall_verdict:
+                    verdicts.append(str(self.last_overall_verdict))
+                if self.last_overall_assessment:
+                    assessments.append(str(self.last_overall_assessment))
+                for threat in self.last_primary_threats or []:
+                    if threat not in threats:
+                        threats.append(threat)
                 for finding in findings:
-                    category = getattr(finding.category, "value", finding.category)
-                    merged.setdefault((str(finding.rule_id or ""), str(category or "")), finding)
+                    key = _decomposed_finding_key(finding)
+                    existing = merged.get(key)
+                    if existing is None or _severity_rank(finding.severity) > _severity_rank(existing.severity):
+                        merged[key] = finding
         finally:
             self.prompt_builder.threat_analysis_prompt = base_prompt
+
         self._llm_usage = total_usage
-        return list(merged.values())
+        unioned = list(merged.values())
+        # Renumber so no two unioned findings share an id.
+        for index, finding in enumerate(unioned):
+            finding.id = f"llm_finding_{getattr(skill, 'name', 'skill')}_{index}"
+
+        self.last_overall_verdict = _most_severe_verdict(verdicts)
+        self.last_primary_threats = threats
+        if assessments:
+            self.last_overall_assessment = " ".join(assessments)
+        self.last_decomposed_passes = ran
+        return unioned
 
     async def _analyze_single(self, skill: Skill) -> list[Finding]:
         """One analysis pass with the currently configured prompt."""

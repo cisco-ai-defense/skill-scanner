@@ -143,6 +143,14 @@ ARMS: dict[str, list[str]] = {
 }
 
 
+# The analyzer does not raise on provider, contract or budget failures: it catches them
+# and returns an INFO finding instead, so a pass that never read the skill looks like a
+# pass that read it and found nothing. At MEDIUM and HIGH that scores as a clean record,
+# which depresses recall on a malicious one and inflates specificity on a benign one. The
+# experiment therefore has to recognise these by rule id.
+_DIAGNOSTIC_RULES = frozenset({"LLM_ANALYSIS_FAILED", "LLM_CONTEXT_BUDGET_EXCEEDED"})
+
+
 def build_analyzer(model: str) -> Any:
     """Build the shipped LLM analyzer, nothing else in the pipeline."""
 
@@ -174,6 +182,7 @@ def run_record(analyzer: Any, loader: Any, directory: Path, focuses: Sequence[st
     merged: dict[tuple[str, str], Any] = {}
     errors = 0
     per_pass = []
+    diagnostic_rules: set[str] = set()
 
     tokens_in = tokens_out = 0
     for focus in focuses:
@@ -184,6 +193,12 @@ def run_record(analyzer: Any, loader: Any, directory: Path, focuses: Sequence[st
             errors += 1
             per_pass.append(None)
             continue
+        diagnostics = [f for f in findings if str(getattr(f, "rule_id", "")) in _DIAGNOSTIC_RULES]
+        if diagnostics:
+            # The pass produced no judgement, only a report that it could not judge.
+            errors += 1
+            diagnostic_rules.update(str(getattr(f, "rule_id", "")) for f in diagnostics)
+            findings = [f for f in findings if f not in diagnostics]
         per_pass.append(len(findings))
         # Read usage immediately: the analyzer resets its counter on the next call, so
         # reading once after the loop reports only the final pass and undercounts a
@@ -197,15 +212,21 @@ def run_record(analyzer: Any, loader: Any, directory: Path, focuses: Sequence[st
     analyzer.prompt_builder.threat_analysis_prompt = base_prompt
     findings = list(merged.values())
     severities = [str(getattr(f.severity, "value", f.severity)).upper() for f in findings]
-    return {
+    result = {
         "max_severity": max_severity(severities),
         "finding_count": len(findings),
         "rules": sorted({finding_key(f)[0] for f in findings} - {""}),
         "pass_counts": per_pass,
         "pass_errors": errors,
+        "diagnostic_rules": sorted(diagnostic_rules),
         "input_tokens": tokens_in,
         "output_tokens": tokens_out,
     }
+    if errors == len(focuses):
+        # Every pass failed, so there is no judgement to score. Scoring it as a clean
+        # record would credit the arm for a record it never analysed.
+        result["error"] = "every pass failed: " + (", ".join(sorted(diagnostic_rules)) or "exception")
+    return result
 
 
 def score(rows: list[dict[str, Any]], threshold: str) -> dict[str, Any]:
@@ -222,7 +243,25 @@ def score(rows: list[dict[str, Any]], threshold: str) -> dict[str, Any]:
         else:
             fp += fired
             tn += not fired
-    return binary_metrics(tp, fp, fn, tn)
+    if (fp + tn) == 0:
+        # No harmless class, so precision, F1 and the false-positive rate have no
+        # denominator. binary_metrics would return precision 1.0 and FPR 0.0, which read
+        # as perfect rather than undefined; HarmfulSkillBench and OpenSkillRisk are both
+        # positive-only and would have been reported that way.
+        recall = tp / (tp + fn) if (tp + fn) else 0.0
+        return {
+            "true_positives": tp,
+            "false_negatives": fn,
+            "recall": recall,
+            "precision": None,
+            "f1": None,
+            "false_positive_rate": None,
+            "has_negative_class": False,
+            "undefined_reason": "corpus has no harmless class; precision, F1 and FPR are undefined",
+        }
+    metrics = dict(binary_metrics(tp, fp, fn, tn))
+    metrics["has_negative_class"] = True
+    return metrics
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -299,7 +338,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "finding_count": 0,
                     "error": f"{type(error).__name__}: {error}",
                 }
-            result.update({"record_id": record.record_id, "label": record.label, "error": None})
+            # setdefault, not a plain assignment: run_record sets "error" when every pass
+            # failed, and overwriting it with None would put the record back into scoring
+            # as a clean result.
+            result.update({"record_id": record.record_id, "label": record.label})
+            result.setdefault("error", None)
             return result
 
         with ThreadPoolExecutor(max_workers=args.workers) as pool:

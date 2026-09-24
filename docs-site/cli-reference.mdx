@@ -42,6 +42,9 @@ skill-scanner scan /path/to/skill [OPTIONS]
 | `--llm-provider` | LLM shortcut: `anthropic`, `openai`, or `openai-compatible` |
 | `--llm-consensus-runs N` | Run LLM analysis N times; keep majority-agreed findings |
 | `--llm-max-tokens N` | Override the LLM response-token budget (default: 8192) |
+| `--llm-decompose` | Run the LLM analyzer once per focus and union the findings instead of one general pass; raises recall at roughly 3x the model calls |
+| `--system-one-endpoint URL` | Optional System One screening endpoint (`POST /v1/systemone`). Advisory only: it can never change a finding, a severity, or the verdict |
+| `--system-one-model NAME` | Model name for the System One endpoint; required with `--system-one-endpoint` and rejected without it |
 | `--use-virustotal` | Enable VirusTotal binary scanner |
 | `--use-aidefense` | Enable Cisco AI Defense analyzer |
 | `--use-osv` | Query OSV.dev for advisories affecting exactly pinned Python dependencies; no API key required |

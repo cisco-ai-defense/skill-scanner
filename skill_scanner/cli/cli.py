@@ -287,6 +287,8 @@ def _build_analyzers(policy: ScanPolicy, args: argparse.Namespace, status: Calla
         use_behavioral=getattr(args, "use_behavioral", False),
         use_llm=getattr(args, "use_llm", False),
         llm_decompose=getattr(args, "llm_decompose", False),
+        system_one_endpoint=getattr(args, "system_one_endpoint", None),
+        system_one_model=getattr(args, "system_one_model", None),
         use_virustotal=getattr(args, "use_virustotal", False),
         vt_api_key=getattr(args, "vt_api_key", None),
         vt_upload_files=getattr(args, "vt_upload_files", False),
@@ -1240,6 +1242,24 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         choices=["anthropic", "openai", "openai-compatible"],
         default=None,
         help="LLM provider shortcut or explicit OpenAI-compatible override",
+    )
+    parser.add_argument(
+        "--system-one-endpoint",
+        default=None,
+        metavar="URL",
+        help=(
+            "Optional System One screening endpoint speaking POST /v1/systemone. Advisory "
+            "only: it records a calibrated probability and can never change a finding, a "
+            "severity or the verdict. The model measured for this scored inverted against "
+            "labelled corpora, so acting on it would make results worse; see "
+            "docs/reference/measured-results.md before relying on it."
+        ),
+    )
+    parser.add_argument(
+        "--system-one-model",
+        default=None,
+        metavar="NAME",
+        help="Model name to send to the System One endpoint. Required with --system-one-endpoint.",
     )
     parser.add_argument(
         "--llm-decompose",

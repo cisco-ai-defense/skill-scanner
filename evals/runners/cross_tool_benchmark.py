@@ -38,6 +38,7 @@ import os
 import platform
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -200,21 +201,23 @@ def run_tool_on_corpus(
     started = time.monotonic()
 
     if workers > 1:
-        # One adapter per worker. SkillSpector's holds only immutable configuration,
-        # but ours owns a live scanner, so sharing it across threads would be unsafe.
-        adapters = [build_adapter(tool, args=args, use_llm=use_llm) for _ in range(workers)]
-        adapter = adapters[0]
+        # One adapter per *thread*, bound through thread-local storage. Indexing adapters
+        # by submission offset does not bind them to a thread: a worker that finishes a
+        # short record dequeues a later task, and that task can map to an adapter still
+        # scanning on another thread. Ours owns a live scanner and mutable per-record
+        # state, so two threads inside one adapter can attribute one record's state to
+        # another. Thread-local storage makes the binding the code already assumed.
+        local = threading.local()
+
+        def scan_with_local_adapter(record: Any) -> ToolRow:
+            own = getattr(local, "adapter", None)
+            if own is None:
+                own = build_adapter(tool, args=args, use_llm=use_llm)
+                local.adapter = own
+            return own.scan(record.record_id, corpus.name, record.directory, record.label)
+
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {
-                pool.submit(
-                    adapters[offset % workers].scan,
-                    record.record_id,
-                    corpus.name,
-                    record.directory,
-                    record.label,
-                ): record
-                for offset, record in enumerate(records)
-            }
+            futures = {pool.submit(scan_with_local_adapter, record): record for record in records}
             for index, future in enumerate(as_completed(futures), start=1):
                 rows.append(future.result())
                 if progress_every and index % progress_every == 0:
@@ -328,6 +331,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     skillspector_path = Path(args.skillspector)
+    # One manifest per arm label and shard. Several processes share an arm when --shard is
+    # used, and a single manifest.{arm}.json meant each overwrote the others, leaving one
+    # shard's record counts standing for the whole run.
+    manifest_suffix = f".{args.arm_label}" if args.arm_label else ""
+    if shard:
+        manifest_suffix += f".shard{shard[0]}of{shard[1]}"
+    manifest_path = output_dir / f"manifest.{args.arm}{manifest_suffix}.json"
     manifest: dict[str, Any] = {
         "track": "cross-tool-comparison",
         "blocking": False,
@@ -340,6 +350,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "skillspector_version": _skillspector_version(skillspector_path) if skillspector_path.exists() else "absent",
         "model": args.model if use_llm else None,
         "region": args.region if use_llm else None,
+        # Recorded so a partial collection cannot be mistaken for a whole one. A shard
+        # covers a stride of the corpus and --limit truncates it, and a manifest that
+        # omitted both read as a complete run either way.
+        "shard": f"{shard[0]}of{shard[1]}" if shard else None,
+        "limit": args.limit,
         # The fairness contract, recorded so a reader can check it rather than
         # trust it.
         "configuration": {
@@ -419,11 +434,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             # Written after every run so a crash still leaves a readable manifest.
             manifest["complete"] = False
-            (output_dir / f"manifest.{args.arm}.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
 
     manifest["complete"] = True
-    (output_dir / f"manifest.{args.arm}.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
-    print(f"\ncollection complete -> {output_dir}/manifest.{args.arm}.json")
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+    print(f"\ncollection complete -> {manifest_path}")
     return 0
 
 

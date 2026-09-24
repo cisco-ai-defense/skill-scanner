@@ -20,6 +20,7 @@ Security scanning for AI agent skills. Detects prompt injection, data exfiltrati
 - [Static Analyzer](architecture/analyzers/static-analyzer.md) -- YAML + YARA pattern matching
 - [Behavioral Analyzer](architecture/analyzers/behavioral-analyzer.md) -- AST dataflow analysis
 - [LLM Analyzer](architecture/analyzers/llm-analyzer.md) -- LLM-as-a-judge semantic analysis
+- [System One Analyzer](architecture/analyzers/system-one-analyzer.md) -- optional advisory screening tier
 - [Meta-Analyzer](architecture/analyzers/meta-analyzer.md) -- False positive filtering and prioritization
 - [Meta & External Analyzers](architecture/analyzers/meta-and-external-analyzers.md) -- AI Defense, VirusTotal, and meta-analysis
 - [AI Defense Analyzer](architecture/analyzers/aidefense-analyzer.md) -- Cisco AI Defense cloud analyzer

@@ -78,6 +78,7 @@ provenance, confidence intervals, and limitations.
 | [CEL Decision Layer](docs/architecture/cel-decision-layer.md) | Typed facts, safety bounds, rollout modes, and telemetry |
 | [Threat Taxonomy](docs/architecture/threat-taxonomy.md) | Complete AITech threat taxonomy with examples |
 | [LLM Analyzer](docs/architecture/analyzers/llm-analyzer.md) | LLM configuration and usage |
+| [System One Analyzer](docs/architecture/analyzers/system-one-analyzer.md) | Optional advisory screening tier, and why it cannot gate |
 | [Meta-Analyzer](docs/architecture/analyzers/meta-analyzer.md) | False positive filtering and prioritization |
 | [Behavioral Analyzer](docs/architecture/analyzers/behavioral-analyzer.md) | Dataflow analysis details |
 | [Scan Policy](docs/user-guide/custom-policy-configuration.md) | Custom policies, presets, and tuning guide |

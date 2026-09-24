@@ -675,6 +675,19 @@ class LLMRequestHandler:
         if self.temperature is not None:
             payload["temperature"] = self.temperature
 
+        # The mantle route builds its own body instead of going through LiteLLM, so the
+        # reasoning control has to be translated here or it is silently dropped and
+        # --llm-reasoning-effort does nothing on this route. The same translator is
+        # reused so there is one mapping, and the endpoint was verified to accept the
+        # OpenAI-compatible field including the "none" that "disabled" maps to.
+        payload.update(
+            build_litellm_reasoning_params(
+                self.reasoning_effort,
+                model=self.provider_config.model,
+                provider=self.provider_config.provider,
+            )
+        )
+
         response_format = {"type": "json_object"} if force_json_object else self._build_bedrock_mantle_response_format()
         if response_format:
             payload["response_format"] = response_format
@@ -735,6 +748,18 @@ class LLMRequestHandler:
                 "No AWS credentials found for the Bedrock mantle endpoint. "
                 "Configure a profile, environment credentials, or an instance role."
             )
+
+        configured_token = self.provider_config.aws_session_token
+        if configured_token and credentials.token != configured_token:
+            # A caller can supply the session token explicitly while leaving the access
+            # key and secret to the environment, which is how the LiteLLM Bedrock path
+            # accepts them. Signing with the token botocore happened to resolve -- or
+            # with none at all -- produces a signature AWS rejects for a temporary
+            # credential, so the configured token wins.
+            from botocore.credentials import Credentials
+
+            frozen = credentials.get_frozen_credentials()
+            credentials = Credentials(frozen.access_key, frozen.secret_key, configured_token)
 
         url = self._bedrock_mantle_endpoint()
         signed = AWSRequest(method="POST", url=url, data=body, headers={"Content-Type": "application/json"})
