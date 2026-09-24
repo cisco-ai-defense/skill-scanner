@@ -25,8 +25,9 @@ low-confidence results (e.g., truncated or synthetic files).
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +49,59 @@ class MagicMatch(NamedTuple):
 _magika_instance = None
 
 
+def _magika_threads() -> int:
+    """ONNX intra-op threads for content detection; ``SKILL_SCANNER_MAGIKA_THREADS``, default 1."""
+
+    raw = os.getenv("SKILL_SCANNER_MAGIKA_THREADS", "").strip()
+    try:
+        value = int(raw) if raw else 1
+    except ValueError:
+        value = 1
+    return max(1, value)
+
+
+def _bounded_magika():
+    """Build Magika with a bounded, non-spinning ONNX session.
+
+    Magika creates its ONNX Runtime session with default options, which sizes the
+    intra-op thread pool to every core on the machine and lets those threads spin while
+    waiting. Detecting one file takes a few milliseconds, so one thread is enough; but
+    each scanner process otherwise starts a machine-wide spinning pool. Running twelve
+    scanner processes in parallel over 1.88M skills, those pools oversubscribed the CPU
+    and throttled useful work several-fold. Falls back to stock Magika if its internals
+    change, so detection itself never depends on this.
+    """
+
+    from magika import Magika
+
+    try:
+        import onnxruntime as rt  # type: ignore[import-untyped]
+    except ImportError:  # pragma: no cover - magika depends on onnxruntime
+        return Magika()
+
+    threads = _magika_threads()
+
+    class _BoundedMagika(Magika):
+        def _init_onnx_session(self) -> Any:
+            options = rt.SessionOptions()
+            options.intra_op_num_threads = threads
+            options.inter_op_num_threads = 1
+            options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+            options.add_session_config_entry("session.inter_op.allow_spinning", "0")
+            rt.disable_telemetry_events()
+            return rt.InferenceSession(self._model_path, sess_options=options, providers=["CPUExecutionProvider"])
+
+    try:
+        return _BoundedMagika()
+    except (AttributeError, TypeError):
+        return Magika()
+
+
 def _get_magika():
     """Lazy-init singleton Magika instance (~100ms first call, ~5ms/file after)."""
     global _magika_instance
     if _magika_instance is None:
-        from magika import Magika
-
-        _magika_instance = Magika()
+        _magika_instance = _bounded_magika()
     return _magika_instance
 
 

@@ -607,3 +607,32 @@ class TestMarkdownIsATextContainer:
         result = fm.check_extension_mismatch(path, min_confidence=0.8)
         # A .py that is actually shell remains a MEDIUM mismatch; only Markdown changed.
         assert result is not None and result[0] == "MEDIUM"
+
+
+class TestMagikaSessionIsBounded:
+    """Each scanner process must not start a machine-wide spinning ONNX thread pool."""
+
+    def test_default_session_uses_one_thread(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import skill_scanner.core.file_magic as fm
+
+        monkeypatch.delenv("SKILL_SCANNER_MAGIKA_THREADS", raising=False)
+        magika = fm._bounded_magika()
+        options = magika._onnx_session.get_session_options()
+        assert options.intra_op_num_threads == 1
+        assert options.inter_op_num_threads == 1
+
+    def test_thread_count_is_configurable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import skill_scanner.core.file_magic as fm
+
+        monkeypatch.setenv("SKILL_SCANNER_MAGIKA_THREADS", "4")
+        assert fm._magika_threads() == 4
+        monkeypatch.setenv("SKILL_SCANNER_MAGIKA_THREADS", "not-a-number")
+        assert fm._magika_threads() == 1
+
+    def test_detection_still_works(self, tmp_path: Path) -> None:
+        import skill_scanner.core.file_magic as fm
+
+        path = tmp_path / "notes.md"
+        path.write_text("# Title\n\nSome markdown with a [link](https://example.org).\n" * 5)
+        match = fm._bounded_magika().identify_path(path)
+        assert match.output.label == "markdown"
