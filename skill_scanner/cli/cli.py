@@ -1434,7 +1434,7 @@ Examples:
     # -- generate-policy ---------------------------------------------------
     gp_p = subparsers.add_parser("generate-policy", help="Generate a default scan policy YAML")
     gp_p.add_argument("--output", "-o", default="scan_policy.yaml", help="Output file path")
-    gp_p.add_argument("--preset", choices=["strict", "balanced", "permissive"], default="balanced", help="Base preset")
+    gp_p.add_argument("--preset", choices=ScanPolicy.preset_names(), default="balanced", help="Base preset")
 
     # -- configure-policy --------------------------------------------------
     cp_p = subparsers.add_parser("configure-policy", help="Interactive TUI to build a custom scan policy")

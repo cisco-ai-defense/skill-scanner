@@ -1,5 +1,10 @@
-# Skill Scanner – Default Scan Policy
-# ====================================
+# Skill Scanner – Quiet Scan Policy
+# ================================
+# Low-noise plus eight further demotions and a LOW cap on LLM findings the model labels
+# CONTEXTUAL_RISK. For triage queues where review capacity is the constraint: on 1.88M real
+# skills the deterministic MEDIUM+ flag rate falls to 1.33%, at a cost of 1.7 points of
+# MaliciousSkillBench train/validation recall (31.45% to 29.78%).
+#
 # This file defines the built-in security policy.  Every setting here can be
 # overridden in an organisation-specific policy file passed via --policy.
 #
@@ -9,7 +14,7 @@
 # To use it:
 #   skill-scanner scan --policy my_org_policy.yaml ./my-skill
 
-policy_name: default
+policy_name: quiet
 policy_version: "1.0"
 preset_base: balanced
 
@@ -655,7 +660,7 @@ llm_analysis:
   max_output_tokens: 8192             # Max tokens for LLM responses
   meta_budget_multiplier: 3.0         # Meta analyzer multiplier (3× above)
   trusted_reference_domains: []       # Trusted internal domains (git, registries, docs); demoted to LOW
-  contextual_risk_max_severity: ""    # Cap for findings the model labels CONTEXTUAL_RISK ("" = no cap)
+  contextual_risk_max_severity: "LOW"    # Cap for findings the model labels CONTEXTUAL_RISK ("" = no cap)
 
 # ---------------------------------------------------------------------------
 # Finding output – final dedupe + policy traceability metadata
@@ -687,7 +692,64 @@ finding_output:
 #     - rule_id: BINARY_FILE_DETECTED
 #       severity: MEDIUM            # Promote back to MEDIUM for strict orgs
 #       reason: "Our policy treats unknown binaries as medium risk"
-severity_overrides: []
+severity_overrides:
+  - rule_id: FILE_MAGIC_MISMATCH
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 78 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_autonomy_abuse_generic
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 699 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_code_execution_generic
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 93 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_capability_inflation_generic
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 213 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: PROMPT_INJECTION_REVEAL_SYSTEM
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 63 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: FIND_EXEC_PATTERN
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 423 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_indirect_prompt_injection_generic
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 144 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: PROMPT_INJECTION_UNRESTRICTED_MODE
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 115 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: SECRET_CONNECTION_STRING
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 985 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: GLOB_HIDDEN_FILE_TARGETING
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 65 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: PROMPT_INJECTION_CONCEALMENT
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 431 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: COMPOUND_FIND_EXEC
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 4,380 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_jailbreak_generic
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 898 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: CORRELATED_SENSITIVE_NETWORK_FLOW
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 2,379 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_coercive_injection_generic
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 381 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: COMPOUND_EXTRACT_EXECUTE
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 147 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_sql_injection_generic
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 656 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: SOCIAL_ENG_ANTHROPIC_IMPERSONATION
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 217 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: PIPELINE_TAINT_FLOW
+    severity: LOW
+    reason: "quiet pack: reporting this rule at LOW clears 1,447 real skills (of 1.88M) that the LLM judge also cleared"
 
 # ---------------------------------------------------------------------------
 # Disabled rules – completely suppress specific rule IDs

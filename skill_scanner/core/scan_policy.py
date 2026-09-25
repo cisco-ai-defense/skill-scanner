@@ -94,6 +94,10 @@ _PRESET_POLICIES: dict[str, Path] = {
     "strict": _DATA_DIR / "strict_policy.yaml",
     "balanced": _DEFAULT_POLICY_PATH,
     "permissive": _DATA_DIR / "permissive_policy.yaml",
+    # Balanced detection with the noisiest rules reported at LOW; chosen on real-skill
+    # adjudication and MaliciousSkillBench train/validation (see measured-results.md).
+    "low-noise": _DATA_DIR / "low_noise_policy.yaml",
+    "quiet": _DATA_DIR / "quiet_policy.yaml",
 }
 
 
@@ -388,6 +392,14 @@ class LLMAnalysisPolicy:
     # Mirrors the pattern of ``pipeline.known_installer_domains``.
     trusted_reference_domains: set[str] = field(default_factory=set)
 
+    # -- Contextual-risk severity cap --
+    # When set (e.g. "LOW"), a finding the model itself labels CONTEXTUAL_RISK -- a
+    # risky capability whose intent, reach or execution is not established -- is capped
+    # at this severity; TRUE_POSITIVE findings are untouched. Empty means no cap. On
+    # MaliciousSkillBench development records a LOW cap took the judge's MEDIUM+
+    # false-positive rate from 23.6% to 6.9% for 5 points of recall.
+    contextual_risk_max_severity: str = ""
+
     # -- Convenience helpers for the meta analyzer --
 
     @property
@@ -537,7 +549,7 @@ class ScanPolicy:
 
     @classmethod
     def from_preset(cls, name: str) -> ScanPolicy:
-        """Load a named preset policy: ``strict``, ``balanced``, or ``permissive``."""
+        """Load a named preset policy: ``strict``, ``balanced``, ``permissive``, ``low-noise`` or ``quiet``."""
         name_lower = name.lower()
         # Select only fixed package-owned paths.  Avoid using request text as
         # a path-producing mapping key even after membership validation.
@@ -547,6 +559,10 @@ class ScanPolicy:
             preset_path = _DEFAULT_POLICY_PATH
         elif name_lower == "permissive":
             preset_path = _DATA_DIR / "permissive_policy.yaml"
+        elif name_lower == "low-noise":
+            preset_path = _DATA_DIR / "low_noise_policy.yaml"
+        elif name_lower == "quiet":
+            preset_path = _DATA_DIR / "quiet_policy.yaml"
         else:
             raise ValueError(f"Unknown preset '{name}'. Available: {', '.join(sorted(_PRESET_POLICIES))}")
         return cls.from_yaml(preset_path)
@@ -786,6 +802,7 @@ class ScanPolicy:
                 max_output_tokens=la.get("max_output_tokens", 8192),
                 meta_budget_multiplier=la.get("meta_budget_multiplier", 3.0),
                 trusted_reference_domains=set(la.get("trusted_reference_domains", [])),
+                contextual_risk_max_severity=str(la.get("contextual_risk_max_severity") or "").upper(),
             ),
             finding_output=FindingOutputPolicy(
                 dedupe_exact_findings=fo.get("dedupe_exact_findings", True),
@@ -919,6 +936,7 @@ class ScanPolicy:
                 "max_output_tokens": self.llm_analysis.max_output_tokens,
                 "meta_budget_multiplier": self.llm_analysis.meta_budget_multiplier,
                 "trusted_reference_domains": sorted(self.llm_analysis.trusted_reference_domains),
+                "contextual_risk_max_severity": self.llm_analysis.contextual_risk_max_severity,
             },
             "finding_output": {
                 "dedupe_exact_findings": self.finding_output.dedupe_exact_findings,

@@ -418,6 +418,7 @@ class SkillScannerAdapter:
         provider: str | None = None,
         use_meta: bool = True,
         profile: str = "full",
+        policy_preset: str = "balanced",
     ) -> None:
         if profile not in self.PROFILES:
             raise CrossToolError(f"unknown profile: {profile}")
@@ -426,6 +427,7 @@ class SkillScannerAdapter:
         self.model = model
         self.provider = provider
         self.profile = profile
+        self.policy_preset = policy_preset
         self._scanner: Any = None
         self._meta: Any = None
         self._llm_analyzer: Any = None
@@ -457,7 +459,7 @@ class SkillScannerAdapter:
         from skill_scanner.core.scanner import SkillScanner
         from skill_scanner.data import list_available_packs, resolve_rule_packs
 
-        policy = ScanPolicy.default()
+        policy = ScanPolicy.from_preset(self.policy_preset)
         if self.profile == "full":
             # Every shipped rule pack, including the community ATR pack.
             extra_rule_dirs = resolve_rule_packs(list(list_available_packs()))

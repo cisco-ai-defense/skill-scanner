@@ -179,6 +179,7 @@ def build_adapter(tool: str, *, args: argparse.Namespace, use_llm: bool) -> Any:
             provider=args.provider,
             use_meta=not args.no_meta,
             profile=args.profile,
+            policy_preset=args.policy_preset,
         )
     raise CrossToolError(f"unknown tool: {tool}")
 
@@ -314,6 +315,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "published configuration; 'full' adds every community pack including ATR. "
         "Defaults to 'core' because 'full' is measurably noisier, and because MSB "
         "source-disjoint forbids ATR-enabled generalization claims.",
+    )
+    parser.add_argument(
+        "--policy-preset",
+        default="balanced",
+        help="Named scan policy preset for our scanner (balanced, strict, permissive, low-noise, quiet).",
     )
     parser.add_argument(
         "--fail-on-findings",

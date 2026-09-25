@@ -1,5 +1,10 @@
-# Skill Scanner – Default Scan Policy
+# Skill Scanner – Low-Noise Scan Policy
 # ====================================
+# The balanced policy, with the rules that alone produced the most judge-cleared flags on
+# 1.88M real skills reported at LOW instead of gating. Chosen on MaliciousSkillBench
+# train/validation only: 5 of 1,653 malicious detections are lost, and the real-world
+# MEDIUM+ flag rate falls from 2.32% to 2.10%. Demoted findings stay visible at LOW.
+#
 # This file defines the built-in security policy.  Every setting here can be
 # overridden in an organisation-specific policy file passed via --policy.
 #
@@ -9,7 +14,7 @@
 # To use it:
 #   skill-scanner scan --policy my_org_policy.yaml ./my-skill
 
-policy_name: default
+policy_name: low-noise
 policy_version: "1.0"
 preset_base: balanced
 
@@ -687,7 +692,40 @@ finding_output:
 #     - rule_id: BINARY_FILE_DETECTED
 #       severity: MEDIUM            # Promote back to MEDIUM for strict orgs
 #       reason: "Our policy treats unknown binaries as medium risk"
-severity_overrides: []
+severity_overrides:
+  - rule_id: FILE_MAGIC_MISMATCH
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 78 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_autonomy_abuse_generic
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 699 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_code_execution_generic
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 93 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_capability_inflation_generic
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 213 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: PROMPT_INJECTION_REVEAL_SYSTEM
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 63 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: FIND_EXEC_PATTERN
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 423 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: YARA_indirect_prompt_injection_generic
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 144 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: PROMPT_INJECTION_UNRESTRICTED_MODE
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 115 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: SECRET_CONNECTION_STRING
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 985 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: GLOB_HIDDEN_FILE_TARGETING
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 65 real skills (of 1.88M) that the LLM judge also cleared"
+  - rule_id: PROMPT_INJECTION_CONCEALMENT
+    severity: LOW
+    reason: "low-noise pack: reporting this rule at LOW clears 431 real skills (of 1.88M) that the LLM judge also cleared"
 
 # ---------------------------------------------------------------------------
 # Disabled rules – completely suppress specific rule IDs
