@@ -34,6 +34,7 @@ Plus:
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -474,3 +475,182 @@ class TestAdjudicatorAvailability:
 
         mock_call.assert_not_called()
         assert finding.severity == Severity.HIGH
+
+
+# ----- Provider credentials ------------------------------------------------
+
+
+class TestAdjudicatorProviderCredentials:
+    """The outbound request carries the credentials the scanner is configured with.
+
+    Regression coverage for the adjudicator building its LiteLLM request by hand
+    and omitting ``api_key`` / ``api_base``. Every test above patches
+    ``litellm.completion`` and asserts on the request the adjudicator *builds*,
+    so a request that can never authenticate against a real provider still
+    passed the whole suite. These assert on the credential fields instead.
+    """
+
+    def test_request_carries_api_key_from_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "anthropic/claude-sonnet-4-5")
+        monkeypatch.setenv("SKILL_SCANNER_LLM_API_KEY", "sk-test-key")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("real", 5)
+            Adjudicator().adjudicate([finding], skill)
+
+        # Without this, LiteLLM falls back to provider-native discovery
+        # (ANTHROPIC_API_KEY), which the scanner never sets.
+        assert mock_call.call_args.kwargs["api_key"] == "sk-test-key"
+
+    def test_request_carries_api_base_for_openai_compatible_endpoint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "gateway-model")
+        monkeypatch.setenv("SKILL_SCANNER_LLM_PROVIDER", "openai-compatible")
+        monkeypatch.setenv("SKILL_SCANNER_LLM_API_KEY", "sk-proxy-key")
+        monkeypatch.setenv("SKILL_SCANNER_LLM_BASE_URL", "https://gateway.example/v1")
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("real", 5)
+            Adjudicator().adjudicate([finding], skill)
+
+        kwargs = mock_call.call_args.kwargs
+        # Without api_base, LiteLLM routes by model name to the provider's PUBLIC
+        # endpoint -- so the gateway key and the scanned file body would both go
+        # somewhere the operator deliberately routed away from.
+        assert kwargs["api_base"] == "https://gateway.example/v1"
+        assert kwargs["api_key"] == "sk-proxy-key"
+        # LiteLLM cannot route a bare custom model name ("LLM Provider NOT
+        # provided"), so the prefix ProviderConfig adds has to survive.
+        assert kwargs["model"] == "openai/gateway-model"
+
+    def test_request_carries_api_version_for_azure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "azure/gpt-4o")
+        monkeypatch.setenv("SKILL_SCANNER_LLM_API_KEY", "azure-key")
+        monkeypatch.setenv("SKILL_SCANNER_LLM_BASE_URL", "https://example.openai.azure.com")
+        monkeypatch.setenv("SKILL_SCANNER_LLM_API_VERSION", "2024-08-01-preview")
+        monkeypatch.delenv("SKILL_SCANNER_LLM_PROVIDER", raising=False)
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("real", 5)
+            Adjudicator().adjudicate([finding], skill)
+
+        # Azure rejects the call outright without both of these.
+        kwargs = mock_call.call_args.kwargs
+        assert kwargs["api_base"] == "https://example.openai.azure.com"
+        assert kwargs["api_version"] == "2024-08-01-preview"
+
+    def test_bedrock_region_is_not_pinned_when_aws_region_unset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0")
+        monkeypatch.delenv("AWS_REGION", raising=False)
+        monkeypatch.delenv("SKILL_SCANNER_LLM_PROVIDER", raising=False)
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("real", 5)
+            Adjudicator().adjudicate([finding], skill)
+
+        # ProviderConfig defaults the region to us-east-1. Forwarding that
+        # short-circuits LiteLLM's own resolution (model ARN, AWS_DEFAULT_REGION,
+        # ~/.aws/config profile), silently relocating requests for an operator who
+        # never set AWS_REGION.
+        assert "aws_region_name" not in mock_call.call_args.kwargs
+
+    def test_bedrock_region_is_forwarded_when_aws_region_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0")
+        monkeypatch.setenv("AWS_REGION", "eu-west-1")
+        monkeypatch.delenv("SKILL_SCANNER_LLM_PROVIDER", raising=False)
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("real", 5)
+            Adjudicator().adjudicate([finding], skill)
+
+        assert mock_call.call_args.kwargs["aws_region_name"] == "eu-west-1"
+
+    def test_model_and_messages_are_not_overwritten_by_provider_params(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SKILL_SCANNER_ADJUDICATOR_LLM_MODEL", "adjudicator/model-id")
+        monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "analyzer/model-id")
+        monkeypatch.setenv("SKILL_SCANNER_LLM_API_KEY", "sk-test-key")
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("real", 5)
+            Adjudicator().adjudicate([finding], skill)
+
+        # The adjudicator-specific model override still wins, and merging the
+        # provider params must not disturb the prompt payload.
+        kwargs = mock_call.call_args.kwargs
+        assert kwargs["model"] == "adjudicator/model-id"
+        assert kwargs["max_tokens"] == 200
+        assert len(kwargs["messages"]) == 2
+
+    def test_provider_resolution_failure_sends_nothing(
+        self, tmp_path: Path, with_model_env: None, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        finding = _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4)
+
+        with caplog.at_level(logging.WARNING):
+            with patch("litellm.completion") as mock_call:
+                mock_call.return_value = _mock_litellm_response("real", 5)
+                with patch(
+                    "skill_scanner.core.analyzers.llm_provider_config.ProviderConfig.__init__",
+                    side_effect=ImportError("provider SDK missing"),
+                ):
+                    Adjudicator().adjudicate([finding], skill)
+
+        # Fail closed. Sending anyway would ship the scanned file to whatever
+        # LiteLLM resolves from ambient env vars -- the provider's public endpoint
+        # instead of the configured gateway, or a remote Ollama host the loopback
+        # guard just rejected. The finding keeps its severity and the operator
+        # gets one WARNING naming the cause.
+        assert mock_call.call_count == 0
+        assert finding.severity == Severity.HIGH
+        warnings = [
+            r for r in caplog.records if r.levelno == logging.WARNING and r.name.endswith("analyzers.adjudicator")
+        ]
+        assert len(warnings) == 1
+        assert "provider SDK missing" in warnings[0].getMessage()
+
+    def test_first_llm_failure_is_reported_at_warning_once(
+        self, tmp_path: Path, with_model_env: None, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        skill = _make_skill(tmp_path, "---\nname: test\n---\n\nSome content.\n")
+        findings = [
+            _finding("PROMPT_INJECTION_CONCEALMENT", Severity.HIGH, line_number=4),
+            _finding("COMMAND_INJECTION_OS_SYSTEM", Severity.CRITICAL, line_number=4),
+        ]
+
+        with caplog.at_level(logging.WARNING):
+            with patch("litellm.completion", side_effect=RuntimeError("Missing API Key")):
+                Adjudicator().adjudicate(findings, skill)
+
+        # A wholly broken adjudicator used to be invisible: failures logged at
+        # DEBUG while `adjudicator` still appeared in analyzers_used, so a
+        # misconfiguration read as "no false positives found".
+        # Scope to this module's logger: rule_registry emits unrelated pack-load
+        # warnings that would otherwise be counted here.
+        warnings = [
+            r for r in caplog.records if r.levelno == logging.WARNING and r.name.endswith("analyzers.adjudicator")
+        ]
+        assert len(warnings) == 1, "expected exactly one WARNING per scan, not one per finding"
+        assert "not producing verdicts" in warnings[0].getMessage()
+        # Demote-only invariant is untouched by the new reporting.
+        assert all(f.severity in (Severity.HIGH, Severity.CRITICAL) for f in findings)

@@ -51,7 +51,7 @@ skill-scanner scan /path/to/skill --use-llm --enable-meta --adjudicate
 - API key via `SKILL_SCANNER_LLM_API_KEY` for providers that need one; AWS credentials for `bedrock/...` models.
 - LiteLLM must be installed.
 
-If any of the above are missing, the adjudicator logs a debug message and skips every finding — the scan behaves identically to a run with `--adjudicate` off. This is intentional: unavailability is not an error, it's a no-op.
+If no model is configured or LiteLLM is missing, the adjudicator logs a debug message and skips every finding — the scan behaves identically to a run with `--adjudicate` off. This is intentional: unavailability is not an error, it's a no-op. If a model is configured but no verdict can be obtained (rejected key, wrong endpoint, retired model id), findings keep their original severity and the first failure is logged at `WARNING` once per scan.
 
 ## Configuration
 
