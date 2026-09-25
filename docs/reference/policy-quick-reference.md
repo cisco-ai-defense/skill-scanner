@@ -279,12 +279,12 @@ When a pipeline reads a matching file, the taint is upgraded to SENSITIVE_DATA.
 <details>
 <summary><strong>llm_analysis</strong> — LLM context budget thresholds</summary>
 
-Controls LLM context budget thresholds for LLM and meta analyzers. Content within budget is sent in full; content exceeding the budget is skipped entirely and an `LLM_CONTEXT_BUDGET_EXCEEDED` INFO finding is emitted.
+Controls LLM context budget thresholds for LLM and meta analyzers. Code files that exceed a limit may contribute bounded excerpts containing executable lines, imports, or high-risk calls; the rest of the file is not analyzed and an `LLM_CONTEXT_BUDGET_EXCEEDED` INFO finding describes the partial analysis. Oversized instruction bodies and referenced files remain skipped entirely.
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
 | max_instruction_body_chars | int | 20000 | Maximum character length for a single instruction body sent to the LLM |
-| max_code_file_chars | int | 15000 | Maximum character length for a single code file sent to the LLM |
+| max_code_file_chars | int | 15000 | Threshold for full code-file inclusion; oversized files contribute bounded excerpts |
 | max_referenced_file_chars | int | 10000 | Maximum character length for a single referenced file sent to the LLM |
 | max_total_prompt_chars | int | 100000 | Maximum total characters across the entire LLM prompt |
 | max_output_tokens | int | 8192 | Maximum output tokens for LLM responses (both LLM analyzer and meta-analyzer) |

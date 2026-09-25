@@ -22,12 +22,27 @@ Handles prompt construction with injection protection using random delimiters.
 
 import hashlib
 import logging
+import re
 import secrets
 from pathlib import Path
 
 from ...core.models import Skill
 
 logger = logging.getLogger(__name__)
+
+_IMPORT_LINE = re.compile(
+    r"^\s*(?:from\s+[\w.]+\s+import\b|import\s+[\w.]+|"
+    r"(?:const|let|var)\s+\w+\s*=\s*require\s*\(|require\s*\(|use\s+[\w:]+)",
+    re.IGNORECASE,
+)
+_HIGH_RISK_LINE = re.compile(
+    r"\b(?:subprocess\s*\.\s*\w+|os\s*\.\s*(?:system|popen|exec\w*)|"
+    r"socket\s*\.\s*\w+|requests?\s*\.\s*\w+|urllib\s*\.\s*\w+|"
+    r"httpx\s*\.\s*\w+|aiohttp\s*\.\s*\w+|ftplib\s*\.\s*\w+|"
+    r"smtplib\s*\.\s*\w+|pickle\s*\.\s*\w+|marshal\s*\.\s*\w+|"
+    r"ctypes\s*\.\s*\w+|eval|exec|compile|__import__|urlopen|popen|system)\b",
+    re.IGNORECASE,
+)
 
 
 def source_evidence_id(path: str) -> str:
@@ -179,21 +194,22 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
         """Format code files for LLM analysis with budget gating.
 
         Files that fit within the per-file and total budget are included in
-        full — **no truncation**.  Files that exceed either limit are skipped
-        and reported so the caller can emit actionable findings.
+        full. Oversized files contribute bounded, line-numbered excerpts when
+        useful code can be selected; the caller is told that the analysis is
+        partial.
 
         Args:
             skill: The skill being analyzed.
-            max_file_chars: Maximum characters allowed per individual file.
+            max_file_chars: Per-file threshold for full inclusion and maximum excerpt size.
             max_total_chars: Remaining total character budget across all
                 content sent to the LLM.
             included_evidence_ids: Optional set populated with IDs for files
                 whose content is included in the returned text.
 
         Returns:
-            Tuple of (formatted_text, skipped_files) where *skipped_files*
-            is a list of dicts with keys ``path``, ``size``, ``reason``,
-            and ``threshold_name``.
+            Tuple of (formatted_text, budget_findings) where each dict has
+            ``path``, ``size``, ``reason``, and ``threshold_name``. Partial
+            entries also include ``partial`` and ``included_chars``.
         """
         lines: list[str] = []
         skipped: list[dict] = []
@@ -205,35 +221,71 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
                 continue
 
             file_size = len(content)
-
-            # Per-file budget check
-            if file_size > max_file_chars:
-                skipped.append(
-                    {
-                        "path": str(skill_file.relative_path),
-                        "size": file_size,
-                        "reason": f"file size ({file_size:,} chars) exceeds per-file limit ({max_file_chars:,})",
-                        "threshold_name": "llm_analysis.max_code_file_chars",
-                    }
-                )
-                continue
-
-            # Total budget check
-            if total_chars + file_size > max_total_chars:
-                skipped.append(
-                    {
-                        "path": str(skill_file.relative_path),
-                        "size": file_size,
-                        "reason": (
-                            f"including this file would exceed the total prompt budget "
-                            f"({total_chars + file_size:,} > {max_total_chars:,})"
-                        ),
-                        "threshold_name": "llm_analysis.max_total_prompt_chars",
-                    }
-                )
-                continue
-
             evidence_id = source_evidence_id(str(skill_file.relative_path))
+
+            per_file_exceeded = file_size > max_file_chars
+            total_exceeded = total_chars + file_size > max_total_chars
+            if per_file_exceeded or total_exceeded:
+                remaining_budget = max(0, min(max_file_chars, max_total_chars - total_chars))
+                line_comment = "#" if skill_file.file_type in ("python", "bash") else "//"
+                excerpt = self._extract_oversized_code(content, remaining_budget, line_comment)
+                threshold_name, threshold_limit = (
+                    ("llm_analysis.max_code_file_chars", max_file_chars)
+                    if per_file_exceeded
+                    else ("llm_analysis.max_total_prompt_chars", max_total_chars - total_chars)
+                )
+                if excerpt:
+                    remaining_total_budget = max_total_chars - total_chars
+                    lines.append(
+                        f"**File: {skill_file.relative_path} [evidence_id={evidence_id}] "
+                        "(selected excerpts; original line numbers)**"
+                    )
+                    lines.append("```" + skill_file.file_type)
+                    lines.append(excerpt)
+                    lines.append("```")
+                    lines.append("")
+                    total_chars += len(excerpt)
+                    if included_evidence_ids is not None:
+                        included_evidence_ids.add(evidence_id)
+                    reason = (
+                        f"Only selected code excerpts ({len(excerpt):,} chars) from this "
+                        f"{file_size:,}-character file were included; the full file was not "
+                        f"analyzed because it exceeds {threshold_name} ({threshold_limit:,} chars)."
+                    )
+                    if per_file_exceeded and total_exceeded:
+                        reason += f" The remaining total prompt budget was {remaining_total_budget:,} chars."
+                    skipped.append(
+                        {
+                            "path": str(skill_file.relative_path),
+                            "size": file_size,
+                            "reason": reason,
+                            "threshold_name": threshold_name,
+                            "partial": True,
+                            "included_chars": len(excerpt),
+                        }
+                    )
+                else:
+                    if per_file_exceeded:
+                        reason = (
+                            f"file size ({file_size:,} chars) exceeds per-file limit "
+                            f"({max_file_chars:,}) and no bounded code excerpts fit the available budget"
+                        )
+                    else:
+                        reason = (
+                            f"including this file would exceed the total prompt budget "
+                            f"({total_chars + file_size:,} > {max_total_chars:,}) and no bounded code "
+                            "excerpts fit the remaining budget"
+                        )
+                    skipped.append(
+                        {
+                            "path": str(skill_file.relative_path),
+                            "size": file_size,
+                            "reason": reason,
+                            "threshold_name": threshold_name,
+                        }
+                    )
+                continue
+
             lines.append(f"**File: {skill_file.relative_path} [evidence_id={evidence_id}]**")
             lines.append("```" + skill_file.file_type)
             lines.append(content)
@@ -245,6 +297,83 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
 
         formatted = "\n".join(lines) if lines else "No script files found."
         return formatted, skipped
+
+    def _extract_oversized_code(self, content: str, max_chars: int, line_comment: str) -> str:
+        """Select bounded executable lines, prioritizing imports and risky calls."""
+        if max_chars <= 0:
+            return ""
+
+        source_lines = content.splitlines()
+        executable_lines = [
+            index
+            for index, line in enumerate(source_lines)
+            if line.strip()
+            and not line.lstrip().startswith((line_comment, "/*", "*/"))
+            and not (line_comment == "//" and line.lstrip().startswith("*"))
+        ]
+        if not executable_lines:
+            return ""
+        executable_line_set = set(executable_lines)
+
+        executable_chars = sum(len(source_lines[index]) + 1 for index in executable_lines)
+        if executable_chars <= max_chars:
+            candidates = [(index, 1) for index in executable_lines]
+        else:
+            priorities: dict[int, int] = {}
+            high_risk_lines: list[int] = []
+            for index in executable_lines:
+                line = source_lines[index]
+                if _HIGH_RISK_LINE.search(line):
+                    priorities[index] = 3
+                    high_risk_lines.append(index)
+                elif _IMPORT_LINE.search(line):
+                    priorities[index] = 2
+
+            for index in high_risk_lines:
+                for neighbor in (index - 1, index + 1):
+                    if neighbor in executable_line_set:
+                        priorities.setdefault(neighbor, 1)
+
+            candidates = sorted(priorities.items(), key=lambda item: (-item[1], item[0]))
+
+        selected: list[tuple[int, str]] = []
+        used_chars = 0
+        for index, _priority in candidates:
+            separator_chars = 1 if selected else 0
+            available = max_chars - used_chars - separator_chars
+            if available <= 0:
+                continue
+            rendered = self._format_excerpt_line(source_lines[index], index + 1, available, line_comment)
+            if rendered is None:
+                continue
+            selected.append((index, rendered))
+            used_chars += len(rendered) + separator_chars
+
+        selected.sort(key=lambda item: item[0])
+        return "\n".join(line for _, line in selected)
+
+    def _format_excerpt_line(self, line: str, line_number: int, max_chars: int, line_comment: str) -> str | None:
+        """Render one source line without losing a matching sink in long lines."""
+        prefix = f"{line_comment} [source line {line_number}] "
+        available = max_chars - len(prefix)
+        if available <= 0:
+            return None
+
+        source = line.rstrip()
+        if len(source) <= available:
+            return prefix + source
+
+        marker = "..."
+        if available <= len(marker) * 2:
+            return None
+        match = _HIGH_RISK_LINE.search(source) or _IMPORT_LINE.search(source)
+        match_start = match.start() if match else 0
+        content_chars = available - len(marker) * 2
+        start = max(0, match_start - content_chars // 3)
+        start = min(start, max(0, len(source) - content_chars))
+        end = min(len(source), start + content_chars)
+        excerpt = (marker if start else "") + source[start:end] + (marker if end < len(source) else "")
+        return prefix + excerpt
 
     def _is_path_within_directory(self, path: Path, directory: Path) -> bool:
         """

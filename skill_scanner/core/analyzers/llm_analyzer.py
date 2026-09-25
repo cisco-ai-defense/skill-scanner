@@ -570,19 +570,32 @@ class LLMAnalyzer(BaseAnalyzer):
 
             # Emit INFO findings for any skipped content
             for item in budget_skipped:
+                partially_analyzed = item.get("partial", False)
+                if partially_analyzed:
+                    title = (
+                        f"'{item['path']}' only partially analyzed "
+                        f"({item['included_chars']:,} excerpt chars from {item['size']:,})"
+                    )
+                    remediation = (
+                        f"Increase {item['threshold_name']} in your scan policy to include more content. "
+                        "The full file was not analyzed."
+                    )
+                else:
+                    title = f"'{item['path']}' excluded from LLM analysis ({item['size']:,} chars)"
+                    remediation = (
+                        f"Increase {item['threshold_name']} in your scan policy "
+                        "to include this content in LLM analysis."
+                    )
                 findings.append(
                     Finding(
                         id=f"llm_budget_{item['path']}",
                         rule_id="LLM_CONTEXT_BUDGET_EXCEEDED",
                         category=ThreatCategory.POLICY_VIOLATION,
                         severity=Severity.INFO,
-                        title=f"'{item['path']}' excluded from LLM analysis ({item['size']:,} chars)",
+                        title=title,
                         description=item["reason"],
                         file_path=item["path"],
-                        remediation=(
-                            f"Increase {item['threshold_name']} in your scan policy "
-                            f"to include this content in LLM analysis."
-                        ),
+                        remediation=remediation,
                         analyzer="llm",
                     )
                 )
