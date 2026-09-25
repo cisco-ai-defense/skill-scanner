@@ -92,7 +92,7 @@ skill-scanner configure-policy -o my_policy.yaml
 | **strict** | shadow / on | Narrow allowlists, no CEL suppression, lower thresholds | Auditing untrusted / external skills, compliance |
 | **balanced** | shadow / on | Sensible defaults, moderate filtering | CI/CD pipelines, everyday scanning |
 | **permissive** | off / off | Broad allowlists, aggressive suppression | Trusted internal skills, dev-time scanning |
-| **low-noise** | shadow / on | `balanced`, with the 11 rules that alone produced the most judge-cleared flags on real skills reported at LOW | Everyday scanning where alert volume matters; costs 5 of 1,653 malicious detections on MaliciousSkillBench train/validation |
+| **low-noise** | shadow / on | `balanced`, with the 11 rules that alone produced the most judge-cleared flags on real skills reported at LOW, and low-confidence LLM findings at LOW | Everyday scanning where alert volume matters; costs 5 of 1,653 malicious detections on MaliciousSkillBench train/validation |
 | **quiet** | shadow / on | `low-noise` plus 8 more demotions and a LOW cap on LLM findings the model labels `CONTEXTUAL_RISK` | Triage queues limited by review capacity; about 1.3% of real skills flagged by the rules |
 
 `low-noise` and `quiet` were chosen from data -- how many judge-cleared real-skill flags each rule
@@ -568,6 +568,7 @@ llm_analysis:
   trusted_reference_domains:           # Org domains trusted for transitive trust / supply chain
     - "gitlab.internal.example.com"
   contextual_risk_max_severity: ""     # e.g. "LOW": cap findings the model labels CONTEXTUAL_RISK
+  low_confidence_max_severity: ""      # e.g. "LOW": cap findings the model rates LOW confidence
 ```
 
 **Impact:**
@@ -576,6 +577,7 @@ llm_analysis:
 - The meta-analyzer applies `meta_budget_multiplier` on top of the base input limits. With the defaults, the meta-analyzer gets 60K instruction, 45K per file, and 300K total.
 - Increase these values for skills with large codebases or extensive instructions. Decrease them to reduce LLM API costs.
 - `contextual_risk_max_severity`: every LLM finding carries the model's own label, `TRUE_POSITIVE` (the cited evidence establishes the behavior) or `CONTEXTUAL_RISK` (a risky capability whose intent, reach or execution is not established). Setting this to `LOW` reports contextual findings at LOW, so only established behavior gates; the original severity is kept in `llm_severity_before_cap`. On MaliciousSkillBench it cut the judge's MEDIUM+ false-positive rate by two thirds or more, at a recall cost of 5 points on train/validation and 16 on the test split. Empty by default; on in the `quiet` preset.
+- `low_confidence_max_severity`: the same cap for findings the model rates `LOW` confidence, whatever their label -- a middle operating point that took the judge's real-skill MEDIUM+ flag rate from 10.5% to 7.6% for 2.5 points of train/validation recall. On in `low-noise` and `quiet`.
 - `trusted_reference_domains`: LLM findings (transitive trust, supply chain) that reference only URLs or domains in this list are demoted to LOW severity. Use this for your organization's internal infrastructure — Git repositories, package registries, documentation portals, artifact stores — that the LLM would otherwise flag as untrusted external sources. Empty by default (all external references flagged normally).
 
 </details>

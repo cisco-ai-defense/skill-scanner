@@ -656,6 +656,7 @@ llm_analysis:
   meta_budget_multiplier: 3.0         # Meta analyzer multiplier (3× above)
   trusted_reference_domains: []       # Trusted internal domains (git, registries, docs); demoted to LOW
   contextual_risk_max_severity: ""    # Cap for findings the model labels CONTEXTUAL_RISK ("" = no cap)
+  low_confidence_max_severity: ""    # Cap for findings the model rates LOW confidence ("" = no cap)
 
 # ---------------------------------------------------------------------------
 # Finding output – final dedupe + policy traceability metadata

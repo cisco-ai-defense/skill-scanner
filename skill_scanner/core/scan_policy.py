@@ -399,6 +399,12 @@ class LLMAnalysisPolicy:
     # MaliciousSkillBench development records a LOW cap took the judge's MEDIUM+
     # false-positive rate from 23.6% to 6.9% for 5 points of recall.
     contextual_risk_max_severity: str = ""
+    # -- Low-confidence severity cap --
+    # When set, a finding the model itself rates LOW confidence is capped at this severity.
+    # A middle operating point: with the current prompt a LOW cap took the real-skill MEDIUM+
+    # flag rate from 10.5% to 7.6%, and cost 2.5 points of recall on MaliciousSkillBench
+    # train/validation (3.6 on the test split).
+    low_confidence_max_severity: str = ""
 
     # -- Convenience helpers for the meta analyzer --
 
@@ -803,6 +809,7 @@ class ScanPolicy:
                 meta_budget_multiplier=la.get("meta_budget_multiplier", 3.0),
                 trusted_reference_domains=set(la.get("trusted_reference_domains", [])),
                 contextual_risk_max_severity=str(la.get("contextual_risk_max_severity") or "").upper(),
+                low_confidence_max_severity=str(la.get("low_confidence_max_severity") or "").upper(),
             ),
             finding_output=FindingOutputPolicy(
                 dedupe_exact_findings=fo.get("dedupe_exact_findings", True),
@@ -937,6 +944,7 @@ class ScanPolicy:
                 "meta_budget_multiplier": self.llm_analysis.meta_budget_multiplier,
                 "trusted_reference_domains": sorted(self.llm_analysis.trusted_reference_domains),
                 "contextual_risk_max_severity": self.llm_analysis.contextual_risk_max_severity,
+                "low_confidence_max_severity": self.llm_analysis.low_confidence_max_severity,
             },
             "finding_output": {
                 "dedupe_exact_findings": self.finding_output.dedupe_exact_findings,

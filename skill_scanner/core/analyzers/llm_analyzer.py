@@ -1271,7 +1271,9 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                 # Get AISubtech code if provided
                 aisubtech_code = llm_finding.get("aisubtech")
 
-                severity, capped_from = self._cap_contextual_risk(severity, llm_finding.get("verdict"))
+                severity, capped_from = self._cap_severity(
+                    severity, llm_finding.get("verdict"), llm_finding.get("confidence")
+                )
 
                 # Create finding with AITech alignment
                 finding = Finding(
@@ -1313,10 +1315,21 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
     def _cap_contextual_risk(self, severity: Severity, verdict: Any) -> tuple[Severity, Severity | None]:
         """Apply ``llm_analysis.contextual_risk_max_severity`` to a CONTEXTUAL_RISK finding."""
 
-        cap = getattr(self.llm_policy, "contextual_risk_max_severity", "") or ""
+        return self._cap_severity(severity, verdict, None)
+
+    def _cap_severity(self, severity: Severity, verdict: Any, confidence: Any) -> tuple[Severity, Severity | None]:
+        """Apply the policy's contextual-risk and low-confidence caps; return (severity, original)."""
+
         order = self._CAPPABLE_SEVERITIES
-        if verdict != "CONTEXTUAL_RISK" or cap not in order or severity.value not in order:
+        caps = []
+        if verdict == "CONTEXTUAL_RISK":
+            caps.append(getattr(self.llm_policy, "contextual_risk_max_severity", "") or "")
+        if confidence == "LOW":
+            caps.append(getattr(self.llm_policy, "low_confidence_max_severity", "") or "")
+        caps = [cap for cap in caps if cap in order]
+        if not caps or severity.value not in order:
             return severity, None
+        cap = min(caps, key=order.index)
         if order.index(severity.value) <= order.index(cap):
             return severity, None
         return Severity(cap), severity

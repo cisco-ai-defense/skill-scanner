@@ -4,6 +4,8 @@
 # 1.88M real skills reported at LOW instead of gating. Chosen on MaliciousSkillBench
 # train/validation only: 5 of 1,653 malicious detections are lost, and the real-world
 # MEDIUM+ flag rate falls from 2.15% to 1.94%. Demoted findings stay visible at LOW.
+# LLM findings the model rates LOW confidence are capped at LOW: 10.5% -> 7.6% of real skills
+# flagged by the judge, for 2.5 points of train/validation recall.
 #
 # This file defines the built-in security policy.  Every setting here can be
 # overridden in an organisation-specific policy file passed via --policy.
@@ -661,6 +663,7 @@ llm_analysis:
   meta_budget_multiplier: 3.0         # Meta analyzer multiplier (3× above)
   trusted_reference_domains: []       # Trusted internal domains (git, registries, docs); demoted to LOW
   contextual_risk_max_severity: ""    # Cap for findings the model labels CONTEXTUAL_RISK ("" = no cap)
+  low_confidence_max_severity: "LOW"    # Cap for findings the model rates LOW confidence ("" = no cap)
 
 # ---------------------------------------------------------------------------
 # Finding output – final dedupe + policy traceability metadata

@@ -816,7 +816,14 @@ LOW`, which reports contextual findings at LOW -- is an operating point, not a f
 
 It cuts the false-positive rate by two thirds or more on every population, and costs 5 points of
 recall on train/validation but 16 on the test split, so it ships off by default and on in the
-`quiet` pack.
+`quiet` pack. A middle point caps only findings the model rates LOW confidence
+(`llm_analysis.low_confidence_max_severity: LOW`, on in `low-noise`):
+
+| New prompt, MEDIUM+ | Train/val recall | Train/val FPR | Test recall | Test FPR | Real-skill flags |
+|---|---|---|---|---|---|
+| No cap | 88.8% | 24.0% | 65.9% | 12.5% | 10.45% |
+| Low-confidence findings at LOW | 86.3% | 16.6% | 62.3% | 10.5% | 7.60% |
+| Contextual findings at LOW | 83.8% | 6.9% | 49.6% | 4.2% | 3.00% |
 
 ## Policy packs instead of knobs
 
@@ -829,11 +836,11 @@ they have. Two presets, chosen from data rather than by hand, sit beside `strict
   were demoted greedily in that order, and the path was cut at two points.
 - **Demotion, not deletion.** A demoted rule is reported at LOW: still visible, not gating.
 
-| Preset | Rules reported at LOW | Real-skill MEDIUM+ flag rate | Train/validation recall | FPR |
-|---|---|---|---|---|
-| `balanced` (default) | 0 | 2.153% | 31.45% | 1.05% |
-| `low-noise` | 11 | 1.937% | 31.35% | 1.05% |
-| `quiet` | 19, plus the LLM contextual cap | 1.331% | 29.78% | 0.15% |
+| Preset | Rules reported at LOW | LLM caps | Real-skill MEDIUM+ (rules) | Train/validation recall (rules) | FPR (rules) |
+|---|---|---|---|---|---|
+| `balanced` (default) | 0 | none | 2.153% | 31.45% | 1.05% |
+| `low-noise` | 11 | low-confidence at LOW | 1.937% | 31.35% | 1.05% |
+| `quiet` | 19 | low-confidence and contextual at LOW | 1.331% | 29.78% | 0.15% |
 
 `low-noise` costs five malicious detections of 1,653 for a 10% cut in real-world flags. `quiet`
 is for triage queues where review capacity is the binding constraint. Past that point every

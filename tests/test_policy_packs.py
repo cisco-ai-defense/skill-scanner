@@ -84,3 +84,32 @@ def test_contextual_risk_cap(cap: str, severity: Severity, verdict: str, expecte
     capped, before = analyzer._cap_contextual_risk(severity, verdict)
     assert capped == expected
     assert (before is not None) == (expected != severity)
+
+
+@pytest.mark.parametrize(
+    ("contextual_cap", "low_conf_cap", "verdict", "confidence", "severity", "expected"),
+    [
+        ("", "LOW", "TRUE_POSITIVE", "LOW", Severity.HIGH, Severity.LOW),
+        ("", "LOW", "TRUE_POSITIVE", "HIGH", Severity.HIGH, Severity.HIGH),
+        ("", "LOW", "CONTEXTUAL_RISK", "MEDIUM", Severity.MEDIUM, Severity.MEDIUM),
+        ("MEDIUM", "LOW", "CONTEXTUAL_RISK", "LOW", Severity.HIGH, Severity.LOW),
+        ("LOW", "", "CONTEXTUAL_RISK", "HIGH", Severity.CRITICAL, Severity.LOW),
+    ],
+)
+def test_low_confidence_cap_and_the_stricter_of_two_caps(
+    contextual_cap: str, low_conf_cap: str, verdict: str, confidence: str, severity: Severity, expected: Severity
+) -> None:
+    policy = ScanPolicy.default()
+    policy.llm_analysis.contextual_risk_max_severity = contextual_cap
+    policy.llm_analysis.low_confidence_max_severity = low_conf_cap
+    analyzer = LLMAnalyzer(model="openai/placeholder", api_key="unused", policy=policy)
+    assert analyzer._cap_severity(severity, verdict, confidence)[0] == expected
+
+
+def test_packs_set_the_llm_caps() -> None:
+    low, quiet = ScanPolicy.from_preset("low-noise"), ScanPolicy.from_preset("quiet")
+    assert (low.llm_analysis.contextual_risk_max_severity, low.llm_analysis.low_confidence_max_severity) == ("", "LOW")
+    assert (quiet.llm_analysis.contextual_risk_max_severity, quiet.llm_analysis.low_confidence_max_severity) == (
+        "LOW",
+        "LOW",
+    )
