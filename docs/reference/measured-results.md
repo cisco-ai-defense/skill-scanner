@@ -33,6 +33,11 @@ pack, no model.
 | Recall | 7.7% |
 | False-positive rate | 7.7% |
 
+These are the shipped rules before the tuning described
+[below](#tuning-the-deterministic-scanner-against-real-skills). On the same split with the tuned
+rules, at the same HIGH+ threshold: precision 73.0%, recall 7.7% (unchanged), false-positive rate
+**4.4%**, F1 14.0%.
+
 Enabling every community rule pack raises recall to 73.8% on an 80/80 sample of the same split, and
 raises the benign flag rate from 7.5% to 92.5%. That configuration is a triage setting, not a gating
 one. MaliciousSkillBench's terms additionally prohibit source-disjoint generalisation claims with the
@@ -545,35 +550,101 @@ platform-injected files before any figure from it is believed.
 
 ## Tuning the deterministic scanner against real skills
 
-Three changes, each chosen from per-analyzer findings and each measured as an A/B against the
-previous scanner on the same records. On the labelled split no malicious record changed severity,
-so recall is unchanged throughout; every movement is a benign record moving down.
+Every usable skill in the gitskills corpus -- 1,876,662 of 1,876,769 records; the 107 the loader cannot
+read are excluded, not counted as clean -- scanned in full by every deterministic analyzer, once with
+the shipped scanner (`5b696a1`) and once with the tuned one (`f3a42f3`). Each change was chosen from
+the per-analyzer findings of the first scan, adjudicated against the local judge, and checked on every
+labelled corpus before it was kept. The records are unlabelled, so these are flag rates, which bound
+the false-positive rate from above.
 
-| Change | Labelled HIGH+ FPR (install gate) | Labelled MEDIUM+ FPR | Real skills |
+| Threshold | Shipped | Tuned | Change |
 |---|---|---|---|
-| Before | 7.71% | 8.44% | MEDIUM+ 4.428% on 19,966 |
-| Installer trust in correlation | **5.87%** | 8.44% | 0 records moved |
-| Markdown is a text container | 5.87% | 8.26% | MEDIUM+ **3.371%**; 213 moved down, 0 up |
-| Claims, not mentions, of Anthropic | 5.87% | **8.07%** | rule flags 4,460 -> 673 over 1.83M manifests |
+| MEDIUM+ | 4.184% [4.155, 4.212] | **2.466%** [2.444, 2.488] | **−41.1%** |
+| HIGH+ | 2.469% [2.447, 2.491] | 2.312% [2.291, 2.334] | −6.4% |
+| CRITICAL | 0.629% [0.617, 0.640] | 0.598% [0.587, 0.609] | −4.9% |
 
-**Installer trust in correlation.** `CORRELATED_NETWORK_EXECUTION_FLOW` ignored the policy's
-`known_installer_domains`, so the pipeline analyzer demoted `curl https://astral.sh/... | sh` to LOW
-while the correlation analyzer raised the same line to HIGH. A fenced, fixed-HTTPS download whose
-every host is on the curated LOTS-aware legitimate list, or a configured installer, is now MEDIUM:
-reported, but no longer blocking. Path scoping is kept, so `raw.githubusercontent.com/nvm-sh` trusts
-nvm rather than every GitHub user, and one untrusted download in a block keeps every flow in it
-HIGH. Twenty-nine of the thirty-one benign firings failed the old installer test on a single
-condition, the role classifier.
+32,243 records left MEDIUM+ and 7 entered it. The flags that remain are ones the judge agrees with
+more often: it also flags 45.6% of the tuned scanner's MEDIUM+ records, against 28.0% of the shipped
+scanner's.
 
-**Markdown is a text container.** 85% of all `FILE_MAGIC_MISMATCH` findings on real skills were a
-`SKILL.md` that Magika reads as YAML, because the skill format requires YAML frontmatter. A text or
-code label in Markdown is no longer a mismatch; binary content in a `.md` file still is. On the
-skills it used to flag, the LLM judge independently found nothing concerning in 96.1%.
+**By rule, MEDIUM+ records on the full corpus:**
 
-**Claims, not mentions.** `SOCIAL_ENG_ANTHROPIC_IMPERSONATION` fired on any skill containing the word
-"anthropic". It now fires on a claim of affiliation. The old exemption was a substring test that also
-exempted real claims -- "...applies fixes. Official Anthropic skill." passed because it contained
-"apply" -- and the new rule catches 221 such claims the old one missed.
+| Rule | Shipped | Tuned | Change | What changed |
+|---|---|---|---|---|
+| `FILE_MAGIC_MISMATCH` | 19,606 | 108 | −99% | A text label in Markdown is not a mismatch; binary content still is |
+| `PIPELINE_TAINT_FLOW` | 10,082 | 5,438 | −46% | Benign-pipe rules match real commands; an interpreter reading data is not a sink |
+| `CORRELATED_NETWORK_EXECUTION_FLOW` | 9,425 | 7,556 | −20% | Installer trust; piping into `python -m json.tool` is not execution |
+| `ACTIVE_DYNAMIC_EXECUTION` | 7,743 | 7,150 | −8% | An empty call in code, or "eval (" in prose, is not a call |
+| `SOCIAL_ENG_ANTHROPIC_IMPERSONATION` | 4,546 | 264 | −94% | A claim of affiliation, not a mention of the vendor |
+| `SUPPLY_CHAIN_UNPINNED_DEPENDENCY` | 3,721 | 0 | −100% | Reported at LOW: hygiene, not a threat signal |
+| `YARA_autonomy_abuse_generic` | 1,771 | 932 | −47% | "Do not proceed without user confirmation" is the opposite instruction |
+| `YARA_sql_injection_generic` | 1,433 | 1,185 | −17% | `sleep(1);` in PHP, JS and k6 is not a time-based payload |
+| `YARA_capability_inflation_generic` | 625 | 359 | −43% | "Easter egg" is UI copy |
+
+**What each change rests on.**
+
+- **Markdown is a text container.** 85% of `FILE_MAGIC_MISMATCH` findings were a `SKILL.md` that
+  Magika reads as YAML, because the skill format requires YAML frontmatter. The judge cleared 95% of
+  them.
+- **Benign pipes match real commands.** `benign_pipe_targets` were matched against the whole string,
+  so `curl ... | jq '.[] | .name'` never matched `curl\s.*\|\s*jq`, and `python -m json.tool` never
+  matched `python3`. A rule now matches from the start, and whatever follows may only be the last
+  command's arguments: another pipe, chaining, redirection or command substitution keeps the finding.
+- **A piped interpreter runs stdin only when it has no program.** `curl URL | bash` and `| python -`
+  execute what was fetched; `| python -m json.tool`, `| python script.py` and `| python3 -c
+  "json.load(sys.stdin)"` read it as data. One rule, in `skill_scanner/core/shell_semantics.py`, is
+  shared by the pipeline and correlation analyzers. It skips redirections (`| sh 2>/dev/null` still
+  runs the payload), stops at shell control and Markdown text (`| sh && tool login`, `| bash #
+  recommended`), and treats an inline program that executes what it reads (`python -c
+  'exec(sys.stdin.read())'`) as running stdin. The first version missed the redirection and the
+  trailing-text cases; measuring the removed chains on real skills is what found them.
+- **Installer trust in correlation.** The correlation analyzer ignored the policy's
+  `known_installer_domains`, so one `curl https://astral.sh/... | sh` was LOW in the pipeline analyzer
+  and HIGH in this one. Trusted, path-scoped hosts now grade MEDIUM.
+- **Claims, not mentions, of Anthropic.** The rule fired on the word "anthropic". It now fires on an
+  authorship claim ("by/from/built by Anthropic", "Anthropic-verified") or on "official" qualifying the
+  skill itself ("Anthropic official skill"), not Anthropic's own material ("Anthropic's official brand
+  colors", "the official Anthropic specification"), "powered by Anthropic", or an identifier such as
+  `anthropic-report.py`. "Imported skill ... from Anthropic" still counts: it asserts origin.
+- **Negations and code in three YARA rules.** Most "proceed without user" and "retry forever" hits
+  were "do not proceed without user confirmation" and "don't retry forever"; the phrase now counts only
+  when it occurs more often than its negation. Generic `sleep(` counts as a time-based SQL payload only
+  after a closing quote. Each new pattern matches a subset of the old one.
+- **Empty calls.** In fenced code, `eval()` with nothing to run executes nothing. In prose the empty
+  form is kept: a malicious development package says "EXECUTE its contents via `exec()`". This rule's
+  promotion evidence is bound to its implementation hash, so the change was re-verified on the same
+  6,597-package MaliciousSkillBench train/validation selection: output byte-identical, 180 hits, all
+  malicious.
+
+**One defect was introduced and fixed along the way.** The Markdown change made `FILE_MAGIC_MISMATCH`
+emit LOW, which the core pack did not declare as an allowed demotion. The finding contract rejected
+every such finding and marked the static analyzer failed, which on the first rescan excluded 904
+records from the measurement. The unit test called the check directly, where no contract is enforced;
+the regression test now scans through `SkillScanner`.
+
+### The same change on labelled corpora
+
+Shipped against tuned, static arm, MEDIUM+ unless stated:
+
+| Corpus | Records | Recall | FPR | Precision |
+|---|---|---|---|---|
+| MaliciousSkillBench source-disjoint | 1,384 | 7.99% → 7.99% | 8.44% → **4.59%** | 59.3% → **72.8%** |
+| ↳ at HIGH+ (install gate) | | 7.75% → 7.75% | 7.71% → **4.40%** | 60.7% → **73.0%** |
+| MaliciousSkillBench balanced-800 | 800 | 33.00% → 31.00% | 2.00% → 1.25% | 94.3% → 96.1% |
+| OpenSkillRisk (positives only) | 374 | 31.55% → 29.95% | — | — |
+| MCP tool poisoning | 50 | 40.0% → 40.0% | 0% → 0% | 100% → 100% |
+
+HarmfulSkillBench (200, unlabelled for this purpose) moves from a 4.0% to a 3.5% flag rate, the
+12,498-skill real-world population from 3.76% to 2.59%, and a separate 200,000-record gitskills
+sample from 2.23% to 0.53%.
+
+**The recall cost is real and is stated rather than averaged away.** Sixteen positive records on
+balanced-800 and OpenSkillRisk drop below MEDIUM. In every one, the finding that carried the record
+was not the malicious behaviour: `curl ... | python3 -m json.tool` formatting, `cat <<JSON | node
+script.js` passing data, a vendor mention of Anthropic, an unpinned dependency, a text label in
+Markdown. These records are malicious for reasons the deterministic layer does not see; the judge is
+the layer meant to catch them. Keeping a rule firing on the wrong evidence for its incidental recall
+would keep the false positives that come with it.
 
 ### Candidates measured and rejected
 
@@ -585,16 +656,23 @@ exempted real claims -- "...applies fixes. Official Anthropic skill." passed bec
   often search `~`, so the root does not separate the classes.
 - **Trusting a host because it matches the skill's own name.** An attacker controls both, so it is not
   a trust signal; ordinary unknown hosts stay HIGH for fetch-and-execute.
-- **Taking fetch-and-execute below MEDIUM.** A live fetch cannot prove its own integrity, and the
-  existing design keeps such behaviour visible and actionable.
+- **Taking fetch-and-execute below MEDIUM.** A live fetch cannot prove its own integrity. Thirteen of
+  the 25 benign MEDIUM+ records left on the source-disjoint split are vendor installers
+  (`curl -fsSL https://cli.tavily.com/install.sh | bash`); separating those from a malicious `| sh`
+  needs domain reputation, which is policy (`known_installer_domains`), not a rule change.
+- **Dropping empty calls in prose.** It removed the only hit on a malicious development package.
+- **Placeholder exemptions for `SECRET_CONNECTION_STRING`.** The judge's verdicts do not separate the
+  shapes: it clears 93% of opaque passwords on local service hosts (docker-compose development
+  credentials) and only 18% of placeholder passwords on placeholder hosts. A hardcoded development
+  credential is still one, so this is left to policy.
 
-### What the labelled corpus cannot tell us
+### What remains
 
-`SUPPLY_CHAIN_UNPINNED_DEPENDENCY`, `YARA_jailbreak_generic`, `YARA_autonomy_abuse_generic` and
-`SECRET_CONNECTION_STRING` never fire on MaliciousSkillBench, whose records are a single `SKILL.md`
-with no dependency files, so there is no labelled evidence of what they catch. On real skills the
-judge clears 75% to 92% of their flags, but on 12 to 30 flags each. They are held for the full-corpus
-adjudication rather than changed on that sample.
+By the judge's account the largest remaining sources, each above 1,000 MEDIUM+ records, are
+`CORRELATED_SENSITIVE_NETWORK_FLOW` (5,721 records, judge clears 66%), `ACTIVE_DYNAMIC_EXECUTION`
+(7,150, 59%), `COMPOUND_FIND_EXEC` (5,581, 67%) and `PROMPT_INJECTION_IGNORE_INSTRUCTIONS` (3,450,
+55%). None has a single shape that separates, and the first two carry most of the labelled recall
+(88% and 82% precision on the source-disjoint split), so they are not changed on the judge's word.
 
 ## What rule-level suppression cannot fix
 

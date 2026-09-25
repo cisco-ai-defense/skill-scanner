@@ -921,71 +921,137 @@ def _render_full_corpus(full: dict) -> str:
     base, tuned = det.get("static-base") or {}, det.get("static-tuned") or {}
     out = "<h2>Every usable skill: deterministic, judge and cascade</h2>\n"
     if base and tuned:
+        step: dict = next(iter(det.get("waterfall") or []), {})
         out += (
             f"<p>{count(base.get('records'))} real published skills, the whole usable gitskills corpus, "
-            "scanned with every deterministic analyzer before and after the tuning described on this "
-            f"page. {count(det.get('records_moved_down'))} records moved to a lower severity and "
-            f"{count(det.get('records_moved_up'))} to a higher one.</p>\n"
+            "each scanned in full by every deterministic analyzer with the shipped scanner and again with the "
+            f"tuned one. {count(step.get('medium_plus_cleared'))} records left MEDIUM or above and "
+            f"{count(step.get('medium_plus_added'))} entered it. These are unlabelled, so a flag rate bounds the "
+            "false-positive rate from above rather than measuring it.</p>\n"
         )
         rows = []
-        for b, t in zip(base.get("tiers") or [], tuned.get("tiers") or []):
+        for label in ("CRITICAL", "HIGH+", "MEDIUM+", "LOW+", "INFO+"):
+            b = (base.get("tiers") or {}).get(label) or {}
+            t = (tuned.get("tiers") or {}).get(label) or {}
+            if not b:
+                continue
             rows.append(
                 [
-                    esc(b["label"]),
-                    percent(b["rate"], 3),
-                    percent(t["rate"], 3),
-                    f"{(t['rate'] - b['rate']) / b['rate']:+.1%}" if b.get("rate") else "&mdash;",
+                    esc(label),
+                    f"{percent(b.get('rate'), 3)} {interval(b.get('ci95'), 3)}",
+                    f"{percent(t.get('rate'), 3)} {interval(t.get('ci95'), 3)}",
+                    f"{(t['rate'] - b['rate']) / b['rate']:+.1%}"
+                    if b.get("rate") and t.get("rate") is not None
+                    else "&mdash;",
                 ]
             )
-        out += table(["Threshold", "Before tuning", "After tuning", "Relative change"], rows, numeric=(1, 2, 3))
+        out += table(
+            ["Threshold", "Before tuning (95% interval)", "After tuning (95% interval)", "Relative change"],
+            rows,
+            numeric=(1, 2, 3),
+        )
+    labelled = (full.get("labelled_ab") or {}).get("corpora") or {}
+    if labelled:
+        out += "<h3>The same change on labelled corpora</h3>\n"
+        out += (
+            "<p>Shipped scanner against tuned scanner, static arm, MEDIUM or above. Every corpus the harness "
+            "holds is shown, including those where the tuning costs recall.</p>\n"
+        )
+        rows = []
+        for corpus, c in labelled.items():
+            b, t = c.get("medium_plus_base") or {}, c.get("medium_plus_final") or {}
+
+            def rate(k: int, n: int) -> str:
+                return percent(k / n, 2) if n else "&mdash;"
+
+            rows.append(
+                [
+                    esc(corpus),
+                    count(c.get("records")),
+                    f"{rate(b.get('tp', 0), b.get('positives', 0))} &rarr; {rate(t.get('tp', 0), t.get('positives', 0))}",
+                    f"{rate(b.get('fp', 0), b.get('negatives', 0))} &rarr; {rate(t.get('fp', 0), t.get('negatives', 0))}",
+                    f"{rate(b.get('flagged_unlabelled', 0), b.get('unlabelled', 0))} &rarr; "
+                    f"{rate(t.get('flagged_unlabelled', 0), t.get('unlabelled', 0))}",
+                ]
+            )
+        out += table(["Corpus", "Records", "Recall", "FPR", "Unlabelled flag rate"], rows, numeric=(1, 2, 3, 4))
     judge = full.get("judge") or {}
     if judge:
-        medium = next((t for t in judge.get("tiers") or [] if t["label"] == "MEDIUM or above"), {})
+        medium = (judge.get("tiers") or {}).get("MEDIUM+") or {}
+        combined = full.get("combined") or {}
         out += (
-            f"<p>The LLM judge read {count(judge.get('records'))} of them "
+            f"<p>The LLM judge read {count(judge.get('genuine'))} of them "
             f"({count(judge.get('failed'))} could not be analysed and are excluded, not counted as clean) and "
-            f"flagged {percent(medium.get('rate'), 2)} at MEDIUM or above. The deterministic scanner or the judge "
-            f"together flag {percent(full.get('combined_flag_rate_det_or_judge'), 2)}.</p>\n"
+            f"flagged {percent(medium.get('rate'), 2)} {interval(medium.get('ci95'), 2)} at MEDIUM or above.</p>\n"
         )
-    adj = full.get("adjudication") or []
-    if adj:
-        out += "<h3>Which deterministic rules the judge disagrees with</h3>\n"
+        agreement = (full.get("agreement") or {}).get("static-tuned") or {}
+        if agreement:
+            out += (
+                f"<p>The tuned deterministic scanner and the judge agree on {count(agreement.get('both'))} flagged "
+                f"records; {count(agreement.get('det_only'))} are flagged only by the rules and "
+                f"{count(agreement.get('judge_only'))} only by the judge (Cohen's &kappa; "
+                f"{agreement.get('cohen_kappa', 0):.3f}). The two layers look at different things, which is why "
+                "neither is ground truth for the other.</p>\n"
+            )
+        if combined:
+            out += (
+                f"<p>Deterministic flags alone: {percent((combined.get('deterministic') or {}).get('rate'), 2)}. "
+                "Deterministic flags plus the judge behind the OpenJev screen: "
+                f"{percent((combined.get('deterministic_or_cascade') or {}).get('rate'), 2)}.</p>\n"
+            )
+    rules = (full.get("by_rule") or {}).get("static-tuned") or []
+    if rules:
+        out += "<h3>Which deterministic rules the judge disagrees with, after tuning</h3>\n"
         out += (
-            "<p>For every rule that fires at MEDIUM or above on at least twenty real skills, the share the "
-            "judge also flags. The judge is not ground truth &mdash; on the labelled split its own "
-            "false-positive rate is about 18% and its recall 53% &mdash; so this ranks rules for review "
-            "rather than measuring their error. Tuning decisions still have to pass the labelled-recall "
-            "check.</p>\n"
+            "<p>For the rules that flag the most real skills at MEDIUM or above: how many records each rule "
+            "alone drives to that tier (removing the rule would clear them), and the share the judge clears. "
+            "The judge is not ground truth &mdash; on the labelled split its own false-positive rate is about "
+            "18% and its recall 53% &mdash; so this ranks rules for review rather than measuring their error.</p>\n"
         )
         out += table(
-            ["Analyzer", "Rule", "Flags", "Judge agrees", "Judge clears"],
+            ["Analyzer", "Rule", "Records", "Sole driver", "Judged", "Judge clears"],
             [
                 [
                     esc(r["analyzer"]),
                     f"<code>{esc(r['rule_id'])}</code>",
-                    count(r["flags"]),
-                    percent(r["judge_agrees"], 1),
-                    percent(r["judge_clears"], 1),
+                    count(r["medium_plus_records"]),
+                    count(r["sole_driver_records"]),
+                    count(r["judged"]),
+                    f"{percent(r.get('judge_clears'), 1)} {interval(r.get('judge_clears_ci95'), 1)}",
                 ]
-                for r in adj[:20]
+                for r in rules[:20]
             ],
-            numeric=(2, 3, 4),
+            numeric=(2, 3, 4, 5),
         )
     casc = full.get("cascade") or {}
-    if casc and "error" not in casc:
+    sweep = casc.get("sweep") or []
+    if sweep and sweep[0].get("records"):
         out += "<h3>The cascade over every skill</h3>\n"
-        out += table(
-            ["", "MEDIUM+ flag rate", "Judge calls"],
-            [
-                ["Judge alone", percent(casc.get("judge_flag_rate"), 2), "100%"],
-                [
-                    "OpenJev screen, then judge",
-                    percent(casc.get("cascade_flag_rate"), 2),
-                    percent(casc.get("judge_calls"), 1),
-                ],
-            ],
-            numeric=(1, 2),
+        out += (
+            f"<p>OpenJev screens each skill and the judge runs only above a threshold. The threshold chosen on "
+            f"the labelled split was {casc.get('threshold')}; on real skills it sends far fewer records to the "
+            "judge than it did there, so the whole trade-off is shown.</p>\n"
         )
+        out += table(
+            ["Screen threshold", "Judge calls", "Judge flags kept", "MEDIUM+ flag rate"],
+            [
+                [
+                    f"{row['threshold']:g}",
+                    percent(row.get("judge_calls"), 1),
+                    percent(row.get("judge_flags_retained"), 1),
+                    percent(row.get("cascade_flag_rate"), 2),
+                ]
+                for row in sweep
+            ],
+            numeric=(1, 2, 3),
+        )
+        jev = full.get("jev") or {}
+        if jev.get("auc_vs_judge_flag") is not None:
+            out += (
+                f"<p>OpenJev's score ranks the judge's flags with AUC {jev['auc_vs_judge_flag']:.3f} over "
+                f"{count(jev.get('paired_with_judge'))} skills both models read. Judge alone: "
+                f"{percent(sweep[0].get('judge_flag_rate'), 2)}.</p>\n"
+            )
     return out
 
 
