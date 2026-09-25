@@ -885,8 +885,53 @@ class TestCodeFileFormatting:
             max_total_chars=220,
         )
 
+        assert len(_formatted) <= 220
         assert skipped[0]["threshold_name"] == "llm_analysis.max_total_prompt_chars"
         assert "max_total_prompt_chars" in skipped[0]["reason"]
+
+    def test_total_prompt_budget_includes_full_file_framing(self):
+        """Keep headers and fences within the aggregate budget for full files."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+        scripts = []
+        for name, content in (("first.py", "value = 1\n"), ("second.py", "value = 2\n")):
+            script = MagicMock()
+            script.relative_path = f"scripts/{name}"
+            script.file_type = "python"
+            script.read_content = MagicMock(return_value=content)
+            scripts.append(script)
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=scripts)
+
+        formatted, _skipped = analyzer.prompt_builder.format_code_files(
+            skill,
+            max_file_chars=100,
+            max_total_chars=120,
+        )
+
+        assert "scripts/first.py" in formatted
+        assert "scripts/second.py" not in formatted
+        assert len(formatted) <= 120
+
+    def test_total_prompt_budget_includes_partial_file_framing(self):
+        """Subtract partial-file framing before selecting bounded code lines."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+        content = "".join(f"value_{index} = {index:04d}\n" for index in range(40))
+        mock_script = MagicMock()
+        mock_script.relative_path = "scripts/large.py"
+        mock_script.file_type = "python"
+        mock_script.read_content = MagicMock(return_value=content)
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=[mock_script])
+
+        formatted, skipped = analyzer.prompt_builder.format_code_files(
+            skill,
+            max_file_chars=300,
+            max_total_chars=220,
+        )
+
+        assert "scripts/large.py" in formatted
+        assert skipped[0]["partial"] is True
+        assert len(formatted) <= 220
 
     @pytest.mark.asyncio
     @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")

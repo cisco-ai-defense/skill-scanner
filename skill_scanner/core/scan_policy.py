@@ -363,9 +363,11 @@ class LLMAnalysisPolicy:
 
     Content that fits within budget is sent in full — **no truncation**.
     Oversized code files may contribute bounded excerpts. Set
-    ``max_code_file_chars`` to zero to keep code-file contents out of LLM
-    requests. Oversized instruction bodies and referenced files are skipped
-    entirely, with an ``LLM_CONTEXT_BUDGET_EXCEEDED`` INFO finding.
+    ``max_code_file_chars`` to zero to keep directly formatted code-file
+    contents out of LLM requests. Referenced files use
+    ``max_referenced_file_chars`` and may still be included within that limit.
+    Oversized instruction bodies and referenced files are skipped entirely,
+    with an ``LLM_CONTEXT_BUDGET_EXCEEDED`` INFO finding.
     """
 
     # -- Per-item limits (LLM analyzer uses these directly) --

@@ -222,40 +222,53 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
 
             file_size = len(content)
             evidence_id = source_evidence_id(str(skill_file.relative_path))
+            opening_fence = "```" + skill_file.file_type
+            closing_fence = "```"
+            full_header = f"**File: {skill_file.relative_path} [evidence_id={evidence_id}]**"
+            partial_header = (
+                f"**File: {skill_file.relative_path} [evidence_id={evidence_id}] "
+                "(selected excerpts; original line numbers)**"
+            )
+
+            def rendered_block_size(header: str, body_chars: int) -> int:
+                line_count = 5
+                newline_count = line_count if lines else line_count - 1
+                return len(header) + len(opening_fence) + body_chars + len(closing_fence) + newline_count
 
             per_file_exceeded = file_size > max_file_chars
-            total_exceeded = total_chars + file_size > max_total_chars
+            full_block_chars = rendered_block_size(full_header, file_size)
+            total_exceeded = total_chars + full_block_chars > max_total_chars
             if per_file_exceeded or total_exceeded:
                 remaining_total_budget = max(0, max_total_chars - total_chars)
-                remaining_budget = min(max_file_chars, remaining_total_budget)
+                excerpt_framing_chars = rendered_block_size(partial_header, 0)
+                remaining_excerpt_budget = max(0, remaining_total_budget - excerpt_framing_chars)
+                remaining_budget = min(max_file_chars, remaining_excerpt_budget)
                 line_comment = "#" if skill_file.file_type in ("python", "bash") else "//"
                 excerpt = self._extract_oversized_code(content, remaining_budget, line_comment)
                 if per_file_exceeded and total_exceeded:
-                    if max_file_chars < remaining_total_budget:
+                    if max_file_chars < remaining_excerpt_budget:
                         threshold_name = "llm_analysis.max_code_file_chars"
                         threshold_limit = max_file_chars
-                    elif remaining_total_budget < max_file_chars:
+                    elif remaining_excerpt_budget < max_file_chars:
                         threshold_name = "llm_analysis.max_total_prompt_chars"
-                        threshold_limit = remaining_total_budget
+                        threshold_limit = remaining_excerpt_budget
                     else:
                         threshold_name = "llm_analysis.max_code_file_chars and llm_analysis.max_total_prompt_chars"
-                        threshold_limit = max_file_chars
+                        threshold_limit = remaining_excerpt_budget
                 elif per_file_exceeded:
                     threshold_name = "llm_analysis.max_code_file_chars"
                     threshold_limit = max_file_chars
                 else:
                     threshold_name = "llm_analysis.max_total_prompt_chars"
-                    threshold_limit = remaining_total_budget
+                    threshold_limit = remaining_excerpt_budget
+                partial_block_chars = rendered_block_size(partial_header, len(excerpt))
                 if excerpt:
-                    lines.append(
-                        f"**File: {skill_file.relative_path} [evidence_id={evidence_id}] "
-                        "(selected excerpts; original line numbers)**"
-                    )
-                    lines.append("```" + skill_file.file_type)
+                    lines.append(partial_header)
+                    lines.append(opening_fence)
                     lines.append(excerpt)
-                    lines.append("```")
+                    lines.append(closing_fence)
                     lines.append("")
-                    total_chars += len(excerpt)
+                    total_chars += partial_block_chars
                     if included_evidence_ids is not None:
                         included_evidence_ids.add(evidence_id)
                     reason = (
@@ -276,7 +289,7 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
                         }
                     )
                 else:
-                    if per_file_exceeded:
+                    if threshold_name == "llm_analysis.max_code_file_chars":
                         reason = (
                             f"file size ({file_size:,} chars) exceeds per-file limit "
                             f"({max_file_chars:,}) and no bounded code excerpts fit the available budget"
@@ -284,8 +297,9 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
                     else:
                         reason = (
                             f"including this file would exceed the total prompt budget "
-                            f"({total_chars + file_size:,} > {max_total_chars:,}) and no bounded code "
-                            "excerpts fit the remaining budget"
+                            f"({total_chars + full_block_chars:,} > {max_total_chars:,}) and no bounded code "
+                            f"excerpts fit the remaining budget; binding limit is {threshold_name} "
+                            f"({threshold_limit:,} chars)"
                         )
                     skipped.append(
                         {
@@ -297,12 +311,12 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
                     )
                 continue
 
-            lines.append(f"**File: {skill_file.relative_path} [evidence_id={evidence_id}]**")
-            lines.append("```" + skill_file.file_type)
+            lines.append(full_header)
+            lines.append(opening_fence)
             lines.append(content)
-            lines.append("```")
+            lines.append(closing_fence)
             lines.append("")
-            total_chars += file_size
+            total_chars += full_block_chars
             if included_evidence_ids is not None:
                 included_evidence_ids.add(evidence_id)
 
