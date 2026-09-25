@@ -362,9 +362,10 @@ class LLMAnalysisPolicy:
     cross-correlation.
 
     Content that fits within budget is sent in full — **no truncation**.
-    Content that exceeds the budget is skipped entirely and an
-    ``LLM_CONTEXT_BUDGET_EXCEEDED`` INFO finding is emitted with guidance
-    on which policy knob to increase.
+    Oversized code files may contribute bounded excerpts. Set
+    ``max_code_file_chars`` to zero to keep code-file contents out of LLM
+    requests. Oversized instruction bodies and referenced files are skipped
+    entirely, with an ``LLM_CONTEXT_BUDGET_EXCEEDED`` INFO finding.
     """
 
     # -- Per-item limits (LLM analyzer uses these directly) --

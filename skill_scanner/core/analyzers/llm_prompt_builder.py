@@ -40,7 +40,7 @@ _HIGH_RISK_LINE = re.compile(
     r"socket\s*\.\s*\w+|requests?\s*\.\s*\w+|urllib\s*\.\s*\w+|"
     r"httpx\s*\.\s*\w+|aiohttp\s*\.\s*\w+|ftplib\s*\.\s*\w+|"
     r"smtplib\s*\.\s*\w+|pickle\s*\.\s*\w+|marshal\s*\.\s*\w+|"
-    r"ctypes\s*\.\s*\w+|eval|exec|compile|__import__|urlopen|popen|system)\b",
+    r"ctypes\s*\.\s*\w+|curl|wget|eval|exec|compile|__import__|urlopen|popen|system)\b",
     re.IGNORECASE,
 )
 
@@ -226,16 +226,27 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
             per_file_exceeded = file_size > max_file_chars
             total_exceeded = total_chars + file_size > max_total_chars
             if per_file_exceeded or total_exceeded:
-                remaining_budget = max(0, min(max_file_chars, max_total_chars - total_chars))
+                remaining_total_budget = max(0, max_total_chars - total_chars)
+                remaining_budget = min(max_file_chars, remaining_total_budget)
                 line_comment = "#" if skill_file.file_type in ("python", "bash") else "//"
                 excerpt = self._extract_oversized_code(content, remaining_budget, line_comment)
-                threshold_name, threshold_limit = (
-                    ("llm_analysis.max_code_file_chars", max_file_chars)
-                    if per_file_exceeded
-                    else ("llm_analysis.max_total_prompt_chars", max_total_chars - total_chars)
-                )
+                if per_file_exceeded and total_exceeded:
+                    if max_file_chars < remaining_total_budget:
+                        threshold_name = "llm_analysis.max_code_file_chars"
+                        threshold_limit = max_file_chars
+                    elif remaining_total_budget < max_file_chars:
+                        threshold_name = "llm_analysis.max_total_prompt_chars"
+                        threshold_limit = remaining_total_budget
+                    else:
+                        threshold_name = "llm_analysis.max_code_file_chars and llm_analysis.max_total_prompt_chars"
+                        threshold_limit = max_file_chars
+                elif per_file_exceeded:
+                    threshold_name = "llm_analysis.max_code_file_chars"
+                    threshold_limit = max_file_chars
+                else:
+                    threshold_name = "llm_analysis.max_total_prompt_chars"
+                    threshold_limit = remaining_total_budget
                 if excerpt:
-                    remaining_total_budget = max_total_chars - total_chars
                     lines.append(
                         f"**File: {skill_file.relative_path} [evidence_id={evidence_id}] "
                         "(selected excerpts; original line numbers)**"
@@ -315,8 +326,11 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
             return ""
         executable_line_set = set(executable_lines)
 
-        executable_chars = sum(len(source_lines[index]) + 1 for index in executable_lines)
-        if executable_chars <= max_chars:
+        rendered_executable_chars = sum(
+            len(f"{line_comment} [source line {index + 1}] ") + len(source_lines[index].rstrip())
+            for index in executable_lines
+        ) + max(0, len(executable_lines) - 1)
+        if rendered_executable_chars <= max_chars:
             candidates = [(index, 1) for index in executable_lines]
         else:
             priorities: dict[int, int] = {}
@@ -335,6 +349,8 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
                         priorities.setdefault(neighbor, 1)
 
             candidates = sorted(priorities.items(), key=lambda item: (-item[1], item[0]))
+            if not candidates:
+                candidates = [(index, 0) for index in executable_lines]
 
         selected: list[tuple[int, str]] = []
         used_chars = 0
