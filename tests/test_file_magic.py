@@ -636,3 +636,29 @@ class TestMagikaSessionIsBounded:
         path.write_text("# Title\n\nSome markdown with a [link](https://example.org).\n" * 5)
         match = fm._bounded_magika().identify_path(path)
         assert match.output.label == "markdown"
+
+
+def test_low_text_label_mismatch_satisfies_the_pack_contract_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The LOW finding must pass the core pack's severity contract, not only the check.
+
+    The check alone returned LOW while pack.yaml declared only HIGH and MEDIUM as allowed
+    demotions, so a full scan rejected the finding and reported the static analyzer as
+    failed -- on 904 of 33,709 rescanned real skills. Only a scan through the scanner,
+    where the contract is enforced, catches that.
+    """
+
+    import skill_scanner.core.file_magic as fm
+    from skill_scanner.core.scanner import SkillScanner
+
+    skill_dir = tmp_path / "text-label-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("---\nname: text-label-skill\ndescription: A fixture.\n---\nbody\n")
+    monkeypatch.setattr(fm, "detect_magic", lambda _p: fm.MagicMatch("code/python", "code", "code/python", 0.95))
+
+    result = SkillScanner().scan_skill(skill_dir)
+
+    assert not result.analyzers_failed, result.analyzers_failed
+    magic = [f for f in result.findings if f.rule_id == "FILE_MAGIC_MISMATCH"]
+    assert magic and {f.severity.value for f in magic} == {"LOW"}

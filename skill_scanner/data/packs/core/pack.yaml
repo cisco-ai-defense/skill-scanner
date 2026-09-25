@@ -817,11 +817,13 @@ rules:
     source: python
     analyzer: static
     category: obfuscation
-    # Maximum base severity; the magic classifier can emit MEDIUM, HIGH, or CRITICAL.
+    # Maximum base severity. Binary or cross-family content emits MEDIUM, HIGH or CRITICAL;
+    # a text label that differs from the extension's (Python read from a .md) emits LOW.
     severity: CRITICAL
     allowed_severity_demotions:
       - HIGH
       - MEDIUM
+      - LOW
     knobs:
       enabled: true
       min_confidence_pct: 80           # Minimum magic detection confidence (0-100) to trigger
