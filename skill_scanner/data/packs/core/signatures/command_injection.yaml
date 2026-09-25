@@ -157,8 +157,11 @@
   exclude_patterns:
     # Common repository cleanup patterns (low-risk maintenance usage)
     - "find\\s+[^\\n]*-name\\s+[\"']?(?:__pycache__|\\.pytest_cache|\\.mypy_cache|\\.ruff_cache|\\.tox|node_modules|dist|build|\\.cache|\\.next|\\.nuxt|\\.egg-info|\\*\\.egg-info)[\"']?[^\\n]*-exec\\s+rm\\b"
-    # Time-based cleanup routines over temp/worktree directories
-    - "find\\s+[^\\n]*-mtime\\s+\\+[0-9]+[^\\n]*-exec\\s+rm\\b"
+    # Time-based cleanup routines over temp/worktree directories. -mmin is the minutes form of
+    # -mtime: "find ~/.gstack/sessions -mmin +120 -type f -exec rm {} +", a widely copied
+    # session-cleanup preamble, was 4,035 of this rule's flags on 1.88M real skills (the judge
+    # cleared 87%).
+    - "find\\s+[^\\n]*-(?:mtime|mmin|atime|amin|ctime|cmin)\\s+\\+[0-9]+[^\\n]*-exec\\s+rm\\b"
   file_types: [bash, markdown]
   description: "find command with -exec flag can execute arbitrary commands on discovered files"
   remediation: "Avoid find -exec with untrusted directories. Use explicit file lists instead"

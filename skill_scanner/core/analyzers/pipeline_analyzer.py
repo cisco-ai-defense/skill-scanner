@@ -848,6 +848,59 @@ class PipelineAnalyzer(BaseAnalyzer):
     # Compound command sequence detection
     # ------------------------------------------------------------------
 
+    # ``find ~/.gstack/sessions -mmin +120 -type f -exec rm {} +`` -- the session-cleanup
+    # preamble of a widely copied skill pack -- was 54% of all COMPOUND_FIND_EXEC flags on
+    # 1.88M real skills (3,014 of 5,581; the judge cleared 94%). Age-bounded removal of
+    # files in a tool's own dot-directory is housekeeping. The grammar is closed: one root
+    # under ~/.<tool>/<subdir> that is not a credential or browser store, files only, an age
+    # predicate, and a plain ``rm``. None of the 33 malicious MaliciousSkillBench
+    # train/validation hits (shell spawns via -exec, SUID chmod, openssl encryption,
+    # file/md5 reconnaissance) has this shape.
+    _SENSITIVE_DOT_DIRS = frozenset(
+        {
+            "ssh", "aws", "gnupg", "kube", "docker", "config", "password-store", "mozilla",
+            "local", "azure", "gcloud", "npmrc", "netrc", "git-credentials", "bash_history",
+        }
+    )  # fmt: skip
+    _CLEANUP_ROOT_RE = re.compile(r"^(?:~|\$HOME|\$\{HOME\})/\.([A-Za-z0-9_-]+)/\S+$")
+    _CLEANUP_FILTER_OPTIONS = frozenset({"-name", "-iname", "-maxdepth", "-mindepth"})
+    _CLEANUP_AGE_OPTIONS = frozenset({"-mmin", "-mtime", "-amin", "-atime", "-cmin", "-ctime"})
+
+    @classmethod
+    def _is_scoped_state_cleanup(cls, line: str) -> bool:
+        command = re.split(r"\s(?:\|\||&&|;|\|)\s|\s2>\S+", line.strip(), maxsplit=1)[0]
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            return False
+        if len(tokens) < 2 or tokens[0] != "find":
+            return False
+        root = cls._CLEANUP_ROOT_RE.match(tokens[1])
+        if root is None or root.group(1).lower() in cls._SENSITIVE_DOT_DIRS:
+            return False
+        index, has_age, files_only, removed = 2, False, False, False
+        while index < len(tokens):
+            token = tokens[index]
+            if token == "-type" and index + 1 < len(tokens) and tokens[index + 1] == "f":
+                files_only = True
+                index += 2
+            elif token in cls._CLEANUP_AGE_OPTIONS and index + 1 < len(tokens):
+                has_age = True
+                index += 2
+            elif token in cls._CLEANUP_FILTER_OPTIONS and index + 1 < len(tokens):
+                index += 2
+            elif token == "-exec" and not removed:
+                end = next((j for j in range(index + 1, len(tokens)) if tokens[j] in {"+", ";"}), None)
+                if end is None:
+                    return False
+                if tokens[index + 1 : end] not in (["rm", "{}"], ["rm", "-f", "{}"]):
+                    return False
+                removed = True
+                index = end + 1
+            else:
+                return False
+        return removed and has_age and files_only
+
     # Known dangerous multi-line command sequences.
     # Each entry: (pattern list, rule_id, severity, category, title, description)
     _COMPOUND_PATTERNS: list[tuple[list[re.Pattern], str, Severity, ThreatCategory, str, str]] = [
@@ -1505,6 +1558,15 @@ class PipelineAnalyzer(BaseAnalyzer):
             block_lines = [ln.strip() for ln in block_text.split("\n")]
             for patterns, rule_id, severity, category, title, description in self._COMPOUND_PATTERNS:
                 matched_lines = self._match_compound_pattern(block_text, patterns)
+                if matched_lines is not None and rule_id == "COMPOUND_FIND_EXEC":
+                    # Every find -exec line in the block counts: one housekeeping line must not
+                    # hide another that is not, and the finding points at the first of those.
+                    active = [
+                        index
+                        for index, line in enumerate(block_lines)
+                        if patterns[0].search(line) and not self._is_scoped_state_cleanup(line)
+                    ]
+                    matched_lines = [active[0]] if active else None
                 if matched_lines is not None:
                     # Filter obvious FP cases for fetch+execute:
                     # - API request examples (curl -X POST /api/...)

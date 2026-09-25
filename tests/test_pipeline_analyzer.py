@@ -570,3 +570,37 @@ class TestInterpreterStdinSemantics:
     )
     def test_interpreter_running_stdin_is_still_a_sink(self, tmp_path, command: str) -> None:
         assert self._taint(tmp_path, command), command
+
+
+class TestScopedStateCleanup:
+    """Age-bounded removal of files in a tool's own dot-directory is housekeeping."""
+
+    @staticmethod
+    def _find_exec(tmp_path, command: str):
+        skill = _make_skill(tmp_path, f"\n```bash\n{command}\n```\n")
+        return [f for f in PipelineAnalyzer().analyze(skill) if f.rule_id == "COMPOUND_FIND_EXEC"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "find ~/.gstack/sessions -mmin +120 -type f -exec rm {} + 2>/dev/null || true",
+            r"find $HOME/.cache/mytool/tmp -type f -mtime +7 -exec rm -f {} \;",
+        ],
+    )
+    def test_cleanup_is_not_a_discovery_and_execution_chain(self, tmp_path, command: str) -> None:
+        assert self._find_exec(tmp_path, command) == []
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            r"find /etc/passwd -exec /bin/bash \;",
+            "find ~/.ssh/old -mmin +120 -type f -exec rm {} +",
+            "find ~/.gstack/sessions -mmin +120 -exec rm -rf {} +",
+            "find ~/.gstack/sessions -type f -exec rm {} +",
+            r"find ~/documents -name '*.pdf' -exec openssl enc -aes-256-cbc -in {} -out {}.enc \;",
+            # A housekeeping line must not hide a second find -exec in the same block.
+            "find ~/.gstack/sessions -mmin +120 -type f -exec rm {} +\n" r"find . -exec /bin/sh -p \; -quit",
+        ],
+    )
+    def test_anything_else_is_still_flagged(self, tmp_path, command: str) -> None:
+        assert self._find_exec(tmp_path, command), command
