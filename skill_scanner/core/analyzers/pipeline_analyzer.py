@@ -39,6 +39,7 @@ from urllib.parse import urlsplit
 
 from ..models import Finding, Severity, Skill, SkillFile, ThreatCategory
 from ..scan_policy import ScanPolicy
+from ..shell_semantics import interpreter_reads_stdin_program
 from ..static_analysis.python_xor_commands import find_decoded_python_commands
 from .base import BaseAnalyzer
 
@@ -653,8 +654,16 @@ class PipelineAnalyzer(BaseAnalyzer):
             if cmd in _TRANSFORM_TAINTS:
                 current_taints.update(_TRANSFORM_TAINTS[cmd])
 
-            # Sink nodes consume tainted data
+            # Sink nodes consume tainted data. A piped interpreter executes that data only
+            # when it reads its program from stdin: ``| python3 -c "json.load(sys.stdin)"``
+            # and ``| python script.py`` read it as input.
             sink_taints = self._sink_taints(cmd)
+            if (
+                i > 0
+                and TaintType.CODE_EXECUTION in sink_taints
+                and not interpreter_reads_stdin_program(cmd, node.arguments)
+            ):
+                sink_taints = sink_taints - {TaintType.CODE_EXECUTION}
             if sink_taints and current_taints:
                 combined = current_taints | sink_taints
 

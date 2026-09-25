@@ -45,6 +45,7 @@ import yaml
 
 from ..models import Finding, Severity, Skill, SkillFile, ThreatCategory
 from ..scan_policy import ScanPolicy
+from ..shell_semantics import interpreter_reads_stdin_program
 from ..static_analysis.bash_taint_tracker import BashTaintType, analyze_bash_script
 from ..static_analysis.javascript_dataflow import analyze_javascript_dataflow
 from ..static_analysis.url_classifier import classify_url, extract_urls
@@ -852,60 +853,8 @@ def _shell_execution_inputs(command: _ShellCommand) -> tuple[str, ...]:
     return (command.raw_executable,)
 
 
-_STDIN_OPERANDS = frozenset({"-", "/dev/stdin", "/dev/fd/0"})
-# Options after which stdin is not the program: an inline program or a module. Per
-# interpreter, because the letters differ -- for a shell ``-e`` is errexit, not eval.
-_SHELL_INTERPRETERS = frozenset({"bash", "sh", "zsh"})
-_INLINE_PROGRAM_OPTIONS: dict[str, frozenset[str]] = {
-    "bash": frozenset({"-c"}),
-    "sh": frozenset({"-c"}),
-    "zsh": frozenset({"-c"}),
-    "python": frozenset({"-c", "-m"}),
-    "python3": frozenset({"-c", "-m"}),
-    "node": frozenset({"-e", "--eval", "-p", "--print"}),
-    "perl": frozenset({"-e", "-E"}),
-    "ruby": frozenset({"-e"}),
-}
-# Options that consume the next argument, so it is not mistaken for a script operand.
-_INTERPRETER_VALUE_OPTIONS = frozenset({"-o", "+o", "-O", "+O", "-W", "-X", "-r", "--require", "--input-type"})
-
-
 def _reads_program_from_stdin(command: _ShellCommand) -> bool:
-    """Whether a piped interpreter runs its standard input as a program.
-
-    ``curl URL | bash`` and ``| python -`` execute what was fetched. ``| python -m
-    json.tool``, ``| python script.py`` and ``| node -e '...'`` do not: the program comes
-    from a module, a file or the command line, and stdin is only the data it reads. On a
-    labelled benchmark 18 of 31 benign network-to-execution flags were ``curl ... |
-    python -m json.tool``.
-    """
-
-    inline = _INLINE_PROGRAM_OPTIONS.get(command.executable)
-    if inline is None:
-        return True
-    arguments = list(command.arguments)
-    index = 0
-    while index < len(arguments):
-        argument = arguments[index]
-        if argument == "-s" and command.executable in _SHELL_INTERPRETERS:
-            return True  # the program is stdin; the operands are its arguments
-        # Exact, or attached to its value (python -mjson.tool, bash -xc 'cmd').
-        if argument in inline or (
-            argument.startswith("-")
-            and not argument.startswith("--")
-            and any(option[1] in argument[1:] for option in inline if len(option) == 2)
-        ):
-            return False
-        if argument in _INTERPRETER_VALUE_OPTIONS:
-            index += 2
-            continue
-        if argument == "--":
-            index += 1
-            break
-        if not argument.startswith(("-", "+")) or argument in _STDIN_OPERANDS:
-            return argument in _STDIN_OPERANDS
-        index += 1
-    return index >= len(arguments) or arguments[index] in _STDIN_OPERANDS
+    return interpreter_reads_stdin_program(command.executable, command.arguments)
 
 
 def _dotted_name(node: ast.AST) -> str:
