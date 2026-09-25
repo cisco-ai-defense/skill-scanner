@@ -132,7 +132,10 @@ def judge_record(record: Any, corpus: str, *, model: str, base_url: str, provide
                     "severity": str(getattr(f.severity, "value", f.severity)).upper(),
                     "file_path": f.file_path,
                     "line_number": f.line_number,
-                    "confidence": (f.metadata or {}).get("confidence"),
+                    # The model's own label and confidence; the runner previously read a key the
+                    # analyzer never sets, so every stored confidence was empty.
+                    "confidence": (f.metadata or {}).get("llm_confidence"),
+                    "llm_verdict": (f.metadata or {}).get("llm_verdict"),
                 }
                 for f in real
             ],
