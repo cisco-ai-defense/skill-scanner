@@ -47,15 +47,13 @@ def _finding(severity: str = "LOW") -> dict:
     return {"severity": severity, "verdict": "CONTEXTUAL_RISK", "title": "note"}
 
 
-class TestRepairIsOffByDefault:
-    def test_default_leaves_the_contradiction_in_place(
-        self, analyzer: LLMAnalyzer, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+class TestRepairIsOnByDefault:
+    def test_default_repairs_the_contradiction(self, analyzer: LLMAnalyzer, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT", raising=False)
         payload = {"verdict": "SAFE", "findings": [_finding()]}
         _prepared(analyzer)._repair_primary_verdict(payload)
-        assert payload["verdict"] == "SAFE"
-        assert analyzer.verdict_repairs == 0
+        assert payload["verdict"] == "SUSPICIOUS"
+        assert analyzer.verdict_repairs == 1
 
     def test_strict_validation_still_rejects_it(self, analyzer: LLMAnalyzer) -> None:
         payload = {
@@ -67,8 +65,8 @@ class TestRepairIsOffByDefault:
         with pytest.raises(ValueError, match="SAFE package verdict requires an empty findings array"):
             analyzer._validate_primary_contract(payload)
 
-    @pytest.mark.parametrize("value", ["0", "false", "no", "off", "", "maybe"])
-    def test_unrecognised_flag_values_do_not_enable_it(
+    @pytest.mark.parametrize("value", ["0", "false", "no", "off", "OFF"])
+    def test_explicit_off_values_restore_the_strict_path(
         self, analyzer: LLMAnalyzer, monkeypatch: pytest.MonkeyPatch, value: str
     ) -> None:
         monkeypatch.setenv("SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT", value)
@@ -82,8 +80,8 @@ class TestRepairWhenEnabled:
     def _enable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT", "1")
 
-    @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on"])
-    def test_recognised_flag_values_enable_it(
+    @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on", "", "maybe"])
+    def test_any_other_value_keeps_it_on(
         self, analyzer: LLMAnalyzer, monkeypatch: pytest.MonkeyPatch, value: str
     ) -> None:
         monkeypatch.setenv("SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT", value)

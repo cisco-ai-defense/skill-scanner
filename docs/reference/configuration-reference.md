@@ -32,7 +32,7 @@ Primary settings for the LLM semantic analyzer.
 | `SKILL_SCANNER_LLM_MAX_TOKENS` | Positive integer output-token budget. Overrides the active policy's `llm_analysis.max_output_tokens` value. | `16384` |
 | `SKILL_SCANNER_LLM_REASONING_EFFORT` | Optional reasoning-depth control: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unset preserves the provider default. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. | `low` |
 | `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` | Skip json_schema and start in plain JSON mode for incompatible proxies. | `true` |
-| `SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT` | Opt-in repair for a self-contradicting model response. Some models return a `SAFE` package verdict together with a non-empty findings array, which the parser otherwise rejects, failing the analysis for that skill. When enabled the verdict is escalated to `SUSPICIOUS` and the findings are kept. Escalate-only: it never downgrades a verdict, so it cannot hide a detection. Off by default because it changes a model answer. | `1` |
+| `SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT` | Repair for a self-contradicting model response, **on by default**. Some models return a `SAFE` package verdict together with a non-empty findings array, which the strict parser rejects, discarding the whole analysis -- on benign skills far more often than malicious ones, so the skill goes un-analysed and passes the gate. The verdict is escalated to `SUSPICIOUS` and the findings are kept. Escalate-only: it never downgrades a verdict, so it cannot hide a detection. Set `0`, `false`, `no` or `off` to restore the strict path. | `0` |
 
 ## Meta Analyzer
 

@@ -912,19 +912,21 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
     def _verdict_repair_enabled() -> bool:
         """Whether to escalate a self-contradicting SAFE verdict instead of failing.
 
-        Off by default so product behaviour is unchanged: a model that reports
-        ``SAFE`` while listing findings has contradicted itself, and failing
-        loudly is the safe default.
+        On by default; ``SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT=0`` (or ``false``,
+        ``no``, ``off``) restores the strict path.
 
-        Evaluation harnesses opt in because the strict path discards the whole
-        analysis, and that discard is not label-neutral. Measured on Gemma 4
-        against MaliciousSkillBench, the contradiction appeared on 22.5% of
-        benign packages and 0% of malicious ones, which silently suppresses the
-        analyzer exactly where it would produce false positives and flatters its
-        measured precision.
+        A model that reports ``SAFE`` while listing findings has contradicted itself, and the
+        strict path discards the whole analysis. That discard is not label-neutral: measured
+        on Gemma 4 against MaliciousSkillBench it hit 22.5% of benign packages and 0% of
+        malicious ones, so the analyzer went silent exactly where it would produce false
+        positives, flattering its measured precision -- and an un-analysed skill passes the
+        gate. Repairing is escalate-only, so it cannot hide a detection. With the current
+        prompt it turned 58 train/validation and 13 test failures into analyses, all of
+        them, with recall unchanged and the MEDIUM+ false-positive rate moving at most
+        0.4 points, because the repaired findings are almost all LOW.
         """
         raw = os.getenv("SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT", "")
-        return raw.strip().lower() in {"1", "true", "yes", "on"}
+        return raw.strip().lower() not in {"0", "false", "no", "off"}
 
     def _repair_optional_taxonomy(self, analysis_result: dict[str, Any]) -> None:
         """Clear an invalid optional AISubtech code instead of rejecting the response.
