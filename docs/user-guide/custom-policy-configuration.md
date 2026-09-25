@@ -92,6 +92,13 @@ skill-scanner configure-policy -o my_policy.yaml
 | **strict** | shadow / on | Narrow allowlists, no CEL suppression, lower thresholds | Auditing untrusted / external skills, compliance |
 | **balanced** | shadow / on | Sensible defaults, moderate filtering | CI/CD pipelines, everyday scanning |
 | **permissive** | off / off | Broad allowlists, aggressive suppression | Trusted internal skills, dev-time scanning |
+| **low-noise** | shadow / on | `balanced`, with the 11 rules that alone produced the most judge-cleared flags on real skills reported at LOW | Everyday scanning where alert volume matters; costs 5 of 1,653 malicious detections on MaliciousSkillBench train/validation |
+| **quiet** | shadow / on | `low-noise` plus 8 more demotions and a LOW cap on LLM findings the model labels `CONTEXTUAL_RISK` | Triage queues limited by review capacity; about 1.3% of real skills flagged by the rules |
+
+`low-noise` and `quiet` were chosen from data -- how many judge-cleared real-skill flags each rule
+alone causes, against how many malicious development packages it alone detects -- and demote rather
+than disable: those findings are still reported, at LOW. The measurements are in
+[Measured results](../reference/measured-results.md#policy-packs-instead-of-knobs).
 
 Use a preset by name:
 
@@ -560,6 +567,7 @@ llm_analysis:
   meta_budget_multiplier: 3.0          # Meta-analyzer multiplies above limits by this factor
   trusted_reference_domains:           # Org domains trusted for transitive trust / supply chain
     - "gitlab.internal.example.com"
+  contextual_risk_max_severity: ""     # e.g. "LOW": cap findings the model labels CONTEXTUAL_RISK
 ```
 
 **Impact:**
@@ -567,6 +575,7 @@ llm_analysis:
 - `max_output_tokens` controls the output token budget for both the LLM analyzer and meta-analyzer. The CLI flag `--llm-max-tokens` and API `llm_max_tokens` field override environment variables; `SKILL_SCANNER_META_LLM_MAX_TOKENS` (meta only) and `SKILL_SCANNER_LLM_MAX_TOKENS` override this policy value. All values must be positive integers. If a provider reports an output limit, the scanner emits an explicit truncation diagnostic instead of treating partial JSON as an ordinary parse error.
 - The meta-analyzer applies `meta_budget_multiplier` on top of the base input limits. With the defaults, the meta-analyzer gets 60K instruction, 45K per file, and 300K total.
 - Increase these values for skills with large codebases or extensive instructions. Decrease them to reduce LLM API costs.
+- `contextual_risk_max_severity`: every LLM finding carries the model's own label, `TRUE_POSITIVE` (the cited evidence establishes the behavior) or `CONTEXTUAL_RISK` (a risky capability whose intent, reach or execution is not established). Setting this to `LOW` reports contextual findings at LOW, so only established behavior gates; the original severity is kept in `llm_severity_before_cap`. On MaliciousSkillBench it cut the judge's MEDIUM+ false-positive rate by two thirds or more, at a recall cost of 5 points on train/validation and 16 on the test split. Empty by default; on in the `quiet` preset.
 - `trusted_reference_domains`: LLM findings (transitive trust, supply chain) that reference only URLs or domains in this list are demoted to LOW severity. Use this for your organization's internal infrastructure — Git repositories, package registries, documentation portals, artifact stores — that the LLM would otherwise flag as untrusted external sources. Empty by default (all external references flagged normally).
 
 </details>
@@ -717,7 +726,7 @@ skill-scanner configure-policy -o my_policy.yaml
 
 The configurator:
 
-1. Lets you pick a starting preset (strict / balanced / permissive)
+1. Lets you pick a starting preset (strict / balanced / permissive / low-noise / quiet)
 2. Names your policy
 3. Walks through each section — you choose which to customise
 4. Shows a summary for review

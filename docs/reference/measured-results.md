@@ -470,6 +470,12 @@ mean-probe screens are weaker (FPR 20.4% and 19.0%) and are not recommended.
 This is one corpus, split in half. It has not been measured on the other labelled corpora, so
 the threshold should not be assumed to transfer.
 
+**This threshold was selected on test members.** MaliciousSkillBench's source-disjoint split used
+here is the benchmark's frozen test partition, and the dataset forbids selecting thresholds on
+frozen test members. Selecting on one half and reporting on the other keeps the reported half
+unseen, but the half used for selection is test data. The cascade figures above should be read as
+exploratory until the threshold is re-selected on the train/validation partition.
+
 ## Where the deterministic false positives come from
 
 Earlier work could only say that rule-level suppression buys at most +0.2 F1. That analysis
@@ -666,13 +672,161 @@ would keep the false positives that come with it.
   credentials) and only 18% of placeholder passwords on placeholder hosts. A hardcoded development
   credential is still one, so this is left to policy.
 
+### A second pass, from reading the flags one by one
+
+Forty records per rule -- thirty the judge cleared, ten it agreed with -- were rescanned and read
+line by line. Three rules had a shape that separates cleanly; each change was then measured on every
+real skill it could touch and on MaliciousSkillBench train/validation (6,594 packages; the frozen
+test split was not used to design anything in this pass).
+
+| Rule | Flags removed on real skills (judge cleared) | Flags kept (judge cleared) |
+|---|---|---|
+| `CORRELATED_SENSITIVE_NETWORK_FLOW` | 1,484 (**88%**) | 4,237 (61%) |
+| `PROMPT_INJECTION_IGNORE_INSTRUCTIONS` | 1,405 (**88%**) | 2,045 (49%) |
+| `ACTIVE_DYNAMIC_EXECUTION` | 182 (**91%**) | 6,968 (65%) |
+
+2,705 records leave MEDIUM+ (the judge cleared 89% of them) and none moves up, taking the full-corpus
+MEDIUM+ rate from 2.466% to **2.322%**. On train/validation recall moves 31.53% → 31.45% (four
+malicious packages whose only finding was a credential sent to its own provider or a backticked
+list item) and FPR 1.12% → 1.05%.
+
+- **A credential authenticating to its own service is not exfiltration.** 29 of 30 judge-cleared
+  samples were `Authorization: Bearer $KEY` to the key's own API, `-u admin:$PASSWORD` to localhost,
+  or `?key=$KEY`. The analyzer already exempted provider-bound authentication, but only for
+  `os.environ.get()`: the subscript form `os.environ['OPENROUTER_API_KEY']` -- the usual way to read
+  a key -- never bound its provider, which is a bug and is fixed. Loopback destinations, vendor key
+  headers (`X-N8N-API-KEY`, `Ocp-Apim-Subscription-Key`) and query-parameter keys now count as
+  authentication; the provider binding still decides, so the same header to another host stays
+  flagged. A fourth relaxation -- trusting an unresolved endpoint variable paired with a
+  same-vendor key -- was measured and **rejected**: a malicious development family ships its own
+  config file and tells the agent to source it, so the package does control that endpoint.
+- **A short prose quotation of "ignore previous instructions" is a mention.** Of this rule's
+  real-world flags, quoted occurrences were 64% and the judge cleared 86% of them; bare imperatives
+  were 36% cleared. Of 35 malicious development hits, 30 are bare. The exclusion covers only a
+  quotation that closes within a few words in prose: a quoted *value* (after `:` or `=`, as in a
+  JSON field or HTTP header) or a quotation that carries on past a sentence break still fires. A
+  first, broader version cut in-page prompt-injection recall on page text from 15,369 to 9,619 raw
+  hits -- injected headers such as `"x-ai": "Ignore all previous instructions. ..."` -- and was
+  narrowed until it moved that population by one hit (15,369 → 15,368). The rule's hash-bound
+  evidence was re-verified: disregard-branch hits 11 → 11, benign 0 → 0, NotInject 0 → 0; the new
+  exclusion and these measurements are recorded in the evidence file.
+- **Methods and checklist prohibitions are not calls.** `image.eval(...)` and `session.exec(...)`
+  are methods, and "— no `os.system(user_input)`" is a prohibition. A broader change -- ignoring
+  `subprocess.run([...])` with a literal non-interpreter program -- was measured and **rejected**:
+  it removed 12 of 180 malicious development hits, which use exactly that form for persistence
+  (`systemctl enable`), reconnaissance (`netstat`, `git config --list`) and exfiltration
+  (`gsutil cp`). Syntax cannot separate those; the program's purpose does.
+
+Exact duplicates do not inflate these rates: only 6.2% of flagged records belong to a family of
+identical `SKILL.md` files, and the largest family has seven copies.
+
 ### What remains
 
-By the judge's account the largest remaining sources, each above 1,000 MEDIUM+ records, are
-`CORRELATED_SENSITIVE_NETWORK_FLOW` (5,721 records, judge clears 66%), `ACTIVE_DYNAMIC_EXECUTION`
-(7,150, 59%), `COMPOUND_FIND_EXEC` (5,581, 67%) and `PROMPT_INJECTION_IGNORE_INSTRUCTIONS` (3,450,
-55%). None has a single shape that separates, and the first two carry most of the labelled recall
-(88% and 82% precision on the source-disjoint split), so they are not changed on the judge's word.
+The largest remaining sources are `ACTIVE_DYNAMIC_EXECUTION` (6,968 records), `COMPOUND_FIND_EXEC`
+(5,581), `CORRELATED_NETWORK_EXECUTION_FLOW` (7,556) and `CORRELATED_SENSITIVE_NETWORK_FLOW` (4,237).
+They are also where the labelled recall lives: demoting any one of them costs 16 to 181 malicious
+development detections. They are left to the policy packs below rather than changed for everyone.
+
+## The LLM judge on every real skill
+
+Gemma 4 26B-A4B, served locally, read 1,871,285 of the 1,876,769 gitskills records (99.7%); 5,484
+could not be analysed and are excluded, not counted as clean. A further 96,128 were analysed with
+partial coverage: the shipped prompt budget left at least one file out, and the judge still
+returned a verdict on the rest.
+
+| Package verdict | Skills | Share |
+|---|---|---|
+| SAFE | 1,514,191 | 80.9% |
+| SUSPICIOUS | 322,027 | 17.2% |
+| MALICIOUS | 35,067 | 1.9% |
+
+It flags **12.5%** of real skills at MEDIUM or above -- five times the tuned deterministic rate --
+and the two layers barely overlap (Cohen's κ 0.076): 15,851 records are flagged by both, 29,214 only
+by the rules, 218,671 only by the judge. Reading its false positives record by record, almost all
+are `CONTEXTUAL_RISK` findings about what a skill is *for*: a browser-automation skill "can execute
+arbitrary JavaScript", a payments skill "can execute financial transactions", a skill that needs an
+API key "exposes credentials", a documented `npm install` "introduces supply-chain risk". The
+largest single cell on real skills is `unauthorized_tool_use` / `CONTEXTUAL_RISK`.
+
+### A prompt that separates capability from misuse
+
+The threat-analysis prompt now lists what is not a finding on its own -- the capability the skill
+exists to provide, the breadth of declared permissions, installing dependencies from a registry,
+requiring API keys, hypothetical injection, quality issues -- and, equally explicitly, the misuse to
+report even when it is phrased as routine: a bundled or downloaded script the agent must run
+automatically or on a trigger, instructions to hide actions or override other instructions, and
+data sent where the stated purpose does not need it.
+
+The prompt was written from real skills and MaliciousSkillBench train/validation (600 malicious,
+1,338 benign), then evaluated once on the frozen test split. A first version that also capped
+`CONTEXTUAL_RISK` severity lost eight points of recall -- the model downgraded genuine "run this
+setup script" instructions -- and was replaced.
+
+| MEDIUM+, Gemma 4 via Bedrock | Recall | FPR | Precision | F1 |
+|---|---|---|---|---|
+| Train/validation, shipped prompt | 86.2% | 28.2% | 57.8% | 69.2% |
+| Train/validation, new prompt | 88.8% | 23.6% | 62.8% | 73.6% |
+| **Test (held out), shipped prompt** | 51.6% | 16.1% | 83.1% | 63.7% |
+| **Test (held out), new prompt** | **65.8%** | **12.5%** | 89.0% | **75.7%** |
+
+On 2,000 uniformly sampled real skills the MEDIUM+ flag rate falls from 12.8% to 10.5%. Analyses
+lost to the verdict/findings consistency contract halve on the test split (27 → 13).
+
+### The judge's own verdict is a strong gate
+
+Each finding carries the model's `TRUE_POSITIVE` or `CONTEXTUAL_RISK` label. Counting only
+`TRUE_POSITIVE` findings toward MEDIUM+ -- available as `llm_analysis.contextual_risk_max_severity:
+LOW`, which reports contextual findings at LOW -- is an operating point, not a free win:
+
+| New prompt, contextual findings capped at LOW | Recall | FPR | Real-skill flag rate |
+|---|---|---|---|
+| Train/validation | 83.8% | 6.9% | |
+| Test (held out) | 49.6% | 4.2% | |
+| 2,000 real skills | | | 3.0% |
+
+It cuts the false-positive rate by two thirds or more on every population, and costs 5 points of
+recall on train/validation but 16 on the test split, so it ships off by default and on in the
+`quiet` pack.
+
+## Policy packs instead of knobs
+
+The scan policy has hundreds of settings. Most users need one decision: how much review capacity
+they have. Two presets, chosen from data rather than by hand, sit beside `strict`, `balanced` and
+`permissive`:
+
+- **Selection.** Every rule was scored by how many real skills it alone drives to MEDIUM+ that the
+  judge also cleared, against how many malicious train/validation packages it alone detects. Rules
+  were demoted greedily in that order, and the path was cut at two points.
+- **Demotion, not deletion.** A demoted rule is reported at LOW: still visible, not gating.
+
+| Preset | Rules reported at LOW | Real-skill MEDIUM+ flag rate | Train/validation recall | FPR |
+|---|---|---|---|---|
+| `balanced` (default) | 0 | 2.322% | 31.45% | 1.05% |
+| `low-noise` | 11 | 2.101% | 31.35% | 1.05% |
+| `quiet` | 19, plus the LLM contextual cap | 1.331% | 29.78% | 0.15% |
+
+`low-noise` costs five malicious detections of 1,653 for a 9.5% cut in real-world flags. `quiet`
+is for triage queues where review capacity is the binding constraint. Past that point every
+further demotion costs dozens of detections -- `ACTIVE_DYNAMIC_EXECUTION` alone carries 109 -- so
+the curve is cut there. Use them with `--policy low-noise` or `--policy quiet`, or pick them in
+`configure-policy`.
+
+## Evaluation hygiene
+
+- **Endpoint protection edits a corpus silently.** Microsoft Defender quarantined `SKILL.md` files
+  from local copies of MaliciousSkillBench -- five from the test split, nine from a development
+  sample within hours of copying -- so a malicious record became an empty one and local runs
+  understated recall. All figures in this and later sections were produced on a Linux analysis
+  host; anyone reproducing them should keep sample corpora off endpoint-protected machines, and
+  check record counts against the manifest before believing a result.
+- **Frozen test members.** Two earlier steps used the test split in ways its terms forbid: the
+  cascade threshold above was selected on half of it, and the `curl ... | python -m json.tool`
+  finding behind the stdin-program change was first seen in its false positives. The change is
+  independently supported on real skills (the judge cleared 55% of the removed flags against 29% of
+  those kept), but its test-split improvement is not an unbiased estimate. Everything in the second
+  pass, the new prompt and the policy packs was designed on train/validation and real skills only.
+- **`msb-balanced-800` overlaps the test split.** 137 of its 800 records are source-disjoint test
+  members, so its figures are not held out and it was not used to select anything.
 
 ## What rule-level suppression cannot fix
 
