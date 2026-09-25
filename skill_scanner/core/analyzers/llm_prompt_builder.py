@@ -417,6 +417,10 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
                     position += 1
                     continue
 
+                if line.startswith("//", position):
+                    filtered[position:] = " " * (len(line) - position)
+                    break
+
                 if char in ("'", '"', "`"):
                     quote = char
                     position += 1

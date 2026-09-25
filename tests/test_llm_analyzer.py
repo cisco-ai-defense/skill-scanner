@@ -877,6 +877,17 @@ class TestCodeFileFormatting:
         assert '"/* not a comment */"' in excerpt
         assert 'eval("real")' in excerpt
 
+    def test_javascript_line_comment_block_marker_does_not_hide_code(self):
+        """Ignore block-comment markers after // so later executable code remains selectable."""
+        excerpt = LLMAnalyzer(api_key="test-key").prompt_builder._extract_oversized_code(
+            "// /* not a block comment\neval('real');",
+            max_chars=100,
+            line_comment="//",
+        )
+
+        assert "eval('real')" in excerpt
+        assert "source line 2" in excerpt
+
     def test_non_javascript_excerpt_filtering_does_not_track_block_comments(self):
         """Keep prior selection behavior for non-JavaScript comment styles."""
         excerpt = LLMAnalyzer(api_key="test-key").prompt_builder._extract_oversized_code(
