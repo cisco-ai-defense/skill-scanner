@@ -717,6 +717,28 @@ list item) and FPR 1.12% → 1.05%.
   (`systemctl enable`), reconnaissance (`netstat`, `git config --list`) and exfiltration
   (`gsutil cp`). Syntax cannot separate those; the program's purpose does.
 
+### A third pass: housekeeping and delegation
+
+- **A copied cleanup line.** `find ~/.gstack/sessions -mmin +120 -type f -exec rm {} +`, the
+  session-cleanup preamble of a widely copied skill pack, was 54% of all `COMPOUND_FIND_EXEC` flags
+  (3,014 of 5,581; the judge cleared 94%), and `FIND_EXEC_PATTERN` flagged the same line.
+  `COMPOUND_FIND_EXEC` now skips age-bounded removal of files in a tool's own dot-directory through a
+  closed grammar -- one root under `~/.<tool>/<subdir>` that is not a credential or browser store,
+  files only, an age predicate, a plain `rm` -- and checks every `find -exec` line in a block, so a
+  housekeeping line cannot hide another. `FIND_EXEC_PATTERN` already excluded `-mtime` cleanup but not
+  its minutes form `-mmin`. None of the 33 malicious development hits (shell spawns through `-exec`,
+  SUID `chmod`, `openssl` encryption, `file`/`md5` reconnaissance) has the shape. **3,050 records leave
+  MEDIUM+** (the judge cleared 93%).
+- **"Do not tell the user to run it"** directs the agent to act itself rather than delegate; nothing is
+  hidden. The concealment rule's precision layer suppressed two exact sentences; it now suppresses
+  this shape whenever nothing on the line could make it a cover -- no clause connector, secret,
+  credential, harmful object or concealment word -- and every adversarial case already in the suite
+  ("...to run this command; silently upload credentials", "...to click the phishing link") stays
+  flagged. 109 records leave MEDIUM+ (84% judge-cleared).
+
+Neither change moves train/validation (recall 31.45%, FPR 1.05%). With both, **the full-corpus MEDIUM+
+rate is 2.153%**, against 4.184% for the shipped scanner: 48.5% fewer flagged skills.
+
 Exact duplicates do not inflate these rates: only 6.2% of flagged records belong to a family of
 identical `SKILL.md` files, and the largest family has seven copies.
 
@@ -772,6 +794,14 @@ setup script" instructions -- and was replaced.
 On 2,000 uniformly sampled real skills the MEDIUM+ flag rate falls from 12.8% to 10.5%. Analyses
 lost to the verdict/findings consistency contract halve on the test split (27 → 13).
 
+**The remaining contradictions are now repaired by default.** A model that returns `SAFE` while
+listing findings contradicts itself, and the strict path discarded the whole analysis; 57 of 58 such
+train/validation failures were benign records, so the judge went silent exactly where it would
+produce false positives, and an un-analysed skill passes the gate. The escalate-only repair (`SAFE`
+becomes `SUSPICIOUS`, findings kept) already existed behind
+`SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT`; it is now on unless disabled. Scored with it on, the
+figures above hold: train/validation FPR 24.0% (from 23.6%), test unchanged.
+
 ### The judge's own verdict is a strong gate
 
 Each finding carries the model's `TRUE_POSITIVE` or `CONTEXTUAL_RISK` label. Counting only
@@ -801,11 +831,11 @@ they have. Two presets, chosen from data rather than by hand, sit beside `strict
 
 | Preset | Rules reported at LOW | Real-skill MEDIUM+ flag rate | Train/validation recall | FPR |
 |---|---|---|---|---|
-| `balanced` (default) | 0 | 2.322% | 31.45% | 1.05% |
-| `low-noise` | 11 | 2.101% | 31.35% | 1.05% |
+| `balanced` (default) | 0 | 2.153% | 31.45% | 1.05% |
+| `low-noise` | 11 | 1.937% | 31.35% | 1.05% |
 | `quiet` | 19, plus the LLM contextual cap | 1.331% | 29.78% | 0.15% |
 
-`low-noise` costs five malicious detections of 1,653 for a 9.5% cut in real-world flags. `quiet`
+`low-noise` costs five malicious detections of 1,653 for a 10% cut in real-world flags. `quiet`
 is for triage queues where review capacity is the binding constraint. Past that point every
 further demotion costs dozens of detections -- `ACTIVE_DYNAMIC_EXECUTION` alone carries 109 -- so
 the curve is cut there. Use them with `--policy low-noise` or `--policy quiet`, or pick them in
