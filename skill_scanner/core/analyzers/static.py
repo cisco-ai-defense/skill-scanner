@@ -2516,7 +2516,12 @@ class StaticAnalyzer(BaseAnalyzer):
             if status == "pinned":
                 continue
 
-            severity = Severity.LOW if status == "wildcard" else Severity.MEDIUM
+            # LOW whether unpinned or wildcard. An unpinned dependency is a reproducibility
+            # weakness, not evidence of malice: the supply-chain threat signals -- a known
+            # vulnerable version, an archive carrying an executable, extract-then-execute --
+            # are separate rules. Across 1,334 real published skills this rule flagged at
+            # MEDIUM, an LLM judge found nothing concerning in 90.2%.
+            severity = Severity.LOW
             if status == "wildcard":
                 detail = f"'{package_name}' is pinned to a wildcard version range"
             else:

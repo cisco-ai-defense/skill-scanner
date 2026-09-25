@@ -785,7 +785,8 @@ rules:
     source: python
     analyzer: static
     category: supply_chain_attack
-    # Base severity; wildcard version ranges are demoted to LOW at runtime.
+    # Maximum severity. Emitted at LOW for both unpinned and wildcard ranges: an
+    # unpinned dependency is hygiene, and supply-chain threat signals are separate rules.
     severity: MEDIUM
     allowed_severity_demotions:
       - LOW
