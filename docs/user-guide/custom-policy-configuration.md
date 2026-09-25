@@ -271,7 +271,7 @@ pipeline:
     - "sh.rustup.rs"
     - "install.mycompany.com"
 
-  benign_pipe_targets:       # Regex patterns for safe pipe chains (full pipeline matched)
+  benign_pipe_targets:       # Regex patterns for safe pipe chains (matched from the start)
     - 'ps\s.*\|\s*grep'
     - 'mycommand\s.*\|\s*jq'
 
@@ -290,7 +290,12 @@ pipeline:
 
 **Impact:**
 - `known_installer_domains`: Matching `curl|sh` patterns are flagged at LOW instead of HIGH.
-- `benign_pipe_targets`: Matching pipe chains are suppressed entirely.
+- `benign_pipe_targets`: Matching pipe chains are suppressed entirely. A pattern is matched from the
+  start of the chain, and whatever follows the match may only be the last command's own arguments:
+  `mycommand\s.*\|\s*jq` covers `mycommand --json | jq '.items[] | .name'`, but a later pipe, `;`,
+  `&&`, redirection, or command substitution (including `$(...)` inside double quotes) keeps the
+  finding. A match must also end at a word boundary, so `jq` does not cover `jqsh`. Redirects to
+  `/dev/null` are allowed.
 - `doc_path_indicators`: Findings in doc paths get reduced severity.
 - `dedupe_equivalent_pipelines`: De-dupes equivalent pipeline chains found by multiple extraction paths.
 - `compound_fetch_*` knobs: Tune fetch-and-execute detection strictness and false-positive suppression.

@@ -228,6 +228,11 @@ _DOWNLOAD_NO_ARGUMENT_OPTIONS = {
 }
 
 
+# Redirecting to /dev/null discards output rather than writing it anywhere, so it is not a
+# sink and does not stop an otherwise benign command from being recognised as one.
+_DEV_NULL_REDIRECT_RE = re.compile(r"(?:\s|^)(?:[12]?>|&>)\s*/dev/null\b|\s2>&1\b")
+
+
 class PipelineAnalyzer(BaseAnalyzer):
     """Analyzes command pipelines for multi-step attack patterns."""
 
@@ -383,9 +388,57 @@ class PipelineAnalyzer(BaseAnalyzer):
         return _SINK_PATTERNS.get(command, set())
 
     def _matches_benign_pipeline(self, raw: str) -> bool:
-        """Match a benign rule only when it covers the complete pipeline."""
+        """Match a benign rule only when it covers the complete pipeline.
+
+        A rule covers the pipeline when it matches from the start and whatever follows is
+        only the final command's own arguments. Requiring a match of every character, as
+        this once did, meant ``curl\\s.*\\|\\s*jq`` matched a bare ``curl url | jq`` but never
+        ``curl -s url | jq '.[] | .name'``, so the shipped benign list almost never applied
+        to a real command. What it guards against is kept: a benign prefix still cannot
+        hide a later stage, because any further pipe, chaining, redirection or command
+        substitution after the match rejects it.
+        """
         candidate = raw.strip()
-        return any(pattern.fullmatch(candidate) for pattern in self.policy._compiled_benign_pipes)
+        for pattern in self.policy._compiled_benign_pipes:
+            if pattern.fullmatch(candidate):
+                return True
+            match = pattern.match(candidate)
+            if match is None:
+                continue
+            rest = candidate[match.end() :]
+            # The match must end at a token boundary: "jq" must not accept "jqx".
+            if rest and not rest[0].isspace():
+                continue
+            if self._has_shell_control(_DEV_NULL_REDIRECT_RE.sub(" ", rest)):
+                continue
+            return True
+        return False
+
+    @staticmethod
+    def _has_shell_control(text: str) -> bool:
+        """Whether ``text`` contains shell control outside single quotes.
+
+        Pipes, chaining, redirection and backticks count when unquoted. Inside double
+        quotes the shell still expands ``$(...)`` and backticks, so those count there too.
+        """
+        in_single = in_double = False
+        index = 0
+        while index < len(text):
+            char = text[index]
+            if char == "\\" and not in_single:
+                index += 2
+                continue
+            if char == "'" and not in_double:
+                in_single = not in_single
+            elif char == '"' and not in_single:
+                in_double = not in_double
+            elif not in_single:
+                if char == "`" or text.startswith("$(", index):
+                    return True
+                if not in_double and char in "|;&<>":
+                    return True
+            index += 1
+        return False
 
     @staticmethod
     def _split_pipeline(raw: str) -> list[str]:
