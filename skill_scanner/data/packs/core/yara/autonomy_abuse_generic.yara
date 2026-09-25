@@ -25,6 +25,13 @@ rule autonomy_abuse_generic{
         // Infinite retry without user control
         $infinite_retry = /\b(retry (indefinitely|forever|until success)|keep (trying|retrying) (forever|indefinitely)|never (stop|give up) (trying|retrying))\b/i
 
+        // The same phrases negated are the opposite instruction -- "do not proceed without
+        // user confirmation", "don't retry forever" -- and are how most real skills use them.
+        // Each negated occurrence also matches the plain string, so the plain string counts
+        // only when it occurs more often than its negation.
+        $skip_confirmation_negated = /(\bnot|\bnever|n't|\bcannot)\s+proceed without (asking )?(the )?(user|human)\b/i
+        $infinite_retry_negated = /(\bnot|\bnever|n't|\bcannot)\s+(retry (indefinitely|forever|until success)|keep (trying|retrying) (forever|indefinitely))\b/i
+
         // Self-modification capabilities
         $self_modify = /\b(modify (my own|this skill's|its own) (code|behavior|instructions?)|rewrite (myself|itself|this skill)|update (my own|its own) (logic|rules))\b/i
 
@@ -51,9 +58,9 @@ rule autonomy_abuse_generic{
     condition:
         // High confidence - always flag
         (
-            $skip_confirmation or
+            #skip_confirmation > #skip_confirmation_negated or
             $override_user or
-            $infinite_retry or
+            #infinite_retry > #infinite_retry_negated or
             $self_modify or
             $privilege_escalation or
             $blind_continue
