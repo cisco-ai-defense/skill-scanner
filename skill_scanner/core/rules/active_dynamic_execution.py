@@ -80,7 +80,7 @@ _ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 _SCOPED_PROHIBITION_RE = re.compile(
-    r"(?:^|[.;:!?]\s*)(?:do\s+not|don't|never|must\s+not|should\s+not|avoid|forbid(?:den)?|no)\s+"
+    r"(?:^|[.;:!?,\u2014\u2013]\s*|\s-\s+)(?:do\s+not|don't|never|must\s+not|should\s+not|avoid|forbid(?:den)?|no)\b\s*"
     r"(?:(?:calls?\s+to|execution\s+of|invocation\s+of|use\s+of)\s+)?"
     r"(?:(?:ever\s+)?(?:call|execute|invoke|run|use)(?:ing)?\s*)?(?:the\s*)?$",
     re.IGNORECASE,
@@ -1786,6 +1786,9 @@ def _inline_calls(instruction: _InstructionLine) -> list[_ExecutionCall]:
             continue
         seen_spans.add(span)
 
+        # ``image.eval(...)`` and ``session.exec(...)`` are methods, not the builtins.
+        if candidate.start() > 0 and line[candidate.start() - 1] == ".":
+            continue
         prefix = line[max(0, candidate.start() - 160) : candidate.start()]
         in_inline_code = any(start <= candidate.start() and end_pos >= end for start, end_pos in inline_ranges)
         outside = (line[: candidate.start()] + line[end:]).strip(" `\t-*+0123456789.)")

@@ -849,3 +849,15 @@ def test_empty_calls_in_code_and_prose_parentheticals_are_not_execution(tmp_path
 )
 def test_calls_with_something_to_run_and_prose_directives_still_fire(tmp_path: Path, body: str) -> None:
     assert find_active_dynamic_execution(_skill(tmp_path, body))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Use `image.eval(pixelCoords)` on a `uniform shader image;` parameter.\n",
+        "Use `session.execute(text(...))`, NOT `session.exec(text(...), params)`.\n",
+        "- [ ] Shell commands use parameterized execution — no `os.system(user_input)` or equivalent\n",
+    ],
+)
+def test_methods_and_checklist_prohibitions_are_not_execution(tmp_path: Path, body: str) -> None:
+    assert find_active_dynamic_execution(_skill(tmp_path, body)) == []

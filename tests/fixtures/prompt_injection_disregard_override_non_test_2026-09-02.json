@@ -8,7 +8,7 @@
     "analyzer": "static",
     "category": "prompt_injection",
     "severity": "HIGH",
-    "implementation_sha256": "1ab8e56ea0be23efb5ede022af95572dc26050a4a49e2800c6417b94bd1b93a1",
+    "implementation_sha256": "e9f577dcdcdce11ad881dd3643dfc5c7264400e92ab1b742c32db4bbfbbe55e1",
     "added_phrase_branch": "(?i)\\bdisregard(?:ing)?\\s+(?:all\\s+)?(?:previous|prior)\\s+(?:prompts?|instructions?|commands?)\\b",
     "excluded_inert_command_label_prefix": "(?i)^\\s*(?:command|prompt|instruction)s?\\s+(?:addressed\\s+)?to\\s+(?:you|the\\s+(?:agent|assistant))\\s*\\(",
     "exclusion_population_hits": {
@@ -17,7 +17,34 @@
       "notinject_raw": 0
     },
     "generic_disregard_allowed": false,
-    "preserves_existing_disregard_rules_branch": true
+    "preserves_existing_disregard_rules_branch": true,
+    "reverified_additional_exclusions": [
+      {
+        "exclusion": "short prose quotation of the override phrase (not a key/value or escaped quote, no sentence break inside)",
+        "reverified_on": "2026-09-25",
+        "malicious_skill_bench_non_test": {
+          "rule_hits_malicious_before": 35,
+          "rule_hits_malicious_after": 34,
+          "rule_hits_benign_before": 0,
+          "rule_hits_benign_after": 0,
+          "disregard_branch_malicious_before": 11,
+          "disregard_branch_malicious_after": 11
+        },
+        "in_page_raw_text_rule_hits": {
+          "before": 15369,
+          "after": 15368,
+          "unique_normalized_before": 529,
+          "unique_normalized_after": 528
+        },
+        "notinject_rule_hits": {
+          "before": 0,
+          "after": 0
+        },
+        "gitskills_full_flags_removed": 1402,
+        "gitskills_full_removed_judge_clears": 0.883,
+        "determinism_report_recomputed": false
+      }
+    ]
   },
   "malicious_skill_bench": {
     "dataset_id": "ProtectSkills/MaliciousSkillBench",
