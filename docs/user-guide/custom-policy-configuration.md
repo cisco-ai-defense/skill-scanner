@@ -548,7 +548,7 @@ Controls prompt budget limits for the LLM analyzer and meta-analyzer. The meta-a
 ```yaml
 llm_analysis:
   max_instruction_body_chars: 20000    # Max chars for SKILL.md instruction body
-  max_code_file_chars: 15000           # Max chars per individual code file
+  max_code_file_chars: 15000           # Full-inclusion threshold and max excerpt size per code file; 0 excludes directly formatted code-file contents
   max_referenced_file_chars: 10000     # Max chars per referenced file
   max_total_prompt_chars: 100000       # Total prompt budget across all files
   max_output_tokens: 8192              # Max tokens for LLM responses
@@ -558,7 +558,7 @@ llm_analysis:
 ```
 
 **Impact:**
-- Files or instruction bodies exceeding these limits are skipped entirely (no truncation) and a budget-skip metadata entry is attached to the scan result.
+- Oversized code files may contribute bounded excerpts of executable lines, imports, or high-risk calls; source line numbers are preserved, and the budget finding states that the full file was not analyzed. Set `max_code_file_chars` to `0` to keep directly formatted code-file contents out of LLM requests. Referenced files use `max_referenced_file_chars` and may still be included when within that limit. Oversized instruction bodies and referenced files are skipped entirely. The scan result includes a budget entry in either case.
 - `max_output_tokens` controls the output token budget for both the LLM analyzer and meta-analyzer. The CLI flag `--llm-max-tokens` and API `llm_max_tokens` field override environment variables; `SKILL_SCANNER_META_LLM_MAX_TOKENS` (meta only) and `SKILL_SCANNER_LLM_MAX_TOKENS` override this policy value. All values must be positive integers. If a provider reports an output limit, the scanner emits an explicit truncation diagnostic instead of treating partial JSON as an ordinary parse error.
 - The meta-analyzer applies `meta_budget_multiplier` on top of the base input limits. With the defaults, the meta-analyzer gets 60K instruction, 45K per file, and 300K total.
 - Increase these values for skills with large codebases or extensive instructions. Decrease them to reduce LLM API costs.
