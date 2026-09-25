@@ -845,6 +845,48 @@ class TestCodeFileFormatting:
         assert "source line 531" in formatted
         assert skipped[0]["partial"] is True
 
+    def test_javascript_excerpt_ignores_block_comments_and_keeps_trailing_code(self):
+        """Do not rank block-comment bodies, but keep code after the closing delimiter."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+        content = "/*\n" + "eval('hidden');\n" * 20 + "*/ eval('real');\n"
+        mock_script = MagicMock()
+        mock_script.relative_path = "scripts/payload.js"
+        mock_script.file_type = "javascript"
+        mock_script.read_content = MagicMock(return_value=content)
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=[mock_script])
+
+        formatted, skipped = analyzer.prompt_builder.format_code_files(
+            skill,
+            max_file_chars=150,
+        )
+
+        assert "eval('hidden')" not in formatted
+        assert "eval('real')" in formatted
+        assert "source line 22" in formatted
+        assert skipped[0]["partial"] is True
+
+    def test_javascript_block_comment_markers_inside_strings_are_preserved(self):
+        """Treat comment delimiters in quoted JavaScript strings as source text."""
+        excerpt = LLMAnalyzer(api_key="test-key").prompt_builder._extract_oversized_code(
+            'const marker = "/* not a comment */";\neval("real");',
+            max_chars=200,
+            line_comment="//",
+        )
+
+        assert '"/* not a comment */"' in excerpt
+        assert 'eval("real")' in excerpt
+
+    def test_non_javascript_excerpt_filtering_does_not_track_block_comments(self):
+        """Keep prior selection behavior for non-JavaScript comment styles."""
+        excerpt = LLMAnalyzer(api_key="test-key").prompt_builder._extract_oversized_code(
+            "/*\neval('code');\n*/",
+            max_chars=100,
+            line_comment="#",
+        )
+
+        assert "eval('code')" in excerpt
+
     def test_falls_back_to_bounded_executable_lines_without_priority_matches(self):
         """Include useful code when oversized files match no named risky pattern."""
         analyzer = LLMAnalyzer(api_key="test-key")

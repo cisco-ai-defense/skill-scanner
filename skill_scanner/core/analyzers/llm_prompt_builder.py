@@ -329,6 +329,8 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
             return ""
 
         source_lines = content.splitlines()
+        if line_comment == "//":
+            source_lines = self._remove_block_comments(source_lines)
         executable_lines = [
             index
             for index, line in enumerate(source_lines)
@@ -381,6 +383,60 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
 
         selected.sort(key=lambda item: item[0])
         return "\n".join(line for _, line in selected)
+
+    @staticmethod
+    def _remove_block_comments(source_lines: list[str]) -> list[str]:
+        """Blank JavaScript-style block comments while preserving source lines."""
+        filtered_lines: list[str] = []
+        in_block_comment = False
+        quote: str | None = None
+        escaped = False
+
+        for line in source_lines:
+            filtered = list(line)
+            position = 0
+            while position < len(line):
+                if in_block_comment:
+                    end = line.find("*/", position)
+                    if end < 0:
+                        filtered[position:] = " " * (len(line) - position)
+                        break
+                    filtered[position : end + 2] = " " * (end + 2 - position)
+                    position = end + 2
+                    in_block_comment = False
+                    continue
+
+                char = line[position]
+                if quote is not None:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == quote:
+                        quote = None
+                    position += 1
+                    continue
+
+                if char in ("'", '"', "`"):
+                    quote = char
+                    position += 1
+                    continue
+
+                if line.startswith("/*", position):
+                    end = line.find("*/", position + 2)
+                    stop = len(line) if end < 0 else end + 2
+                    filtered[position:stop] = " " * (stop - position)
+                    if end < 0:
+                        in_block_comment = True
+                        break
+                    position = stop
+                    continue
+
+                position += 1
+
+            filtered_lines.append("".join(filtered))
+
+        return filtered_lines
 
     def _format_excerpt_line(self, line: str, line_number: int, max_chars: int, line_comment: str) -> str | None:
         """Render one source line without losing a matching sink in long lines."""
