@@ -739,6 +739,16 @@ list item) and FPR 1.12% → 1.05%.
 Neither change moves train/validation (recall 31.45%, FPR 1.05%). With both, **the full-corpus MEDIUM+
 rate is 2.153%**, against 4.184% for the shipped scanner: 48.5% fewer flagged skills.
 
+- **A persona named Dan is not the DAN jailbreak**, and "I'm a developer" is a self-description,
+  not a claim over the model. `YARA_jailbreak_generic` now matches `DAN` only in capitals (the
+  surrounding words stay case-insensitive) and developer claims only as "I'm *your* developer" or
+  "I built you". No labelled hit changes; 127 real skills leave MEDIUM+ (83% judge-cleared). Two
+  further narrowings were measured and **rejected**: dropping "admin password" / "master key" from
+  the override-code string and "dark mode" from the alter-ego string would remove 903 real-world
+  flags, but the judge clears the removed and the kept at the same rate (73% and 72%), and seven
+  malicious development records are detected by those strings alone. The detection is coincidental
+  -- configuration text in an otherwise malicious skill -- but without a better signal it is kept.
+
 Exact duplicates do not inflate these rates: only 6.2% of flagged records belong to a family of
 identical `SKILL.md` files, and the largest family has seven copies.
 
