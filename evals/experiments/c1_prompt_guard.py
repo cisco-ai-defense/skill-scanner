@@ -68,6 +68,32 @@ WINDOW_TOKENS = 512
 WINDOW_OVERLAP = 128
 
 POSITIVE_LABELS = frozenset({"malicious", "contextually_risky", "obviously_malicious"})
+NEGATIVE_LABELS = frozenset({"benign"})
+
+
+def label_class(label: str | None) -> bool | None:
+    """True for a positive label, False for a negative one, None when the record is unlabelled.
+
+    An absent or unrecognised label is not a negative: counting it as one would give an
+    unlabelled corpus false positives and true negatives it does not have.
+    """
+    if label in POSITIVE_LABELS:
+        return True
+    if label in NEGATIVE_LABELS:
+        return False
+    return None
+
+
+def spread(records: Sequence[Any], limit: int) -> list[Any]:
+    """``limit`` records evenly spaced across the whole list, in order.
+
+    The corpora are ordered harmless-first, so a prefix selects one class only. A stride
+    of ``len // limit`` degenerates to a prefix once ``limit`` exceeds half the corpus,
+    which is why the indices are spread explicitly.
+    """
+    if limit <= 0 or limit >= len(records):
+        return list(records)
+    return [records[(index * len(records)) // limit] for index in range(limit)]
 
 
 def select_device(requested: str) -> str:
@@ -177,6 +203,9 @@ def score_at(rows: list[dict[str, Any]], threshold: float) -> dict[str, Any]:
         if probability is None:
             continue
         fired = probability >= threshold
+        if row["positive"] is None:
+            # Unlabelled: it has a flag rate, not a place in the confusion matrix.
+            continue
         if row["positive"]:
             tp += fired
             fn += not fired
@@ -244,10 +273,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         corpus = CleanCorpus.load(Path(args.clean_root).expanduser(), name)
         records = list(corpus.records)
         if args.limit:
-            # Strided, because the corpora are ordered harmless-first and taking a
-            # prefix would select one class only.
-            step = max(1, len(records) // args.limit)
-            records = records[::step][: args.limit]
+            records = spread(records, args.limit)
 
         rows: list[dict[str, Any]] = []
         started = time.monotonic()
@@ -258,7 +284,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 {
                     "record_id": record.record_id,
                     "label": record.label,
-                    "positive": record.label in POSITIVE_LABELS,
+                    "positive": label_class(record.label),
                     "chars": len(text),
                     **result,
                 }
@@ -267,8 +293,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 rate = index / (time.monotonic() - started)
                 print(f"  [{name}] {index}/{len(records)}  {rate:.1f}/s", flush=True)
 
-        scored = [(r["probability"], r["positive"]) for r in rows if r["probability"] is not None]
-        labelled = any(r["positive"] for r in rows) and any(not r["positive"] for r in rows)
+        scored = [
+            (r["probability"], r["positive"])
+            for r in rows
+            if r["probability"] is not None and r["positive"] is not None
+        ]
+        labelled = any(r["positive"] is True for r in rows) and any(r["positive"] is False for r in rows)
         flagged = sum(1 for r in rows if (r["probability"] or 0) >= 0.5)
         usable = sum(1 for r in rows if r["probability"] is not None)
 
@@ -276,8 +306,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "records": len(rows),
             "usable": usable,
             "unreadable": len(rows) - usable,
-            "positives": sum(1 for r in rows if r["positive"]),
-            "negatives": sum(1 for r in rows if not r["positive"]),
+            "positives": sum(1 for r in rows if r["positive"] is True),
+            "negatives": sum(1 for r in rows if r["positive"] is False),
+            "unlabelled": sum(1 for r in rows if r["positive"] is None),
             "has_labels": labelled,
             "auc": auc(scored),
             "flag_rate_at_0.5": flagged / usable if usable else None,
