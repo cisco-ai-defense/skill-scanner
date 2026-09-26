@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "updated_at": "2026-09-02",
+  "updated_at": "2026-09-26",
   "safety_defaults": {
     "execute_samples": false,
     "follow_embedded_links": false,
@@ -58,6 +58,26 @@
         "scope": "Benchmark-authored metadata and organization; third-party skill artifacts retain upstream terms."
       },
       "download_policy": "scheduled_or_release_only",
+      "pull_request_acquisition": {
+        "purpose": "detection_impact_development_split",
+        "files": [
+          "primary.parquet",
+          "metadata.parquet",
+          "attack_taxonomy.parquet",
+          "impact_taxonomy.parquet",
+          "splits/random.parquet",
+          "splits/source_balanced_random.parquet",
+          "splits/m_structural_disjoint.parquet",
+          "splits/source_disjoint.parquet",
+          "package_manifest.csv",
+          "schema.json"
+        ],
+        "partitions": [
+          "train",
+          "validation"
+        ],
+        "scan_network": "denied"
+      },
       "approved_uses": [
         "blocking_core_only_source_disjoint",
         "supplemental_full_pack_malicious_structural_disjoint",
@@ -333,6 +353,16 @@
         "scope": "Sanitized signals and redistributed public OpenClaw skill content."
       },
       "download_policy": "scheduled_or_manual",
+      "pull_request_acquisition": {
+        "purpose": "detection_impact_real_skill_sample",
+        "files": [
+          "data/validation.jsonl"
+        ],
+        "partitions": [
+          "validation"
+        ],
+        "scan_network": "denied"
+      },
       "approved_uses": [
         "silver_label_drift",
         "scanner_disagreement_mining",

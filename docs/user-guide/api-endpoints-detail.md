@@ -92,7 +92,7 @@ Content-Type: application/json
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
 | `skill_directory` | string | required | Path to skill directory |
-| `policy` | string | null | Scan policy: preset name (`strict`, `balanced`, `permissive`) or path to custom YAML |
+| `policy` | string | null | Scan policy: preset name (`strict`, `balanced`, `permissive`, `low-noise`, `quiet`) or path to custom YAML |
 | `custom_rules` | string | null | Path to custom YARA rules directory |
 | `use_behavioral` | boolean | false | Enable behavioral dataflow analyzer |
 | `use_llm` | boolean | false | Enable LLM semantic analyzer |

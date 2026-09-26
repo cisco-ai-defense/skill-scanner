@@ -5,7 +5,7 @@
   "skill_name": "unpinned-dependency",
   "package_label": "contextual_risk",
   "expected_verdict": "safe",
-  "expected_severity": "MEDIUM",
+  "expected_severity": "LOW",
   "provenance": {
     "source": "first-party human-reviewed inert fixture",
     "license": "Apache-2.0",
@@ -15,13 +15,13 @@
     "scanner_derived_label": false,
     "sealed_hf_test_content_used_for_labeling": false,
     "label_provenance_sha256": "d70ae9beeca73034ada0a6a510c8c35445e20d733cfdb9865ea6a132e6b1cfa0",
-    "label_evidence_sha256": "874f672c1a548c69be5b5998a8dfc5563854fd0f5a8f7d232ace6b143900c53d"
+    "label_evidence_sha256": "59a7ee76e14a0b316ce0a2a29fc737c590f78cbf54d7b47d960d5598cf6d727c"
   },
   "expected_findings": [
     {
       "rule_id": "SUPPLY_CHAIN_UNPINNED_DEPENDENCY",
       "category": "supply_chain_attack",
-      "severity": "MEDIUM",
+      "severity": "LOW",
       "file_path": "requirements.txt",
       "analyzer": "static",
       "line_number": 1

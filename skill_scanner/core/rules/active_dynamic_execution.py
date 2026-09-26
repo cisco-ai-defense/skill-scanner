@@ -80,7 +80,7 @@ _ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 _SCOPED_PROHIBITION_RE = re.compile(
-    r"(?:^|[.;:!?]\s*)(?:do\s+not|don't|never|must\s+not|should\s+not|avoid|forbid(?:den)?|no)\s+"
+    r"(?:^|[.;:!?,\u2014\u2013]\s*|\s-\s+)(?:do\s+not|don't|never|must\s+not|should\s+not|avoid|forbid(?:den)?|no)\b\s*"
     r"(?:(?:calls?\s+to|execution\s+of|invocation\s+of|use\s+of)\s+)?"
     r"(?:(?:ever\s+)?(?:call|execute|invoke|run|use)(?:ing)?\s*)?(?:the\s*)?$",
     re.IGNORECASE,
@@ -615,7 +615,7 @@ def _python_api_class(
     return None
 
 
-def _python_execution_calls(source: str) -> list[tuple[str, int]]:
+def _python_execution_calls(source: str, *, require_arguments: bool = False) -> list[tuple[str, int]]:
     tree = _ast_within_budget(source)
     if tree is None:
         return []
@@ -624,6 +624,11 @@ def _python_execution_calls(source: str) -> list[tuple[str, int]]:
     calls: list[tuple[str, int]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
+            continue
+        # In code, ``eval()`` with nothing to run executes nothing. Prose is different: "then
+        # EXECUTE its contents via `exec()`" names the API as an instruction, so the inline
+        # path keeps empty calls.
+        if require_arguments and not node.args and not node.keywords:
             continue
         api_class = _python_api_class(
             node.func,
@@ -1515,7 +1520,7 @@ def _javascript_eval_scopes(tokens: list[_JsToken]) -> _JavascriptEvalScopeMap |
     return scope_map
 
 
-def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
+def _javascript_execution_calls(source: str, *, require_arguments: bool = False) -> list[tuple[str, int]]:
     tokenization = tokenize_javascript(source, max_tokens=MAX_JS_TOKENS)
     if not tokenization.complete:
         return []
@@ -1524,6 +1529,12 @@ def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
     if eval_scopes is None:
         return []
     calls: list[tuple[str, int]] = []
+
+    def has_arguments(open_index: int) -> bool:
+        # See _python_execution_calls: an empty call in code runs nothing.
+        if not require_arguments:
+            return True
+        return open_index + 1 < len(tokens) and tokens[open_index + 1].value != ")"
 
     for index, token in enumerate(tokens):
         if len(calls) >= MAX_DETECTIONS:
@@ -1535,11 +1546,12 @@ def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
             and following == "("
             and previous not in {".", "?."}
             and not eval_scopes.is_shadowed(index)
+            and has_arguments(index + 1)
         ):
             calls.append(("javascript_eval", token.line))
             continue
         binding = eval_scopes.execution_binding(index, token.value)
-        if binding == "child_exec" and following == "(" and previous not in {".", "?"}:
+        if binding == "child_exec" and following == "(" and previous not in {".", "?"} and has_arguments(index + 1):
             calls.append(("javascript_child_process", token.line))
             continue
         if (
@@ -1549,6 +1561,7 @@ def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
             and tokens[index + 1].value in {".", "?"}
             and tokens[index + 2].value in _CHILD_PROCESS_METHODS
             and tokens[index + 3].value == "("
+            and has_arguments(index + 3)
         ):
             calls.append(("javascript_child_process", token.line))
             continue
@@ -1565,6 +1578,7 @@ def _javascript_execution_calls(source: str) -> list[tuple[str, int]]:
             and tokens[index + 4].value == "."
             and tokens[index + 5].value in _CHILD_PROCESS_METHODS
             and tokens[index + 6].value == "("
+            and has_arguments(index + 6)
         ):
             calls.append(("javascript_child_process", token.line))
     return calls
@@ -1589,16 +1603,16 @@ def _block_calls(block: _MarkdownBlock) -> list[_ExecutionCall]:
     parsed: list[tuple[str, int]] = []
     detected_language: Literal["python", "javascript"]
     if language in _PYTHON_LANGUAGES:
-        parsed = _python_execution_calls(block.content)
+        parsed = _python_execution_calls(block.content, require_arguments=True)
         detected_language = "python"
     elif language in _JAVASCRIPT_LANGUAGES:
-        parsed = _javascript_execution_calls(block.content)
+        parsed = _javascript_execution_calls(block.content, require_arguments=True)
         detected_language = "javascript"
     elif not language:
-        parsed = _python_execution_calls(block.content)
+        parsed = _python_execution_calls(block.content, require_arguments=True)
         detected_language = "python"
         if not parsed:
-            parsed = _javascript_execution_calls(block.content)
+            parsed = _javascript_execution_calls(block.content, require_arguments=True)
             detected_language = "javascript"
     else:
         return []
@@ -1772,10 +1786,17 @@ def _inline_calls(instruction: _InstructionLine) -> list[_ExecutionCall]:
             continue
         seen_spans.add(span)
 
+        # ``image.eval(...)`` and ``session.exec(...)`` are methods, not the builtins.
+        if candidate.start() > 0 and line[candidate.start() - 1] == ".":
+            continue
         prefix = line[max(0, candidate.start() - 160) : candidate.start()]
         in_inline_code = any(start <= candidate.start() and end_pos >= end for start, end_pos in inline_ranges)
         outside = (line[: candidate.start()] + line[end:]).strip(" `\t-*+0123456789.)")
         code_only = not outside
+        # In running prose a space before the parenthesis is English, not a call: "Run the
+        # eval (pass --model ...)". Code spans and code-only lines keep the looser syntax.
+        if not code_only and not in_inline_code and candidate.group(0)[-2:-1].isspace():
+            continue
         if not code_only and not (_ACTION_RE.search(prefix) and (in_inline_code or len(prefix.split()) <= 24)):
             continue
         local_prefix = re.split(r"[.;:!?]", prefix)[-1].rstrip(" `\t")

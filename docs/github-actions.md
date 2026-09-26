@@ -39,7 +39,7 @@ This will:
 | `skill_path` | string | *(required)* | Path to skills directory or single skill |
 | `scan_mode` | string | `scan-all` | `scan` (single skill) or `scan-all` (directory) |
 | `format` | string | `sarif` | Output format: summary, json, markdown, table, sarif, html |
-| `policy` | string | `balanced` | Scan policy: strict, balanced, permissive, or path to YAML |
+| `policy` | string | `balanced` | Scan policy: strict, balanced, permissive, low-noise, quiet, or path to YAML. See [Recommended settings](user-guide/recommended-settings.md) |
 | `fail_on_severity` | string | `high` | Fail if findings at/above this severity |
 | `python_version` | string | `3.12` | Numeric CPython version from 3.11 through 3.14 |
 | `upload_sarif` | boolean | `true` | Upload SARIF to Code Scanning |

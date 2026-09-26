@@ -563,3 +563,102 @@ class TestMagicMatchMetadata:
         _sev, _desc, magic = result
         assert magic.content_family == "archive"
         assert "/" in magic.content_type  # e.g. "archive/zip"
+
+
+class TestMarkdownIsATextContainer:
+    """A SKILL.md reading as YAML or code is not a disguise; binary content still is.
+
+    On 200,000 real published skills, 85% of FILE_MAGIC_MISMATCH findings were SKILL.md
+    files Magika read as YAML, because the skill format requires YAML frontmatter.
+    """
+
+    @staticmethod
+    def _check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content_type: str, family: str):
+        import skill_scanner.core.file_magic as fm
+
+        path = tmp_path / "SKILL.md"
+        path.write_text("---\nname: x\ndescription: y\n---\nbody\n")
+        monkeypatch.setattr(fm, "detect_magic", lambda _p: fm.MagicMatch(content_type, family, content_type, 0.95))
+        return fm.check_extension_mismatch(path, min_confidence=0.8)
+
+    def test_yaml_frontmatter_is_not_a_mismatch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert self._check(tmp_path, monkeypatch, "code/yaml", "code") is None
+
+    def test_other_text_labels_are_reported_low(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        result = self._check(tmp_path, monkeypatch, "code/python", "code")
+        assert result is not None
+        # Visible, but below the MEDIUM gate: the content is still read by every other
+        # analyzer, so the label alone is not evidence of obfuscation.
+        assert result[0] == "LOW"
+
+    def test_binary_content_in_markdown_is_still_flagged(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        result = self._check(tmp_path, monkeypatch, "archive/zip", "archive")
+        assert result is not None
+        assert result[0] in {"MEDIUM", "HIGH", "CRITICAL"}
+
+    def test_the_label_check_still_applies_to_other_text_extensions(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import skill_scanner.core.file_magic as fm
+
+        path = tmp_path / "tool.py"
+        path.write_text("echo hi\n")
+        monkeypatch.setattr(fm, "detect_magic", lambda _p: fm.MagicMatch("code/shell", "code", "shell", 0.95))
+        result = fm.check_extension_mismatch(path, min_confidence=0.8)
+        # A .py that is actually shell remains a MEDIUM mismatch; only Markdown changed.
+        assert result is not None and result[0] == "MEDIUM"
+
+
+class TestMagikaSessionIsBounded:
+    """Each scanner process must not start a machine-wide spinning ONNX thread pool."""
+
+    def test_default_session_uses_one_thread(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import skill_scanner.core.file_magic as fm
+
+        monkeypatch.delenv("SKILL_SCANNER_MAGIKA_THREADS", raising=False)
+        magika = fm._bounded_magika()
+        options = magika._onnx_session.get_session_options()
+        assert options.intra_op_num_threads == 1
+        assert options.inter_op_num_threads == 1
+
+    def test_thread_count_is_configurable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import skill_scanner.core.file_magic as fm
+
+        monkeypatch.setenv("SKILL_SCANNER_MAGIKA_THREADS", "4")
+        assert fm._magika_threads() == 4
+        monkeypatch.setenv("SKILL_SCANNER_MAGIKA_THREADS", "not-a-number")
+        assert fm._magika_threads() == 1
+
+    def test_detection_still_works(self, tmp_path: Path) -> None:
+        import skill_scanner.core.file_magic as fm
+
+        path = tmp_path / "notes.md"
+        path.write_text("# Title\n\nSome markdown with a [link](https://example.org).\n" * 5)
+        match = fm._bounded_magika().identify_path(path)
+        assert match.output.label == "markdown"
+
+
+def test_low_text_label_mismatch_satisfies_the_pack_contract_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The LOW finding must pass the core pack's severity contract, not only the check.
+
+    The check alone returned LOW while pack.yaml declared only HIGH and MEDIUM as allowed
+    demotions, so a full scan rejected the finding and reported the static analyzer as
+    failed -- on 904 of 33,709 rescanned real skills. Only a scan through the scanner,
+    where the contract is enforced, catches that.
+    """
+
+    import skill_scanner.core.file_magic as fm
+    from skill_scanner.core.scanner import SkillScanner
+
+    skill_dir = tmp_path / "text-label-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("---\nname: text-label-skill\ndescription: A fixture.\n---\nbody\n")
+    monkeypatch.setattr(fm, "detect_magic", lambda _p: fm.MagicMatch("code/python", "code", "code/python", 0.95))
+
+    result = SkillScanner().scan_skill(skill_dir)
+
+    assert not result.analyzers_failed, result.analyzers_failed
+    magic = [f for f in result.findings if f.rule_id == "FILE_MAGIC_MISMATCH"]
+    assert magic and {f.severity.value for f in magic} == {"LOW"}

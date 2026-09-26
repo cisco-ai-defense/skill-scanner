@@ -103,7 +103,9 @@ class TestDependencyPinningFindings:
         assert len(findings) == 2
         assert all(f.rule_id == _RULE_ID for f in findings)
         assert all(f.category == ThreatCategory.SUPPLY_CHAIN_ATTACK for f in findings)
-        assert all(f.severity == Severity.MEDIUM for f in findings)
+        # Reported, but below the MEDIUM gate: an unpinned dependency is hygiene, and the
+        # supply-chain threat signals are separate rules.
+        assert all(f.severity == Severity.LOW for f in findings)
 
     def test_pinned_requirements_clean(self, analyzer, make_skill):
         skill = make_skill(

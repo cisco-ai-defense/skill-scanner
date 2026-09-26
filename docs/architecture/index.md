@@ -50,7 +50,7 @@ graph TB
         PACKS["data/packs/core<br>signatures + yara + python checks"]
         PROMPTS["data/prompts<br>LLM schemas/prompts"]
         TAXONOMY["Threat mapping<br>AITech taxonomy"]
-        PRESETS["data/*_policy.yaml<br>strict/balanced/permissive"]
+        PRESETS["data/*_policy.yaml<br>strict/balanced/permissive/low-noise/quiet"]
     end
 
     subgraph Output[Output]

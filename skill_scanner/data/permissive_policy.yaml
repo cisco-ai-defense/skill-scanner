@@ -167,11 +167,11 @@ pipeline:
   benign_pipe_targets:
     - 'ps\s.*\|\s*grep'
     - 'grep\s.*\|\s*grep\s+-v'
-    - 'cat\s.*\|\s*(sort|uniq|wc|head|tail|grep|cut|awk|sed)'
+    - 'cat\s.*\|\s*(sort|uniq|wc|head|tail|grep|cut|awk|sed|jq|python3?\s+-m\s+json\.tool)'
     - 'find\s.*\|\s*(sort|head|wc|xargs\s+ls)'
     - 'ls\s.*\|\s*(sort|head|grep|wc)'
     - 'echo\s.*\|\s*(tr|sed|awk|cut|base64)'
-    - 'curl\s.*\|\s*(jq|python\s+-m\s+json\.tool|json_pp|yq|xmllint)'
+    - 'curl\s.*\|\s*(jq|python3?\s+-m\s+json\.tool|json_pp|yq|xmllint)'
     # Extras for permissive
     - 'docker\s.*\|\s*(grep|head|tail|jq)'
     - 'kubectl\s.*\|\s*(grep|jq|head)'

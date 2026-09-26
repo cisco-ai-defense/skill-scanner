@@ -39,6 +39,21 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 
+# Bedrock "mantle" endpoint: an OpenAI-compatible route in front of Bedrock that
+# serves models absent from the bedrock-runtime catalogue (notably Gemma 4).
+# It is reached with SigV4 signing over service name "bedrock" rather than with a
+# bearer key, which is why it cannot go through LiteLLM's ``bedrock/`` adapter.
+BEDROCK_MANTLE_MODEL_PREFIX = "bedrock-mantle/"
+BEDROCK_MANTLE_PROVIDER = "bedrock-mantle"
+BEDROCK_MANTLE_SIGV4_SERVICE = "bedrock"
+BEDROCK_MANTLE_HOST_TEMPLATE = "https://bedrock-mantle.{region}.api.aws/openai/v1"
+
+
+def default_bedrock_mantle_base_url(region: str | None) -> str:
+    """Return the OpenAI-compatible mantle base URL for *region*."""
+
+    return BEDROCK_MANTLE_HOST_TEMPLATE.format(region=region or "us-east-1")
+
 
 def is_loopback_host(host: object) -> bool:
     """Return whether *host* is the literal 127.0.0.1 or ::1 address."""
@@ -172,7 +187,15 @@ class ProviderConfig:
         # override is set. Custom model names can include provider words such as
         # "gemini" without meaning they should use the Google SDK.
         model_lower = model.lower()
-        self.is_bedrock = not self.is_openai_compatible and ("bedrock/" in model or model_lower.startswith("bedrock/"))
+        # Detect the mantle route first so the plain Bedrock branch never claims it.
+        self.is_bedrock_mantle = self.provider == BEDROCK_MANTLE_PROVIDER or model_lower.startswith(
+            BEDROCK_MANTLE_MODEL_PREFIX
+        )
+        self.is_bedrock = (
+            not self.is_openai_compatible
+            and not self.is_bedrock_mantle
+            and ("bedrock/" in model or model_lower.startswith("bedrock/"))
+        )
         self.is_gemini = not self.is_openai_compatible and (
             "gemini" in model_lower or model_lower.startswith("gemini/")
         )
@@ -192,9 +215,18 @@ class ProviderConfig:
 
         # Determine if we should use Google SDK
         self.use_google_sdk = False
+        # Determine if we should use the direct SigV4 Bedrock mantle client.
+        self.use_bedrock_mantle = False
 
         # Handle Vertex AI separately (uses LiteLLM, not Google SDK)
-        if self.is_openai_compatible:
+        if self.is_bedrock_mantle:
+            # Direct SigV4 client; LiteLLM is deliberately not involved because it
+            # cannot sign a body it builds itself.
+            self.use_bedrock_mantle = True
+            self.model = self._normalize_bedrock_mantle_model_name(model)
+            if not self.base_url:
+                self.base_url = default_bedrock_mantle_base_url(self.aws_region)
+        elif self.is_openai_compatible:
             if not LITELLM_AVAILABLE:
                 raise ImportError(
                     "LiteLLM is required for OpenAI-compatible providers. Install with: pip install litellm"
@@ -260,6 +292,14 @@ class ProviderConfig:
             return model
         return f"openai/{model}"
 
+    def _normalize_bedrock_mantle_model_name(self, model: str) -> str:
+        """Strip the routing prefix, leaving the bare mantle model id."""
+        if model.lower().startswith(BEDROCK_MANTLE_MODEL_PREFIX):
+            model = model[len(BEDROCK_MANTLE_MODEL_PREFIX) :]
+        if not model:
+            raise ValueError("Bedrock mantle model id must not be empty")
+        return model
+
     def _resolve_api_key(self, api_key: str | None) -> str | None:
         """Resolve API key from parameter or environment variables.
 
@@ -282,6 +322,9 @@ class ProviderConfig:
         if self.is_vertex:
             return None
         elif self.is_ollama:
+            return None
+        elif self.is_bedrock_mantle:
+            # SigV4 signing uses ambient AWS credentials, not an API key.
             return None
 
         # Check the standard env var first
@@ -367,7 +410,13 @@ class ProviderConfig:
 
     def validate(self) -> None:
         """Validate that configuration is complete."""
-        if not self.is_bedrock and not self.is_ollama and not self.is_vertex and not self.api_key:
+        if (
+            not self.is_bedrock
+            and not self.is_bedrock_mantle
+            and not self.is_ollama
+            and not self.is_vertex
+            and not self.api_key
+        ):
             if self.is_azure:
                 raise ValueError(
                     f"No API key or Entra ID credentials found for Azure model {self.model}. "

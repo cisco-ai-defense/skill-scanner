@@ -28,6 +28,8 @@ Skill Scanner layers complementary detection engines so that no single blind spo
 |----------|-------------|--------------|
 | **Behavioral Analyzer** | `--use-behavioral` | AST and control-flow dataflow analysis for Python |
 | **LLM Analyzer** | `--use-llm` | Semantic threat reasoning powered by LLM |
+| **Decomposed LLM Analysis** | `--llm-decompose` | One LLM pass per focus, findings unioned; higher recall at roughly 3x the model calls |
+| **System One Screening** | `--system-one-endpoint` + `--system-one-model` | Records a calibrated risk probability for triage. Advisory only: it cannot change a finding, a severity, or the verdict |
 | **Meta-Analyzer** | `--enable-meta` | Second-pass false-positive reduction across all findings |
 | **VirusTotal Analyzer** | `--use-virustotal` | Binary hash reputation and optional file uploads |
 | **AI Defense Analyzer** | `--use-aidefense` | Cisco cloud-based threat classification |
@@ -124,6 +126,8 @@ Every detection threshold, rule scope, and output behavior is configurable throu
 | **balanced** (default) | shadow / on | Production scanning with good detection-to-noise ratio |
 | **strict** | shadow / on | Untrusted/external skills, compliance audits — maximum sensitivity |
 | **permissive** | off / off | Trusted internal skills — reduced noise |
+| **low-noise** | shadow / on | Balanced, with 11 rules that mostly flag harmless skills reported at LOW |
+| **quiet** | shadow / on | Triage queues with little review capacity — 19 rules reported at LOW |
 
 #### Key Policy Sections
 

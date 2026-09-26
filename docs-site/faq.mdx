@@ -1,7 +1,7 @@
 ---
 title: "FAQ"
 description: "Answers to common Skill Scanner questions about supported formats, analyzers, LLM providers, scan policies, CI/CD, SDK usage, outputs, and troubleshooting."
-order: 11
+order: 12
 ---
 
 ## Frequently Asked Questions
@@ -52,7 +52,7 @@ Yes. Skill Scanner supports three rule types: YAML signature rules (regex patter
 
 ### How do scan policies work?
 
-Policies control every aspect of scanner behavior through YAML configuration: which rules fire, severity levels, file limits, analyzability thresholds, and more. Three built-in presets are available: `strict` (maximum sensitivity), `balanced` (default), and `permissive` (reduced noise). Generate and customize policies with `skill-scanner generate-policy` and `skill-scanner configure-policy`. See [Scan Policies](/docs/skill-scanner/scan-policies).
+Policies control every aspect of scanner behavior through YAML configuration: which rules fire, severity levels, file limits, analyzability thresholds, and more. Five built-in presets are available: `strict` (maximum sensitivity), `balanced` (default), `permissive` (reduced noise), and `low-noise` and `quiet`, which report at LOW the rules whose real-world flags the LLM judge most often clears. Generate and customize policies with `skill-scanner generate-policy` and `skill-scanner configure-policy`. See [Scan Policies](/docs/skill-scanner/scan-policies).
 
 ### How do I integrate with CI/CD?
 

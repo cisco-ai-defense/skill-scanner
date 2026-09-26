@@ -42,6 +42,9 @@ skill-scanner scan /path/to/skill [OPTIONS]
 | `--llm-provider` | LLM shortcut: `anthropic`, `openai`, or `openai-compatible` |
 | `--llm-consensus-runs N` | Run LLM analysis N times; keep majority-agreed findings |
 | `--llm-max-tokens N` | Override the LLM response-token budget (default: 8192) |
+| `--llm-decompose` | Run the LLM analyzer once per focus and union the findings instead of one general pass; raises recall at roughly 3x the model calls |
+| `--system-one-endpoint URL` | Optional System One screening endpoint (`POST /v1/systemone`). Advisory only: it can never change a finding, a severity, or the verdict |
+| `--system-one-model NAME` | Model name for the System One endpoint; required with `--system-one-endpoint` and rejected without it |
 | `--use-virustotal` | Enable VirusTotal binary scanner |
 | `--use-aidefense` | Enable Cisco AI Defense analyzer |
 | `--use-osv` | Query OSV.dev for advisories affecting exactly pinned Python dependencies; no API key required |
@@ -63,7 +66,7 @@ skill-scanner scan /path/to/skill [OPTIONS]
 
 | Flag | Description |
 |------|-------------|
-| `--policy` | Preset name (`strict`, `balanced`, `permissive`) or path to custom YAML |
+| `--policy` | Preset name (`strict`, `balanced`, `permissive`, `low-noise`, `quiet`) or path to custom YAML |
 | `--custom-rules PATH` | Use custom YARA rules from directory |
 | `--rule-packs PACK...` | Enable packs such as `atr` and `promptguard`; use `--rule-packs list` to inspect packs |
 | `--trusted-rule-pack PATH` | Load an administrator-trusted schema-v2 signature/YARA/CEL pack; repeatable |
@@ -164,7 +167,7 @@ skill-scanner generate-policy [OPTIONS]
 | Flag | Description |
 |------|-------------|
 | `-o, --output PATH` | Output file path |
-| `--preset NAME` | Base preset: `strict`, `balanced`, `permissive` |
+| `--preset NAME` | Base preset: `strict`, `balanced`, `permissive`, `low-noise`, `quiet` |
 
 ```bash
 skill-scanner generate-policy -o my_policy.yaml --preset strict

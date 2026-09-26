@@ -8,6 +8,7 @@ Skill Scanner ships as a CLI tool, a Python library, and a REST API. This sectio
 - **[Embed scanning in Python](./python-sdk)** -- Import the SDK to scan skills programmatically inside your own applications.
 - **[Integrate via REST API](./api-server)** -- Upload skill ZIPs over HTTP for CI/CD, web portals, or service-to-service workflows.
 - **[Tune detection sensitivity](./scan-policies-overview)** -- Choose a preset policy or write custom YAML to control which rules fire and at what severity.
+- **[Pick a configuration for your use case](./recommended-settings)** -- What we recommend for local development, CI gates, vetting third-party skills and registry-scale scanning, why, and how to set it up.
 
 ## Start Here
 
@@ -17,6 +18,7 @@ Skill Scanner ships as a CLI tool, a Python library, and a REST API. This sectio
 
 ## Advanced Topics
 
+- [Recommended Settings](recommended-settings.md) — what to run for which job, with measured numbers
 - [Scan Policies Overview](scan-policies-overview.md)
 - [Custom Policy Configuration](custom-policy-configuration.md)
 - [API Server](api-server.md)

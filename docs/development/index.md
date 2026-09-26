@@ -28,6 +28,7 @@ uv run skill-scanner scan evals/skills/safe-skills/simple-math  # smoke test
 
 - [Local setup and tests](setup-and-testing.md) -- detailed environment configuration, test commands, coverage
 - [CI/CD & Integrations](integrations.md) -- GitHub Actions, pre-commit hooks, SARIF upload, build gates
+- [Detection impact check](detection-impact-check.md) -- what a pull request that touches detection does to recall, FPR and real-skill flag rates, measured on every such PR
 - [Example usage patterns](../guides/examples-and-how-to.md) -- runnable examples and how-to walkthroughs
 
 ## Contribution Path

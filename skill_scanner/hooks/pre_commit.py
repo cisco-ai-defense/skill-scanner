@@ -189,7 +189,7 @@ def scan_skill(skill_dir: Path, config: dict) -> dict:
 
         # Load policy (preset name, file path, or default)
         policy_value = config.get("policy")
-        if policy_value and policy_value in ("strict", "balanced", "permissive"):
+        if policy_value and policy_value in ScanPolicy.preset_names():
             policy = ScanPolicy.from_preset(policy_value)
         elif policy_value:
             policy = ScanPolicy.from_yaml(policy_value)

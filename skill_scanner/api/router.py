@@ -377,7 +377,7 @@ def _resolve_policy(policy_str: str | None, *, cel_mode: CelMode | str | None = 
         policy = ScanPolicy.default()
     else:
         policy_str = policy_str.strip()
-        if policy_str.lower() in ("strict", "balanced", "permissive"):
+        if policy_str.lower() in ScanPolicy.preset_names():
             policy = ScanPolicy.from_preset(policy_str)
         else:
             try:

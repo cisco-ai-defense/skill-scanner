@@ -87,28 +87,25 @@ def check_manifest(manifest: SkillManifest, policy: ScanPolicy) -> list[Finding]
         )
 
     # -- SOCIAL_ENG_ANTHROPIC_IMPERSONATION --
-    description_lower = manifest.description.lower()
     name_lower = manifest.name.lower()
-    is_anthropic_mentioned = "anthropic" in name_lower or "anthropic" in description_lower
+    description_lower = manifest.description.lower()
+    # A claim of affiliation, not a mention of the vendor: see brand_claims.
+    from skill_scanner.core.brand_claims import claims_anthropic_affiliation
 
-    if is_anthropic_mentioned:
-        legitimate_patterns = ["apply", "brand", "guidelines", "colors", "typography", "style"]
-        is_legitimate = any(pattern in description_lower for pattern in legitimate_patterns)
-
-        if not is_legitimate:
-            findings.append(
-                Finding(
-                    id=generate_finding_id("SOCIAL_ENG_ANTHROPIC_IMPERSONATION", "manifest"),
-                    rule_id="SOCIAL_ENG_ANTHROPIC_IMPERSONATION",
-                    category=ThreatCategory.SOCIAL_ENGINEERING,
-                    severity=Severity.MEDIUM,
-                    title="Potential Anthropic brand impersonation",
-                    description="Skill name or description contains 'Anthropic', suggesting official affiliation",
-                    file_path="SKILL.md",
-                    remediation="Do not impersonate official skills or use unauthorized branding",
-                    analyzer="static",
-                )
+    if claims_anthropic_affiliation(manifest.name, manifest.description):
+        findings.append(
+            Finding(
+                id=generate_finding_id("SOCIAL_ENG_ANTHROPIC_IMPERSONATION", "manifest"),
+                rule_id="SOCIAL_ENG_ANTHROPIC_IMPERSONATION",
+                category=ThreatCategory.SOCIAL_ENGINEERING,
+                severity=Severity.MEDIUM,
+                title="Potential Anthropic brand impersonation",
+                description="Skill name or description claims to be from, by, or endorsed by Anthropic",
+                file_path="SKILL.md",
+                remediation="Do not impersonate official skills or use unauthorized branding",
+                analyzer="static",
             )
+        )
 
     if "claude official" in name_lower or "claude official" in description_lower:
         findings.append(

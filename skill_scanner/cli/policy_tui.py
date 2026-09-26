@@ -215,6 +215,8 @@ class PolicyConfigApp(App[str | None]):
                 yield RadioButton("Strict – narrow allowlists, no suppressions", id="preset-strict")
                 yield RadioButton("Balanced – sensible defaults (recommended)", id="preset-balanced", value=True)
                 yield RadioButton("Permissive – broad allowlists, aggressive suppression", id="preset-permissive")
+                yield RadioButton("Low-noise – balanced, noisiest rules reported at LOW", id="preset-low-noise")
+                yield RadioButton("Quiet – fewest flags; for review queues with limited capacity", id="preset-quiet")
 
             yield Rule()
 
@@ -523,7 +525,7 @@ class PolicyConfigApp(App[str | None]):
     @on(RadioSet.Changed, "#preset-radio")
     def on_preset_change(self, event: RadioSet.Changed) -> None:
         idx = event.radio_set.pressed_index
-        presets = ["strict", "balanced", "permissive"]
+        presets = ["strict", "balanced", "permissive", "low-noise", "quiet"]
         if 0 <= idx < len(presets):
             self._load_preset(presets[idx])
 

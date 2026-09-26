@@ -22,7 +22,7 @@ This page is generated from live `argparse` output and should match runtime beha
 
 ## Common Flags
 
-Flags shared by `scan` and `scan-all`:
+Flags shared by `scan`, `scan-all` and `scan-repo`:
 
 | Flag | Default | Description |
 |---|---|---|
@@ -37,6 +37,9 @@ Flags shared by `scan` and `scan-all`:
 | `--use-aidefense` | off | Enable Cisco AI Defense analyzer |
 | `--use-osv` | off | Enable OSV.dev dependency vulnerability scanning (no API key; requires network) |
 | `--llm-reasoning-effort LEVEL` | provider default | Optional reasoning depth: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. |
+| `--llm-decompose` | off | Run the LLM analyzer once per focus and union the findings instead of making one general pass. Raises recall at roughly three times the model calls. Requires `--use-llm`. See [Optional semantic flags](#optional-semantic-flags). |
+| `--system-one-endpoint URL` | off | Optional System One screening endpoint speaking `POST /v1/systemone`. **Advisory only**: it can never change a finding, a severity or the verdict. `https`, or `http` on loopback. |
+| `--system-one-model NAME` | none | Model name for the System One endpoint. Required with `--system-one-endpoint`, and rejected without it. |
 | `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |
 | `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |
 | `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |
@@ -111,10 +114,12 @@ usage: cli.py scan [-h] [--format {summary,json,markdown,table,sarif,html}]
                    [--aidefense-api-key AIDEFENSE_API_KEY]
                    [--aidefense-api-url AIDEFENSE_API_URL] [--use-osv]
                    [--llm-provider {anthropic,openai,openai-compatible}]
-                   [--llm-consensus-runs N] [--llm-max-tokens N]
-                   [--llm-reasoning-effort LEVEL] [--use-trigger]
-                   [--enable-meta] [--adjudicate] [--policy PRESET_OR_PATH]
-                   [--lenient] [--skill-file FILENAME] [--custom-rules PATH]
+                   [--system-one-endpoint URL] [--system-one-model NAME]
+                   [--llm-decompose] [--llm-consensus-runs N]
+                   [--llm-max-tokens N] [--llm-reasoning-effort LEVEL]
+                   [--use-trigger] [--enable-meta] [--adjudicate]
+                   [--policy PRESET_OR_PATH] [--lenient]
+                   [--skill-file FILENAME] [--custom-rules PATH]
                    [--rule-packs PACK [PACK ...]] [--trusted-rule-pack PATH]
                    [--cel-mode {off,shadow,enforce}] [--taxonomy PATH]
                    [--threat-mapping PATH]
@@ -172,6 +177,24 @@ options:
   --llm-provider {anthropic,openai,openai-compatible}
                         LLM provider shortcut or explicit OpenAI-compatible
                         override
+  --system-one-endpoint URL
+                        Optional System One screening endpoint speaking POST
+                        /v1/systemone. Advisory only: it records a calibrated
+                        probability and can never change a finding, a severity
+                        or the verdict. The model measured for this scored
+                        inverted against labelled corpora, so acting on it
+                        would make results worse; see docs/reference/measured-
+                        results.md before relying on it.
+  --system-one-model NAME
+                        Model name to send to the System One endpoint.
+                        Required with --system-one-endpoint.
+  --llm-decompose       Run the LLM analyzer once per focus (declared purpose,
+                        policy surface, security behaviors) and union the
+                        findings, instead of one general pass. Raises recall
+                        where a single pass was missing findings, at roughly
+                        three times the model calls. Measured effect varies by
+                        corpus and model; see docs/reference/measured-
+                        results.md.
   --llm-consensus-runs N
                         Run LLM analysis N times and keep only findings with
                         majority agreement (reduces false positives, increases
@@ -247,9 +270,10 @@ usage: cli.py scan-all [-h] [--recursive] [--check-overlap]
                        [--aidefense-api-key AIDEFENSE_API_KEY]
                        [--aidefense-api-url AIDEFENSE_API_URL] [--use-osv]
                        [--llm-provider {anthropic,openai,openai-compatible}]
-                       [--llm-consensus-runs N] [--llm-max-tokens N]
-                       [--llm-reasoning-effort LEVEL] [--use-trigger]
-                       [--enable-meta] [--adjudicate]
+                       [--system-one-endpoint URL] [--system-one-model NAME]
+                       [--llm-decompose] [--llm-consensus-runs N]
+                       [--llm-max-tokens N] [--llm-reasoning-effort LEVEL]
+                       [--use-trigger] [--enable-meta] [--adjudicate]
                        [--policy PRESET_OR_PATH] [--lenient]
                        [--skill-file FILENAME] [--custom-rules PATH]
                        [--rule-packs PACK [PACK ...]]
@@ -312,6 +336,24 @@ options:
   --llm-provider {anthropic,openai,openai-compatible}
                         LLM provider shortcut or explicit OpenAI-compatible
                         override
+  --system-one-endpoint URL
+                        Optional System One screening endpoint speaking POST
+                        /v1/systemone. Advisory only: it records a calibrated
+                        probability and can never change a finding, a severity
+                        or the verdict. The model measured for this scored
+                        inverted against labelled corpora, so acting on it
+                        would make results worse; see docs/reference/measured-
+                        results.md before relying on it.
+  --system-one-model NAME
+                        Model name to send to the System One endpoint.
+                        Required with --system-one-endpoint.
+  --llm-decompose       Run the LLM analyzer once per focus (declared purpose,
+                        policy surface, security behaviors) and union the
+                        findings, instead of one general pass. Raises recall
+                        where a single pass was missing findings, at roughly
+                        three times the model calls. Measured effect varies by
+                        corpus and model; see docs/reference/measured-
+                        results.md.
   --llm-consensus-runs N
                         Run LLM analysis N times and keep only findings with
                         majority agreement (reduces false positives, increases
@@ -388,9 +430,10 @@ usage: cli.py scan-repo [-h] [--recursive | --no-recursive | -r]
                         [--aidefense-api-key AIDEFENSE_API_KEY]
                         [--aidefense-api-url AIDEFENSE_API_URL] [--use-osv]
                         [--llm-provider {anthropic,openai,openai-compatible}]
-                        [--llm-consensus-runs N] [--llm-max-tokens N]
-                        [--llm-reasoning-effort LEVEL] [--use-trigger]
-                        [--enable-meta] [--adjudicate]
+                        [--system-one-endpoint URL] [--system-one-model NAME]
+                        [--llm-decompose] [--llm-consensus-runs N]
+                        [--llm-max-tokens N] [--llm-reasoning-effort LEVEL]
+                        [--use-trigger] [--enable-meta] [--adjudicate]
                         [--policy PRESET_OR_PATH] [--lenient]
                         [--skill-file FILENAME] [--custom-rules PATH]
                         [--rule-packs PACK [PACK ...]]
@@ -456,6 +499,24 @@ options:
   --llm-provider {anthropic,openai,openai-compatible}
                         LLM provider shortcut or explicit OpenAI-compatible
                         override
+  --system-one-endpoint URL
+                        Optional System One screening endpoint speaking POST
+                        /v1/systemone. Advisory only: it records a calibrated
+                        probability and can never change a finding, a severity
+                        or the verdict. The model measured for this scored
+                        inverted against labelled corpora, so acting on it
+                        would make results worse; see docs/reference/measured-
+                        results.md before relying on it.
+  --system-one-model NAME
+                        Model name to send to the System One endpoint.
+                        Required with --system-one-endpoint.
+  --llm-decompose       Run the LLM analyzer once per focus (declared purpose,
+                        policy surface, security behaviors) and union the
+                        findings, instead of one general pass. Raises recall
+                        where a single pass was missing findings, at roughly
+                        three times the model calls. Measured effect varies by
+                        corpus and model; see docs/reference/measured-
+                        results.md.
   --llm-consensus-runs N
                         Run LLM analysis N times and keep only findings with
                         majority agreement (reduces false positives, increases
@@ -636,3 +697,39 @@ options:
 ```
 
 </details>
+
+## Optional semantic flags
+
+Both of these are accepted by `scan`, `scan-all` and `scan-repo`, and both are off by
+default.
+
+### `--llm-decompose`
+
+Run the LLM analyzer once per focus — declared purpose against actual behaviour, policy
+and instruction surface, and concrete security behaviours — and union the findings,
+instead of making one general pass. It raises recall where a single pass was missing
+findings, at roughly three times the model calls.
+
+The size of the gain depends on the model and on how much headroom the single pass left,
+and on one positive-only corpus recall fell. Read [measured
+results](measured-results.md) before assuming a figure transfers.
+
+Requires `--use-llm`.
+
+### `--system-one-endpoint` and `--system-one-model`
+
+| Flag | Meaning |
+|---|---|
+| `--system-one-endpoint URL` | A System One endpoint speaking `POST /v1/systemone`. Must be `https`, or `http` on loopback; a plaintext remote endpoint is refused so skill content is not sent in clear text. |
+| `--system-one-model NAME` | The model name to send to that endpoint. Required whenever the endpoint is set; supplying one without the other is an error rather than a silent default. |
+
+The bearer token is read from `SKILL_SCANNER_SYSTEM_ONE_API_KEY` and never from the
+command line, so it does not land in shell history or a process listing.
+
+**This tier is advisory only.** It records a calibrated probability and cannot emit a
+finding, change a severity, or alter the verdict. That is deliberate: across 439 records
+and two prompt framings, the model measured scored *inverted* with respect to the label
+(AUC 0.25–0.31), so wiring it into severity would have made the scanner worse. The
+integration ships because the protocol is model-agnostic and a future model may separate
+the classes. Demonstrating that separation on a corpus is the precondition for anything
+acting on it. See [measured results](measured-results.md).

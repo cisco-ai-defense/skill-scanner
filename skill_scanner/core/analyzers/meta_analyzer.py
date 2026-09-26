@@ -841,7 +841,13 @@ class MetaAnalyzer(BaseAnalyzer):
         # analyzer's normalization and request-parameter handling so the meta
         # analyzer receives the same key and default endpoint.
         self.provider_config: ProviderConfig | None = None
-        if self.provider == "orcarouter" or self.model.lower().startswith("orcarouter/"):
+        _wants_provider_config = (
+            self.provider == "orcarouter"
+            or self.model.lower().startswith("orcarouter/")
+            or self.provider == "bedrock-mantle"
+            or self.model.lower().startswith("bedrock-mantle/")
+        )
+        if _wants_provider_config:
             self.provider_config = ProviderConfig(
                 model=self.model,
                 api_key=self.api_key,
@@ -858,12 +864,19 @@ class MetaAnalyzer(BaseAnalyzer):
             self.provider = self.provider_config.provider
 
         self.is_bedrock = bool(self.model and "bedrock/" in self.model)
+        # The mantle route is OpenAI-compatible but authenticates with SigV4, so it
+        # has no API key. "bedrock/" is not a substring of "bedrock-mantle/", so
+        # without this it would be treated as a keyed provider and rejected.
+        self.is_bedrock_mantle = bool(
+            getattr(self.provider_config, "use_bedrock_mantle", False) is True
+            or (self.model and self.model.lower().startswith("bedrock-mantle/"))
+        )
         self.is_ollama = bool(self.model and self.model.lower().startswith("ollama/"))
         if self.is_ollama:
             self.base_url = resolve_ollama_base_url(self.base_url)
 
         # Validate configuration
-        if not self.api_key and not self.is_bedrock and not self.is_ollama:
+        if not self.api_key and not self.is_bedrock and not self.is_bedrock_mantle and not self.is_ollama:
             raise ValueError(
                 "Meta-Analyzer LLM API key not configured. "
                 "Set SKILL_SCANNER_META_LLM_API_KEY or SKILL_SCANNER_LLM_API_KEY environment variable."
@@ -1913,6 +1926,58 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
             api_params["aws_session_token"] = self.aws_session_token
         if self.aws_profile:
             api_params["aws_profile_name"] = self.aws_profile
+
+        if self.is_bedrock_mantle and self.provider_config is not None:
+            # LiteLLM cannot sign a body it builds itself, so the mantle route goes
+            # through the request handler that owns that client rather than through
+            # acompletion.
+            from .llm_request_handler import LLMRequestHandler
+
+            handler = LLMRequestHandler(
+                self.provider_config,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                max_retries=self.max_retries,
+                timeout=self.timeout,
+                reasoning_effort=self.reasoning_effort,
+            )
+            # The handler loads the *analyzer's* response schema by default. Left as
+            # that, meta-analysis requests are constrained to the analyzer's shape and
+            # the model returns findings/verdict instead of the meta delta, so every
+            # batch fails the contract and is silently retained unchanged -- meta
+            # becomes a no-op that still reports having run.
+            #
+            # Meta's own schema cannot be used on this route either: the mantle
+            # validator rejects it, and not only for `uniqueItems`. Stripping
+            # `uniqueItems`, `pattern`, `minItems` and `maxItems` still returns
+            # `validation_error: the task request was rejected by the target`, so the
+            # schema is beyond what the route accepts rather than tripping one keyword.
+            #
+            # Requesting unconstrained JSON is therefore the only working option here.
+            # It is safe because the strict contract validation downstream is what
+            # actually protects the caller: schema enforcement was belt-and-braces, and
+            # an unparsable response is still rejected rather than accepted.
+            handler.response_schema = None
+            try:
+                mantle_content = await handler.make_request(messages, context="meta-analysis")
+            except LLMResponseTruncatedError as error:
+                # _analyze_batch catches only MetaAnalysisTruncatedError. Left as the
+                # handler's own type, a truncated mantle response would escape that
+                # handling and surface as a generic failure, losing the retry-with-fewer
+                # -findings path that exists precisely for truncation.
+                _add_token_usage(self._llm_usage, handler.last_usage)
+                # Carry the original diagnostics across rather than inventing values:
+                # the retry path reports finish_reason, model and the token cap, and a
+                # placeholder there would misdescribe why the batch was cut short.
+                raise MetaAnalysisTruncatedError(
+                    str(error),
+                    finish_reason=error.finish_reason,
+                    model=error.model,
+                    max_tokens=error.max_tokens,
+                    context=error.context,
+                ) from error
+            _add_token_usage(self._llm_usage, handler.last_usage)
+            return mantle_content
 
         # Retry logic with exponential backoff
         last_exception = None

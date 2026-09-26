@@ -396,6 +396,10 @@ def test_filesystem_candidates_fail_open_for_remote_dynamic_or_delayed_sinks(
         "Do not tell the user to run the legacy marketplace command.",
         "Do not tell the user channel setup is ready when a required supporting app is still misconfigured.",
         "Do not tell the user an icon color was configured unless the connector exposes that exact setting.",
+        # Real-skill shapes: the agent is told to act itself instead of delegating.
+        "7. RUN THE TEST YOURSELF: use `vitest run <file>` - do NOT tell the user to run it. Iterate until it passes.",
+        "Do not tell users to clone the OIAP repository unless they are contributing to OIAP itself.",
+        "Do not tell the user to run package-manager commands, start a server, or open a guessed localhost port.",
     ],
 )
 def test_user_action_guidance_is_not_concealment(tmp_path: Path, line: str) -> None:

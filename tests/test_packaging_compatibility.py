@@ -243,3 +243,45 @@ def test_editable_build_reuses_only_an_integrity_verified_source_helper() -> Non
     assert 'manifest["helper"]["helper_version"] != package_version' in hook
     assert "checked-in CEL helper bundle is incomplete" in hook
     assert "--helper-version source-tree" in hook
+
+
+def _reusable_workflow_input_validation() -> str:
+    document = yaml.safe_load((REPO_ROOT / ".github/workflows/scan-skills.yml").read_text(encoding="utf-8"))
+    steps = document["jobs"]["scan"]["steps"]
+    return next(step for step in steps if step.get("name") == "Validate inputs")["run"]
+
+
+def _run_input_validation(policy: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    environment = {
+        **os.environ,
+        "INPUT_SCAN_MODE": "scan-all",
+        "INPUT_FORMAT": "sarif",
+        "INPUT_POLICY": policy,
+        "INPUT_FAIL_ON_SEVERITY": "high",
+    }
+    return subprocess.run(
+        ["bash", "-c", _reusable_workflow_input_validation()],
+        check=False,
+        capture_output=True,
+        cwd=cwd,
+        env=environment,
+        text=True,
+        timeout=10,
+    )
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="the reusable workflow validation runs in Bash")
+def test_reusable_workflow_accepts_every_policy_preset(tmp_path: Path) -> None:
+    # A preset the scanner ships but the workflow rejects is unusable from CI.
+    from skill_scanner.core.scan_policy import ScanPolicy
+
+    for preset in ScanPolicy.preset_names():
+        result = _run_input_validation(preset, tmp_path)
+        assert result.returncode == 0, f"{preset}: {result.stdout}"
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="the reusable workflow validation runs in Bash")
+def test_reusable_workflow_rejects_an_unknown_policy(tmp_path: Path) -> None:
+    result = _run_input_validation("no-such-preset", tmp_path)
+    assert result.returncode == 1
+    assert "Invalid policy" in result.stdout

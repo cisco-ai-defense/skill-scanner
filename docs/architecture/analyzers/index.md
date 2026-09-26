@@ -46,5 +46,6 @@ See [Scanning Pipeline](../scanning-pipeline.md) for the full execution flow.
 - [Meta-Analyzer](meta-analyzer.md)
 - [AI Defense Analyzer](aidefense-analyzer.md)
 - [OSV Analyzer](osv-analyzer.md)
+- [System One Analyzer](system-one-analyzer.md)
 - [Analyzer Selection Guide](meta-and-external-analyzers.md)
 - [Writing Custom Rules](writing-custom-rules.md)

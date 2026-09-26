@@ -1,0 +1,101 @@
+{
+  "common_max_bytes": 12288,
+  "drop_order": [
+    "package_shape",
+    "siblings",
+    "neighborhood"
+  ],
+  "field_budgets": {
+    "candidate": 2048,
+    "declared_purpose": 1024,
+    "file_role": 128,
+    "neighborhood": 3072,
+    "package_shape": 1024,
+    "siblings": 1024,
+    "skill_identity": 256,
+    "typed_facts": 1024
+  },
+  "forbidden_source_rationale": {
+    "other_tier_verdict": "Including another tier's decision destroys arm independence and invalidates cascade scoring.",
+    "untrusted_prompt_as_policy": "These corpora are largely prompt-injection samples, so sample text stays framed as untrusted and is neutralized before use."
+  },
+  "forbidden_sources": [
+    "benchmark_truth",
+    "sample_label",
+    "model_reasoning",
+    "other_tier_verdict",
+    "untrusted_prompt_as_policy"
+  ],
+  "hard_reject_bytes": 24576,
+  "kind": "skill-scanner-system-one-contexts",
+  "note": "Budgets are in bytes because code tokenizes far worse than prose. Measured against Gemma 4, repetitive Python came in at 3.06 bytes per token and adversarial content is worse. The guard ratio is a pessimistic 2 bytes per token.",
+  "packing_tiers": {
+    "A": {
+      "applies_when": "scanner_relevant_bytes <= budget",
+      "description": "Send all scanner-relevant content. Covers essentially every MaliciousSkillBench record at ~2.9 KB and most ClawHub rows at ~24 KB.",
+      "name": "whole_record"
+    },
+    "B": {
+      "applies_when": "scanner_relevant_bytes > budget",
+      "description": "SKILL.md whole first, then referenced scripts, then remaining code ordered by Magika type, then documentation markdown truncated hardest.",
+      "fill_order": [
+        "skill_md",
+        "referenced_scripts",
+        "other_code_by_magika_type",
+        "documentation_markdown"
+      ],
+      "name": "priority_ordered"
+    },
+    "C": {
+      "applies_when": "priority_ordered_still_overflows",
+      "description": "One request per candidate finding. The floor for the long tail, and the cheapest and most auditable option.",
+      "name": "candidate_centric"
+    }
+  },
+  "questions_reserve_bytes": 2048,
+  "schema_version": 1,
+  "trusted_sources": [
+    "skill_manifest",
+    "declared_skill_purpose",
+    "candidate_finding_evidence",
+    "projected_candidate_facts",
+    "file_role_classification"
+  ],
+  "variant_note": "Fields name what render_state emits. A variant that listed a field the renderer cannot produce would silently degrade to the full context and the ablation would measure nothing, so the two vocabularies are kept identical.",
+  "variants": {
+    "K0": {
+      "description": "Control: the packed file content and nothing else. Any gap to K7 is the measured value of context.",
+      "fields": [
+        "skill_identity",
+        "files"
+      ]
+    },
+    "K1": {
+      "description": "Adds the skill's own declared purpose, the intent analogue.",
+      "fields": [
+        "skill_identity",
+        "files",
+        "declared_purpose"
+      ]
+    },
+    "K3": {
+      "description": "Adds derived package shape: file inventory, roles and detected types.",
+      "fields": [
+        "skill_identity",
+        "files",
+        "declared_purpose",
+        "package_shape"
+      ]
+    },
+    "K7": {
+      "description": "Production recipe: everything renderable inside the byte bound.",
+      "fields": [
+        "skill_identity",
+        "files",
+        "declared_purpose",
+        "package_shape",
+        "packing_tier"
+      ]
+    }
+  }
+}

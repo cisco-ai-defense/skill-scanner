@@ -36,6 +36,7 @@ import stat
 import sys
 import unicodedata
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,7 @@ from evals.datasets.public_datasets import (  # noqa: E402
     get_locked_dataset,
     load_dataset_lock,
     locked_split_protocols,
+    pull_request_acquisition,
     sample_metadata_manifest_sha256,
     validate_artifact_manifest,
     validate_quarantine_manifest,
@@ -57,11 +59,6 @@ from evals.datasets.public_datasets import (  # noqa: E402
     validate_snapshot_metadata,
     validate_source_artifact_manifest,
     validated_portable_relative_path,
-)
-from evals.runners.public_dataset_benchmark import (  # noqa: E402
-    SNAPSHOT_MANIFEST,
-    SNAPSHOT_SCHEMA_VERSION,
-    load_frozen_snapshot,
 )
 
 try:
@@ -354,14 +351,33 @@ def _materialize_pinned_text(destination: Path, content: str) -> None:
         raise
 
 
-def materialize_snapshot(
+@dataclass(frozen=True)
+class _ValidatedPopulation:
+    """The whole pinned population, validated against the lock, with nothing written yet."""
+
+    lock: Mapping[str, Any]
+    dataset: Mapping[str, Any]
+    revision: str
+    artifacts: list[dict[str, Any]]
+    samples: list[dict[str, Any]]
+    texts: dict[str, str]
+    quarantine: tuple[dict[str, Any], ...]
+    declared_digest: str
+    sample_metadata_digest: str
+    quarantine_digest: str
+
+
+def _validated_population(
     source_root: Path,
-    output_root: Path,
     *,
-    profile_path: Path = PROFILE_FILE,
-    dataset_lock: Path | None = None,
-) -> Mapping[str, Any]:
-    """Validate pinned inputs and write the complete inert classification snapshot."""
+    profile_path: Path,
+    dataset_lock: Path | None,
+) -> _ValidatedPopulation:
+    """Validate every pinned input and row, and every manifest digest, before any output exists.
+
+    Both writers below use this, so a partial materialization -- the train/validation split a
+    pull request scans -- is checked against exactly the same population as the release snapshot.
+    """
 
     if parquet is None:  # pragma: no cover - exercised by the producer environment
         raise MaterializationError("install the locked datasets dependency group: uv sync --frozen --group datasets")
@@ -420,52 +436,42 @@ def materialize_snapshot(
     if len(quarantine_by_id) != len(quarantine):
         raise MaterializationError("dataset profile contains duplicate quarantine identities")
 
-    output_root = Path(output_root)
-    if output_root.exists() or output_root.is_symlink():
-        raise MaterializationError("output directory must be a new non-symlink path")
-    if not output_root.parent.is_dir() or output_root.parent.is_symlink():
-        raise MaterializationError("output directory parent must be an existing non-symlink directory")
-    # Resolve only the existing parent. This keeps the leaf creation exclusive
-    # while normalizing platform aliases such as macOS /tmp -> /private/tmp.
-    output_root = output_root.parent.resolve(strict=True) / output_root.name
-    output_root.mkdir(mode=0o700)
-    (output_root / "skills").mkdir(mode=0o700)
-
     artifacts: list[dict[str, Any]] = []
     samples: list[dict[str, Any]] = []
-    try:
-        for benchmark_id in sorted(by_id):
-            row = by_id[benchmark_id]
-            label, source_id = identities[benchmark_id]
-            family = row["structural_family_id"]
-            if family is None and label == "benign":
-                family = "UNASSIGNED_BENIGN"
-            if not isinstance(family, str) or not family or "\x00" in family:
-                raise MaterializationError(f"{benchmark_id} has an invalid structural_family_id")
-            categories = _category_ids(row, label)
-            selected_text = row["skill_text"] if row["skill_text"] is not None else row["public_skill_text"]
-            if not isinstance(selected_text, str) or not selected_text:
-                raise MaterializationError(f"{benchmark_id} has no public-readable skill text")
-            if row["text_available"] is not (row["skill_text"] is not None):
-                raise MaterializationError(f"{benchmark_id} text_available disagrees with skill_text")
-            if row["original_text_withheld"] and row["skill_text"] is not None:
-                raise MaterializationError(f"{benchmark_id} exposes an original marked withheld")
-            if row["public_skill_text"] is not None:
-                public_digest = hashlib.sha256(row["public_skill_text"].encode("utf-8")).hexdigest()
-                if row["public_text_sha256"] != public_digest:
-                    raise MaterializationError(f"{benchmark_id} public text digest mismatch")
-            elif row["public_text_sha256"] is not None:
-                raise MaterializationError(f"{benchmark_id} has a public digest without public text")
+    texts: dict[str, str] = {}
+    for benchmark_id in sorted(by_id):
+        row = by_id[benchmark_id]
+        label, source_id = identities[benchmark_id]
+        family = row["structural_family_id"]
+        if family is None and label == "benign":
+            family = "UNASSIGNED_BENIGN"
+        if not isinstance(family, str) or not family or "\x00" in family:
+            raise MaterializationError(f"{benchmark_id} has an invalid structural_family_id")
+        categories = _category_ids(row, label)
+        selected_text = row["skill_text"] if row["skill_text"] is not None else row["public_skill_text"]
+        if not isinstance(selected_text, str) or not selected_text:
+            raise MaterializationError(f"{benchmark_id} has no public-readable skill text")
+        if row["text_available"] is not (row["skill_text"] is not None):
+            raise MaterializationError(f"{benchmark_id} text_available disagrees with skill_text")
+        if row["original_text_withheld"] and row["skill_text"] is not None:
+            raise MaterializationError(f"{benchmark_id} exposes an original marked withheld")
+        if row["public_skill_text"] is not None:
+            public_digest = hashlib.sha256(row["public_skill_text"].encode("utf-8")).hexdigest()
+            if row["public_text_sha256"] != public_digest:
+                raise MaterializationError(f"{benchmark_id} public text digest mismatch")
+        elif row["public_text_sha256"] is not None:
+            raise MaterializationError(f"{benchmark_id} has a public digest without public text")
 
-            content = selected_text.encode("utf-8")
-            artifact = {
-                "path": f"skills/{benchmark_id}/SKILL.md",
-                "sha256": hashlib.sha256(content).hexdigest(),
-                "size_bytes": len(content),
-            }
-            artifacts.append(artifact)
-            sample_splits = {protocol: splits[protocol][benchmark_id] for protocol in protocols}
-            sample = {
+        content = selected_text.encode("utf-8")
+        artifact = {
+            "path": f"skills/{benchmark_id}/SKILL.md",
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "size_bytes": len(content),
+        }
+        artifacts.append(artifact)
+        sample_splits = {protocol: splits[protocol][benchmark_id] for protocol in protocols}
+        samples.append(
+            {
                 "benchmark_id": benchmark_id,
                 "category_ids": categories,
                 "exact_hash": row["exact_hash"],
@@ -480,62 +486,112 @@ def materialize_snapshot(
                 "structural_family_id": family,
                 "text_origin_source_id": row["text_origin_source_id"],
             }
-            samples.append(sample)
+        )
 
-            quarantined = quarantine_by_id.get(benchmark_id)
-            if quarantined is not None:
-                for field, expected in (
-                    ("path", artifact["path"]),
-                    ("sha256", artifact["sha256"]),
-                    ("size_bytes", artifact["size_bytes"]),
-                    ("label", label),
-                    ("source_id", source_id),
-                    ("structural_family_id", family),
-                    ("splits", sample_splits),
-                ):
-                    if quarantined[field] != expected:
-                        raise MaterializationError(f"{benchmark_id} quarantine {field} disagrees with source data")
-                continue
+        quarantined = quarantine_by_id.get(benchmark_id)
+        if quarantined is not None:
+            for field, expected in (
+                ("path", artifact["path"]),
+                ("sha256", artifact["sha256"]),
+                ("size_bytes", artifact["size_bytes"]),
+                ("label", label),
+                ("source_id", source_id),
+                ("structural_family_id", family),
+                ("splits", sample_splits),
+            ):
+                if quarantined[field] != expected:
+                    raise MaterializationError(f"{benchmark_id} quarantine {field} disagrees with source data")
+            continue
+        texts[benchmark_id] = selected_text
 
-            _materialize_pinned_text(output_root / "skills" / benchmark_id, selected_text)
+    declared_digest = artifact_manifest_sha256(DATASET_ID, artifacts, manifest=lock)
+    validate_artifact_manifest(
+        DATASET_ID,
+        artifacts,
+        manifest_sha256=declared_digest,
+        manifest=lock,
+    )
+    sample_metadata_digest = sample_metadata_manifest_sha256(
+        DATASET_ID,
+        samples,
+        artifact_manifest_sha256=declared_digest,
+        manifest=lock,
+    )
+    validate_sample_metadata_manifest(
+        DATASET_ID,
+        samples,
+        artifact_manifest_sha256=declared_digest,
+        manifest_sha256=sample_metadata_digest,
+        manifest=lock,
+    )
+    quarantine_digest = dataset["integrity"]["materialization"]["quarantine_manifest_sha256"]
+    validate_quarantine_manifest(
+        DATASET_ID,
+        quarantine,
+        declared_artifact_manifest_sha256=declared_digest,
+        manifest_sha256=quarantine_digest,
+        manifest=lock,
+    )
+    return _ValidatedPopulation(
+        lock=lock,
+        dataset=dataset,
+        revision=revision,
+        artifacts=artifacts,
+        samples=samples,
+        texts=texts,
+        quarantine=quarantine,
+        declared_digest=declared_digest,
+        sample_metadata_digest=sample_metadata_digest,
+        quarantine_digest=quarantine_digest,
+    )
 
-        declared_digest = artifact_manifest_sha256(DATASET_ID, artifacts, manifest=lock)
-        validate_artifact_manifest(
-            DATASET_ID,
-            artifacts,
-            manifest_sha256=declared_digest,
-            manifest=lock,
-        )
-        sample_metadata_digest = sample_metadata_manifest_sha256(
-            DATASET_ID,
-            samples,
-            artifact_manifest_sha256=declared_digest,
-            manifest=lock,
-        )
-        validate_sample_metadata_manifest(
-            DATASET_ID,
-            samples,
-            artifact_manifest_sha256=declared_digest,
-            manifest_sha256=sample_metadata_digest,
-            manifest=lock,
-        )
-        quarantine_digest = dataset["integrity"]["materialization"]["quarantine_manifest_sha256"]
-        validate_quarantine_manifest(
-            DATASET_ID,
-            quarantine,
-            declared_artifact_manifest_sha256=declared_digest,
-            manifest_sha256=quarantine_digest,
-            manifest=lock,
-        )
+
+def _new_output_root(output_root: Path) -> Path:
+    output_root = Path(output_root)
+    if output_root.exists() or output_root.is_symlink():
+        raise MaterializationError("output directory must be a new non-symlink path")
+    if not output_root.parent.is_dir() or output_root.parent.is_symlink():
+        raise MaterializationError("output directory parent must be an existing non-symlink directory")
+    # Resolve only the existing parent. This keeps the leaf creation exclusive
+    # while normalizing platform aliases such as macOS /tmp -> /private/tmp.
+    output_root = output_root.parent.resolve(strict=True) / output_root.name
+    output_root.mkdir(mode=0o700)
+    return output_root
+
+
+def materialize_snapshot(
+    source_root: Path,
+    output_root: Path,
+    *,
+    profile_path: Path = PROFILE_FILE,
+    dataset_lock: Path | None = None,
+) -> Mapping[str, Any]:
+    """Validate pinned inputs and write the complete inert classification snapshot."""
+
+    # Imported here, not at module level: the benchmark module imports the scanner, and the source
+    # listing and the pull-request split must run in an acquisition job that has only the datasets
+    # dependency group installed.
+    from evals.runners.public_dataset_benchmark import (
+        SNAPSHOT_MANIFEST,
+        SNAPSHOT_SCHEMA_VERSION,
+        load_frozen_snapshot,
+    )
+
+    population = _validated_population(source_root, profile_path=profile_path, dataset_lock=dataset_lock)
+    output_root = _new_output_root(output_root)
+    (output_root / "skills").mkdir(mode=0o700)
+    try:
+        for benchmark_id in sorted(population.texts):
+            _materialize_pinned_text(output_root / "skills" / benchmark_id, population.texts[benchmark_id])
         manifest = {
             "schema_version": SNAPSHOT_SCHEMA_VERSION,
             "dataset_id": DATASET_ID,
-            "revision": revision,
-            "artifact_manifest_sha256": declared_digest,
-            "sample_metadata_manifest_sha256": sample_metadata_digest,
-            "artifacts": artifacts,
-            "samples": samples,
-            "quarantine": {"manifest_sha256": quarantine_digest, "records": list(quarantine)},
+            "revision": population.revision,
+            "artifact_manifest_sha256": population.declared_digest,
+            "sample_metadata_manifest_sha256": population.sample_metadata_digest,
+            "artifacts": population.artifacts,
+            "samples": population.samples,
+            "quarantine": {"manifest_sha256": population.quarantine_digest, "records": list(population.quarantine)},
         }
         _write_json_new(output_root / SNAPSHOT_MANIFEST, manifest)
         snapshot = load_frozen_snapshot(output_root, dataset_id=DATASET_ID, dataset_lock=dataset_lock)
@@ -545,14 +601,110 @@ def materialize_snapshot(
 
     return {
         "dataset_id": DATASET_ID,
-        "revision": revision,
-        "source_artifact_manifest_sha256": dataset["integrity"]["source_artifact_manifest_sha256"],
+        "revision": population.revision,
+        "source_artifact_manifest_sha256": population.dataset["integrity"]["source_artifact_manifest_sha256"],
         "artifact_manifest_sha256": snapshot.artifact_manifest_sha256,
         "sample_metadata_manifest_sha256": snapshot.sample_metadata_manifest_sha256,
         "usable_artifact_manifest_sha256": snapshot.usable_artifact_manifest_sha256,
-        "declared_artifacts": len(artifacts),
-        "usable_artifacts": len(artifacts) - len(quarantine),
-        "quarantined_artifacts": len(quarantine),
+        "declared_artifacts": len(population.artifacts),
+        "usable_artifacts": len(population.artifacts) - len(population.quarantine),
+        "quarantined_artifacts": len(population.quarantine),
+    }
+
+
+def development_split_ids(samples: Sequence[Mapping[str, Any]], partitions: Sequence[str]) -> list[str]:
+    """Records whose every split protocol places them in an allowed partition.
+
+    Requiring every protocol is what keeps the frozen test split out: a record in the
+    source-disjoint test partition is excluded even if another protocol calls it training data.
+    """
+
+    allowed = set(partitions)
+    return sorted(
+        str(sample["benchmark_id"])
+        for sample in samples
+        if sample["splits"] and all(partition in allowed for partition in sample["splits"].values())
+    )
+
+
+def materialize_development_split(
+    source_root: Path,
+    clean_root: Path,
+    *,
+    corpus: str = "msb-trainval",
+    profile_path: Path = PROFILE_FILE,
+    dataset_lock: Path | None = None,
+) -> Mapping[str, Any]:
+    """Write only the partitions a pull request may scan, as a label-free corpus.
+
+    The whole pinned population is validated first, exactly as for the release snapshot; then only
+    records inside the lock's ``pull_request_acquisition`` partitions are written, so no frozen test
+    member is ever materialized. Labels go to a sibling ``<corpus>.labels.json`` outside every
+    scanned directory, in the layout ``evals/lib/cross_tool.CleanCorpus`` reads.
+    """
+
+    population = _validated_population(source_root, profile_path=profile_path, dataset_lock=dataset_lock)
+    try:
+        allowance = pull_request_acquisition(DATASET_ID, population.lock)
+    except DatasetLockError as exc:
+        raise MaterializationError(str(exc)) from exc
+    partitions = [str(partition) for partition in allowance["partitions"]]
+    if "test" in partitions:  # pragma: no cover - the lock validator refuses this first
+        raise MaterializationError("a pull-request split may not include the frozen test partition")
+    selected = [record_id for record_id in development_split_ids(population.samples, partitions)]
+    usable = [record_id for record_id in selected if record_id in population.texts]
+    labels = {str(sample["benchmark_id"]): str(sample["label"]) for sample in population.samples}
+
+    clean_root = Path(clean_root)
+    if clean_root.is_symlink() or (clean_root.exists() and not clean_root.is_dir()):
+        raise MaterializationError("clean root must be a directory")
+    clean_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    corpus_root = _new_output_root(clean_root / corpus)
+    labels_path = clean_root / f"{corpus}.labels.json"
+    if labels_path.exists() or labels_path.is_symlink():
+        shutil.rmtree(corpus_root)
+        raise MaterializationError(f"{labels_path.name} already exists")
+    tree = hashlib.sha256()
+    try:
+        for record_id in usable:
+            text = population.texts[record_id]
+            _materialize_pinned_text(corpus_root / record_id, text)
+            tree.update(f"{record_id}/SKILL.md".encode())
+            tree.update(b"\0")
+            tree.update(text.encode("utf-8"))
+            tree.update(b"\0")
+        counts: dict[str, int] = {}
+        for record_id in usable:
+            counts[labels[record_id]] = counts.get(labels[record_id], 0) + 1
+        _write_json_new(
+            labels_path,
+            {
+                "complete": True,
+                "corpus": corpus,
+                "dataset_id": DATASET_ID,
+                "revision": population.revision,
+                "artifact_manifest_sha256": population.declared_digest,
+                "selection": f"every split protocol in {sorted(partitions)}",
+                "count": len(usable),
+                "label_counts": counts,
+                "tree_sha256": tree.hexdigest(),
+                "records": [{"record_id": record_id, "label": labels[record_id]} for record_id in usable],
+            },
+        )
+    except BaseException:
+        shutil.rmtree(corpus_root, ignore_errors=True)
+        labels_path.unlink(missing_ok=True)
+        raise
+    return {
+        "dataset_id": DATASET_ID,
+        "revision": population.revision,
+        "corpus": corpus,
+        "partitions": sorted(partitions),
+        "records": len(usable),
+        "label_counts": counts,
+        "excluded_by_partition": len(population.samples) - len(selected),
+        "quarantined_in_selection": len(selected) - len(usable),
+        "tree_sha256": tree.hexdigest(),
     }
 
 
@@ -562,6 +714,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--dataset-lock", type=Path, default=None)
     parser.add_argument("--dataset-profile", type=Path, default=PROFILE_FILE)
+    parser.add_argument(
+        "--development-split",
+        type=Path,
+        default=None,
+        help="write only the lock's pull-request partitions, as a label-free corpus under this clean root",
+    )
     parser.add_argument(
         "--print-source-paths",
         action="store_true",
@@ -578,6 +736,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             for artifact in artifacts:
                 print(artifact["path"])
+            return 0
+        if args.development_split is not None:
+            if args.source_dir is None or args.output_dir is not None:
+                raise MaterializationError("--development-split takes --source-dir and no --output-dir")
+            summary = materialize_development_split(
+                args.source_dir,
+                args.development_split,
+                profile_path=args.dataset_profile,
+                dataset_lock=args.dataset_lock,
+            )
+            print(json.dumps(summary, sort_keys=True))
             return 0
         if args.source_dir is None or args.output_dir is None:
             raise MaterializationError("--source-dir and --output-dir are required")

@@ -20,6 +20,7 @@ Security scanning for AI agent skills. Detects prompt injection, data exfiltrati
 - [Static Analyzer](architecture/analyzers/static-analyzer.md) -- YAML + YARA pattern matching
 - [Behavioral Analyzer](architecture/analyzers/behavioral-analyzer.md) -- AST dataflow analysis
 - [LLM Analyzer](architecture/analyzers/llm-analyzer.md) -- LLM-as-a-judge semantic analysis
+- [System One Analyzer](architecture/analyzers/system-one-analyzer.md) -- optional advisory screening tier
 - [Meta-Analyzer](architecture/analyzers/meta-analyzer.md) -- False positive filtering and prioritization
 - [Meta & External Analyzers](architecture/analyzers/meta-and-external-analyzers.md) -- AI Defense, VirusTotal, and meta-analysis
 - [AI Defense Analyzer](architecture/analyzers/aidefense-analyzer.md) -- Cisco AI Defense cloud analyzer
@@ -44,6 +45,7 @@ Security scanning for AI agent skills. Detects prompt injection, data exfiltrati
 - [API Operations](user-guide/api-operations.md) -- API usage patterns
 - [API Endpoints Detail](user-guide/api-endpoints-detail.md) -- Endpoint reference
 - [API Rationale](user-guide/api-rationale.md) -- Design decisions behind the API
+- [Recommended Settings](user-guide/recommended-settings.md) -- What to run for which job, why, and how to configure it
 - [Scan Policies Overview](user-guide/scan-policies-overview.md) -- Policy presets and tuning
 - [Custom Policy Configuration](user-guide/custom-policy-configuration.md) -- Writing your own policy YAML
 
@@ -60,6 +62,7 @@ Security scanning for AI agent skills. Detects prompt injection, data exfiltrati
 - [Output Formats](reference/output-formats.md) -- JSON, SARIF, Markdown, HTML, and table formats
 - [Policy Quick Reference](reference/policy-quick-reference.md) -- Compact policy section and knob reference
 - [Dependencies & LLM Providers](reference/dependencies-and-llm-providers.md) -- Supported providers and extras
+- [Measured Results](reference/measured-results.md) -- What the scanner scores, on which corpus, under which configuration
 
 ## Development
 
