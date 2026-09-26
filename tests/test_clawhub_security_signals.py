@@ -502,3 +502,23 @@ def test_real_core_scanner_runs_offline_snapshot_in_cel_shadow_mode(tmp_path: Pa
     assert report["cel"]["invalid_metadata_samples"] == 0
     assert report["cel"]["identity_values"]["mode"] == ["shadow"]
     assert report["cel"]["identity_values"]["runtime"] == ["cel-go"]
+
+
+def test_integral_float_counts_are_counts_and_fractional_ones_are_not(tmp_path: Path) -> None:
+    # The pinned upstream JSONL writes VirusTotal counts as floats; rejecting them discarded
+    # 9,693 of 10,076 validation rows as schema-invalid.
+    from evals.datasets.clawhub_security_signals import iter_clawhub_security_signal_rows
+
+    integral = _row("integral")
+    integral["virustotal_undetected_count"] = 66.0
+    fractional = _row("fractional")
+    fractional["virustotal_undetected_count"] = 1.5
+    negative = _row("negative")
+    negative["virustotal_malicious_count"] = -1.0
+    root, lock, profile = _write_snapshot_contract(tmp_path, selected_rows=[integral, fractional, negative])
+    errors = {
+        record.row_id: record.ingestion_error
+        for record in iter_clawhub_security_signal_rows(_load(root, lock, profile))
+    }
+    assert errors["integral"] is None
+    assert sum(error == "ROW_SCHEMA_INVALID" for error in errors.values()) == 2

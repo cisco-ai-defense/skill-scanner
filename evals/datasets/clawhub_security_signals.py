@@ -42,10 +42,13 @@ from typing import Any, BinaryIO, cast
 from evals.datasets.public_datasets import (
     DatasetLockError,
     DatasetSchemaError,
+    UnsafeSampleError,
     artifact_manifest_sha256,
     get_locked_dataset,
     load_dataset_lock,
+    pull_request_acquisition,
     validate_locked_row,
+    validated_portable_relative_path,
 )
 
 DATASET_ID = "OpenClaw/clawhub-security-signals"
@@ -526,7 +529,13 @@ def _nullable_bounded_string(
 
 
 def _nullable_nonnegative_integer(value: Any, location: str) -> None:
-    if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+    if value is None:
+        return
+    # The pinned upstream JSONL writes the VirusTotal counts as floats (``66.0``). An integral,
+    # finite, non-negative float is a count; rejecting it discarded 9,693 of 10,076 validation rows.
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer() and value >= 0:
+        return
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise DatasetSchemaError(f"{location} must be a non-negative integer or null")
 
 
@@ -720,3 +729,141 @@ def iter_clawhub_security_signal_rows(
             # row. If another process changed the file during a long scan, the
             # runner aborts instead of publishing evidence under the old pin.
             _verify_open_split(handle, contract)
+
+
+# A real-skill sample for flag rates. Bounded so one oversized bundle cannot dominate a CI job.
+_SAMPLE_MAX_FILES_PER_SKILL = 256
+_SAMPLE_MAX_BYTES_PER_SKILL = 4 * 1024 * 1024
+
+
+def sample_row_ids(row_ids: Sequence[str], *, revision: str, size: int) -> list[str]:
+    """A fixed sample: the ``size`` ids with the smallest keyed hash, independent of file order.
+
+    Keying on the revision means a new pinned revision draws a new sample instead of silently
+    keeping an old one; within a revision every run scans exactly the same skills.
+    """
+
+    if size <= 0:
+        raise ClawhubSecuritySignalsError("sample size must be positive")
+
+    def key(row_id: str) -> str:
+        return hashlib.sha256(f"clawhub-sample-v1\0{revision}\0{row_id}".encode()).hexdigest()
+
+    return sorted(sorted(set(row_ids), key=key)[:size])
+
+
+def _opaque_record_id(row_id: str) -> str:
+    # Directory names carry no slug or owner: the sample is scanned, never browsed.
+    return "c_" + hashlib.sha256(row_id.encode("utf-8")).hexdigest()[:20]
+
+
+def _write_new_text(path: Path, content: str) -> int:
+    if "\x00" in content:
+        raise UnsafeSampleError("sample text contains a NUL byte")
+    encoded = content.encode("utf-8")
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(encoded)
+    return len(encoded)
+
+
+def _write_sample_skill(directory: Path, row: Mapping[str, Any]) -> int:
+    """SKILL.md plus every bundled text file whose path passes the shared portable-path contract."""
+
+    directory.mkdir(mode=0o700)
+    written = _write_new_text(directory / "SKILL.md", cast(str, row["skill_md_content"]))
+    files = 1
+    seen = {"skill.md"}
+    for entry in cast(Sequence[Mapping[str, Any]], row.get("skill_bundle_content") or ()):
+        if files >= _SAMPLE_MAX_FILES_PER_SKILL:
+            break
+        content = entry.get("content") if isinstance(entry, Mapping) else None
+        if not isinstance(content, str) or not content:
+            continue
+        try:
+            relative = validated_portable_relative_path(entry.get("path"))
+        except UnsafeSampleError:
+            continue
+        collision = relative.as_posix().casefold()
+        if collision in seen or written + len(content.encode("utf-8")) > _SAMPLE_MAX_BYTES_PER_SKILL:
+            continue
+        seen.add(collision)
+        target = directory.joinpath(*relative.parts)
+        for parent in reversed(target.parents):
+            if parent == directory or directory not in parent.parents:
+                continue
+            if not parent.exists():
+                parent.mkdir(mode=0o700)
+        try:
+            written += _write_new_text(target, content)
+        except (UnsafeSampleError, OSError):
+            continue
+        files += 1
+    return files
+
+
+def materialize_flag_rate_sample(
+    snapshot: ClawhubSecuritySignalsSnapshot,
+    clean_root: Path,
+    *,
+    corpus: str = "clawhub-sample",
+    size: int = 2_000,
+) -> Mapping[str, Any]:
+    """Write a fixed sample of real skills as a label-free corpus, for flag rates only.
+
+    Every label is ``None``: the ClawHub verdict is an automated silver signal, and the lock
+    forbids treating it as ground truth or gating on it. Only the splits the lock's
+    ``pull_request_acquisition`` names may be sampled. Nothing is executed or followed.
+    """
+
+    allowance = pull_request_acquisition(DATASET_ID, snapshot.lock_manifest)
+    allowed = set(cast(Sequence[str], allowance["partitions"]))
+    if not {split.name for split in snapshot.splits} <= allowed:
+        raise ClawhubSecuritySignalsError(f"pull requests may sample only {sorted(allowed)}")
+
+    valid_ids = [
+        record.row_id for record in iter_clawhub_security_signal_rows(snapshot) if record.ingestion_error is None
+    ]
+    chosen = set(sample_row_ids(valid_ids, revision=snapshot.revision, size=size))
+
+    clean_root = Path(clean_root)
+    clean_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    corpus_root = clean_root / corpus
+    labels_path = clean_root / f"{corpus}.labels.json"
+    if corpus_root.exists() or labels_path.exists():
+        raise ClawhubSecuritySignalsError(f"{corpus} already exists under {clean_root}")
+    corpus_root.mkdir(mode=0o700)
+    records: list[dict[str, Any]] = []
+    files = 0
+    for record in iter_clawhub_security_signal_rows(snapshot):
+        if record.ingestion_error is not None or record.row_id not in chosen or record.row is None:
+            continue
+        record_id = _opaque_record_id(record.row_id)
+        files += _write_sample_skill(corpus_root / record_id, record.row)
+        records.append({"record_id": record_id, "label": None})
+    records.sort(key=lambda item: item["record_id"])
+    descriptor = os.open(labels_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "complete": True,
+                "corpus": corpus,
+                "dataset_id": DATASET_ID,
+                "revision": snapshot.revision,
+                "splits": sorted(split.name for split in snapshot.splits),
+                "selection": f"{len(records)} rows with the smallest keyed hash, clawhub-sample-v1",
+                "label_policy": "unlabelled: flag rates only; the ClawHub verdict is not ground truth",
+                "count": len(records),
+                "records": records,
+            },
+            handle,
+            indent=1,
+        )
+    return {
+        "dataset_id": DATASET_ID,
+        "revision": snapshot.revision,
+        "corpus": corpus,
+        "records": len(records),
+        "files": files,
+        "valid_rows": len(valid_ids),
+    }
