@@ -43,7 +43,9 @@ rule capability_inflation_generic{
         $overpromising_strong = /\b(100% (safe|secure|accurate|reliable)|guaranteed (to never|to always|that it will)|(this|the|our) (tool|skill|assistant) never (fails|errors|crashes|breaks)|(this|the|our) (tool|skill|assistant) always (works|succeeds) (perfectly|flawlessly))\b/i
 
         // Hidden activation triggers
-        $hidden_triggers = /\b(secret (command|keyword)|hidden (feature|mode)|easter egg|backdoor (access|entry))\b/i
+        // "Easter egg" dropped: on real skills it is UI-delight copy, cleared by the judge on
+        // nearly every flag, and no labelled malicious sample uses it.
+        $hidden_triggers = /\b(secret (command|keyword)|hidden (feature|mode)|backdoor (access|entry))\b/i
 
     condition:
 

@@ -153,6 +153,65 @@ class SecurityError(Exception):
     pass
 
 
+# _analyze_single does not raise on a provider or contract failure: it records last_error
+# and returns an INFO finding saying it could not analyse. Unioned blindly, that marker
+# joins the semantic findings and a pass that read nothing looks like a pass that found
+# nothing. A budget notice is different: it is added before the model is asked, so it
+# accompanies an answered pass and reports partial coverage, not a failure.
+_DECOMPOSED_FAILURE_RULE = "LLM_ANALYSIS_FAILED"
+_DECOMPOSED_COVERAGE_RULE = "LLM_CONTEXT_BUDGET_EXCEEDED"
+_DECOMPOSED_DIAGNOSTIC_RULES = frozenset({_DECOMPOSED_FAILURE_RULE, _DECOMPOSED_COVERAGE_RULE})
+
+_DECOMPOSED_SEVERITY_ORDER = ("SAFE", "INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+
+# Verdicts weakest to strongest, so a union keeps the strongest rather than whichever
+# pass happened to run last.
+_DECOMPOSED_VERDICT_ORDER = ("SAFE", "SUSPICIOUS", "MALICIOUS")
+
+
+def _severity_rank(severity: Any) -> int:
+    """Rank a severity, treating an unknown value as the weakest.
+
+    Unknown ranks lowest rather than raising: a newly added level must not be able to win
+    a collision by accident, and must not break a scan.
+    """
+
+    value = str(getattr(severity, "value", severity) or "").upper()
+    return _DECOMPOSED_SEVERITY_ORDER.index(value) if value in _DECOMPOSED_SEVERITY_ORDER else 0
+
+
+def _most_severe_verdict(verdicts: list[str]) -> str:
+    """Return the strongest verdict seen across decomposed passes."""
+
+    best = ""
+    best_rank = -1
+    for verdict in verdicts:
+        value = str(verdict or "").upper()
+        rank = _DECOMPOSED_VERDICT_ORDER.index(value) if value in _DECOMPOSED_VERDICT_ORDER else -1
+        if rank > best_rank:
+            best, best_rank = verdict, rank
+    return best
+
+
+def _decomposed_finding_key(finding: Finding) -> tuple[str, ...]:
+    """Identity for unioning findings across decomposed passes.
+
+    Deliberately more than the rule id. ``rule_id`` is derived from the category, so two
+    genuinely different findings in one category share it and keying on it alone would
+    drop one. Location and title separate them; title whitespace is normalised so a
+    reflowed line does not create a duplicate.
+    """
+
+    category = getattr(finding.category, "value", finding.category)
+    return (
+        str(finding.rule_id or ""),
+        str(category or ""),
+        str(finding.file_path or ""),
+        str(finding.line_number if finding.line_number is not None else ""),
+        " ".join(str(finding.title or "").split()).lower(),
+    )
+
+
 class LLMAnalyzer(BaseAnalyzer):
     """
     Production LLM analyzer using LLM as a judge.
@@ -194,6 +253,8 @@ class LLMAnalyzer(BaseAnalyzer):
         reasoning_effort: str | None = None,
         # Policy (optional – uses generous defaults when omitted)
         policy: ScanPolicy | None = None,
+        # Decomposed analysis: run one pass per focus and union the findings.
+        decompose: bool = False,
     ):
         """
         Initialize enhanced LLM analyzer.
@@ -297,6 +358,21 @@ class LLMAnalyzer(BaseAnalyzer):
 
         self.prompt_builder = PromptBuilder()
         self.response_parser = ResponseParser()
+        # Off by default. Enabling it multiplies model calls by the number of focuses,
+        # so it is a deliberate choice rather than a silent cost increase.
+        self.decompose = bool(decompose) and bool(self.prompt_builder.decomposed_focuses)
+        # How many focuses actually completed on the most recent scan, so a partially
+        # failed decomposition is visible rather than looking like a full one.
+        self.last_decomposed_passes = 0
+        # Declared so a caller can distinguish a complete decomposition from one where
+        # some passes never read the skill.
+        self.last_decomposed_failures = 0
+        # Skill-level assessment from the most recent analysis. Declared here rather than
+        # only being assigned deep in _convert_to_findings, so the class contract is
+        # explicit and a reader before the first scan sees defined values.
+        self.last_overall_assessment: str = ""
+        self.last_overall_verdict: str = ""
+        self.last_primary_threats: list[Any] = []
 
         self.model = self.provider_config.model
         self.api_key = self.provider_config.api_key
@@ -326,6 +402,15 @@ class LLMAnalyzer(BaseAnalyzer):
 
         # Tracks the last analysis error (read by the scanner for analyzers_failed)
         self.last_error: str | None = None
+
+        # Counts responses whose package verdict was escalated to satisfy the
+        # consistency table. Read by evaluation harnesses to report how often a
+        # model contradicted itself; always zero unless repair is enabled.
+        self.verdict_repairs: int = 0
+
+        # Counts findings whose optional AISubtech code was not a valid taxonomy code and
+        # was cleared rather than allowed to void the whole response.
+        self.taxonomy_repairs: int = 0
 
     @property
     def llm_usage(self) -> LLMTokenUsage:
@@ -501,8 +586,8 @@ class LLMAnalyzer(BaseAnalyzer):
         """
         Analyze skill using LLM (async).
 
-        Supports enriched context from other analyzers and opt-in consensus
-        judging (multiple runs with majority agreement).
+        Supports enriched context from other analyzers, opt-in consensus judging
+        (multiple runs with majority agreement), and opt-in decomposed analysis.
 
         Args:
             skill: Skill to analyze
@@ -510,6 +595,149 @@ class LLMAnalyzer(BaseAnalyzer):
         Returns:
             List of security findings
         """
+        if self.decompose:
+            return await self._analyze_decomposed(skill)
+        return await self._analyze_single(skill)
+
+    async def _analyze_decomposed(self, skill: Skill) -> list[Finding]:
+        """Run one pass per focus and union the findings.
+
+        Each focus narrows attention without changing the decision rules, so the passes
+        differ in emphasis rather than in what counts as evidence.
+
+        Three details are load-bearing for the union:
+
+        *Identity must not collapse distinct findings.* ``rule_id`` is derived from the
+        category, so keying on it alone would treat every finding in a category as the
+        same one and a later HIGH would hide behind an earlier LOW. The key therefore
+        includes location and title, and on a real collision the more severe finding wins
+        rather than the first seen.
+
+        *Ids must stay unique.* Each pass numbers its findings from zero, so ids are
+        reassigned after the union; ``Finding.id`` is the exported unique identifier.
+
+        *The package assessment must agree with the findings.* Each pass overwrites the
+        skill-level verdict, so the strongest verdict across passes is kept and the
+        primary threats merged. Otherwise a final SAFE pass could contradict a HIGH
+        finding the union retained.
+
+        A failing pass is skipped rather than aborting the scan, and token usage is
+        accumulated per pass so the cost of the extra calls stays visible. Only a raised
+        error or an ``LLM_ANALYSIS_FAILED`` marker makes a pass failed; a budget notice
+        comes with an answered pass, so it is kept, once, as a coverage finding.
+        """
+
+        base_prompt = self.prompt_builder.threat_analysis_prompt
+        merged: dict[tuple[str, ...], Finding] = {}
+        total_usage = _empty_token_usage()
+        verdicts: list[str] = []
+        assessments: list[str] = []
+        threats: list[Any] = []
+        ran = 0
+        failed = 0
+        pass_errors: list[str] = []
+        failures: dict[tuple[str, ...], Finding] = {}
+        coverage: dict[tuple[str, ...], Finding] = {}
+
+        def union(found: list[Finding]) -> None:
+            for finding in found:
+                key = _decomposed_finding_key(finding)
+                existing = merged.get(key)
+                if existing is None or _severity_rank(finding.severity) > _severity_rank(existing.severity):
+                    merged[key] = finding
+
+        try:
+            for focus in self.prompt_builder.decomposed_focuses:
+                self.prompt_builder.threat_analysis_prompt = base_prompt + focus
+                try:
+                    findings = await self._analyze_single(skill)
+                except Exception as error:  # noqa: BLE001 - one focus must not void the scan
+                    # getattr, because the handler must not be able to raise: a failing
+                    # pass is recoverable, and an exception thrown while reporting it
+                    # would turn that into a failed scan.
+                    logger.warning(
+                        "decomposed pass failed for %s: %s",
+                        getattr(skill, "name", "unknown"),
+                        error,
+                    )
+                    failed += 1
+                    pass_errors.append(f"{type(error).__name__}: {error}")
+                    continue
+
+                # Read usage per pass: _analyze_single resets the counter on entry, so
+                # reading once at the end would report only the final pass. A failed pass
+                # counts too, because the request was billed.
+                _add_token_usage(total_usage, self._llm_usage)
+                for finding in findings:
+                    if str(getattr(finding, "rule_id", "") or "") == _DECOMPOSED_COVERAGE_RULE:
+                        coverage.setdefault(_decomposed_finding_key(finding), finding)
+                returned_failures = [
+                    finding
+                    for finding in findings
+                    if str(getattr(finding, "rule_id", "") or "") == _DECOMPOSED_FAILURE_RULE
+                ]
+                semantic = [
+                    finding
+                    for finding in findings
+                    if str(getattr(finding, "rule_id", "") or "") not in _DECOMPOSED_DIAGNOSTIC_RULES
+                ]
+                if returned_failures:
+                    # The pass produced no judgement. Counting it as a success would let an
+                    # unread skill read as a clean one; any findings it did return are kept.
+                    failed += 1
+                    if self.last_error:
+                        pass_errors.append(str(self.last_error))
+                    for finding in returned_failures:
+                        failures.setdefault(_decomposed_finding_key(finding), finding)
+                    union(semantic)
+                    continue
+
+                ran += 1
+                if self.last_overall_verdict:
+                    verdicts.append(str(self.last_overall_verdict))
+                if self.last_overall_assessment:
+                    assessments.append(str(self.last_overall_assessment))
+                for threat in self.last_primary_threats or []:
+                    if threat not in threats:
+                        threats.append(threat)
+                union(semantic)
+        finally:
+            self.prompt_builder.threat_analysis_prompt = base_prompt
+
+        self._llm_usage = total_usage
+
+        # Coverage notices are ordinary findings, as on a single pass. A failure marker is
+        # returned only when no pass produced a judgement: then it is the only honest
+        # result, and dropping it would report a skill nothing could read as clean. When a
+        # pass did answer -- even SAFE with nothing to report -- the failures are reported
+        # through last_error instead of a marker that would contradict the verdict.
+        unioned = list(merged.values()) + list(coverage.values())
+        if not ran:
+            unioned += list(failures.values())
+
+        # last_error must reflect the run, not whichever pass happened to be last: a
+        # later success would otherwise clear an earlier failure, and a failing final
+        # pass would flag a run whose earlier passes produced findings.
+        if failed:
+            self.last_error = f"{failed} of {failed + ran} decomposed passes failed: " + "; ".join(
+                dict.fromkeys(pass_errors)
+            )
+        else:
+            self.last_error = None
+        # Renumber so no two unioned findings share an id.
+        for index, finding in enumerate(unioned):
+            finding.id = f"llm_finding_{getattr(skill, 'name', 'skill')}_{index}"
+
+        self.last_overall_verdict = _most_severe_verdict(verdicts)
+        self.last_primary_threats = threats
+        if assessments:
+            self.last_overall_assessment = " ".join(assessments)
+        self.last_decomposed_passes = ran
+        self.last_decomposed_failures = failed
+        return unioned
+
+    async def _analyze_single(self, skill: Skill) -> list[Finding]:
+        """One analysis pass with the currently configured prompt."""
         self._llm_usage = _empty_token_usage()
         self._allowed_evidence_ids = set()
         findings = []
@@ -649,6 +877,8 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                 )
                 _add_token_usage(self._llm_usage, self.request_handler.last_usage)
                 analysis_result = self.response_parser.parse(response_content)
+                self._repair_primary_verdict(analysis_result)
+                self._repair_optional_taxonomy(analysis_result)
                 self._validate_primary_contract(analysis_result)
                 findings.extend(self._convert_to_findings(analysis_result, skill))
             else:
@@ -685,6 +915,75 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
 
         self.last_error = None
         return findings
+
+    @staticmethod
+    def _verdict_repair_enabled() -> bool:
+        """Whether to escalate a self-contradicting SAFE verdict instead of failing.
+
+        On by default; ``SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT=0`` (or ``false``,
+        ``no``, ``off``) restores the strict path.
+
+        A model that reports ``SAFE`` while listing findings has contradicted itself, and the
+        strict path discards the whole analysis. That discard is not label-neutral: measured
+        on Gemma 4 against MaliciousSkillBench it hit 22.5% of benign packages and 0% of
+        malicious ones, so the analyzer went silent exactly where it would produce false
+        positives, flattering its measured precision -- and an un-analysed skill passes the
+        gate. Repairing is escalate-only, so it cannot hide a detection. With the current
+        prompt it turned 58 train/validation and 13 test failures into analyses, all of
+        them, with recall unchanged and the MEDIUM+ false-positive rate moving at most
+        0.4 points, because the repaired findings are almost all LOW.
+        """
+        raw = os.getenv("SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT", "")
+        return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+    def _repair_optional_taxonomy(self, analysis_result: dict[str, Any]) -> None:
+        """Clear an invalid optional AISubtech code instead of rejecting the response.
+
+        ``aisubtech`` is optional in the contract: ``None`` is a valid value. A model that
+        invents a sub-technique code has produced a finding that is otherwise well formed,
+        and the strict validator used to reject the entire response for it, discarding
+        every finding in it. Measured over real published skills with a local Gemma 4
+        judge, that voided 3.6% of analyses, nearly all of them for this one field.
+
+        Only the optional field is touched. The required AITech code, severity, category,
+        evidence ids and the verdict are still validated strictly, and a finding with an
+        invalid required field still fails the response.
+        """
+        findings = analysis_result.get("findings")
+        if not isinstance(findings, list):
+            return
+        for item in findings:
+            if not isinstance(item, dict) or "aisubtech" not in item:
+                continue
+            value = item.get("aisubtech")
+            if value is None:
+                continue
+            if isinstance(value, str) and value in cisco_ai_taxonomy.VALID_AISUBTECH_CODES:
+                continue
+            item["aisubtech"] = None
+            self.taxonomy_repairs += 1
+            logger.warning("cleared invalid optional AISubtech code %r on a primary finding", value)
+
+    def _repair_primary_verdict(self, analysis_result: dict[str, Any]) -> None:
+        """Escalate ``SAFE`` to ``SUSPICIOUS`` when findings were reported.
+
+        Escalate-only by construction. The findings are the substantive output
+        and are validated on their own terms; only the summary verdict is
+        rewritten, and never in the direction of reporting less risk.
+        """
+        if not self._verdict_repair_enabled():
+            return
+        findings = analysis_result.get("findings")
+        if analysis_result.get("verdict") != "SAFE" or not isinstance(findings, list) or not findings:
+            return
+
+        analysis_result["verdict"] = "SUSPICIOUS"
+        self.verdict_repairs += 1
+        logger.warning(
+            "repaired self-contradicting package verdict: model returned SAFE with %d finding(s); "
+            "escalated to SUSPICIOUS",
+            len(findings),
+        )
 
     def _validate_primary_contract(self, analysis_result: dict[str, Any]) -> None:
         """Enforce the evidence and package-verdict contract after parsing."""
@@ -785,6 +1084,8 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                 )
                 _add_token_usage(self._llm_usage, self.request_handler.last_usage)
                 analysis_result = self.response_parser.parse(response_content)
+                self._repair_primary_verdict(analysis_result)
+                self._repair_optional_taxonomy(analysis_result)
                 self._validate_primary_contract(analysis_result)
                 run_findings = self._convert_to_findings(analysis_result, skill)
                 all_run_findings.append(run_findings)
@@ -978,6 +1279,10 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                 # Get AISubtech code if provided
                 aisubtech_code = llm_finding.get("aisubtech")
 
+                severity, capped_from = self._cap_severity(
+                    severity, llm_finding.get("verdict"), llm_finding.get("confidence")
+                )
+
                 # Create finding with AITech alignment
                 finding = Finding(
                     id=f"llm_finding_{skill.name}_{idx}",
@@ -1001,6 +1306,7 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                         "llm_verdict": llm_finding.get("verdict"),
                         "llm_confidence": llm_finding.get("confidence"),
                         "evidence_ids": list(llm_finding.get("evidence_ids") or []),
+                        **({"llm_severity_before_cap": capped_from.value} if capped_from is not None else {}),
                     },
                 )
 
@@ -1011,6 +1317,30 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                 continue
 
         return findings
+
+    _CAPPABLE_SEVERITIES = ("INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+
+    def _cap_contextual_risk(self, severity: Severity, verdict: Any) -> tuple[Severity, Severity | None]:
+        """Apply ``llm_analysis.contextual_risk_max_severity`` to a CONTEXTUAL_RISK finding."""
+
+        return self._cap_severity(severity, verdict, None)
+
+    def _cap_severity(self, severity: Severity, verdict: Any, confidence: Any) -> tuple[Severity, Severity | None]:
+        """Apply the policy's contextual-risk and low-confidence caps; return (severity, original)."""
+
+        order = self._CAPPABLE_SEVERITIES
+        caps = []
+        if verdict == "CONTEXTUAL_RISK":
+            caps.append(getattr(self.llm_policy, "contextual_risk_max_severity", "") or "")
+        if confidence == "LOW":
+            caps.append(getattr(self.llm_policy, "low_confidence_max_severity", "") or "")
+        caps = [cap for cap in caps if cap in order]
+        if not caps or severity.value not in order:
+            return severity, None
+        cap = min(caps, key=order.index)
+        if order.index(severity.value) <= order.index(cap):
+            return severity, None
+        return Severity(cap), severity
 
     @staticmethod
     def _infer_file_path(skill: Skill, title: str, description: str, evidence: str) -> str | None:

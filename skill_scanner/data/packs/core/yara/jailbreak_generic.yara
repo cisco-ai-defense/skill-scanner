@@ -23,7 +23,9 @@ rule jailbreak_generic{
 
         // --- DAN (Do Anything Now) Jailbreak Patterns ---
         // The most well-known jailbreak with ~89.6% success rate
-        $dan_explicit = /\b(you are (now )?DAN|from now on[^.]{0,30}(you (will be|are) (known as )?|call you )DAN|enable DAN mode|activate DAN|DAN mode (enabled|activated|on))\b/i
+        // DAN is the jailbreak's name in capitals; "You are Dan, a friendly assistant" is a persona
+        // named Dan. The surrounding words stay case-insensitive.
+        $dan_explicit = /\b([Yy][Oo][Uu]\s[Aa][Rr][Ee](\s[Nn][Oo][Ww])?\sDAN|[Ff][Rr][Oo][Mm]\s[Nn][Oo][Ww]\s[Oo][Nn][^.]{0,30}([Yy][Oo][Uu]\s([Ww][Ii][Ll][Ll]\s[Bb][Ee]|[Aa][Rr][Ee])\s([Kk][Nn][Oo][Ww][Nn]\s[Aa][Ss]\s)?|[Cc][Aa][Ll][Ll]\s[Yy][Oo][Uu]\s)DAN|[Ee][Nn][Aa][Bb][Ll][Ee]\sDAN\s[Mm][Oo][Dd][Ee]|[Aa][Cc][Tt][Ii][Vv][Aa][Tt][Ee]\sDAN|DAN\s[Mm][Oo][Dd][Ee]\s([Ee][Nn][Aa][Bb][Ll][Ee][Dd]|[Aa][Cc][Tt][Ii][Vv][Aa][Tt][Ee][Dd]|[Oo][Nn]))\b/
 
         // DAN immersion / role adoption
         $dan_role = /\b(immerse yourself (into|in) the role of DAN|(take on|assume|adopt) the (role|persona|identity) of DAN|you (will|are going to) (play|act as|be) DAN)\b/i
@@ -142,7 +144,9 @@ rule jailbreak_generic{
         // ================================================================
 
         // Developer/creator claims
-        $authority_developer = /\b(I('m| am) (your |the |an? )?(creator|developer|programmer|engineer|designer|maker|owner)|I (created|made|built|designed|programmed|developed) you|I work (for|at) (Anthropic|OpenAI|Google|Meta|Microsoft))/i
+        // A claim over the model ("I'm your developer", "I built you"), not a self-description
+        // ("I'm a developer").
+        $authority_developer = /\b(I('m| am) your (creator|developer|programmer|engineer|designer|maker|owner)|I (created|made|built|designed|programmed|developed) you|I work (for|at) (Anthropic|OpenAI|Google|Meta|Microsoft))/i
 
         // Admin/root access CLAIMS (jailbreak-specific: false claims of having elevated access)
         // NOTE: "bypass security checks" and "developer mode activated" are in prompt_injection_generic

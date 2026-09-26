@@ -29,6 +29,7 @@ from __future__ import annotations
 import ast
 import configparser
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -45,10 +46,12 @@ import yaml
 
 from ..models import Finding, Severity, Skill, SkillFile, ThreatCategory
 from ..scan_policy import ScanPolicy
+from ..shell_semantics import interpreter_reads_stdin_program
 from ..static_analysis.bash_taint_tracker import BashTaintType, analyze_bash_script
 from ..static_analysis.javascript_dataflow import analyze_javascript_dataflow
 from ..static_analysis.url_classifier import classify_url, extract_urls
 from .base import BaseAnalyzer
+from .pipeline_analyzer import url_matches_known_installer
 
 _SCRIPT_TYPES = frozenset({"python", "bash", "javascript", "typescript"})
 _CONFIG_SUFFIXES = frozenset({".json", ".toml", ".yaml", ".yml", ".ini", ".cfg", ".conf"})
@@ -189,10 +192,16 @@ _SHELL_VAR_ASSIGNMENT = re.compile(
     re.DOTALL,
 )
 _SHELL_VAR_REFERENCE = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
-_AUTH_HEADER_RE = re.compile(
-    r"^\s*(?:authorization|proxy-authorization|x-api-key|api-key|private-token|x-auth-token)\s*:",
-    re.IGNORECASE,
+# A credential header: the standard names, or a vendor's hyphenated key/token header such as
+# X-N8N-API-KEY or Ocp-Apim-Subscription-Key -- never a bare "token" or "key", which in a request
+# body is a payload field. Recognising one only classifies the credential as authentication;
+# whether its destination is ordinary is decided separately by the provider binding.
+_AUTH_HEADER_NAME_PATTERN = (
+    r"(?:authorization|proxy-authorization|private-token|"
+    r"(?:[a-z0-9]+-)+(?:api-?key|key|token|auth|auth-token|access-token|subscription-key|secret))"
 )
+_AUTH_HEADER_RE = re.compile(rf"^\s*{_AUTH_HEADER_NAME_PATTERN}\s*:", re.IGNORECASE)
+_AUTH_HEADER_NAME_RE = re.compile(rf"^{_AUTH_HEADER_NAME_PATTERN}$", re.IGNORECASE)
 _AUTH_HEADER_NAMES = frozenset(
     {
         "api-key",
@@ -633,6 +642,12 @@ def _literal_shell_assignment(value: str) -> str | None:
     return parts[0] if len(parts) == 1 else None
 
 
+_QUERY_AUTH_RE = re.compile(
+    r"[?&](?:key|api[_-]?key|apikey|token|access[_-]?token|auth[_-]?token|auth)=\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?",
+    re.IGNORECASE,
+)
+
+
 def _shell_credential_use(command: _ShellCommand, sensitive_names: set[str]) -> str:
     """Classify credential variables as authentication or transmitted data."""
 
@@ -663,8 +678,11 @@ def _shell_credential_use(command: _ShellCommand, sensitive_names: set[str]) -> 
         elif any(argument.startswith(f"{option}=") for option in _CURL_PAYLOAD_OPTIONS):
             if set(_SHELL_VAR_REFERENCE.findall(argument)) & sensitive_names:
                 roles.append("payload")
-        elif set(_SHELL_VAR_REFERENCE.findall(argument)) & sensitive_names:
-            roles.append("payload")
+        elif names := set(_SHELL_VAR_REFERENCE.findall(argument)) & sensitive_names:
+            # ``?key=$TENOR_API_KEY`` authenticates the request the same way a header does; the
+            # provider binding downstream still decides whether the destination is ordinary.
+            query_auth = {match.group(1) for match in _QUERY_AUTH_RE.finditer(argument)}
+            roles.append("authentication" if names <= query_auth else "payload")
         index += 1
     if roles and all(role == "authentication" for role in roles):
         return "authentication"
@@ -787,6 +805,22 @@ def _authentication_urls_match_providers(
     )
 
 
+def _is_loopback_host(host: str) -> bool:
+    value = host.lower().strip("[]").rstrip(".")
+    if value == "localhost" or value.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
+def _authentication_stays_local(urls: tuple[dict[str, Any], ...]) -> bool:
+    """A credential presented to a loopback service does not leave the machine."""
+
+    return bool(urls) and all(_is_loopback_host(str(url.get("host", ""))) for url in urls)
+
+
 def _network_destination_class(
     urls: tuple[dict[str, Any], ...],
     *,
@@ -851,6 +885,10 @@ def _shell_execution_inputs(command: _ShellCommand) -> tuple[str, ...]:
     return (command.raw_executable,)
 
 
+def _reads_program_from_stdin(command: _ShellCommand) -> bool:
+    return interpreter_reads_stdin_program(command.executable, command.arguments)
+
+
 def _dotted_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -910,6 +948,7 @@ def _url_fact(url: str, file_path: str, *, direction: str = "inbound", method: s
     if domain_class == "unknown":
         domain_class = "external"
     return {
+        "url": url,
         "scheme": scheme,
         "host": host,
         "domain_class": domain_class,
@@ -1665,6 +1704,13 @@ class _PythonSignalExtractor(ast.NodeVisitor):
                 if not names or any(_is_sensitive_name(name) for name in names):
                     self._record_source("sensitive_environment", node.lineno)
                     taints.add("sensitive_environment")
+                    # The same provider binding as os.environ.get()/getenv(): without it the
+                    # subscript form -- the usual way to read a key -- never matched its host.
+                    taints.update(
+                        f"credential_provider:{provider}"
+                        for name in names[:16]
+                        for provider in _credential_provider_tokens(name)
+                    )
             elif isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, (str, int)):
                 taints = _append_reference_selector(taints, str(node.slice.value))
             return taints
@@ -1683,7 +1729,9 @@ class _PythonSignalExtractor(ast.NodeVisitor):
                 if (
                     isinstance(key, ast.Constant)
                     and isinstance(key.value, str)
-                    and key.value.strip().lower() in _AUTH_HEADER_NAMES
+                    and (
+                        key.value.strip().lower() in _AUTH_HEADER_NAMES or _AUTH_HEADER_NAME_RE.match(key.value.strip())
+                    )
                 ):
                     value_taints = self._as_authentication_taints(value_taints)
                 elif key is not None:
@@ -1769,9 +1817,9 @@ class _PythonSignalExtractor(ast.NodeVisitor):
             )
             destination_class = _network_destination_class(provisional_urls, configured=False)
             providers = self._credential_providers(argument_taints)
-            normal_authentication = credential_use == "authentication" and self._authentication_destination_matches(
-                providers,
-                provisional_urls,
+            normal_authentication = credential_use == "authentication" and (
+                self._authentication_destination_matches(providers, provisional_urls)
+                or _authentication_stays_local(provisional_urls)
             )
             if normal_authentication:
                 destination_class = "provider_bound_service"
@@ -2765,9 +2813,9 @@ class CorrelationAnalyzer(BaseAnalyzer):
                             else _credential_provider_tokens(name)
                         )
                     }
-                    normal_authentication = credential_use == "authentication" and _authentication_urls_match_providers(
-                        credential_providers,
-                        provisional_urls,
+                    normal_authentication = credential_use == "authentication" and (
+                        _authentication_urls_match_providers(credential_providers, provisional_urls)
+                        or _authentication_stays_local(provisional_urls)
                     )
                     if normal_authentication:
                         destination_class = "provider_bound_service"
@@ -2905,6 +2953,8 @@ class CorrelationAnalyzer(BaseAnalyzer):
                 while cursor > 0 and commands[cursor].preceding_operator == "|":
                     upstream.append(commands[cursor - 1])
                     cursor -= 1
+                if upstream and not _reads_program_from_stdin(sink):
+                    continue
                 if any(command.executable in _SHELL_NETWORK for command in upstream):
                     signals.flows.append(
                         _Flow("network", "code_execution", (), signals.path, signals.path, line_number)
@@ -3643,8 +3693,7 @@ class CorrelationAnalyzer(BaseAnalyzer):
     def _has_untrusted_or_dynamic_url(signals: _FileSignals) -> bool:
         return not signals.urls or any(url["domain_class"] != "legitimate" for url in signals.urls)
 
-    @classmethod
-    def _same_file_flow_severity(cls, signals: _FileSignals, flow: _Flow) -> Severity:
+    def _same_file_flow_severity(self, signals: _FileSignals, flow: _Flow) -> Severity:
         """Grade an exact same-file flow without erasing the candidate.
 
         Fetch-and-execute remains HIGH unless it is a fenced, documented
@@ -3654,15 +3703,45 @@ class CorrelationAnalyzer(BaseAnalyzer):
         Dynamic, insecure, mismatched, or undeclared providers remain HIGH.
         """
 
-        if (
+        if not (
             flow.source_class == "network"
             and flow.sink_class == "code_execution"
             and signals.evidence_kind == "fenced_code_flow"
-            and signals.role_kind == "documented_installer"
-            and cls._has_fixed_https_download(signals)
+            and self._has_fixed_https_download(signals)
         ):
+            return Severity.HIGH
+        if signals.role_kind == "documented_installer":
+            return Severity.MEDIUM
+        # Every download comes from a host the scanner already trusts: a curated,
+        # LOTS-aware registry or API host, or an entry in the policy's
+        # known_installer_domains. That list was honoured by the pipeline analyzer and
+        # ignored here, so the same `curl https://astral.sh/... | sh` was demoted to LOW by
+        # one analyzer and raised to HIGH by the other. MEDIUM keeps it visible.
+        if self._downloads_are_trusted(signals):
             return Severity.MEDIUM
         return Severity.HIGH
+
+    def _downloads_are_trusted(self, signals: _FileSignals) -> bool:
+        """Whether every download URL is on a legitimate host or a known installer."""
+
+        pipeline_policy = getattr(self.policy, "pipeline", None)
+        installers = (
+            pipeline_policy.known_installer_domains
+            if pipeline_policy is not None and getattr(pipeline_policy, "check_known_installers", False)
+            else set()
+        )
+        downloads = [event for event in signals.networks if event.downloads]
+        if not downloads:
+            return False
+        for event in downloads:
+            for url in event.urls:
+                if url.get("domain_class") == "legitimate":
+                    continue
+                if installers and url_matches_known_installer(str(url.get("url") or ""), installers):
+                    url["trusted_installer"] = True
+                    continue
+                return False
+        return True
 
     @staticmethod
     def _has_fixed_https_download(signals: _FileSignals) -> bool:

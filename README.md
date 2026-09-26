@@ -74,14 +74,17 @@ provenance, confidence intervals, and limitations.
 | Guide | Description |
 |-------|-------------|
 | [Quick Start](docs/getting-started/quick-start.md) | Get started in 5 minutes |
+| [Recommended Settings](docs/user-guide/recommended-settings.md) | What to run for which job, why, and how to configure it |
 | [Architecture](docs/architecture/index.md) | System design and components |
 | [CEL Decision Layer](docs/architecture/cel-decision-layer.md) | Typed facts, safety bounds, rollout modes, and telemetry |
 | [Threat Taxonomy](docs/architecture/threat-taxonomy.md) | Complete AITech threat taxonomy with examples |
 | [LLM Analyzer](docs/architecture/analyzers/llm-analyzer.md) | LLM configuration and usage |
+| [System One Analyzer](docs/architecture/analyzers/system-one-analyzer.md) | Optional advisory screening tier, and why it cannot gate |
 | [Meta-Analyzer](docs/architecture/analyzers/meta-analyzer.md) | False positive filtering and prioritization |
 | [Behavioral Analyzer](docs/architecture/analyzers/behavioral-analyzer.md) | Dataflow analysis details |
 | [Scan Policy](docs/user-guide/custom-policy-configuration.md) | Custom policies, presets, and tuning guide |
 | [Policy Quick Reference](docs/reference/policy-quick-reference.md) | Compact reference for policy sections and knobs |
+| [Measured Results](docs/reference/measured-results.md) | Every published figure, with its corpus, population and model |
 | [Rule Authoring](docs/architecture/analyzers/writing-custom-rules.md) | How to add signature, YARA, and Python rules |
 | [GitHub Actions](docs/github-actions.md) | Reusable workflow for CI/CD integration |
 | [API Reference](docs/user-guide/api-server.md) | REST API documentation |
@@ -218,7 +221,7 @@ skill-scanner scan /path/to/skill --taxonomy /path/to/taxonomy.json --threat-map
 # VirusTotal hash scan with optional unknown-file uploads
 skill-scanner scan /path/to/skill --use-virustotal --vt-upload-files
 
-# Use a scan policy preset (strict, balanced, permissive)
+# Use a scan policy preset (strict, balanced, permissive, low-noise, quiet)
 skill-scanner scan /path/to/skill --policy strict
 
 # Inspect CEL decisions without suppressing findings
@@ -290,7 +293,7 @@ if not result.is_safe:
 
 | Option | Description |
 |--------|-------------|
-| `--policy` | Scan policy: preset name (`strict`, `balanced`, `permissive`) or path to custom YAML |
+| `--policy` | Scan policy: preset name (`strict`, `balanced`, `permissive`, `low-noise`, `quiet`) or path to custom YAML |
 | `--use-behavioral` | Enable behavioral analyzer (dataflow analysis) |
 | `--use-llm` | Enable LLM analyzer (requires API key) |
 | `--llm-provider` | LLM provider for CLI routing: `anthropic` or `openai` |

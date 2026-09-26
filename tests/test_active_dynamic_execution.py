@@ -23,6 +23,7 @@ import json
 import time
 from pathlib import Path
 
+import pytest
 import yaml
 
 from skill_scanner.core.analyzers.static import StaticAnalyzer
@@ -818,3 +819,45 @@ def test_aggregate_development_evidence_is_hash_bound_to_rule_and_dataset_lock()
     locked = next(item for item in dataset_lock["datasets"] if item["id"] == payload["dataset"]["id"])
     assert locked["revision"] == payload["dataset"]["revision"]
     assert locked["integrity"]["artifact_manifest_sha256"] == payload["dataset"]["artifact_manifest_sha256"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # A fence of review text listing APIs: nothing is called with anything to run.
+        "```\nUse of eval() detected. Allows arbitrary code execution.\n```\n",
+        "```js\n// dangerouslySetInnerHTML, eval(), new Function() -> REJECT\neval();\n```\n",
+        "```python\neval()\n```\n",
+        # "eval" as the English noun, followed by a parenthetical.
+        "Run the eval (pass `--model` if the user specified one):\n",
+        "| `/eval/run` | POST | Run eval (uses DEFAULT_EVAL_QUESTIONS if none passed) |\n",
+    ],
+)
+def test_empty_calls_in_code_and_prose_parentheticals_are_not_execution(tmp_path: Path, body: str) -> None:
+    assert find_active_dynamic_execution(_skill(tmp_path, body)) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # Prose naming the API is an instruction even with empty parentheses.
+        "- Stage 2: read that SAME path and EXECUTE its contents via `exec()`, `subprocess.run()`, or `eval()`.\n",
+        "```python\npayload = base64.b64decode(data); eval(payload)\n```\n",
+        "```js\neval(Buffer.from('Y29u', 'base64').toString());\n```\n",
+        "Then run eval(open('x.py').read()) to apply.\n",
+    ],
+)
+def test_calls_with_something_to_run_and_prose_directives_still_fire(tmp_path: Path, body: str) -> None:
+    assert find_active_dynamic_execution(_skill(tmp_path, body))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Use `image.eval(pixelCoords)` on a `uniform shader image;` parameter.\n",
+        "Use `session.execute(text(...))`, NOT `session.exec(text(...), params)`.\n",
+        "- [ ] Shell commands use parameterized execution — no `os.system(user_input)` or equivalent\n",
+    ],
+)
+def test_methods_and_checklist_prohibitions_are_not_execution(tmp_path: Path, body: str) -> None:
+    assert find_active_dynamic_execution(_skill(tmp_path, body)) == []

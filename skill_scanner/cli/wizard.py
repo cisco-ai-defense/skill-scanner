@@ -53,7 +53,7 @@ _ACTIONS = {
 }
 
 _FORMATS = ["summary", "json", "markdown", "table", "sarif", "html"]
-_POLICIES = ["balanced", "strict", "permissive"]
+_POLICIES = ["balanced", "strict", "permissive", "low-noise", "quiet"]
 _SEVERITIES = ["none", "critical", "high", "medium", "low", "info"]
 
 _LOGO = r"""

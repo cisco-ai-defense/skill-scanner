@@ -1,0 +1,128 @@
+---
+title: "Recommended Settings"
+description: "What to run for local development, CI gates, vetting third-party skills and registry-scale scanning, why, and how to configure it, with measured detection and flag rates."
+order: 8
+---
+
+## Recommended Settings
+
+Which configuration to run for which job, and what to expect from it. Every number here is measured,
+and each names its population, because a flag rate measured on one set of skills does not transfer to
+another.
+
+- **Held-out test**: MaliciousSkillBench's frozen source-disjoint split, 839 malicious and 545 benign
+  skills, used to design nothing. This is the number to plan on.
+- **Real skills**: 1.88 million published skills for the rules, and 2,000 of them sampled uniformly for
+  anything involving the LLM judge. They are unlabelled, so the rate is how many would reach you.
+
+---
+
+### At a Glance
+
+| You are... | Configuration | Block on | Review | What reaches you |
+|------------|---------------|----------|--------|------------------|
+| Writing skills (local, pre-commit) | rules, `low-noise` | HIGH | -- | 1.9% of real skills blocked |
+| Gating your team's own skills in CI | rules, `low-noise` | HIGH | MEDIUM annotations | 1.9% blocked |
+| Vetting third-party skills before install | rules + LLM judge, `balanced` | HIGH | MEDIUM | 11.7% reviewed, 3.8% blocked |
+| Vetting with little review capacity | rules + LLM judge, `quiet` | HIGH | MEDIUM | 3.9% reviewed, 2.9% blocked |
+| Scanning a registry or marketplace | rules, `low-noise`; judge where the budget allows | HIGH | MEDIUM | 1.9% of real skills from the rules |
+| Hunting (research, incident response) | every rule pack, judge with `--llm-decompose` | never | everything | most skills flag; triage only |
+
+Two things hold in every case:
+
+- **Block at HIGH, review at MEDIUM.** With the judge on, a MEDIUM threshold catches twice the
+  malicious skills that HIGH does (66.7% against 33.7% on the held-out test split) but also flags
+  15.4% of harmless ones, against 6.4%. That is a review queue, not a gate.
+- **Treat an unanalysed skill as unreviewed, not as clean.** A skill the judge could not read is
+  reported as an INFO `LLM_ANALYSIS_FAILED` finding and passes the gate; route those to review.
+
+---
+
+### Your Own Skills: Local, Pre-Commit and CI
+
+```bash
+skill-scanner scan ./my-skill --policy low-noise
+skill-scanner scan-all ./skills --recursive --policy low-noise --fail-on-severity high --format sarif --output results.sarif
+```
+
+With the reusable [GitHub workflow](/docs/skill-scanner/github-actions):
+
+```yaml
+jobs:
+  scan:
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    with:
+      skill_path: .claude/skills
+      policy: low-noise
+      fail_on_severity: high
+```
+
+The rules need no keys, send nothing anywhere and take milliseconds per skill. `low-noise` reports at
+LOW the 11 rules that most often flag a real skill on their own when the LLM judge considers it
+harmless. On the held-out test split it gives up one detection of 839 and leaves the false-positive
+rate unchanged; across 1.88 million real skills it takes the MEDIUM+ flag rate from 2.14% to 1.93%.
+
+---
+
+### Third-Party Skills Before Install
+
+```bash
+export SKILL_SCANNER_LLM_MODEL="bedrock-mantle/google.gemma-4-26b-a4b"
+skill-scanner scan ./downloaded-skill --use-llm --fail-on-severity high --format json --output scan.json
+```
+
+Rules alone catch 8% of the held-out malicious skills, because most malicious skills contain nothing a
+pattern can prove -- an instruction to run a bundled script on a trigger, or to send data somewhere the
+skill's purpose does not need it. That is what the judge reads for.
+
+| Rules + judge, MEDIUM+ review queue | Held-out recall | Held-out FPR | Real skills reviewed |
+|-------------------------------------|-----------------|--------------|----------------------|
+| `balanced` | 66.7% | 15.4% | 11.7% |
+| `low-noise` | 63.2% | 13.4% | 8.7% |
+| `quiet` | 50.3% | 7.2% | 3.9% |
+
+At the HIGH gate the three block about the same malicious skills (33.7%, 33.7% and 33.1%), so the
+choice is the size of the review queue. **Do not use `quiet` without the judge**: its extra rule
+demotions halve what the rules alone catch on the held-out split.
+
+The judge costs about 3,800 input and 90 output tokens per skill with Gemma 4 26B. Keep verdict
+repair on (the default) and the meta-analyzer off (it cost 16.4 points of recall).
+
+---
+
+### Keeping Skill Content on Your Machines
+
+Gemma 4 26B served locally with vLLM reproduces its hosted results. Point the scanner at it:
+
+```bash
+export SKILL_SCANNER_LLM_PROVIDER=openai
+export SKILL_SCANNER_LLM_BASE_URL=http://127.0.0.1:8000/v1
+export SKILL_SCANNER_LLM_MODEL=gemma-4-26b-a4b
+export SKILL_SCANNER_LLM_API_KEY=unused
+```
+
+Serve it with `--structured-outputs-config '{"backend": "xgrammar", "disable_any_whitespace": true}'`:
+without it the model padded its JSON with whitespace to the token limit and lost 46.5% of analyses.
+
+---
+
+### Building on a Recommendation
+
+```bash
+skill-scanner generate-policy --preset low-noise -o my-policy.yaml
+skill-scanner scan ./skill --policy my-policy.yaml
+```
+
+The presets differ in `severity_overrides` (demoted rules, reported at LOW) and in two LLM caps:
+
+```yaml
+llm_analysis:
+  low_confidence_max_severity: LOW     # cap findings the model rates LOW confidence
+  contextual_risk_max_severity: ""     # "LOW" caps findings labelled CONTEXTUAL_RISK (on in quiet)
+```
+
+See [Scan Policies](/docs/skill-scanner/scan-policies) for every setting. The full method behind these
+numbers is in
+[Measured Results](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/reference/measured-results.md),
+and the complete guide, including registry-scale scanning and threat hunting, in
+[Recommended Settings](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/user-guide/recommended-settings.md).

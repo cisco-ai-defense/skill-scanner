@@ -114,6 +114,9 @@ def build_analyzers(
     llm_consensus_runs: int = 1,
     llm_max_tokens: int | None = None,
     llm_reasoning_effort: str | None = None,
+    llm_decompose: bool = False,
+    system_one_endpoint: str | None = None,
+    system_one_model: str | None = None,
 ) -> list[BaseAnalyzer]:
     """Build the full analyzer list (core + optional).
 
@@ -138,6 +141,15 @@ def build_analyzers(
         llm_reasoning_effort: Optional reasoning-depth control. When *None*,
             LLM clients resolve ``SKILL_SCANNER_LLM_REASONING_EFFORT`` and
             otherwise preserve provider defaults.
+        llm_decompose: Run the LLM analyzer once per focus and union the
+            findings instead of one general pass. Off by default because it
+            multiplies model calls by the number of focuses.
+        system_one_endpoint: Optional System One screening endpoint. Advisory
+            only: the tier records a calibrated probability and never changes a
+            finding, a severity or the verdict.
+        system_one_model: Model name for the System One endpoint. Required
+            whenever *system_one_endpoint* is set, and rejected without it,
+            because neither half is usable alone.
 
     Returns:
         A list of analyzer instances ready to be passed to
@@ -190,6 +202,7 @@ def build_analyzers(
                 llm_user=llm_user,
                 reasoning_effort=llm_reasoning_effort,
                 policy=policy,
+                decompose=llm_decompose,
                 **extra_kwargs,
             )
             if llm_consensus_runs > 1:
@@ -234,6 +247,26 @@ def build_analyzers(
             analyzers.append(TriggerAnalyzer())
         except (ImportError, ValueError, TypeError) as exc:
             logger.warning("Could not load Trigger analyzer: %s", exc)
+
+    if system_one_model and not system_one_endpoint:
+        # Neither half is usable alone. Accepting the model and quietly building no
+        # screening tier would let a typo in the endpoint flag read as a successful run
+        # with screening enabled.
+        raise ValueError("system_one_endpoint is required when system_one_model is set")
+
+    if system_one_endpoint:
+        if not system_one_model:
+            raise ValueError("system_one_model is required when system_one_endpoint is set")
+        from .analyzers.system_one_analyzer import SystemOneAnalyzer
+
+        analyzers.append(
+            SystemOneAnalyzer(
+                system_one_endpoint,
+                model=system_one_model,
+                api_key=os.getenv("SKILL_SCANNER_SYSTEM_ONE_API_KEY"),
+                policy=policy,
+            )
+        )
 
     if use_osv:
         try:

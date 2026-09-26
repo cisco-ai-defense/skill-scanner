@@ -30,6 +30,7 @@ import hashlib
 import ipaddress
 import re
 import shlex
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
@@ -38,6 +39,7 @@ from urllib.parse import urlsplit
 
 from ..models import Finding, Severity, Skill, SkillFile, ThreatCategory
 from ..scan_policy import ScanPolicy
+from ..shell_semantics import interpreter_reads_stdin_program
 from ..static_analysis.python_xor_commands import find_decoded_python_commands
 from .base import BaseAnalyzer
 
@@ -227,6 +229,11 @@ _DOWNLOAD_NO_ARGUMENT_OPTIONS = {
 }
 
 
+# Redirecting to /dev/null discards output rather than writing it anywhere, so it is not a
+# sink and does not stop an otherwise benign command from being recognised as one.
+_DEV_NULL_REDIRECT_RE = re.compile(r"(?:\s|^)(?:[12]?>|&>)\s*/dev/null\b|\s2>&1\b")
+
+
 class PipelineAnalyzer(BaseAnalyzer):
     """Analyzes command pipelines for multi-step attack patterns."""
 
@@ -382,9 +389,57 @@ class PipelineAnalyzer(BaseAnalyzer):
         return _SINK_PATTERNS.get(command, set())
 
     def _matches_benign_pipeline(self, raw: str) -> bool:
-        """Match a benign rule only when it covers the complete pipeline."""
+        """Match a benign rule only when it covers the complete pipeline.
+
+        A rule covers the pipeline when it matches from the start and whatever follows is
+        only the final command's own arguments. Requiring a match of every character, as
+        this once did, meant ``curl\\s.*\\|\\s*jq`` matched a bare ``curl url | jq`` but never
+        ``curl -s url | jq '.[] | .name'``, so the shipped benign list almost never applied
+        to a real command. What it guards against is kept: a benign prefix still cannot
+        hide a later stage, because any further pipe, chaining, redirection or command
+        substitution after the match rejects it.
+        """
         candidate = raw.strip()
-        return any(pattern.fullmatch(candidate) for pattern in self.policy._compiled_benign_pipes)
+        for pattern in self.policy._compiled_benign_pipes:
+            if pattern.fullmatch(candidate):
+                return True
+            match = pattern.match(candidate)
+            if match is None:
+                continue
+            rest = candidate[match.end() :]
+            # The match must end at a token boundary: "jq" must not accept "jqx".
+            if rest and not rest[0].isspace():
+                continue
+            if self._has_shell_control(_DEV_NULL_REDIRECT_RE.sub(" ", rest)):
+                continue
+            return True
+        return False
+
+    @staticmethod
+    def _has_shell_control(text: str) -> bool:
+        """Whether ``text`` contains shell control outside single quotes.
+
+        Pipes, chaining, redirection and backticks count when unquoted. Inside double
+        quotes the shell still expands ``$(...)`` and backticks, so those count there too.
+        """
+        in_single = in_double = False
+        index = 0
+        while index < len(text):
+            char = text[index]
+            if char == "\\" and not in_single:
+                index += 2
+                continue
+            if char == "'" and not in_double:
+                in_single = not in_single
+            elif char == '"' and not in_single:
+                in_double = not in_double
+            elif not in_single:
+                if char == "`" or text.startswith("$(", index):
+                    return True
+                if not in_double and char in "|;&<>":
+                    return True
+            index += 1
+        return False
 
     @staticmethod
     def _split_pipeline(raw: str) -> list[str]:
@@ -551,27 +606,7 @@ class PipelineAnalyzer(BaseAnalyzer):
 
     def _is_known_installer(self, raw_url: str) -> bool:
         """Match one parsed URL against exact/subdomain installer endpoints."""
-        endpoint = self._parse_http_endpoint(raw_url)
-        if endpoint is None:
-            return False
-        _, hostname, path = endpoint
-        for configured in self.policy.pipeline.known_installer_domains:
-            trusted_endpoint = self._parse_installer_policy_endpoint(configured)
-            if trusted_endpoint is None:
-                continue
-            trusted_hostname, path_prefix = trusted_endpoint
-            try:
-                trusted_is_ip = ipaddress.ip_address(trusted_hostname)
-            except ValueError:
-                host_matches = hostname == trusted_hostname or hostname.endswith(f".{trusted_hostname}")
-            else:
-                host_matches = hostname == trusted_is_ip.compressed.lower()
-            if not host_matches:
-                continue
-            if path_prefix and path != path_prefix and not path.startswith(f"{path_prefix}/"):
-                continue
-            return True
-        return False
+        return url_matches_known_installer(raw_url, self.policy.pipeline.known_installer_domains)
 
     def _is_instructional_skillmd_pipeline(self, chain: PipelineChain) -> bool:
         """Heuristic for installation examples embedded in SKILL.md."""
@@ -619,8 +654,16 @@ class PipelineAnalyzer(BaseAnalyzer):
             if cmd in _TRANSFORM_TAINTS:
                 current_taints.update(_TRANSFORM_TAINTS[cmd])
 
-            # Sink nodes consume tainted data
+            # Sink nodes consume tainted data. A piped interpreter executes that data only
+            # when it reads its program from stdin: ``| python3 -c "json.load(sys.stdin)"``
+            # and ``| python script.py`` read it as input.
             sink_taints = self._sink_taints(cmd)
+            if (
+                i > 0
+                and TaintType.CODE_EXECUTION in sink_taints
+                and not interpreter_reads_stdin_program(cmd, node.arguments)
+            ):
+                sink_taints = sink_taints - {TaintType.CODE_EXECUTION}
             if sink_taints and current_taints:
                 combined = current_taints | sink_taints
 
@@ -804,6 +847,59 @@ class PipelineAnalyzer(BaseAnalyzer):
     # ------------------------------------------------------------------
     # Compound command sequence detection
     # ------------------------------------------------------------------
+
+    # ``find ~/.gstack/sessions -mmin +120 -type f -exec rm {} +`` -- the session-cleanup
+    # preamble of a widely copied skill pack -- was 54% of all COMPOUND_FIND_EXEC flags on
+    # 1.88M real skills (3,014 of 5,581; the judge cleared 94%). Age-bounded removal of
+    # files in a tool's own dot-directory is housekeeping. The grammar is closed: one root
+    # under ~/.<tool>/<subdir> that is not a credential or browser store, files only, an age
+    # predicate, and a plain ``rm``. None of the 33 malicious MaliciousSkillBench
+    # train/validation hits (shell spawns via -exec, SUID chmod, openssl encryption,
+    # file/md5 reconnaissance) has this shape.
+    _SENSITIVE_DOT_DIRS = frozenset(
+        {
+            "ssh", "aws", "gnupg", "kube", "docker", "config", "password-store", "mozilla",
+            "local", "azure", "gcloud", "npmrc", "netrc", "git-credentials", "bash_history",
+        }
+    )  # fmt: skip
+    _CLEANUP_ROOT_RE = re.compile(r"^(?:~|\$HOME|\$\{HOME\})/\.([A-Za-z0-9_-]+)/\S+$")
+    _CLEANUP_FILTER_OPTIONS = frozenset({"-name", "-iname", "-maxdepth", "-mindepth"})
+    _CLEANUP_AGE_OPTIONS = frozenset({"-mmin", "-mtime", "-amin", "-atime", "-cmin", "-ctime"})
+
+    @classmethod
+    def _is_scoped_state_cleanup(cls, line: str) -> bool:
+        command = re.split(r"\s(?:\|\||&&|;|\|)\s|\s2>\S+", line.strip(), maxsplit=1)[0]
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            return False
+        if len(tokens) < 2 or tokens[0] != "find":
+            return False
+        root = cls._CLEANUP_ROOT_RE.match(tokens[1])
+        if root is None or root.group(1).lower() in cls._SENSITIVE_DOT_DIRS:
+            return False
+        index, has_age, files_only, removed = 2, False, False, False
+        while index < len(tokens):
+            token = tokens[index]
+            if token == "-type" and index + 1 < len(tokens) and tokens[index + 1] == "f":
+                files_only = True
+                index += 2
+            elif token in cls._CLEANUP_AGE_OPTIONS and index + 1 < len(tokens):
+                has_age = True
+                index += 2
+            elif token in cls._CLEANUP_FILTER_OPTIONS and index + 1 < len(tokens):
+                index += 2
+            elif token == "-exec" and not removed:
+                end = next((j for j in range(index + 1, len(tokens)) if tokens[j] in {"+", ";"}), None)
+                if end is None:
+                    return False
+                if tokens[index + 1 : end] not in (["rm", "{}"], ["rm", "-f", "{}"]):
+                    return False
+                removed = True
+                index = end + 1
+            else:
+                return False
+        return removed and has_age and files_only
 
     # Known dangerous multi-line command sequences.
     # Each entry: (pattern list, rule_id, severity, category, title, description)
@@ -1462,6 +1558,15 @@ class PipelineAnalyzer(BaseAnalyzer):
             block_lines = [ln.strip() for ln in block_text.split("\n")]
             for patterns, rule_id, severity, category, title, description in self._COMPOUND_PATTERNS:
                 matched_lines = self._match_compound_pattern(block_text, patterns)
+                if matched_lines is not None and rule_id == "COMPOUND_FIND_EXEC":
+                    # Every find -exec line in the block counts: one housekeeping line must not
+                    # hide another that is not, and the finding points at the first of those.
+                    active = [
+                        index
+                        for index, line in enumerate(block_lines)
+                        if patterns[0].search(line) and not self._is_scoped_state_cleanup(line)
+                    ]
+                    matched_lines = [active[0]] if active else None
                 if matched_lines is not None:
                     # Filter obvious FP cases for fetch+execute:
                     # - API request examples (curl -X POST /api/...)
@@ -1627,3 +1732,35 @@ class PipelineAnalyzer(BaseAnalyzer):
                     return matched_lines
 
         return None  # Not all patterns matched in sequence
+
+
+def url_matches_known_installer(raw_url: str, installer_domains: Iterable[str]) -> bool:
+    """Whether ``raw_url`` falls under a configured known-installer endpoint.
+
+    An entry is a hostname with an optional path prefix: ``astral.sh`` trusts that host
+    and its subdomains, while ``raw.githubusercontent.com/nvm-sh`` trusts only nvm's
+    repository rather than all of GitHub's user content. Shared by the pipeline and
+    correlation analyzers so both apply one definition.
+    """
+
+    endpoint = PipelineAnalyzer._parse_http_endpoint(raw_url)
+    if endpoint is None:
+        return False
+    _, hostname, path = endpoint
+    for configured in installer_domains:
+        trusted_endpoint = PipelineAnalyzer._parse_installer_policy_endpoint(configured)
+        if trusted_endpoint is None:
+            continue
+        trusted_hostname, path_prefix = trusted_endpoint
+        try:
+            trusted_is_ip = ipaddress.ip_address(trusted_hostname)
+        except ValueError:
+            host_matches = hostname == trusted_hostname or hostname.endswith(f".{trusted_hostname}")
+        else:
+            host_matches = hostname == trusted_is_ip.compressed.lower()
+        if not host_matches:
+            continue
+        if path_prefix and path != path_prefix and not path.startswith(f"{path_prefix}/"):
+            continue
+        return True
+    return False

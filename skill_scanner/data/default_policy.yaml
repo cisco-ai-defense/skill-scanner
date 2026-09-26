@@ -144,15 +144,17 @@ pipeline:
     - "mise.jdx.dev"               # mise
     - "taskfile.dev"               # Task
 
-  # Regex patterns for benign pipe targets (full pipeline is matched)
+  # Regex patterns for benign pipe chains, matched from the start. The remainder after the
+  # match may only be the last command's arguments: no further pipe, chaining, redirection
+  # (other than to /dev/null) or command substitution.
   benign_pipe_targets:
     - 'ps\s.*\|\s*grep'                                                   # ps aux | grep
     - 'grep\s.*\|\s*grep\s+-v'                                            # grep | grep -v
-    - 'cat\s.*\|\s*(sort|uniq|wc|head|tail|grep|cut|awk|sed)'             # cat | text-processing
+    - 'cat\s.*\|\s*(sort|uniq|wc|head|tail|grep|cut|awk|sed|jq|python3?\s+-m\s+json\.tool)'             # cat | text-processing
     - 'find\s.*\|\s*(sort|head|wc|xargs\s+ls)'                            # find | sort/count
     - 'ls\s.*\|\s*(sort|head|grep|wc)'                                    # ls | filter
     - 'echo\s.*\|\s*(tr|sed|awk|cut|base64)'                              # echo | transform
-    - 'curl\s.*\|\s*(jq|python\s+-m\s+json\.tool|json_pp|yq|xmllint)'    # curl | formatter
+    - 'curl\s.*\|\s*(jq|python3?\s+-m\s+json\.tool|json_pp|yq|xmllint)'    # curl | formatter
 
   # Path segments that indicate documentation context (lower severity)
   doc_path_indicators:
@@ -653,6 +655,8 @@ llm_analysis:
   max_output_tokens: 8192             # Max tokens for LLM responses
   meta_budget_multiplier: 3.0         # Meta analyzer multiplier (3× above)
   trusted_reference_domains: []       # Trusted internal domains (git, registries, docs); demoted to LOW
+  contextual_risk_max_severity: ""    # Cap for findings the model labels CONTEXTUAL_RISK ("" = no cap)
+  low_confidence_max_severity: ""    # Cap for findings the model rates LOW confidence ("" = no cap)
 
 # ---------------------------------------------------------------------------
 # Finding output – final dedupe + policy traceability metadata

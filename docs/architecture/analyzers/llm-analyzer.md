@@ -18,6 +18,40 @@ The LLM Analyzer uses large language models as security judges to perform semant
 - **Provider-specific**: OpenAI/Anthropic use `response_format`, Gemini uses `response_schema`
 - **Direct mapping**: AITech codes mapped directly to ThreatCategory enum
 
+### Decomposed analysis (`--llm-decompose`)
+
+Off by default. When enabled the analyzer runs one pass per focus — declared purpose against actual
+behaviour, policy and instruction surface, and concrete security behaviours — and unions the findings
+on rule and category, so two passes describing the same behaviour in different words count once.
+
+Each focus is appended to the shipped prompt rather than replacing it, so the passes differ in emphasis
+and not in what counts as evidence. A focus that replaced the decision rules could win recall by
+relaxing the standard.
+
+The cost is one set of model calls per focus. Measured on Gemma 4 26B, a single pass uses about 4,800
+input tokens per skill and five passes about 24,700. A failing pass is skipped rather than aborting the
+scan, and token usage is accumulated across passes so the extra cost stays visible.
+
+Recall gains vary by corpus and model, and on one corpus recall falls. See
+[measured results](../../reference/measured-results.md) before enabling it.
+
+#### Provider schema constraints
+
+Not every backend accepts the whole schema. Two constraints are handled automatically, and both are
+worth knowing because the symptom of getting them wrong is a scan that still returns static findings
+while the semantic stage silently contributes nothing:
+
+- **Bedrock Converse** (`bedrock/...`) rejects the array cardinality keywords `maxItems`, `minItems`
+  and `uniqueItems`, answering `output_config.format.schema: For 'array' type, property 'maxItems' is
+  not supported`. The scanner strips those keywords for this route and keeps strict structured output,
+  rather than falling back to plain JSON and losing the structural guarantee for the sake of a bound
+  the prompt already states.
+- **Bedrock mantle** (`bedrock-mantle/...`) rejects `uniqueItems` only, and refuses a `json_object`
+  request unless a message contains the literal word `json`.
+
+If a future backend rejects some other keyword, the request degrades to plain JSON mode rather than
+failing, and the response is parsed with the same validation.
+
 ### 3. Prompt Injection Protection
 - **Random delimiters**: Uses `secrets.token_hex(16)` for unpredictable tags
 - **Pre-analysis validation**: Detects delimiter injection before LLM sees content

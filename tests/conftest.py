@@ -46,6 +46,31 @@ if env_file.exists():
     load_dotenv(env_file)
 
 
+# A developer ``.env`` is loaded above so credential-gated integration tests can
+# run locally.  That also leaks endpoint- and model-shaping variables into every
+# test, which silently overrides the very provider defaults some tests assert.
+# Those variables are removed per-test here; API keys are deliberately left in
+# place so credential-gated tests keep behaving exactly as before.  Any test that
+# needs one of these set does so explicitly in its own body, which runs after
+# this fixture.
+_AMBIENT_LLM_CONFIG_VARS = (
+    "SKILL_SCANNER_LLM_BASE_URL",
+    "SKILL_SCANNER_META_LLM_BASE_URL",
+    "SKILL_SCANNER_LLM_API_VERSION",
+    "SKILL_SCANNER_META_LLM_API_VERSION",
+    "SKILL_SCANNER_LLM_MODEL",
+    "SKILL_SCANNER_META_LLM_MODEL",
+    "SKILL_SCANNER_LLM_PROVIDER",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ambient_llm_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep provider defaults deterministic regardless of local ``.env`` values."""
+    for variable in _AMBIENT_LLM_CONFIG_VARS:
+        monkeypatch.delenv(variable, raising=False)
+
+
 # ---------------------------------------------------------------------------
 # Real skill directory fixtures
 # ---------------------------------------------------------------------------

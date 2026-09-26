@@ -12,10 +12,14 @@ Scan policies define scanner behavior without code changes. Start with a built-i
 
 ### Which Preset Should I Use?
 
+[Recommended Settings](/docs/skill-scanner/recommended-settings) answers this per use case, with measured numbers. In short:
+
 | Scanning... | Use |
 |-------------|-----|
-| Untrusted or external skills | **strict** — maximum sensitivity |
-| Normal CI/CD pipeline | **balanced** (default) — good detection-to-noise ratio |
+| Your own skills, locally, in pre-commit or in CI | **low-noise** — rules only |
+| Third-party skills before install | **balanced** (default) with the LLM judge; block HIGH, review MEDIUM |
+| Third-party skills with little review capacity | **quiet** with the LLM judge — not without it |
+| Audits and threat hunting | **strict** — maximum sensitivity, triage only |
 | Trusted internal skills | **permissive** — reduced noise |
 
 ---
@@ -27,11 +31,14 @@ Scan policies define scanner behavior without code changes. Start with a built-i
 | `strict` | shadow / on | Maximum sensitivity | Untrusted content, compliance audits, security reviews |
 | `balanced` | shadow / on | Default blend | General CI usage, day-to-day development scanning |
 | `permissive` | off / off | Lower noise | Trusted internal workflows, known-safe skill directories |
+| `low-noise` | shadow / on | Balanced, fewer harmless flags | Balanced with 11 rules reported at LOW; LLM findings the model rates low-confidence capped at LOW |
+| `quiet` | shadow / on | Fewest flags | Triage queues: 19 rules reported at LOW, and LLM low-confidence and contextual-risk findings capped at LOW |
 
 ```bash
 skill-scanner scan ./my-skill --policy strict
 skill-scanner scan ./my-skill --policy balanced
 skill-scanner scan ./my-skill --policy permissive
+skill-scanner scan ./my-skill --policy low-noise
 ```
 
 Override the selected policy for one invocation with

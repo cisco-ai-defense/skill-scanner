@@ -141,6 +141,7 @@ The LLM and Meta analyzers use [LiteLLM](https://github.com/BerriAI/litellm) und
 | Anthropic | `anthropic/claude-sonnet-4-20250514` | None |
 | OpenAI | `gpt-4o` | None |
 | AWS Bedrock | `bedrock/anthropic.claude-3-sonnet-...` | `[bedrock]` |
+| AWS Bedrock mantle | `bedrock-mantle/google.gemma-4-26b-a4b` | `[bedrock]` |
 | Google Vertex | `vertex_ai/gemini-2.5-pro` | `[vertex]` |
 | Azure OpenAI | `azure/gpt-4o` | `[azure]` |
 | OpenAI-compatible | provider-specific model + `SKILL_SCANNER_LLM_PROVIDER=openai` | None |
@@ -148,6 +149,8 @@ The LLM and Meta analyzers use [LiteLLM](https://github.com/BerriAI/litellm) und
 Set `--llm-provider` on the CLI or configure via the `SKILL_SCANNER_LLM_MODEL` environment variable using LiteLLM model naming conventions.
 
 Vertex AI uses `GOOGLE_APPLICATION_CREDENTIALS` when set and otherwise falls back to ambient Application Default Credentials, including Workload Identity. Bedrock similarly supports ambient AWS/IAM credentials.
+
+Some Bedrock models are published only on the OpenAI-compatible *mantle* endpoint rather than on `bedrock-runtime`. Use the `bedrock-mantle/` prefix for those. It signs with SigV4 against service name `bedrock`, so it shares the same IAM credentials and needs no API key, and it is a separate prefix because `bedrock/` signs against `bedrock-runtime`, which does not serve them. See the [configuration reference](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/reference/configuration-reference.md) for the route's schema constraints.
 
 OSV.dev dependency scanning (`--use-osv`) needs network access but no API key or optional package.
 
