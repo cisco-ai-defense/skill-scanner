@@ -946,6 +946,30 @@ further demotion costs dozens of detections -- `ACTIVE_DYNAMIC_EXECUTION` alone 
 the curve is cut there. Use them with `--policy low-noise` or `--policy quiet`, or pick them in
 `configure-policy`.
 
+### The presets on the held-out split, with and without the judge
+
+A scan with `--use-llm` flags a skill when either layer reports MEDIUM+, so a preset has to be
+measured as that union. Each preset brings its rule demotions and its LLM caps. Records both layers
+read; judge rows from Gemma 4 via Bedrock with the new prompt:
+
+| Preset | Judge | Development recall | FPR | Held-out recall | FPR | Real skills (2,000) |
+|---|---|---|---|---|---|---|
+| `balanced` | off | 29.7% | 1.0% | 8.0% | 4.2% | 2.00% |
+| `low-noise` | off | 29.7% | 1.0% | 7.9% | 4.2% | 1.65% |
+| `quiet` | off | 28.2% | 0.1% | **4.2%** | 3.7% | 1.10% |
+| `balanced` | on | 90.5% | 24.6% | 66.7% | 15.4% | 11.65% |
+| `low-noise` | on | 88.0% | 17.3% | 63.2% | 13.4% | 8.65% |
+| `quiet` | on | 85.5% | 7.0% | 50.3% | 7.2% | 3.85% |
+
+At HIGH+ the three presets with the judge catch 33.7%, 33.7% and 33.1% of the held-out malicious
+skills at 6.4%, 6.4% and 5.5% FPR, flagging 3.80%, 3.60% and 2.90% of real skills.
+
+**`quiet` should not run without the judge.** Its eight rule demotions beyond `low-noise` were chosen
+on development data and real skills, where they cost little; on the held-out split they halve what
+the rules alone catch (8.0% to 4.2%). With the judge on, the judge carries that recall.
+`evals/experiments/a3_recommended_profiles.py` reproduces the table, and
+[Recommended settings](../user-guide/recommended-settings.md) turns it into configurations.
+
 ## Evaluation hygiene
 
 - **Endpoint protection edits a corpus silently.** Microsoft Defender quarantined `SKILL.md` files
@@ -990,13 +1014,36 @@ scanner processes over 1.9 million just-extracted files ran at three records a s
 of their time in the kernel. Mounting the corpus directory `noatime` (a bind mount of the directory onto
 itself) restored about ninety records a second per process.
 
+**The full-corpus figures, step by step.** Each script takes its inputs as arguments and was rerun on
+the analysis host against the same raw rows; every output matched the published one exactly.
+
+| Step | Script |
+|---|---|
+| Scan a corpus with one tree (static arm) | `evals/runners/cross_tool_benchmark.py` |
+| Run the judge alone over a corpus | `evals/runners/judge_only.py` |
+| Score OpenJev's eight probes | `evals/experiments/c3_openjev_local.py` |
+| Build the Parquet store from the raw rows | `evals/experiments/f1_full_corpus_store.py` |
+| Tiers, per-rule sole drivers, judge coverage, agreement, cascade sweep, presets | `evals/experiments/f2_full_corpus_analysis.py` |
+| The overlay estimate against the full rescan | `evals/experiments/f3_overlay_check.py` |
+| Shipped against final on labelled corpora, and the recall cost | `evals/experiments/f4_labelled_ab.py` |
+| The greedy path the presets were cut from | `evals/experiments/f5_policy_pack_path.py` |
+| The judge per prompt and per cap | `evals/experiments/a2_judge_prompt_caps.py` |
+| The presets with and without the judge | `evals/experiments/a3_recommended_profiles.py` |
+| The OpenJev screen, selected on train/validation | `evals/experiments/c4_openjev_screen.py` |
+| The Space's report, checked for leaks before it is written | `evals/publish/large_scale_report.py` |
+
+The per-record rows stay private: the source corpora forbid redistributing their content, and a
+record identifier is the first step to it. The aggregate report the Space renders is published as
+`results/large-scale.json`, with its SHA-256 in `results/SHA256SUMS`.
+
 `evals/results/` is not tracked, so the run tracker referenced during development is not in the
 repository. The negative results it recorded are written up in the sections above, and the full
 per-corpus tables are on the published Space linked at the top of this page.
 
 ## Related
 
+- [Recommended settings](../user-guide/recommended-settings.md) — the configurations these figures support, by use case.
 - [Configuration reference](configuration-reference.md) — every environment variable, including the
-  Bedrock mantle route and the opt-in verdict repair.
+  Bedrock mantle route and verdict repair, which is on by default.
 - [LLM analyzer](../architecture/analyzers/llm-analyzer.md) — provider schema constraints.
 - [Dependencies and LLM providers](dependencies-and-llm-providers.md) — model naming per provider.

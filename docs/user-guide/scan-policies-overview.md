@@ -4,16 +4,19 @@ Scan policies define scanner behavior without code changes.
 
 ## Which Preset Should I Use?
 
-```mermaid
-flowchart TD
-    A["What are you scanning?"] --> B{"Untrusted or external skills?"}
-    B -- Yes --> C["Use <strong>strict</strong>"]
-    B -- No --> D{"Normal CI/CD pipeline?"}
-    D -- Yes --> E["Use <strong>balanced</strong> (default)"]
-    D -- No --> F{"Trusted internal skills?"}
-    F -- Yes --> G["Use <strong>permissive</strong>"]
-    F -- No --> E
-```
+[Recommended settings](recommended-settings.md) answers this per use case, with measured detection
+and flag rates and the commands to run. In short:
+
+| Scanning... | Preset | LLM judge |
+|---|---|---|
+| Your own skills, locally, in pre-commit or in CI | `low-noise` | not needed |
+| Third-party skills before install | `balanced` (default) | on: block at HIGH, review MEDIUM |
+| Third-party skills with little review capacity | `quiet` | on -- not without it |
+| Audits and threat hunting | `strict` | on, triage only |
+| Trusted internal skills where noise matters more than coverage | `permissive` | not needed |
+
+`strict` and `permissive` were not part of the full-corpus measurements; measure them on your own
+skills before using either as a gate.
 
 ## Built-In Presets
 
@@ -21,6 +24,8 @@ flowchart TD
 |---|---|---|---|---|
 | `strict` | Maximum sensitivity | `shadow` | on | Untrusted content and audits |
 | `balanced` | Default blend | `shadow` | on | General CI usage |
+| `low-noise` | `balanced` with 11 rules reported at LOW and low-confidence LLM findings capped at LOW | `shadow` | on | Everyday scanning where alert volume matters |
+| `quiet` | `low-noise` plus 8 more rules at LOW and contextual-risk LLM findings capped at LOW | `shadow` | on | Review queues limited by capacity, with the judge on |
 | `permissive` | Lower noise | `off` | off | Trusted internal workflows |
 
 ## Quick Start

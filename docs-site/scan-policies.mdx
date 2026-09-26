@@ -12,12 +12,15 @@ Scan policies define scanner behavior without code changes. Start with a built-i
 
 ### Which Preset Should I Use?
 
+[Recommended Settings](/docs/skill-scanner/recommended-settings) answers this per use case, with measured numbers. In short:
+
 | Scanning... | Use |
 |-------------|-----|
-| Untrusted or external skills | **strict** — maximum sensitivity |
-| Normal CI/CD pipeline | **balanced** (default) — good detection-to-noise ratio |
+| Your own skills, locally, in pre-commit or in CI | **low-noise** — rules only |
+| Third-party skills before install | **balanced** (default) with the LLM judge; block HIGH, review MEDIUM |
+| Third-party skills with little review capacity | **quiet** with the LLM judge — not without it |
+| Audits and threat hunting | **strict** — maximum sensitivity, triage only |
 | Trusted internal skills | **permissive** — reduced noise |
-| A review queue with limited capacity | **low-noise**, or **quiet** when capacity is the binding constraint |
 
 ---
 

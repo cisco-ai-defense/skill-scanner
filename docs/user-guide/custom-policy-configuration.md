@@ -7,6 +7,8 @@
 > skill-scanner scan --policy strict ./skill
 > ```
 > Read on only if you need to customise thresholds, allowlists, or rule behavior.
+> Not sure which preset? [Recommended settings](recommended-settings.md) picks one per use case, with
+> measured numbers.
 
 Every organisation has a different security bar. A **scan policy** captures what counts as benign, which rules fire on which file types, which installer URLs are trusted, numeric thresholds, and more — all in a single YAML file.
 

@@ -45,6 +45,7 @@ Security scanning for AI agent skills. Detects prompt injection, data exfiltrati
 - [API Operations](user-guide/api-operations.md) -- API usage patterns
 - [API Endpoints Detail](user-guide/api-endpoints-detail.md) -- Endpoint reference
 - [API Rationale](user-guide/api-rationale.md) -- Design decisions behind the API
+- [Recommended Settings](user-guide/recommended-settings.md) -- What to run for which job, why, and how to configure it
 - [Scan Policies Overview](user-guide/scan-policies-overview.md) -- Policy presets and tuning
 - [Custom Policy Configuration](user-guide/custom-policy-configuration.md) -- Writing your own policy YAML
 
