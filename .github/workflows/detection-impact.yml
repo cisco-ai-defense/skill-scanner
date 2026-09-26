@@ -1,0 +1,386 @@
+name: Detection Impact
+
+# Scans the same records with the base and the head tree of a pull request that touches detection,
+# and reports what changed as aggregates only. See docs/development/detection-impact-check.md.
+#
+# Data handling, per evals/datasets/public-datasets.lock.json:
+#   * Only datasets whose lock entry carries `pull_request_acquisition` are fetched, only their
+#     pinned files, only in the acquire job, and every byte is hash-verified before use.
+#   * MaliciousSkillBench is materialized as train/validation only; no frozen test member is
+#     ever written, so none can be scored.
+#   * Scans run with credentials removed and outbound network denied. Nothing is executed.
+#   * The PR comment and job summary carry aggregate metrics only; the report builder refuses
+#     record identifiers, paths, credentials and free text.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - "skill_scanner/data/packs/**"
+      - "skill_scanner/data/*_policy.yaml"
+      - "skill_scanner/core/rules/**"
+      - "skill_scanner/core/analyzers/**"
+      - "skill_scanner/core/static_analysis/**"
+      - "skill_scanner/core/cel/**"
+      - "skill_scanner/core/*.py"
+      - "tools/cel_runtime/**"
+      - "evals/runners/detection_impact.py"
+      - "evals/runners/cross_tool_benchmark.py"
+      - "evals/lib/**"
+      - "evals/datasets/**"
+      - ".github/workflows/detection-impact.yml"
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Branch or commit to compare the dispatched ref against"
+        required: false
+        default: "main"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: detection-impact-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acquire:
+    name: Acquire lock-pinned train/validation and real-skill sample
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6.7.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install locked acquisition dependencies
+        run: uv sync --frozen --no-install-project --only-group datasets
+
+      - name: Resolve what the lock allows a pull request to fetch
+        shell: bash
+        run: |
+          uv run --no-sync python - <<'PY' > "$RUNNER_TEMP/acquisition.env"
+          import shlex
+
+          from evals.datasets.public_datasets import get_locked_dataset, load_dataset_lock, pull_request_acquisition
+
+          lock = load_dataset_lock()
+          if lock["safety_defaults"]["network_fetch_in_pull_requests"] is not False:
+              raise SystemExit("the harness must never fetch in a pull request")
+          for key, dataset_id in (("MSB", "ProtectSkills/MaliciousSkillBench"), ("CLAWHUB", "OpenClaw/clawhub-security-signals")):
+              allowance = pull_request_acquisition(dataset_id, lock)
+              if "test" in allowance["partitions"]:
+                  raise SystemExit(f"{dataset_id}: a pull request may never materialize the test partition")
+              print(f"{key}_REVISION={shlex.quote(get_locked_dataset(dataset_id, lock)['revision'])}")
+              print(f"{key}_FILES={shlex.quote(' '.join(allowance['files']))}")
+          PY
+          cat "$RUNNER_TEMP/acquisition.env"
+
+      - name: Download only lock-pinned MaliciousSkillBench files
+        shell: bash
+        env:
+          HF_HUB_DISABLE_XET: "1"
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/acquisition.env"
+          read -r -a allowed <<< "$MSB_FILES"
+          mapfile -t contract < <(uv run --no-sync python evals/datasets/materialize_malicious_skill_bench.py --print-source-paths)
+          if [[ "${allowed[*]}" != "${contract[*]}" ]]; then
+            echo "::error::the pull-request allowance differs from the validated source profile"
+            exit 1
+          fi
+          uv run --no-sync hf download ProtectSkills/MaliciousSkillBench \
+            --repo-type dataset --revision "$MSB_REVISION" \
+            --local-dir "$RUNNER_TEMP/msb-source" "${allowed[@]}"
+
+      - name: Materialize train/validation only
+        shell: bash
+        run: |
+          uv run --no-sync python evals/datasets/materialize_malicious_skill_bench.py \
+            --source-dir "$RUNNER_TEMP/msb-source" \
+            --development-split "$RUNNER_TEMP/clean"
+
+      - name: Download only the lock-pinned ClawHub validation file
+        shell: bash
+        env:
+          HF_HUB_DISABLE_XET: "1"
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/acquisition.env"
+          read -r -a allowed <<< "$CLAWHUB_FILES"
+          uv run --no-sync hf download OpenClaw/clawhub-security-signals \
+            --repo-type dataset --revision "$CLAWHUB_REVISION" \
+            --local-dir "$RUNNER_TEMP/clawhub-source" "${allowed[@]}"
+
+      - name: Materialize the fixed real-skill sample
+        shell: bash
+        run: |
+          uv run --no-sync python evals/datasets/materialize_clawhub_sample.py \
+            --source-dir "$RUNNER_TEMP/clawhub-source" \
+            --clean-root "$RUNNER_TEMP/clean" \
+            --size 2000
+
+      - name: Discard sources
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/msb-source" "$RUNNER_TEMP/clawhub-source"
+
+      - name: Upload inert corpora
+        uses: actions/upload-artifact@v4
+        with:
+          name: detection-impact-corpora-${{ github.run_id }}
+          path: ${{ runner.temp }}/clean/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 1
+
+  scan:
+    name: Scan with the ${{ matrix.tree }} tree
+    needs: acquire
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        tree: [base, head]
+    steps:
+      - name: Checkout head
+        uses: actions/checkout@v4
+        with:
+          path: head
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve the base commit
+        id: base
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DISPATCH_BASE: ${{ inputs.base_ref }}
+        run: |
+          set -euo pipefail
+          cd head
+          if [[ -n "${PR_BASE_SHA:-}" ]]; then
+            base="$PR_BASE_SHA"
+          else
+            base="$(git rev-parse --verify "origin/${DISPATCH_BASE:-main}^{commit}")"
+          fi
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::could not resolve the base commit"
+            exit 1
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout base
+        if: matrix.tree == 'base'
+        uses: actions/checkout@v4
+        with:
+          path: base
+          ref: ${{ steps.base.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up Go for bundled CEL
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.1"
+          cache-dependency-path: head/tools/cel_runtime/go.sum
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6.7.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install locked scanner dependencies
+        working-directory: head
+        run: uv sync --all-extras --frozen
+
+      - name: Assemble the tree under test
+        # Both sides run the head's harness, so only the scanner differs between them.
+        shell: bash
+        env:
+          TREE: ${{ matrix.tree }}
+        run: |
+          set -euo pipefail
+          tree="$RUNNER_TEMP/tree"
+          mkdir -p "$tree"
+          cp -R head/evals "$tree/evals"
+          if [[ "$TREE" == base ]]; then
+            (cd base && ../head/.venv/bin/python scripts/build_cel_helper.py --in-place --helper-version source-tree)
+            cp head/skill_scanner/_version.py base/skill_scanner/_version.py
+            cp -R base/skill_scanner "$tree/skill_scanner"
+          else
+            cp -R head/skill_scanner "$tree/skill_scanner"
+          fi
+          test -f "$tree/skill_scanner/core/cel/_bin/manifest.json"
+
+      - name: Download inert corpora
+        uses: actions/download-artifact@v4
+        with:
+          name: detection-impact-corpora-${{ github.run_id }}
+          path: ${{ runner.temp }}/clean
+
+      - name: Scan with credentials removed and the network denied
+        shell: bash
+        env:
+          SKILL_SCANNER_DISABLE_NETWORK: "1"
+          HF_HUB_OFFLINE: "1"
+          NO_PROXY: "*"
+          TREE: ${{ matrix.tree }}
+        run: |
+          set -euo pipefail
+          while IFS='=' read -r name _; do
+            case "$name" in
+              *_TOKEN|*_SECRET|*_PASSWORD|*_API_KEY|AWS_*|AZURE_*|GOOGLE_APPLICATION_CREDENTIALS) unset "$name" ;;
+            esac
+          done < <(env)
+          runner_uid="$(id -u)"
+          sudo iptables -I OUTPUT 1 -m owner --uid-owner "$runner_uid" -j REJECT
+          sudo ip6tables -I OUTPUT 1 -m owner --uid-owner "$runner_uid" -j REJECT
+          trap 'sudo iptables -D OUTPUT -m owner --uid-owner "$runner_uid" -j REJECT; sudo ip6tables -D OUTPUT -m owner --uid-owner "$runner_uid" -j REJECT' EXIT
+          head/.venv/bin/python - <<'PY'
+          import socket
+
+          for address, family in (("1.1.1.1", socket.AF_INET), ("2606:4700:4700::1111", socket.AF_INET6)):
+              sock = socket.socket(family, socket.SOCK_STREAM)
+              sock.settimeout(1.0)
+              try:
+                  sock.connect((address, 443))
+              except OSError:
+                  pass
+              else:
+                  raise SystemExit(f"network isolation failed for {address}")
+              finally:
+                  sock.close()
+          PY
+          cd "$RUNNER_TEMP/tree"
+          "$GITHUB_WORKSPACE/head/.venv/bin/python" evals/runners/cross_tool_benchmark.py \
+            --tool skill-scanner --arm static --profile core \
+            --clean-root "$RUNNER_TEMP/clean" \
+            --corpus msb-trainval --corpus clawhub-sample \
+            --workers 4 --progress-every 2000 \
+            --output-dir "$RUNNER_TEMP/rows/$TREE"
+
+      - name: Upload rows
+        uses: actions/upload-artifact@v4
+        with:
+          name: detection-impact-rows-${{ matrix.tree }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/rows/${{ matrix.tree }}/*.jsonl
+          if-no-files-found: error
+          retention-days: 1
+
+  compare:
+    name: Compare base and head
+    needs: [acquire, scan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout head
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download base rows
+        uses: actions/download-artifact@v4
+        with:
+          name: detection-impact-rows-base-${{ github.run_id }}
+          path: ${{ runner.temp }}/rows/base
+
+      - name: Download head rows
+        uses: actions/download-artifact@v4
+        with:
+          name: detection-impact-rows-head-${{ github.run_id }}
+          path: ${{ runner.temp }}/rows/head
+
+      - name: Compare, publish the summary, and apply the gates
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ACCEPTED: ${{ contains(github.event.pull_request.labels.*.name, 'detection-impact-accepted') }}
+        run: |
+          set -uo pipefail
+          accept=()
+          if [[ "$ACCEPTED" == true ]]; then
+            accept=(--accept-metric-changes)
+          fi
+          mkdir -p "$RUNNER_TEMP/report"
+          python evals/runners/detection_impact.py \
+            --base-rows "$RUNNER_TEMP/rows/base" --head-rows "$RUNNER_TEMP/rows/head" \
+            --report "$RUNNER_TEMP/report/report.json" --comment "$RUNNER_TEMP/report/comment.md" \
+            --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA" --repo "$GITHUB_WORKSPACE" "${accept[@]}"
+          status=$?
+          if [[ -f "$RUNNER_TEMP/report/comment.md" ]]; then
+            cat "$RUNNER_TEMP/report/comment.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "$status" > "$RUNNER_TEMP/report/status"
+          exit "$status"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: detection-impact-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/report/
+          if-no-files-found: warn
+          retention-days: 14
+
+  comment:
+    name: Post the summary on the pull request
+    # Same-repository pull requests only: a fork's token cannot write, and this job never runs
+    # pull-request code -- it only reads the report the compare job produced.
+    needs: compare
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.compare.result != 'skipped'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download report
+        uses: actions/download-artifact@v4
+        with:
+          name: detection-impact-report-${{ github.run_id }}
+          path: report
+
+      - name: Create or update the sticky comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'report/comment.md';
+            if (!fs.existsSync(path)) {
+              core.warning('no comment was produced; see the compare job log');
+              return;
+            }
+            const body = fs.readFileSync(path, 'utf8');
+            const marker = '<!-- detection-impact -->';
+            if (!body.startsWith(marker) || body.length > 60000) {
+              core.setFailed('the report is not a detection-impact comment');
+              return;
+            }
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find((c) => c.user.type === 'Bot' && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

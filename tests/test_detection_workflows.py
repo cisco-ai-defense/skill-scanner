@@ -255,6 +255,7 @@ def test_go_toolchain_is_exact_across_source_and_release_builds() -> None:
     assert release_gate.count('go-version: "1.27.1"') == 2
     assert release.count('go-version: "1.27.1"') == 2
     for workflow_name in (
+        "detection-impact.yml",
         "detection-pr-gates.yml",
         "detection-release-evidence.yml",
         "detection-release-gates.yml",
@@ -300,3 +301,81 @@ def test_committed_golden_workflows_require_exact_identity_and_five_runs() -> No
     ):
         assert f'"{timing_field}"' in pr
     assert '"cel_fallbacks"' not in pr.split("volatile =", 1)[1].split("}", 1)[0]
+
+
+_IMPACT_WORKFLOW = "detection-impact.yml"
+
+
+def _impact() -> dict:
+    return yaml.safe_load(_workflow(_IMPACT_WORKFLOW))
+
+
+def test_detection_impact_triggers_on_detection_changes_and_is_never_scheduled() -> None:
+    document = _impact()
+    triggers = document.get("on", document.get(True))
+    paths = triggers["pull_request"]["paths"]
+    for required in (
+        "skill_scanner/data/packs/**",
+        "skill_scanner/data/*_policy.yaml",
+        "skill_scanner/core/rules/**",
+        "skill_scanner/core/analyzers/**",
+    ):
+        assert required in paths
+    assert "schedule" not in triggers
+
+
+def test_detection_impact_materializes_no_frozen_test_member() -> None:
+    document = _impact()
+    acquire = "\n".join(step.get("run", "") for step in document["jobs"]["acquire"]["steps"])
+    assert "--development-split" in acquire
+    # The full release snapshot writes every member, test included; the pull-request job never builds it.
+    assert "--output-dir" not in acquire
+    assert "pull_request_acquisition" in acquire
+    assert "a pull request may never materialize the test partition" in acquire
+    workflow = _workflow(_IMPACT_WORKFLOW)
+    for forbidden in ("msb-source-disjoint", "msb-balanced-800", "harmfulskillbench", "openskillrisk", "notinject"):
+        assert forbidden not in workflow.casefold()
+
+
+def test_detection_impact_scans_offline_with_credentials_removed() -> None:
+    steps = _impact()["jobs"]["scan"]["steps"]
+    run = next(
+        step["run"] for step in steps if step.get("name") == "Scan with credentials removed and the network denied"
+    )
+    assert "iptables -I OUTPUT" in run and "ip6tables -I OUTPUT" in run
+    assert "network isolation failed" in run
+    assert 'unset "$name"' in run
+    assert "--profile core" in run and "--arm static" in run
+
+
+def test_detection_impact_comment_job_runs_no_pull_request_code() -> None:
+    document = _impact()
+    job = document["jobs"]["comment"]
+    assert all("actions/checkout" not in str(step.get("uses", "")) for step in job["steps"])
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in job["if"]
+    assert job["permissions"] == {"contents": "read", "pull-requests": "write"}
+    assert document["permissions"] == {"contents": "read"}
+    for name, other in document["jobs"].items():
+        if name != "comment":
+            assert "permissions" not in other, name
+
+
+def test_detection_impact_checkouts_never_persist_credentials() -> None:
+    for job in _impact()["jobs"].values():
+        for step in job["steps"]:
+            if "actions/checkout" in str(step.get("uses", "")):
+                assert step["with"]["persist-credentials"] is False
+
+
+def test_detection_impact_never_interpolates_untrusted_input_into_shell() -> None:
+    for step_name, run in _workflow_run_steps(_IMPACT_WORKFLOW):
+        assert "${{ inputs." not in run, step_name
+        assert "${{ github.event" not in run, step_name
+        assert "${{ github.head_ref" not in run, step_name
+
+
+def test_detection_impact_workflow_passes_actionlint_when_available() -> None:
+    actionlint = shutil.which("actionlint")
+    if actionlint is None:
+        return
+    subprocess.run([actionlint, str(WORKFLOWS / _IMPACT_WORKFLOW)], check=True)
