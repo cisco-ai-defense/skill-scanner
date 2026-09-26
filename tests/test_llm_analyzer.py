@@ -888,6 +888,23 @@ class TestCodeFileFormatting:
         assert "eval('real')" in excerpt
         assert "source line 2" in excerpt
 
+    def test_format_code_files_preserves_code_after_line_comment_marker(self):
+        """Keep executable JavaScript visible through the public formatting path."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+        content = "// /* not a block comment\n" + ("// filler\n" * 500) + "eval('real');\n"
+        mock_script = MagicMock()
+        mock_script.relative_path = "scripts/payload.js"
+        mock_script.file_type = "javascript"
+        mock_script.read_content = MagicMock(return_value=content)
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=[mock_script])
+
+        formatted, skipped = analyzer.prompt_builder.format_code_files(skill, max_file_chars=100)
+
+        assert "eval('real');" in formatted
+        assert "source line 502" in formatted
+        assert skipped[0]["partial"] is True
+
     def test_non_javascript_excerpt_filtering_does_not_track_block_comments(self):
         """Keep prior selection behavior for non-JavaScript comment styles."""
         excerpt = LLMAnalyzer(api_key="test-key").prompt_builder._extract_oversized_code(
