@@ -269,6 +269,7 @@ def render_index(
     per_dataset: dict | None = None,
     stability: dict | None = None,
     cost: dict | None = None,
+    large_scale: dict | None = None,
 ) -> str:
     track = (baseline or {}).get("tracks", {}).get("core-only-source-disjoint") or {}
     judge_track = ((judged or {}).get("arms", {}).get("core_judge", {}).get("report", {}).get("tracks", {}) or {}).get(
@@ -311,6 +312,8 @@ additions.</li>
 <li>Nothing here is stable below 14%. Repeating one judged configuration over the same packages changed
 the verdict on 14% of them, so smaller differences are noise.</li>
 </ul>"""
+
+    body += _render_index_large_scale(large_scale or {})
 
     body += """<h2>Why this was worth measuring</h2>
 <p>A skill is an unusually open format. It can contain any code, in any language, for any legitimate
@@ -368,6 +371,68 @@ cost us a run each.</li>
 <a href="{PUBLISHED_BLOG_URL}">{esc(PUBLISHED_BLOG_URL)}</a>. Earlier work on System One models:
 <a href="{PRIOR_SYSTEM_ONE_SPACE}">{esc(PRIOR_SYSTEM_ONE_SPACE)}</a>.</p>"""
     return page("Skill scanner evaluation results", "index.html", body)
+
+
+def _render_index_large_scale(report: dict) -> str:
+    """Headline numbers from tuning against every real skill, linking to the full page."""
+
+    full = report.get("full") or {}
+    det = full.get("deterministic") or {}
+    base = ((det.get("static-base") or {}).get("tiers") or {}).get("MEDIUM+") or {}
+    final = ((det.get("static-head") or det.get("static-tuned") or {}).get("tiers") or {}).get("MEDIUM+") or {}
+    if not (base and final):
+        return ""
+    cards = [
+        (
+            f"{percent(base.get('rate'), 2)} &rarr; {percent(final.get('rate'), 2)}",
+            "Real skills the rules flag at MEDIUM+, shipped to final",
+        )
+    ]
+    test = ((full.get("labelled_ab") or {}).get("corpora") or {}).get("msb-source-disjoint") or {}
+    b, t = test.get("medium_plus_base") or {}, test.get("medium_plus_final") or {}
+    if b.get("negatives") and t.get("negatives"):
+        cards.append(
+            (
+                f"{percent(b['fp'] / b['negatives'], 2)} &rarr; {percent(t['fp'] / t['negatives'], 2)}",
+                "Rules false-positive rate on the held-out test split",
+            )
+        )
+    rows = (report.get("judge_prompt") or {}).get("rows") or []
+    shipped = next((r for r in rows if r.get("prompt") == "shipped" and r.get("cap") is None), {})
+    new = next((r for r in rows if r.get("prompt") == "new" and r.get("cap") is None), {})
+    if shipped and new:
+        cards.append(
+            (
+                f"{percent(shipped['test']['f1'], 1)} &rarr; {percent(new['test']['f1'], 1)}",
+                "Judge F1 on the held-out test split, new prompt",
+            )
+        )
+    screen = next(
+        (
+            r
+            for r in (report.get("jev_screen") or {}).get("results") or []
+            if r.get("prompt") == "new" and r.get("cap") is None and r.get("screen") == "logistic"
+        ),
+        {},
+    )
+    real = screen.get("real") or screen.get("uniform") or {}
+    if real:
+        cards.append(
+            (
+                percent(real.get("flag_rate"), 2),
+                f"Of {count(real.get('records'))} sampled real skills, flagged by the judge behind the OpenJev "
+                f"screen; {percent(real.get('judge_calls'), 1)} reach the judge",
+            )
+        )
+    out = "<h2>Tuned against every real skill</h2>"
+    out += (
+        f"<p>Every usable skill in the gitskills corpus, {count((det.get('static-base') or {}).get('records'))} of "
+        "them, was scanned by every deterministic analyzer and read by the LLM judge and the System One model "
+        "served on local GPUs. The deterministic rules were then tuned from those results, checked on every labelled "
+        "corpus, and the whole corpus rescanned with the final tree. "
+        '<a href="large-scale.html">The large-scale page</a> has the detail.</p>'
+    )
+    return out + kpis(cards)
 
 
 def render_reproduction(reproduction: dict | None) -> str:
@@ -912,50 +977,75 @@ def _metric_row(label: str, m: dict) -> list[str]:
     ]
 
 
+def _tier_cell(tier: dict, digits: int = 3) -> str:
+    return f"{percent(tier.get('rate'), digits)} {interval(tier.get('ci95'), digits)}" if tier else "&mdash;"
+
+
 def _render_full_corpus(full: dict) -> str:
-    """Every usable gitskills skill: deterministic before/after, the judge, adjudication, cascade."""
+    """Every usable gitskills skill: deterministic before/after, the judge, adjudication, cascade, packs."""
 
     if not full:
         return ""
     det = full.get("deterministic") or {}
-    base, tuned = det.get("static-base") or {}, det.get("static-tuned") or {}
+    base, tuned, head = (det.get(run) or {} for run in ("static-base", "static-tuned", "static-head"))
+    # The final tree when it was scanned in full; older reports only carry the first tuning pass.
+    final_run = "static-head" if head else "static-tuned"
+    final = head or tuned
     out = "<h2>Every usable skill: deterministic, judge and cascade</h2>\n"
-    if base and tuned:
-        step: dict = next(iter(det.get("waterfall") or []), {})
-        out += (
-            f"<p>{count(base.get('records'))} real published skills, the whole usable gitskills corpus, "
-            "each scanned in full by every deterministic analyzer with the shipped scanner and again with the "
-            f"tuned one. {count(step.get('medium_plus_cleared'))} records left MEDIUM or above and "
-            f"{count(step.get('medium_plus_added'))} entered it. These are unlabelled, so a flag rate bounds the "
-            "false-positive rate from above rather than measuring it.</p>\n"
+    if base and final:
+        overall: dict = det.get("overall") or next(iter(det.get("waterfall") or []), {})
+        passes = (
+            ", again after the first tuning pass, and a third time with the final tree"
+            if head and tuned
+            else " and again with the tuned one"
         )
+        out += (
+            f"<p>{count(base.get('records'))} real published skills, the whole usable gitskills corpus, each "
+            f"scanned in full by every deterministic analyzer with the shipped scanner{passes}. Between the "
+            f"shipped and the final scanner {count(overall.get('medium_plus_cleared'))} records left MEDIUM or "
+            f"above and {count(overall.get('medium_plus_added'))} entered it. These are unlabelled, so a flag rate "
+            "bounds the false-positive rate from above rather than measuring it.</p>\n"
+        )
+        headers = ["Threshold", "Shipped (95% interval)"]
+        headers += ["First pass"] if head and tuned else []
+        headers += ["Final (95% interval)", "Relative change"]
         rows = []
         for label in ("CRITICAL", "HIGH+", "MEDIUM+", "LOW+", "INFO+"):
             b = (base.get("tiers") or {}).get(label) or {}
-            t = (tuned.get("tiers") or {}).get(label) or {}
+            t = (final.get("tiers") or {}).get(label) or {}
             if not b:
                 continue
-            rows.append(
-                [
-                    esc(label),
-                    f"{percent(b.get('rate'), 3)} {interval(b.get('ci95'), 3)}",
-                    f"{percent(t.get('rate'), 3)} {interval(t.get('ci95'), 3)}",
-                    f"{(t['rate'] - b['rate']) / b['rate']:+.1%}"
-                    if b.get("rate") and t.get("rate") is not None
-                    else "&mdash;",
-                ]
-            )
-        out += table(
-            ["Threshold", "Before tuning (95% interval)", "After tuning (95% interval)", "Relative change"],
-            rows,
-            numeric=(1, 2, 3),
+            row = [esc(label), _tier_cell(b)]
+            if head and tuned:
+                row.append(percent(((tuned.get("tiers") or {}).get(label) or {}).get("rate"), 3))
+            row += [
+                _tier_cell(t),
+                f"{(t['rate'] - b['rate']) / b['rate']:+.1%}"
+                if b.get("rate") and t.get("rate") is not None
+                else "&mdash;",
+            ]
+            rows.append(row)
+        out += table(headers, rows, numeric=tuple(range(1, len(headers))))
+    check = full.get("composition_check") or {}
+    if check.get("exact_medium_plus") is not None:
+        extra = ", ".join(
+            f"{count(n)} by <code>{esc(rule)}</code>" for rule, n in check.get("only_composed_by_rules") or []
+        )
+        out += (
+            "<p>The later passes were first measured by rescanning only the records each change could touch and "
+            f"overlaying them on the first-pass scan. That estimate was {percent(check.get('composed_rate'), 3)}; "
+            f"the full rescan gives {percent(check.get('exact_rate'), 3)}. Every record the full scan flags was in "
+            f"the estimate, which over-counted {count(check.get('only_composed'))} records"
+            + (f" ({extra})" if extra else "")
+            + " whose changes landed after, or outside, the rescanned sets.</p>\n"
         )
     labelled = (full.get("labelled_ab") or {}).get("corpora") or {}
     if labelled:
         out += "<h3>The same change on labelled corpora</h3>\n"
         out += (
-            "<p>Shipped scanner against tuned scanner, static arm, MEDIUM or above. Every corpus the harness "
-            "holds is shown, including those where the tuning costs recall.</p>\n"
+            "<p>Shipped scanner against the final scanner, static arm, MEDIUM or above. Every corpus the harness "
+            "holds is shown, including those where the tuning costs recall. The rules were designed on the "
+            "train/validation split and on real skills; the test split was not used to design them.</p>\n"
         )
         rows = []
         for corpus, c in labelled.items():
@@ -964,9 +1054,10 @@ def _render_full_corpus(full: dict) -> str:
             def rate(k: int, n: int) -> str:
                 return percent(k / n, 2) if n else "&mdash;"
 
+            role = f' <span class="tag">{esc(c["role"])}</span>' if c.get("role") else ""
             rows.append(
                 [
-                    esc(corpus),
+                    esc(corpus) + role,
                     count(c.get("records")),
                     f"{rate(b.get('tp', 0), b.get('positives', 0))} &rarr; {rate(t.get('tp', 0), t.get('positives', 0))}",
                     f"{rate(b.get('fp', 0), b.get('negatives', 0))} &rarr; {rate(t.get('fp', 0), t.get('negatives', 0))}",
@@ -975,19 +1066,46 @@ def _render_full_corpus(full: dict) -> str:
                 ]
             )
         out += table(["Corpus", "Records", "Recall", "FPR", "Unlabelled flag rate"], rows, numeric=(1, 2, 3, 4))
+        lost = full.get("recall_cost") or {}
+        if lost.get("records"):
+            carried = ", ".join(f"{count(n)} by <code>{esc(rule)}</code>" for rule, n in lost.get("carried_by") or [])
+            out += bad(
+                f"the recall cost on train/validation is {count(lost['records'])} malicious packages that no "
+                f"longer reach MEDIUM. The findings that carried them: {carried}. Most are hygiene or mention "
+                "findings rather than the malicious behaviour &mdash; an unpinned dependency, a mention of "
+                "Anthropic, a text label in Markdown &mdash; and the judge is the layer meant to catch these skills. "
+                "Keeping a rule firing on the wrong evidence for its incidental recall would keep the false "
+                "positives that come with it."
+            )
     judge = full.get("judge") or {}
     if judge:
         medium = (judge.get("tiers") or {}).get("MEDIUM+") or {}
         combined = full.get("combined") or {}
+        partial = judge.get("partial_coverage")
         out += (
-            f"<p>The LLM judge read {count(judge.get('genuine'))} of them "
-            f"({count(judge.get('failed'))} could not be analysed and are excluded, not counted as clean) and "
-            f"flagged {percent(medium.get('rate'), 2)} {interval(medium.get('ci95'), 2)} at MEDIUM or above.</p>\n"
+            f"<p>The LLM judge, with the shipped prompt, read {count(judge.get('genuine'))} of them "
+            f"({count(judge.get('failed'))} could not be analysed and are excluded, not counted as clean"
+            + (
+                f"; {count(partial)} were read with partial coverage, the prompt budget leaving a file out"
+                if partial
+                else ""
+            )
+            + f") and flagged {percent(medium.get('rate'), 2)} {interval(medium.get('ci95'), 2)} at MEDIUM or "
+            "above.</p>\n"
         )
-        agreement = (full.get("agreement") or {}).get("static-tuned") or {}
+        verdicts = (judge.get("verdicts") or {}).get("rates") or {}
+        if verdicts:
+            out += (
+                "<p>Its package verdicts: "
+                + ", ".join(f"{esc(v)} {percent(verdicts.get(v), 1)}" for v in ("SAFE", "SUSPICIOUS", "MALICIOUS"))
+                + ". Almost all of its false positives read as findings about what a skill is <em>for</em> "
+                "&mdash; a browser-automation skill can run JavaScript, a payments skill can move money &mdash; "
+                "which is what the new prompt below addresses.</p>\n"
+            )
+        agreement = (full.get("agreement") or {}).get(final_run) or {}
         if agreement:
             out += (
-                f"<p>The tuned deterministic scanner and the judge agree on {count(agreement.get('both'))} flagged "
+                f"<p>The final deterministic scanner and the judge agree on {count(agreement.get('both'))} flagged "
                 f"records; {count(agreement.get('det_only'))} are flagged only by the rules and "
                 f"{count(agreement.get('judge_only'))} only by the judge (Cohen's &kappa; "
                 f"{agreement.get('cohen_kappa', 0):.3f}). The two layers look at different things, which is why "
@@ -999,7 +1117,7 @@ def _render_full_corpus(full: dict) -> str:
                 "Deterministic flags plus the judge behind the OpenJev screen: "
                 f"{percent((combined.get('deterministic_or_cascade') or {}).get('rate'), 2)}.</p>\n"
             )
-    rules = (full.get("by_rule") or {}).get("static-tuned") or []
+    rules = (full.get("by_rule") or {}).get(final_run) or []
     if rules:
         out += "<h3>Which deterministic rules the judge disagrees with, after tuning</h3>\n"
         out += (
@@ -1026,20 +1144,26 @@ def _render_full_corpus(full: dict) -> str:
     casc = full.get("cascade") or {}
     sweep = casc.get("sweep") or []
     if sweep and sweep[0].get("records"):
+        chosen = casc.get("threshold")
         out += "<h3>The cascade over every skill</h3>\n"
         out += (
-            f"<p>OpenJev screens each skill and the judge runs only above a threshold. The threshold chosen on "
-            f"the labelled split was {casc.get('threshold')}; on real skills it sends far fewer records to the "
-            "judge than it did there, so the whole trade-off is shown.</p>\n"
+            "<p>OpenJev screens each skill and the judge runs only above a threshold on its "
+            f"<code>prompt_injection</code> probability. The threshold, <strong>{esc(chosen)}</strong>, was "
+            f"{esc(casc.get('selection') or 'chosen on the labelled split')}. On real skills it sends far fewer "
+            "records to the judge than it did on the labelled split, so the whole trade-off is shown.</p>\n"
         )
+
+        def mark(row: dict, text: str) -> str:
+            return f"<strong>{text}</strong>" if row["threshold"] == chosen else text
+
         out += table(
             ["Screen threshold", "Judge calls", "Judge flags kept", "MEDIUM+ flag rate"],
             [
                 [
-                    f"{row['threshold']:g}",
-                    percent(row.get("judge_calls"), 1),
-                    percent(row.get("judge_flags_retained"), 1),
-                    percent(row.get("cascade_flag_rate"), 2),
+                    mark(row, f"{row['threshold']:g}"),
+                    mark(row, percent(row.get("judge_calls"), 1)),
+                    mark(row, percent(row.get("judge_flags_retained"), 1)),
+                    mark(row, percent(row.get("cascade_flag_rate"), 2)),
                 ]
                 for row in sweep
             ],
@@ -1052,6 +1176,236 @@ def _render_full_corpus(full: dict) -> str:
                 f"{count(jev.get('paired_with_judge'))} skills both models read. Judge alone: "
                 f"{percent(sweep[0].get('judge_flag_rate'), 2)}.</p>\n"
             )
+    packs = full.get("packs") or {}
+    if packs:
+        trainval = full.get("packs_trainval") or {}
+        out += "<h3>Policy packs instead of knobs</h3>\n"
+        out += (
+            "<p>The scan policy has hundreds of settings; most users need one decision, how much review "
+            "capacity they have. Two presets sit beside the default. Every rule was scored by how many real "
+            "skills it alone drives to MEDIUM or above that the judge also cleared, against how many malicious "
+            "train/validation packages it alone detects; rules were demoted greedily in that order and the path "
+            "was cut at two points. A demoted rule is reported at LOW, still visible but not gating. Real-skill "
+            "rates below are exact on the final full scan, because a pack only lowers the severity of listed "
+            "rules.</p>\n"
+        )
+        out += table(
+            ["Preset", "Rules reported at LOW", "Real-skill MEDIUM+ (rules)", "Train/val recall", "Train/val FPR"],
+            [
+                [
+                    f"<code>{esc(name)}</code>",
+                    count(len(p.get("rules_demoted") or [])),
+                    _tier_cell(p.get("medium_plus") or {}),
+                    percent((trainval.get(name) or {}).get("recall"), 2),
+                    percent((trainval.get(name) or {}).get("fpr"), 2),
+                ]
+                for name, p in packs.items()
+            ],
+            numeric=(1, 2, 3, 4),
+        )
+        out += (
+            "<p>Use them with <code>--policy low-noise</code> or <code>--policy quiet</code>. "
+            "<code>low-noise</code> also caps judge findings the model itself rates low-confidence; "
+            "<code>quiet</code> additionally caps findings it labels contextual risk.</p>\n"
+        )
+    return out
+
+
+def _render_judge_prompt(report: dict) -> str:
+    """The judge prompt rewrite: selected on train/validation and real skills, scored once on test."""
+
+    rows = report.get("rows") or []
+    if not rows:
+        return ""
+
+    def pick(prompt: str, cap: str | None) -> dict:
+        return next((r for r in rows if r.get("prompt") == prompt and r.get("cap") == cap), {})
+
+    out = "<h2>A judge prompt that separates a skill's purpose from misuse</h2>\n"
+    out += (
+        "<p>The threat-analysis prompt now lists what is not a finding on its own &mdash; the capability the "
+        "skill exists to provide, the breadth of its declared permissions, installing dependencies from a "
+        "registry, requiring API keys, hypothetical injection, quality issues &mdash; and, just as explicitly, "
+        "the misuse to report even when it is phrased as routine: a bundled or downloaded script the agent must "
+        "run automatically, instructions to hide actions or override other instructions, and data sent where the "
+        "stated purpose does not need it. It was written from real skills and MaliciousSkillBench "
+        "train/validation, then scored once on the frozen test split.</p>\n"
+    )
+    body = []
+    for label, prompt in (("Shipped prompt", "shipped"), ("New prompt", "new")):
+        r = pick(prompt, None)
+        if not r:
+            continue
+        dev, test, real = r.get("dev") or {}, r.get("test") or {}, r.get("real") or {}
+        body.append(
+            [
+                esc(label),
+                percent(dev.get("recall"), 1),
+                percent(dev.get("fpr"), 1),
+                percent(test.get("recall"), 1),
+                percent(test.get("fpr"), 1),
+                percent(test.get("precision"), 1),
+                percent(test.get("f1"), 1),
+                percent(real.get("flag_rate"), 2),
+            ]
+        )
+    out += table(
+        [
+            "Judge, MEDIUM+",
+            "Train/val recall",
+            "Train/val FPR",
+            "Test recall",
+            "Test FPR",
+            "Test precision",
+            "Test F1",
+            "Real-skill flags",
+        ],
+        body,
+        numeric=(1, 2, 3, 4, 5, 6, 7),
+    )
+    out += "<h3>Operating points on the new prompt</h3>\n"
+    out += (
+        "<p>Each finding carries the model's own verdict (<code>TRUE_POSITIVE</code> or "
+        "<code>CONTEXTUAL_RISK</code>) and confidence. Capping either below MEDIUM is an operating point, not a "
+        "free win: it cuts false positives on every population and costs recall, more on test than on "
+        "train/validation.</p>\n"
+    )
+    caps = []
+    for label, cap in (
+        ("No cap", None),
+        ("Low-confidence findings at LOW", "low-confidence"),
+        ("Contextual-risk findings at LOW", "contextual"),
+    ):
+        r = pick("new", cap)
+        if not r:
+            continue
+        dev, test, real = r.get("dev") or {}, r.get("test") or {}, r.get("real") or {}
+        caps.append(
+            [
+                esc(label),
+                percent(dev.get("recall"), 1),
+                percent(dev.get("fpr"), 1),
+                percent(test.get("recall"), 1),
+                percent(test.get("fpr"), 1),
+                percent(real.get("flag_rate"), 2),
+            ]
+        )
+    out += table(
+        ["New prompt, MEDIUM+", "Train/val recall", "Train/val FPR", "Test recall", "Test FPR", "Real-skill flags"],
+        caps,
+        numeric=(1, 2, 3, 4, 5),
+    )
+    out += (
+        f'<p class="sub">{esc(report.get("model") or "Gemma 4 26B-A4B")}, verdict repair on (the default). '
+        "Train/validation: 600 malicious and 1,338 benign MaliciousSkillBench packages. Test: the 1,384-package "
+        "source-disjoint split. Real skills: 2,000 sampled uniformly from gitskills, a flag rate that bounds the "
+        "false-positive rate from above.</p>\n"
+    )
+    return out
+
+
+def _render_jev_screen(report: dict) -> str:
+    """OpenJev in front of the judge, with thresholds chosen on train/validation only."""
+
+    results = report.get("results") or []
+    if not results:
+        return ""
+    out = "<h2>The OpenJev screen, re-selected on train/validation</h2>\n"
+    out += (
+        "<p>A record is flagged only when the screen passes it <em>and</em> the judge flags it. Two screens: "
+        "OpenJev's <code>prompt_injection</code> probability alone, and a logistic regression over all eight "
+        "probe logits fitted on train/validation. For each judge prompt the threshold keeps at least 97% of the "
+        "judge's own train/validation recall at the lowest train/validation false-positive rate; the frozen test "
+        "split was then scored once, and nothing was chosen on it.</p>\n"
+    )
+    names = {
+        None: "Judge alone",
+        "prompt_injection": "prompt_injection screen",
+        "logistic": "Logistic, all eight probes",
+    }
+    for prompt, title in (("new", "With the new judge prompt"), ("shipped", "With the shipped judge prompt")):
+        rows = [r for r in results if r.get("prompt") == prompt and r.get("cap") is None]
+        if not rows:
+            continue
+        out += f"<h3>{esc(title)}</h3>\n"
+        body = []
+        for r in rows:
+            test, real = r.get("test") or {}, r.get("real") or r.get("uniform") or {}
+            threshold = r.get("threshold_probability", r.get("threshold"))
+            label = names.get(r.get("screen"), r.get("screen"))
+            if threshold is not None:
+                label = f"{label} ({'p' if 'threshold_probability' in r else 'score'} &ge; {threshold:g})"
+            body.append(
+                [
+                    label,
+                    percent(test.get("recall"), 1),
+                    percent(test.get("fpr"), 1),
+                    percent(test.get("precision"), 1),
+                    percent(test.get("f1"), 1),
+                    percent(test.get("judge_calls"), 0),
+                    percent(real.get("flag_rate"), 2),
+                    percent(real.get("judge_calls"), 1),
+                ]
+            )
+        out += table(
+            [
+                "Held-out test, MEDIUM+",
+                "Recall",
+                "FPR",
+                "Precision",
+                "F1",
+                "Judge calls",
+                "Real-skill flags",
+                "Real-skill judge calls",
+            ],
+            body,
+            numeric=(1, 2, 3, 4, 5, 6, 7),
+        )
+    capped = [r for r in results if r.get("prompt") == "new" and r.get("cap") == "low-confidence"]
+    if capped:
+        out += "<h3>New prompt, low-confidence findings capped at LOW</h3>\n"
+        out += table(
+            ["Held-out test, MEDIUM+", "Recall", "FPR", "Real-skill flags", "Real-skill judge calls"],
+            [
+                [
+                    names.get(r.get("screen"), r.get("screen")),
+                    percent((r.get("test") or {}).get("recall"), 1),
+                    percent((r.get("test") or {}).get("fpr"), 1),
+                    percent((r.get("real") or r.get("uniform") or {}).get("flag_rate"), 2),
+                    percent((r.get("real") or r.get("uniform") or {}).get("judge_calls"), 1),
+                ]
+                for r in capped
+            ],
+            numeric=(1, 2, 3, 4),
+        )
+    alone = {r.get("prompt"): r for r in results if r.get("screen") is None and r.get("cap") is None}
+    screened = [r for r in results if r.get("screen") and r.get("cap") is None and r.get("prompt") in alone]
+    if screened:
+        cuts = [1 - r["test"]["fpr"] / alone[r["prompt"]]["test"]["fpr"] for r in screened]
+        costs = [alone[r["prompt"]]["test"]["recall"] - r["test"]["recall"] for r in screened]
+        calls = [(r.get("real") or r.get("uniform"))["judge_calls"] for r in screened]
+        out += good(
+            f"Selected on train/validation, a screen cuts the judge's test false-positive rate by "
+            f"{min(cuts):.0%} to {max(cuts):.0%} for {min(costs) * 100:.1f} to {max(costs) * 100:.1f} points of "
+            f"recall, and on real skills it sends only {min(calls):.1%} to {max(calls):.1%} of records to the "
+            "judge at all. The eight-probe logistic screen is the stronger of the two on every population."
+        )
+    out += bad(
+        "The logistic screen needs all eight probes per skill, which were scored on the labelled splits and the "
+        "2,000-skill sample; the full-corpus run scored <code>prompt_injection</code> only, so the full-corpus "
+        "cascade uses that screen. Real-skill rates are flag rates, not false-positive rates."
+    )
+    auc = report.get("standalone_auc") or {}
+    if auc:
+        out += "<h3>Each probe on its own</h3>\n"
+        out += table(
+            ["Screen", "Train/val AUC", "Test AUC"],
+            [
+                [f"<code>{esc(name)}</code>", f"{v.get('dev', 0):.3f}", f"{v.get('test', 0):.3f}"]
+                for name, v in sorted(auc.items(), key=lambda item: -(item[1].get("test") or 0))
+            ],
+            numeric=(1, 2),
+        )
     return out
 
 
@@ -1136,6 +1490,13 @@ def render_large_scale(report: dict | None) -> str:
             "moves little. This is one corpus split in half; the threshold has not been measured on "
             "the other labelled corpora and should not be assumed to transfer.</p>\n"
         )
+        if cascade.get("selected_on_test_members"):
+            body += bad(
+                "this threshold was chosen on half of MaliciousSkillBench's frozen test split, and the benchmark's "
+                "terms forbid selecting thresholds on test members. The reported half was unseen, but the half "
+                "used for selection was test data. The screen is re-selected on train/validation in the next "
+                "section, and those figures supersede these."
+            )
         real = cascade.get("real_world") or {}
         if real:
             body += "<h3>The same cascade on real published skills</h3>\n"
@@ -1162,6 +1523,8 @@ def render_large_scale(report: dict | None) -> str:
                 "rate rather than an exact one. The judge-call column is the operational number: the "
                 "share of real skills the screen still sends to the expensive model.</p>\n"
             )
+
+    body += _render_jev_screen(report.get("jev_screen") or {})
 
     # --- deterministic FPR by analyzer ------------------------------------------------
     det = report.get("deterministic") or {}
@@ -1251,6 +1614,7 @@ def render_large_scale(report: dict | None) -> str:
             )
 
     body += _render_full_corpus(report.get("full") or {})
+    body += _render_judge_prompt(report.get("judge_prompt") or {})
 
     notes = report.get("notes") or []
     if notes:
@@ -1773,7 +2137,15 @@ def build(
     for name, content in (
         (
             "index.html",
-            render_index(baseline_report, judged_report, e1_report, per_dataset_report, stability_report, cost_report),
+            render_index(
+                baseline_report,
+                judged_report,
+                e1_report,
+                per_dataset_report,
+                stability_report,
+                cost_report,
+                large_scale_report,
+            ),
         ),
         (
             "deterministic.html",
