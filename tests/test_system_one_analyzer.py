@@ -194,34 +194,63 @@ class TestEndpointIsCheckedByHostname:
 
 
 class TestRedirectsAreRefused:
-    def test_a_redirect_does_not_forward_the_bearer_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_redirect_does_not_forward_the_bearer_token(self) -> None:
         """urllib copies Authorization onto the redirected request.
 
         The constructor only vets the first hop, so a 302 to another origin or to
         plaintext http would hand the token and the skill's source to whatever the
-        endpoint nominated.
+        endpoint nominated. Exercised through the configured opener against two real
+        loopback servers: the endpoint answers 302, and the redirect target must receive
+        nothing.
         """
-        import urllib.error
+        import http.server
+        import threading
 
-        from skill_scanner.core.analyzers import system_one_analyzer as module
+        received: dict[str, list[str | None]] = {"endpoint": [], "target": []}
 
-        followed: list[str] = []
+        def handler(name: str, location: str | None) -> type[http.server.BaseHTTPRequestHandler]:
+            class Handler(http.server.BaseHTTPRequestHandler):
+                def do_POST(self) -> None:  # noqa: N802 - the stdlib's dispatch name
+                    self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                    received[name].append(self.headers.get("Authorization"))
+                    self.send_response(302 if location else 200)
+                    if location:
+                        self.send_header("Location", location)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", "2")
+                    self.end_headers()
+                    self.wfile.write(b"{}")
 
-        class FakeOpener:
-            def open(self, request: Any, timeout: int | None = None) -> Any:
-                # Mirrors what the redirect handler does: raise rather than follow.
-                raise urllib.error.HTTPError(
-                    request.full_url, 302, "refusing redirect to http://attacker.example", {}, None
-                )
+                # A followed 302 is re-issued as a GET, so the target must see either.
+                do_GET = do_POST  # noqa: N815
 
-        monkeypatch.setattr(module, "_NO_REDIRECT_OPENER", FakeOpener())
-        analyzer = SystemOneAnalyzer("https://api.example.com/v1/systemone", model="m", api_key="secret")
-        skill = SimpleNamespace(name="s", files=[SimpleNamespace(relative_path="SKILL.md", content="body")])
+                def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+                    return
 
-        assert analyzer.analyze(skill) == []
+            return Handler
+
+        target = http.server.HTTPServer(("127.0.0.1", 0), handler("target", None))
+        endpoint = http.server.HTTPServer(
+            ("127.0.0.1", 0), handler("endpoint", f"http://127.0.0.1:{target.server_port}/collect")
+        )
+        for server in (target, endpoint):
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            analyzer = SystemOneAnalyzer(
+                f"http://127.0.0.1:{endpoint.server_port}/v1/systemone", model="m", api_key="secret"
+            )
+            skill = SimpleNamespace(name="s", files=[SimpleNamespace(relative_path="SKILL.md", content="body")])
+            assert analyzer.analyze(skill) == []
+        finally:
+            for server in (target, endpoint):
+                server.shutdown()
+                server.server_close()
+
+        # The first hop carried the token, which is what makes following the redirect dangerous.
+        assert received["endpoint"] == ["Bearer secret"]
+        assert received["target"] == [], "the redirect was followed"
         assert analyzer.last_result is not None
         assert analyzer.last_result["status"] == "error"
-        assert followed == []
         # The refusal reason must not carry the token.
         assert "secret" not in str(analyzer.last_error)
 
