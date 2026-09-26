@@ -73,6 +73,25 @@ groups with raw-row diagnostics. NotInject reports diagnostic flagged rate and
 hard-negative candidates only; it is never eligible for release FPR or benign
 package-gold metrics. Missing snapshots produce an explicit nonblocking skip.
 
+## Pull-request acquisition
+
+The lock keeps `network_fetch_in_pull_requests: false`: the harness, the scanner and every sample
+stay offline in a pull request. The one exception is explicit and per dataset. An entry with
+`pull_request_acquisition` names the exact pinned files a pull-request check may download, the
+partitions it may materialize, and requires the scan to run with the network denied. The validator
+allows it only for public, automatically downloadable datasets and only for `train` and
+`validation` partitions, so no frozen test member can be written, let alone scored.
+
+Two entries carry it, both for `.github/workflows/detection-impact.yml`:
+
+- `ProtectSkills/MaliciousSkillBench`: the ten pinned source files, materialized with
+  `materialize_malicious_skill_bench.py --development-split CLEAN`, which validates the whole
+  pinned population and then writes only records whose every split protocol is train or validation.
+- `OpenClaw/clawhub-security-signals`: the pinned `data/validation.jsonl`, sampled with
+  `materialize_clawhub_sample.py` into a fixed, label-free 2,000-skill set for flag rates only.
+
+See `docs/development/detection-impact-check.md`.
+
 ## Offline validation
 
 The helpers perform no network requests and never execute content:

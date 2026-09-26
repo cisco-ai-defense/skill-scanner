@@ -111,7 +111,15 @@ _DATASET_REQUIRED_FIELDS = frozenset(
         "gating",
     }
 )
-_DATASET_FIELDS = _DATASET_REQUIRED_FIELDS | {"known_issues", "expected"}
+_DATASET_FIELDS = _DATASET_REQUIRED_FIELDS | {"known_issues", "expected", "pull_request_acquisition"}
+# ``network_fetch_in_pull_requests`` stays false: the harness, the scanner and every sample stay
+# offline in a pull request. The one exception is explicit and per dataset: a pull-request check may
+# download a public dataset's lock-pinned files in a separate acquisition job, materialize only the
+# partitions named here, and hand the scan job an inert snapshot to read with the network denied.
+_PULL_REQUEST_ACQUISITION_FIELDS = frozenset({"purpose", "files", "partitions", "scan_network"})
+_PULL_REQUEST_PURPOSES = frozenset({"detection_impact_development_split", "detection_impact_real_skill_sample"})
+_PULL_REQUEST_PARTITIONS = frozenset({"train", "validation"})
+_PULL_REQUEST_DOWNLOAD_POLICIES = frozenset({"scheduled_or_release_only", "scheduled_or_manual"})
 _LICENSE_FIELDS = frozenset({"spdx", "code_spdx", "scope"})
 _INTEGRITY_REQUIRED_FIELDS = frozenset(
     {
@@ -333,6 +341,49 @@ def _require_object_shape(
     return value
 
 
+def _validate_pull_request_acquisition(dataset_id: str, dataset: Mapping[str, Any]) -> None:
+    """A pull request may fetch a dataset only as narrowly as its lock entry says."""
+
+    allowance = _require_object_shape(
+        dataset.get("pull_request_acquisition"),
+        location=f"{dataset_id}.pull_request_acquisition",
+        required=_PULL_REQUEST_ACQUISITION_FIELDS,
+        allowed=_PULL_REQUEST_ACQUISITION_FIELDS,
+    )
+    if dataset.get("access") != "public" or dataset.get("download_policy") not in _PULL_REQUEST_DOWNLOAD_POLICIES:
+        raise DatasetLockError(f"{dataset_id}: only public, automatically downloadable datasets allow PR acquisition")
+    if allowance.get("purpose") not in _PULL_REQUEST_PURPOSES:
+        raise DatasetLockError(f"{dataset_id}: pull_request_acquisition.purpose is unsupported")
+    if allowance.get("scan_network") != "denied":
+        raise DatasetLockError(f"{dataset_id}: a pull-request scan of acquired data must run with the network denied")
+    partitions = _require_unique_strings(
+        allowance.get("partitions"), location=f"{dataset_id}.pull_request_acquisition.partitions"
+    )
+    if not set(partitions) <= _PULL_REQUEST_PARTITIONS:
+        raise DatasetLockError(
+            f"{dataset_id}: pull requests may materialize only train and validation partitions, never "
+            f"{sorted(set(partitions) - _PULL_REQUEST_PARTITIONS)}"
+        )
+    files = _require_unique_strings(allowance.get("files"), location=f"{dataset_id}.pull_request_acquisition.files")
+    for path in files:
+        try:
+            _validated_relative_path(path, allow_root_skill=True, allow_binary=True)
+        except UnsafeSampleError as exc:
+            raise DatasetLockError(
+                f"{dataset_id}: pull_request_acquisition file {path!r} is not a portable path"
+            ) from exc
+
+
+def pull_request_acquisition(dataset_id: str, manifest: Mapping[str, Any] | None = None) -> Mapping[str, Any]:
+    """The validated pull-request allowance for a dataset, or an error if it has none."""
+
+    dataset = get_locked_dataset(dataset_id, manifest if manifest is not None else load_dataset_lock())
+    allowance = dataset.get("pull_request_acquisition")
+    if not isinstance(allowance, Mapping):
+        raise DatasetLockError(f"{dataset_id}: the dataset lock does not allow pull-request acquisition")
+    return allowance
+
+
 def _require_unique_strings(value: Any, *, location: str, allow_empty: bool = False) -> list[str]:
     if not isinstance(value, list) or (not value and not allow_empty):
         raise DatasetLockError(f"{location} must be a{' possibly empty' if allow_empty else ' non-empty'} list")
@@ -517,6 +568,8 @@ def _validate_lock(manifest: Any) -> None:
             raise DatasetLockError(f"{dataset_id}: prohibited_uses must include execute_samples")
         if dataset.get("download_policy") == "prohibited" and approved_uses:
             raise DatasetLockError(f"{dataset_id}: prohibited datasets may not declare approved uses")
+        if "pull_request_acquisition" in dataset:
+            _validate_pull_request_acquisition(dataset_id, dataset)
 
         license_info = _require_object_shape(
             dataset.get("license"),
