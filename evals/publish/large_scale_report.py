@@ -18,7 +18,7 @@
 
     python evals/publish/large_scale_report.py --output results/large-scale.json \\
         --prior large-scale-local-gpu.json --analysis f2.json --labelled f4.json \\
-        --overlay f3.json --jev-screen c4.json --judge-prompt a2.json
+        --overlay f3.json --jev-screen c4.json --judge-prompt a2.json --profiles a3.json
 
 Every input is aggregate: counts, rates, rule identifiers, thresholds, model coefficients. The
 report is still checked before it is written, because it is published: a host path, a record
@@ -122,6 +122,8 @@ def assemble(args: argparse.Namespace) -> dict[str, Any]:
     report["full"] = full
     report["jev_screen"] = load(args.jev_screen)
     report["judge_prompt"] = load(args.judge_prompt)
+    if args.profiles:
+        report["profiles"] = load(args.profiles).get("profiles") or []
     report["notes"] = list(NOTES)
     report["provenance"] = {
         "scanner_commits": {
@@ -190,6 +192,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--overlay", type=Path, default=None, help="f3_overlay_check output")
     parser.add_argument("--jev-screen", type=Path, required=True, help="c4_openjev_screen output")
     parser.add_argument("--judge-prompt", type=Path, required=True, help="a2_judge_prompt_caps output")
+    parser.add_argument("--profiles", type=Path, default=None, help="a3_recommended_profiles output")
     parser.add_argument("--shipped-commit", default="5b696a1")
     parser.add_argument("--first-pass-commit", default="f3a42f3")
     parser.add_argument("--final-commit", default="9c08673")

@@ -282,6 +282,11 @@ deterministic rules, a System One model, and a full LLM judge. Only the rules ha
 is what happens when the other two are switched on, measured on the same corpora and with the same code
 that produced the published rule-only numbers.</p>"""
 
+    # The latest results lead; the first evaluation follows under its own heading.
+    latest = _render_index_large_scale(large_scale or {})
+    body += latest
+    if latest:
+        body += "<h2>The first evaluation, on the locked test corpus</h2>"
     cards: list[tuple[str, str]] = []
     if track and judge_track:
         cards = [
@@ -300,20 +305,22 @@ that produced the published rule-only numbers.</p>"""
     if cards:
         body += kpis(cards)
 
-    body += """<h2>The short version</h2>
+    body += """<h3>The short version</h3>
 <ul>
 <li>Switching on the judge nearly tripled F1 on the locked test corpus, from 13.74% to 37.68%, and
 precision went up rather than down.</li>
 <li>The System One model is the better deal for anything automated. It roughly doubled F1 over the
 rules, produced no false positives at all in our runs, and processed the whole 1,384-package test corpus
-in 42 seconds for 18 cents.</li>
+in 42 seconds for 18 cents. <em>Later measurements qualify this:</em> asked a single question over raw
+skill source, the hosted model did not separate malicious from benign skills (AUC 0.25 to 0.31), so the
+shipped <code>--system-one-endpoint</code> tier is advisory only; asked eight choice questions, OpenJev
+screens well in front of the judge, as the large-scale page shows.</li>
 <li>The meta-judge did nothing. It ran on 78% of packages and produced no suppressions and no
-additions.</li>
+additions. <em>Later traced to a schema-wiring defect that made it a no-op;</em> once fixed it cost 16.4
+points of recall, so it stays off.</li>
 <li>Nothing here is stable below 14%. Repeating one judged configuration over the same packages changed
 the verdict on 14% of them, so smaller differences are noise.</li>
 </ul>"""
-
-    body += _render_index_large_scale(large_scale or {})
 
     body += """<h2>Why this was worth measuring</h2>
 <p>A skill is an unusually open format. It can contain any code, in any language, for any legitimate
@@ -1623,9 +1630,53 @@ def render_large_scale(report: dict | None) -> str:
         body += "</ul>\n"
     published = report.get("published_as")
     if published:
+        body += "<h2>The data behind this page</h2>\n"
         body += (
-            f'<p class="sub">Every figure on this page, and the per-rule tables behind it, is in '
-            f'<a href="{esc(published)}">{esc(published)}</a>: counts, rates and rule identifiers only.</p>\n'
+            f'<p>Every figure on this page, and the per-rule tables behind it, is in <a href="{esc(published)}">'
+            f"{esc(published)}</a>: counts, rates, thresholds and rule identifiers only. No skill content, record "
+            "identifier, finding text, prompt or model rationale is published, and the file is refused at build "
+            "time if one appears.</p>\n"
+        )
+        digests = report.get("digests_file")
+        if digests:
+            body += (
+                f'<p><a href="{esc(digests)}">{esc(digests)}</a> holds its SHA-256, so a copy can be checked '
+                "against the file this page was rendered from.</p>\n"
+            )
+        provenance = report.get("provenance") or {}
+        commits = provenance.get("scanner_commits") or {}
+        if commits:
+            body += (
+                "<p>Scanner trees: shipped <code>"
+                + esc(commits.get("shipped") or "?")
+                + "</code>, first tuning pass <code>"
+                + esc(commits.get("first_pass") or "?")
+                + "</code>, final <code>"
+                + esc(commits.get("final") or "?")
+                + "</code>"
+                + (
+                    f"; report built at <code>{esc(str(provenance['report_builder_commit'])[:12])}</code>"
+                    if provenance.get("report_builder_commit")
+                    else ""
+                )
+                + ".</p>\n"
+            )
+        body += "<h3>Reproducing it</h3>\n"
+        body += table(
+            ["Step", "Script"],
+            [
+                ["Score OpenJev's eight probes", "<code>evals/experiments/c3_openjev_local.py</code>"],
+                ["Run the judge alone over a corpus", "<code>evals/runners/judge_only.py</code>"],
+                ["Scan a corpus with one tree", "<code>evals/runners/cross_tool_benchmark.py</code>"],
+                ["Build the store", "<code>evals/experiments/f1_full_corpus_store.py</code>"],
+                ["Analyse every real skill", "<code>evals/experiments/f2_full_corpus_analysis.py</code>"],
+                ["Check the overlay against the full scan", "<code>evals/experiments/f3_overlay_check.py</code>"],
+                ["Shipped against final on labelled corpora", "<code>evals/experiments/f4_labelled_ab.py</code>"],
+                ["The preset demotion path", "<code>evals/experiments/f5_policy_pack_path.py</code>"],
+                ["Judge prompt and caps", "<code>evals/experiments/a2_judge_prompt_caps.py</code>"],
+                ["Select the OpenJev screen", "<code>evals/experiments/c4_openjev_screen.py</code>"],
+                ["Assemble and check this report", "<code>evals/publish/large_scale_report.py</code>"],
+            ],
         )
     return page(title, "large-scale.html", body)
 
@@ -1889,8 +1940,55 @@ Batch inference halves the judge's rate, which the figures above do not assume.<
     return out
 
 
+def _render_profiles(profiles: Sequence[dict]) -> str:
+    """Each preset with and without the judge, measured as a scan runs it."""
+    if not profiles:
+        return ""
+    out = "<h3>What each configuration catches and flags</h3>"
+    out += (
+        "<p>A scan with the judge on flags a skill when either layer reports MEDIUM or above, so each preset is "
+        "measured as that union, with its rule demotions and LLM caps applied. Held out: MaliciousSkillBench's "
+        "frozen test split, used to design nothing. Real skills: 2,000 sampled uniformly, a flag rate that bounds "
+        "the false-positive rate from above.</p>"
+    )
+    rows = []
+    for profile in profiles:
+        medium, high = profile.get("medium_plus") or {}, profile.get("high_plus") or {}
+        test, test_high = medium.get("test") or {}, high.get("test") or {}
+        real, real_high = medium.get("real") or {}, high.get("real") or {}
+        rows.append(
+            [
+                f"<code>{esc(profile.get('preset'))}</code>" + (" + judge" if profile.get("judge") else ", rules only"),
+                percent(test.get("recall"), 1),
+                percent(test.get("fpr"), 1),
+                percent(real.get("flag_rate"), 2),
+                percent(test_high.get("recall"), 1),
+                percent(test_high.get("fpr"), 1),
+                percent(real_high.get("flag_rate"), 2),
+            ]
+        )
+    out += table(
+        [
+            "Configuration",
+            "Review at MEDIUM+: recall",
+            "FPR",
+            "Real skills",
+            "Block at HIGH+: recall",
+            "FPR",
+            "Real skills",
+        ],
+        rows,
+        numeric=(1, 2, 3, 4, 5, 6),
+    )
+    return out
+
+
 def render_recommendations(
-    rec: dict | None, per_dataset: dict | None, stability: dict | None, cost: dict | None = None
+    rec: dict | None,
+    per_dataset: dict | None,
+    stability: dict | None,
+    cost: dict | None = None,
+    large_scale: dict | None = None,
 ) -> str:
     body = "<h2>How to configure the scanner</h2>"
     if not rec:
@@ -1915,7 +2013,7 @@ def render_recommendations(
         ],
     )
 
-    body += "<h3>Three setups, depending on what reads the output</h3>"
+    body += "<h3>Setups by use case</h3>"
     for profile in rec["profiles"]:
         body += (
             f'<div class="rec"><strong>{esc(profile["name"])}</strong>'
@@ -1924,7 +2022,10 @@ def render_recommendations(
             f'<p class="sub">Expect: {esc(profile["expected"])}</p></div>'
         )
 
-    if per_dataset:
+    profiles = (large_scale or {}).get("profiles") or []
+    if profiles:
+        body += _render_profiles(profiles)
+    elif per_dataset:
         body += "<h3>What each setup would have caught</h3>"
         rows = []
         for name in sorted(per_dataset.get("datasets", {})):
@@ -1946,9 +2047,10 @@ def render_recommendations(
 corpus, not as a cascade total. Combining tiers can only raise a decision, never lower it, so a cascade
 catches at least as much as its best tier.</p>"""
 
-    body += render_cost(cost)
+    if not profiles:
+        body += render_cost(cost)
 
-    body += "<h3>Four ways to misread these results</h3><ul>"
+    body += "<h3>Ways to misread these results</h3><ul>"
     body += "".join(f"<li>{esc(item)}</li>" for item in rec["pitfalls"])
     body += "</ul>"
 
@@ -1957,6 +2059,11 @@ catches at least as much as its best tier.</p>"""
 configuration {count(stability.get("core_plus_judge", {}).get("passes"))} times over the same packages
 changed the verdict on {percent(stability.get("noise_floor"))} of them, while the deterministic rules did
 not move once.</p>"""
+    if rec.get("guide_url"):
+        body += (
+            f"<p>The full guide, with the commands for each setup, is "
+            f'<a href="{esc(rec["guide_url"])}">Recommended settings</a> in the repository.</p>'
+        )
     return page("How to configure it", "recommendations.html", body)
 
 
@@ -2177,7 +2284,9 @@ def build(
         ("experiments.html", render_experiments(e1_report, e3_report, findings_report)),
         (
             "recommendations.html",
-            render_recommendations(recommendation_report, per_dataset_report, stability_report, cost_report),
+            render_recommendations(
+                recommendation_report, per_dataset_report, stability_report, cost_report, large_scale_report
+            ),
         ),
         ("methodology.html", render_methodology()),
         ("reproduce.html", render_reproduce(reproduce_report)),
