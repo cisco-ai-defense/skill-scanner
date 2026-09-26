@@ -1621,6 +1621,12 @@ def render_large_scale(report: dict | None) -> str:
         body += "<h2>Measurement notes</h2>\n<ul>\n"
         body += "".join(f"<li>{esc(n)}</li>\n" for n in notes)
         body += "</ul>\n"
+    published = report.get("published_as")
+    if published:
+        body += (
+            f'<p class="sub">Every figure on this page, and the per-rule tables behind it, is in '
+            f'<a href="{esc(published)}">{esc(published)}</a>: counts, rates and rule identifiers only.</p>\n'
+        )
     return page(title, "large-scale.html", body)
 
 
