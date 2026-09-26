@@ -29,7 +29,7 @@ on:
         type: string
         default: "sarif"
       policy:
-        description: "Scan policy preset (strict, balanced, permissive) or path to custom YAML"
+        description: "Scan policy preset (strict, balanced, permissive, low-noise, quiet) or path to custom YAML"
         required: false
         type: string
         default: "balanced"
@@ -152,10 +152,10 @@ jobs:
             *) echo "::error::Invalid format: must be summary, json, markdown, table, sarif, or html"; fail=1 ;;
           esac
           case "$INPUT_POLICY" in
-            strict|balanced|permissive) ;;
+            strict|balanced|permissive|low-noise|quiet) ;;
             *)
               if [ ! -f "$INPUT_POLICY" ]; then
-                echo "::error::Invalid policy: must be a preset (strict, balanced, permissive) or a path to an existing YAML file"
+                echo "::error::Invalid policy: must be a preset (strict, balanced, permissive, low-noise, quiet) or a path to an existing YAML file"
                 fail=1
               fi
               ;;
