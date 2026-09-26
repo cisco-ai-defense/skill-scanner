@@ -435,7 +435,7 @@ class TestReturnedFailureFindings:
         async def fake_single(skill: Any) -> list[Finding]:
             calls["n"] += 1
             if calls["n"] == 1:
-                return [self._diagnostic("LLM_CONTEXT_BUDGET_EXCEEDED")]
+                return [self._diagnostic()]
             return [_finding(f"RULE_{calls['n']}")]
 
         monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
@@ -447,13 +447,95 @@ class TestReturnedFailureFindings:
         analyzer = _analyzer(decompose=True)
 
         async def fake_single(skill: Any) -> list[Finding]:
-            analyzer.last_error = "context budget exceeded"
-            return [self._diagnostic("LLM_CONTEXT_BUDGET_EXCEEDED")]
+            analyzer.last_error = "provider refused"
+            return [self._diagnostic()]
 
         monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
         findings = asyncio.run(analyzer._analyze_decomposed(SimpleNamespace(name="s")))
         # Dropping it here would report a skill nothing could read as a clean one.
-        assert [f.rule_id for f in findings] == ["LLM_CONTEXT_BUDGET_EXCEEDED"]
+        assert [f.rule_id for f in findings] == ["LLM_ANALYSIS_FAILED"]
+
+    def test_a_budget_notice_is_coverage_not_a_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """_analyze_single adds the notice before asking the model, so it rides on an answered pass."""
+        analyzer = _analyzer(decompose=True)
+        passes = len(analyzer.prompt_builder.decomposed_focuses)
+        calls = {"n": 0}
+
+        async def fake_single(skill: Any) -> list[Finding]:
+            calls["n"] += 1
+            analyzer.last_error = None
+            analyzer.last_overall_verdict = "SAFE" if calls["n"] == 1 else "SUSPICIOUS"
+            if calls["n"] == 1:
+                return [self._diagnostic("LLM_CONTEXT_BUDGET_EXCEEDED")]
+            return [_finding(f"RULE_{calls['n']}")]
+
+        monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
+        findings = asyncio.run(analyzer._analyze_decomposed(SimpleNamespace(name="s")))
+        assert analyzer.last_decomposed_failures == 0
+        assert analyzer.last_decomposed_passes == passes
+        assert analyzer.last_error is None
+        assert [f.rule_id for f in findings].count("LLM_CONTEXT_BUDGET_EXCEEDED") == 1
+
+    def test_a_budget_notice_is_reported_once_across_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        analyzer = _analyzer(decompose=True)
+        calls = {"n": 0}
+
+        async def fake_single(skill: Any) -> list[Finding]:
+            calls["n"] += 1
+            return [self._diagnostic("LLM_CONTEXT_BUDGET_EXCEEDED"), _finding(f"RULE_{calls['n']}")]
+
+        monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
+        findings = asyncio.run(analyzer._analyze_decomposed(SimpleNamespace(name="s")))
+        rules = [f.rule_id for f in findings]
+        # Every pass skips the same file under the same budget, so one notice, not one per pass.
+        assert rules.count("LLM_CONTEXT_BUDGET_EXCEEDED") == 1
+        assert analyzer.last_decomposed_failures == 0
+
+    def test_a_safe_pass_suppresses_the_failure_marker(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A SAFE answer with nothing to report is a judgement; the marker would contradict it."""
+        analyzer = _analyzer(decompose=True)
+        passes = len(analyzer.prompt_builder.decomposed_focuses)
+        calls = {"n": 0}
+
+        async def fake_single(skill: Any) -> list[Finding]:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                analyzer.last_error = "provider refused"
+                return [self._diagnostic()]
+            analyzer.last_error = None
+            analyzer.last_overall_verdict = "SAFE"
+            return []
+
+        monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
+        findings = asyncio.run(analyzer._analyze_decomposed(SimpleNamespace(name="s")))
+        assert findings == []
+        assert analyzer.last_overall_verdict == "SAFE"
+        assert analyzer.last_decomposed_passes == passes - 1
+        assert analyzer.last_decomposed_failures == 1
+        # The failure is still reported, through last_error rather than a finding.
+        assert analyzer.last_error is not None and "provider refused" in analyzer.last_error
+
+    def test_findings_returned_with_a_failure_marker_are_kept(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        analyzer = _analyzer(decompose=True)
+        passes = len(analyzer.prompt_builder.decomposed_focuses)
+        calls = {"n": 0}
+
+        async def fake_single(skill: Any) -> list[Finding]:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                analyzer.last_error = "contract violation"
+                return [_finding("PARTIAL_RULE"), self._diagnostic()]
+            analyzer.last_error = None
+            return [_finding(f"RULE_{calls['n']}")]
+
+        monkeypatch.setattr(analyzer, "_analyze_single", fake_single)
+        findings = asyncio.run(analyzer._analyze_decomposed(SimpleNamespace(name="s")))
+        rules = {f.rule_id for f in findings}
+        assert "PARTIAL_RULE" in rules
+        assert "LLM_ANALYSIS_FAILED" not in rules
+        # Failed, not completed: one pass is not counted twice.
+        assert analyzer.last_decomposed_failures == 1
+        assert analyzer.last_decomposed_passes == passes - 1
 
     def test_a_later_success_does_not_clear_an_earlier_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         analyzer = _analyzer(decompose=True)

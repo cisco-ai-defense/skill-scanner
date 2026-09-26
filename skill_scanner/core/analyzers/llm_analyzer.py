@@ -153,11 +153,14 @@ class SecurityError(Exception):
     pass
 
 
-# _analyze_single does not raise on a provider, budget or contract failure: it records
-# last_error and returns an INFO finding saying it could not analyse. Unioned blindly,
-# that marker joins the semantic findings and a pass that read nothing looks like a pass
-# that found nothing.
-_DECOMPOSED_DIAGNOSTIC_RULES = frozenset({"LLM_ANALYSIS_FAILED", "LLM_CONTEXT_BUDGET_EXCEEDED"})
+# _analyze_single does not raise on a provider or contract failure: it records last_error
+# and returns an INFO finding saying it could not analyse. Unioned blindly, that marker
+# joins the semantic findings and a pass that read nothing looks like a pass that found
+# nothing. A budget notice is different: it is added before the model is asked, so it
+# accompanies an answered pass and reports partial coverage, not a failure.
+_DECOMPOSED_FAILURE_RULE = "LLM_ANALYSIS_FAILED"
+_DECOMPOSED_COVERAGE_RULE = "LLM_CONTEXT_BUDGET_EXCEEDED"
+_DECOMPOSED_DIAGNOSTIC_RULES = frozenset({_DECOMPOSED_FAILURE_RULE, _DECOMPOSED_COVERAGE_RULE})
 
 _DECOMPOSED_SEVERITY_ORDER = ("SAFE", "INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
 
@@ -619,7 +622,9 @@ class LLMAnalyzer(BaseAnalyzer):
         finding the union retained.
 
         A failing pass is skipped rather than aborting the scan, and token usage is
-        accumulated per pass so the cost of the extra calls stays visible.
+        accumulated per pass so the cost of the extra calls stays visible. Only a raised
+        error or an ``LLM_ANALYSIS_FAILED`` marker makes a pass failed; a budget notice
+        comes with an answered pass, so it is kept, once, as a coverage finding.
         """
 
         base_prompt = self.prompt_builder.threat_analysis_prompt
@@ -631,7 +636,15 @@ class LLMAnalyzer(BaseAnalyzer):
         ran = 0
         failed = 0
         pass_errors: list[str] = []
-        diagnostics: dict[tuple[str, ...], Finding] = {}
+        failures: dict[tuple[str, ...], Finding] = {}
+        coverage: dict[tuple[str, ...], Finding] = {}
+
+        def union(found: list[Finding]) -> None:
+            for finding in found:
+                key = _decomposed_finding_key(finding)
+                existing = merged.get(key)
+                if existing is None or _severity_rank(finding.severity) > _severity_rank(existing.severity):
+                    merged[key] = finding
 
         try:
             for focus in self.prompt_builder.decomposed_focuses:
@@ -651,36 +664,35 @@ class LLMAnalyzer(BaseAnalyzer):
                     pass_errors.append(f"{type(error).__name__}: {error}")
                     continue
 
-                # A pass that returned only a diagnostic marker produced no judgement.
-                # Counting it as a success would let an unread skill read as a clean one.
-                returned_diagnostics = [
+                # Read usage per pass: _analyze_single resets the counter on entry, so
+                # reading once at the end would report only the final pass. A failed pass
+                # counts too, because the request was billed.
+                _add_token_usage(total_usage, self._llm_usage)
+                for finding in findings:
+                    if str(getattr(finding, "rule_id", "") or "") == _DECOMPOSED_COVERAGE_RULE:
+                        coverage.setdefault(_decomposed_finding_key(finding), finding)
+                returned_failures = [
                     finding
                     for finding in findings
-                    if str(getattr(finding, "rule_id", "") or "") in _DECOMPOSED_DIAGNOSTIC_RULES
+                    if str(getattr(finding, "rule_id", "") or "") == _DECOMPOSED_FAILURE_RULE
                 ]
-                if returned_diagnostics:
+                semantic = [
+                    finding
+                    for finding in findings
+                    if str(getattr(finding, "rule_id", "") or "") not in _DECOMPOSED_DIAGNOSTIC_RULES
+                ]
+                if returned_failures:
+                    # The pass produced no judgement. Counting it as a success would let an
+                    # unread skill read as a clean one; any findings it did return are kept.
                     failed += 1
                     if self.last_error:
                         pass_errors.append(str(self.last_error))
-                    for finding in returned_diagnostics:
-                        diagnostics.setdefault(_decomposed_finding_key(finding), finding)
-                    findings = [finding for finding in findings if finding not in returned_diagnostics]
-                    # Usage still counted: the request was billed even though it failed.
-                    _add_token_usage(total_usage, self._llm_usage)
-                    if not findings:
-                        continue
-                    ran += 1
-                    for finding in findings:
-                        key = _decomposed_finding_key(finding)
-                        existing = merged.get(key)
-                        if existing is None or _severity_rank(finding.severity) > _severity_rank(existing.severity):
-                            merged[key] = finding
+                    for finding in returned_failures:
+                        failures.setdefault(_decomposed_finding_key(finding), finding)
+                    union(semantic)
                     continue
 
                 ran += 1
-                # Read usage per pass: _analyze_single resets the counter on entry, so
-                # reading once at the end would report only the final pass.
-                _add_token_usage(total_usage, self._llm_usage)
                 if self.last_overall_verdict:
                     verdicts.append(str(self.last_overall_verdict))
                 if self.last_overall_assessment:
@@ -688,24 +700,20 @@ class LLMAnalyzer(BaseAnalyzer):
                 for threat in self.last_primary_threats or []:
                     if threat not in threats:
                         threats.append(threat)
-                for finding in findings:
-                    key = _decomposed_finding_key(finding)
-                    existing = merged.get(key)
-                    if existing is None or _severity_rank(finding.severity) > _severity_rank(existing.severity):
-                        merged[key] = finding
+                union(semantic)
         finally:
             self.prompt_builder.threat_analysis_prompt = base_prompt
 
         self._llm_usage = total_usage
 
-        if merged:
-            # At least one pass judged the skill, so the coverage gap is reported through
-            # last_error rather than as a finding that would sit alongside real ones.
-            unioned = list(merged.values())
-        else:
-            # No pass produced a judgement. The diagnostic marker is the only honest
-            # result, and dropping it would report a skill nothing could read as clean.
-            unioned = list(diagnostics.values())
+        # Coverage notices are ordinary findings, as on a single pass. A failure marker is
+        # returned only when no pass produced a judgement: then it is the only honest
+        # result, and dropping it would report a skill nothing could read as clean. When a
+        # pass did answer -- even SAFE with nothing to report -- the failures are reported
+        # through last_error instead of a marker that would contradict the verdict.
+        unioned = list(merged.values()) + list(coverage.values())
+        if not ran:
+            unioned += list(failures.values())
 
         # last_error must reflect the run, not whichever pass happened to be last: a
         # later success would otherwise clear an earlier failure, and a failing final
