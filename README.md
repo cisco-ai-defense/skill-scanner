@@ -219,7 +219,7 @@ skill-scanner scan /path/to/skill --taxonomy /path/to/taxonomy.json --threat-map
 # VirusTotal hash scan with optional unknown-file uploads
 skill-scanner scan /path/to/skill --use-virustotal --vt-upload-files
 
-# Use a scan policy preset (strict, balanced, permissive)
+# Use a scan policy preset (strict, balanced, permissive, low-noise, quiet)
 skill-scanner scan /path/to/skill --policy strict
 
 # Inspect CEL decisions without suppressing findings
@@ -291,7 +291,7 @@ if not result.is_safe:
 
 | Option | Description |
 |--------|-------------|
-| `--policy` | Scan policy: preset name (`strict`, `balanced`, `permissive`) or path to custom YAML |
+| `--policy` | Scan policy: preset name (`strict`, `balanced`, `permissive`, `low-noise`, `quiet`) or path to custom YAML |
 | `--use-behavioral` | Enable behavioral analyzer (dataflow analysis) |
 | `--use-llm` | Enable LLM analyzer (requires API key) |
 | `--llm-provider` | LLM provider for CLI routing: `anthropic` or `openai` |

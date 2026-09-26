@@ -17,6 +17,7 @@ Scan policies define scanner behavior without code changes. Start with a built-i
 | Untrusted or external skills | **strict** — maximum sensitivity |
 | Normal CI/CD pipeline | **balanced** (default) — good detection-to-noise ratio |
 | Trusted internal skills | **permissive** — reduced noise |
+| A review queue with limited capacity | **low-noise**, or **quiet** when capacity is the binding constraint |
 
 ---
 
@@ -27,11 +28,14 @@ Scan policies define scanner behavior without code changes. Start with a built-i
 | `strict` | shadow / on | Maximum sensitivity | Untrusted content, compliance audits, security reviews |
 | `balanced` | shadow / on | Default blend | General CI usage, day-to-day development scanning |
 | `permissive` | off / off | Lower noise | Trusted internal workflows, known-safe skill directories |
+| `low-noise` | shadow / on | Balanced, fewer harmless flags | Balanced with 11 rules reported at LOW; LLM findings the model rates low-confidence capped at LOW |
+| `quiet` | shadow / on | Fewest flags | Triage queues: 19 rules reported at LOW, and LLM low-confidence and contextual-risk findings capped at LOW |
 
 ```bash
 skill-scanner scan ./my-skill --policy strict
 skill-scanner scan ./my-skill --policy balanced
 skill-scanner scan ./my-skill --policy permissive
+skill-scanner scan ./my-skill --policy low-noise
 ```
 
 Override the selected policy for one invocation with

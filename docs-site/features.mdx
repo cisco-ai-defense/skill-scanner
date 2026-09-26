@@ -126,6 +126,8 @@ Every detection threshold, rule scope, and output behavior is configurable throu
 | **balanced** (default) | shadow / on | Production scanning with good detection-to-noise ratio |
 | **strict** | shadow / on | Untrusted/external skills, compliance audits — maximum sensitivity |
 | **permissive** | off / off | Trusted internal skills — reduced noise |
+| **low-noise** | shadow / on | Balanced, with 11 rules that mostly flag harmless skills reported at LOW |
+| **quiet** | shadow / on | Triage queues with little review capacity — 19 rules reported at LOW |
 
 #### Key Policy Sections
 
