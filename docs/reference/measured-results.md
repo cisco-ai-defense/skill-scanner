@@ -34,9 +34,9 @@ pack, no model.
 | False-positive rate | 7.7% |
 
 These are the shipped rules before the tuning described
-[below](#tuning-the-deterministic-scanner-against-real-skills). On the same split with the tuned
-rules, at the same HIGH+ threshold: precision 73.0%, recall 7.7% (unchanged), false-positive rate
-**4.4%**, F1 14.0%.
+[below](#tuning-the-deterministic-scanner-against-real-skills). On the same split with the final tuned
+rules, at the same HIGH+ threshold: precision 74.7%, recall 7.7% (unchanged), false-positive rate
+**4.0%**, F1 14.0%.
 
 Enabling every community rule pack raises recall to 73.8% on an 80/80 sample of the same split, and
 raises the benign flag rate from 7.5% to 92.5%. That configuration is a triage setting, not a gating
@@ -473,8 +473,47 @@ the threshold should not be assumed to transfer.
 **This threshold was selected on test members.** MaliciousSkillBench's source-disjoint split used
 here is the benchmark's frozen test partition, and the dataset forbids selecting thresholds on
 frozen test members. Selecting on one half and reporting on the other keeps the reported half
-unseen, but the half used for selection is test data. The cascade figures above should be read as
-exploratory until the threshold is re-selected on the train/validation partition.
+unseen, but the half used for selection is test data. The re-selection below supersedes these
+figures.
+
+### Re-selected on train/validation
+
+All eight probes were scored on MaliciousSkillBench train/validation (600 malicious and 1,338
+benign packages), the frozen test split and 2,000 uniformly sampled real skills. Two screens were
+selected on train/validation alone: the `prompt_injection` probe, and a logistic regression over all
+eight probe logits fitted there. For each judge prompt the threshold keeps at least 97% of the
+judge's own train/validation recall at the lowest train/validation false-positive rate. The test
+split was then scored once. `evals/experiments/c4_openjev_screen.py` reproduces every figure here.
+
+| Held-out test, new judge prompt, MEDIUM+ | Recall | FPR | Precision | F1 | Judge calls | Real-skill flags | Real-skill judge calls |
+|---|---|---|---|---|---|---|---|
+| Judge alone | 65.7% | 12.5% | 89.0% | 75.6% | 100% | 10.45% | 100% |
+| `prompt_injection` ≥ 0.048 | 59.5% | 3.7% | 96.1% | 73.5% | 60% | 3.15% | 7.9% |
+| **Logistic, eight probes** | **61.3%** | **2.4%** | **97.5%** | **75.3%** | 58% | **1.75%** | **3.1%** |
+
+| Held-out test, shipped judge prompt, MEDIUM+ | Recall | FPR | Precision | F1 | Judge calls | Real-skill flags | Real-skill judge calls |
+|---|---|---|---|---|---|---|---|
+| Judge alone | 51.3% | 16.1% | 82.9% | 63.4% | 100% | 12.80% | 100% |
+| `prompt_injection` ≥ 0.061 | 48.0% | 3.3% | 95.7% | 63.9% | 58% | 2.60% | 7.0% |
+| Logistic, eight probes | 48.8% | 2.0% | 97.4% | 65.0% | 56% | 1.30% | 2.5% |
+
+Test figures cover the 1,379 records OpenJev answered (five failed). Selected on the permitted
+split, the screen removes 71–88% of the judge's test false positives for 2.5–6.2 points of recall.
+On real skills it is mostly a cost control: only 2.5–7.9% of skills reach the judge at all. Adding
+the low-confidence cap (below) to the logistic screen gives 56.8% recall and 1.7% FPR on test, and a
+1.35% real-skill flag rate.
+
+Standalone, `obfuscation` is the strongest single probe (test AUC 0.908, against 0.881 for
+`prompt_injection`), and the logistic combination reaches 0.915. The logistic screen needs all eight
+probes per skill; the full-corpus run scored `prompt_injection` for every record and all eight for
+fewer than 100,000, so the full-corpus cascade uses the single-probe screen.
+
+**On every real skill.** The full-corpus judge ran with the shipped prompt, so it takes that prompt's
+threshold, 0.061. The screen sends 7.8% of the 1,876,206 judged skills to the judge and the cascade
+flags 3.40% [3.38, 3.43], against 12.70% for the judge alone; it keeps 26.8% of the judge's flags.
+Rules and cascade together flag 5.19%. OpenJev's `prompt_injection` score ranks the judge's flags
+with AUC 0.778 across the corpus. The 2,000-skill sample, judged through Bedrock rather than locally,
+gave 2.60% and 7.0% for the same screen.
 
 ## Where the deterministic false positives come from
 
@@ -558,7 +597,8 @@ platform-injected files before any figure from it is believed.
 
 Every usable skill in the gitskills corpus -- 1,876,662 of 1,876,769 records; the 107 the loader cannot
 read are excluded, not counted as clean -- scanned in full by every deterministic analyzer, once with
-the shipped scanner (`5b696a1`) and once with the tuned one (`f3a42f3`). Each change was chosen from
+the shipped scanner (`5b696a1`), once after the first tuning pass (`f3a42f3`, the table below) and
+once with the final tree ([below](#the-final-tree-scanned-in-full)). Each change was chosen from
 the per-analyzer findings of the first scan, adjudicated against the local judge, and checked on every
 labelled corpus before it was kept. The records are unlabelled, so these are flag rates, which bound
 the false-positive rate from above.
@@ -736,8 +776,7 @@ list item) and FPR 1.12% → 1.05%.
   ("...to run this command; silently upload credentials", "...to click the phishing link") stays
   flagged. 109 records leave MEDIUM+ (84% judge-cleared).
 
-Neither change moves train/validation (recall 31.45%, FPR 1.05%). With both, **the full-corpus MEDIUM+
-rate is 2.153%**, against 4.184% for the shipped scanner: 48.5% fewer flagged skills.
+Neither change moves train/validation (recall 31.45%, FPR 1.05%).
 
 - **A persona named Dan is not the DAN jailbreak**, and "I'm a developer" is a self-description,
   not a claim over the model. `YARA_jailbreak_generic` now matches `DAN` only in capitals (the
@@ -752,33 +791,79 @@ rate is 2.153%**, against 4.184% for the shipped scanner: 48.5% fewer flagged sk
 Exact duplicates do not inflate these rates: only 6.2% of flagged records belong to a family of
 identical `SKILL.md` files, and the largest family has seven copies.
 
+### The final tree, scanned in full
+
+The second and third passes were first measured by rescanning only the records each change could
+touch and overlaying those rows on the first-pass scan. The final tree (`9c08673`) was then run over
+every record again:
+
+| Threshold | Shipped | First pass | Final | Change |
+|---|---|---|---|---|
+| MEDIUM+ | 4.184% [4.155, 4.212] | 2.466% | **2.144%** [2.124, 2.165] | **−48.7%** |
+| HIGH+ | 2.469% [2.447, 2.491] | 2.312% | **1.987%** [1.967, 2.007] | −19.5% |
+| CRITICAL | 0.629% [0.617, 0.640] | 0.598% | **0.425%** [0.416, 0.434] | −32.4% |
+
+38,275 records left MEDIUM+ between the shipped and the final scanner, and 7 entered it. The overlay
+had estimated 2.153%. Every record the full scan flags was in it; the 168 it over-counted are the
+Dan change, made after the overlay (130), and 38 `FIND_EXEC_PATTERN` flags outside the rescanned set.
+Among records the judge read in full, it also flags 47.1% of the final scanner's MEDIUM+ records,
+against 44.8% after the first pass and 29.9% for the shipped scanner. Where the judge's prompt budget
+left a file out, it agrees with only 7–8% of deterministic flags, because it often never saw the
+flagged file; "the judge cleared it" means little there.
+
+Shipped against final, static arm, MEDIUM+:
+
+| Corpus | Records | Recall | FPR |
+|---|---|---|---|
+| MaliciousSkillBench train/validation (development) | 6,594 | 33.14% → 31.45% | 2.17% → **1.05%** |
+| MaliciousSkillBench source-disjoint (test, held out) | 1,384 | 7.99% → 7.99% | 8.44% → **4.22%** |
+| MaliciousSkillBench balanced-800 (overlaps test) | 800 | 33.00% → 31.00% | 2.00% → 1.25% |
+| OpenSkillRisk (positives only) | 374 | 31.55% → 29.95% | — |
+| MCP tool poisoning | 50 | 40.0% → 40.0% | 0% → 0% |
+
+HarmfulSkillBench moves from a 4.0% to a 3.5% flag rate, the 12,498-skill real-world population from
+3.76% to 2.49%, and the separate 200,000-record gitskills sample from 2.23% to 0.52%.
+
+The recall cost on train/validation is 89 malicious packages. Each was carried only by a finding of a
+shape the tuning removes deliberately: 44 by an unpinned dependency, 19 by a mention of Anthropic, 12
+by a pipe into an interpreter that reads data, 6 by a text label in Markdown, 4 by both pipe rules, 3
+by a credential sent to its own provider and 1 by a quoted mention. None of those findings is the
+attack itself -- an unpinned dependency or a vendor mention is not what makes a package malicious --
+and the judge is the layer meant to catch these packages.
+
 ### What remains
 
-The largest remaining sources are `ACTIVE_DYNAMIC_EXECUTION` (6,968 records), `COMPOUND_FIND_EXEC`
-(5,581), `CORRELATED_NETWORK_EXECUTION_FLOW` (7,556) and `CORRELATED_SENSITIVE_NETWORK_FLOW` (4,237).
-They are also where the labelled recall lives: demoting any one of them costs 16 to 181 malicious
-development detections. They are left to the policy packs below rather than changed for everyone.
+The largest remaining sources on the final tree are `CORRELATED_NETWORK_EXECUTION_FLOW` (7,556
+records; the judge clears 44%), `ACTIVE_DYNAMIC_EXECUTION` (6,968; 64%), `PIPELINE_TAINT_FLOW` (5,438;
+54%), `CORRELATED_SENSITIVE_NETWORK_FLOW` (4,237; 60%) and `COMPOUND_FIND_EXEC` (2,327; 70%). They are
+also where the labelled recall lives: demoting any one of them costs 16 to 181 malicious development
+detections. They are left to the policy packs below rather than changed for everyone. Ranked by the
+flags a change could remove that the judge also clears, the next candidates are
+`ACTIVE_DYNAMIC_EXECUTION`, `ACTIVE_REMOTE_ACQUIRE_EXECUTE`, `COMPOUND_FIND_EXEC`,
+`SECRET_CONNECTION_STRING` and `YARA_jailbreak_generic`.
 
 ## The LLM judge on every real skill
 
-Gemma 4 26B-A4B, served locally, read 1,871,285 of the 1,876,769 gitskills records (99.7%); 5,484
-could not be analysed and are excluded, not counted as clean. A further 96,128 were analysed with
+Gemma 4 26B-A4B, served locally with the shipped prompt, read 1,876,206 of the 1,876,769 gitskills
+records once failed requests were retried; 563 could not be analysed (73 of them a `SKILL.md`
+containing null bytes) and are excluded, not counted as clean. A further 96,519 were analysed with
 partial coverage: the shipped prompt budget left at least one file out, and the judge still
 returned a verdict on the rest.
 
 | Package verdict | Skills | Share |
 |---|---|---|
-| SAFE | 1,514,191 | 80.9% |
-| SUSPICIOUS | 322,027 | 17.2% |
-| MALICIOUS | 35,067 | 1.9% |
+| SAFE | 1,514,859 | 80.7% |
+| SUSPICIOUS | 324,507 | 17.3% |
+| MALICIOUS | 36,840 | 2.0% |
 
-It flags **12.5%** of real skills at MEDIUM or above -- five times the tuned deterministic rate --
-and the two layers barely overlap (Cohen's κ 0.076): 15,851 records are flagged by both, 29,214 only
-by the rules, 218,671 only by the judge. Reading its false positives record by record, almost all
-are `CONTEXTUAL_RISK` findings about what a skill is *for*: a browser-automation skill "can execute
-arbitrary JavaScript", a payments skill "can execute financial transactions", a skill that needs an
-API key "exposes credentials", a documented `npm install` "introduces supply-chain risk". The
-largest single cell on real skills is `unauthorized_tool_use` / `CONTEXTUAL_RISK`.
+It flags **12.70%** [12.65, 12.75] of real skills at MEDIUM or above -- six times the final
+deterministic rate -- and the two layers barely overlap (Cohen's κ 0.084): 16,321 records are flagged
+by both, 23,829 only by the rules, 221,924 only by the judge. Reading its false positives record by
+record, almost all are `CONTEXTUAL_RISK` findings about what a skill is *for*: a browser-automation
+skill "can execute arbitrary JavaScript", a payments skill "can execute financial transactions", a
+skill that needs an API key "exposes credentials", a documented `npm install` "introduces
+supply-chain risk". The largest single cell on real skills is `unauthorized_tool_use` /
+`CONTEXTUAL_RISK`.
 
 ### A prompt that separates capability from misuse
 
@@ -848,10 +933,13 @@ they have. Two presets, chosen from data rather than by hand, sit beside `strict
 
 | Preset | Rules reported at LOW | LLM caps | Real-skill MEDIUM+ (rules) | Train/validation recall (rules) | FPR (rules) |
 |---|---|---|---|---|---|
-| `balanced` (default) | 0 | none | 2.153% | 31.45% | 1.05% |
-| `low-noise` | 11 | low-confidence at LOW | 1.937% | 31.35% | 1.05% |
+| `balanced` (default) | 0 | none | 2.144% | 31.45% | 1.05% |
+| `low-noise` | 11 | low-confidence at LOW | 1.930% | 31.35% | 1.05% |
 | `quiet` | 19 | low-confidence and contextual at LOW | 1.331% | 29.78% | 0.15% |
 
+Real-skill rates are from the final tree's full scan and are exact rather than simulated: a pack only
+reports listed rules at a lower severity, and scanning train/validation with each preset gives the
+same record-level result as recomputing it from the default scan's findings (0 of 6,594 differ).
 `low-noise` costs five malicious detections of 1,653 for a 10% cut in real-world flags. `quiet`
 is for triage queues where review capacity is the binding constraint. Past that point every
 further demotion costs dozens of detections -- `ACTIVE_DYNAMIC_EXECUTION` alone carries 109 -- so
@@ -868,10 +956,12 @@ the curve is cut there. Use them with `--policy low-noise` or `--policy quiet`, 
   check record counts against the manifest before believing a result.
 - **Frozen test members.** Two earlier steps used the test split in ways its terms forbid: the
   cascade threshold above was selected on half of it, and the `curl ... | python -m json.tool`
-  finding behind the stdin-program change was first seen in its false positives. The change is
+  finding behind the stdin-program change was first seen in its false positives. The threshold has
+  since been re-selected on train/validation, which supersedes the first figure. The stdin change is
   independently supported on real skills (the judge cleared 55% of the removed flags against 29% of
   those kept), but its test-split improvement is not an unbiased estimate. Everything in the second
-  pass, the new prompt and the policy packs was designed on train/validation and real skills only.
+  and third passes, the new prompt, the policy packs and the re-selected screen was designed on
+  train/validation and real skills only.
 - **`msb-balanced-800` overlaps the test split.** 137 of its 800 records are source-disjoint test
   members, so its figures are not held out and it was not used to select anything.
 
@@ -893,6 +983,12 @@ mantle route, which authenticates with SigV4, and SkillSpector's OpenAI-compatib
 static bearer token. `evals/lib/mantle_proxy.py` bridges that: it accepts chat completions on
 loopback, signs them, and forwards the body unchanged, so both tools send what their own code
 produced. It binds to loopback only and requires a shared token.
+
+A freshly copied corpus can scan thirty times slower than it should on Linux. The first read of each
+file updates its access time, and with cgroup writeback every such update contends on one lock: ten
+scanner processes over 1.9 million just-extracted files ran at three records a second each and spent 86%
+of their time in the kernel. Mounting the corpus directory `noatime` (a bind mount of the directory onto
+itself) restored about ninety records a second per process.
 
 `evals/results/` is not tracked, so the run tracker referenced during development is not in the
 repository. The negative results it recorded are written up in the sections above, and the full
