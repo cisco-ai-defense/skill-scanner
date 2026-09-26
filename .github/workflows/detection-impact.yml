@@ -232,24 +232,19 @@ jobs:
           path: ${{ runner.temp }}/clean
 
       - name: Scan with credentials removed and the network denied
+        # The scan runs in a fresh network namespace, which has no route anywhere, while the
+        # runner agent keeps its own connection to GitHub; blocking the runner's uid instead cuts the
+        # agent off and the job is cancelled. `env -i` passes only what the scan needs: no token,
+        # key or other credential reaches it.
         shell: bash
         env:
-          SKILL_SCANNER_DISABLE_NETWORK: "1"
-          HF_HUB_OFFLINE: "1"
-          NO_PROXY: "*"
           TREE: ${{ matrix.tree }}
         run: |
           set -euo pipefail
-          while IFS='=' read -r name _; do
-            case "$name" in
-              *_TOKEN|*_SECRET|*_PASSWORD|*_API_KEY|AWS_*|AZURE_*|GOOGLE_APPLICATION_CREDENTIALS) unset "$name" ;;
-            esac
-          done < <(env)
-          runner_uid="$(id -u)"
-          sudo iptables -I OUTPUT 1 -m owner --uid-owner "$runner_uid" -j REJECT
-          sudo ip6tables -I OUTPUT 1 -m owner --uid-owner "$runner_uid" -j REJECT
-          trap 'sudo iptables -D OUTPUT -m owner --uid-owner "$runner_uid" -j REJECT; sudo ip6tables -D OUTPUT -m owner --uid-owner "$runner_uid" -j REJECT' EXIT
-          head/.venv/bin/python - <<'PY'
+          cat > "$RUNNER_TEMP/scan.sh" <<'SCAN'
+          set -euo pipefail
+          python="$1"; tree="$2"; clean="$3"; out="$4"
+          "$python" - <<'PY'
           import socket
 
           for address, family in (("1.1.1.1", socket.AF_INET), ("2606:4700:4700::1111", socket.AF_INET6)):
@@ -264,13 +259,20 @@ jobs:
               finally:
                   sock.close()
           PY
-          cd "$RUNNER_TEMP/tree"
-          "$GITHUB_WORKSPACE/head/.venv/bin/python" evals/runners/cross_tool_benchmark.py \
+          cd "$tree"
+          "$python" evals/runners/cross_tool_benchmark.py \
             --tool skill-scanner --arm static --profile core \
-            --clean-root "$RUNNER_TEMP/clean" \
+            --clean-root "$clean" \
             --corpus msb-trainval --corpus clawhub-sample \
             --workers 4 --progress-every 2000 \
-            --output-dir "$RUNNER_TEMP/rows/$TREE"
+            --output-dir "$out"
+          SCAN
+          mkdir -p "$RUNNER_TEMP/rows/$TREE"
+          sudo unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups \
+            env -i PATH="$PATH" HOME="$HOME" LANG=C.UTF-8 \
+              SKILL_SCANNER_DISABLE_NETWORK=1 HF_HUB_OFFLINE=1 NO_PROXY='*' \
+            bash "$RUNNER_TEMP/scan.sh" \
+              "$GITHUB_WORKSPACE/head/.venv/bin/python" "$RUNNER_TEMP/tree" "$RUNNER_TEMP/clean" "$RUNNER_TEMP/rows/$TREE"
 
       - name: Upload rows
         uses: actions/upload-artifact@v4

@@ -342,9 +342,11 @@ def test_detection_impact_scans_offline_with_credentials_removed() -> None:
     run = next(
         step["run"] for step in steps if step.get("name") == "Scan with credentials removed and the network denied"
     )
-    assert "iptables -I OUTPUT" in run and "ip6tables -I OUTPUT" in run
+    # Its own network namespace: no route out, while the runner agent keeps its connection.
+    assert "sudo unshare --net --" in run
     assert "network isolation failed" in run
-    assert 'unset "$name"' in run
+    # Only an explicit environment reaches the scan, so no credential does.
+    assert "env -i PATH=" in run
     assert "--profile core" in run and "--arm static" in run
 
 
