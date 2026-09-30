@@ -553,7 +553,7 @@ all = [
     { name = "pyasn1" },
 ]
 apple-fm = [
-    { name = "apple-fm-sdk" },
+    { name = "apple-fm-sdk", marker = "sys_platform == 'darwin'" },
 ]
 azure = [
     { name = "azure-identity" },
@@ -596,7 +596,7 @@ sbom = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.50,<1" },
-    { name = "apple-fm-sdk", marker = "extra == 'apple-fm'" },
+    { name = "apple-fm-sdk", marker = "sys_platform == 'darwin' and extra == 'apple-fm'" },
     { name = "azure-identity", marker = "extra == 'all'", specifier = ">=1.20,<2" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.20,<2" },
     { name = "boto3", marker = "extra == 'all'", specifier = ">=1.40,<2" },
