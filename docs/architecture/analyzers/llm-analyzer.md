@@ -385,7 +385,7 @@ result = scanner.scan_skill("/path/to/skill")
 1. **Combine with static analysis**: Use both for comprehensive coverage
 2. **Use consensus only when needed**: Increase `llm_consensus_runs` for higher-confidence voting, keep `1` for lower latency
 3. **Tune retry/timeout settings**: Configure `max_retries`, `rate_limit_delay`, and `timeout` to match your environment
-4. **Use explicit model routing**: Set `SKILL_SCANNER_LLM_MODEL` to the exact backend path (`bedrock/...`, `azure/...`, `gemini/...`, `vertex_ai/...`)
+4. **Use explicit model routing**: Set `SKILL_SCANNER_LLM_MODEL` to the exact backend path (`bedrock/...`, `azure/...`, `gemini/...`, `vertex_ai/...`, `apple-fm/system`)
 
 ## Troubleshooting
 
@@ -396,6 +396,8 @@ export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 ```
 
 For Bedrock IAM auth, use a `bedrock/...` model and configure AWS credentials/profile instead of API key.
+
+For the on-device Apple Foundation Model, set `SKILL_SCANNER_LLM_MODEL=apple-fm/system` and leave the API key unset. Install the `[apple-fm]` extra on macOS 26+ with Apple Intelligence enabled. That model is for semantic skill scans. Behavioral alignment prompts exceed its context window, so keep alignment on a hosted model.
 
 ### "Rate limit exceeded"
 The analyzer automatically retries with exponential backoff. If still failing:

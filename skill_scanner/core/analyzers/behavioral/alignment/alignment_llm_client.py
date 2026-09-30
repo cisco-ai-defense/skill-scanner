@@ -32,6 +32,7 @@ import os
 from typing import Any
 
 from .....llm_reasoning import build_litellm_reasoning_params, resolve_llm_reasoning_effort
+from ...apple_fm import apple_fm_acompletion, is_apple_fm_model
 from ...llm_provider_config import ProviderConfig
 from ...llm_request_handler import _TEMPERATURE_UNSET, _resolve_temperature
 from ...llm_request_options import (
@@ -101,15 +102,21 @@ class AlignmentLLMClient:
             ImportError: If litellm is not available
             ValueError: If API key is not provided
         """
-        if not LITELLM_AVAILABLE:
+        raw_provider = provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER")
+        provider_name = raw_provider.strip().lower().replace("_", "-") if raw_provider else None
+        openai_compatible = provider_name in {"openai", "openai-compatible", "custom-openai"}
+        apple_fm = not openai_compatible and (is_apple_fm_model(model) or provider_name == "apple-fm")
+        if apple_fm and not is_apple_fm_model(model):
+            model = "apple-fm/system"
+        if not LITELLM_AVAILABLE and not apple_fm:
             raise ImportError("litellm is required for alignment verification. Install with: pip install litellm")
 
         # Store configuration for per-request usage. OrcaRouter uses the shared
         # provider configuration so model normalization, key resolution, and
         # its default OpenAI-compatible endpoint stay consistent with the main
         # and meta LLM clients.
-        raw_provider = provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER")
-        self._provider = raw_provider.strip().lower().replace("_", "-") if raw_provider else None
+        self._provider = provider_name
+        self._is_apple_fm = apple_fm
         self._provider_config: ProviderConfig | None = None
         self._llm_user = resolve_llm_user(llm_user)
         if self._provider == "orcarouter" or model.lower().startswith("orcarouter/"):
@@ -130,7 +137,7 @@ class AlignmentLLMClient:
             self._llm_user = self._provider_config.llm_user
         else:
             self._api_key = api_key or self._resolve_api_key(model)
-            if not self._api_key and not self._is_bedrock_model(model):
+            if not self._api_key and not self._is_bedrock_model(model) and not self._is_apple_fm:
                 raise ValueError("LLM provider API key is required for alignment verification")
             self._base_url = base_url
             self._api_version = api_version
@@ -160,6 +167,8 @@ class AlignmentLLMClient:
             return os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
         elif "ollama" in model_lower:
             # Ollama is local and typically doesn't need API key
+            return None
+        elif model_lower.startswith("apple-fm/"):
             return None
 
         # All providers (including Bedrock, Gemini, OpenAI, Anthropic, Azure):
@@ -208,6 +217,9 @@ class AlignmentLLMClient:
             try:
                 return await self._make_llm_request(prompt)
             except Exception as e:
+                message = str(e).lower()
+                if "context window" in message or "context length" in message:
+                    raise
                 if attempt < max_retries - 1:
                     delay = base_delay * (2**attempt)
                     self.logger.warning(
@@ -280,7 +292,10 @@ class AlignmentLLMClient:
                 request_params["user"] = self._llm_user
 
             self.logger.debug(f"Sending alignment verification request to {self._model}")
-            response = await acompletion(**request_params, drop_params=True)
+            if self._is_apple_fm:
+                response = await apple_fm_acompletion(**request_params)
+            else:
+                response = await acompletion(**request_params, drop_params=True)
 
             # Extract content from response
             content = response.choices[0].message.content

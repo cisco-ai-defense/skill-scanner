@@ -78,7 +78,7 @@ You only need to set these if you're using the corresponding features. Click a s
 
 - `SKILL_SCANNER_LLM_API_KEY`
 - `SKILL_SCANNER_LLM_PROVIDER` — set to `openai` for OpenAI-compatible custom endpoints when the model name is not enough to infer routing
-- `SKILL_SCANNER_LLM_MODEL`
+- `SKILL_SCANNER_LLM_MODEL` — `apple-fm/system` selects the on-device Apple Foundation Model and does not need an API key. Use it for semantic scans. Behavioral alignment prompts exceed the on-device context window.
 - `SKILL_SCANNER_LLM_BASE_URL`
 - `SKILL_SCANNER_LLM_API_VERSION`
 - `SKILL_SCANNER_LLM_USER` — optional raw Chat Completions `user` field for OpenAI-compatible routes

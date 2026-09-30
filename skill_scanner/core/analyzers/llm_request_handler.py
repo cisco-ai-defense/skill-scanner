@@ -512,6 +512,10 @@ class LLMRequestHandler:
         # mantle client and attempt real AWS credential resolution.
         if getattr(self.provider_config, "use_bedrock_mantle", False) is True:
             return await self._make_bedrock_mantle_request(messages, context)
+        # Same ``is True`` guard as the mantle route: a MagicMock provider
+        # config must not be diverted into the on-device SDK.
+        if getattr(self.provider_config, "is_apple_fm", False) is True:
+            return await self._make_apple_fm_request(messages, context)
         if self.provider_config.use_google_sdk:
             # For Google SDK, combine system and user messages into a single prompt
             # Google SDK doesn't have separate system/user roles like OpenAI/Anthropic
@@ -528,6 +532,57 @@ class LLMRequestHandler:
             return await self._make_google_sdk_request(combined_prompt, context)
         else:
             return await self._make_litellm_request(messages, context)
+
+    async def _make_apple_fm_request(self, messages: list[dict[str, str]], context: str) -> str:
+        """Run the prompt on the on-device Apple Foundation Model."""
+        from .apple_fm import apple_fm_acompletion
+
+        last_exception: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = await apple_fm_acompletion(
+                    model=self.provider_config.model,
+                    messages=messages,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    timeout=self.timeout,
+                    json_schema=self.response_schema if isinstance(self.response_schema, dict) else None,
+                )
+                self._last_usage = _extract_token_usage(response)
+                return response.choices[0].message.content or ""
+            except Exception as exc:
+                last_exception = exc
+                error_msg = str(exc).lower()
+                # A too-small context window does not succeed on retry.
+                if "context window" in error_msg or "context length" in error_msg:
+                    raise
+                if any(
+                    keyword in error_msg
+                    for keyword in [
+                        "rate limit",
+                        "quota",
+                        "too many requests",
+                        "429",
+                        "throttl",
+                        "concurrent request",
+                        "timed out",
+                    ]
+                ):
+                    if attempt < self.max_retries:
+                        delay = (2**attempt) * self.rate_limit_delay
+                        logger.warning(
+                            "Apple FM request failed for %s, retrying in %ss (attempt %d/%d)",
+                            context,
+                            delay,
+                            attempt + 1,
+                            self.max_retries + 1,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                raise
+        if last_exception is not None:
+            raise last_exception
+        raise RuntimeError("apple-fm request failed")
 
     async def _make_litellm_request(self, messages: list[dict[str, str]], context: str) -> str:
         """Make request using LiteLLM with structured outputs when supported."""

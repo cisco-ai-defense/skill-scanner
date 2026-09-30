@@ -816,6 +816,8 @@ class MetaAnalyzer(BaseAnalyzer):
             or os.getenv("SKILL_SCANNER_LLM_API_KEY")  # Scanner-wide
         )
         configured_model = model or os.getenv("SKILL_SCANNER_META_LLM_MODEL") or os.getenv("SKILL_SCANNER_LLM_MODEL")
+        if not configured_model and self.provider == "apple-fm":
+            configured_model = "apple-fm/system"
         self.model: str = configured_model or (
             "orcarouter/anthropic/claude-sonnet-5" if self.provider == "orcarouter" else "claude-3-5-sonnet-20241022"
         )
@@ -841,11 +843,16 @@ class MetaAnalyzer(BaseAnalyzer):
         # analyzer's normalization and request-parameter handling so the meta
         # analyzer receives the same key and default endpoint.
         self.provider_config: ProviderConfig | None = None
+        _openai_compatible = self.provider in {"openai", "openai-compatible", "custom-openai"}
         _wants_provider_config = (
             self.provider == "orcarouter"
             or self.model.lower().startswith("orcarouter/")
             or self.provider == "bedrock-mantle"
             or self.model.lower().startswith("bedrock-mantle/")
+            or (
+                not _openai_compatible
+                and (self.provider == "apple-fm" or self.model.lower().startswith("apple-fm/"))
+            )
         )
         if _wants_provider_config:
             self.provider_config = ProviderConfig(
@@ -874,9 +881,25 @@ class MetaAnalyzer(BaseAnalyzer):
         self.is_ollama = bool(self.model and self.model.lower().startswith("ollama/"))
         if self.is_ollama:
             self.base_url = resolve_ollama_base_url(self.base_url)
+        self.is_apple_fm = bool(
+            getattr(self.provider_config, "is_apple_fm", False) is True
+            or (
+                self.provider not in {"openai", "openai-compatible", "custom-openai"}
+                and (
+                    self.provider == "apple-fm"
+                    or (self.model and self.model.lower().startswith("apple-fm/"))
+                )
+            )
+        )
 
         # Validate configuration
-        if not self.api_key and not self.is_bedrock and not self.is_bedrock_mantle and not self.is_ollama:
+        if (
+            not self.api_key
+            and not self.is_bedrock
+            and not self.is_bedrock_mantle
+            and not self.is_ollama
+            and not self.is_apple_fm
+        ):
             raise ValueError(
                 "Meta-Analyzer LLM API key not configured. "
                 "Set SKILL_SCANNER_META_LLM_API_KEY or SKILL_SCANNER_LLM_API_KEY environment variable."
@@ -1884,6 +1907,25 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
             {"role": "user", "content": user_prompt},
         ]
 
+        if self.is_apple_fm:
+            config = self.provider_config
+            if config is None or getattr(config, "is_apple_fm", False) is not True:
+                config = ProviderConfig(model=self.model, api_key=None, provider="apple-fm")
+            handler = LLMRequestHandler(
+                config,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                max_retries=self.max_retries,
+                timeout=self.timeout,
+                reasoning_effort=self.reasoning_effort,
+            )
+            # Meta validates its own JSON contract. The on-device model has no
+            # json_schema response format, so leave the prompt unconstrained.
+            handler.response_schema = None
+            content = await handler.make_request(messages, context="meta-analysis")
+            _add_token_usage(self._llm_usage, handler.last_usage)
+            return content
+
         api_params: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -1931,8 +1973,6 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
             # LiteLLM cannot sign a body it builds itself, so the mantle route goes
             # through the request handler that owns that client rather than through
             # acompletion.
-            from .llm_request_handler import LLMRequestHandler
-
             handler = LLMRequestHandler(
                 self.provider_config,
                 max_tokens=self.max_tokens,

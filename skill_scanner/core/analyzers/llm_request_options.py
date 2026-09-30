@@ -30,6 +30,7 @@ _NON_OPENAI_MODEL_PREFIXES = (
     "gemini/",
     "gemini-",
     "models/gemini-",
+    "apple-fm/",
     "ollama/",
     "openrouter/",
     "vertex/",

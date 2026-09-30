@@ -116,6 +116,10 @@ vertex = [
 azure = [
     "azure-identity>=1.20,<2",
 ]
+# On-device Apple Foundation Models (macOS 26+, Apple Intelligence)
+apple-fm = [
+    "apple-fm-sdk",
+]
 # Supply chain dependency scanning (requires network access)
 # NOTE: guarddog has a dependency conflict with pip-audit via tomli.
 # Install separately: pip install guarddog

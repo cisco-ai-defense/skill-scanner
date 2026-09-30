@@ -201,6 +201,24 @@ def _resolve_temperature(default: float = 0.0) -> float | None:
     return default
 
 
+def _parse_adjudicator_content(content: str) -> dict[str, Any] | None:
+    """Extract the first JSON object from a model response."""
+    start = content.find("{")
+    end = content.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        logger.debug("adjudicator response had no JSON: %r", content[:200])
+        return None
+    try:
+        parsed = json.loads(content[start : end + 1])
+    except json.JSONDecodeError:
+        logger.debug("adjudicator response was invalid JSON: %r", content[start : end + 1][:200])
+        return None
+    if not isinstance(parsed, dict):
+        logger.debug("adjudicator response JSON was not an object: %r", type(parsed).__name__)
+        return None
+    return parsed
+
+
 def _resolve_model() -> str | None:
     """Resolve the LLM model from env vars.
 
@@ -276,6 +294,8 @@ class Adjudicator:
         model = _resolve_model()
         if model is None and self.provider == "orcarouter":
             model = "orcarouter/anthropic/claude-sonnet-5"
+        if model is None and self.provider == "apple-fm":
+            model = "apple-fm/system"
         self.model: str | None = model
         self.temperature = _resolve_temperature()
 
@@ -452,13 +472,19 @@ class Adjudicator:
         """
         import time as _time
 
+        if not self.model:
+            return None
+
+        from .apple_fm import is_apple_fm_model
+
+        openai_compatible = self.provider in {"openai", "openai-compatible", "custom-openai"}
+        if not openai_compatible and (is_apple_fm_model(self.model) or self.provider == "apple-fm"):
+            return self._call_apple_fm(prompt)
+
         try:
             import litellm
         except ImportError:
             logger.debug("adjudicator: litellm not installed; skipping")
-            return None
-
-        if not self.model:
             return None
 
         # Credentials and routing come from the same resolver the LLM analyzer uses.
@@ -539,6 +565,45 @@ class Adjudicator:
         if not isinstance(parsed, dict):
             logger.debug("adjudicator response JSON was not an object: %r", type(parsed).__name__)
             return None
+        return parsed
+
+    def _call_apple_fm(self, prompt: str) -> dict[str, Any] | None:
+        """Ask the on-device Foundation Model. Failures leave the finding unchanged."""
+        import asyncio
+
+        from .apple_fm import apple_fm_acompletion
+
+        async def _once() -> str:
+            response = await apple_fm_acompletion(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=200,
+                temperature=self.temperature,
+                timeout=self.timeout,
+            )
+            _add_token_usage(self._llm_usage, _extract_token_usage(response))
+            return (response.choices[0].message.content or "").strip()
+
+        try:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                content = asyncio.run(_once())
+            else:
+                import concurrent.futures
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    content = pool.submit(asyncio.run, _once()).result()
+        except Exception as exc:
+            logger.debug("adjudicator Apple FM call failed: %s", exc)
+            self._note_llm_failure(exc)
+            return None
+        parsed = _parse_adjudicator_content(content)
+        if parsed is None:
+            self._note_llm_failure("response contained no valid JSON object")
         return parsed
 
     def _adjudicate_one(self, finding: Finding, skill: Skill) -> AdjudicationResult:

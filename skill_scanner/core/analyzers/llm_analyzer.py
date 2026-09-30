@@ -114,6 +114,7 @@ class LLMProvider(str, Enum):
     - aws-bedrock: AWS Bedrock models
     - gcp-vertex: Google Cloud Vertex AI
     - ollama: Local Ollama models
+    - apple-fm: On-device Apple Foundation Models
     - openrouter: OpenRouter API
     - orcarouter: OrcaRouter API
     """
@@ -126,6 +127,7 @@ class LLMProvider(str, Enum):
     AWS_BEDROCK = "aws-bedrock"
     GCP_VERTEX = "gcp-vertex"
     OLLAMA = "ollama"
+    APPLE_FM = "apple-fm"
     OPENROUTER = "openrouter"
     ORCAROUTER = "orcarouter"
 
@@ -324,6 +326,7 @@ class LLMAnalyzer(BaseAnalyzer):
                 "aws-bedrock": "bedrock/anthropic.claude-v2",
                 "gcp-vertex": "vertex_ai/gemini-1.5-pro",
                 "ollama": "ollama/llama2",
+                "apple-fm": "apple-fm/system",
                 "openrouter": "openrouter/openai/gpt-4",
                 "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
             }

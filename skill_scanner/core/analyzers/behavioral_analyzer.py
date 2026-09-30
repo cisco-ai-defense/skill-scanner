@@ -107,13 +107,24 @@ class BehavioralAnalyzer(BaseAnalyzer):
         self.alignment_orchestrator = None
         if use_alignment_verification:
             try:
+                from .apple_fm import is_apple_fm_model
                 from .behavioral.alignment import AlignmentOrchestrator
 
                 # Resolve LLM configuration - use SKILL_SCANNER_LLM_* variables
+
                 model = llm_model or os.environ.get("SKILL_SCANNER_LLM_MODEL", "gemini/gemini-2.0-flash")
+                provider_name = (llm_provider or os.environ.get("SKILL_SCANNER_LLM_PROVIDER") or "").strip().lower()
+                provider_name = provider_name.replace("_", "-")
+                if provider_name == "apple-fm" and not is_apple_fm_model(model):
+                    model = "apple-fm/system"
                 api_key = llm_api_key or os.environ.get("SKILL_SCANNER_LLM_API_KEY")
 
-                if api_key:
+                keyless_apple = provider_name not in {
+                    "openai",
+                    "openai-compatible",
+                    "custom-openai",
+                } and is_apple_fm_model(model)
+                if api_key or keyless_apple:
                     self.alignment_orchestrator = AlignmentOrchestrator(
                         llm_model=model,
                         llm_api_key=api_key,
