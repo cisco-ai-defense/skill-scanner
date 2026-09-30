@@ -849,10 +849,7 @@ class MetaAnalyzer(BaseAnalyzer):
             or self.model.lower().startswith("orcarouter/")
             or self.provider == "bedrock-mantle"
             or self.model.lower().startswith("bedrock-mantle/")
-            or (
-                not _openai_compatible
-                and (self.provider == "apple-fm" or self.model.lower().startswith("apple-fm/"))
-            )
+            or (not _openai_compatible and (self.provider == "apple-fm" or self.model.lower().startswith("apple-fm/")))
         )
         if _wants_provider_config:
             self.provider_config = ProviderConfig(
@@ -885,10 +882,7 @@ class MetaAnalyzer(BaseAnalyzer):
             getattr(self.provider_config, "is_apple_fm", False) is True
             or (
                 self.provider not in {"openai", "openai-compatible", "custom-openai"}
-                and (
-                    self.provider == "apple-fm"
-                    or (self.model and self.model.lower().startswith("apple-fm/"))
-                )
+                and (self.provider == "apple-fm" or (self.model and self.model.lower().startswith("apple-fm/")))
             )
         )
 
