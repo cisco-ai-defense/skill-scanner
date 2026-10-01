@@ -25,6 +25,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from skill_scanner.core.analyzers.adjudicator import _LLM_LOCK, Adjudicator
 from skill_scanner.core.analyzers.apple_fm import apple_fm_acompletion, is_apple_fm_model
 from skill_scanner.core.analyzers.behavioral.alignment.alignment_llm_client import AlignmentLLMClient
 from skill_scanner.core.analyzers.llm_analyzer import LLMProvider
@@ -294,3 +295,53 @@ def test_guided_schema_is_passed_to_the_session(monkeypatch: pytest.MonkeyPatch)
 def test_language_model_session_accepts_instructions() -> None:
     """Guard the adapter against a signature that dropped the instructions parameter."""
     assert "instructions" in inspect.signature(_FakeFM.LanguageModelSession).parameters
+
+
+def test_missing_instructions_channel_is_not_merged_into_the_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    class BareSession:
+        def __init__(self) -> None:
+            pass
+
+        async def respond(self, prompt: str, options=None):
+            return prompt
+
+    class BareFM(_FakeFM):
+        class LanguageModelSession(BareSession):
+            pass
+
+    fake = ModuleType("apple_fm_sdk")
+    fake.SystemLanguageModel = BareFM.SystemLanguageModel
+    fake.LanguageModelSession = BareFM.LanguageModelSession
+    fake.GenerationOptions = BareFM.GenerationOptions
+    _install_fake_sdk(monkeypatch, fake)
+
+    with pytest.raises(RuntimeError, match="separate instructions"):
+        asyncio.run(
+            apple_fm_acompletion(
+                model="apple-fm/system",
+                messages=[
+                    {"role": "system", "content": "policy"},
+                    {"role": "user", "content": "skill text"},
+                ],
+            )
+        )
+
+
+def test_adjudicator_apple_fm_holds_the_llm_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_keys(monkeypatch)
+    monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "apple-fm/system")
+    held: dict[str, bool] = {}
+
+    async def fake_completion(**kwargs):
+        held["locked"] = _LLM_LOCK.locked()
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"verdict": "real"}'))],
+            usage=None,
+        )
+
+    monkeypatch.setattr("skill_scanner.core.analyzers.apple_fm.apple_fm_acompletion", fake_completion)
+
+    result = Adjudicator()._call_apple_fm("skill text")
+
+    assert held["locked"] is True
+    assert result == {"verdict": "real"}

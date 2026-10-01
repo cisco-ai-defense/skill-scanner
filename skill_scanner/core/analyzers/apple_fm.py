@@ -195,7 +195,13 @@ async def apple_fm_acompletion(**params: Any) -> AppleFMResponse:
     if instructions and signature is not None and "instructions" in signature.parameters:
         session_kwargs["instructions"] = instructions
     elif instructions:
-        prompt = f"{instructions}\n\n{prompt}"
+        # Keep the policy channel separate from skill content. Merging them
+        # into one prompt lets the skill text sit in the same instruction
+        # stream the adjudicator uses to demote findings.
+        raise RuntimeError(
+            "Apple Foundation Models session cannot take separate instructions; "
+            "refusing to merge them into the user prompt"
+        )
 
     session = fm.LanguageModelSession(**session_kwargs)
     respond_kwargs: dict = {}

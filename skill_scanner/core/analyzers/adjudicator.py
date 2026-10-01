@@ -587,16 +587,21 @@ class Adjudicator:
             _add_token_usage(self._llm_usage, _extract_token_usage(response))
             return (response.choices[0].message.content or "").strip()
 
-        try:
+        def _run() -> str:
             try:
                 asyncio.get_running_loop()
             except RuntimeError:
-                content = asyncio.run(_once())
-            else:
-                import concurrent.futures
+                return asyncio.run(_once())
+            import concurrent.futures
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    content = pool.submit(asyncio.run, _once()).result()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(asyncio.run, _once).result()
+
+        try:
+            # Same lock as the LiteLLM path. Parallel scans otherwise open
+            # several on-device sessions against one Foundation Model.
+            with _LLM_LOCK:
+                content = _run()
         except Exception as exc:
             logger.debug("adjudicator Apple FM call failed: %s", exc)
             self._note_llm_failure(exc)
