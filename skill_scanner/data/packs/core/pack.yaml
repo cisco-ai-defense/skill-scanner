@@ -772,6 +772,24 @@ rules:
       enabled: true
     description: "Skill uses network but doesn't declare it"
 
+  UNDECLARED_NETWORK_DESTINATION:
+    source: python
+    analyzer: static
+    category: unauthorized_tool_use
+    severity: MEDIUM
+    # Destination-oriented "intent vs implementation" check: a script contacts or
+    # configures a literal host that the documentation never names. Complements
+    # TOOL_ABUSE_UNDECLARED_NETWORK (which is capability-oriented). Enabled in the
+    # balanced default and strict presets; disabled in the noise-reduction presets
+    # (permissive/low-noise/quiet) as it is more false-positive prone than most
+    # rules (see data/*_policy.yaml disabled_rules). Hosts under the policy's
+    # llm_analysis.trusted_reference_domains are emitted at LOW.
+    allowed_severity_demotions:
+      - LOW
+    knobs:
+      enabled: true
+    description: "Script contacts or configures a host the documentation never mentions"
+
   SOCIAL_ENG_MISLEADING_DESC:
     source: python
     analyzer: static
@@ -780,6 +798,19 @@ rules:
     knobs:
       enabled: true
     description: "Description does not match actual behavior"
+
+  SUPPLY_CHAIN_REGISTRY_REDIRECT:
+    source: python
+    analyzer: static
+    category: supply_chain_attack
+    # Maximum severity. Registries under the policy's
+    # llm_analysis.trusted_reference_domains are emitted at LOW.
+    severity: HIGH
+    allowed_severity_demotions:
+      - LOW
+    knobs:
+      enabled: true
+    description: "Package-manager registry/index redirected to a non-default host"
 
   SUPPLY_CHAIN_UNPINNED_DEPENDENCY:
     source: python

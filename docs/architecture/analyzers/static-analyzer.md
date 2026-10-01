@@ -5,8 +5,9 @@
 >
 > The static analyzer runs an ordered, deterministic pipeline covering YAML
 > signatures, bounded contextual Python rules, YARA-X, binary and document
-> inspection, Unicode concealment, dependency pinning, allowed-tools
-> enforcement, and final finding refinement. It is an always-on core analyzer
+> inspection, Unicode concealment, registry redirection, undeclared network
+> destinations, dependency pinning, allowed-tools enforcement, and final
+> finding refinement. It is an always-on core analyzer
 > and requires no external services.
 
 The static analyzer is the primary deterministic detection engine. It combines YAML signature matching, YARA-X rule scanning, Python-based checks, and file inventory analysis to detect security threats without requiring external services.
@@ -30,24 +31,26 @@ flowchart TD
     S07 --> S08["Script/code signatures"]
     S08 --> S09["Dynamic sensitive-file access"]
     S09 --> S10["Consistency + allowed tools"]
-    S10 --> S11["Dependency pinning"]
-    S11 --> S12["Config-file URLs"]
-    S12 --> S13["Referenced files"]
-    S13 --> S14["Binary files"]
-    S14 --> S15["Hidden files"]
-    S15 --> S16["ASCII smuggling"]
-    S16 --> S17["Unicode-obfuscated instructions"]
-    S17 --> S18["File inventory"]
-    S18 --> S19["PDF documents"]
-    S19 --> S20["Office documents"]
-    S20 --> S21["Homoglyphs"]
-    S21 --> S22["YARA-X"]
-    S22 --> S23["Asset signatures"]
-    S23 --> S24["Disabled-rule filter"]
-    S24 --> S25["Test-credential filter"]
-    S25 --> S26["Deduplication"]
-    S26 --> S27["Unreferenced-script context"]
-    S27 --> S28["Core-signature refinement"]
+    S10 --> S11["Registry redirection"]
+    S11 --> S12["Undeclared network destinations"]
+    S12 --> S13["Dependency pinning"]
+    S13 --> S14["Config-file URLs"]
+    S14 --> S15["Referenced files"]
+    S15 --> S16["Binary files"]
+    S16 --> S17["Hidden files"]
+    S17 --> S18["ASCII smuggling"]
+    S18 --> S19["Unicode-obfuscated instructions"]
+    S19 --> S20["File inventory"]
+    S20 --> S21["PDF documents"]
+    S21 --> S22["Office documents"]
+    S22 --> S23["Homoglyphs"]
+    S23 --> S24["YARA-X"]
+    S24 --> S25["Asset signatures"]
+    S25 --> S26["Disabled-rule filter"]
+    S26 --> S27["Test-credential filter"]
+    S27 --> S28["Deduplication"]
+    S28 --> S29["Unreferenced-script context"]
+    S29 --> S30["Core-signature refinement"]
 ```
 
 Each pass targets a different aspect of the skill package:
@@ -64,6 +67,8 @@ Each pass targets a different aspect of the skill package:
 | Script scanning | `_scan_scripts()` | Python/bash/other scripts against signatures |
 | Dynamic sensitive access | `_check_dynamic_sensitive_file_access()` | Dynamic glob/enumeration of credential and configuration paths |
 | Consistency | `_check_consistency()` | Mismatch between manifest claims and behavior, including allowed-tools enforcement |
+| Registry redirection | `check_registry_redirect()` | Package-manager commands, registry environment variables, config files (`.npmrc`, `pip.conf`, `.cargo/config.toml`, ...) and config-file writes that point npm/yarn/pnpm, pip/uv, Go, Cargo, RubyGems, NuGet or Docker at a non-default registry host (`SUPPLY_CHAIN_REGISTRY_REDIRECT`) |
+| Undeclared network destinations | `check_undeclared_network_destination()` | Literal HTTP(S) hosts in scripts that SKILL.md, other Markdown and the manifest description never visibly name (`UNDECLARED_NETWORK_DESTINATION`) |
 | Dependency pinning | `_check_dependency_pinning()` | Unpinned dependencies in `requirements*.txt`, `pyproject.toml`, `setup.cfg`, `setup.py`, `Pipfile`, manifest metadata, and `package.json` (`^1.2.3`/`~1.2.3`/`>=1`/`*`/dist-tags are MEDIUM; `1.x`/`1.2.*` are LOW). Suppressed per ecosystem when a lockfile freezes that ecosystem's versions: Python lockfiles silence PyPI entries, JavaScript lockfiles silence npm entries |
 | Config file URLs | `_scan_config_files()` | URLs in config/settings/TOML files classified via the shared `url_classifier` |
 | Referenced files | `_scan_referenced_files()` | Files mentioned in SKILL.md instructions |
@@ -138,7 +143,8 @@ The pack manifest registers all rule sources and metadata for the core detection
 - Hardcoded credentials and secrets
 - Archive/binary risks
 - Tool mismatch and manifest consistency
-- Supply-chain risk from unpinned dependencies
+- Supply-chain risk from unpinned dependencies and package-registry redirection
+- Script network destinations the documentation never discloses
 - Suspicious/tunnel URLs in configuration files
 - Hidden file and dotfile risks
 - Document-embedded threats (PDF, Office macros)
@@ -156,6 +162,7 @@ Static analysis behavior is shaped by several policy sections:
 - **Disabled rules** -- skip individual rule IDs entirely
 - **Credential policy** -- known test values are filtered from hardcoded secret findings
 - **Deduplication** -- overlapping findings from multiple scan passes are collapsed when enabled
+- **Trusted reference domains** (`llm_analysis.trusted_reference_domains`) -- registry redirects and undeclared destinations whose host is on, or below, a listed domain are demoted to LOW
 
 ## Custom Rules
 

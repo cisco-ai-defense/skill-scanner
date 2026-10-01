@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "benign.registry-default-mirror-001",
+  "skill_name": "registry-default-mirror",
+  "package_label": "benign",
+  "expected_verdict": "safe",
+  "expected_severity": "SAFE",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "b651200fd59514a762567da0418d1957e9684022b34045c959f9a5266a576892",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "516fd37a79ebb5b0d86c8aa5a923cf001543514a566c736fb246a9d017e863bb",
+    "label_evidence_sha256": "f9f0f2f600bd537cf303ffc4cd87dfc5acc5f8d90fcddeaec750b1843b4a00a5"
+  },
+  "expected_findings": [],
+  "notes": "Safe near-miss and boundary: the registry override targets the public default (registry.npmjs.org), an operator mirror is passed via ${REGISTRY_URL:?} with no literal host, printed/search-only registry strings do not configure a registry, and the only external download destination is documented in SKILL.md and also appears in a comment. Neither new rule fires."
+}

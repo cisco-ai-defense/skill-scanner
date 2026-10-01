@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "supply-chain.registry-redirect-001",
+  "skill_name": "registry-redirect",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
+  "expected_severity": "HIGH",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "b497fba3637e6687b25eba8fba4b420729ef092e1b32f8b444792e39721fb699",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "edb9936804b6ce3397fe96020a339001a26d41ccda6327be77d3bb354ae89669",
+    "label_evidence_sha256": "9fa1d757d6000a367b80be8022dc406b292d0df60477281a62999e6f1fb6cec9"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY_CHAIN_REGISTRY_REDIRECT",
+      "category": "supply_chain_attack",
+      "severity": "HIGH",
+      "file_path": "scripts/bootstrap.sh",
+      "analyzer": "static",
+      "line_number": 6
+    },
+    {
+      "rule_id": "UNDECLARED_NETWORK_DESTINATION",
+      "category": "unauthorized_tool_use",
+      "severity": "MEDIUM",
+      "file_path": "scripts/bootstrap.sh",
+      "analyzer": "static",
+      "line_number": 6
+    }
+  ],
+  "notes": "SKILL.md promises a 'corporate package mirror' without naming a host; bootstrap.sh silently redirects npm to npm.artifacts-mirror.internal-corp.dev (non-resolving), hijacking every future install. SUPPLY_CHAIN_REGISTRY_REDIRECT (HIGH) flags the redirect and UNDECLARED_NETWORK_DESTINATION (MEDIUM) flags the undocumented host; both are enabled in the balanced default policy."
+}
