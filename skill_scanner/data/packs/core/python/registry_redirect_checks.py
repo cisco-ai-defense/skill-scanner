@@ -307,6 +307,18 @@ def find_registry_redirects(skill: Skill) -> list[RegistryRedirect]:
         seen: set[tuple[str, str]] = set()
         heredoc_delimiter: str | None = None
         heredoc_target_config = False
+        is_config = _config_basename(skill_file.relative_path)
+        if is_config and skill_file.relative_path.endswith(".cargo/config.toml"):
+            # Table-aware scan of the whole file, run once (not per line) so a large
+            # config without a match stays linear.
+            cargo_matches = _scan_cargo_config(lines, variables)
+            if cargo_matches:
+                for cargo_index, host, manager in cargo_matches:
+                    key = (skill_file.relative_path, host)
+                    if key not in seen:
+                        seen.add(key)
+                        redirects.append(RegistryRedirect(host, manager, skill_file.relative_path, cargo_index))
+                continue
         for index, line in enumerate(lines, start=1):
             if heredoc_delimiter is not None:
                 if line.strip() == heredoc_delimiter:
@@ -314,19 +326,7 @@ def find_registry_redirects(skill: Skill) -> list[RegistryRedirect]:
                     heredoc_target_config = False
                     continue
                 matches = _scan_config_line(line, variables) if heredoc_target_config else []
-            elif _config_basename(skill_file.relative_path):
-                matches = (
-                    _scan_cargo_config(lines, variables)
-                    if skill_file.relative_path.endswith(".cargo/config.toml")
-                    else []
-                )
-                if matches:
-                    for cargo_index, host, manager in matches:
-                        key = (skill_file.relative_path, host)
-                        if key not in seen:
-                            seen.add(key)
-                            redirects.append(RegistryRedirect(host, manager, skill_file.relative_path, cargo_index))
-                    break
+            elif is_config:
                 matches = _scan_config_line(line, variables)
             else:
                 heredoc = _HEREDOC_RE.search(line)

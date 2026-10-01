@@ -292,3 +292,13 @@ def test_trusted_reference_domains_demote_registry_redirect_to_low(make_skill):
     }
     registry = PackLoader().build_registry()
     assert all(registry.validate_bundled_python_finding(finding) == () for finding in findings)
+
+
+def test_cargo_config_without_match_scans_in_linear_time(make_skill):
+    import time
+
+    body = "[build]\n" + "\n".join(f"jobs = {index}" for index in range(8000)) + "\n"
+    skill = make_skill({".cargo/config.toml": body})
+    started = time.perf_counter()
+    assert _hosts(skill) == set()
+    assert time.perf_counter() - started < 0.5

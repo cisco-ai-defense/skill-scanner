@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 from skill_scanner.core.models import Finding, Severity, ThreatCategory
 
 from ._helpers import generate_finding_id
+from .registry_redirect_checks import _split_statements as split_shell_statements
 from .url_normalization import (
     is_same_or_subdomain,
     is_trusted_host,
@@ -198,11 +199,43 @@ def _declared_hosts(skill: Skill) -> set[str]:
     return declared
 
 
-def _is_bash_echo_or_search_only(line: str) -> bool:
-    stripped = line.lstrip()
+def _has_unquoted_pipe_or_background(statement: str) -> bool:
+    quote: str | None = None
+    escaped = False
+    for char in statement:
+        if escaped:
+            escaped = False
+        elif char == "\\" and quote != "'":
+            escaped = True
+        elif quote:
+            if char == quote:
+                quote = None
+        elif char in "\"'":
+            quote = char
+        elif char in "|&":
+            return True
+    return False
+
+
+def _is_bash_echo_or_search_only(statement: str) -> bool:
+    """Return true for a standalone echo/printf/rg/grep whose output goes nowhere.
+
+    Called per ``;``/``&&``/``||`` statement. A pipe, background ``&``, redirect,
+    or command substitution means the URL may reach a real command, so the
+    statement is scanned.
+    """
+    stripped = statement.lstrip()
     if not stripped.startswith(("echo ", "printf ", "rg ", "grep ")):
         return False
-    return ">" not in stripped and "| tee" not in stripped
+    if ">" in stripped or "$(" in stripped or "`" in stripped:
+        return False
+    return not _has_unquoted_pipe_or_background(stripped)
+
+
+def _bash_scan_text(line: str) -> str:
+    return " ; ".join(
+        statement for statement in split_shell_statements(line) if not _is_bash_echo_or_search_only(statement)
+    )
 
 
 def _script_lines(content: str, file_type: str) -> list[str]:
@@ -227,8 +260,8 @@ def find_undeclared_destinations(skill: Skill) -> list[UndeclaredDestination]:
         if not content:
             continue
         for index, line in enumerate(_script_lines(content, skill_file.file_type), start=1):
-            if skill_file.file_type == "bash" and _is_bash_echo_or_search_only(line):
-                continue
+            if skill_file.file_type == "bash":
+                line = _bash_scan_text(line)
             for host in _iter_script_hosts(line):
                 if host in seen or _is_allowlisted(host) or _is_declared(host, declared):
                     continue
