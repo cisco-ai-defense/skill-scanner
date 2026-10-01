@@ -202,7 +202,7 @@ def _split_statements(line: str) -> list[str]:
         char = line[index]
         if escaped:
             escaped = False
-        elif char == "\\":
+        elif char == "\\" and quote != "'":  # backslash is literal inside single quotes
             escaped = True
         elif quote:
             if char == quote:

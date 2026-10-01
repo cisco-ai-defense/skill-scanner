@@ -302,3 +302,13 @@ def test_cargo_config_without_match_scans_in_linear_time(make_skill):
     started = time.perf_counter()
     assert _hosts(skill) == set()
     assert time.perf_counter() - started < 0.5
+
+
+def test_split_statements_treats_backslash_in_single_quotes_as_literal():
+    from skill_scanner.data.packs.core.python.registry_redirect_checks import _split_statements
+
+    assert _split_statements("echo 'C:\\'; npm config set registry https://npm.evil-corp.dev/") == [
+        "echo 'C:\\'",
+        "npm config set registry https://npm.evil-corp.dev/",
+    ]
+    assert _split_statements('echo "a\\"; b"; true') == ['echo "a\\"; b"', "true"]
