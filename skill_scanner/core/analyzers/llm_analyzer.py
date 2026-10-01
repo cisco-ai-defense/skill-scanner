@@ -116,6 +116,7 @@ class LLMProvider(str, Enum):
     - ollama: Local Ollama models
     - openrouter: OpenRouter API
     - orcarouter: OrcaRouter API
+    - cheaperinference: Cheaper Inference API
     """
 
     OPENAI = "openai"
@@ -128,6 +129,7 @@ class LLMProvider(str, Enum):
     OLLAMA = "ollama"
     OPENROUTER = "openrouter"
     ORCAROUTER = "orcarouter"
+    CHEAPERINFERENCE = "cheaperinference"
 
     @classmethod
     def normalize(cls, provider: str) -> str:
@@ -326,6 +328,7 @@ class LLMAnalyzer(BaseAnalyzer):
                 "ollama": "ollama/llama2",
                 "openrouter": "openrouter/openai/gpt-4",
                 "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
+                "cheaperinference": "cheaperinference/gpt-5.4-mini",
             }
             model = model_mapping.get(provider_str, "claude-3-5-sonnet-20241022")
         elif model is None:

@@ -112,7 +112,9 @@ class AlignmentLLMClient:
         self._provider = raw_provider.strip().lower().replace("_", "-") if raw_provider else None
         self._provider_config: ProviderConfig | None = None
         self._llm_user = resolve_llm_user(llm_user)
-        if self._provider == "orcarouter" or model.lower().startswith("orcarouter/"):
+        if self._provider in {"orcarouter", "cheaperinference"} or model.lower().startswith(
+            ("orcarouter/", "cheaperinference/")
+        ):
             self._provider_config = ProviderConfig(
                 model=model,
                 api_key=api_key,

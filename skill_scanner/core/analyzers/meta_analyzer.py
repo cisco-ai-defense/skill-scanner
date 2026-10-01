@@ -816,9 +816,10 @@ class MetaAnalyzer(BaseAnalyzer):
             or os.getenv("SKILL_SCANNER_LLM_API_KEY")  # Scanner-wide
         )
         configured_model = model or os.getenv("SKILL_SCANNER_META_LLM_MODEL") or os.getenv("SKILL_SCANNER_LLM_MODEL")
-        self.model: str = configured_model or (
-            "orcarouter/anthropic/claude-sonnet-5" if self.provider == "orcarouter" else "claude-3-5-sonnet-20241022"
-        )
+        self.model: str = configured_model or {
+            "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
+            "cheaperinference": "cheaperinference/gpt-5.4-mini",
+        }.get(self.provider or "", "claude-3-5-sonnet-20241022")
         self.base_url = (
             base_url
             or os.getenv("SKILL_SCANNER_META_LLM_BASE_URL")  # Meta-specific
@@ -844,6 +845,8 @@ class MetaAnalyzer(BaseAnalyzer):
         _wants_provider_config = (
             self.provider == "orcarouter"
             or self.model.lower().startswith("orcarouter/")
+            or self.provider == "cheaperinference"
+            or self.model.lower().startswith("cheaperinference/")
             or self.provider == "bedrock-mantle"
             or self.model.lower().startswith("bedrock-mantle/")
         )

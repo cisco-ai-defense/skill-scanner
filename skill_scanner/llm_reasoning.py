@@ -105,9 +105,10 @@ def _uses_anthropic_native_api(model: str | None, provider: str | None) -> bool:
         "azure-ai",
         "openrouter",
         "orcarouter",
+        "cheaperinference",
     }:
         return False
-    if model_lower.startswith(("openai/", "azure/", "openrouter/", "orcarouter/")):
+    if model_lower.startswith(("openai/", "azure/", "openrouter/", "orcarouter/", "cheaperinference/")):
         return False
 
     if model_lower.startswith("anthropic/"):

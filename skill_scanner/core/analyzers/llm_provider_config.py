@@ -208,6 +208,9 @@ class ProviderConfig:
         self.is_orcarouter = self.provider == "orcarouter" or (
             not self.is_openai_compatible and model_lower.startswith("orcarouter/")
         )
+        self.is_cheaperinference = self.provider == "cheaperinference" or (
+            not self.is_openai_compatible and model_lower.startswith("cheaperinference/")
+        )
         self.is_gpt5 = "gpt-5" in model_lower
 
         if self.is_ollama:
@@ -243,6 +246,12 @@ class ProviderConfig:
             if not LITELLM_AVAILABLE:
                 raise ImportError("LiteLLM is required for OrcaRouter. Install with: pip install litellm")
             self.model = self._normalize_orcarouter_model_name(model)
+        elif self.is_cheaperinference:
+            # Cheaper Inference is OpenAI-compatible; route through the OpenAI LiteLLM
+            # adapter with the default endpoint (overridable via base_url).
+            if not LITELLM_AVAILABLE:
+                raise ImportError("LiteLLM is required for Cheaper Inference. Install with: pip install litellm")
+            self.model = self._normalize_cheaperinference_model_name(model)
         elif self.is_gemini and GOOGLE_GENAI_AVAILABLE:
             # Google AI Studio (uses Google SDK directly)
             self.use_google_sdk = True
@@ -288,6 +297,14 @@ class ProviderConfig:
         """Force LiteLLM's OpenAI adapter for OrcaRouter models (OpenAI-compatible)."""
         if model.lower().startswith("orcarouter/"):
             model = model[len("orcarouter/") :]
+        if model.lower().startswith("openai/"):
+            return model
+        return f"openai/{model}"
+
+    def _normalize_cheaperinference_model_name(self, model: str) -> str:
+        """Force LiteLLM's OpenAI adapter for Cheaper Inference models (OpenAI-compatible)."""
+        if model.lower().startswith("cheaperinference/"):
+            model = model[len("cheaperinference/") :]
         if model.lower().startswith("openai/"):
             return model
         return f"openai/{model}"
@@ -430,7 +447,7 @@ class ProviderConfig:
         params = {}
 
         if self.api_key:
-            if self.is_gemini:
+            if self.is_gemini and not self.is_cheaperinference:
                 # For Google AI Studio, LiteLLM uses GEMINI_API_KEY environment variable
                 if not os.getenv("GEMINI_API_KEY"):
                     os.environ["GEMINI_API_KEY"] = self.api_key
@@ -446,6 +463,9 @@ class ProviderConfig:
         elif self.is_orcarouter:
             # Default OrcaRouter endpoint (OpenAI-compatible) when no base_url is given.
             params["api_base"] = "https://api.orcarouter.ai/v1"
+        elif self.is_cheaperinference:
+            # Default Cheaper Inference endpoint (OpenAI-compatible) when no base_url is given.
+            params["api_base"] = "https://api.cheaperinference.com/v1"
         if self.api_version:
             params["api_version"] = self.api_version
 

@@ -276,10 +276,15 @@ class Adjudicator:
         model = _resolve_model()
         if model is None and self.provider == "orcarouter":
             model = "orcarouter/anthropic/claude-sonnet-5"
+        if model is None and self.provider == "cheaperinference":
+            model = "cheaperinference/gpt-5.4-mini"
 
         self.provider_config: ProviderConfig | None = None
         self.model: str | None
-        if model and (self.provider == "orcarouter" or model.lower().startswith("orcarouter/")):
+        if model and (
+            self.provider in {"orcarouter", "cheaperinference"}
+            or model.lower().startswith(("orcarouter/", "cheaperinference/"))
+        ):
             self.provider_config = ProviderConfig(
                 model=model,
                 api_key=os.environ.get("SKILL_SCANNER_LLM_API_KEY"),

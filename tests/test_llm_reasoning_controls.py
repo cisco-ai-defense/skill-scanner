@@ -125,6 +125,8 @@ class TestProviderAwareParams:
             ("openrouter/anthropic/claude-sonnet-5", "openrouter"),
             ("anthropic/claude-sonnet-5", "orcarouter"),
             ("orcarouter/anthropic/claude-sonnet-5", ""),
+            ("claude-sonnet-5", "cheaperinference"),
+            ("cheaperinference/claude-sonnet-5", ""),
             ("bedrock/amazon.nova-pro-v1:0", "aws-bedrock"),
         ],
     )
@@ -443,6 +445,56 @@ class TestMetaAndAlignmentPaths:
             kwargs = completion.await_args.kwargs
             assert kwargs["model"] == "openai/anthropic/claude-sonnet-5"
             assert kwargs["api_base"] == "https://api.orcarouter.ai/v1"
+            assert kwargs["reasoning_effort"] == "none"
+            assert "thinking" not in kwargs
+
+    @pytest.mark.asyncio
+    async def test_cheaperinference_meta_default_and_alignment_share_gateway_semantics(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from skill_scanner.core.analyzers.behavioral.alignment.alignment_llm_client import (
+            AlignmentLLMClient,
+        )
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        for variable in (
+            "SKILL_SCANNER_LLM_MODEL",
+            "SKILL_SCANNER_META_LLM_MODEL",
+            "SKILL_SCANNER_LLM_PROVIDER",
+            "SKILL_SCANNER_LLM_REASONING_EFFORT",
+            "SKILL_SCANNER_META_LLM_REASONING_EFFORT",
+        ):
+            monkeypatch.delenv(variable, raising=False)
+
+        meta = MetaAnalyzer(
+            api_key="test-key",
+            provider="cheaperinference",
+            reasoning_effort="disabled",
+            max_retries=1,
+        )
+        alignment = AlignmentLLMClient(
+            model="cheaperinference/gpt-5.4-mini",
+            api_key="test-key",
+            provider="cheaperinference",
+            reasoning_effort="disabled",
+        )
+
+        with patch(
+            "skill_scanner.core.analyzers.meta_analyzer.acompletion",
+            AsyncMock(return_value=_response()),
+        ) as meta_completion:
+            await meta._make_llm_request("system", "user")
+        with patch(
+            "skill_scanner.core.analyzers.behavioral.alignment.alignment_llm_client.acompletion",
+            AsyncMock(return_value=_response()),
+        ) as alignment_completion:
+            await alignment._make_llm_request("prompt")
+
+        for completion in (meta_completion, alignment_completion):
+            kwargs = completion.await_args.kwargs
+            assert kwargs["model"] == "openai/gpt-5.4-mini"
+            assert kwargs["api_base"] == "https://api.cheaperinference.com/v1"
             assert kwargs["reasoning_effort"] == "none"
             assert "thinking" not in kwargs
 

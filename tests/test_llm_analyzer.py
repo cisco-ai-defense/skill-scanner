@@ -211,6 +211,46 @@ class TestLLMAnalyzerInitialization:
             "api_base": "https://orca.internal/v1",
         }
 
+    def test_cheaperinference_model_prefix_routes_via_openai_adapter(self):
+        """Cheaper Inference model prefix routes through the OpenAI LiteLLM adapter with the default endpoint."""
+        analyzer = LLMAnalyzer(
+            model="cheaperinference/gpt-5.4-mini",
+            api_key="test-key",
+        )
+
+        assert analyzer.model == "openai/gpt-5.4-mini"
+        assert analyzer.provider_config.is_cheaperinference
+        assert analyzer.provider_config.get_request_params() == {
+            "api_key": "test-key",
+            "api_base": "https://api.cheaperinference.com/v1",
+        }
+
+    def test_cheaperinference_provider_override_uses_default_endpoint(self):
+        """The explicit cheaperinference provider override maps to the OpenAI adapter."""
+        analyzer = LLMAnalyzer(
+            model="gpt-5.4-mini",
+            provider="cheaperinference",
+            api_key="test-key",
+        )
+
+        assert analyzer.model == "openai/gpt-5.4-mini"
+        assert analyzer.provider_config.is_cheaperinference
+        assert analyzer.provider_config.get_request_params()["api_base"] == "https://api.cheaperinference.com/v1"
+
+    def test_cheaperinference_custom_base_url_overrides_default_endpoint(self):
+        """An explicit base_url overrides the Cheaper Inference default endpoint."""
+        analyzer = LLMAnalyzer(
+            model="cheaperinference/gpt-5.4-mini",
+            api_key="test-key",
+            base_url="https://ci.internal/v1",
+        )
+
+        assert analyzer.model == "openai/gpt-5.4-mini"
+        assert analyzer.provider_config.get_request_params() == {
+            "api_key": "test-key",
+            "api_base": "https://ci.internal/v1",
+        }
+
 
 class TestPromptLoading:
     """Test prompt loading functionality."""
