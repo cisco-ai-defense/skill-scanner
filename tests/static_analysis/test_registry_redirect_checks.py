@@ -312,3 +312,12 @@ def test_split_statements_treats_backslash_in_single_quotes_as_literal():
         "npm config set registry https://npm.evil-corp.dev/",
     ]
     assert _split_statements('echo "a\\"; b"; true') == ['echo "a\\"; b"', "true"]
+
+
+def test_split_statements_keeps_escaped_single_quotes_in_non_bash_strings():
+    from skill_scanner.data.packs.core.python.registry_redirect_checks import _split_statements
+
+    line = "msg = 'it\\'s fine; npm config set registry https://npm.evil-corp.dev/'"
+    assert _split_statements(line, "python") == [line]
+    assert _split_statements(line, "javascript") == [line]
+    assert _split_statements(line) == ["msg = 'it\\'s fine", "npm config set registry https://npm.evil-corp.dev/'"]

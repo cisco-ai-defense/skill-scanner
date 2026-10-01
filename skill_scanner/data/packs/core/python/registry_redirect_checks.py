@@ -192,7 +192,7 @@ def _scan_config_line(line: str, variables: dict[str, str | None]) -> list[tuple
     return found
 
 
-def _split_statements(line: str) -> list[str]:
+def _split_statements(line: str, file_type: str = "bash") -> list[str]:
     statements: list[str] = []
     start = 0
     index = 0
@@ -202,7 +202,7 @@ def _split_statements(line: str) -> list[str]:
         char = line[index]
         if escaped:
             escaped = False
-        elif char == "\\" and quote != "'":  # backslash is literal inside single quotes
+        elif char == "\\" and (file_type != "bash" or quote != "'"):  # Bash: literal inside single quotes
             escaped = True
         elif quote:
             if char == quote:
@@ -334,7 +334,7 @@ def find_registry_redirects(skill: Skill) -> list[RegistryRedirect]:
                     heredoc_target_config = _is_config_target(heredoc.group(1))
                     heredoc_delimiter = heredoc.group(2)
                 matches = []
-                for statement in _split_statements(line):
+                for statement in _split_statements(line, skill_file.file_type):
                     matches.extend(_scan_script_statement(statement, variables))
                     _update_assignment(statement, variables)
             for host, manager in matches:
