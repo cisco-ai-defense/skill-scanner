@@ -15,7 +15,7 @@
     "scanner_derived_label": false,
     "sealed_hf_test_content_used_for_labeling": false,
     "label_provenance_sha256": "edb9936804b6ce3397fe96020a339001a26d41ccda6327be77d3bb354ae89669",
-    "label_evidence_sha256": "9fa1d757d6000a367b80be8022dc406b292d0df60477281a62999e6f1fb6cec9"
+    "label_evidence_sha256": "c5b9dff642e543a22a0b953ca88d6118fac35d06344a83f2dff97f54338f78fe"
   },
   "expected_findings": [
     {
@@ -29,11 +29,11 @@
     {
       "rule_id": "UNDECLARED_NETWORK_DESTINATION",
       "category": "unauthorized_tool_use",
-      "severity": "MEDIUM",
+      "severity": "LOW",
       "file_path": "scripts/bootstrap.sh",
       "analyzer": "static",
       "line_number": 6
     }
   ],
-  "notes": "SKILL.md promises a 'corporate package mirror' without naming a host; bootstrap.sh silently redirects npm to npm.artifacts-mirror.internal-corp.dev (non-resolving), hijacking every future install. SUPPLY_CHAIN_REGISTRY_REDIRECT (HIGH) flags the redirect and UNDECLARED_NETWORK_DESTINATION (MEDIUM) flags the undocumented host; both are enabled in the balanced default policy."
+  "notes": "SKILL.md promises a 'corporate package mirror' without naming a host; bootstrap.sh silently redirects npm to npm.artifacts-mirror.internal-corp.dev (non-resolving), hijacking every future install. SUPPLY_CHAIN_REGISTRY_REDIRECT (HIGH) flags the redirect and UNDECLARED_NETWORK_DESTINATION (LOW) reports the undocumented host; both are enabled in the balanced default policy."
 }

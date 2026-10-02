@@ -273,9 +273,10 @@ def find_undeclared_destinations(skill: Skill) -> list[UndeclaredDestination]:
 def check_undeclared_network_destination(skill: Skill, trusted_domains: Iterable[str] = ()) -> list[Finding]:
     """Flag script network destinations absent from the skill documentation.
 
-    Destinations under *trusted_domains* (the policy's
-    ``llm_analysis.trusted_reference_domains``) are demoted to LOW rather than
-    suppressed, matching how the LLM analyzer treats trusted internal domains.
+    Findings are LOW: the rule is reported for review but never gates a scan
+    until its flag rate on real skills is measured. Destinations under
+    *trusted_domains* (the policy's ``llm_analysis.trusted_reference_domains``)
+    are still reported, with a note that the host is trusted.
     """
     trusted = normalize_trusted_domains(trusted_domains)
     findings: list[Finding] = []
@@ -287,13 +288,13 @@ def check_undeclared_network_destination(skill: Skill, trusted_domains: Iterable
             f"behaviour the manifest and description do not disclose."
         )
         if is_trusted:
-            description += " The host is a trusted reference domain in the scan policy, so severity is LOW."
+            description += " The host is a trusted reference domain in the scan policy."
         findings.append(
             Finding(
                 id=generate_finding_id(RULE_ID, f"{destination.file_path}:{destination.host}"),
                 rule_id=RULE_ID,
                 category=ThreatCategory.UNAUTHORIZED_TOOL_USE,
-                severity=Severity.LOW if is_trusted else Severity.MEDIUM,
+                severity=Severity.LOW,
                 title="Script contacts a destination the documentation never mentions",
                 description=description,
                 file_path=destination.file_path,

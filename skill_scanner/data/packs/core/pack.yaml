@@ -776,16 +776,15 @@ rules:
     source: python
     analyzer: static
     category: unauthorized_tool_use
-    severity: MEDIUM
+    # LOW until its real-skill flag rate is measured: a script calling any API its
+    # SKILL.md does not name fires it, so at MEDIUM it would gate ordinary skills.
+    severity: LOW
     # Destination-oriented "intent vs implementation" check: a script contacts or
     # configures a literal host that the documentation never names. Complements
     # TOOL_ABUSE_UNDECLARED_NETWORK (which is capability-oriented). Enabled in the
     # balanced default and strict presets; disabled in the noise-reduction presets
     # (permissive/low-noise/quiet) as it is more false-positive prone than most
-    # rules (see data/*_policy.yaml disabled_rules). Hosts under the policy's
-    # llm_analysis.trusted_reference_domains are emitted at LOW.
-    allowed_severity_demotions:
-      - LOW
+    # rules (see data/*_policy.yaml disabled_rules).
     knobs:
       enabled: true
     description: "Script contacts or configures a host the documentation never mentions"

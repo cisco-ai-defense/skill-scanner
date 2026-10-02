@@ -37,7 +37,7 @@ def test_undeclared_destination_fires(make_skill):
     assert len(findings) == 1
     finding = findings[0]
     assert finding.rule_id == RULE_ID
-    assert finding.severity == Severity.MEDIUM
+    assert finding.severity == Severity.LOW
     assert finding.category == ThreatCategory.UNAUTHORIZED_TOOL_USE
     assert finding.file_path == "run.sh"
     assert finding.line_number == 2
@@ -171,7 +171,7 @@ def test_bash_echo_and_search_url_mentions_are_not_destinations(make_skill):
     assert _static_6b_hosts(skill) == set()
 
 
-def test_trusted_reference_domains_demote_to_low_on_dot_boundary(make_skill):
+def test_trusted_reference_domains_match_on_dot_boundary(make_skill):
     skill = make_skill(
         {
             "SKILL.md": "# skill\nFormats text locally.",
@@ -183,13 +183,13 @@ def test_trusted_reference_domains_demote_to_low_on_dot_boundary(make_skill):
         }
     )
     trusted = ["https://ACME-CORP.dev/", "  "]
-    severities = {
-        finding.description.split("'")[1]: finding.severity
+    trusted_note = {
+        finding.description.split("'")[1]: "trusted reference domain" in finding.description
         for finding in check_undeclared_network_destination(skill, trusted)
     }
-    assert severities == {
-        "artifacts.internal.acme-corp.dev": Severity.LOW,
-        "collector.notacme-corp.dev": Severity.MEDIUM,
+    assert trusted_note == {
+        "artifacts.internal.acme-corp.dev": True,
+        "collector.notacme-corp.dev": False,
     }
 
 
