@@ -22,7 +22,8 @@
         --judge dev=dev-new.jsonl --judge test=test-new.jsonl --judge real=real-new.jsonl
 
 A scan with ``--use-llm`` flags a skill when either the rules or the judge report MEDIUM or above,
-so a recommendation has to be measured as that union, on the records both layers read. Each
+so a recommendation has to be measured as that union, on the records both layers read, and is
+reported as recall, FPR, precision and F1 with the confusion counts behind them. Each
 policy preset contributes its rule demotions and its LLM caps: ``balanced`` neither, ``low-noise``
 11 demotions and the low-confidence cap, ``quiet`` 19 demotions and both caps (the stricter wins).
 Both are applied to stored findings exactly as the scanner applies them.
@@ -113,6 +114,13 @@ def measure(flags: dict[str, tuple[Any, bool]]) -> dict[str, Any]:
     if negatives:
         out["fpr"] = fp / negatives
         out["fpr_ci95"] = list(wilson_interval(fp, negatives, digits=4))
+    if positives and negatives:
+        # A flag counts as a catch at this tier, so precision and F1 describe the review queue
+        # (MEDIUM+) or the gate (HIGH+) on this split's class mix, not on a deployment's.
+        out["counts"] = {"tp": tp, "fp": fp, "fn": positives - tp, "tn": negatives - fp}
+        out["precision"] = tp / (tp + fp) if tp + fp else None
+        out["precision_ci95"] = list(wilson_interval(tp, tp + fp, digits=4)) if tp + fp else None
+        out["f1"] = 2 * tp / (2 * tp + fp + (positives - tp)) if tp else 0.0
     if not positives and not negatives:
         out["flag_rate"] = flagged / len(flags) if flags else None
         out["flag_rate_ci95"] = list(wilson_interval(flagged, len(flags), digits=4)) if flags else None
@@ -156,7 +164,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             report["profiles"].append(row)
             summary = {
                 split: {
-                    m: round(v, 4) for m, v in row["medium_plus"][split].items() if m in ("recall", "fpr", "flag_rate")
+                    m: round(v, 4)
+                    for m, v in row["medium_plus"][split].items()
+                    if m in ("recall", "fpr", "precision", "f1", "flag_rate") and v is not None
                 }
                 for split in rules
             }

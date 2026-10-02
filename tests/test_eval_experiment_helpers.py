@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from evals.experiments.a3_recommended_profiles import measure
 from evals.experiments.c1_prompt_guard import label_class, score_at, spread
 from evals.experiments.c4_openjev_screen import auc, fit_logistic, labelled, load_judge, select, unlabelled
 
@@ -118,3 +119,33 @@ class TestOpenJevScreen:
         real = unlabelled(ids, scores, judge, threshold)
         assert real["judge_calls"] == pytest.approx(0.5)
         assert real["flag_rate"] == pytest.approx(0.5)
+
+
+class TestRecommendedProfileMetrics:
+    def test_precision_and_f1_follow_the_confusion_counts(self) -> None:
+        flags = {
+            "m1": ("malicious", True),
+            "m2": ("malicious", True),
+            "m3": ("malicious", False),
+            "b1": ("benign", True),
+            "b2": ("benign", False),
+            "b3": ("benign", False),
+            "b4": ("benign", False),
+        }
+        out = measure(flags)
+        assert out["counts"] == {"tp": 2, "fp": 1, "fn": 1, "tn": 3}
+        assert out["recall"] == pytest.approx(2 / 3)
+        assert out["fpr"] == pytest.approx(1 / 4)
+        assert out["precision"] == pytest.approx(2 / 3)
+        assert out["f1"] == pytest.approx(2 / 3)
+        assert out["precision_ci95"][0] < out["precision"] < out["precision_ci95"][1]
+
+    def test_nothing_flagged_has_no_precision_and_zero_f1(self) -> None:
+        out = measure({"m1": ("malicious", False), "b1": ("benign", False)})
+        assert out["precision"] is None and out["precision_ci95"] is None
+        assert out["f1"] == 0.0
+
+    def test_an_unlabelled_split_reports_only_a_flag_rate(self) -> None:
+        out = measure({"r1": (None, True), "r2": (None, False)})
+        assert out["flag_rate"] == 0.5
+        assert "precision" not in out and "f1" not in out
