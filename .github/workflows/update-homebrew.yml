@@ -158,12 +158,16 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: |
           test "$(uname -m)" = "${{ matrix.machine }}"
-          brew install --build-from-source generated-formula/skill-scanner.rb
+          # Homebrew refuses formulae outside a tap, so install from a throwaway local tap.
+          brew tap-new --no-git local/skill-scanner
+          tap_dir="$(brew --repository local/skill-scanner)"
+          install -m 644 generated-formula/skill-scanner.rb "$tap_dir/Formula/skill-scanner.rb"
+          brew install --build-from-source local/skill-scanner/skill-scanner
 
       - name: Validate packaged helper architecture and rules
         shell: bash
         run: |
-          prefix="$(brew --prefix skill-scanner)"
+          prefix="$(brew --prefix local/skill-scanner/skill-scanner)"
           helper_root="$prefix/libexec"
           helper_count="$(find "$helper_root" -type f -name 'skill-scanner-cel-go-darwin-*' | wc -l | tr -d ' ')"
           test "$helper_count" = 1
@@ -186,7 +190,7 @@ jobs:
           assert helper["toolchain_version"] == "go1.27.1"
           PY
           "$prefix/bin/skill-scanner" validate-rules
-          brew test skill-scanner
+          brew test local/skill-scanner/skill-scanner
 
   commit-formula:
     name: Open a pull request with the qualified formula
