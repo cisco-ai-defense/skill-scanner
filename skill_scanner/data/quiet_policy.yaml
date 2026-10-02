@@ -759,7 +759,10 @@ severity_overrides:
 #   disabled_rules:
 #     - LAZY_LOAD_DEEP_NESTING     # We allow deep nesting
 #     - ARCHIVE_FILE_DETECTED      # Archives are expected in our skills
-disabled_rules: []
+disabled_rules:
+  # FP-prone destination-oriented undeclared-network check; off in this
+  # noise-reduction preset (on in the balanced default and strict presets).
+  - UNDECLARED_NETWORK_DESTINATION
 
 # ---------------------------------------------------------------------------
 # Scoped suppressions – silence or re-rate a rule for named skills or paths

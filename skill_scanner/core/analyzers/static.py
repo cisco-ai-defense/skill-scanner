@@ -66,6 +66,8 @@ from ...core.static_analysis.python_shell_semantics import (
 )
 from ...core.static_analysis.url_classifier import classify_url, extract_urls
 from ...data import DATA_DIR
+from ...data.packs.core.python.registry_redirect_checks import check_registry_redirect
+from ...data.packs.core.python.undeclared_destination_checks import check_undeclared_network_destination
 from ...threats.threats import ThreatMapping
 from .base import BaseAnalyzer
 from .npm_manifest import (
@@ -1701,6 +1703,9 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(self._check_dynamic_sensitive_file_access(skill))
         if manifest_complete:
             findings.extend(self._check_consistency(skill))
+        trusted_domains = self.policy.llm_analysis.trusted_reference_domains
+        findings.extend(check_registry_redirect(skill, trusted_domains))
+        findings.extend(check_undeclared_network_destination(skill, trusted_domains))
         findings.extend(self._check_dependency_pinning(skill))
         findings.extend(self._scan_config_files(skill))
         findings.extend(self._scan_referenced_files(skill))

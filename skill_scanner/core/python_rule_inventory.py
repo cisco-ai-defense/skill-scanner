@@ -170,6 +170,26 @@ _IMPLEMENTATIONS = {
             ThreatCategory.COMMAND_INJECTION,
             Severity.MEDIUM,
         ),
+        # Registry-redirect and undeclared-destination checks live in the
+        # bundled ``data/packs/core/python`` modules (outside the AST-inventoried
+        # core tree) and are wired into the static analyzer, so their identities
+        # are declared here rather than discovered from a literal ``Finding`` call.
+        # The registry redirect demotes to LOW for hosts under
+        # llm_analysis.trusted_reference_domains; the undeclared-destination
+        # check is always LOW.
+        _implementation(
+            "SUPPLY_CHAIN_REGISTRY_REDIRECT",
+            "static",
+            ThreatCategory.SUPPLY_CHAIN_ATTACK,
+            Severity.HIGH,
+            Severity.LOW,
+        ),
+        _implementation(
+            "UNDECLARED_NETWORK_DESTINATION",
+            "static",
+            ThreatCategory.UNAUTHORIZED_TOOL_USE,
+            Severity.LOW,
+        ),
         *(
             _implementation(
                 meta_detected_rule_id(category),

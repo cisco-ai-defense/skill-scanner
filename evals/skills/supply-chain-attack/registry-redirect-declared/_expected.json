@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "supply-chain.registry-redirect-declared-001",
+  "skill_name": "registry-redirect-declared",
+  "package_label": "contextual_risk",
+  "expected_verdict": "unsafe",
+  "expected_severity": "HIGH",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "94e3ba3a94ccf76b4b69b21fcbeeee113d8b1373ff6fca13ac02de25b315208e",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "07756735a1baecb11e77aa23217e76f5fe9da9880a4dc2c685c13b53704d7243",
+    "label_evidence_sha256": "808fed97bd1a004efb4d346bb38a0cf3ddd0a504a209fb3be6b24461f1bf4178"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "SUPPLY_CHAIN_REGISTRY_REDIRECT",
+      "category": "supply_chain_attack",
+      "severity": "HIGH",
+      "file_path": "scripts/bootstrap.sh",
+      "analyzer": "static",
+      "line_number": 6
+    }
+  ],
+  "notes": "Declared near-miss: SKILL.md documents the mirror host, so UNDECLARED_NETWORK_DESTINATION stays silent even under the strict policy, but redirecting the package registry is still a supply-chain risk, so SUPPLY_CHAIN_REGISTRY_REDIRECT fires HIGH regardless of documentation."
+}
