@@ -4,11 +4,11 @@
 > **Quick Answer**
 > Just want to scan with a preset? No YAML needed:
 > ```bash
-> skill-scanner scan --policy strict ./skill
+> skill-scanner scan --use-llm --policy low-noise ./skill
 > ```
 > Read on only if you need to customise thresholds, allowlists, or rule behavior.
-> Not sure which preset? [Recommended settings](recommended-settings.md) picks one per use case, with
-> measured numbers.
+> Not sure which preset? [Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings)
+> picks one by goal, with measured recall, false-positive rate and F1.
 
 Every organisation has a different security bar. A **scan policy** captures what counts as benign, which rules fire on which file types, which installer URLs are trusted, numeric thresholds, and more — all in a single YAML file.
 
@@ -50,11 +50,11 @@ Every organisation has a different security bar. A **scan policy** captures what
 
 ```bash
 # Scan with a built-in preset
-skill-scanner scan --policy strict ./my-skill
-skill-scanner scan --policy permissive ./my-skill
+skill-scanner scan --use-llm --policy low-noise ./my-skill
+skill-scanner scan --use-llm --policy quiet ./my-skill   # quiet only with the judge
 
 # Generate a policy file from a preset, then customise it
-skill-scanner generate-policy --preset balanced -o my_policy.yaml
+skill-scanner generate-policy --preset low-noise -o my_policy.yaml
 # ... edit my_policy.yaml ...
 skill-scanner scan --policy my_policy.yaml ./my-skill
 
@@ -91,9 +91,9 @@ skill-scanner configure-policy -o my_policy.yaml
 
 | Preset | CEL / correlation | Description | Use when |
 |--------|-------------------|-------------|----------|
-| **strict** | shadow / on | Narrow allowlists, no CEL suppression, lower thresholds | Auditing untrusted / external skills, compliance |
-| **balanced** | shadow / on | Sensible defaults, moderate filtering | CI/CD pipelines, everyday scanning |
-| **permissive** | off / off | Broad allowlists, aggressive suppression | Trusted internal skills, dev-time scanning |
+| **strict** | shadow / on | Narrow allowlists, no CEL suppression, lower thresholds | Audits and threat hunting where a person reads every finding; not measured as a gate |
+| **balanced** | shadow / on | Sensible defaults, moderate filtering | The default; with the LLM judge, the highest measured F1 |
+| **permissive** | off / off | Broad allowlists, aggressive suppression | Not measured as a gate; for fewer false positives prefer `low-noise` |
 | **low-noise** | shadow / on | `balanced`, with the 11 rules that alone produced the most judge-cleared flags on real skills reported at LOW, and low-confidence LLM findings at LOW | Everyday scanning where alert volume matters; costs 5 of 1,653 malicious detections on MaliciousSkillBench train/validation |
 | **quiet** | shadow / on | `low-noise` plus 8 more demotions and a LOW cap on LLM findings the model labels `CONTEXTUAL_RISK` | Triage queues limited by review capacity; about 1.3% of real skills flagged by the rules |
 
@@ -105,20 +105,22 @@ than disable: those findings are still reported, at LOW. The measurements are in
 Use a preset by name:
 
 ```bash
-skill-scanner scan --policy strict ./skill-dir
+skill-scanner scan --use-llm --policy low-noise ./skill-dir
 ```
 
 Or generate a file from a preset to customise:
 
 ```bash
-skill-scanner generate-policy --preset strict -o strict_custom.yaml
+skill-scanner generate-policy --preset low-noise -o low_noise_custom.yaml
 ```
 
 ---
 
 ## Preset Comparison
 
-The table below highlights the key differences between the three presets. Values not shown inherit from `balanced`.
+The table below highlights the key differences between `strict`, `balanced` and `permissive`. Values
+not shown inherit from `balanced`. `low-noise` and `quiet` are `balanced` with the
+`severity_overrides` and `llm_analysis` caps described above; every other setting matches `balanced`.
 
 | Setting | Strict | Balanced (default) | Permissive |
 |---------|--------|--------------------|------------|

@@ -12,18 +12,24 @@ This page is a compact reference. For full walkthroughs, see [Custom Policy Conf
 |--------|----------|-------------|----------|
 | **balanced** (default) | `shadow` | enabled | Good balance of detection and false-positive rate. Broad benign allowlists, demotion in docs, known installer domains trusted. |
 | **strict** | `shadow` | enabled | Lowest thresholds, most sensitive. Scans all files (no inert extension skip), no known installer demotions, narrow allowlists. Best for untrusted/external skills and compliance audits. |
-| **permissive** | `off` | disabled | Highest thresholds, fewer findings, broader whitelists. Best for trusted internal skills or high-FP workflows. |
+| **permissive** | `off` | disabled | Highest thresholds, fewer findings, broader whitelists. Not measured as a gate; prefer `low-noise` for fewer false positives. |
+| **low-noise** | `shadow` | enabled | `balanced` with 11 rules reported at LOW and LLM findings the model rates low-confidence capped at LOW. Your own skills, and the judge with a smaller review queue. |
+| **quiet** | `shadow` | enabled | `low-noise` plus 8 more demotions and a LOW cap on `CONTEXTUAL_RISK` LLM findings. Lowest false-positive rate, **only with `--use-llm`**. |
+
+Measured recall, false-positive rate and F1 for each preset, with and without the judge, are in
+[Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings).
 
 ```bash
-skill-scanner scan --policy balanced ./my-skill
-skill-scanner scan --policy strict ./my-skill
-skill-scanner scan --policy /path/to/custom.yaml ./my-skill
-skill-scanner scan --policy balanced --cel-mode shadow ./my-skill
+skill-scanner scan --use-llm --policy balanced ./my-skill
+skill-scanner scan --use-llm --policy low-noise ./my-skill
+skill-scanner scan --use-llm --policy quiet ./my-skill
+skill-scanner scan --use-llm --policy /path/to/custom.yaml ./my-skill
+skill-scanner scan --use-llm --policy balanced --cel-mode shadow ./my-skill
 skill-scanner generate-policy -o my_org_policy.yaml
 skill-scanner configure-policy  # Interactive TUI
 ```
 
-Use `--preset strict|balanced|permissive` with `generate-policy` to base a new file on a specific preset.
+Use `--preset strict|balanced|permissive|low-noise|quiet` with `generate-policy` to base a new file on a specific preset.
 
 All bundled CEL rules currently use `rollout: shadow`; a global `enforce` mode
 therefore remains non-suppressing until individual rules pass promotion. ATR is
@@ -279,7 +285,7 @@ When a pipeline reads a matching file, the taint is upgraded to SENSITIVE_DATA.
 <details>
 <summary><strong>llm_analysis</strong> — LLM context budget thresholds</summary>
 
-Controls LLM context budget thresholds for LLM and meta analyzers. Code files that exceed a limit may contribute bounded excerpts containing executable lines, imports, or high-risk calls; the rest of the file is not analyzed and an `LLM_CONTEXT_BUDGET_EXCEEDED` INFO finding describes the partial analysis. An oversized instruction body is reduced to its beginning and end, with the omission marked; oversized referenced files remain skipped entirely.
+Controls LLM context budgets for the LLM and meta analyzers, and caps on the judge's weakest findings. Content within budget is sent in full. Code files that exceed a limit may contribute bounded excerpts containing executable lines, imports, or high-risk calls; the rest of the file is not analyzed and an `LLM_CONTEXT_BUDGET_EXCEEDED` INFO finding describes the partial analysis. An oversized instruction body is reduced to its beginning and end, with the omission marked; oversized referenced files remain skipped entirely.
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|
@@ -289,6 +295,9 @@ Controls LLM context budget thresholds for LLM and meta analyzers. Code files th
 | max_total_prompt_chars | int | 100000 | Maximum total characters across the entire LLM prompt |
 | max_output_tokens | int | 8192 | Maximum output tokens for LLM responses (both LLM analyzer and meta-analyzer) |
 | meta_budget_multiplier | float | 3.0 | Multiplier applied to all input limits above for the meta analyzer (e.g. 3x = 60K instruction, 45K/file, 300K total) |
+| low_confidence_max_severity | str | `""` | Cap for LLM findings the model rates LOW confidence (e.g. `LOW`); on in `low-noise` and `quiet` |
+| contextual_risk_max_severity | str | `""` | Cap for LLM findings labelled `CONTEXTUAL_RISK` (e.g. `LOW`); on in `quiet` |
+| trusted_reference_domains | list | `[]` | Organization-controlled domains; LLM transitive-trust and supply-chain findings referencing only these are demoted to LOW |
 
 </details>
 

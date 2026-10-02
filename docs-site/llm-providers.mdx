@@ -1,0 +1,197 @@
+---
+title: "LLM Providers"
+description: "Configure the Skill Scanner LLM judge for Anthropic, OpenAI, AWS Bedrock, Google Vertex AI and Gemini, Azure OpenAI, OpenAI-compatible gateways, local vLLM or Ollama, and the on-device Apple Foundation Model."
+order: 6
+---
+
+## LLM Providers
+
+The LLM judge (`--use-llm`) reads a skill for intent. It is what lifts recall on held-out
+malicious skills from 8% to about 67% (see [Recommended Settings](/docs/skill-scanner/recommended-settings)).
+This page shows how to point it at your provider.
+
+You configure the judge with environment variables. The two you always set:
+
+| Variable | What it is |
+|----------|------------|
+| `SKILL_SCANNER_LLM_MODEL` | The model, as `provider/model`. Default: `anthropic/claude-sonnet-5-5`. |
+| `SKILL_SCANNER_LLM_API_KEY` | The provider API key. Not needed for Bedrock, Vertex AI, Ollama or Apple FM, which use their own credentials. |
+
+<Callout type="warning">
+  If `--use-llm` is set and the judge cannot start, the scan stops with an error and exit code 2
+  code. This happens with a missing key, a missing provider extra or an unknown provider. A CI job
+  with a broken secret fails instead of quietly passing with rules only.
+</Callout>
+
+---
+
+### Anthropic (default)
+
+```bash
+export SKILL_SCANNER_LLM_API_KEY="sk-ant-..."
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-5-5"   # optional: this is the default
+skill-scanner scan ./skill --use-llm
+```
+
+No extra install is needed. For a cheaper, higher-volume judge, use `anthropic/claude-haiku-4-5`.
+
+### OpenAI
+
+```bash
+export SKILL_SCANNER_LLM_API_KEY="sk-..."
+export SKILL_SCANNER_LLM_MODEL="openai/<model>"
+```
+
+### AWS Bedrock
+
+Install the extra, then use your normal AWS credentials: an environment, a profile or an instance
+role. No API key is needed.
+
+```bash
+pip install "cisco-ai-skill-scanner[bedrock]"
+export AWS_REGION="us-east-1"                 # a region that serves the model for your account
+export AWS_PROFILE="my-bedrock-profile"       # optional
+
+# The model the published figures were measured with (OpenAI-compatible "mantle" endpoint)
+export SKILL_SCANNER_LLM_MODEL="bedrock-mantle/google.gemma-4-26b-a4b"
+
+# A model served on bedrock-runtime, such as Claude: use the model ID from the Bedrock console
+export SKILL_SCANNER_LLM_MODEL="bedrock/<bedrock-model-id>"
+```
+
+Use the prefix your model is served under:
+
+- `bedrock/` signs requests for `bedrock-runtime`.
+- `bedrock-mantle/` signs for the OpenAI-compatible mantle endpoint, which serves models such as
+  Gemma 4 that `bedrock-runtime` does not.
+
+Both use the same IAM credentials. Prompt caching is not applied on the mantle route.
+
+### Google Vertex AI and Gemini
+
+```bash
+# Vertex AI: uses GOOGLE_APPLICATION_CREDENTIALS, or ambient Application Default Credentials
+pip install "cisco-ai-skill-scanner[vertex]"
+export SKILL_SCANNER_LLM_MODEL="vertex_ai/<model>"
+
+# Google AI Studio (Gemini API key)
+pip install "cisco-ai-skill-scanner[google]"
+export SKILL_SCANNER_LLM_API_KEY="..."
+export SKILL_SCANNER_LLM_MODEL="gemini/<model>"
+```
+
+### Azure OpenAI
+
+```bash
+pip install "cisco-ai-skill-scanner[azure]"
+export SKILL_SCANNER_LLM_MODEL="azure/<deployment-name>"
+export SKILL_SCANNER_LLM_BASE_URL="https://<resource>.openai.azure.com"
+export SKILL_SCANNER_LLM_API_VERSION="2024-02-15-preview"
+export SKILL_SCANNER_LLM_API_KEY="..."      # or managed identity
+```
+
+### OpenAI-Compatible Gateways and Proxies
+
+Any endpoint that speaks the OpenAI Chat Completions API works without a provider-specific
+integration. This covers LLM gateways, inference marketplaces, company proxies and self-hosted
+servers:
+
+```bash
+export SKILL_SCANNER_LLM_PROVIDER="openai-compatible"
+export SKILL_SCANNER_LLM_BASE_URL="https://gateway.example.com/v1"
+export SKILL_SCANNER_LLM_MODEL="<model name as the gateway lists it>"
+export SKILL_SCANNER_LLM_API_KEY="..."
+```
+
+On the command line, `--llm-provider openai-compatible` does the same as the provider variable.
+
+- **Gateway rejects `json_schema` responses:** some proxies don't accept structured output. Set
+  `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT=true` to start in plain JSON mode.
+- **Gateway needs a `user` field:** some gateways need the Chat Completions `user` field for routing
+  or billing. Set it with `SKILL_SCANNER_LLM_USER`.
+
+Hosted routers with a built-in prefix also work directly: `openrouter/<model>` and `orcarouter/<model>`.
+
+### Keeping Skill Content on Your Machines
+
+#### vLLM (or any local OpenAI-compatible server)
+
+Gemma 4 26B-A4B served locally with vLLM matched its hosted results in an earlier measurement:
+held-out F1 64.2% local against 61.2% hosted, with the previous prompt.
+
+```bash
+vllm serve <gemma-4-26b-a4b weights> --served-model-name gemma-4-26b-a4b \
+  --structured-outputs-config '{"backend": "xgrammar", "disable_any_whitespace": true}'
+
+export SKILL_SCANNER_LLM_PROVIDER="openai-compatible"
+export SKILL_SCANNER_LLM_BASE_URL="http://127.0.0.1:8000/v1"
+export SKILL_SCANNER_LLM_MODEL="gemma-4-26b-a4b"
+export SKILL_SCANNER_LLM_API_KEY="unused"   # required by the route; vLLM ignores it
+```
+
+<Callout type="warning" title="Disable whitespace in constrained decoding">
+  Without `"disable_any_whitespace": true`, the model emitted a complete JSON object and then padded
+  it with whitespace up to the token limit. That lost 46.5% of analyses. With it, the loss was 0.6%.
+</Callout>
+
+#### Ollama
+
+```bash
+export SKILL_SCANNER_LLM_MODEL="ollama/<model>"
+# SKILL_SCANNER_LLM_BASE_URL defaults to http://127.0.0.1:11434
+```
+
+The Ollama route only accepts a loopback `http://` endpoint, so skill content cannot be routed off
+the host by accident.
+
+#### Apple Foundation Model (experimental)
+
+On a Mac with Apple Intelligence (macOS 26 or newer), the judge can run on the on-device model with
+no API key:
+
+```bash
+pip install "cisco-ai-skill-scanner[apple-fm]"
+export SKILL_SCANNER_LLM_MODEL="apple-fm/system"
+skill-scanner scan ./skill --use-llm
+```
+
+The on-device model has a small context window. It runs the semantic judge, but behavioral alignment
+(`--use-behavioral` with the LLM) stays on a hosted model. It has not been measured on the
+evaluation splits, so check it on a sample of your own skills first.
+
+---
+
+### Behavior Worth Knowing
+
+- **Temperature.** The scanner sends temperature 0 to models that accept it. It omits the parameter
+  for models that reject sampling settings, such as Claude Sonnet 5.5. Override with
+  `SKILL_SCANNER_LLM_TEMPERATURE=<number>`, or set it to `none` to always omit it.
+- **Verdict repair is on.** A model that answers `SAFE` while listing findings contradicts itself.
+  The scanner escalates that verdict to `SUSPICIOUS` and keeps the findings. It never downgrades.
+  `SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT=0` restores the strict path, which discards the
+  whole analysis.
+- **Caps on the judge's weakest findings.** The `low-noise` and `quiet` presets set these, and you
+  can set them in your own policy:
+
+  ```yaml
+  llm_analysis:
+    low_confidence_max_severity: LOW     # findings the model rates LOW confidence (on in low-noise and quiet)
+    contextual_risk_max_severity: LOW    # findings labelled CONTEXTUAL_RISK (on in quiet)
+  ```
+
+- **Prompt budget.** A skill too large for the prompt budget is judged on bounded excerpts. An INFO
+  `LLM_CONTEXT_BUDGET_EXCEEDED` finding names what was left out. Raise the budgets in
+  `llm_analysis`: `max_total_prompt_chars`, `max_instruction_body_chars`, `max_code_file_chars` and
+  `max_referenced_file_chars`.
+- **Output tokens.** `--llm-max-tokens N` (default 8192), or `SKILL_SCANNER_LLM_MAX_TOKENS`. Raise it
+  if you see truncated JSON.
+- **Reasoning depth.** `--llm-reasoning-effort` or `SKILL_SCANNER_LLM_REASONING_EFFORT` (`disabled`,
+  `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Unset keeps the provider default.
+- **Separate models for other LLM stages:**
+  - `SKILL_SCANNER_META_LLM_*` overrides the model for the meta-analyzer, which we recommend
+    leaving off.
+  - `SKILL_SCANNER_ADJUDICATOR_LLM_MODEL` overrides it for `--adjudicate`.
+  - Both fall back to the primary `SKILL_SCANNER_LLM_*` values.
+
+The complete list of variables is in the
+[Configuration Reference](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/reference/configuration-reference.md).

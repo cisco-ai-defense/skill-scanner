@@ -18,10 +18,14 @@ order: 2
   Published wheels include the required CEL helper. LLM, VirusTotal, and AI Defense analyzers need API keys configured as environment variables.
 </Callout>
 
-Published wheels support glibc Linux x86-64/ARM64, macOS x86-64/ARM64, and
-Windows x86-64. The CEL helper supports macOS 13+, while the complete scanner
-currently requires macOS 14+ because of the YARA-X wheel floor. Alpine/musl,
-PyPy, Windows ARM, Python 3.10, and Python 3.15+ are unsupported.
+Prebuilt wheels cover:
+
+- glibc Linux x86-64 and ARM64
+- macOS x86-64 and ARM64 (macOS 14 or newer, because of the YARA-X wheel floor)
+- Windows x86-64
+
+On other platforms pip falls back to the source distribution, which needs Go 1.27.1+ to build the
+CEL helper. Alpine/musl, PyPy, Windows ARM, Python 3.10 and Python 3.15+ are unsupported.
 
 ---
 
@@ -31,9 +35,29 @@ PyPy, Windows ARM, Python 3.10, and Python 3.15+ are unsupported.
 # Using uv (recommended)
 uv pip install cisco-ai-skill-scanner
 
+# As a standalone command-line tool, isolated from your projects
+uv tool install cisco-ai-skill-scanner
+pipx install cisco-ai-skill-scanner
+
 # Using pip
 pip install cisco-ai-skill-scanner
+
+# Pin a version in CI
+pip install "cisco-ai-skill-scanner==2.2.0"
 ```
+
+The `low-noise` and `quiet` presets and the other settings on
+[Recommended Settings](/docs/skill-scanner/recommended-settings) need 2.2.0 or newer.
+
+#### Homebrew (macOS)
+
+```bash
+brew tap cisco-ai-defense/skill-scanner https://github.com/cisco-ai-defense/skill-scanner
+brew install cisco-ai-defense/skill-scanner/skill-scanner
+```
+
+The formula is regenerated from the PyPI release after each version is published, so it can trail
+PyPI by a short time.
 
 ### Cloud Provider Extras
 
@@ -43,15 +67,23 @@ Install optional extras for managed LLM cloud services:
 # AWS Bedrock support (IAM credentials)
 pip install cisco-ai-skill-scanner[bedrock]
 
+# Google AI Studio (Gemini API key) support
+pip install cisco-ai-skill-scanner[google]
+
 # Google Vertex AI support
 pip install cisco-ai-skill-scanner[vertex]
 
 # Azure OpenAI support (managed identity)
 pip install cisco-ai-skill-scanner[azure]
 
+# On-device Apple Foundation Model (experimental, macOS 26+ with Apple Intelligence)
+pip install cisco-ai-skill-scanner[apple-fm]
+
 # All cloud providers
 pip install cisco-ai-skill-scanner[all]
 ```
+
+Without the matching extra, `--use-llm` stops with an error instead of quietly falling back to rules only.
 
 ### Install from Source
 
@@ -97,11 +129,11 @@ All configuration is done through environment variables. No config files are req
 | Variable | Description |
 |----------|-------------|
 | `SKILL_SCANNER_LLM_API_KEY` | API key for the LLM provider |
-| `SKILL_SCANNER_LLM_MODEL` | Model name (e.g., `anthropic/claude-sonnet-4-20250514`, `gpt-4o`) |
-| `SKILL_SCANNER_LLM_PROVIDER` | Optional routing override, including `openai` for compatible endpoints |
+| `SKILL_SCANNER_LLM_MODEL` | Model as `provider/model`. Default: `anthropic/claude-sonnet-5-5` |
+| `SKILL_SCANNER_LLM_PROVIDER` | Optional routing override, such as `openai-compatible` for gateways and local servers |
 | `SKILL_SCANNER_LLM_BASE_URL` | Base URL for an OpenAI-compatible endpoint |
 | `SKILL_SCANNER_LLM_USER` | Optional raw Chat Completions `user` field for OpenAI-compatible routes |
-| `SKILL_SCANNER_LLM_TEMPERATURE` | Optional temperature override; use `none` to omit it |
+| `SKILL_SCANNER_LLM_TEMPERATURE` | Optional temperature override. Use `none` to omit it. Models that reject temperature get none by default |
 | `SKILL_SCANNER_ADJUDICATOR_LLM_MODEL` | Optional model override for `--adjudicate` |
 
 <Callout type="warning">
@@ -119,9 +151,9 @@ All configuration is done through environment variables. No config files are req
 #### Quick Setup
 
 ```bash
-# Required only for LLM-powered analysis
+# The LLM judge (every recommended setup uses it; see LLM Providers for local models)
 export SKILL_SCANNER_LLM_API_KEY="your_api_key"
-export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-5-5"
 
 # Optional: VirusTotal binary scanning
 export VIRUSTOTAL_API_KEY="your_virustotal_api_key"
@@ -134,24 +166,24 @@ export AI_DEFENSE_API_KEY="your_aidefense_api_key"
 
 ### LLM Provider Setup
 
-The LLM and Meta analyzers use [LiteLLM](https://github.com/BerriAI/litellm) under the hood, supporting many providers through a unified interface.
+The LLM judge works with Anthropic (the default), OpenAI, AWS Bedrock, Google Vertex AI and Gemini,
+Azure OpenAI, any OpenAI-compatible gateway or local server, Ollama, and, experimentally, the
+on-device Apple Foundation Model.
 
-| Provider | Model String Example | Extra Required |
-|----------|---------------------|----------------|
-| Anthropic | `anthropic/claude-sonnet-4-20250514` | None |
-| OpenAI | `gpt-4o` | None |
-| AWS Bedrock | `bedrock/anthropic.claude-3-sonnet-...` | `[bedrock]` |
+| Provider | Model string | Extra |
+|----------|--------------|-------|
+| Anthropic | `anthropic/claude-sonnet-5-5` | None |
+| OpenAI | `openai/<model>` | None |
+| AWS Bedrock | `bedrock/<model-id>` | `[bedrock]` |
 | AWS Bedrock mantle | `bedrock-mantle/google.gemma-4-26b-a4b` | `[bedrock]` |
-| Google Vertex | `vertex_ai/gemini-2.5-pro` | `[vertex]` |
-| Azure OpenAI | `azure/gpt-4o` | `[azure]` |
-| OpenAI-compatible | provider-specific model + `SKILL_SCANNER_LLM_PROVIDER=openai` | None |
+| Google Vertex AI | `vertex_ai/<model>` | `[vertex]` |
+| Google AI Studio | `gemini/<model>` | `[google]` |
+| Azure OpenAI | `azure/<deployment>` | `[azure]` |
+| OpenAI-compatible gateway or vLLM | any name, with `SKILL_SCANNER_LLM_PROVIDER=openai-compatible` and `SKILL_SCANNER_LLM_BASE_URL` | None |
+| Ollama | `ollama/<model>` | None |
+| Apple Foundation Model | `apple-fm/system` | `[apple-fm]` |
 
-Set `--llm-provider` on the CLI or configure via the `SKILL_SCANNER_LLM_MODEL` environment variable using LiteLLM model naming conventions.
-
-Vertex AI uses `GOOGLE_APPLICATION_CREDENTIALS` when set and otherwise falls back to ambient Application Default Credentials, including Workload Identity. Bedrock similarly supports ambient AWS/IAM credentials.
-
-Some Bedrock models are published only on the OpenAI-compatible *mantle* endpoint rather than on `bedrock-runtime`. Use the `bedrock-mantle/` prefix for those. It signs with SigV4 against service name `bedrock`, so it shares the same IAM credentials and needs no API key, and it is a separate prefix because `bedrock/` signs against `bedrock-runtime`, which does not serve them. See the [configuration reference](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/reference/configuration-reference.md) for the route's schema constraints.
+See [LLM Providers](/docs/skill-scanner/llm-providers) for credentials, the vLLM settings that keep
+JSON intact, and the measured model.
 
 OSV.dev dependency scanning (`--use-osv`) needs network access but no API key or optional package.
-
-See the [Dependencies and LLM Providers](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/reference/dependencies-and-llm-providers.md) reference for provider-specific setup instructions.

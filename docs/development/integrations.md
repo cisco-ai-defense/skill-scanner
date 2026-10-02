@@ -73,7 +73,7 @@ For deeper semantic analysis, add API keys as repository secrets:
 - name: Run scan with LLM
   env:
     SKILL_SCANNER_LLM_API_KEY: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
-    SKILL_SCANNER_LLM_MODEL: anthropic/claude-sonnet-4-20250514
+    SKILL_SCANNER_LLM_MODEL: anthropic/claude-sonnet-5-5
   run: |
     skill-scanner scan-all ./skills \
       --recursive \
@@ -96,10 +96,25 @@ Add to your [`.pre-commit-config.yaml`](https://github.com/cisco-ai-defense/skil
 ```yaml
 repos:
   - repo: https://github.com/cisco-ai-defense/skill-scanner
-    rev: v1.0.0  # use latest version
+    rev: 2.2.0  # the latest release tag (no "v" prefix)
     hooks:
       - id: skill-scanner
         args: ["--fail-on-findings"]
+```
+
+The packaged hook scans only the skills a commit touches, with the deterministic rules alone. Don't
+rely on it by itself. Pair it with a judged scan in CI, or use a local hook that runs the judge:
+
+```yaml
+repos:
+  - repo: local
+    hooks:
+      - id: skill-scanner
+        name: Scan agent skills (rules + LLM judge)
+        entry: skill-scanner scan-all .claude/skills --recursive --use-llm --policy low-noise --fail-on-severity high
+        language: system
+        pass_filenames: false
+        files: ^\.claude/skills/
 ```
 
 ### Manual hook

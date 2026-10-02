@@ -1,7 +1,7 @@
 ---
 title: "CLI Reference"
 description: "Skill Scanner CLI reference for scanning local skills or GitHub repositories, enabling OSV and LLM analysis, applying policies, and exporting reports."
-order: 5
+order: 7
 ---
 
 ## CLI Reference
@@ -40,7 +40,7 @@ skill-scanner scan /path/to/skill [OPTIONS]
 | `--use-behavioral` | Enable behavioral analyzer (AST dataflow analysis) |
 | `--use-llm` | Enable LLM analyzer (requires API key) |
 | `--llm-provider` | LLM shortcut: `anthropic`, `openai`, or `openai-compatible` |
-| `--llm-consensus-runs N` | Run LLM analysis N times; keep majority-agreed findings |
+| `--llm-consensus-runs N` | Run LLM analysis N times; keep majority-agreed findings (N times the cost; not measured on the evaluation splits) |
 | `--llm-max-tokens N` | Override the LLM response-token budget (default: 8192) |
 | `--llm-decompose` | Run the LLM analyzer once per focus and union the findings instead of one general pass; raises recall at roughly 3x the model calls |
 | `--system-one-endpoint URL` | Optional System One screening endpoint (`POST /v1/systemone`). Advisory only: it can never change a finding, a severity, or the verdict |
@@ -49,7 +49,7 @@ skill-scanner scan /path/to/skill [OPTIONS]
 | `--use-aidefense` | Enable Cisco AI Defense analyzer |
 | `--use-osv` | Query OSV.dev for advisories affecting exactly pinned Python and JavaScript dependencies; no API key required |
 | `--use-trigger` | Enable trigger specificity analyzer |
-| `--enable-meta` | Enable meta-analyzer for false positive filtering |
+| `--enable-meta` | Enable the meta-analyzer. Off by default and not recommended: it cost 16.4 points of recall in measurement |
 | `--adjudicate` | Demote-only LLM review of deterministic HIGH/CRITICAL literal-regex false positives |
 
 #### Output Flags
@@ -85,27 +85,33 @@ skill-scanner scan /path/to/skill [OPTIONS]
 #### Examples
 
 ```bash
-# Core analyzers only (default)
+# Core analyzers only: a first test that the CLI works (add --use-llm for real use)
 skill-scanner scan ./my-skill
 
-# Full analysis with all engines
-skill-scanner scan ./my-skill --use-behavioral --use-llm --use-osv --use-aidefense --enable-meta
+# Vetting a third-party skill: rules + LLM judge, block HIGH (see Recommended Settings)
+skill-scanner scan ./my-skill --use-llm --policy balanced --fail-on-severity high
+
+# Lowest false-positive rate with the judge
+skill-scanner scan ./my-skill --use-llm --policy quiet --fail-on-severity high
+
+# Every engine, for an audit you read in full
+skill-scanner scan ./my-skill --use-behavioral --use-llm --use-osv --use-aidefense
 
 # Review deterministic HIGH/CRITICAL matches before LLM enrichment
 skill-scanner scan ./my-skill --adjudicate
 
-# LLM consensus mode for high-confidence results
-skill-scanner scan ./my-skill --use-llm --llm-consensus-runs 3 --enable-meta
+# Decomposed judge: three focused passes, about three times the tokens, for high-stakes reviews
+skill-scanner scan ./my-skill --use-llm --llm-decompose
 
 # Generate interactive HTML report
-skill-scanner scan ./my-skill --use-llm --enable-meta --format html --output report.html
+skill-scanner scan ./my-skill --use-llm --format html --output report.html
 
 # Produce JSON and SARIF in one scan
 skill-scanner scan ./my-skill --format json --format sarif \
   --output-json results.json --output-sarif results.sarif
 
-# CI/CD: fail on high-severity findings
-skill-scanner scan ./my-skill --fail-on-severity high --format sarif --output results.sarif
+# CI/CD: rules + judge, fail on high-severity findings
+skill-scanner scan ./my-skill --use-llm --policy low-noise --fail-on-severity high --format sarif --output results.sarif
 
 # Scan a non-standard skill format (e.g., Claude Code commands)
 skill-scanner scan .claude/commands/deploy --lenient
@@ -170,7 +176,7 @@ skill-scanner generate-policy [OPTIONS]
 | `--preset NAME` | Base preset: `strict`, `balanced`, `permissive`, `low-noise`, `quiet` |
 
 ```bash
-skill-scanner generate-policy -o my_policy.yaml --preset strict
+skill-scanner generate-policy -o my_policy.yaml --preset low-noise
 ```
 
 ---

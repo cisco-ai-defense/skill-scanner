@@ -2,12 +2,11 @@
 
 ## Core Runtime Dependencies
 
-The ranges below come from this checkout's
-[`pyproject.toml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/pyproject.toml)
-and apply to a release that contains these changes. The supported interpreter
-range for that release is CPython >= 3.11 and < 3.15. The checked-in Homebrew
-formula still packages version 1.0.2 and must not be used as evidence that this
-unreleased dependency or platform contract is already published.
+The ranges below come from
+[`pyproject.toml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/pyproject.toml).
+The supported interpreter range is CPython >= 3.11 and < 3.15. The Homebrew
+formula in `Formula/` is regenerated from each PyPI release by the
+`update-homebrew` workflow, so it can trail PyPI briefly.
 
 ### Web Framework and API
 
@@ -92,8 +91,7 @@ The `google` and `vertex` extras also carry the security floors
 
 ### Bundled CEL Runtime
 
-CEL is a core runtime in this checkout. A release containing these changes will
-pin the official `cel.dev/cel-go` module at `v0.32.0` and ship it as a bounded
+CEL is a core runtime. Releases pin the official `cel.dev/cel-go` module at `v0.32.0` and ship it as a bounded
 local helper process; it does not depend on `cel-expr-python`. Each binary is
 built with `CGO_ENABLED=0`, bound to helper protocol 2 and the canonical
 `ScanFacts` descriptor, and checked against the SHA-256 and target identity in
@@ -149,10 +147,9 @@ override for a locally built helper. It bypasses packaged-resource manifest
 discovery, so never point it at a downloaded rule pack, dataset artifact, or
 other untrusted executable.
 
-Go 1.27.1 is the minimum supported source-build toolchain for this checkout.
-Its CI and release workflows pin exactly Go 1.27.1 for reproducibility; a
-release containing these changes will carry that pin into its wheels, SBOMs,
-release evidence, and Homebrew qualification. Earlier Go releases cannot build
+Go 1.27.1 is the minimum supported source-build toolchain. CI and release
+workflows pin exactly Go 1.27.1 for reproducibility, and carry that pin into
+wheels, SBOMs, release evidence and Homebrew qualification. Earlier Go releases cannot build
 the same Darwin contract:
 with `CGO_ENABLED=0`, they emit an older Mach-O deployment floor and ignore
 `MACOSX_DEPLOYMENT_TARGET`. A qualified release-toolchain change requires
@@ -166,14 +163,15 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 
 | Provider | Model example | Notes |
 |----------|--------------|-------|
-| Anthropic | `anthropic/claude-sonnet-4-20250514` | Default provider |
-| OpenAI | `openai/gpt-4o` | |
-| OpenAI-compatible custom endpoint | `Cloud-Gemini-3.1-Pro` with `SKILL_SCANNER_LLM_PROVIDER=openai` | Uses `SKILL_SCANNER_LLM_BASE_URL` |
-| AWS Bedrock | `bedrock/anthropic.claude-sonnet-4-20250514-v1:0` | Requires `[bedrock]` extra or API key |
+| Anthropic | `anthropic/claude-sonnet-5-5` | Default provider |
+| OpenAI | `openai/<model>` | |
+| OpenAI-compatible gateway, proxy or local server (vLLM) | any name the server lists, with `SKILL_SCANNER_LLM_PROVIDER=openai-compatible` | Uses `SKILL_SCANNER_LLM_BASE_URL` |
+| AWS Bedrock | `bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0` | Requires `[bedrock]` extra or API key |
 | AWS Bedrock mantle | `bedrock-mantle/google.gemma-4-26b-a4b` | OpenAI-compatible Bedrock endpoint for models absent from `bedrock-runtime`. SigV4-signed with the same IAM credentials; requires the `[bedrock]` extra |
 | Google Vertex AI | `vertex_ai/gemini-2.5-pro` | Requires `[vertex]` extra |
 | Google AI Studio | `gemini/gemini-2.5-flash` | Requires `[google]` extra |
 | Azure OpenAI | `azure/my-deployment-name` | Requires `[azure]` extra |
+| Apple Foundation Model (experimental) | `apple-fm/system` | On-device, macOS 26+ with Apple Intelligence; requires `[apple-fm]` extra |
 | Ollama (local) | `ollama/llama3` | No API key needed |
 | Apple Foundation Models | `apple-fm/system` | On-device. No API key. Requires `apple-fm-sdk` (`pip install "apple-fm-sdk>=0.2.1,<0.3"`, built from source with full Xcode), macOS 26+, and Apple Intelligence. Use this for LLM semantic scans. Do not use it for behavioral alignment: those prompts exceed the on-device context window. |
 | OrcaRouter | `orcarouter/anthropic/claude-sonnet-5` | OpenAI-compatible gateway; default endpoint `https://api.orcarouter.ai/v1` (override with `SKILL_SCANNER_LLM_BASE_URL`) |

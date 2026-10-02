@@ -4,16 +4,18 @@ Scan policies define scanner behavior without code changes.
 
 ## Which Preset Should I Use?
 
-[Recommended settings](recommended-settings.md) answers this per use case, with measured detection
-and flag rates and the commands to run. In short:
+[Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings)
+answers this by goal, with measured recall, false-positive rate and F1, and the commands to run. In short:
+
+Every recommended setup runs the LLM judge (`--use-llm`); the rules alone catch only about 8% of
+held-out malicious skills.
 
 | Scanning... | Preset | LLM judge |
 |---|---|---|
-| Your own skills, locally, in pre-commit or in CI | `low-noise` | not needed |
-| Third-party skills before install | `balanced` (default) | on: block at HIGH, review MEDIUM |
-| Third-party skills with little review capacity | `quiet` | on -- not without it |
+| Your own skills, locally, in pre-commit or in CI | `low-noise` | on: block at HIGH |
+| Third-party skills, highest F1 | `balanced` (default) | on: block at HIGH, review MEDIUM |
+| Third-party skills, lowest false-positive rate | `quiet` | on -- never without it |
 | Audits and threat hunting | `strict` | on, triage only |
-| Trusted internal skills where noise matters more than coverage | `permissive` | not needed |
 
 `strict` and `permissive` were not part of the full-corpus measurements; measure them on your own
 skills before using either as a gate.

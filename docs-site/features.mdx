@@ -1,7 +1,7 @@
 ---
 title: "Features"
 description: "Explore Skill Scanner features, including deterministic, behavioral, OSV, YARA, and LLM analysis, adjudication, policies, and CI-ready reports."
-order: 3
+order: 14
 ---
 
 ## Features
@@ -30,7 +30,7 @@ Skill Scanner layers complementary detection engines so that no single blind spo
 | **LLM Analyzer** | `--use-llm` | Semantic threat reasoning powered by LLM |
 | **Decomposed LLM Analysis** | `--llm-decompose` | One LLM pass per focus, findings unioned; higher recall at roughly 3x the model calls |
 | **System One Screening** | `--system-one-endpoint` + `--system-one-model` | Records a calibrated risk probability for triage. Advisory only: it cannot change a finding, a severity, or the verdict |
-| **Meta-Analyzer** | `--enable-meta` | Second-pass false-positive reduction across all findings |
+| **Meta-Analyzer** | `--enable-meta` | Second-pass review across all findings. Off by default: measured, it cost 16.4 points of recall |
 | **VirusTotal Analyzer** | `--use-virustotal` | Binary hash reputation and optional file uploads |
 | **AI Defense Analyzer** | `--use-aidefense` | Cisco cloud-based threat classification |
 | **OSV Analyzer** | `--use-osv` | Known vulnerabilities in exactly pinned Python and JavaScript dependencies; no API key required |
@@ -212,13 +212,21 @@ Six output formats support every workflow from local triage to platform automati
 
 ### LLM Consensus Mode
 
-Run the LLM analyzer multiple times independently and keep only majority-agreed findings, significantly reducing false positives while preserving true threats.
+Run the LLM analyzer several times independently and keep only majority-agreed findings. It multiplies the cost by the number of runs, and its effect on false positives has not been measured on the evaluation splits. For measured ways to lower false positives, see [Recommended Settings](/docs/skill-scanner/recommended-settings).
 
 ```bash
-skill-scanner scan ./skill --use-llm --llm-consensus-runs 3 --enable-meta
+skill-scanner scan ./skill --use-llm --llm-consensus-runs 3
 ```
 
-Combines consensus voting with meta-analyzer false-positive filtering for high-confidence results. Majority uses the configured run count as its denominator, and retained findings use the highest severity observed across agreeing votes. The meta-analyzer batches large finding sets and the LLM path recovers fenced JSON while surfacing genuinely truncated responses.
+Majority uses the configured run count as its denominator, and retained findings use the highest severity observed across agreeing votes.
+
+### Decomposed LLM Analysis
+
+`--llm-decompose` runs the judge once per focus (declared purpose, policy surface, security behaviors) and unions the findings. It costs about three times the model calls. With the previous prompt it raised held-out F1 from 61.2% to 68.3% on Gemma 4 26B, and from 58.7% to 81.4% on Claude Haiku 4.5. About two thirds of the gain came from sampling variance.
+
+```bash
+skill-scanner scan ./skill --use-llm --llm-decompose
+```
 
 ### Per-Finding Adjudication
 
@@ -226,7 +234,7 @@ The optional adjudicator reviews each deterministic HIGH/CRITICAL finding before
 
 ```bash
 skill-scanner scan ./skill --adjudicate
-skill-scanner scan ./skill --use-llm --enable-meta --adjudicate
+skill-scanner scan ./skill --use-llm --adjudicate
 ```
 
 Adjudicator, LLM analyzer, and meta-analyzer token usage is aggregated in JSON output under `llm_usage` when the provider reports usage.

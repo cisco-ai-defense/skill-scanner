@@ -21,7 +21,7 @@ Supports [OpenAI Codex Skills](https://openai.github.io/codex/) and [Cursor Agen
 
 - **Multi-Engine Detection** - Static analysis, behavioral dataflow, LLM semantic analysis, and cloud-based scanning for layered, best-effort coverage
 - **Typed CEL Decisions** - The core scanner uses the official `cel-go` v0.32.0 runtime to correlate bounded facts after deterministic detection and before optional LLM analysis
-- **Finding Review** - The optional Meta-analyzer correlates, prioritizes, and can filter findings; paired accuracy validation remains pending
+- **Measured Presets** - `low-noise` and `quiet` presets and LLM caps, with recall, false-positive rate and F1 published for each ([Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings))
 - **CI/CD Ready** - SARIF output for GitHub Code Scanning, [reusable GitHub Actions workflow](docs/github-actions.md), exit codes for build failures
 - **Pre-commit Hook** - [Standard pre-commit framework](https://pre-commit.com/) integration to scan skills before every commit
 - **Extensible** - Plugin architecture for custom analyzers
@@ -38,49 +38,39 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 
 - **No findings ≠ no risk.** A scan that returns "No findings" indicates that no known threat patterns were detected. It does not guarantee that a skill is secure, benign, or free of vulnerabilities.
 - **Coverage is inherently incomplete.** The scanner combines signature-based detection, LLM-based semantic analysis, behavioral dataflow analysis, optional cloud services, and configurable rule packs. While this approach improves coverage, no automated tool can detect every technique, especially novel or zero-day attacks.
-- **False positives and false negatives can occur.** Consensus modes and meta-analysis can help review findings, but no configuration eliminates all incorrect classifications. Tune the [scan policy](docs/user-guide/custom-policy-configuration.md) to your risk tolerance.
+- **False positives and false negatives can occur.** Presets, the LLM judge and scoped suppressions reduce noise, but no configuration eliminates all incorrect classifications. Pick a measured setup from [Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings) and tune the [scan policy](docs/user-guide/custom-policy-configuration.md) to your risk tolerance.
 - **Human review remains essential.** Automated scanning is one component of a defense-in-depth strategy. High-risk or production deployments should pair scanner results with manual code review and/or  threat modeling.
 
-### Current modernization evidence
+### Measured results
 
-The final core + CEL development benchmark contains 5,256 malicious and 1,338
-benign MaliciousSkillBench packages. Compared with `origin/main`, the current
-scanner raised F1 from 32.92% to 47.73% and recall from 19.88% to 31.43%, while
-reducing benign false-positive rate from 3.59% to 1.05%. Precision is 99.16%.
-Five CEL-shadow runs were exact and deterministic; CEL evaluated 154 candidates
-without proposing a suppression or falling back.
+On held-out skills (MaliciousSkillBench's frozen test split, 839 malicious and 545 harmless):
 
-The locked source-disjoint split is weaker: TP=65, FP=42, TN=503, and FN=774,
-for 60.75% precision, 7.75% recall, 13.74% F1, and 7.71% FPR. This improves F1
-over `origin/main` (7.40%) but regresses FPR (3.67%), so it **does not pass the
-promotion gate**. Every bundled CEL rule therefore remains in `shadow`; this
-change does not promote any CEL suppression.
+- **Rules alone** catch 7.7% of malicious skills at HIGH, at a 4.0% false-positive rate.
+- **With the LLM judge** (Gemma 4 26B, `balanced`), 66.7% reach review at MEDIUM+ (15.4% FPR), and
+  33.7% are blocked at HIGH (6.4% FPR).
 
-Compatibility and supplemental checks found identical CEL-OFF/CEL-SHADOW
-findings on 111 official Codex, Claude Code, and Cursor skills (30 MEDIUM+ and
-8 HIGH/CRITICAL packages), with five stable runs. The NotInject hard-negative
-set had 0/339 actionable matches. HarmfulSkillBench had 7/200 actionable and
-6/200 HIGH+ packages with one quarantined sample, while OpenSkillRisk had
-76/263 actionable packages with two host quarantines. The latter two are
-positive-only recall diagnostics and cannot measure precision or FPR. Optional
-ATR results are outside this release scope. See [Detection Evaluation and
-Rollout](docs/development/detection-evaluation-rollout.md) for methodology,
-provenance, confidence intervals, and limitations.
+Every figure, with its corpus and method, is in [Measured Results](docs/reference/measured-results.md)
+and on the [evaluation Space](https://huggingface.co/spaces/Vineethsain/skill-scanner-vs-skillspector).
 
 ---
 
 ## Documentation
 
+The documentation website is **[cisco-ai-defense.github.io/docs/skill-scanner](https://cisco-ai-defense.github.io/docs/skill-scanner)**.
+Deep-dive pages live in [`docs/`](docs/README.md).
+
 | Guide | Description |
 |-------|-------------|
 | [Quick Start](docs/getting-started/quick-start.md) | Get started in 5 minutes |
-| [Recommended Settings](docs/user-guide/recommended-settings.md) | What to run for which job, why, and how to configure it |
+| [Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings) | Pick a setup for the lowest FPR or the highest F1, with copy-paste configs |
+| [LLM Providers](https://cisco-ai-defense.github.io/docs/skill-scanner/llm-providers) | Configure the LLM judge for any provider, gateway or local model |
+| [Results and Tuning](https://cisco-ai-defense.github.io/docs/skill-scanner/results-and-tuning) | Read findings, build a review queue, lower false positives |
 | [Architecture](docs/architecture/index.md) | System design and components |
 | [CEL Decision Layer](docs/architecture/cel-decision-layer.md) | Typed facts, safety bounds, rollout modes, and telemetry |
 | [Threat Taxonomy](docs/architecture/threat-taxonomy.md) | Complete AITech threat taxonomy with examples |
 | [LLM Analyzer](docs/architecture/analyzers/llm-analyzer.md) | LLM configuration and usage |
 | [System One Analyzer](docs/architecture/analyzers/system-one-analyzer.md) | Optional advisory screening tier, and why it cannot gate |
-| [Meta-Analyzer](docs/architecture/analyzers/meta-analyzer.md) | False positive filtering and prioritization |
+| [Meta-Analyzer](docs/architecture/analyzers/meta-analyzer.md) | Optional second-pass review (off by default; measured cost) |
 | [Behavioral Analyzer](docs/architecture/analyzers/behavioral-analyzer.md) | Dataflow analysis details |
 | [Scan Policy](docs/user-guide/custom-policy-configuration.md) | Custom policies, presets, and tuning guide |
 | [Policy Quick Reference](docs/reference/policy-quick-reference.md) | Compact reference for policy sections and knobs |
@@ -94,29 +84,31 @@ provenance, confidence intervals, and limitations.
 
 ## Installation
 
-**Prerequisites for this checkout and a release containing these changes:**
-CPython 3.11–3.14 and [uv](https://docs.astral.sh/uv/) (recommended) or pip
+**Prerequisites:** CPython 3.11–3.14 and [uv](https://docs.astral.sh/uv/) (recommended) or pip.
 
-A release containing this branch's CEL changes will include the required helper
-in its wheels; there is no separate CEL extra. That release is configured for
-CPython 3.11–3.14, while source installs additionally require Go 1.27.1+ to
-build the helper. Until it is published, the package currently served by PyPI
-may have a different compatibility contract. See [Installation and
-Configuration](docs/user-guide/installation-and-configuration.md) for details.
+Wheels include the CEL helper for glibc Linux x86-64/ARM64, macOS 14+ x86-64/ARM64 and Windows
+x86-64. Other platforms build from the source distribution, which needs Go 1.27.1+. See
+[Installation and Configuration](docs/user-guide/installation-and-configuration.md) for details.
 
 ```bash
 # Using uv (recommended)
 uv pip install cisco-ai-skill-scanner
 
+# As a standalone tool
+uv tool install cisco-ai-skill-scanner   # or: pipx install cisco-ai-skill-scanner
+
 # Using pip
 pip install cisco-ai-skill-scanner
 ```
+
+The presets and settings in [Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings)
+need 2.2.0 or newer (`skill-scanner --version`).
 
 <details>
 <summary><strong>Cloud Provider Extras</strong></summary>
 
 ```bash
-# AWS Bedrock support
+# AWS Bedrock support (IAM credentials, no API key)
 pip install cisco-ai-skill-scanner[bedrock]
 
 # Google AI Studio / Gemini support
@@ -128,7 +120,7 @@ pip install cisco-ai-skill-scanner[vertex]
 # Azure OpenAI support
 pip install cisco-ai-skill-scanner[azure]
 
-# On-device Apple Foundation Models (macOS 26+, Apple Intelligence)
+# On-device Apple Foundation Model (experimental; macOS 26+, Apple Intelligence)
 pip install "apple-fm-sdk>=0.2.1,<0.3"   # builds from source; needs full Xcode
 
 # All cloud providers
@@ -141,15 +133,31 @@ pip install cisco-ai-skill-scanner[all]
 
 ## Quick Start
 
-### Environment Setup (Optional)
+### Recommended settings
+
+Every recommended setup runs the LLM judge (`--use-llm`): rules alone catch only about 8% of
+held-out malicious skills.
+
+| Goal | Command | Held-out recall / FPR / F1 |
+|------|---------|----------------------------|
+| Highest F1 | `skill-scanner scan ./skill --use-llm --policy balanced --fail-on-severity high`, and review everything at MEDIUM+ | 66.7% / 15.4% / 75.5% |
+| Smaller review queue (your own skills) | `skill-scanner scan ./skill --use-llm --policy low-noise --fail-on-severity high` | 63.2% / 13.4% / 73.5% |
+| Lowest false-positive rate | `skill-scanner scan ./skill --use-llm --policy quiet --fail-on-severity high` | 50.3% / 7.2% / 64.9% |
+| Nothing leaves the machine | any of the above, with the judge on a [local model](https://cisco-ai-defense.github.io/docs/skill-scanner/llm-providers) | as above |
+
+Rates are for the MEDIUM+ review queue on MaliciousSkillBench's held-out split, with Gemma 4 26B as
+the judge. Measured precision for each, and the same setups for pre-commit, GitHub Actions, Python and
+the REST API, are in [Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings).
+
+### Environment Setup
 
 ```bash
-# For LLM analyzer and Meta-analyzer
+# The LLM judge, used by every recommended setup (local models: see LLM Providers)
 export SKILL_SCANNER_LLM_API_KEY="your_api_key"
-export SKILL_SCANNER_LLM_MODEL="claude-sonnet-5-5"
+export SKILL_SCANNER_LLM_MODEL="claude-sonnet-5-5"   # the default
 
-# On-device Apple Foundation Model (no API key). Semantic scans only.
-# Behavioral alignment prompts exceed the on-device context window.
+# On-device Apple Foundation Model (experimental, no API key). Behavioral
+# alignment verification is skipped with a warning on this model.
 # export SKILL_SCANNER_LLM_MODEL="apple-fm/system"
 # Optional: disabled, minimal, low, medium, high, xhigh, or max
 export SKILL_SCANNER_LLM_REASONING_EFFORT="low"
@@ -174,8 +182,11 @@ The wizard walks you through selecting a scan target, analyzers, policy, and out
 ### CLI Usage
 
 ```bash
-# Scan a single skill (core analyzers: static + bytecode + pipeline + correlation)
+# First test: core analyzers only (static + bytecode + pipeline + correlation)
 skill-scanner scan /path/to/skill
+
+# Real use: add the LLM judge
+skill-scanner scan /path/to/skill --use-llm --policy balanced --fail-on-severity high
 
 # Scan with behavioral analyzer (dataflow analysis)
 skill-scanner scan /path/to/skill --use-behavioral
@@ -183,8 +194,11 @@ skill-scanner scan /path/to/skill --use-behavioral
 # Scan with all engines
 skill-scanner scan /path/to/skill --use-behavioral --use-llm --use-aidefense
 
-# Scan with meta-analyzer for false positive filtering
-skill-scanner scan /path/to/skill --use-llm --enable-meta
+# Rules + LLM judge, with the preset that has the fewest false positives
+skill-scanner scan /path/to/skill --use-llm --policy quiet
+
+# Decomposed judge: three focused passes, about three times the tokens
+skill-scanner scan /path/to/skill --use-llm --llm-decompose
 
 # Scan with trigger analyzer for vague description checks
 skill-scanner scan /path/to/skill --use-trigger
@@ -213,11 +227,11 @@ skill-scanner scan-all .claude/commands --recursive --lenient
 # Use a custom metadata filename instead of SKILL.md
 skill-scanner scan /path/to/skill --skill-file README.md
 
-# CI/CD: Fail build if threats found
-skill-scanner scan-all ./skills --fail-on-severity high --format sarif --output results.sarif
+# CI/CD: rules + judge, fail the build on HIGH
+skill-scanner scan-all ./skills --recursive --use-llm --policy low-noise --fail-on-severity high --format sarif --output results.sarif
 
 # Generate interactive HTML report with attack correlation groups
-skill-scanner scan /path/to/skill --use-llm --enable-meta --format html --output report.html
+skill-scanner scan /path/to/skill --use-llm --format html --output report.html
 
 # Use custom YARA rules
 skill-scanner scan /path/to/skill --custom-rules /path/to/my-rules/
@@ -228,8 +242,8 @@ skill-scanner scan /path/to/skill --taxonomy /path/to/taxonomy.json --threat-map
 # VirusTotal hash scan with optional unknown-file uploads
 skill-scanner scan /path/to/skill --use-virustotal --vt-upload-files
 
-# Use a scan policy preset (strict, balanced, permissive, low-noise, quiet)
-skill-scanner scan /path/to/skill --policy strict
+# Use a scan policy preset (balanced, low-noise, quiet, strict, permissive) with the judge
+skill-scanner scan /path/to/skill --use-llm --policy low-noise
 
 # Inspect CEL decisions without suppressing findings
 skill-scanner scan /path/to/skill --cel-mode shadow --format json
@@ -237,8 +251,8 @@ skill-scanner scan /path/to/skill --cel-mode shadow --format json
 # Use a custom org policy file
 skill-scanner scan /path/to/skill --policy my_org_policy.yaml
 
-# Generate a policy file to customise
-skill-scanner generate-policy -o my_org_policy.yaml
+# Generate a policy file to customise, starting from a preset
+skill-scanner generate-policy --preset low-noise -o my_org_policy.yaml
 
 # Interactive policy configurator (TUI)
 skill-scanner configure-policy
@@ -252,8 +266,10 @@ severity selection stable for majority-agreed findings. It does not make an
 individual LLM sample deterministic, and descriptive fields from equal-severity
 votes, single-run output, and non-majority findings can still vary between scans.
 
-**LLM provider note:** `--llm-provider` currently accepts `anthropic` or `openai`.
-For Bedrock, Vertex, Azure, Gemini, and other LiteLLM backends, set provider-specific model strings and environment variables (see [LLM Analyzer docs](docs/architecture/analyzers/llm-analyzer.md)).
+**LLM provider note:** `--llm-provider` accepts `anthropic`, `openai` or `openai-compatible`.
+For Bedrock, Vertex AI, Azure, Gemini, Ollama, gateways and local servers, set provider-specific model
+strings and environment variables (see [LLM Providers](https://cisco-ai-defense.github.io/docs/skill-scanner/llm-providers)).
+If `--use-llm` is set and the judge cannot start, the scan stops with an error rather than passing with rules only.
 
 ### Python SDK
 
@@ -290,7 +306,7 @@ if not result.is_safe:
 | **Correlation** | Bounded structured source/sink correlation | Python, JavaScript, TypeScript, and package facts | None |
 | **Behavioral** | AST dataflow analysis | Python files | None |
 | **LLM** | Semantic analysis | SKILL.md + scripts | API key |
-| **Meta** | False positive filtering | All findings | API key |
+| **Meta** | Second-pass review (off by default) | All findings | API key |
 | **VirusTotal** | Hash-based malware | Binary files | API key |
 | **AI Defense** | Cloud-based AI | Text content | API key |
 
@@ -303,7 +319,12 @@ if not result.is_safe:
 | `--policy` | Scan policy: preset name (`strict`, `balanced`, `permissive`, `low-noise`, `quiet`) or path to custom YAML |
 | `--use-behavioral` | Enable behavioral analyzer (dataflow analysis) |
 | `--use-llm` | Enable LLM analyzer (requires API key) |
-| `--llm-provider` | LLM provider for CLI routing: `anthropic` or `openai` |
+| `--llm-provider` | LLM provider for CLI routing: `anthropic`, `openai` or `openai-compatible` |
+| `--llm-decompose` | Run the judge once per focus and union the findings (about three times the model calls) |
+| `--adjudicate` | Demote-only LLM review of deterministic HIGH/CRITICAL literal-regex false positives |
+| `--use-osv` | Query OSV.dev for known-vulnerable pinned dependencies (network, no key) |
+| `--rule-packs PACK...` | Enable optional signature packs (e.g. `atr`, `promptguard`); `--rule-packs list` shows them |
+| `--system-one-endpoint URL` | Optional advisory System One screen; never changes a finding (needs `--system-one-model`) |
 | `--llm-consensus-runs N` | Run LLM analysis `N` times, keep majority-agreed findings, and retain their highest observed severity |
 | `--llm-max-tokens N` | Maximum output tokens for LLM responses (default: 8192) |
 | `--llm-reasoning-effort LEVEL` | Optional reasoning depth (`disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`); unset preserves the provider default |
@@ -313,7 +334,7 @@ if not result.is_safe:
 | `--use-aidefense` | Enable Cisco AI Defense analyzer |
 | `--aidefense-api-url URL` | Override AI Defense API URL (optional) |
 | `--use-trigger` | Enable trigger specificity analyzer |
-| `--enable-meta` | Enable meta-analyzer for false positive filtering |
+| `--enable-meta` | Enable the meta-analyzer. Off by default and not recommended: it cost 16.4 points of recall in measurement |
 | `--verbose` | Include per-finding policy fingerprints, co-occurrence metadata, and keep meta-analyzer false positives |
 | `--format` | Output: `summary`, `json`, `markdown`, `table`, `sarif`, `html`. The `html` format produces a self-contained interactive report with collapsible correlation groups, expandable code snippets, and pipeline taint flow diagrams |
 | `--detailed` | Include detailed findings in Markdown output |
@@ -336,13 +357,14 @@ if not result.is_safe:
 | `interactive` | Launch interactive scan wizard (explicit) |
 | `scan` | Scan a single skill directory |
 | `scan-all` | Scan multiple skills (with `--recursive`, `--check-overlap`) |
+| `scan-repo` | Clone a GitHub repository (`owner/repo` or URL) and scan its skills |
 | `generate-policy` | Generate a scan policy YAML for customisation |
 | `configure-policy` | Interactive TUI to build/edit a custom scan policy (`--input` supported) |
 | `list-analyzers` | Show available analyzers |
 | `validate-rules` | Validate bundled rules plus optional `--rules-file` signatures and repeatable `--trusted-rule-pack` v2 packs |
 
-Balanced (the default) and strict policies use CEL `shadow`; permissive uses
-CEL `off`. Every bundled CEL rule currently has `rollout: shadow`, so even a
+The `balanced` (default), `low-noise`, `quiet` and `strict` presets use CEL `shadow`; `permissive`
+uses CEL `off`. Every bundled CEL rule currently has `rollout: shadow`, so even a
 global `--cel-mode enforce` retains findings until an individual rule is
 qualified and promoted. The ATR pack remains opt-in through
 `--rule-packs atr` and is not part of the current core + CEL release gate.
@@ -379,12 +401,19 @@ on:
     paths: [".cursor/skills/**"]
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
     with:
+      scanner_version: "2.2.0"
       skill_path: .cursor/skills
+      policy: low-noise
+      use_llm: true
+      llm_model: anthropic/claude-sonnet-5-5
+    secrets:
+      llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
     permissions:
       security-events: write
       contents: read
+      actions: read
 ```
 
 Results appear as inline annotations in PRs via GitHub Code Scanning. See the [full guide](docs/github-actions.md) for LLM integration, secret configuration, and branch protection setup.
@@ -393,40 +422,28 @@ Results appear as inline annotations in PRs via GitHub Code Scanning. See the [f
 
 ## Pre-commit Hook
 
-Scan skills before every commit using the [pre-commit](https://pre-commit.com/) framework:
+Scan skills, with the judge, before every commit using the [pre-commit](https://pre-commit.com/) framework:
 
 ```yaml
 # .pre-commit-config.yaml
 repos:
-  - repo: https://github.com/cisco-ai-defense/skill-scanner
-    rev: v1.0.0  # use the latest release tag
+  - repo: local
     hooks:
       - id: skill-scanner
+        name: Scan agent skills (rules + LLM judge)
+        entry: skill-scanner scan-all .claude/skills --recursive --use-llm --policy low-noise --fail-on-severity high
+        language: system
+        pass_filenames: false
+        files: ^\.claude/skills/
 ```
 
-Or install the built-in hook directly:
+The hook uses the `skill-scanner` installed in your environment and the `SKILL_SCANNER_LLM_*`
+variables from your shell. Run `pre-commit install` once.
 
-```bash
-skill-scanner-pre-commit --install
-```
-
-The hook maps changed files to their nearest `SKILL.md` and scans each affected
-skill once. During a normal commit, it reads the staged diff. In CI, compare two
-revisions so no staged index is required:
-
-```bash
-pre-commit run skill-scanner --from-ref "$BASE_SHA" --to-ref "$HEAD_SHA"
-```
-
-Both revisions must exist in the checkout. To scan every configured skill,
-invoke the hook directly:
-
-```bash
-skill-scanner-pre-commit --scan-all
-```
-
-Alternatively, configure `args: [--scan-all]` for the hook in
-`.pre-commit-config.yaml`.
+The packaged hook (`id: skill-scanner` from this repository, or `skill-scanner-pre-commit --install`)
+maps changed files to their nearest `SKILL.md` and scans only those skills, but with the rules alone.
+Don't rely on it by itself: pair it with a judged scan in CI. Its options are documented in
+[Integrations](docs/development/integrations.md).
 
 ---
 

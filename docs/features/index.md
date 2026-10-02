@@ -25,7 +25,7 @@ Skill Scanner layers multiple detection engines so that no single blind spot —
 |---|---|---|
 | Behavioral Analyzer | `--use-behavioral` | AST and control-flow dataflow analysis for Python logic |
 | LLM Analyzer | `--use-llm` | Semantic threat reasoning powered by LLM |
-| Meta-Analyzer | `--enable-meta` | Second-pass false-positive reduction across all findings |
+| Meta-Analyzer | `--enable-meta` | Second-pass review across all findings. Off by default: measured, it cost 16.4 points of recall |
 | VirusTotal Analyzer | `--use-virustotal` | Binary hash reputation and optional file uploads |
 | AI Defense Analyzer | `--use-aidefense` | Cisco cloud-based threat classification |
 | Trigger Analyzer | `--use-trigger` | Detection of vague or suspicious skill descriptions |
@@ -238,7 +238,7 @@ The primary interface for local development and CI pipelines.
 | `configure-policy` | Interactive TUI for editing policy |
 
 ```bash
-skill-scanner scan ./my-skill --use-behavioral --use-llm --enable-meta
+skill-scanner scan ./my-skill --use-behavioral --use-llm --policy balanced --fail-on-severity high
 ```
 
 See [CLI Usage](../user-guide/cli-usage.md) and [CLI Command Reference](../reference/cli-command-reference.md) for all flags.
@@ -351,12 +351,13 @@ See [Integrations Guide](../development/integrations.md) for CI/CD setup details
 
 - **Selective analyzer enablement** — only activate what you need. Core analyzers run by default; optional analyzers are opt-in.
 - **LLM consensus mode** — `--llm-consensus-runs N` runs the LLM analyzer N times, keeps only majority-agreed findings, and deterministically retains their highest observed severity. Individual LLM samples remain model-dependent and may vary.
-- **Policy-based suppression** — use `severity_overrides` to reclassify and `disabled_rules` to suppress specific rule IDs, without code changes.
+- **Measured presets** — `low-noise` and `quiet` report noisy rules at LOW and cap the LLM judge's weakest findings; see [Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings) for recall, FPR and F1 per preset.
+- **Policy-based suppression** — use `severity_overrides` to reclassify, scoped `suppressions` to silence a reviewed finding for named skills or paths, and `disabled_rules` to switch a rule off everywhere, without code changes.
 - **Structured output** — every format is designed for machine consumption and long-term maintainability.
 
 > [!TIP]
 > **Deep semantic triage**
 > ```bash
-> skill-scanner scan ./skill --use-llm --llm-consensus-runs 3 --enable-meta --format html --output report.html
+> skill-scanner scan ./skill --use-llm --llm-decompose --format html --output report.html
 > ```
-> Combines LLM consensus with meta-analysis false-positive filtering and an interactive HTML report.
+> Runs the judge once per focus (about three times the tokens) and produces an interactive HTML report.

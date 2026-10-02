@@ -2,9 +2,11 @@
 
 Skill Scanner provides a **reusable workflow** you can call from any repository to scan Agent Skills on every push or pull request. Results can be uploaded to GitHub Code Scanning for inline annotations.
 
-## Quick Start (Static Analysis Only, No Keys Required)
+## Quick Start
 
-Add this file to your repository at `.github/workflows/scan-skills.yml`:
+Every recommended setup runs the LLM judge (`use_llm: true`); the rules alone catch only about 8% of
+held-out malicious skills. Add your model provider's key as the repository secret
+`SKILL_SCANNER_LLM_API_KEY`, then add this file at `.github/workflows/scan-skills.yml`:
 
 ```yaml
 name: Scan Skills
@@ -17,13 +19,23 @@ on:
 
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
     with:
+      scanner_version: "2.2.0"
       skill_path: .cursor/skills
+      policy: low-noise
+      use_llm: true
+      llm_model: anthropic/claude-sonnet-5-5
+    secrets:
+      llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
     permissions:
       security-events: write
       contents: read
+      actions: read
 ```
+
+For Bedrock, Vertex AI or a self-hosted model, run the CLI in your own job instead (see
+[GitHub Actions and Pre-commit](https://cisco-ai-defense.github.io/docs/skill-scanner/github-actions)).
 
 This will:
 
@@ -31,6 +43,11 @@ This will:
 2. Run `skill-scanner scan-all .cursor/skills --format sarif --recursive --check-overlap`
 3. Upload SARIF results to GitHub Code Scanning (findings appear as annotations on PRs)
 4. Fail the workflow if any findings at or above HIGH severity are detected (configurable via `fail_on_severity`)
+
+Pin the workflow to a release tag (`@2.2.0`), and grant the caller job `security-events: write`,
+`contents: read` and `actions: read`: a reusable workflow can only use the permissions its caller
+grants. For which preset and threshold to use, see
+[Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings).
 
 ## Reusable Workflow Inputs
 
@@ -69,55 +86,51 @@ All secrets are optional and only needed for advanced analysis features.
 `extra_args` is intentionally allowlisted because this reusable workflow can run
 with API secrets in the environment. Supported extra flags are additive scanner
 options such as `--use-virustotal`, `--vt-upload-files`, `--use-aidefense`,
-`--use-trigger`, `--enable-meta`, selected LLM tuning flags, custom local rule
-paths, taxonomy paths, and `--rule-packs`. Add new entries only after confirming
+`--use-trigger`, `--use-osv`, `--llm-decompose`, `--adjudicate`, `--enable-meta`,
+selected LLM tuning flags, custom local rule paths, taxonomy paths, and
+`--rule-packs`. Add new entries only after confirming
 they cannot expose secrets or execute caller-controlled code.
 
 To configure secrets, go to your repository's **Settings > Secrets and variables > Actions** and add them there. They are never exposed in logs.
 
 ## Configuration Tiers
 
-### Tier 1: Static Analysis (No Keys)
+### Tier 1: Rules + LLM Judge (One Key)
 
-Zero-config static scanning with YARA rules, behavioral analysis, and SARIF upload:
-
-```yaml
-jobs:
-  scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
-    with:
-      skill_path: .cursor/skills
-```
-
-### Tier 2: Static + LLM (One Key)
-
-Add LLM-powered semantic analysis for deeper threat detection:
+The recommended starting point. Use `policy: low-noise` for your own skills, `balanced` for the highest F1 on third-party skills, or `quiet` for the lowest false-positive rate:
 
 ```yaml
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
     with:
+      scanner_version: "2.2.0"
       skill_path: .cursor/skills
+      policy: low-noise
       use_llm: true
-      llm_model: gpt-4o
+      llm_model: anthropic/claude-sonnet-5-5
     secrets:
       llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
 ```
 
-### Tier 3: Full Stack (All Keys)
+### Tier 2: Full Stack (All Keys)
 
 Enable every analyzer including VirusTotal binary scanning:
 
 ```yaml
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
     with:
+      scanner_version: "2.2.0"
       skill_path: .cursor/skills
       use_llm: true
       use_behavioral: true
-      policy: strict
+      extra_args: --use-virustotal --use-osv
     secrets:
       llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
       virustotal_api_key: ${{ secrets.VIRUSTOTAL_API_KEY }}

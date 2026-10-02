@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 import sys
 from collections import defaultdict
@@ -27,6 +28,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCS_ROOT = REPO_ROOT / "docs-site"
+TOC_PATH = DOCS_ROOT / "_meta" / "toc.json"
 FRONTMATTER_RE = re.compile(r"\A---\r?\n(?P<body>.*?)\r?\n---\r?\n", re.DOTALL)
 FIELD_RE = re.compile(r"^(?P<key>[A-Za-z][A-Za-z0-9_-]*):\s*(?P<value>.*)$")
 INTERNAL_LINK_RE = re.compile(r"\]\(/docs/skill-scanner(?:/(?P<slug>[^)#\s]+))?(?:#[^)]*)?\)")
@@ -52,6 +54,52 @@ def route_for(page: Path) -> str:
     if parts[-1] == "index":
         parts.pop()
     return "/".join(parts)
+
+
+def toc_slugs(group: dict, errors: list[str], base: str = "") -> list[str]:
+    """Collect the page slugs a TOC group lists, the way the website resolves them."""
+    path = group.get("path") or base
+    if not isinstance(group.get("id"), str) or not isinstance(group.get("label"), str):
+        errors.append(f"{TOC_PATH.relative_to(REPO_ROOT)}: every group needs a string id and label")
+    slugs: list[str] = []
+    for page in group.get("pages") or []:
+        slug, title = page.get("slug"), page.get("title")
+        if not isinstance(slug, str) or not isinstance(title, str):
+            errors.append(f"{TOC_PATH.relative_to(REPO_ROOT)}: every page needs a string slug and title")
+            continue
+        if slug == "index":
+            slugs.append(path)
+        else:
+            slugs.append(f"{path}/{slug}" if path else slug)
+    for subgroup in group.get("subgroups") or []:
+        slugs.extend(toc_slugs(subgroup, errors, path))
+    return slugs
+
+
+def validate_toc(routes: set[str]) -> list[str]:
+    """Every page must appear in the grouped navigation exactly once, and nothing else may."""
+    if not TOC_PATH.is_file():
+        return []
+    relative = TOC_PATH.relative_to(REPO_ROOT)
+    try:
+        toc = json.loads(TOC_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"{relative}: invalid JSON ({exc})"]
+    if not isinstance(toc, dict) or not isinstance(toc.get("groups"), list):
+        return [f'{relative}: expected an object with a "groups" list']
+
+    errors: list[str] = []
+    listed: list[str] = []
+    for group in toc["groups"]:
+        listed.extend(toc_slugs(group, errors))
+    for slug in sorted({s for s in listed if listed.count(s) > 1}):
+        errors.append(f"{relative}: page {slug!r} is listed more than once")
+    for slug in sorted(set(listed) - routes):
+        errors.append(f"{relative}: lists missing page {slug!r}")
+    for slug in sorted(routes - set(listed)):
+        shown = slug or "index"
+        errors.append(f"{relative}: page {shown!r} is not in the navigation")
+    return errors
 
 
 def validate() -> list[str]:
@@ -108,6 +156,7 @@ def validate() -> list[str]:
             if slug not in routes:
                 errors.append(f"{relative}: internal link points to missing route {slug!r}")
 
+    errors.extend(validate_toc(routes))
     return errors
 
 

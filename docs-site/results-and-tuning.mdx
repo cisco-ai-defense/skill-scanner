@@ -1,0 +1,185 @@
+---
+title: "Results and Tuning"
+description: "Read Skill Scanner findings, separate the HIGH gate from the MEDIUM review queue, handle skills the LLM judge could not read, and lower false positives with presets, severity overrides and scoped suppressions."
+order: 11
+---
+
+## Results and Tuning
+
+How to read a scan, decide what to act on, and lower false positives for your own skills without
+losing detections elsewhere.
+
+---
+
+### What Each Severity Means for You
+
+| Severity | What to do | Notes |
+|----------|------------|-------|
+| **CRITICAL**, **HIGH** | Block. Use `--fail-on-severity high`. | Measured as the gate. |
+| **MEDIUM** | Send to a person for review. | With the judge on, this queue catches about twice the malicious skills the gate does. |
+| **LOW** | Visible, but don't act on it by default. | Rules demoted by the `low-noise` and `quiet` presets and capped judge findings land here. |
+| **INFO** | Coverage notes. Never gates. | Includes `LLM_ANALYSIS_FAILED` and `LLM_CONTEXT_BUDGET_EXCEEDED`. Read them; see below. |
+
+Exit codes:
+
+- `0`: the scan ran and nothing reached the threshold.
+- `1`: at least one finding is at or above the `--fail-on-severity` level.
+- `2`: the scan could not run as configured, for example a requested LLM judge without a key or an
+  unknown policy. In CI, treat it as a broken setup, not as findings.
+
+In the summary output, *SAFE* or *No findings* means no known pattern was detected. It is not a
+guarantee.
+
+---
+
+### JSON Output at a Glance
+
+`skill-scanner scan ... --format json` gives one result:
+
+```json
+{
+  "skill_name": "my-skill",
+  "is_safe": false,
+  "max_severity": "HIGH",
+  "findings": [
+    { "rule_id": "...", "severity": "HIGH", "category": "...", "title": "...",
+      "file_path": "scripts/run.sh", "line_number": 12, "analyzer": "static" }
+  ],
+  "suppressed_findings": []
+}
+```
+
+`scan-all` wraps those results in `results[]` under a `summary` with counts by severity.
+
+#### Build the review queue
+
+```bash
+# Single scan: every MEDIUM+ finding, plus skills the judge could not read
+jq -r '.findings[]
+  | select(.severity == "MEDIUM" or .severity == "HIGH" or .severity == "CRITICAL"
+           or .rule_id == "LLM_ANALYSIS_FAILED")
+  | "\(.severity)\t\(.rule_id)\t\(.file_path // "-")\t\(.title)"' scan.json
+
+# scan-all: which skills need a person, and why
+jq -r '.results[]
+  | select(.max_severity == "MEDIUM" or .max_severity == "HIGH" or .max_severity == "CRITICAL"
+           or ([.findings[].rule_id] | index("LLM_ANALYSIS_FAILED")))
+  | "\(.max_severity)\t\(.skill_name)"' scan.json
+```
+
+---
+
+### Skills the Judge Did Not Fully Read
+
+Two INFO findings tell you the judge's verdict is missing or partial. Neither one gates on its own,
+so handle them yourself:
+
+- **`LLM_ANALYSIS_FAILED`**: the judge returned nothing usable for this skill, for example a
+  provider error or an unparsable response. **Treat the skill as unreviewed, not as clean.** Route it
+  to review, or rerun it.
+- **`LLM_CONTEXT_BUDGET_EXCEEDED`**: the skill was larger than the prompt budget, so the judge read
+  bounded excerpts and the finding names what it left out. On real skills this was about 5% of
+  judged skills. You can either:
+  - raise the budgets in your policy's `llm_analysis` section (`max_total_prompt_chars`,
+    `max_instruction_body_chars`, `max_code_file_chars`, `max_referenced_file_chars`), or
+  - send those skills to review.
+
+Fail a CI job when any skill was not analysed:
+
+```bash
+jq -e '[.results[].findings[] | select(.rule_id == "LLM_ANALYSIS_FAILED")] | length == 0' scan.json \
+  || { echo "some skills were not analysed by the judge: review them"; exit 1; }
+```
+
+---
+
+### Lowering False Positives
+
+Work through these in order, and stop when the noise is acceptable. Each step keeps detections
+elsewhere intact.
+
+#### 1. Pick the right preset
+
+Pick from [Recommended Settings](/docs/skill-scanner/recommended-settings):
+
+- `low-noise` + judge for your own skills.
+- `balanced` + judge for third-party skills (highest F1).
+- `quiet` + judge for the lowest false-positive rate.
+
+Presets demote noisy rules to LOW rather than deleting them.
+
+#### 2. Re-rate a rule that is noisy for you
+
+Start from the nearest preset and change only what you need:
+
+```bash
+skill-scanner generate-policy --preset low-noise -o my-policy.yaml
+skill-scanner scan ./skill --use-llm --policy my-policy.yaml
+```
+
+```yaml
+severity_overrides:            # a demoted rule is reported at LOW: visible, not gating
+  - rule_id: FILE_MAGIC_MISMATCH
+    severity: LOW
+    reason: "mostly a text label in Markdown on our skills"
+```
+
+#### 3. Suppress a reviewed finding for one skill or path
+
+Scoped suppressions keep the rule live everywhere else:
+
+```yaml
+suppressions:
+  - rule_id: HOMOGLYPH_ATTACK
+    skills: ["docs-translator"]
+    reason: "Skill legitimately contains Cyrillic prose"
+    expires: 2030-12-31
+  - rule_id: ARCHIVE_FILE_DETECTED
+    paths: ["**/fixtures/**/*.zip"]
+    reason: "Test fixtures"
+```
+
+A suppressed finding leaves `findings`, the verdict and the exit code, but it is kept:
+
+- It is listed under `suppressed_findings` in JSON.
+- SARIF reports it as dismissed, so Code Scanning keeps the record.
+
+#### 4. Cap the judge's weakest findings
+
+```yaml
+llm_analysis:
+  low_confidence_max_severity: LOW     # findings the model rates LOW confidence
+  contextual_risk_max_severity: LOW    # findings labelled CONTEXTUAL_RISK
+```
+
+The contextual cap is a strong lever, with a real cost. On held-out skills it cut the judge's FPR
+from 12.5% to 4.2%, and its recall from 65.9% to 49.6%.
+
+#### 5. Edit everything else interactively
+
+```bash
+skill-scanner configure-policy -i my-policy.yaml -o my-policy.yaml
+```
+
+`disabled_rules` switches a rule off everywhere and leaves no trace. Prefer a scoped suppression or
+a severity override.
+
+**Measure every change on a sample of your own skills** before rolling it out:
+
+```bash
+skill-scanner scan-all ./sample --recursive --use-llm --policy low-noise      --format json --output before.json
+skill-scanner scan-all ./sample --recursive --use-llm --policy my-policy.yaml --format json --output after.json
+jq '[.results[] | select(.max_severity == "HIGH" or .max_severity == "CRITICAL")] | length' before.json after.json
+```
+
+Judged runs vary between identical runs, so repeat a judged comparison before trusting a small
+difference.
+
+---
+
+### Related
+
+- [Scan Policies](/docs/skill-scanner/scan-policies): presets, merge behavior and every policy section
+- [CLI Reference](/docs/skill-scanner/cli-reference): output formats and exit behavior
+- [Custom Policy Configuration](https://github.com/cisco-ai-defense/skill-scanner/blob/main/docs/user-guide/custom-policy-configuration.md):
+  the full policy reference

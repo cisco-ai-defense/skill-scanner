@@ -1,7 +1,7 @@
 ---
 title: "Architecture"
 description: "Explore Skill Scanner architecture: its typed CEL decision layer, pluggable analyzers, policy engine, rule packs, threat taxonomy, and extension points."
-order: 6
+order: 13
 ---
 
 ## Architecture
@@ -80,7 +80,7 @@ Safely unpacks archives embedded in skills with protections for zip bombs, nesti
 |----------|-----------------|----------|
 | `behavioral_analyzer` | AST dataflow + cross-file correlation | `--use-behavioral` |
 | `llm_analyzer` | Semantic threat analysis with structured schema | API key + `--use-llm` |
-| `meta_analyzer` | Second-pass LLM validation/filtering | API key + `--enable-meta` |
+| `meta_analyzer` | Second-pass LLM validation/filtering (off by default; not recommended) | API key + `--enable-meta` |
 | `virustotal_analyzer` | Binary hash lookup + optional upload | API key + `--use-virustotal` |
 | `aidefense_analyzer` | Cisco AI Defense cloud inspection | API key + `--use-aidefense` |
 | `osv_analyzer` | OSV.dev advisories for exactly pinned Python and JavaScript dependencies | Network + `--use-osv` |

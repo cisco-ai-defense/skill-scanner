@@ -81,9 +81,9 @@ curl -X POST http://localhost:8000/scan \
 | `use_aidefense` | boolean | `false` | Enable AI Defense analyzer |
 | `use_trigger` | boolean | `false` | Enable trigger specificity analysis |
 | `use_osv` | boolean | `false` | Query OSV.dev for vulnerable exactly pinned Python and JavaScript dependencies |
-| `enable_meta` | boolean | `false` | Enable meta-analyzer |
+| `enable_meta` | boolean | `false` | Enable meta-analyzer (not recommended; see Recommended Settings) |
 | `llm_consensus_runs` | integer | `1` | Configured LLM runs used for majority consensus |
-| `policy` | string | `"balanced"` | Policy preset or YAML path |
+| `policy` | string | `"balanced"` | Preset (`balanced`, `low-noise`, `quiet`, `strict`, `permissive`) or YAML path |
 | `lenient` | boolean | `false` | Tolerate malformed skills |
 
 ---
@@ -180,7 +180,7 @@ The API server uses the same environment variables as the CLI:
 
 ```bash
 export SKILL_SCANNER_LLM_API_KEY=your_key
-export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
+export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-5-5
 export AI_DEFENSE_API_KEY=your_key
 ```
 

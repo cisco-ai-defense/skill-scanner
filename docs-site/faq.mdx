@@ -16,15 +16,24 @@ Skill Scanner supports [OpenAI Codex Skills](https://agentskills.io), [Cursor Ag
 
 ### Do I need API keys to use it?
 
-No. Core analyzers (static, bytecode, pipeline) require no API keys and no network access. OSV.dev scanning (`--use-osv`) requires network access but no key. Keys or cloud credentials are needed for LLM (`--use-llm` or `--adjudicate`), VirusTotal (`--use-virustotal`), and Cisco AI Defense (`--use-aidefense`).
+Not necessarily, but you do need a model for the LLM judge (`--use-llm`), which every recommended setup uses. That can be a hosted provider with a key, Bedrock or Vertex AI with cloud credentials, or a model you run locally with no key and no network (see [LLM Providers](/docs/skill-scanner/llm-providers)). The deterministic rules need nothing, but on their own they catch only about 8% of malicious skills. OSV.dev scanning (`--use-osv`) needs network access but no key. VirusTotal (`--use-virustotal`) and Cisco AI Defense (`--use-aidefense`) need their own keys.
 
 ### Which LLM providers are supported?
 
-Skill Scanner uses [LiteLLM](https://github.com/BerriAI/litellm) under the hood, supporting Anthropic, OpenAI, AWS Bedrock, Google Vertex AI, Azure OpenAI, OrcaRouter, and many other providers. Install optional extras (`[bedrock]`, `[vertex]`, `[azure]`, or `[all]`) for managed cloud services.
+Anthropic (the default, `anthropic/claude-sonnet-5-5`), OpenAI, AWS Bedrock, Google Vertex AI and Gemini, Azure OpenAI, OpenRouter, OrcaRouter, Ollama, the on-device Apple Foundation Model (experimental), and any OpenAI-compatible gateway or local server through `SKILL_SCANNER_LLM_PROVIDER=openai-compatible`. Install the matching extra (`[bedrock]`, `[vertex]`, `[google]`, `[azure]`, `[apple-fm]`, or `[all]`) for managed cloud services. See [LLM Providers](/docs/skill-scanner/llm-providers).
 
 ### How do I choose which analyzers to enable?
 
-Start with the defaults — the three core analyzers handle common threats without configuration. Add `--use-osv` for known vulnerable Python and JavaScript pins and `--use-behavioral` for Python dataflow. Add `--use-llm` for semantic reasoning and `--enable-meta` for cross-correlation. Use `--adjudicate` when deterministic HIGH/CRITICAL literal-regex false positives need a demote-only LLM review. Enable VirusTotal or Cisco AI Defense for cloud-based binary and content scanning.
+Start from [Recommended Settings](/docs/skill-scanner/recommended-settings), which picks a setup by goal with measured numbers.
+
+- **Always run the LLM judge** (`--use-llm`). It is what catches most malicious skills: held-out recall rises from 8% with the rules alone to about 67%. On a local model, nothing leaves your machine.
+- **Your own skills:** the judge with `--policy low-noise`.
+- **Third-party skills:** the judge with `--policy balanced` (highest F1) or `--policy quiet` (lowest false-positive rate).
+- **Optional extras:**
+  - `--use-osv` checks for known-vulnerable Python and JavaScript dependency pins.
+  - `--use-behavioral` adds Python dataflow analysis.
+  - VirusTotal or Cisco AI Defense add cloud-based binary and content scanning.
+- **Leave `--enable-meta` off.** It is off by default because it cost 16.4 points of recall in measurement.
 
 ### What is the adjudicator?
 
@@ -32,11 +41,11 @@ The adjudicator is an optional pass between deterministic analysis and LLM enric
 
 ### What is the meta-analyzer?
 
-The meta-analyzer is a second-pass LLM that reviews all findings from other analyzers and filters out likely false positives while preserving true threats. It requires an LLM API key and runs after all other analyzers complete. Enable it with `--enable-meta`.
+The meta-analyzer is a second-pass LLM that reviews the findings from other analyzers, correlates them, and can filter ones it judges false positives. It is off by default, and we recommend keeping it off. Measured on held-out skills, it cost 16.4 points of recall for 0.3 points of false-positive rate. Enable it with `--enable-meta` only if you have measured it on your own skills.
 
 ### What is LLM consensus mode?
 
-Consensus mode runs the LLM analyzer multiple times independently and keeps only findings that a majority of runs agree on. This significantly reduces false positives. Enable with `--llm-consensus-runs 3` (or any odd number).
+Consensus mode runs the LLM analyzer several times and keeps only the findings a majority of runs agree on. It multiplies the cost by the number of runs. Its effect on false positives has not been measured on the evaluation splits, so check it on your own skills before relying on it. Enable with `--llm-consensus-runs 3` (or any odd number).
 
 ### Does a clean scan mean the skill is safe?
 
@@ -52,7 +61,7 @@ Yes. Skill Scanner supports three rule types: YAML signature rules (regex patter
 
 ### How do scan policies work?
 
-Policies control every aspect of scanner behavior through YAML configuration: which rules fire, severity levels, file limits, analyzability thresholds, and more. Five built-in presets are available: `strict` (maximum sensitivity), `balanced` (default), `permissive` (reduced noise), and `low-noise` and `quiet`, which report at LOW the rules whose real-world flags the LLM judge most often clears. Generate and customize policies with `skill-scanner generate-policy` and `skill-scanner configure-policy`. See [Scan Policies](/docs/skill-scanner/scan-policies).
+Policies control every aspect of scanner behavior through YAML configuration: which rules fire, severity levels, file limits, analyzability thresholds, and more. Five built-in presets are available: `balanced` (the default), `low-noise` and `quiet`, which report at LOW the rules whose real-world flags the LLM judge most often clears, `strict` (maximum sensitivity, for audits), and `permissive`. Only `balanced`, `low-noise` and `quiet` are measured as gates; see [Recommended Settings](/docs/skill-scanner/recommended-settings). Generate and customize policies with `skill-scanner generate-policy` and `skill-scanner configure-policy`. See [Scan Policies](/docs/skill-scanner/scan-policies).
 
 ### How do I integrate with CI/CD?
 
@@ -61,12 +70,19 @@ Use the reusable GitHub Actions workflow for zero-config integration:
 ```yaml
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
     with:
+      scanner_version: "2.2.0"
       skill_path: .cursor/skills
+      policy: low-noise
+      use_llm: true
+      llm_model: anthropic/claude-sonnet-5-5
+    secrets:
+      llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
     permissions:
       security-events: write
       contents: read
+      actions: read
 ```
 
 Results appear as inline annotations in PRs via GitHub Code Scanning. Use `--fail-on-severity high` in any CI system to fail builds on findings. See [GitHub Actions](/docs/skill-scanner/github-actions).
@@ -79,6 +95,18 @@ Six formats: `summary` (terminal), `json` (automation), `markdown` (reports), `t
 
 Yes. Import `SkillScanner`, `scan_skill`, or `scan_directory` directly in Python. The SDK provides typed models for findings, results, and reports. See [Python SDK](/docs/skill-scanner/python-sdk).
 
+### How do I get the fewest false positives?
+
+Use the LLM judge with the `quiet` preset and block at HIGH: 33.1% of held-out malicious skills blocked at a 5.5% false-positive rate. Review MEDIUM+ as well to reach 50.3% recall at 7.2%. Don't use `quiet` without the judge. For your own skills, scoped `suppressions` and `severity_overrides` remove the remaining noise without switching rules off; see [Results and Tuning](/docs/skill-scanner/results-and-tuning).
+
+### What setting gives the highest F1?
+
+The `balanced` preset with the LLM judge, reviewing everything at MEDIUM or above: 66.7% recall at 15.4% false-positive rate, F1 about 75.5% on the held-out split. See [Recommended Settings](/docs/skill-scanner/recommended-settings) for every preset.
+
+### My skill was not analysed by the LLM. Is it clean?
+
+No. A skill the judge could not read gets an INFO `LLM_ANALYSIS_FAILED` finding, and INFO never fails a scan. Treat it as unreviewed and route it to a person. [Results and Tuning](/docs/skill-scanner/results-and-tuning) shows how to catch these in CI.
+
 ### What is cross-skill analysis?
 
 Cross-skill analysis detects coordinated attacks across multiple skills, including data relay patterns, shared external URLs, complementary triggers, and shared suspicious patterns. Enable with `--check-overlap` on `scan-all`.
@@ -86,7 +114,7 @@ Cross-skill analysis detects coordinated attacks across multiple skills, includi
 ### What platforms are supported?
 
 Skill Scanner supports CPython 3.11–3.14 on glibc Linux x86-64/ARM64, macOS
-12+ x86-64/ARM64, and Windows x86-64.
+14+ x86-64/ARM64, and Windows x86-64. Other platforms install from the source distribution, which needs Go 1.27.1+.
 
 ### How does it relate to DefenseClaw?
 

@@ -96,7 +96,7 @@ Content-Type: application/json
 | `custom_rules` | string | null | Path to custom YARA rules directory |
 | `use_behavioral` | boolean | false | Enable behavioral dataflow analyzer |
 | `use_llm` | boolean | false | Enable LLM semantic analyzer |
-| `llm_provider` | string | `"anthropic"` | LLM provider shortcut (`anthropic` or `openai`) |
+| `llm_provider` | string | `"anthropic"` | LLM provider shortcut (`anthropic`, `openai` or `openai-compatible`) |
 | `llm_consensus_runs` | integer | `1` | Number of LLM passes for majority voting |
 | `use_virustotal` | boolean | false | Enable VirusTotal binary analyzer |
 | `vt_upload_files` | boolean | false | Upload unknown binaries to VirusTotal |

@@ -86,7 +86,7 @@ import os
 from skill_scanner.core.analyzers import LLMAnalyzer
 
 scanner.add_analyzer(LLMAnalyzer(
-    model="anthropic/claude-sonnet-4-20250514",
+    model="anthropic/claude-sonnet-5-5",
     api_key=os.environ["SKILL_SCANNER_LLM_API_KEY"],
 ))
 ```
@@ -188,8 +188,8 @@ Values in descending order: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`, `SAFE`.
 from skill_scanner import SkillScanner
 from skill_scanner.core.scan_policy import ScanPolicy
 
-# Use a built-in preset
-policy = ScanPolicy.from_preset("strict")
+# Use a built-in preset: balanced, low-noise, quiet, strict or permissive
+policy = ScanPolicy.from_preset("low-noise")
 
 # Or load a custom YAML file
 policy = ScanPolicy.from_yaml("my_policy.yaml")
@@ -206,12 +206,15 @@ from skill_scanner.core.analyzer_factory import build_analyzers
 analyzers = build_analyzers(
     policy,
     use_behavioral=True,
-    use_llm=True,
+    use_llm=True,       # model and key come from SKILL_SCANNER_LLM_*
     use_osv=True,
-    llm_consensus_runs=3,
 )
-scanner = SkillScanner(analyzers=analyzers, policy=policy)
+with SkillScanner(analyzers=analyzers, policy=policy) as scanner:
+    result = scanner.scan_skill("/path/to/skill")
 ```
+
+[Recommended Settings](/docs/skill-scanner/recommended-settings) lists which preset and analyzers to
+use for each job, with measured rates.
 
 Set `policy.adjudicator.enabled = True` before constructing `SkillScanner` to enable the demote-only adjudication pass programmatically.
 

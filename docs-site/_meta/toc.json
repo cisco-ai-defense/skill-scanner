@@ -1,0 +1,54 @@
+{
+  "groups": [
+    {
+      "id": "get-started",
+      "label": "Get Started",
+      "pages": [
+        { "slug": "index", "title": "Overview" },
+        { "slug": "installation", "title": "Installation" },
+        { "slug": "quick-start", "title": "Quick Start" }
+      ]
+    },
+    {
+      "id": "pick-a-setup",
+      "label": "Pick a Setup",
+      "pages": [
+        { "slug": "recommended-settings", "title": "Recommended Settings" }
+      ]
+    },
+    {
+      "id": "configure",
+      "label": "Configure",
+      "pages": [
+        { "slug": "scan-policies", "title": "Scan Policies" },
+        { "slug": "llm-providers", "title": "LLM Providers" },
+        { "slug": "cli-reference", "title": "CLI Reference" }
+      ]
+    },
+    {
+      "id": "integrate",
+      "label": "Integrate",
+      "pages": [
+        { "slug": "github-actions", "title": "GitHub Actions and Pre-commit" },
+        { "slug": "python-sdk", "title": "Python SDK" },
+        { "slug": "api-reference", "title": "REST API" }
+      ]
+    },
+    {
+      "id": "results",
+      "label": "Results and Tuning",
+      "pages": [
+        { "slug": "results-and-tuning", "title": "Results and Tuning" },
+        { "slug": "faq", "title": "FAQ" }
+      ]
+    },
+    {
+      "id": "internals",
+      "label": "Internals",
+      "pages": [
+        { "slug": "architecture", "title": "Architecture" },
+        { "slug": "features", "title": "Features" }
+      ]
+    }
+  ]
+}

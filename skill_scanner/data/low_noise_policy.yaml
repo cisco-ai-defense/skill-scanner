@@ -3,7 +3,7 @@
 # The balanced policy, with the rules that alone produced the most judge-cleared flags on
 # 1.88M real skills reported at LOW instead of gating. Chosen on MaliciousSkillBench
 # train/validation only: 5 of 1,653 malicious detections are lost, and the real-world
-# MEDIUM+ flag rate falls from 2.15% to 1.94%. Demoted findings stay visible at LOW.
+# MEDIUM+ flag rate falls from 2.14% to 1.93%. Demoted findings stay visible at LOW.
 # LLM findings the model rates LOW confidence are capped at LOW: 10.5% -> 7.6% of real skills
 # flagged by the judge, for 2.5 points of train/validation recall.
 #

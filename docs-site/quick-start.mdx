@@ -1,7 +1,7 @@
 ---
 title: "Quick Start"
 description: "Install Skill Scanner, scan an AI agent skill, review security findings, and export JSON, SARIF, Markdown, table, or HTML reports in minutes."
-order: 4
+order: 3
 ---
 
 ## Quick Start
@@ -16,23 +16,31 @@ Get scanning in under a minute.
 # Using uv (recommended)
 uv pip install cisco-ai-skill-scanner
 
+# As a standalone tool
+uv tool install cisco-ai-skill-scanner   # or: pipx install cisco-ai-skill-scanner
+
 # Using pip
 pip install cisco-ai-skill-scanner
 ```
 
+Check the version with `skill-scanner --version`. This guide assumes 2.2.0 or newer.
+
 ---
 
-### 2. Configure (Optional)
+### 2. Configure the LLM Judge
 
-Core analyzers require no configuration. For LLM-powered analysis, set your API key:
+The LLM judge (`--use-llm`) is what reads a skill for intent, and every recommended setup uses it. It
+needs a model and, for most providers, a key:
 
 ```bash
 export SKILL_SCANNER_LLM_API_KEY="your_api_key"
-export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-5-5"   # the default
 ```
 
 <Callout type="tip">
-  Skip this step to use the scanner immediately with static analysis only. LLM configuration can be added later.
+  Bedrock, Vertex AI, gateways and local models (so nothing leaves your machine) are covered in
+  [LLM Providers](/docs/skill-scanner/llm-providers). Without the judge the scanner still runs, but
+  the rules alone catch only about 8% of malicious skills. Use that for a first test, not for real use.
 </Callout>
 
 ---
@@ -40,14 +48,17 @@ export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
 ### 3. Scan a Skill
 
 ```bash
-# Scan a single skill directory
+# First test: check the CLI works (rules only; add --use-llm for real use)
 skill-scanner scan /path/to/skill
 
-# Scan with behavioral analysis
-skill-scanner scan /path/to/skill --use-behavioral
+# A third-party skill: rules plus the LLM judge, blocking HIGH (highest F1)
+skill-scanner scan /path/to/skill --use-llm --policy balanced --fail-on-severity high
 
-# Add dependency and semantic analysis
-skill-scanner scan /path/to/skill --use-behavioral --use-osv --use-llm --enable-meta
+# Your own skills: the low-noise preset with the judge
+skill-scanner scan /path/to/skill --use-llm --policy low-noise --fail-on-severity high
+
+# Add Python dataflow and known-vulnerable dependency checks
+skill-scanner scan /path/to/skill --use-llm --use-behavioral --use-osv
 
 # Scan every skill in a public GitHub repository
 skill-scanner scan-repo owner/repo
@@ -127,7 +138,7 @@ skill-scanner scan /path/to/skill --format json --output results.json
 skill-scanner scan /path/to/skill --format sarif --output results.sarif
 
 # Interactive HTML report
-skill-scanner scan /path/to/skill --use-llm --enable-meta --format html --output report.html
+skill-scanner scan /path/to/skill --use-llm --format html --output report.html
 
 # Compact table for terminal
 skill-scanner scan-all /path/to/skills --format table
@@ -141,17 +152,22 @@ skill-scanner scan /path/to/skill --format json --format sarif \
 
 ### 7. Use Scan Policies
 
+Five presets ship: `balanced` (the default), `low-noise`, `quiet`, `strict` and `permissive`.
+
 ```bash
-# Strict policy for untrusted skills
-skill-scanner scan /path/to/skill --policy strict
+# Your own skills: fewer harmless flags, same detections
+skill-scanner scan /path/to/skill --use-llm --policy low-noise
 
-# Permissive policy for internal skills
-skill-scanner scan /path/to/skill --policy permissive
+# The lowest false-positive rate: the fewest flags, only with the judge
+skill-scanner scan /path/to/skill --use-llm --policy quiet
 
-# Generate and customize a policy
-skill-scanner generate-policy -o my_policy.yaml
-skill-scanner scan /path/to/skill --policy my_policy.yaml
+# Start a custom policy from a preset
+skill-scanner generate-policy --preset low-noise -o my_policy.yaml
+skill-scanner scan /path/to/skill --use-llm --policy my_policy.yaml
 ```
+
+[Recommended Settings](/docs/skill-scanner/recommended-settings) shows which preset to use for which
+job, with measured recall, false-positive rate and F1.
 
 ---
 
@@ -160,7 +176,8 @@ skill-scanner scan /path/to/skill --policy my_policy.yaml
 Fail builds when threats are detected:
 
 ```bash
-skill-scanner scan-all ./skills --fail-on-severity high --format sarif --output results.sarif
+skill-scanner scan-all ./skills --recursive --use-llm --policy low-noise --fail-on-severity high \
+  --format sarif --output results.sarif
 ```
 
 Or use the reusable GitHub Actions workflow:
@@ -172,12 +189,20 @@ on:
     paths: [".cursor/skills/**"]
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
     with:
+      scanner_version: "2.2.0"
       skill_path: .cursor/skills
+      policy: low-noise
+      fail_on_severity: high
+      use_llm: true
+      llm_model: anthropic/claude-sonnet-5-5
+    secrets:
+      llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
     permissions:
       security-events: write
       contents: read
+      actions: read
 ```
 
 See [GitHub Actions](/docs/skill-scanner/github-actions) for the full CI/CD guide.
@@ -228,6 +253,9 @@ uv manages its own virtual environment — no manual venv activation needed.
 
 ### Next Steps
 
+- **[Recommended Settings](/docs/skill-scanner/recommended-settings): pick a setup** for the lowest
+  false-positive rate or the highest F1, and copy its config
+- [Results and Tuning](/docs/skill-scanner/results-and-tuning) — Read findings and lower noise
 - [Features](/docs/skill-scanner/features) — Explore analyzers, rule packs, and current capabilities
 - [CLI Reference](/docs/skill-scanner/cli-reference) — All commands and flags
 - [Scan Policies](/docs/skill-scanner/scan-policies) — Tune detection sensitivity

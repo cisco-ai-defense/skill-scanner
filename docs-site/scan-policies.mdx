@@ -1,7 +1,7 @@
 ---
 title: "Scan Policies"
 description: "Configure Skill Scanner policies with built-in presets, severity overrides, disabled rules, LLM budgets, trusted domains, and adjudication controls."
-order: 7
+order: 5
 ---
 
 ## Scan Policies
@@ -12,15 +12,17 @@ Scan policies define scanner behavior without code changes. Start with a built-i
 
 ### Which Preset Should I Use?
 
-[Recommended Settings](/docs/skill-scanner/recommended-settings) answers this per use case, with measured numbers. In short:
+[Recommended Settings](/docs/skill-scanner/recommended-settings) answers this by goal, with measured numbers. Every recommended setup runs the LLM judge (`--use-llm`). In short:
 
 | Scanning... | Use |
 |-------------|-----|
-| Your own skills, locally, in pre-commit or in CI | **low-noise** — rules only |
-| Third-party skills before install | **balanced** (default) with the LLM judge; block HIGH, review MEDIUM |
-| Third-party skills with little review capacity | **quiet** with the LLM judge — not without it |
-| Audits and threat hunting | **strict** — maximum sensitivity, triage only |
-| Trusted internal skills | **permissive** — reduced noise |
+| Your own skills, locally, in pre-commit or in CI | **low-noise** with the LLM judge |
+| Third-party skills, highest F1 | **balanced** (default) with the LLM judge; block HIGH, review MEDIUM |
+| Third-party skills, lowest false-positive rate | **quiet** with the LLM judge, never without it |
+| Audits and threat hunting | **strict** with the LLM judge; read everything, never a gate |
+
+`permissive` turns CEL and correlation off. It has not been measured as a gate, so for fewer false
+positives prefer `low-noise`.
 
 ---
 
@@ -31,14 +33,14 @@ Scan policies define scanner behavior without code changes. Start with a built-i
 | `strict` | shadow / on | Maximum sensitivity | Untrusted content, compliance audits, security reviews |
 | `balanced` | shadow / on | Default blend | General CI usage, day-to-day development scanning |
 | `permissive` | off / off | Lower noise | Trusted internal workflows, known-safe skill directories |
-| `low-noise` | shadow / on | Balanced, fewer harmless flags | Balanced with 11 rules reported at LOW; LLM findings the model rates low-confidence capped at LOW |
-| `quiet` | shadow / on | Fewest flags | Triage queues: 19 rules reported at LOW, and LLM low-confidence and contextual-risk findings capped at LOW |
+| `low-noise` | shadow / on | Balanced, fewer harmless flags | Your own skills, and the judge with a smaller queue: 11 rules reported at LOW; LLM findings the model rates low-confidence capped at LOW |
+| `quiet` | shadow / on | Fewest flags | Third-party skills with the judge, when review capacity is the constraint: 19 rules reported at LOW, and LLM low-confidence and contextual-risk findings capped at LOW. Not without the judge |
 
 ```bash
-skill-scanner scan ./my-skill --policy strict
-skill-scanner scan ./my-skill --policy balanced
-skill-scanner scan ./my-skill --policy permissive
-skill-scanner scan ./my-skill --policy low-noise
+skill-scanner scan ./my-skill --use-llm --policy balanced
+skill-scanner scan ./my-skill --use-llm --policy low-noise
+skill-scanner scan ./my-skill --use-llm --policy quiet
+skill-scanner scan ./my-skill --use-llm --policy strict
 ```
 
 Override the selected policy for one invocation with
@@ -52,14 +54,14 @@ outside the current core + CEL release gate.
 ### Generate and Customize a Policy
 
 ```bash
-# Generate a policy YAML from a preset
-skill-scanner generate-policy --preset balanced -o my_policy.yaml
+# Generate a policy YAML from a preset (any of the five)
+skill-scanner generate-policy --preset low-noise -o my_policy.yaml
 
 # Interactive TUI for editing every policy section
 skill-scanner configure-policy -i my_policy.yaml -o my_policy.yaml
 
 # Use the custom policy
-skill-scanner scan ./my-skill --policy my_policy.yaml
+skill-scanner scan ./my-skill --use-llm --policy my_policy.yaml
 ```
 
 <Callout type="tip">
@@ -93,9 +95,10 @@ Policies cover file classification, analyzer behavior, adjudication, LLM budgets
 | `analyzers.correlation` | Bounded source/sink and staged-behavior correlation |
 | `cel.mode` | CEL decisions: off, shadow, or enforce |
 | `severity_overrides` | Per-rule severity remapping (promote or demote) |
-| `disabled_rules` | Suppress specific rule IDs entirely |
+| `suppressions` | Silence or re-rate a rule for named skills or paths only |
+| `disabled_rules` | Switch specific rule IDs off everywhere |
 | `adjudicator` | Enable demote-only review and set the minimum false-positive confidence |
-| `llm_analysis` | Prompt/output budgets, meta multiplier, and trusted reference domains |
+| `llm_analysis` | Prompt/output budgets, caps on low-confidence and contextual-risk LLM findings, meta multiplier, and trusted reference domains |
 
 #### All Sections
 
@@ -109,10 +112,11 @@ Policies cover file classification, analyzer behavior, adjudication, LLM budgets
 | `pipeline` | Shell pipeline analysis tuning |
 | `command_safety` | Command risk tier classification |
 | `severity_overrides` | Per-rule severity adjustments |
-| `disabled_rules` | Rule suppression list |
+| `suppressions` | Scoped, expiring, audited exceptions for named skills or paths |
+| `disabled_rules` | Rules switched off everywhere |
 | `finding_output` | Deduplication and co-occurrence annotation settings |
 | `metadata` | Policy fingerprint and metadata attachment |
-| `llm_analysis` | LLM context/output budgets, meta multiplier, and trusted reference domains |
+| `llm_analysis` | LLM context/output budgets, LLM severity caps, meta multiplier, and trusted reference domains |
 | `adjudicator` | Per-finding adjudication toggle and confidence threshold |
 | `docs_scanning` | Documentation path scanning behavior |
 | `hidden_files` | Hidden file handling allowlists |
@@ -121,21 +125,56 @@ Policies cover file classification, analyzer behavior, adjudication, LLM budgets
 
 ### Common Policy Tweaks
 
-#### Suppress a Noisy Rule
+#### Demote a Noisy Rule (Visible, Not Gating)
 
 ```yaml
-disabled_rules:
-  - HIDDEN_FILE_DETECTED
-  - BINARY_FILE_DETECTED
+severity_overrides:
+  - rule_id: HIDDEN_DATA_FILE
+    severity: LOW
+    reason: "our skills ship dotfiles on purpose"
 ```
 
 #### Promote a Rule to CRITICAL
 
 ```yaml
 severity_overrides:
-  DATA_EXFIL_HTTP_POST: CRITICAL
-  HARDCODED_SECRET_GENERIC: HIGH
+  - rule_id: DATA_EXFIL_HTTP_POST
+    severity: CRITICAL
+    reason: "any outbound POST from a skill is a blocker for us"
 ```
+
+#### Suppress a Reviewed Finding for One Skill or Path
+
+```yaml
+suppressions:
+  - rule_id: HOMOGLYPH_ATTACK
+    skills: ["docs-translator"]
+    reason: "Skill legitimately contains Cyrillic prose"
+    expires: 2030-12-31
+```
+
+A suppressed finding no longer affects the verdict or exit code, but it is kept under
+`suppressed_findings` in JSON, and SARIF shows it as dismissed.
+
+#### Switch a Rule Off Everywhere
+
+```yaml
+disabled_rules:
+  - BINARY_FILE_DETECTED
+```
+
+Disabled rules produce no findings at all. Prefer a severity override or a scoped suppression.
+
+#### Cap the LLM Judge's Weakest Findings
+
+```yaml
+llm_analysis:
+  low_confidence_max_severity: LOW     # on in low-noise and quiet
+  contextual_risk_max_severity: LOW    # on in quiet
+```
+
+Capped findings are still reported, at LOW. [Results and Tuning](/docs/skill-scanner/results-and-tuning)
+shows what each cap costs in recall.
 
 #### Restrict File Size Limits
 
@@ -184,7 +223,7 @@ from skill_scanner import SkillScanner
 from skill_scanner.core.scan_policy import ScanPolicy
 
 # Use a built-in preset
-policy = ScanPolicy.from_preset("strict")
+policy = ScanPolicy.from_preset("low-noise")
 
 # Or load a custom YAML file
 policy = ScanPolicy.from_yaml("my_policy.yaml")
@@ -200,7 +239,7 @@ result = scanner.scan_skill("/path/to/skill")
 Commit your custom policy to the repository and reference it in CI:
 
 ```bash
-skill-scanner scan-all ./skills --policy .github/scan-policy.yaml --fail-on-severity high
+skill-scanner scan-all ./skills --use-llm --policy .github/scan-policy.yaml --fail-on-severity high
 ```
 
 Or in GitHub Actions:
@@ -209,6 +248,8 @@ Or in GitHub Actions:
 with:
   skill_path: .cursor/skills
   policy: .github/scan-policy.yaml
+  use_llm: true
+  llm_model: anthropic/claude-sonnet-5-5
 ```
 
 ---

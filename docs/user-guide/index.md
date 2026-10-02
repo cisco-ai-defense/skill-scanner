@@ -4,11 +4,11 @@ Skill Scanner ships as a CLI tool, a Python library, and a REST API. This sectio
 
 ## What are you trying to do?
 
-- **[Scan a skill locally](./cli-usage)** -- Run the CLI against a skill directory on your machine or in a CI pipeline.
-- **[Embed scanning in Python](./python-sdk)** -- Import the SDK to scan skills programmatically inside your own applications.
-- **[Integrate via REST API](./api-server)** -- Upload skill ZIPs over HTTP for CI/CD, web portals, or service-to-service workflows.
-- **[Tune detection sensitivity](./scan-policies-overview)** -- Choose a preset policy or write custom YAML to control which rules fire and at what severity.
-- **[Pick a configuration for your use case](./recommended-settings)** -- What we recommend for local development, CI gates, vetting third-party skills and registry-scale scanning, why, and how to set it up.
+- **[Scan a skill locally](cli-usage.md)** -- Run the CLI against a skill directory on your machine or in a CI pipeline.
+- **[Embed scanning in Python](python-sdk.md)** -- Import the SDK to scan skills programmatically inside your own applications.
+- **[Integrate via REST API](api-server.md)** -- Upload skill ZIPs over HTTP for CI/CD, web portals, or service-to-service workflows.
+- **[Tune detection sensitivity](scan-policies-overview.md)** -- Choose a preset policy or write custom YAML to control which rules fire and at what severity.
+- **[Pick a configuration for your use case](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings)** -- The setup with the lowest false-positive rate or the highest F1, with measured numbers and copy-paste configs.
 
 ## Start Here
 

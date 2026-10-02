@@ -6,26 +6,30 @@
 > pip install cisco-ai-skill-scanner
 > skill-scanner scan ./my-skill
 > ```
-> A release containing this branch's CEL changes will include the required
-> helper in its wheels. The sections below cover that release's planned platform
-> matrix, optional providers, LLM keys, and advanced toggles.
+> Wheels include the required CEL helper. The sections below cover the platform
+> matrix, optional providers, LLM keys, and advanced toggles. To pick a setup, see
+> [Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings).
 
 ## Installation
 
-This checkout, and a release containing these changes, supports CPython 3.11,
-3.12, 3.13, and 3.14. It rejects Python 3.10 and Python 3.15+.
+Skill Scanner supports CPython 3.11, 3.12, 3.13 and 3.14. It rejects Python 3.10
+and Python 3.15+.
 
-The release workflow is configured to produce wheels for glibc Linux
-x86-64/ARM64, macOS x86-64/ARM64, and Windows x86-64. The CEL helper supports
-macOS 13+, but the complete scanner's planned minimum is macOS 14 because of the
-YARA-X wheel floor. Alpine/musl, PyPy, and Windows ARM are outside that release
-matrix. Until a release containing these changes is published, the package
-currently served by PyPI may have a different compatibility contract.
+Releases ship wheels for glibc Linux x86-64/ARM64, macOS x86-64/ARM64 and
+Windows x86-64. The CEL helper supports macOS 13+, but the complete scanner
+needs macOS 14 because of the YARA-X wheel floor. Other platforms install from
+the source distribution, which needs Go 1.27.1+. Alpine/musl, PyPy and Windows
+ARM are unsupported.
+
+The `low-noise` and `quiet` presets, the LLM caps and `--llm-decompose` need
+2.2.0 or newer.
 
 ### PyPI (recommended)
 
 ```bash
 uv pip install cisco-ai-skill-scanner
+# or, as a standalone tool
+uv tool install cisco-ai-skill-scanner   # or: pipx install cisco-ai-skill-scanner
 # or
 pip install cisco-ai-skill-scanner
 ```

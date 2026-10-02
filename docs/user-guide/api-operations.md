@@ -78,7 +78,7 @@ CMD ["skill-scanner-api", "--host", "0.0.0.0", "--port", "8000"]
 docker build -t skill-scanner-api .
 docker run -p 8000:8000 \
   -e SKILL_SCANNER_LLM_API_KEY=your_key \
-  -e SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514 \
+  -e SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-5-5 \
   skill-scanner-api
 ```
 
@@ -196,7 +196,7 @@ pip install -U cisco-ai-skill-scanner
 
 # Set model credentials
 export SKILL_SCANNER_LLM_API_KEY=your_key
-export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
+export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-5-5
 ```
 
 ### Slow performance

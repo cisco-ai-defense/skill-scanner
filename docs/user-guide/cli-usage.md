@@ -96,15 +96,19 @@ Not sure which flags to use? Pick the row that matches your situation:
 
 | Scenario | Suggested flags |
 |---|---|
-| Fast local iteration | default analyzers |
-| Suspicious third-party skill | `--use-behavioral --policy strict` |
-| High-confidence triage | `--use-llm --enable-meta` |
+| First test that the CLI works | default analyzers (rules only; add the judge for real use) |
+| Your own skills, pre-commit, CI | `--use-llm --policy low-noise --fail-on-severity high` |
+| Suspicious third-party skill | `--use-llm --policy balanced --fail-on-severity high` (review MEDIUM+) |
+| Little review capacity | `--use-llm --policy quiet --fail-on-severity high` |
+| High-stakes review | `--use-llm --llm-decompose --use-behavioral` |
 | Binary-heavy package | `--use-virustotal` |
 
 ## Exit Code Behavior
 
 - `0`: successful command (or no fail condition triggered)
-- `1`: runtime error, or findings detected when `--fail-on-findings` is enabled
+- `1`: runtime error, or findings at or above the `--fail-on-severity` / `--fail-on-findings` threshold
+- `2`: the scan could not run as configured, for example an unknown policy, or a requested LLM judge
+  that could not be built (missing key, missing provider extra). It never falls back to rules only.
 
 When `--fail-on-findings` is active:
 

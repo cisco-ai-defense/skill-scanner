@@ -1,18 +1,28 @@
 ---
-title: "GitHub Actions"
+title: "GitHub Actions and Pre-commit"
 description: "Integrate Skill Scanner with GitHub Actions using reusable workflows, SARIF Code Scanning, severity gates, branch protection, and pre-commit hooks."
-order: 11
+order: 8
 ---
 
-## GitHub Actions
+## GitHub Actions and Pre-commit
 
-Scan skills automatically on every push or pull request using the reusable GitHub Actions workflow. Results appear as inline annotations in PRs via GitHub Code Scanning.
+Scan skills automatically on every push or pull request with the reusable GitHub Actions workflow,
+or before every commit with the pre-commit hook. In CI, findings appear as inline annotations on
+pull requests through GitHub Code Scanning.
+
+Which preset and threshold to use is covered in
+[Recommended Settings](/docs/skill-scanner/recommended-settings). The short version:
+
+- Every setup runs the LLM judge (`use_llm: true`). Rules alone catch only about 8% of malicious skills.
+- For your own skills, use `low-noise` with the judge, failing at HIGH.
+- For third-party skills, use `balanced` (highest F1) or `quiet` (lowest false-positive rate) with the judge.
 
 ---
 
-### Quick Start (No Keys Required)
+### Quick Start
 
-Add this file to your repository at `.github/workflows/scan-skills.yml`:
+Add your model provider's key as the repository secret `SKILL_SCANNER_LLM_API_KEY`, then add this file
+to your repository at `.github/workflows/scan-skills.yml`:
 
 ```yaml
 name: Scan Skills
@@ -25,18 +35,34 @@ on:
 
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
     with:
+      scanner_version: "2.2.0"
       skill_path: .cursor/skills
+      policy: low-noise
+      fail_on_severity: high
+      use_llm: true
+      llm_model: anthropic/claude-sonnet-5-5
+    secrets:
+      llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
     permissions:
       security-events: write
       contents: read
+      actions: read
 ```
+
+For Bedrock, Vertex AI or a model you host, use the
+[self-hosted workflow with the judge on Bedrock](#self-hosted-workflow-with-the-judge-on-bedrock)
+instead.
+
+Pin the workflow to a release tag such as `@2.2.0`, not `@main`. The caller must grant the three
+permissions shown. A reusable workflow can only use permissions its caller grants, and the SARIF
+upload needs `security-events: write`.
 
 This will:
 
-1. Install `cisco-ai-skill-scanner` from PyPI on a fresh runner
-2. Run `skill-scanner scan-all` with SARIF output, recursive scanning, and cross-skill overlap detection
+1. Install `cisco-ai-skill-scanner` from PyPI on a fresh runner (pin the version with the `scanner_version` input)
+2. Run `skill-scanner scan-all --use-llm` with SARIF output, recursive scanning, and cross-skill overlap detection
 3. Upload SARIF results to GitHub Code Scanning (findings appear as annotations on PRs)
 4. Fail the workflow if any findings at or above HIGH severity are detected
 
@@ -49,17 +75,32 @@ This will:
 | `skill_path` | string | *(required)* | Path to skills directory or single skill |
 | `scan_mode` | string | `scan-all` | `scan` (single skill) or `scan-all` (directory) |
 | `format` | string | `sarif` | Output format: summary, json, markdown, table, sarif, html |
-| `policy` | string | `balanced` | Preset name or path to custom YAML |
+| `policy` | string | `balanced` | Preset (`balanced`, `low-noise`, `quiet`, `strict`, `permissive`) or path to custom YAML |
+| `scanner_version` | string | `""` (latest) | `cisco-ai-skill-scanner` release to install, e.g. `2.2.0`. Pin it to the same release as the workflow ref |
 | `fail_on_severity` | string | `high` | Fail if findings at/above this severity |
 | `python_version` | string | `3.12` | Numeric CPython version from 3.11 through 3.14 |
 | `upload_sarif` | boolean | `true` | Upload SARIF to Code Scanning |
 | `use_llm` | boolean | `false` | Enable LLM semantic analysis |
-| `llm_model` | string | `""` | LLM model name (e.g., `gpt-4o`) |
+| `llm_model` | string | `""` | LLM model, as `provider/model` (e.g., `anthropic/claude-sonnet-5-5`) |
+| `llm_provider` | string | `""` | Provider override, e.g. `openai-compatible` for a gateway |
+| `llm_base_url` | string | `""` | Base URL for an OpenAI-compatible gateway |
+| `aws_region` | string | `us-east-1` | Region for `bedrock/` models; pass a Bedrock API key as the `llm_api_key` secret |
 | `use_behavioral` | boolean | `false` | Enable behavioral dataflow analysis |
 | `lenient` | boolean | `false` | Tolerate malformed skills |
 | `extra_args` | string | `""` | Additional CLI flags accepted by the workflow's explicit allowlist |
 
-The allowlist includes additive analyzer and tuning options such as `--rule-packs`, `--use-virustotal`, `--use-aidefense`, `--use-trigger`, `--enable-meta`, LLM limits, and repository-local policy/taxonomy paths. Unknown flags are rejected before the scan runs. The reusable workflow does not currently accept `--use-osv` or `--adjudicate`; use the self-hosted pattern below when those passes are required.
+The `extra_args` allowlist accepts additive analyzer and tuning options. These include
+`--rule-packs`, `--use-osv`, `--use-virustotal`, `--use-aidefense`, `--use-trigger`,
+`--llm-decompose`, `--adjudicate`, LLM limits, and repository-local policy and taxonomy paths.
+Unknown flags are rejected before the scan runs.
+
+The reusable workflow can reach Bedrock with a Bedrock API key (the `llm_api_key` secret, a `bedrock/`
+model and `aws_region`), but it cannot assume an AWS role or another cloud identity. For role-based
+Bedrock or Vertex AI, use the [self-hosted workflow](#self-hosted-workflow-with-the-judge-on-bedrock).
+
+A run that cannot start as configured fails with "could not run as configured" (scanner exit code 2),
+which is different from "found findings". An unknown policy or a judge without a working key
+causes it.
 
 ---
 
@@ -78,51 +119,72 @@ Configure secrets in **Settings > Secrets and variables > Actions**. They are ne
 
 ### Configuration Tiers
 
-#### Tier 1: Static Analysis (No Keys)
-
-Zero-config static scanning with SARIF upload:
+#### Tier 1: Rules + LLM Judge — your own skills
 
 ```yaml
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
     with:
+      scanner_version: "2.2.0"
       skill_path: .cursor/skills
-```
-
-#### Tier 2: Static + LLM (One Key)
-
-Add LLM-powered semantic analysis:
-
-```yaml
-jobs:
-  scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
-    with:
-      skill_path: .cursor/skills
+      policy: low-noise
       use_llm: true
-      llm_model: gpt-4o
+      llm_model: anthropic/claude-sonnet-5-5
     secrets:
       llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
 ```
 
-#### Tier 3: LLM + Behavioral + VirusTotal
+Fails on HIGH; MEDIUM findings appear as annotations for the reviewer.
 
-Enable LLM, VirusTotal, and behavioral analysis:
+#### Tier 2: Rules + LLM Judge — third-party skills
 
 ```yaml
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
     with:
-      skill_path: .cursor/skills
+      scanner_version: "2.2.0"
+      skill_path: vendor/skills
+      policy: balanced        # quiet for the lowest false-positive rate
+      use_llm: true
+      llm_model: anthropic/claude-sonnet-5-5
+    secrets:
+      llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+```
+
+For an OpenAI-compatible gateway, add `llm_provider: openai-compatible` and `llm_base_url`.
+
+#### Tier 3: Judge + Behavioral + VirusTotal
+
+```yaml
+jobs:
+  scan:
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
+    with:
+      scanner_version: "2.2.0"
+      skill_path: vendor/skills
       use_llm: true
       use_behavioral: true
-      policy: strict
+      extra_args: --use-virustotal --use-osv
     secrets:
       llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
       virustotal_api_key: ${{ secrets.VIRUSTOTAL_API_KEY }}
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
 ```
+
+Keep `strict` for audits where a person reads every finding; it is not measured as a gate.
 
 ---
 
@@ -141,32 +203,29 @@ PRs that touch skill files must pass the security scan before they can be merged
 
 ### Pre-commit Hook
 
-Scan skills before every commit using the [pre-commit](https://pre-commit.com/) framework:
+Scan skills, with the judge, before every commit using the [pre-commit](https://pre-commit.com/)
+framework:
 
 ```yaml
 # .pre-commit-config.yaml
 repos:
-  - repo: https://github.com/cisco-ai-defense/skill-scanner
-    rev: 2.0.12 # pin the latest release you have reviewed
+  - repo: local
     hooks:
       - id: skill-scanner
+        name: Scan agent skills (rules + LLM judge)
+        entry: skill-scanner scan-all .claude/skills --recursive --use-llm --policy low-noise --fail-on-severity high
+        language: system
+        pass_filenames: false
+        files: ^\.claude/skills/
 ```
 
-Or install the built-in hook directly:
+The hook runs when a commit touches `.claude/skills/`. It uses the `skill-scanner` installed in your
+environment and the `SKILL_SCANNER_LLM_*` variables from your shell, which can point at a
+[local model](/docs/skill-scanner/llm-providers#keeping-skill-content-on-your-machines). Run
+`pre-commit install` once.
 
-```bash
-skill-scanner-pre-commit --install
-```
-
-The hook maps each changed path to its nearest parent `SKILL.md`, scans each affected skill once, and blocks commits at the configured severity. Use `--scan-all` to scan every configured skill.
-
-For incremental CI scans, let pre-commit supply the changed paths between two checked-out revisions:
-
-```bash
-pre-commit run skill-scanner --from-ref "$BASE_SHA" --to-ref "$HEAD_SHA"
-```
-
-Both revisions must be available in the checkout (for example, use `fetch-depth: 0` with `actions/checkout`). Deletions are handled when the hook computes changed paths.
+The packaged `skill-scanner` hook (`skill-scanner-pre-commit`) scans only the skills a commit
+touches, but runs the rules alone. Don't rely on it by itself: pair it with a judged scan in CI.
 
 ---
 
@@ -196,11 +255,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install cisco-ai-skill-scanner
+      - run: pip install "cisco-ai-skill-scanner==2.2.0"
 
       - name: Scan skills
+        env:
+          SKILL_SCANNER_LLM_API_KEY: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
+          SKILL_SCANNER_LLM_MODEL: anthropic/claude-sonnet-5-5
         run: |
           skill-scanner scan-all .cursor/skills \
+            --use-llm \
+            --policy low-noise \
             --format sarif \
             --output results.sarif \
             --recursive \
@@ -224,14 +288,57 @@ Commit a custom policy to the repository and reference it:
 with:
   skill_path: .cursor/skills
   policy: .github/scan-policy.yaml
+  use_llm: true
+  llm_model: anthropic/claude-sonnet-5-5
 ```
 
 Or in the self-hosted workflow:
 
 ```bash
 skill-scanner scan-all .cursor/skills \
+  --use-llm \
   --policy .github/scan-policy.yaml \
   --format sarif \
   --output results.sarif \
   --fail-on-severity high
 ```
+
+---
+
+### Self-Hosted Workflow with the Judge on Bedrock
+
+The model the published figures were measured with runs on Bedrock. Assume a role with OIDC, then
+run the CLI:
+
+```yaml
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.BEDROCK_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: pip install "cisco-ai-skill-scanner[bedrock]==2.2.0"
+      - name: Scan skills
+        env:
+          SKILL_SCANNER_LLM_MODEL: bedrock-mantle/google.gemma-4-26b-a4b
+        run: |
+          skill-scanner scan-all vendor/skills --recursive --use-llm --policy balanced \
+            --fail-on-severity high --format sarif --output results.sarif
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: results.sarif
+```
+
+If the judge cannot start, for example because the role cannot reach the model, the scan exits
+with code 2 instead of passing with rules only.

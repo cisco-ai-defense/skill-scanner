@@ -247,6 +247,6 @@ uv run pytest tests/test_scanner.py::test_scan_safe_skill -v --forked
 
 ## Related Documentation
 
-- [Development Guide](/docs/developing.md) - Environment setup
+- [Development Guide](docs/development/setup-and-testing.md) - Environment setup
 - [Contributing Guide](/CONTRIBUTING.md) - Contribution process
 - [Evaluation Framework](/evals/README.md) - Detection accuracy testing

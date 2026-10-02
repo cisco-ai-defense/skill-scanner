@@ -75,7 +75,7 @@ The API server uses the same environment variables as the CLI. The most common o
 ```bash
 export SKILL_SCANNER_ALLOWED_ROOTS=/srv/skills:/srv/scanner-config
 export SKILL_SCANNER_LLM_API_KEY=your_key
-export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-4-20250514
+export SKILL_SCANNER_LLM_MODEL=anthropic/claude-sonnet-5-5
 export AI_DEFENSE_API_KEY=your_key
 ```
 

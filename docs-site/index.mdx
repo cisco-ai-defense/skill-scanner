@@ -13,16 +13,16 @@ Skill Scanner combines **pattern-based detection** (YAML + YARA + Python checks)
 [View on GitHub](https://github.com/cisco-ai-defense/skill-scanner) | [PyPI Package](https://pypi.org/project/cisco-ai-skill-scanner/) | [Join Discord](https://discord.com/invite/nKWtDcXxtx)
 
 <Callout type="tip" title="Get Started Fast">
-  Install with pip, scan a skill, and see results in under a minute. See the [Quick Start](/docs/skill-scanner/quick-start) for a full walkthrough.
+  Install with pip, scan a skill, and see results in under a minute. See the [Quick Start](/docs/skill-scanner/quick-start) for a full walkthrough, then [Recommended Settings](/docs/skill-scanner/recommended-settings) to pick a setup for the lowest false-positive rate or the highest F1.
 </Callout>
 
 ---
 
 ### How It Works
 
-**1. Install** — `pip install cisco-ai-skill-scanner` or use [uv](https://docs.astral.sh/uv/). Optionally configure LLM and cloud service API keys for deeper analysis.
+**1. Install** — `pip install cisco-ai-skill-scanner` or use [uv](https://docs.astral.sh/uv/). Then configure a model for the LLM judge, hosted or local. The judge is what reads a skill for intent, and every recommended setup uses it.
 
-**2. Scan** — Point the CLI at a local skill, a directory of skills, or a GitHub repository. Core analyzers (static, bytecode, pipeline) run automatically. Add behavioral, LLM, OSV.dev, VirusTotal, Cisco AI Defense, adjudication, and cross-skill analysis as needed.
+**2. Scan** — Point the CLI at a local skill, a directory of skills, or a GitHub repository. Core analyzers (static, bytecode, pipeline) run automatically; add the LLM judge with `--use-llm`. Behavioral, OSV.dev, VirusTotal, Cisco AI Defense, adjudication, and cross-skill analysis are optional extras.
 
 **3. Review** — Get findings in six output formats: summary, JSON, Markdown, table, SARIF, and interactive HTML. Each finding includes severity, threat category, file path, and remediation guidance.
 
@@ -55,16 +55,18 @@ Skill Scanner combines **pattern-based detection** (YAML + YARA + Python checks)
 | Guide | Description |
 |-------|-------------|
 | [Installation](/docs/skill-scanner/installation) | Prerequisites, install methods, and environment configuration |
-| [Features](/docs/skill-scanner/features) | Analyzer inventory, rule packs, file intelligence, and current detection capabilities |
 | [Quick Start](/docs/skill-scanner/quick-start) | Get scanning in under a minute |
+| [Recommended Settings](/docs/skill-scanner/recommended-settings) | Pick a setup by goal, with measured recall, FPR and F1, and copy its config |
+| [Scan Policies](/docs/skill-scanner/scan-policies) | Presets, custom policy YAML, and common tweaks |
+| [LLM Providers](/docs/skill-scanner/llm-providers) | Configure the LLM judge for any provider, gateway or local model |
 | [CLI Reference](/docs/skill-scanner/cli-reference) | All commands, flags, and examples |
-| [Architecture](/docs/skill-scanner/architecture) | Scanning pipeline, system design, and extension points |
-| [Scan Policies](/docs/skill-scanner/scan-policies) | Presets, custom policy YAML, and tuning guide |
-| [Recommended Settings](/docs/skill-scanner/recommended-settings) | What to run for which job, why, and how to configure it |
+| [GitHub Actions and Pre-commit](/docs/skill-scanner/github-actions) | CI/CD integration with the reusable workflow and the pre-commit hook |
 | [Python SDK](/docs/skill-scanner/python-sdk) | Programmatic scanning with typed models |
-| [API Reference](/docs/skill-scanner/api-reference) | REST API server for upload and batch workflows |
-| [GitHub Actions](/docs/skill-scanner/github-actions) | CI/CD integration with reusable workflow |
+| [REST API](/docs/skill-scanner/api-reference) | REST API server for upload and batch workflows |
+| [Results and Tuning](/docs/skill-scanner/results-and-tuning) | Read findings, build the review queue, and lower false positives |
 | [FAQ](/docs/skill-scanner/faq) | Common questions and answers |
+| [Architecture](/docs/skill-scanner/architecture) | Scanning pipeline, system design, and extension points |
+| [Features](/docs/skill-scanner/features) | Analyzer inventory, rule packs, file intelligence, and current detection capabilities |
 
 For deep-dives into individual analyzers, rule authoring, and threat taxonomy, see the [full documentation](https://github.com/cisco-ai-defense/skill-scanner/tree/main/docs) in the repository.
 
@@ -76,7 +78,7 @@ Skill Scanner is a detection tool. It identifies known and probable risk pattern
 
 - **No findings does not equal no risk.** A clean scan means no known threat patterns were detected — not that the skill is safe.
 - **Coverage is inherently incomplete.** The scanner combines multiple engines, but novel attacks may evade all of them.
-- **False positives and false negatives can occur.** Consensus modes and meta-analysis reduce noise, but no configuration eliminates all errors.
+- **False positives and false negatives can occur.** Presets, the LLM judge and scoped suppressions reduce noise, but no configuration eliminates all errors. [Recommended Settings](/docs/skill-scanner/recommended-settings) gives the measured rates for each setup.
 - **Human review remains essential.** Automated scanning is one layer in a defense-in-depth strategy.
 
 ---

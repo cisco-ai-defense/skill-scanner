@@ -55,7 +55,14 @@ skill-scanner scan /path/to/skill --use-llm --enable-meta --format json
 **Requirements:**
 - **Analyzer count**: CLI enforces at least 2 analyzers for meta-analysis (`_build_meta_analyzer` guard). API endpoints expose `enable_meta` and apply meta-analysis when findings exist; using multiple analyzers is still recommended for correlation quality.
 - **LLM credentials**: Configure `SKILL_SCANNER_META_LLM_API_KEY` / `SKILL_SCANNER_LLM_API_KEY`, or use a `bedrock/...` model with AWS credentials/IAM
-- **Recommended**: Use `--use-llm` with meta-analysis for best results, as LLM findings provide the semantic understanding the meta-analyzer relies on
+- **If you enable it**, pair it with `--use-llm`, as LLM findings provide the semantic understanding the meta-analyzer relies on
+
+> [!WARNING]
+> **Off by default, and we recommend keeping it off.** Measured on MaliciousSkillBench's held-out
+> split with Gemma 4 26B, the meta-analyzer cost 16.4 points of recall for 0.3 points of
+> false-positive rate. See [Measured results](../../reference/measured-results.md#the-meta-analyzer-is-off-by-default-and-should-stay-that-way).
+> To lower false positives, use a preset and the LLM caps instead
+> ([Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings)).
 
 ## API Usage
 
@@ -86,7 +93,7 @@ The scanner uses `SKILL_SCANNER_*` environment variables exclusively (no provide
 **Scanner-wide settings** (apply to both LLM and Meta analyzers):
 ```bash
 export SKILL_SCANNER_LLM_API_KEY="your-api-key"
-export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-5-5"
 export SKILL_SCANNER_LLM_BASE_URL="https://..."  # For Azure/custom endpoints
 export SKILL_SCANNER_LLM_API_VERSION="2025-01-01-preview"  # For Azure
 export SKILL_SCANNER_LLM_MAX_TOKENS="16384"  # Positive integer
@@ -96,7 +103,7 @@ export SKILL_SCANNER_LLM_REASONING_EFFORT="low"
 **Meta-specific overrides** (optional - use different model/key for meta-analysis):
 ```bash
 export SKILL_SCANNER_META_LLM_API_KEY="different-key"
-export SKILL_SCANNER_META_LLM_MODEL="gpt-4o"
+export SKILL_SCANNER_META_LLM_MODEL="openai/<model>"
 export SKILL_SCANNER_META_LLM_BASE_URL="https://..."
 export SKILL_SCANNER_META_LLM_API_VERSION="..."
 export SKILL_SCANNER_META_LLM_MAX_TOKENS="32768"
@@ -128,7 +135,7 @@ export SKILL_SCANNER_META_LLM_REASONING_EFFORT="minimal"
 ```bash
 # Standard setup (one key for everything)
 export SKILL_SCANNER_LLM_API_KEY="sk-ant-..."
-export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-5-5"
 
 # Azure OpenAI setup
 export SKILL_SCANNER_LLM_API_KEY="your-azure-key"
@@ -139,7 +146,7 @@ export SKILL_SCANNER_LLM_API_VERSION="2025-01-01-preview"
 # Separate meta key for second opinion (advanced)
 export SKILL_SCANNER_LLM_API_KEY="sk-ant-..."  # Primary: Claude
 export SKILL_SCANNER_META_LLM_API_KEY="sk-..."  # Meta: OpenAI
-export SKILL_SCANNER_META_LLM_MODEL="gpt-4o"
+export SKILL_SCANNER_META_LLM_MODEL="openai/<model>"
 ```
 
 ### Provider Examples
@@ -147,13 +154,13 @@ export SKILL_SCANNER_META_LLM_MODEL="gpt-4o"
 **Anthropic Claude:**
 ```bash
 export SKILL_SCANNER_LLM_API_KEY="sk-ant-..."
-export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"
+export SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-5-5"
 ```
 
 **OpenAI:**
 ```bash
 export SKILL_SCANNER_LLM_API_KEY="sk-..."
-export SKILL_SCANNER_LLM_MODEL="gpt-4o"
+export SKILL_SCANNER_LLM_MODEL="openai/<model>"
 ```
 
 **Azure OpenAI:**
@@ -172,7 +179,7 @@ export SKILL_SCANNER_LLM_MODEL="gemini/gemini-1.5-pro"
 
 **AWS Bedrock:**
 ```bash
-export SKILL_SCANNER_LLM_MODEL="bedrock/anthropic.claude-sonnet-4-20250514-v1:0"
+export SKILL_SCANNER_LLM_MODEL="bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0"
 # Optional if using bearer auth:
 export SKILL_SCANNER_LLM_API_KEY="bedrock-api-key-..."
 # Or use AWS credentials/profile/role:

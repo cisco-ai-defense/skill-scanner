@@ -7,6 +7,32 @@ own.
 Full tables, per-corpus breakdowns and the head-to-head against NVIDIA SkillSpector are published at
 [Vineethsain/skill-scanner-vs-skillspector](https://huggingface.co/spaces/Vineethsain/skill-scanner-vs-skillspector).
 
+## Summary: current figures
+
+The scanner as it ships in 2.2.0, on MaliciousSkillBench's held-out source-disjoint split (839
+malicious, 545 benign). The judge is Gemma 4 26B through Bedrock with the current prompt. "Real skills"
+means 2,000 sampled uniformly from 1.88 million published skills, and is a flag rate, not an error rate.
+
+| Configuration | MEDIUM+ recall / FPR | HIGH+ recall / FPR | Real skills MEDIUM+ / HIGH+ |
+|---|---|---|---|
+| Rules only, `balanced` | 8.0% / 4.2% | 7.7% / 4.0% | 2.00% / 1.85% |
+| Rules only, `low-noise` | 7.9% / 4.2% | 7.7% / 4.0% | 1.65% / 1.65% |
+| Rules + judge, `balanced` | 66.7% / 15.4% | 33.7% / 6.4% | 11.65% / 3.80% |
+| Rules + judge, `low-noise` | 63.2% / 13.4% | 33.7% / 6.4% | 8.65% / 3.60% |
+| Rules + judge, `quiet` | 50.3% / 7.2% | 33.1% / 5.5% | 3.85% / 2.90% |
+| Judge alone | 65.9% / 12.5% (F1 75.8%) | | 10.45% / -- |
+
+- **Highest F1:** rules + judge with `balanced`, counting the MEDIUM+ review queue as a catch.
+- **Lowest false-positive rate with real recall:** `quiet` with the judge.
+- Never run `quiet` without the judge.
+
+[Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings)
+turns these into configurations. The sections below give the method behind each figure.
+
+Some figures on this page differ from these by a tenth of a point, for example 65.7% or 65.8% judge
+recall. Those come from scoring a slightly different record subset, such as the records every arm
+answered, or from scoring before verdict repair became the default.
+
 ## How to read these numbers
 
 Three things change a figure materially, so all three are always stated.
@@ -26,17 +52,15 @@ separate stages. The published rule-only figures ran with the judge off.
 Corpus: MaliciousSkillBench source-disjoint split, 839 malicious and 545 benign. Shipped core rule
 pack, no model.
 
-| Metric | Value |
-|---|---|
-| F1 | 13.7% |
-| Precision | 60.7% |
-| Recall | 7.7% |
-| False-positive rate | 7.7% |
+| Metric, HIGH+ | Current rules | Before tuning |
+|---|---|---|
+| F1 | 14.0% | 13.7% |
+| Precision | 74.7% | 60.7% |
+| Recall | 7.7% | 7.7% |
+| False-positive rate | **4.0%** | 7.7% |
 
-These are the shipped rules before the tuning described
-[below](#tuning-the-deterministic-scanner-against-real-skills). On the same split with the final tuned
-rules, at the same HIGH+ threshold: precision 74.7%, recall 7.7% (unchanged), false-positive rate
-**4.0%**, F1 14.0%.
+The tuning that halved the false-positive rate without losing a detection is described
+[below](#tuning-the-deterministic-scanner-against-real-skills).
 
 Enabling every community rule pack raises recall to 73.8% on an 80/80 sample of the same split, and
 raises the benign flag rate from 7.5% to 92.5%. That configuration is a triage setting, not a gating

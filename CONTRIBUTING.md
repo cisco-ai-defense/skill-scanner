@@ -16,7 +16,7 @@ in any real-time space e.g., Slack, Discord, etc.
 
 ## Development Setup
 
-See [docs/developing.md](/docs/developing.md) for complete environment setup instructions, including:
+See [docs/development/setup-and-testing.md](docs/development/setup-and-testing.md) for complete environment setup instructions, including:
 
 - Installing prerequisites (CPython 3.11–3.14, Go 1.27.1+, uv)
 - Cloning and configuring the repository
