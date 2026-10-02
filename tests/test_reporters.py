@@ -19,8 +19,9 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, unquote_to_bytes, urlsplit
 
 import pytest
 
@@ -409,6 +410,29 @@ def test_sarif_reporter_encodes_filename_characters(tmp_path, monkeypatch, filen
     assert not parsed.query
     assert not parsed.fragment
     assert unquote(parsed.path) == f"skills/docs/scripts/{filename}"
+
+
+@pytest.mark.parametrize("in_skill_directory", [True, False])
+def test_sarif_reporter_preserves_surrogate_escaped_path_bytes(tmp_path, monkeypatch, in_skill_directory):
+    """Undecodable filesystem bytes must not prevent report generation."""
+    monkeypatch.chdir(tmp_path)
+    skill_name = "docs\udcff" if in_skill_directory else "docs"
+    filename = "helper.py" if in_skill_directory else "helper\udcff.py"
+    finding = _sample_findings()[2]
+    finding.file_path = f"scripts/{filename}"
+    result = ScanResult(
+        skill_name=skill_name,
+        skill_directory=str(tmp_path / "skills" / skill_name),
+        findings=[finding],
+    )
+
+    uri = _result_uris(SARIFReporter().generate_report(result))[0]
+
+    assert uri.isascii()
+    parsed = urlsplit(uri)
+    assert not parsed.query
+    assert not parsed.fragment
+    assert unquote_to_bytes(parsed.path) == os.fsencode(f"skills/{skill_name}/scripts/{filename}")
 
 
 @pytest.mark.parametrize("inside_scan_root", [True, False])

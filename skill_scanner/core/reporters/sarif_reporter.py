@@ -25,7 +25,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote_from_bytes
 
 from ...core.models import Finding, Report, ScanResult, Severity
 
@@ -213,7 +213,8 @@ class SARIFReporter:
 
         # These are filesystem paths, so literal %, # and ? must not become
         # URI escapes, fragments or queries. Keep only path separators safe.
-        return quote(file_path.as_posix(), safe="/")
+        # Preserve surrogate-escaped bytes from undecodable filenames as well.
+        return quote_from_bytes(os.fsencode(file_path.as_posix()), safe="/")
 
     def _convert_findings(self, findings: list[Finding], skill_directory: str | None = None) -> list[dict[str, Any]]:
         """Convert findings to SARIF results."""
