@@ -52,10 +52,12 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Checkout exact release tag
+      # The generator reads only PyPI metadata and the hash-verified release
+      # sdist, never this tree, so run the current generator: a fix to it then
+      # applies to every release's formula, not only to later releases.
+      - name: Checkout formula tooling at the workflow ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.resolve-release.outputs.release_sha }}
           fetch-depth: 0
 
       - name: Install uv
@@ -104,6 +106,8 @@ jobs:
           grep -F 'resource.stage(wheelhouse)' Formula/skill-scanner.rb
           grep -F 'venv.pip_install dependency_wheels.join("\n"), build_isolation: false' Formula/skill-scanner.rb
           grep -F 'venv.pip_install_and_link buildpath, build_isolation: false' Formula/skill-scanner.rb
+          grep -Fx '  preserve_rpath' Formula/skill-scanner.rb
+          grep -F 'system "unzip", "-q", wheel, "skill_scanner/core/cel/_bin/*", "-d", helper_dir' Formula/skill-scanner.rb
           if grep -F 'resource.cached_download' Formula/skill-scanner.rb; then
             echo "Generated formula must stage wheels under their valid distribution filenames" >&2
             exit 1

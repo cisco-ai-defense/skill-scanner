@@ -453,6 +453,10 @@ def test_homebrew_workflow_uses_exact_tag_sdist_and_smokes_both_macos_architectu
     assert "Generated formula must disable PEP 517 build isolation explicitly" in workflow
     assert '"$prefix/bin/skill-scanner" validate-rules' in workflow
     assert "brew test local/skill-scanner/skill-scanner" in workflow
+    generate_job = workflow[workflow.index("  generate-formula:") : workflow.index("  smoke-homebrew:")]
+    assert "Checkout formula tooling at the workflow ref" in generate_job
+    assert "release_sha" not in generate_job.split("Install uv")[0]
+    assert "grep -Fx '  preserve_rpath' Formula/skill-scanner.rb" in generate_job
     assert workflow.index("smoke-homebrew:") < workflow.index("commit-formula:")
 
 
