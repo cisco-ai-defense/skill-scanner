@@ -25,6 +25,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from ...core.models import Finding, Report, ScanResult, Severity
 
@@ -194,24 +195,25 @@ class SARIFReporter:
         is taken as the scan root; when the skill directory lies outside it
         (or on a different drive), the skill-relative path is kept as before.
         """
-        file_path = finding.file_path if finding.file_path else "SKILL.md"
-        if not skill_directory or Path(file_path).is_absolute():
-            return Path(file_path).as_posix()
+        file_path = Path(finding.file_path or "SKILL.md")
+        if file_path.is_absolute():
+            return file_path.as_uri()
 
-        try:
-            skill_rel = os.path.relpath(skill_directory, os.getcwd())
-        except ValueError:
-            # Windows: skill directory and CWD on different drives
-            return Path(file_path).as_posix()
+        if skill_directory:
+            try:
+                skill_rel = os.path.relpath(skill_directory, os.getcwd())
+            except ValueError:
+                # Windows: skill directory and CWD on different drives.
+                pass
+            else:
+                # Keep skill-relative paths when the skill is outside the
+                # scan root; a %SRCROOT%-relative path cannot be formed.
+                if skill_rel != os.pardir and not skill_rel.startswith(os.pardir + os.sep):
+                    file_path = Path(skill_rel) / file_path
 
-        if skill_rel == os.curdir:
-            return Path(file_path).as_posix()
-        if skill_rel == os.pardir or skill_rel.startswith(os.pardir + os.sep):
-            # Skill directory is outside the scan root; a %SRCROOT%-relative
-            # path cannot be formed, and ".." segments are invalid in SARIF.
-            return Path(file_path).as_posix()
-
-        return (Path(skill_rel) / file_path).as_posix()
+        # These are filesystem paths, so literal %, # and ? must not become
+        # URI escapes, fragments or queries. Keep only path separators safe.
+        return quote(file_path.as_posix(), safe="/")
 
     def _convert_findings(self, findings: list[Finding], skill_directory: str | None = None) -> list[dict[str, Any]]:
         """Convert findings to SARIF results."""
