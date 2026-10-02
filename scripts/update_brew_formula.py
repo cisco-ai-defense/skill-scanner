@@ -313,6 +313,16 @@ def require_project_sdist(pypi_data: dict, version: str) -> tuple[str, str, str]
     return url, sha256, filename
 
 
+def release_upload_time(pypi_data: dict) -> str:
+    """Return the upload time of the release sdist as an RFC 3339 timestamp."""
+    for entry in pypi_data.get("urls", []):
+        if entry.get("packagetype") == "sdist":
+            uploaded = entry.get("upload_time_iso_8601")
+            if isinstance(uploaded, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T[\d:.]+Z", uploaded):
+                return uploaded
+    raise RuntimeError("release source distribution is missing its upload time")
+
+
 def download_verified_sdist(url: str, expected_sha256: str) -> bytes:
     """Download a bounded source distribution and verify the PyPI digest."""
 
@@ -393,8 +403,14 @@ def read_build_system_requirements(project_file: Path) -> tuple[str, ...]:
     return tuple(requirement.strip() for requirement in requires)
 
 
-def resolve_dependencies(project_file: Path, *, python_platform: str) -> list[tuple[str, str]]:
+def resolve_dependencies(
+    project_file: Path, *, python_platform: str, exclude_newer: str | None = None
+) -> list[tuple[str, str]]:
     """Resolve runtime and build dependencies for one Darwin target.
+
+    ``exclude_newer`` (an RFC 3339 timestamp) limits resolution to packages
+    published before it, so regenerating a release's formula later, or while a
+    dependency is mid-upload, resolves the same versions.
 
     Returns a sorted list of (normalised-name, version) tuples.
     """
@@ -428,6 +444,7 @@ def resolve_dependencies(project_file: Path, *, python_platform: str) -> list[tu
                 "3.12",
                 "--python-platform",
                 python_platform,
+                *(["--exclude-newer", exclude_newer] if exclude_newer else []),
             ],
             capture_output=True,
             text=True,
@@ -630,13 +647,16 @@ def main() -> None:
     except Exception as exc:
         print(f"  ERROR: Could not validate {main_filename}: {exc}", file=sys.stderr)
         sys.exit(1)
-    print("  Resolving target-specific transitive dependencies from the release sdist via uv...")
+    released_at = release_upload_time(main_data)
+    print(f"  Resolving target-specific transitive dependencies from the release sdist via uv (as of {released_at})...")
     dependency_graphs: dict[str, list[tuple[str, str]]] = {}
     with tempfile.TemporaryDirectory(prefix="skill-scanner-brew-release-") as temp_dir:
         project_file = Path(temp_dir) / "pyproject.toml"
         project_file.write_bytes(release_pyproject)
         for target, python_platform in HOMEBREW_PYTHON_PLATFORMS.items():
-            dependency_graphs[target] = resolve_dependencies(project_file, python_platform=python_platform)
+            dependency_graphs[target] = resolve_dependencies(
+                project_file, python_platform=python_platform, exclude_newer=released_at
+            )
             print(f"    {target}: {len(dependency_graphs[target])} packages")
 
     # 3. Fetch one compatible, hash-pinned wheel for every dependency in each

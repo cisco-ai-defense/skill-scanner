@@ -37,6 +37,7 @@ from scripts.update_brew_formula import (
     find_artifact,
     read_build_system_requirements,
     read_sdist_pyproject,
+    release_upload_time,
     render_formula,
     require_project_sdist,
     resolve_dependencies,
@@ -434,7 +435,8 @@ def test_homebrew_workflow_uses_exact_tag_sdist_and_smokes_both_macos_architectu
     assert "macos-26-intel" in workflow
     assert "target: darwin-arm64" in workflow
     assert "target: darwin-amd64" in workflow
-    assert "brew install --build-from-source generated-formula/skill-scanner.rb" in workflow
+    assert "brew tap-new --no-git local/skill-scanner" in workflow
+    assert "brew install --build-from-source local/skill-scanner/skill-scanner" in workflow
     assert "grep -F 'depends_on macos: :sonoma' Formula/skill-scanner.rb" in workflow
     assert 'assert helper["macos_minimum"] == "13.0"' in workflow
     assert 'assert helper["toolchain_version"] == "go1.27.1"' in workflow
@@ -446,5 +448,41 @@ def test_homebrew_workflow_uses_exact_tag_sdist_and_smokes_both_macos_architectu
     assert "venv.pip_install_and_link buildpath, build_isolation: false" in workflow
     assert "Generated formula must disable PEP 517 build isolation explicitly" in workflow
     assert '"$prefix/bin/skill-scanner" validate-rules' in workflow
-    assert "brew test skill-scanner" in workflow
+    assert "brew test local/skill-scanner/skill-scanner" in workflow
     assert workflow.index("smoke-homebrew:") < workflow.index("commit-formula:")
+
+
+def test_dependency_resolution_can_pin_to_the_release_upload_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release_project = tmp_path / "pyproject.toml"
+    release_project.write_text(
+        '[build-system]\nrequires = ["hatchling>=1.27"]\nbuild-backend = "hatchling.build"\n'
+        '[project]\nname = "release"\nversion = "1"\n',
+        encoding="utf-8",
+    )
+    observed: dict[str, list[str]] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed["command"] = command
+        return subprocess.CompletedProcess(command, 0, stdout="hatchling==1.27.0\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    resolve_dependencies(
+        release_project,
+        python_platform=HOMEBREW_PYTHON_PLATFORMS["darwin-arm64"],
+        exclude_newer="2026-10-02T22:41:07.123456Z",
+    )
+    assert observed["command"][-2:] == ["--exclude-newer", "2026-10-02T22:41:07.123456Z"]
+
+
+def test_release_upload_time_comes_from_the_sdist() -> None:
+    data = {
+        "urls": [
+            {"packagetype": "bdist_wheel", "upload_time_iso_8601": "2026-10-02T22:40:00.000000Z"},
+            {"packagetype": "sdist", "upload_time_iso_8601": "2026-10-02T22:41:07.123456Z"},
+        ]
+    }
+    assert release_upload_time(data) == "2026-10-02T22:41:07.123456Z"
+    with pytest.raises(RuntimeError):
+        release_upload_time({"urls": [{"packagetype": "sdist"}]})
