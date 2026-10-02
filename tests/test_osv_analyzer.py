@@ -21,6 +21,8 @@ All OSV HTTP calls are mocked; no live network access occurs.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
@@ -57,7 +59,26 @@ class _FakeClient:
         return self.response
 
 
-def _make_analyzer(client: _FakeClient) -> OSVAnalyzer:
+class _SequencedClient:
+    """Returns one queued response per POST and records every payload sent."""
+
+    def __init__(self, responses: list[_FakeResponse | Exception]):
+        self.responses = list(responses)
+        self.payloads: list[dict] = []
+
+    @property
+    def last_payload(self) -> dict | None:
+        return self.payloads[-1] if self.payloads else None
+
+    def post(self, _url: str, json: dict):  # noqa: A002 - match httpx signature
+        self.payloads.append(json)
+        queued = self.responses.pop(0) if self.responses else _FakeResponse({"results": []})
+        if isinstance(queued, Exception):
+            raise queued
+        return queued
+
+
+def _make_analyzer(client: _FakeClient | _SequencedClient) -> OSVAnalyzer:
     analyzer = OSVAnalyzer(enabled=True)
     analyzer._client = client
     return analyzer
@@ -170,7 +191,7 @@ _SKILL_MD = "---\nname: osv\ndescription: A test skill\n---\n# osv\n"
 def _pins(skill) -> dict[str, str]:
     """Map of ``name -> version`` for pins collected from a skill."""
     analyzer = OSVAnalyzer(enabled=True)
-    return {name: version for name, version, _, _ in analyzer._collect_pinned_dependencies(skill)}
+    return {dep.name: dep.version for dep in analyzer._collect_pinned_dependencies(skill)}
 
 
 class TestPinnedSourceCoverage:
@@ -233,3 +254,207 @@ class TestPinnedSourceCoverage:
         assert len(findings) == 1
         assert findings[0].metadata["package"] == "requests"
         assert analyzer._client.last_payload["queries"][0]["version"] == "2.19.0"
+
+
+class TestNpmManifest:
+    """package.json exact pins are queried against the npm ecosystem."""
+
+    def test_exact_pin_queried_as_npm(self, make_skill):
+        skill = make_skill({"SKILL.md": _SKILL_MD, "package.json": json.dumps({"dependencies": {"lodash": "4.17.15"}})})
+        response = _FakeResponse({"results": [{"vulns": [{"id": "GHSA-29mw-wpgm-hmr9"}]}]})
+        analyzer = _make_analyzer(_FakeClient(response=response))
+
+        findings = analyzer.analyze(skill)
+        assert len(findings) == 1
+        query = analyzer._client.last_payload["queries"][0]
+        assert query["package"] == {"ecosystem": "npm", "name": "lodash"}
+        assert query["version"] == "4.17.15"
+        assert findings[0].metadata["ecosystem"] == "npm"
+        # npm coordinates read ``name@version``, not the PyPI ``name==version``.
+        assert findings[0].snippet == "lodash@4.17.15"
+        assert findings[0].file_path == "package.json"
+
+    def test_finding_projects_into_facts(self, make_skill):
+        skill = make_skill({"SKILL.md": _SKILL_MD, "package.json": json.dumps({"dependencies": {"lodash": "4.17.15"}})})
+        response = _FakeResponse({"results": [{"vulns": [{"id": "GHSA-29mw-wpgm-hmr9"}]}]})
+        analyzer = _make_analyzer(_FakeClient(response=response))
+
+        findings = analyzer.analyze(skill)
+        facts = ScanFactProjector().project(skill, findings[0], findings)
+        assert facts.candidate.file_path == "package.json"
+        assert facts.projection.complete is True
+        assert "INVALID_PATH" not in facts.projection.error_codes
+
+    def test_range_is_not_queried(self, make_skill):
+        skill = make_skill({"SKILL.md": _SKILL_MD, "package.json": json.dumps({"dependencies": {"lodash": "^4.17.0"}})})
+        client = _FakeClient(response=_FakeResponse({"results": []}))
+        analyzer = _make_analyzer(client)
+
+        assert analyzer.analyze(skill) == []
+        assert client.last_payload is None
+
+    def test_dev_dependency_is_recorded_in_metadata(self, make_skill):
+        skill = make_skill({"SKILL.md": _SKILL_MD, "package.json": json.dumps({"devDependencies": {"jest": "29.7.0"}})})
+        response = _FakeResponse({"results": [{"vulns": [{"id": "GHSA-dev"}]}]})
+        analyzer = _make_analyzer(_FakeClient(response=response))
+
+        assert analyzer.analyze(skill)[0].metadata["dev"] is True
+
+    def test_python_and_npm_dependencies_share_one_request(self, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "requirements.txt": "requests==2.19.0\n",
+                "package.json": json.dumps({"dependencies": {"lodash": "4.17.15"}}),
+            }
+        )
+        analyzer = _make_analyzer(_FakeClient(response=_FakeResponse({"results": [{}, {}]})))
+        analyzer.analyze(skill)
+
+        queries = analyzer._client.last_payload["queries"]
+        assert {(q["package"]["ecosystem"], q["package"]["name"]) for q in queries} == {
+            ("PyPI", "requests"),
+            ("npm", "lodash"),
+        }
+
+    def test_vendored_node_modules_manifests_not_queried(self, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "node_modules/vendored/package.json": json.dumps({"dependencies": {"lodash": "4.17.15"}}),
+            }
+        )
+        client = _FakeClient(response=_FakeResponse({"results": []}))
+        analyzer = _make_analyzer(client)
+
+        assert analyzer.analyze(skill) == []
+        assert client.last_payload is None
+
+    def test_aliased_dependency_queried_under_real_name(self, make_skill):
+        skill = make_skill(
+            {"SKILL.md": _SKILL_MD, "package.json": json.dumps({"dependencies": {"alias": "npm:real-pkg@1.2.3"}})}
+        )
+        analyzer = _make_analyzer(_FakeClient(response=_FakeResponse({"results": [{}]})))
+        analyzer.analyze(skill)
+
+        assert analyzer._client.last_payload["queries"][0]["package"]["name"] == "real-pkg"
+
+
+class TestMalformedResponses:
+    """A shape-malformed response must fail open, not abort the scan."""
+
+    def test_non_mapping_result_entry_fails_open(self, make_skill):
+        skill = make_skill({"SKILL.md": _SKILL_MD, "package.json": json.dumps({"dependencies": {"lodash": "4.17.15"}})})
+        analyzer = _make_analyzer(_FakeClient(response=_FakeResponse({"results": ["not-a-mapping"]})))
+        assert analyzer.analyze(skill) == []
+
+    def test_non_mapping_vulnerability_entry_is_ignored(self, make_skill):
+        skill = make_skill({"SKILL.md": _SKILL_MD, "package.json": json.dumps({"dependencies": {"lodash": "4.17.15"}})})
+        response = _FakeResponse({"results": [{"vulns": ["not-a-mapping", {"id": "GHSA-real"}]}]})
+        analyzer = _make_analyzer(_FakeClient(response=response))
+
+        findings = analyzer.analyze(skill)
+        assert len(findings) == 1
+        assert findings[0].metadata["vulnerability_ids"] == ["GHSA-real"]
+
+    def test_results_not_a_list_fails_open(self, make_skill):
+        skill = make_skill({"SKILL.md": _SKILL_MD, "package.json": json.dumps({"dependencies": {"lodash": "4.17.15"}})})
+        analyzer = _make_analyzer(_FakeClient(response=_FakeResponse({"results": "nope"})))
+        assert analyzer.analyze(skill) == []
+
+
+class TestBoundsValidation:
+    """Query bounds are positive integers; None keeps the default."""
+
+    @pytest.mark.parametrize("value", [0, -1, -5, 1.5, "5"])
+    def test_invalid_chunk_size_rejected(self, value):
+        with pytest.raises(ValueError):
+            OSVAnalyzer(enabled=True, chunk_size=value)
+
+    @pytest.mark.parametrize("value", [0, -1, 2.5, "10"])
+    def test_invalid_max_dependencies_rejected(self, value):
+        with pytest.raises(ValueError):
+            OSVAnalyzer(enabled=True, max_dependencies=value)
+
+    def test_none_keeps_defaults(self):
+        analyzer = OSVAnalyzer(enabled=True)
+        assert analyzer.chunk_size == OSVAnalyzer.QUERY_CHUNK_SIZE
+        assert analyzer.max_dependencies == OSVAnalyzer.MAX_DEPENDENCIES
+
+
+class TestQueryBatching:
+    """Lockfiles can list thousands of packages, so queries are bounded."""
+
+    _THREE_PINS = {"SKILL.md": _SKILL_MD, "requirements.txt": "a==1.0.0\nb==2.0.0\nc==3.0.0\n"}
+
+    def test_dependencies_are_split_into_chunks(self, make_skill):
+        skill = make_skill(self._THREE_PINS)
+        client = _SequencedClient(
+            [
+                _FakeResponse({"results": [{}, {"vulns": [{"id": "V-B"}]}]}),
+                _FakeResponse({"results": [{"vulns": [{"id": "V-C"}]}]}),
+            ]
+        )
+        analyzer = _make_analyzer(client)
+        analyzer.chunk_size = 2
+
+        findings = analyzer.analyze(skill)
+        assert [len(payload["queries"]) for payload in client.payloads] == [2, 1]
+        assert {finding.metadata["package"] for finding in findings} == {"b", "c"}
+
+    def test_failed_chunk_does_not_discard_other_chunks(self, make_skill):
+        skill = make_skill(self._THREE_PINS)
+        client = _SequencedClient(
+            [httpx.ConnectError("no network"), _FakeResponse({"results": [{"vulns": [{"id": "V-C"}]}]})]
+        )
+        analyzer = _make_analyzer(client)
+        analyzer.chunk_size = 2
+
+        findings = analyzer.analyze(skill)
+        assert {finding.metadata["package"] for finding in findings} == {"c"}
+
+    def test_dependency_cap_bounds_total_queries(self, make_skill):
+        skill = make_skill(self._THREE_PINS)
+        client = _SequencedClient([_FakeResponse({"results": [{}, {}]})])
+        analyzer = _make_analyzer(client)
+        analyzer.max_dependencies = 2
+
+        analyzer.analyze(skill)
+        assert sum(len(payload["queries"]) for payload in client.payloads) == 2
+
+
+class TestDeduplication:
+    """The same release declared twice is one query and one finding."""
+
+    def test_same_name_in_two_ecosystems_stays_distinct(self, make_skill):
+        # "requests" exists on both PyPI and npm; they are unrelated packages.
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "requirements.txt": "requests==2.19.0\n",
+                "package.json": json.dumps({"dependencies": {"requests": "2.19.0"}}),
+            }
+        )
+        client = _FakeClient(
+            response=_FakeResponse({"results": [{"vulns": [{"id": "PYSEC-1"}]}, {"vulns": [{"id": "GHSA-1"}]}]})
+        )
+        analyzer = _make_analyzer(client)
+
+        findings = analyzer.analyze(skill)
+        assert len(findings) == 2
+        assert {finding.id for finding in findings} == {"OSV_PyPI_requests_2.19.0", "OSV_npm_requests_2.19.0"}
+
+    def test_pin_repeated_across_manifests_is_queried_once(self, make_skill):
+        skill = make_skill(
+            {
+                "SKILL.md": _SKILL_MD,
+                "requirements.txt": "requests==2.19.0\n",
+                "pyproject.toml": '[project]\nname = "s"\ndependencies = ["requests==2.19.0"]\n',
+            }
+        )
+        client = _FakeClient(response=_FakeResponse({"results": [{"vulns": [{"id": "V"}]}]}))
+        analyzer = _make_analyzer(client)
+
+        findings = analyzer.analyze(skill)
+        assert len(client.last_payload["queries"]) == 1
+        assert len(findings) == 1

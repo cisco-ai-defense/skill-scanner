@@ -1524,7 +1524,11 @@ class SkillScanner:
             check_overlap: If True, check for description overlap between skills
             lenient: Tolerate malformed YAML / missing fields in skills.
                 When True, directories containing ``.md`` files (but no
-                ``SKILL.md``) are also discovered as candidate skills.
+                ``SKILL.md``) are also discovered as candidate skills. In a
+                recursive scan, a Markdown-only candidate is skipped when it
+                sits inside, or contains, a skill found by its manifest: that
+                skill already scans its files, so the candidate would only
+                repeat its findings against a synthesized ``SKILL.md``.
             skill_file: Optional custom metadata filename (e.g. ``"README.md"``).
 
         Returns:
@@ -1543,6 +1547,11 @@ class SkillScanner:
 
         # Keep track of loaded skills for cross-skill analysis
         loaded_skills: list[Skill] = []
+        # Files owned by each manifest skill that scanned cleanly, keyed by its
+        # resolved root. Manifest skills come first in ``skill_dirs``, so this is
+        # complete before any Markdown-only (lenient) candidate is reached.
+        manifest_coverage: dict[Path, set[Path]] = {}
+        track_manifest_coverage = recursive and lenient
 
         for skill_dir in skill_dirs:
             try:
@@ -1551,8 +1560,24 @@ class SkillScanner:
                     lenient=lenient,
                     skill_file=skill_file,
                 )
+                synthetic = bool(skill.load_metadata.get("synthetic_instruction_body"))
+                skill_root = skill.directory.resolve()
+                skill_files = {file.path for file in skill.files}
+                if (
+                    track_manifest_coverage
+                    and synthetic
+                    and self._covered_by_manifest_skill(skill, skill_root, skill_files, manifest_coverage)
+                ):
+                    logger.debug("Skipping %s: covered by a manifest skill", skill_dir)
+                    continue
+
                 result = self._scan_single_skill(skill, skill_dir, load_telemetry=load_telemetry)
                 report.add_scan_result(result)
+
+                # A manifest skill whose analysis failed does not claim its files,
+                # so the Markdown inside it is still scanned on its own.
+                if track_manifest_coverage and not synthetic and not result.analyzers_failed:
+                    manifest_coverage[skill_root] = skill_files
 
                 if check_overlap and skill.manifest_complete:
                     loaded_skills.append(skill)
@@ -1779,6 +1804,26 @@ class SkillScanner:
                 # directory as a skill, but do not wander into its external
                 # siblings/children (containment, see docstring).
                 dirs[:] = []
+
+    @staticmethod
+    def _covered_by_manifest_skill(
+        skill: Skill,
+        skill_root: Path,
+        skill_files: set[Path],
+        manifest_coverage: dict[Path, set[Path]],
+    ) -> bool:
+        """Whether a Markdown-only candidate duplicates a manifest skill.
+
+        It does when a manifest skill above it already scanned every file it
+        holds, or when it contains a manifest skill: a parent folder's
+        pseudo-skill would rescan that skill's files and add findings against a
+        ``SKILL.md`` that does not exist.
+        """
+        for parent in skill_root.parents:
+            covered = manifest_coverage.get(parent)
+            if covered is not None and skill.skill_md_path in covered and skill_files <= covered:
+                return True
+        return any(skill_root in root.parents for root in manifest_coverage)
 
     def _find_skill_directories(
         self,

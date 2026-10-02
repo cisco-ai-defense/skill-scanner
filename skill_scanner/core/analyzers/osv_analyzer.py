@@ -16,14 +16,25 @@
 
 """OSV dependency vulnerability analyzer.
 
-Checks a skill's pinned Python dependencies against the free, open
+Checks a skill's exactly resolved dependencies against the free, open
 `OSV.dev <https://osv.dev>`_ vulnerability database. Opt-in (like the
 VirusTotal analyzer), requires no API key, and fails open on network errors so
 it never blocks a scan.
 
-Only dependencies pinned to an exact version (``package==1.2.3``) are queried:
-an open range (``package>=1``) has no single version to look up, and that risk
-is already surfaced by the unpinned-dependency static check.
+Collected sources:
+
+* **PyPI** -- dependencies pinned to an exact version (``package==1.2.3``) in a
+  requirements file, ``pyproject.toml``, ``setup.cfg``, ``setup.py``, a
+  ``Pipfile`` or manifest metadata. An open range (``package>=1``) has no single
+  version to look up, and that risk is already surfaced by the
+  unpinned-dependency static check.
+* **npm** -- dependencies declared at an exact version in a ``package.json``.
+  A range (``^4.17.0``) names no single release, so the unpinned-dependency
+  static check carries that signal instead.  Lockfiles are not read, matching
+  how Python dependencies are collected.
+
+Each query carries its own ecosystem, so ecosystems are looked up together.
+Queries are deduplicated, chunked and capped to stay proportionate.
 """
 
 from __future__ import annotations
@@ -40,6 +51,8 @@ import httpx
 
 from ..models import Finding, Severity, ThreatCategory
 from .base import BaseAnalyzer
+from .dependencies import NPM_ECOSYSTEM, ResolvedDependency
+from .npm_manifest import entries_from_package_json, exact_version, is_npm_manifest
 
 if TYPE_CHECKING:
     from ..models import Skill
@@ -141,6 +154,47 @@ def _pipfile_requirement(name: str, spec: Any) -> str | None:
     return None
 
 
+def _vulns_per_dependency(payload: object, count: int) -> list[list[dict]]:
+    """Extract one advisory list per queried dependency from an OSV response.
+
+    The response comes from an external service, so its shape is validated rather
+    than trusted: a malformed body raises ``ValueError``, which the caller already
+    treats as a failed chunk and fails open on.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("OSV response body is not a JSON object")
+    results = payload.get("results", [])
+    if not isinstance(results, list):
+        raise ValueError("OSV response 'results' is not a list")
+
+    extracted: list[list[dict]] = []
+    for index in range(count):
+        entry = results[index] if index < len(results) else None
+        vulns = entry.get("vulns") if isinstance(entry, dict) else None
+        extracted.append([v for v in vulns if isinstance(v, dict)] if isinstance(vulns, list) else [])
+    return extracted
+
+
+def _positive_bound(value: object, default: int, name: str) -> int:
+    """Return ``value`` when it is a positive integer, else the default for ``None``.
+
+    A silently accepted zero or negative bound is worse than an error: a negative
+    chunk size yields no query chunks at all, and a negative cap truncates from
+    the wrong end.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{name} must be a positive integer, got {value!r}")
+    return value
+
+
+def _coordinates(dependency: ResolvedDependency) -> str:
+    """Render a dependency the way its ecosystem writes it."""
+    separator = "@" if dependency.ecosystem == NPM_ECOSYSTEM else "=="
+    return f"{dependency.name}{separator}{dependency.version}"
+
+
 def _entries_from_pipfile(path: str, content: str) -> list[tuple[str, int | None, str]]:
     """``[packages]`` and ``[dev-packages]`` sections of a Pipfile (TOML)."""
     data = _safe_toml(content)
@@ -159,9 +213,15 @@ def _entries_from_pipfile(path: str, content: str) -> list[tuple[str, int | None
 
 
 class OSVAnalyzer(BaseAnalyzer):
-    """Query pinned dependencies against the OSV.dev vulnerability database."""
+    """Query resolved dependencies against the OSV.dev vulnerability database."""
 
     QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
+
+    #: Queries per ``querybatch`` request, kept inside OSV's pagination threshold.
+    QUERY_CHUNK_SIZE = 200
+
+    #: Lookups per skill; a scan should not become a full dependency audit.
+    MAX_DEPENDENCIES = 1000
 
     def __init__(
         self,
@@ -169,11 +229,15 @@ class OSVAnalyzer(BaseAnalyzer):
         ecosystem: str = "PyPI",
         timeout: float = 10.0,
         policy: ScanPolicy | None = None,
+        chunk_size: int | None = None,
+        max_dependencies: int | None = None,
     ):
         super().__init__("osv_analyzer", policy=policy)
         self.enabled = enabled
         self.ecosystem = ecosystem
         self.timeout = timeout
+        self.chunk_size = _positive_bound(chunk_size, self.QUERY_CHUNK_SIZE, "chunk_size")
+        self.max_dependencies = _positive_bound(max_dependencies, self.MAX_DEPENDENCIES, "max_dependencies")
         self._client = httpx.Client(timeout=timeout)
 
     def analyze(self, skill: Skill) -> list[Finding]:
@@ -184,33 +248,73 @@ class OSVAnalyzer(BaseAnalyzer):
         if not dependencies:
             return []
 
-        try:
-            vuln_lists = self._query_osv_batch([(name, version) for name, version, _, _ in dependencies])
-        except (httpx.HTTPError, ValueError) as exc:
-            # Fail open: OSV is an optional signal and must never break a scan.
-            logger.warning("OSV query failed, skipping vulnerability analysis: %s", exc)
-            return []
+        vuln_lists = self._query_osv(dependencies)
 
         findings: list[Finding] = []
-        for (name, version, source, line_number), vulns in zip(dependencies, vuln_lists, strict=False):
+        for dependency, vulns in zip(dependencies, vuln_lists, strict=False):
             if not vulns:
                 continue
-            findings.append(self._create_finding(name, version, vulns, source, line_number))
+            findings.append(self._create_finding(dependency, vulns))
         return findings
 
-    def _collect_pinned_dependencies(self, skill: Skill) -> list[tuple[str, str, str, int | None]]:
-        """Return ``(name, version, source_path, line_number)`` for exact pins.
+    def _collect_pinned_dependencies(self, skill: Skill) -> list[ResolvedDependency]:
+        """Return every dependency resolved to an exact version.
 
-        Sources: ``requirements*.txt``, ``pyproject.toml`` (``[project]``
+        PyPI sources: ``requirements*.txt``, ``pyproject.toml`` (``[project]``
         dependencies and optional-dependencies), ``setup.cfg``, ``setup.py``
         (``install_requires``), ``Pipfile``, and a manifest ``metadata``
-        ``dependencies`` list. Only exact ``==`` pins are queried against OSV.
+        ``dependencies`` list; only exact ``==`` pins qualify.  npm source:
+        ``package.json``; only specs naming one exact release qualify.
+
+        One release is often declared twice, so results are deduplicated on
+        ecosystem, name and version.
         """
-        collected: list[tuple[str, str, str, int | None]] = []
+        collected: list[ResolvedDependency] = []
         for source, line_number, raw in self._iter_requirement_strings(skill):
             parsed = self._parse_pinned(raw)
             if parsed is not None:
-                collected.append((parsed[0], parsed[1], source, line_number))
+                collected.append(ResolvedDependency(self.ecosystem, parsed[0], parsed[1], source, line_number))
+        collected.extend(self._iter_npm_dependencies(skill))
+
+        seen: set[tuple[str, str, str]] = set()
+        deduplicated: list[ResolvedDependency] = []
+        for dependency in collected:
+            key = (dependency.ecosystem, dependency.name, dependency.version)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduplicated.append(dependency)
+
+        if len(deduplicated) > self.max_dependencies:
+            logger.warning(
+                "Skill declares %d resolved dependencies; querying the first %d",
+                len(deduplicated),
+                self.max_dependencies,
+            )
+            del deduplicated[self.max_dependencies :]
+        return deduplicated
+
+    @staticmethod
+    def _iter_npm_dependencies(skill: Skill) -> list[ResolvedDependency]:
+        """Exactly pinned npm dependencies from every ``package.json`` in the skill."""
+        collected: list[ResolvedDependency] = []
+        for skill_file in skill.files:
+            if not is_npm_manifest(skill_file.relative_path):
+                continue
+            for entry in entries_from_package_json(skill_file.relative_path, skill_file.read_content()):
+                version = exact_version(entry.spec)
+                if version is None:
+                    continue
+                collected.append(
+                    ResolvedDependency(
+                        ecosystem=NPM_ECOSYSTEM,
+                        name=entry.name,
+                        version=version,
+                        source=entry.source,
+                        line_number=entry.line_number,
+                        dev=entry.dev,
+                    )
+                )
         return collected
 
     @staticmethod
@@ -258,51 +362,70 @@ class OSVAnalyzer(BaseAnalyzer):
             return None
         return match.group("name"), match.group("version")
 
-    def _query_osv_batch(self, packages: list[tuple[str, str]]) -> list[list[dict]]:
+    def _query_osv(self, dependencies: list[ResolvedDependency]) -> list[list[dict]]:
+        """Query in chunks, returning one vulnerability list per dependency.
+
+        Chunks fail open independently, so a transient error costs that chunk's
+        coverage rather than the whole scan.
+        """
+        vuln_lists: list[list[dict]] = []
+        for start in range(0, len(dependencies), self.chunk_size):
+            chunk = dependencies[start : start + self.chunk_size]
+            try:
+                vuln_lists.extend(self._query_osv_batch(chunk))
+            except (httpx.HTTPError, ValueError) as exc:
+                logger.warning("OSV query failed for %d dependencies, skipping them: %s", len(chunk), exc)
+                vuln_lists.extend([] for _ in chunk)
+        return vuln_lists
+
+    def _query_osv_batch(self, dependencies: list[ResolvedDependency]) -> list[list[dict]]:
         """Query OSV querybatch; return a per-package list of vulnerability dicts."""
-        if not packages:
+        if not dependencies:
             return []
         payload = {
             "queries": [
-                {"package": {"ecosystem": self.ecosystem, "name": name}, "version": version}
-                for name, version in packages
+                {
+                    "package": {"ecosystem": dependency.ecosystem, "name": dependency.name},
+                    "version": dependency.version,
+                }
+                for dependency in dependencies
             ]
         }
         response = self._client.post(self.QUERYBATCH_URL, json=payload)
         response.raise_for_status()
-        results = response.json().get("results", [])
-        return [(results[index].get("vulns") or []) if index < len(results) else [] for index in range(len(packages))]
+        return _vulns_per_dependency(response.json(), len(dependencies))
 
-    def _create_finding(
-        self, name: str, version: str, vulns: list[dict], source: str, line_number: int | None
-    ) -> Finding:
+    def _create_finding(self, dependency: ResolvedDependency, vulns: list[dict]) -> Finding:
         vuln_ids = [vuln_id for v in vulns if isinstance((vuln_id := v.get("id")), str) and vuln_id]
         references = [f"https://osv.dev/vulnerability/{vuln_id}" for vuln_id in vuln_ids]
         ids_display = ", ".join(vuln_ids) if vuln_ids else "unknown"
+        coordinates = _coordinates(dependency)
         return Finding(
-            id=f"OSV_{name}_{version}",
+            # One name and version can exist on both PyPI and npm, unrelated.
+            id=f"OSV_{dependency.ecosystem}_{dependency.name}_{dependency.version}",
             rule_id="SUPPLY_CHAIN_KNOWN_VULNERABILITY",
             category=ThreatCategory.SUPPLY_CHAIN_ATTACK,
             severity=Severity.HIGH,
-            title=f"Known vulnerability in dependency {name}=={version}",
+            title=f"Known vulnerability in dependency {coordinates}",
             description=(
-                f"Dependency '{name}=={version}' has {len(vuln_ids)} known "
+                f"Dependency '{coordinates}' has {len(vuln_ids)} known "
                 f"vulnerability advisory(ies) in the OSV database: {ids_display}."
             ),
-            file_path=source,
-            line_number=line_number,
-            snippet=f"{name}=={version}",
+            file_path=dependency.source,
+            line_number=dependency.line_number,
+            snippet=coordinates,
             remediation="Upgrade to a patched version listed in the referenced OSV advisories.",
             analyzer="osv",
             metadata={
-                "package": name,
-                "version": version,
-                "ecosystem": self.ecosystem,
+                "package": dependency.name,
+                "version": dependency.version,
+                "ecosystem": dependency.ecosystem,
+                "dev": dependency.dev,
                 "vulnerability_ids": vuln_ids,
                 "references": references,
                 "semantic_facts": {
                     "evidence_kind": "dependency_advisory",
-                    "context_kind": "manifest" if source == "SKILL.md" else "dependency_file",
+                    "context_kind": "manifest" if dependency.source == "SKILL.md" else "dependency_file",
                     "evidence_value_class": "known_vulnerable_dependency",
                     "evidence_count": len(vuln_ids),
                     "signal_kind": "known_vulnerability",
