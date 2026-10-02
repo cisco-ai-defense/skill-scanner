@@ -4,21 +4,30 @@
 #
 #   jobs:
 #     scan:
-#       uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@main
+#       uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
 #       with:
 #         skill_path: .cursor/skills
+#         scanner_version: "2.2.0"
+#         use_llm: true
+#         llm_model: claude-sonnet-5-5
 #       secrets:
 #         llm_api_key: ${{ secrets.SKILL_SCANNER_LLM_API_KEY }}
 #
 # The runner checks out YOUR repo, installs skill-scanner from PyPI, and runs
 # the CLI on your code.  Our repo is never cloned – GitHub reads this YAML to
-# know what steps to execute.
+# know what steps to execute.  Pin both the workflow ref and scanner_version to
+# the same release so the presets and flags match the docs for that release.
 
 name: Scan Agent Skills
 
 on:
   workflow_call:
     inputs:
+      scanner_version:
+        description: "skill-scanner version to install from PyPI, for example 2.2.0 (empty installs the latest release). Pin to match the docs"
+        required: false
+        type: string
+        default: ""
       skill_path:
         description: "Path to a single skill directory, or a parent directory for scan-all"
         required: true
@@ -29,7 +38,7 @@ on:
         type: string
         default: "sarif"
       policy:
-        description: "Scan policy preset (strict, balanced, permissive, low-noise, quiet) or path to custom YAML"
+        description: "Scan policy preset (balanced, low-noise, quiet, strict, permissive) or path to custom YAML. low-noise and quiet are measured with the LLM judge (use_llm)"
         required: false
         type: string
         default: "balanced"
@@ -49,15 +58,30 @@ on:
         type: boolean
         default: true
       use_llm:
-        description: "Enable LLM-based semantic analysis (requires llm_api_key secret)"
+        description: "Enable the LLM judge (recommended; needs the llm_api_key secret, which can be a Bedrock API key)"
         required: false
         type: boolean
         default: false
       llm_model:
-        description: "LLM model to use (maps to SKILL_SCANNER_LLM_MODEL env var, e.g. gpt-4o, claude-sonnet-4-20250514)"
+        description: "LLM model to use (maps to SKILL_SCANNER_LLM_MODEL, e.g. claude-sonnet-5-5 or bedrock/us.anthropic.claude-sonnet-5-5)"
         required: false
         type: string
         default: ""
+      llm_provider:
+        description: "Optional LLM provider (maps to SKILL_SCANNER_LLM_PROVIDER, e.g. openai-compatible for a gateway)"
+        required: false
+        type: string
+        default: ""
+      llm_base_url:
+        description: "Optional LLM endpoint base URL (maps to SKILL_SCANNER_LLM_BASE_URL)"
+        required: false
+        type: string
+        default: ""
+      aws_region:
+        description: "AWS region for bedrock/ models (maps to AWS_REGION)"
+        required: false
+        type: string
+        default: "us-east-1"
       use_behavioral:
         description: "Enable behavioral dataflow analysis"
         required: false
@@ -123,9 +147,21 @@ jobs:
       - name: Install skill-scanner
         env:
           INPUT_LLM_MODEL: ${{ inputs.llm_model }}
+          INPUT_SCANNER_VERSION: ${{ inputs.scanner_version }}
         run: |
+          VERSION_SPEC=""
+          if [ -n "$INPUT_SCANNER_VERSION" ]; then
+            if [[ ! "$INPUT_SCANNER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-z0-9.]*)$ ]]; then
+              echo "::error::scanner_version must be a release version such as 2.2.0"
+              exit 1
+            fi
+            VERSION_SPEC="==${INPUT_SCANNER_VERSION}"
+          fi
           EXTRAS=""
           case "$INPUT_LLM_MODEL" in
+            bedrock/*|bedrock-mantle/*)
+              EXTRAS="[bedrock]"
+              ;;
             gemini/*|*gemini*)
               EXTRAS="[google]"
               ;;
@@ -133,7 +169,8 @@ jobs:
               EXTRAS="[vertex]"
               ;;
           esac
-          pip install "cisco-ai-skill-scanner${EXTRAS}"
+          pip install "cisco-ai-skill-scanner${EXTRAS}${VERSION_SPEC}"
+          skill-scanner --version
 
       - name: Validate inputs
         env:
@@ -170,6 +207,9 @@ jobs:
         env:
           SKILL_SCANNER_LLM_API_KEY: ${{ secrets.llm_api_key }}
           SKILL_SCANNER_LLM_MODEL: ${{ inputs.llm_model }}
+          SKILL_SCANNER_LLM_PROVIDER: ${{ inputs.llm_provider }}
+          SKILL_SCANNER_LLM_BASE_URL: ${{ inputs.llm_base_url }}
+          AWS_REGION: ${{ inputs.aws_region }}
           VIRUSTOTAL_API_KEY: ${{ secrets.virustotal_api_key }}
           INPUT_SCAN_MODE: ${{ inputs.scan_mode }}
           INPUT_SKILL_PATH: ${{ inputs.skill_path }}
@@ -190,7 +230,16 @@ jobs:
           import sys
 
           value_flags = {
-              "--llm-provider": {"anthropic", "openai", "openai-compatible"},
+              "--llm-provider": {
+                  "anthropic",
+                  "openai",
+                  "openai-compatible",
+                  "aws-bedrock",
+                  "gcp-vertex",
+                  "azure-openai",
+                  "azure-ai",
+                  "openrouter",
+              },
               "--llm-consensus-runs": "int",
               "--llm-max-tokens": "int",
               "--skill-file": "path",
@@ -204,6 +253,9 @@ jobs:
               "--use-aidefense",
               "--use-trigger",
               "--enable-meta",
+              "--llm-decompose",
+              "--use-osv",
+              "--adjudicate",
               "--detailed",
               "--render-markdown",
               "--no-render-markdown",
@@ -290,8 +342,17 @@ jobs:
       - name: Check severity threshold
         env:
           INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail_on_severity }}
+          INPUT_FORMAT: ${{ inputs.format }}
         run: |
-          if [ "$scan_exit_code" != "0" ]; then
-            echo "::error::Skill Scanner found findings at or above $INPUT_FAIL_ON_SEVERITY severity"
+          if [ "$scan_exit_code" = "0" ]; then
+            exit 0
+          fi
+          # Exit 2 means the scan could not be configured as requested (an unknown
+          # policy, or an LLM judge that could not be built); a SARIF run that wrote
+          # no results file also never got as far as scanning.
+          if [ "$scan_exit_code" = "2" ] || { [ "$INPUT_FORMAT" = "sarif" ] && [ ! -s results.sarif ]; }; then
+            echo "::error::Skill Scanner could not run as configured (exit $scan_exit_code); see the Run scan step log"
             exit 1
           fi
+          echo "::error::Skill Scanner found findings at or above $INPUT_FAIL_ON_SEVERITY severity"
+          exit 1
