@@ -166,12 +166,12 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 | Anthropic | `anthropic/claude-sonnet-5-5` | Default provider |
 | OpenAI | `openai/<model>` | |
 | OpenAI-compatible gateway, proxy or local server (vLLM) | any name the server lists, with `SKILL_SCANNER_LLM_PROVIDER=openai-compatible` | Uses `SKILL_SCANNER_LLM_BASE_URL` |
-| AWS Bedrock | `bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0` | Requires `[bedrock]` extra or API key |
+| AWS Bedrock | `bedrock/us.anthropic.claude-sonnet-5-5` | Requires `[bedrock]` extra or API key |
 | AWS Bedrock mantle | `bedrock-mantle/google.gemma-4-26b-a4b` | OpenAI-compatible Bedrock endpoint for models absent from `bedrock-runtime`. SigV4-signed with the same IAM credentials; requires the `[bedrock]` extra |
 | Google Vertex AI | `vertex_ai/gemini-2.5-pro` | Requires `[vertex]` extra |
 | Google AI Studio | `gemini/gemini-2.5-flash` | Requires `[google]` extra |
 | Azure OpenAI | `azure/my-deployment-name` | Requires `[azure]` extra |
-| Apple Foundation Model (experimental) | `apple-fm/system` | On-device, macOS 26+ with Apple Intelligence; requires `[apple-fm]` extra |
+| Apple Foundation Model (experimental) | `apple-fm/system` | On-device; macOS 26+ with Apple Intelligence and full Xcode; `pip install "apple-fm-sdk>=0.2.1,<0.3"`. Behavioral alignment verification is skipped with a warning |
 | Ollama (local) | `ollama/llama3` | No API key needed |
 | Apple Foundation Models | `apple-fm/system` | On-device. No API key. Requires `apple-fm-sdk` (`pip install "apple-fm-sdk>=0.2.1,<0.3"`, built from source with full Xcode), macOS 26+, and Apple Intelligence. Use this for LLM semantic scans. Do not use it for behavioral alignment: those prompts exceed the on-device context window. |
 | OrcaRouter | `orcarouter/anthropic/claude-sonnet-5` | OpenAI-compatible gateway; default endpoint `https://api.orcarouter.ai/v1` (override with `SKILL_SCANNER_LLM_BASE_URL`) |

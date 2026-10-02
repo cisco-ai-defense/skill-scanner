@@ -12,6 +12,12 @@
 
 The static analyzer is the primary deterministic detection engine. It combines YAML signature matching, YARA-X rule scanning, Python-based checks, and file inventory analysis to detect security threats without requiring external services.
 
+**What text is scanned in `SKILL.md`.** Agents load a skill's frontmatter `description` and
+`when_to_use` into context before the skill runs, so injection or exfiltration text hidden there
+matters as much as the body. The core signature rules, YARA-X and the active-directive rules scan
+those two frontmatter fields as well as the instruction body, and report real line numbers. Optional
+rule packs enabled with `--rule-packs` (for example `atr` and `promptguard`) scan the body only.
+
 <small>Source: [`skill_scanner/core/analyzers/static.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/core/analyzers/static.py)</small>
 
 ## Analysis Flow

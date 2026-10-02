@@ -120,8 +120,8 @@ pip install cisco-ai-skill-scanner[vertex]
 # Azure OpenAI support
 pip install cisco-ai-skill-scanner[azure]
 
-# On-device Apple Foundation Model (experimental; macOS 26+, Apple Intelligence)
-pip install "apple-fm-sdk>=0.2.1,<0.3"   # builds from source; needs full Xcode
+# On-device Apple Foundation Model (experimental: macOS 26+, Apple Intelligence, full Xcode)
+pip install "apple-fm-sdk>=0.2.1,<0.3"
 
 # All cloud providers
 pip install cisco-ai-skill-scanner[all]
@@ -177,7 +177,7 @@ Not sure which flags to use? Run `skill-scanner` with no arguments to launch the
 skill-scanner
 ```
 
-The wizard walks you through selecting a scan target, analyzers, policy, and output format, then shows the assembled command before running it. Great for learning the CLI.
+The wizard walks you through selecting a scan target, analyzers, policy, and output format, then shows the assembled command before running it. It recommends the LLM judge and leaves the meta-analyzer off. Great for learning the CLI.
 
 ### CLI Usage
 
@@ -427,23 +427,31 @@ Scan skills, with the judge, before every commit using the [pre-commit](https://
 ```yaml
 # .pre-commit-config.yaml
 repos:
-  - repo: local
+  - repo: https://github.com/cisco-ai-defense/skill-scanner
+    rev: 2.2.0  # the latest release tag (no "v" prefix)
     hooks:
       - id: skill-scanner
-        name: Scan agent skills (rules + LLM judge)
-        entry: skill-scanner scan-all .claude/skills --recursive --use-llm --policy low-noise --fail-on-severity high
-        language: system
-        pass_filenames: false
-        files: ^\.claude/skills/
 ```
 
-The hook uses the `skill-scanner` installed in your environment and the `SKILL_SCANNER_LLM_*`
-variables from your shell. Run `pre-commit install` once.
+Turn the judge on in `.skill_scannerrc` at the repository root (`use_llm` is off by default):
 
-The packaged hook (`id: skill-scanner` from this repository, or `skill-scanner-pre-commit --install`)
-maps changed files to their nearest `SKILL.md` and scans only those skills, but with the rules alone.
-Don't rely on it by itself: pair it with a judged scan in CI. Its options are documented in
-[Integrations](docs/development/integrations.md).
+```json
+{
+  "skills_path": ".claude/skills",
+  "policy": "low-noise",
+  "use_llm": true,
+  "llm_model": "anthropic/claude-sonnet-5-5",
+  "severity_threshold": "high",
+  "fail_fast": true
+}
+```
+
+The hook scans only the skills a commit touches. The key comes from `SKILL_SCANNER_LLM_API_KEY`,
+or from cloud credentials for Bedrock and Vertex AI. `llm_model` and `llm_provider` fall back to
+`SKILL_SCANNER_LLM_MODEL` and `SKILL_SCANNER_LLM_PROVIDER`, so the hook can point at a local model.
+If the judge cannot be built, the commit is blocked with exit code 2 instead of passing on the rules
+alone. For a `bedrock/` model, add `additional_dependencies: [boto3]` to the hook. Run
+`pre-commit install` once, or `skill-scanner-pre-commit --install` without the pre-commit framework.
 
 ---
 

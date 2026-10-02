@@ -24,8 +24,9 @@ Exit codes:
 
 - `0`: the scan ran and nothing reached the threshold.
 - `1`: at least one finding is at or above the `--fail-on-severity` level.
-- `2`: the scan could not run as configured, for example a requested LLM judge without a key or an
-  unknown policy. In CI, treat it as a broken setup, not as findings.
+- `2`: a policy or configuration error, including a requested analyzer (LLM judge, behavioral or
+  meta) that cannot be built, for example without a key. In CI, treat it as a broken setup, not as
+  findings. Over the REST API the same problem returns HTTP 400.
 
 In the summary output, *SAFE* or *No findings* means no known pattern was detected. It is not a
 guarantee.

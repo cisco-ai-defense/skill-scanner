@@ -76,7 +76,7 @@ curl -X POST http://localhost:8000/scan \
 |-------|------|---------|-------------|
 | `skill_directory` | string | *(required)* | Absolute path to skill directory |
 | `use_behavioral` | boolean | `false` | Enable behavioral analyzer |
-| `use_llm` | boolean | `false` | Enable LLM analyzer |
+| `use_llm` | boolean | `false` | Enable the LLM judge (recommended). If the judge cannot be built, for example without a key, the request fails with HTTP 400 |
 | `use_virustotal` | boolean | `false` | Enable VirusTotal analyzer |
 | `use_aidefense` | boolean | `false` | Enable AI Defense analyzer |
 | `use_trigger` | boolean | `false` | Enable trigger specificity analysis |

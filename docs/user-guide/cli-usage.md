@@ -107,8 +107,9 @@ Not sure which flags to use? Pick the row that matches your situation:
 
 - `0`: successful command (or no fail condition triggered)
 - `1`: runtime error, or findings at or above the `--fail-on-severity` / `--fail-on-findings` threshold
-- `2`: the scan could not run as configured, for example an unknown policy, or a requested LLM judge
-  that could not be built (missing key, missing provider extra). It never falls back to rules only.
+- `2`: a policy or configuration error, including a requested analyzer (LLM judge, behavioral or
+  meta) that cannot be built, for example a missing key or provider extra. It never falls back to
+  rules only. The REST API returns HTTP 400 for the same error.
 
 When `--fail-on-findings` is active:
 

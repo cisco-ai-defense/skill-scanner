@@ -179,7 +179,7 @@ export SKILL_SCANNER_LLM_MODEL="gemini/gemini-1.5-pro"
 
 **AWS Bedrock:**
 ```bash
-export SKILL_SCANNER_LLM_MODEL="bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0"
+export SKILL_SCANNER_LLM_MODEL="bedrock/us.anthropic.claude-sonnet-5-5"
 # Optional if using bearer auth:
 export SKILL_SCANNER_LLM_API_KEY="bedrock-api-key-..."
 # Or use AWS credentials/profile/role:

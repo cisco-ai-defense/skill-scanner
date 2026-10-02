@@ -20,7 +20,7 @@ Not necessarily, but you do need a model for the LLM judge (`--use-llm`), which 
 
 ### Which LLM providers are supported?
 
-Anthropic (the default, `anthropic/claude-sonnet-5-5`), OpenAI, AWS Bedrock, Google Vertex AI and Gemini, Azure OpenAI, OpenRouter, OrcaRouter, Ollama, the on-device Apple Foundation Model (experimental), and any OpenAI-compatible gateway or local server through `SKILL_SCANNER_LLM_PROVIDER=openai-compatible`. Install the matching extra (`[bedrock]`, `[vertex]`, `[google]`, `[azure]`, `[apple-fm]`, or `[all]`) for managed cloud services. See [LLM Providers](/docs/skill-scanner/llm-providers).
+Anthropic (the default, `anthropic/claude-sonnet-5-5`), OpenAI, AWS Bedrock, Google Vertex AI and Gemini, Azure OpenAI, OpenRouter, OrcaRouter, Ollama, the on-device Apple Foundation Model (experimental), and any OpenAI-compatible gateway or local server through `SKILL_SCANNER_LLM_PROVIDER=openai-compatible`. Install the matching extra (`[bedrock]`, `[vertex]`, `[google]`, `[azure]`, or `[all]`) for managed cloud services; Apple FM needs `pip install "apple-fm-sdk>=0.2.1,<0.3"`. See [LLM Providers](/docs/skill-scanner/llm-providers).
 
 ### How do I choose which analyzers to enable?
 

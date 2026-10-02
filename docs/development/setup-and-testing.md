@@ -189,8 +189,8 @@ repos:
       - id: skill-scanner
 ```
 
-The packaged hook runs the deterministic rules only; the recommended setups add the LLM judge (see
-[Integrations](integrations.md#using-pre-commit-framework)).
+Set `"use_llm": true` in the consuming repo's `.skill_scannerrc` so the hook runs the LLM judge, as
+the recommended setups do (see [Integrations](integrations.md#using-pre-commit-framework)).
 
 The hook entry point is `skill-scanner-pre-commit` (defined in `pyproject.toml`).
 It computes staged paths internally, maps each file to the nearest parent

@@ -86,7 +86,7 @@ skill-scanner scan /path/to/skill --use-llm --llm-provider openai
 
 # AWS Bedrock (enterprise compliance) via model prefix
 export AWS_REGION=us-east-1
-export SKILL_SCANNER_LLM_MODEL=bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+export SKILL_SCANNER_LLM_MODEL=bedrock/us.anthropic.claude-sonnet-5-5
 skill-scanner scan /path/to/skill --use-llm
 ```
 
@@ -129,7 +129,7 @@ analyzer = LLMAnalyzer(model="gpt-4-turbo", api_key=key)
 ### AWS Bedrock
 ```python
 analyzer = LLMAnalyzer(
-    model="bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    model="bedrock/us.anthropic.claude-sonnet-5-5",
     aws_region="us-east-1",
     aws_profile="production"  # Or use IAM role
 )
@@ -296,7 +296,7 @@ export SKILL_SCANNER_LLM_USER='{"appkey":"your-appkey"}'
 
 # For AWS Bedrock bearer-token mode
 export SKILL_SCANNER_LLM_API_KEY="bedrock-api-key-..."
-export SKILL_SCANNER_LLM_MODEL="bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0"
+export SKILL_SCANNER_LLM_MODEL="bedrock/us.anthropic.claude-sonnet-5-5"
 ```
 
 ### Model Selection
@@ -312,7 +312,7 @@ For Bedrock, use the `bedrock/` model prefix:
 ```bash
 # Bearer token authentication
 export SKILL_SCANNER_LLM_API_KEY='bedrock-api-key-...'
-export SKILL_SCANNER_LLM_MODEL='bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0'
+export SKILL_SCANNER_LLM_MODEL='bedrock/us.anthropic.claude-sonnet-5-5'
 ```
 
 For IAM-based authentication (no API key needed):
@@ -322,7 +322,7 @@ For IAM-based authentication (no API key needed):
 export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
 export AWS_REGION=us-east-1
-export SKILL_SCANNER_LLM_MODEL='bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0'
+export SKILL_SCANNER_LLM_MODEL='bedrock/us.anthropic.claude-sonnet-5-5'
 
 # Or named profile
 export AWS_PROFILE=production

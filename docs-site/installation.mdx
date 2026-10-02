@@ -76,8 +76,8 @@ pip install cisco-ai-skill-scanner[vertex]
 # Azure OpenAI support (managed identity)
 pip install cisco-ai-skill-scanner[azure]
 
-# On-device Apple Foundation Model (experimental, macOS 26+ with Apple Intelligence)
-pip install cisco-ai-skill-scanner[apple-fm]
+# On-device Apple Foundation Model (experimental: macOS 26+, Apple Intelligence, full Xcode)
+pip install "apple-fm-sdk>=0.2.1,<0.3"
 
 # All cloud providers
 pip install cisco-ai-skill-scanner[all]
@@ -174,14 +174,14 @@ on-device Apple Foundation Model.
 |----------|--------------|-------|
 | Anthropic | `anthropic/claude-sonnet-5-5` | None |
 | OpenAI | `openai/<model>` | None |
-| AWS Bedrock | `bedrock/<model-id>` | `[bedrock]` |
+| AWS Bedrock | `bedrock/us.anthropic.claude-sonnet-5-5` | `[bedrock]` |
 | AWS Bedrock mantle | `bedrock-mantle/google.gemma-4-26b-a4b` | `[bedrock]` |
 | Google Vertex AI | `vertex_ai/<model>` | `[vertex]` |
 | Google AI Studio | `gemini/<model>` | `[google]` |
 | Azure OpenAI | `azure/<deployment>` | `[azure]` |
 | OpenAI-compatible gateway or vLLM | any name, with `SKILL_SCANNER_LLM_PROVIDER=openai-compatible` and `SKILL_SCANNER_LLM_BASE_URL` | None |
 | Ollama | `ollama/<model>` | None |
-| Apple Foundation Model | `apple-fm/system` | `[apple-fm]` |
+| Apple Foundation Model (experimental) | `apple-fm/system` | `pip install "apple-fm-sdk>=0.2.1,<0.3"` |
 
 See [LLM Providers](/docs/skill-scanner/llm-providers) for credentials, the vLLM settings that keep
 JSON intact, and the measured model.

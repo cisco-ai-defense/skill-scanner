@@ -18,9 +18,9 @@ You configure the judge with environment variables. The two you always set:
 | `SKILL_SCANNER_LLM_API_KEY` | The provider API key. Not needed for Bedrock, Vertex AI, Ollama or Apple FM, which use their own credentials. |
 
 <Callout type="warning">
-  If `--use-llm` is set and the judge cannot start, the scan stops with an error and exit code 2
-  code. This happens with a missing key, a missing provider extra or an unknown provider. A CI job
-  with a broken secret fails instead of quietly passing with rules only.
+  If `--use-llm` is set and the judge cannot start, the scan stops with an error and exit code 2, and
+  the REST API returns HTTP 400. This happens with a missing key, a missing provider extra or an
+  unknown provider. A CI job with a broken secret fails instead of quietly passing with rules only.
 </Callout>
 
 ---
@@ -55,8 +55,8 @@ export AWS_PROFILE="my-bedrock-profile"       # optional
 # The model the published figures were measured with (OpenAI-compatible "mantle" endpoint)
 export SKILL_SCANNER_LLM_MODEL="bedrock-mantle/google.gemma-4-26b-a4b"
 
-# A model served on bedrock-runtime, such as Claude: use the model ID from the Bedrock console
-export SKILL_SCANNER_LLM_MODEL="bedrock/<bedrock-model-id>"
+# Claude on bedrock-runtime (also the default for SKILL_SCANNER_LLM_PROVIDER=aws-bedrock)
+export SKILL_SCANNER_LLM_MODEL="bedrock/us.anthropic.claude-sonnet-5-5"
 ```
 
 Use the prefix your model is served under:
@@ -146,26 +146,32 @@ the host by accident.
 
 #### Apple Foundation Model (experimental)
 
-On a Mac with Apple Intelligence (macOS 26 or newer), the judge can run on the on-device model with
-no API key:
+On a Mac with Apple Intelligence, the judge can run on the on-device model with no API key. You need
+macOS 26 or newer and full Xcode, not only the Command Line Tools, because the SDK builds natively at
+install time.
 
 ```bash
-pip install "cisco-ai-skill-scanner[apple-fm]"
+pip install "apple-fm-sdk>=0.2.1,<0.3"
 export SKILL_SCANNER_LLM_MODEL="apple-fm/system"
 skill-scanner scan ./skill --use-llm
 ```
 
 The on-device model has a small context window. It runs the semantic judge, but behavioral alignment
-(`--use-behavioral` with the LLM) stays on a hosted model. It has not been measured on the
-evaluation splits, so check it on a sample of your own skills first.
+verification (`--use-behavioral` with the LLM) is skipped with a warning rather than sent to it. It
+is experimental and has not been measured on the evaluation splits, so check it on a sample of your
+own skills before relying on it.
 
 ---
 
 ### Behavior Worth Knowing
 
-- **Temperature.** The scanner sends temperature 0 to models that accept it. It omits the parameter
-  for models that reject sampling settings, such as Claude Sonnet 5.5. Override with
-  `SKILL_SCANNER_LLM_TEMPERATURE=<number>`, or set it to `none` to always omit it.
+- **Temperature.** The scanner sends temperature 0 to models that accept it, and omits it
+  automatically for models that reject sampling settings: Claude Sonnet 5.x, Opus 4.7 and later,
+  Fable, and OpenAI reasoning models. Override with `SKILL_SCANNER_LLM_TEMPERATURE=<number>`, or set
+  it to `none` to always omit it.
+- **Structured output.** Claude Sonnet 5.5, Opus 5.5 and Fable 5.1 reject a forced `tool_choice`. For
+  them the scanner asks for plain JSON with the schema in the system prompt. Other models keep
+  schema-constrained output.
 - **Verdict repair is on.** A model that answers `SAFE` while listing findings contradicts itself.
   The scanner escalates that verdict to `SUSPICIOUS` and keeps the findings. It never downgrades.
   `SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT=0` restores the strict path, which discards the

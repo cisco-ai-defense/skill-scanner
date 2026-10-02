@@ -62,6 +62,7 @@ Multiple analyzers covering the same category provides layered detection — if 
 
 Recent core detections include:
 
+- Injection and exfiltration text in the `SKILL.md` frontmatter `description` and `when_to_use` fields, which agents load before invocation (core rules, YARA and active-directive rules; optional packs scan the body only)
 - Package-registry redirection (npm/yarn/pnpm, pip/uv, Go, Cargo, RubyGems, NuGet, Docker) and script network destinations the skill's documentation never names
 - Unpinned dependencies across Python, Node/npm, Ruby, Go, Rust, Java/Maven, .NET/NuGet, PHP/Composer, and Swift manifests
 - Suspicious URLs in YAML, JSON, TOML, INI, and environment/config files, including current ngrok domains plus `bore.pub`, `serveo.net`, and `localtunnel.me`
