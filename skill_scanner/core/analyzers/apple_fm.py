@@ -35,6 +35,21 @@ def is_apple_fm_model(model: str | None) -> bool:
     return bool(model) and model.lower().startswith(_PREFIX)
 
 
+def require_apple_fm_sdk() -> None:
+    """Raise ImportError with an install hint when apple-fm-sdk is missing.
+
+    Called when an analyzer is built, so a requested on-device scan fails
+    before scanning instead of reporting every skill as unanalysed.
+    """
+    import importlib.util
+
+    if importlib.util.find_spec("apple_fm_sdk") is None:
+        raise ImportError(
+            'apple-fm-sdk is not installed. Install it with: pip install "apple-fm-sdk>=0.2.1,<0.3" '
+            "(macOS 26+, Apple Intelligence enabled, full Xcode to build)."
+        )
+
+
 def apple_fm_runtime_status() -> tuple[bool, str]:
     """Return whether the on-device model can run, and why if it cannot."""
     try:

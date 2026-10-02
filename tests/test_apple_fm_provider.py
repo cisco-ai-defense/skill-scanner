@@ -25,14 +25,23 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from skill_scanner.core.analyzers import apple_fm as apple_fm_module
 from skill_scanner.core.analyzers.adjudicator import _LLM_LOCK, Adjudicator
 from skill_scanner.core.analyzers.apple_fm import apple_fm_acompletion, is_apple_fm_model
 from skill_scanner.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
-from skill_scanner.core.analyzers.llm_analyzer import LLMProvider
+from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer, LLMProvider
 from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
 from skill_scanner.core.analyzers.llm_request_handler import LLMRequestHandler
 from skill_scanner.core.analyzers.llm_request_options import supports_openai_user_param
 from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+_REAL_REQUIRE_SDK = apple_fm_module.require_apple_fm_sdk
+
+
+@pytest.fixture(autouse=True)
+def _sdk_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests fake the SDK; CI runners never have apple-fm-sdk installed."""
+    monkeypatch.setattr(apple_fm_module, "require_apple_fm_sdk", lambda: None)
 
 
 def _clear_keys(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,6 +224,16 @@ def test_adapter_maps_messages_and_options(monkeypatch: pytest.MonkeyPatch) -> N
     )
 
     assert response.choices[0].message.content == "be careful|scan this|0.0"
+
+
+def test_llm_analyzer_requires_the_sdk_when_built(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A requested on-device scan fails when the analyzer is built, not per skill."""
+    _clear_keys(monkeypatch)
+    monkeypatch.setattr(apple_fm_module, "require_apple_fm_sdk", _REAL_REQUIRE_SDK)
+    monkeypatch.setattr("importlib.util.find_spec", lambda name, *a, **k: None)
+
+    with pytest.raises(ImportError, match="pip install"):
+        LLMAnalyzer(model="apple-fm/system")
 
 
 def test_missing_sdk_raises_install_hint(monkeypatch: pytest.MonkeyPatch) -> None:

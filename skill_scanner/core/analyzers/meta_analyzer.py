@@ -886,6 +886,11 @@ class MetaAnalyzer(BaseAnalyzer):
             )
         )
 
+        if self.is_apple_fm:
+            from .apple_fm import require_apple_fm_sdk
+
+            require_apple_fm_sdk()
+
         # Validate configuration
         if (
             not self.api_key

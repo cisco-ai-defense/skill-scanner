@@ -369,6 +369,10 @@ class LLMAnalyzer(BaseAnalyzer):
             llm_user=llm_user,
         )
         self.provider_config.validate()
+        if getattr(self.provider_config, "is_apple_fm", False) is True:
+            from .apple_fm import require_apple_fm_sdk
+
+            require_apple_fm_sdk()
 
         self.request_handler = LLMRequestHandler(
             provider_config=self.provider_config,
