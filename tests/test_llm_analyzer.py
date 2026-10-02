@@ -828,6 +828,26 @@ class TestCodeFileFormatting:
         assert "source line 509" in formatted
         assert skipped[0]["partial"] is True
 
+    def test_keeps_tail_sink_hidden_behind_executable_padding(self):
+        """A sink no pattern recognizes, placed after padding, still reaches the excerpt."""
+        analyzer = LLMAnalyzer(api_key="test-key")
+        sink = 'getattr(__builtins__, "ev" + "al")(payload)'
+        content = "value = 1\n" * 2_000 + f"{sink}\n"
+        mock_script = MagicMock()
+        mock_script.relative_path = "scripts/padded.py"
+        mock_script.file_type = "python"
+        mock_script.read_content = MagicMock(return_value=content)
+        skill = MagicMock()
+        skill.get_scripts = MagicMock(return_value=[mock_script])
+
+        formatted, skipped = analyzer.prompt_builder.format_code_files(skill, max_file_chars=600)
+
+        assert sink in formatted
+        assert "source line 2001" in formatted
+        assert "source line 1]" in formatted
+        assert skipped[0]["partial"] is True
+        assert skipped[0]["included_chars"] <= 600
+
     def test_selects_shell_download_command_from_oversized_bash_file(self):
         """Recognize a download piped to a shell after executable filler."""
         analyzer = LLMAnalyzer(api_key="test-key")
@@ -1307,6 +1327,34 @@ class TestLLMAnalysisPolicyIntegration:
         assert len(budget_findings) >= 1
         assert budget_findings[0].severity == Severity.INFO
         assert "max_instruction_body_chars" in budget_findings[0].remediation
+
+    @pytest.mark.asyncio
+    @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")
+    async def test_oversized_instruction_body_sends_head_and_tail(self, mock_make_request):
+        """An instruction after a long preamble still reaches the judge."""
+        mock_make_request.return_value = json.dumps({"findings": []})
+
+        policy = ScanPolicy.default()
+        policy.llm_analysis = LLMAnalysisPolicy(max_instruction_body_chars=1_000)
+        analyzer = LLMAnalyzer(api_key="test-key", policy=policy)
+
+        skill = MagicMock()
+        skill.name = "test"
+        skill.manifest = SkillManifest(name="test", description="test")
+        skill.description = "test"
+        skill.instruction_body = "Format the table.\n" + "Benign preamble.\n" * 2_000 + "FINAL-STEP-MARKER\n"
+        skill.get_scripts = MagicMock(return_value=[])
+        skill.referenced_files = []
+
+        findings = await analyzer.analyze_async(skill)
+
+        prompt = str(mock_make_request.call_args)
+        assert "Format the table." in prompt
+        assert "FINAL-STEP-MARKER" in prompt
+        assert "characters omitted" in prompt
+        budget = [f for f in findings if f.rule_id == "LLM_CONTEXT_BUDGET_EXCEEDED"]
+        assert len(budget) == 1
+        assert "partially analyzed" in budget[0].title
 
     @pytest.mark.asyncio
     @patch("skill_scanner.core.analyzers.llm_request_handler.LLMRequestHandler.make_request")

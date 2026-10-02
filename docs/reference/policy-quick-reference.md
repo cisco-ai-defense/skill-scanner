@@ -279,7 +279,7 @@ When a pipeline reads a matching file, the taint is upgraded to SENSITIVE_DATA.
 <details>
 <summary><strong>llm_analysis</strong> — LLM context budget thresholds</summary>
 
-Controls LLM context budget thresholds for LLM and meta analyzers. Code files that exceed a limit may contribute bounded excerpts containing executable lines, imports, or high-risk calls; the rest of the file is not analyzed and an `LLM_CONTEXT_BUDGET_EXCEEDED` INFO finding describes the partial analysis. Oversized instruction bodies and referenced files remain skipped entirely.
+Controls LLM context budget thresholds for LLM and meta analyzers. Code files that exceed a limit may contribute bounded excerpts containing executable lines, imports, or high-risk calls; the rest of the file is not analyzed and an `LLM_CONTEXT_BUDGET_EXCEEDED` INFO finding describes the partial analysis. An oversized instruction body is reduced to its beginning and end, with the omission marked; oversized referenced files remain skipped entirely.
 
 | Field | Type | Default | Affects |
 |-------|------|---------|---------|

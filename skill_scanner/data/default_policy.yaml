@@ -646,7 +646,8 @@ analyzers:
 # max_code_file_chars to 0 to keep directly formatted code-file contents out
 # of LLM requests. Referenced files use max_referenced_file_chars and may still
 # be included when within that limit.
-# Oversized instruction bodies and referenced files are skipped entirely.
+# An oversized instruction body is reduced to its beginning and end;
+# oversized referenced files are skipped entirely.
 #
 # The meta analyzer multiplies these limits by meta_budget_multiplier
 # (default 3×) because it needs more context for cross-correlation.

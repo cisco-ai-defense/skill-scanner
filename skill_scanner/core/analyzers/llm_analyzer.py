@@ -164,6 +164,27 @@ _DECOMPOSED_DIAGNOSTIC_RULES = frozenset({_DECOMPOSED_FAILURE_RULE, _DECOMPOSED_
 
 _DECOMPOSED_SEVERITY_ORDER = ("SAFE", "INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
 
+
+def _head_and_tail_excerpt(text: str, max_chars: int) -> str:
+    """Keep the start and end of *text* within *max_chars*, marking the cut.
+
+    The end matters as much as the start: an instruction placed after a long
+    benign preamble must still reach the judge.
+    """
+    if len(text) <= max_chars:
+        return text
+    # Size the marker for the largest possible omission so the result never
+    # exceeds max_chars.
+    marker_template = "\n\n[... {:,} characters omitted to fit llm_analysis.max_instruction_body_chars ...]\n\n"
+    budget = max_chars - len(marker_template.format(len(text)))
+    if budget <= 0:
+        return ""
+    head = budget * 2 // 3
+    tail = budget - head
+    marker = marker_template.format(len(text) - head - tail)
+    return text[:head] + marker + (text[-tail:] if tail else "")
+
+
 # Verdicts weakest to strongest, so a union keeps the strongest rather than whichever
 # pass happened to run last.
 _DECOMPOSED_VERDICT_ORDER = ("SAFE", "SUSPICIOUS", "MALICIOUS")
@@ -748,21 +769,24 @@ class LLMAnalyzer(BaseAnalyzer):
             lp = self.llm_policy
             total_budget = lp.max_total_prompt_chars
 
-            # Instruction body: include full or skip entirely
+            # Instruction body: include in full, or a bounded head-and-tail excerpt
             instruction_body = skill.instruction_body
             if len(instruction_body) > lp.max_instruction_body_chars:
-                budget_skipped.append(
-                    {
-                        "path": "SKILL.md (instruction body)",
-                        "size": len(instruction_body),
-                        "reason": (
-                            f"instruction body ({len(instruction_body):,} chars) exceeds "
-                            f"limit ({lp.max_instruction_body_chars:,})"
-                        ),
-                        "threshold_name": "llm_analysis.max_instruction_body_chars",
-                    }
-                )
-                instruction_body = ""
+                full_size = len(instruction_body)
+                instruction_body = _head_and_tail_excerpt(instruction_body, lp.max_instruction_body_chars)
+                item = {
+                    "path": "SKILL.md (instruction body)",
+                    "size": full_size,
+                    "reason": (
+                        f"instruction body ({full_size:,} chars) exceeds limit ({lp.max_instruction_body_chars:,})"
+                    ),
+                    "threshold_name": "llm_analysis.max_instruction_body_chars",
+                }
+                if instruction_body:
+                    item["partial"] = True
+                    item["included_chars"] = len(instruction_body)
+                    item["reason"] += "; only its beginning and end were analyzed"
+                budget_skipped.append(item)
 
             # Track budget consumed by instruction body
             budget_used = len(instruction_body)

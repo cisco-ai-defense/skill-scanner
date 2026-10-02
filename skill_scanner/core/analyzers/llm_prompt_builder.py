@@ -385,8 +385,11 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
                         priorities.setdefault(neighbor, 1)
 
             candidates = sorted(priorities.items(), key=lambda item: (-item[1], item[0]))
-            if not candidates:
-                candidates = [(index, 0) for index in executable_lines]
+            # Spend what the prioritized lines leave on the rest of the file from
+            # both ends, so a sink the patterns miss cannot hide behind padding
+            # at the end of the file.
+            remaining = [index for index in executable_lines if index not in priorities]
+            candidates.extend((index, 0) for index in self._head_and_tail_order(remaining))
 
         selected: list[tuple[int, str]] = []
         used_chars = 0
@@ -403,6 +406,19 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
 
         selected.sort(key=lambda item: item[0])
         return "\n".join(line for _, line in selected)
+
+    @staticmethod
+    def _head_and_tail_order(indexes: list[int]) -> list[int]:
+        """Order line indexes alternately from the start and the end."""
+        ordered: list[int] = []
+        low, high = 0, len(indexes) - 1
+        while low <= high:
+            ordered.append(indexes[low])
+            if low != high:
+                ordered.append(indexes[high])
+            low += 1
+            high -= 1
+        return ordered
 
     @staticmethod
     def _remove_block_comments(source_lines: list[str]) -> list[str]:
