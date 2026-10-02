@@ -56,8 +56,13 @@ brew tap cisco-ai-defense/skill-scanner https://github.com/cisco-ai-defense/skil
 brew install cisco-ai-defense/skill-scanner/skill-scanner
 ```
 
-The formula is regenerated from the PyPI release after each version is published, so it can trail
-PyPI by a short time.
+The formula needs macOS 14 or newer and installs a pinned, prebuilt wheel for every dependency, so it
+takes a minute or two. It is regenerated from the PyPI release after each version is published, so
+it can trail PyPI by a short time. Upgrade with `brew upgrade skill-scanner`.
+
+If Homebrew reports that it could not link `python@3.12` because files such as
+`/usr/local/bin/python3.12` already exist (a python.org install on an Intel Mac), run
+`brew link --overwrite python@3.12` and then `brew install` again.
 
 ### Cloud Provider Extras
 

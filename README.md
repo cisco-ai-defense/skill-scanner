@@ -99,6 +99,10 @@ uv tool install cisco-ai-skill-scanner   # or: pipx install cisco-ai-skill-scann
 
 # Using pip
 pip install cisco-ai-skill-scanner
+
+# Using Homebrew (macOS 14+)
+brew tap cisco-ai-defense/skill-scanner https://github.com/cisco-ai-defense/skill-scanner
+brew install cisco-ai-defense/skill-scanner/skill-scanner
 ```
 
 The presets and settings in [Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings)

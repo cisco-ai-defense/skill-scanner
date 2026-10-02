@@ -162,6 +162,10 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: |
           test "$(uname -m)" = "${{ matrix.machine }}"
+          # GitHub's Intel runners ship python.org Python 3.12 symlinks in
+          # /usr/local/bin, which block linking Homebrew's python@3.12 and leave
+          # its pip unusable; take the links over before installing.
+          brew install python@3.12 || brew link --overwrite python@3.12
           # Homebrew refuses formulae outside a tap, so install from a throwaway local tap.
           brew tap-new --no-git local/skill-scanner
           tap_dir="$(brew --repository local/skill-scanner)"
