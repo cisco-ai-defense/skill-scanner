@@ -25,7 +25,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote_from_bytes
+from urllib.parse import quote_from_bytes, urlsplit
 
 from ...core.models import Finding, Report, ScanResult, Severity
 
@@ -235,12 +235,13 @@ class SARIFReporter:
             }
 
             artifact_uri = self._artifact_uri(finding, skill_directory)
+            artifact_location = {"uri": artifact_uri}
+            # SARIF 3.4.4 forbids a URI base for an absolute artifact URI.
+            if not urlsplit(artifact_uri).scheme:
+                artifact_location["uriBaseId"] = "%SRCROOT%"
             location: dict[str, Any] = {
                 "physicalLocation": {
-                    "artifactLocation": {
-                        "uri": artifact_uri,
-                        "uriBaseId": "%SRCROOT%",
-                    },
+                    "artifactLocation": artifact_location,
                 }
             }
 

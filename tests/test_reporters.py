@@ -403,9 +403,12 @@ def test_sarif_reporter_encodes_filename_characters(tmp_path, monkeypatch, filen
         findings=[finding],
     )
 
-    uri = _result_uris(SARIFReporter().generate_report(result))[0]
+    output = SARIFReporter().generate_report(result)
+    uri = _result_uris(output)[0]
 
     assert uri == f"skills/docs/scripts/{encoded}"
+    artifact = json.loads(output)["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+    assert artifact["uriBaseId"] == "%SRCROOT%"
     parsed = urlsplit(uri)
     assert not parsed.query
     assert not parsed.fragment
@@ -469,16 +472,28 @@ def test_sarif_reporter_encodes_cross_skill_finding_path():
     assert _result_uris(SARIFReporter().generate_report(report)) == ["skills/docs%20%231/SKILL.md"]
 
 
-def test_sarif_reporter_absolute_path_is_a_file_uri(tmp_path):
+@pytest.mark.parametrize("report_kind", ["single", "aggregate", "cross_skill"])
+def test_sarif_reporter_absolute_path_is_a_file_uri(tmp_path, report_kind):
+    """Absolute artifacts must be file URIs without a relative path base."""
     finding = _sample_findings()[2]
     finding.file_path = str(tmp_path / "release #1.py")
     result = ScanResult(skill_name="docs", skill_directory=str(tmp_path), findings=[finding])
+    if report_kind == "single":
+        data = result
+    elif report_kind == "aggregate":
+        data = Report()
+        data.add_scan_result(result)
+    else:
+        data = Report(cross_skill_findings=[finding])
 
-    uri = _result_uris(SARIFReporter().generate_report(result))[0]
+    output = SARIFReporter().generate_report(data)
+    uri = _result_uris(output)[0]
 
     assert uri == (tmp_path / "release #1.py").as_uri()
     assert urlsplit(uri).scheme == "file"
     assert not urlsplit(uri).fragment
+    artifact = json.loads(output)["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+    assert "uriBaseId" not in artifact
 
 
 def _report_with_suppressions() -> Report:
