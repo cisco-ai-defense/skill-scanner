@@ -43,6 +43,21 @@ from .scan_policy import ScanPolicy
 logger = logging.getLogger(__name__)
 
 
+class AnalyzerConfigurationError(ValueError):
+    """An explicitly requested analyzer could not be built.
+
+    Raised instead of logging a warning so that a requested LLM, behavioral or
+    meta analysis never turns into a successful deterministic-only scan.
+    """
+
+
+LLM_CONFIGURATION_HINT = (
+    "Set SKILL_SCANNER_LLM_MODEL and SKILL_SCANNER_LLM_API_KEY (or cloud credentials for "
+    "Bedrock and Vertex), and install the provider extra if it needs one, for example "
+    "pip install 'cisco-ai-skill-scanner[bedrock]'."
+)
+
+
 def build_core_analyzers(
     policy: ScanPolicy,
     *,
@@ -175,7 +190,7 @@ def build_analyzers(
                 )
             )
         except (ImportError, ValueError, TypeError) as exc:
-            logger.warning("Could not load behavioral analyzer: %s", exc)
+            raise AnalyzerConfigurationError(f"the behavioral analyzer could not be loaded: {exc}") from exc
 
     if use_llm:
         effective_max_tokens = resolve_llm_max_tokens(
@@ -213,7 +228,9 @@ def build_analyzers(
             # successful deterministic-only scan.
             raise
         except (ImportError, ValueError, TypeError) as exc:
-            logger.warning("Could not load LLM analyzer: %s", exc)
+            raise AnalyzerConfigurationError(
+                f"the LLM analyzer could not be loaded: {exc}. {LLM_CONFIGURATION_HINT}"
+            ) from exc
 
     if use_virustotal:
         try:

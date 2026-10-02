@@ -43,7 +43,7 @@ except ImportError:
     raise ImportError("API server requires FastAPI. Install with: pip install fastapi uvicorn python-multipart")
 
 from .. import __version__ as PACKAGE_VERSION
-from ..core.analyzer_factory import build_analyzers
+from ..core.analyzer_factory import LLM_CONFIGURATION_HINT, AnalyzerConfigurationError, build_analyzers
 from ..core.cel.models import CelMode
 from ..core.cel.runtime import CelRuntimeUnavailable
 from ..core.exceptions import SkillLoadError
@@ -441,6 +441,35 @@ def _skill_load_error_detail(error: SkillLoadError, skill_dir: Path) -> str:
     return f"Invalid skill package: {detail}"
 
 
+def _build_api_meta_analyzer(
+    policy: ScanPolicy,
+    *,
+    llm_max_tokens: int | None,
+    llm_provider: str | None,
+    llm_reasoning_effort: str | None,
+):
+    """Build the meta-analyzer a request asked for, or raise a configuration error."""
+    if not META_AVAILABLE or MetaAnalyzer is None or apply_meta_analysis_to_results is None:
+        raise AnalyzerConfigurationError("enable_meta needs the LLM dependencies: pip install litellm")
+    try:
+        return MetaAnalyzer(
+            policy=policy,
+            max_tokens=resolve_llm_max_tokens(
+                llm_max_tokens,
+                meta=True,
+                default=policy.llm_analysis.max_output_tokens if policy else 8192,
+            ),
+            provider=llm_provider,
+            reasoning_effort=llm_reasoning_effort,
+        )
+    except ReasoningConfigurationError:
+        raise
+    except Exception as e:
+        raise AnalyzerConfigurationError(
+            f"the meta-analyzer could not be initialised: {e}. {LLM_CONFIGURATION_HINT}"
+        ) from e
+
+
 def _build_analyzers(
     policy: ScanPolicy,
     *,
@@ -579,6 +608,18 @@ async def scan_skill(
 
     scan_id = str(uuid.uuid4())
 
+    meta_analyzer = None
+    if request.enable_meta:
+        try:
+            meta_analyzer = _build_api_meta_analyzer(
+                policy,
+                llm_max_tokens=request.llm_max_tokens,
+                llm_provider=request.llm_provider,
+                llm_reasoning_effort=request.llm_reasoning_effort,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
     def run_scan():
         # Context variables do not automatically cross executor boundaries,
         # so bind the request id inside the worker thread itself.
@@ -610,13 +651,7 @@ async def scan_skill(
             result = await loop.run_in_executor(executor, run_scan)
 
         # Meta-analysis
-        if (
-            request.enable_meta
-            and META_AVAILABLE
-            and MetaAnalyzer is not None
-            and apply_meta_analysis_to_results is not None
-            and len(result.findings) > 0
-        ):
+        if meta_analyzer is not None and apply_meta_analysis_to_results is not None and len(result.findings) > 0:
             with scan_log_context(
                 skill_name=result.skill_name,
                 skill_path=str(skill_dir),
@@ -625,16 +660,6 @@ async def scan_skill(
                 try:
                     from ..core.loader import SkillLoader
 
-                    meta_analyzer = MetaAnalyzer(
-                        policy=policy,
-                        max_tokens=resolve_llm_max_tokens(
-                            request.llm_max_tokens,
-                            meta=True,
-                            default=policy.llm_analysis.max_output_tokens if policy else 8192,
-                        ),
-                        provider=request.llm_provider,
-                        reasoning_effort=request.llm_reasoning_effort,
-                    )
                     loader = SkillLoader()
                     skill = loader.load_skill(skill_dir)
 
@@ -951,25 +976,19 @@ def _run_batch_scan(
         )
 
         # Meta-analysis per skill
-        if (
-            request.enable_meta
-            and META_AVAILABLE
-            and MetaAnalyzer is not None
-            and apply_meta_analysis_to_results is not None
-        ):
+        if request.enable_meta:
             import asyncio
 
+            # Built before the per-skill loop so a configuration error fails the
+            # batch instead of being swallowed with the per-skill failures below.
+            meta_analyzer = _build_api_meta_analyzer(
+                policy,
+                llm_max_tokens=request.llm_max_tokens,
+                llm_provider=request.llm_provider,
+                llm_reasoning_effort=request.llm_reasoning_effort,
+            )
+
             async def _run_batch_meta(scanner_ref, report_ref, policy_ref):
-                meta_analyzer = MetaAnalyzer(
-                    policy=policy_ref,
-                    max_tokens=resolve_llm_max_tokens(
-                        request.llm_max_tokens,
-                        meta=True,
-                        default=policy_ref.llm_analysis.max_output_tokens if policy_ref else 8192,
-                    ),
-                    provider=request.llm_provider,
-                    reasoning_effort=request.llm_reasoning_effort,
-                )
                 for result in report_ref.scan_results:
                     if result.findings:
                         skill_dir_path = Path(result.skill_directory)
