@@ -152,6 +152,19 @@ def test_behavioral_alignment_is_not_routed_to_apple_fm(monkeypatch: pytest.Monk
     assert by_provider.alignment_orchestrator is None
 
 
+def test_hosted_provider_keeps_alignment_for_apple_fm_model_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An OpenAI-compatible gateway may use an apple-fm/ model id."""
+    _clear_keys(monkeypatch)
+    analyzer = BehavioralAnalyzer(
+        use_alignment_verification=True,
+        llm_model="apple-fm/system",
+        llm_provider="openai-compatible",
+        llm_api_key="hosted-key",
+    )
+
+    assert analyzer.alignment_orchestrator is not None
+
+
 class _FakeSession:
     def __init__(self, instructions: str = "") -> None:
         self.instructions = instructions
