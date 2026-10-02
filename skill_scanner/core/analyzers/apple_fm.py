@@ -46,7 +46,7 @@ def require_apple_fm_sdk() -> None:
     if importlib.util.find_spec("apple_fm_sdk") is None:
         raise ImportError(
             'apple-fm-sdk is not installed. Install it with: pip install "apple-fm-sdk>=0.2.1,<0.3" '
-            "(macOS 26+, Apple Intelligence enabled, full Xcode to build)."
+            "(macOS 26+, Apple Intelligence enabled, full Xcode to build)"
         )
 
 
