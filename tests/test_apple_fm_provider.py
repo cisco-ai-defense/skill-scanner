@@ -27,13 +27,17 @@ import pytest
 
 from skill_scanner.core.analyzers import apple_fm as apple_fm_module
 from skill_scanner.core.analyzers.adjudicator import _LLM_LOCK, Adjudicator
-from skill_scanner.core.analyzers.apple_fm import apple_fm_acompletion, is_apple_fm_model
+from skill_scanner.core.analyzers.apple_fm import (
+    AppleFMContextWindowError,
+    apple_fm_acompletion,
+    is_apple_fm_model,
+)
 from skill_scanner.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
 from skill_scanner.core.analyzers.llm_analyzer import LLMAnalyzer, LLMProvider
 from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
 from skill_scanner.core.analyzers.llm_request_handler import LLMRequestHandler
 from skill_scanner.core.analyzers.llm_request_options import supports_openai_user_param
-from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisContextWindowError, MetaAnalyzer
 
 _REAL_REQUIRE_SDK = apple_fm_module.require_apple_fm_sdk
 
@@ -67,6 +71,16 @@ def test_provider_config_allows_keyless_apple_fm(monkeypatch: pytest.MonkeyPatch
     assert config.api_key is None
     assert config.model == "apple-fm/system"
     assert supports_openai_user_param(config.model, "apple-fm") is False
+
+
+def test_apple_fm_rejects_a_bedrock_mantle_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mantle model must not leave the machine under an on-device provider."""
+    _clear_keys(monkeypatch)
+
+    with pytest.raises(ValueError, match="on-device"):
+        ProviderConfig(model="bedrock-mantle/gemma", provider="apple-fm")
+    with pytest.raises(ValueError, match="on-device"):
+        ProviderConfig(model="apple-fm/system", provider="bedrock-mantle")
 
 
 def test_provider_name_maps_to_system_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -240,6 +254,52 @@ def test_missing_sdk_raises_install_hint(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setitem(sys.modules, "apple_fm_sdk", None)
     with pytest.raises(ImportError, match="pip install apple-fm-sdk"):
         asyncio.run(apple_fm_acompletion(model="apple-fm/system", messages=[{"role": "user", "content": "hi"}]))
+
+
+def test_context_window_error_is_typed(monkeypatch: pytest.MonkeyPatch) -> None:
+    class OversizeError(RuntimeError):
+        pass
+
+    OversizeError.__name__ = "ExceededContextWindowSizeError"
+
+    class OversizeSession:
+        def __init__(self, instructions: str = "") -> None:
+            self.instructions = instructions
+
+        async def respond(self, prompt: str, options=None):
+            raise OversizeError("prompt is too large")
+
+    class OversizeFM(_FakeFM):
+        class LanguageModelSession(OversizeSession):
+            pass
+
+    fake = ModuleType("apple_fm_sdk")
+    fake.SystemLanguageModel = OversizeFM.SystemLanguageModel
+    fake.LanguageModelSession = OversizeFM.LanguageModelSession
+    fake.GenerationOptions = OversizeFM.GenerationOptions
+    _install_fake_sdk(monkeypatch, fake)
+
+    with pytest.raises(AppleFMContextWindowError, match="context window"):
+        asyncio.run(
+            apple_fm_acompletion(
+                model="apple-fm/system",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+        )
+
+
+def test_meta_request_classifies_a_context_window_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_keys(monkeypatch)
+    monkeypatch.delenv("SKILL_SCANNER_LLM_PROVIDER", raising=False)
+
+    async def too_large(**kwargs):
+        raise AppleFMContextWindowError("Apple Foundation Models context window cannot fit this prompt")
+
+    monkeypatch.setattr("skill_scanner.core.analyzers.apple_fm.apple_fm_acompletion", too_large)
+    analyzer = MetaAnalyzer(model="apple-fm/system", max_tokens=64)
+
+    with pytest.raises(MetaAnalysisContextWindowError, match="context window"):
+        asyncio.run(analyzer._make_llm_request("system", "user"))
 
 
 def test_timeout_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:

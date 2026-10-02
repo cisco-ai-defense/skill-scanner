@@ -535,7 +535,7 @@ class LLMRequestHandler:
 
     async def _make_apple_fm_request(self, messages: list[dict[str, str]], context: str) -> str:
         """Run the prompt on the on-device Apple Foundation Model."""
-        from .apple_fm import apple_fm_acompletion
+        from .apple_fm import AppleFMContextWindowError, apple_fm_acompletion
 
         last_exception: Exception | None = None
         for attempt in range(self.max_retries + 1):
@@ -552,8 +552,10 @@ class LLMRequestHandler:
                 return response.choices[0].message.content or ""
             except Exception as exc:
                 last_exception = exc
-                error_msg = str(exc).lower()
                 # A too-small context window does not succeed on retry.
+                if isinstance(exc, AppleFMContextWindowError):
+                    raise
+                error_msg = str(exc).lower()
                 if "context window" in error_msg or "context length" in error_msg:
                     raise
                 if any(

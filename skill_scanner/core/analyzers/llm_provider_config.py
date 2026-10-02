@@ -207,6 +207,15 @@ class ProviderConfig:
         self.is_apple_fm = not self.is_openai_compatible and (
             self.provider == "apple-fm" or model_lower.startswith("apple-fm/")
         )
+        # Mantle is dispatched before Apple FM. A mixed selection would send
+        # skill content to the remote SigV4 endpoint while the caller asked
+        # for the on-device model.
+        if self.is_apple_fm and self.is_bedrock_mantle:
+            raise ValueError(
+                "Apple Foundation Models run on-device and cannot be combined with a "
+                "Bedrock Mantle model. Use provider 'apple-fm' with an apple-fm/ model, "
+                "or a bedrock-mantle model without the apple-fm provider."
+            )
         self.is_openrouter = not self.is_openai_compatible and model_lower.startswith("openrouter/")
         self.is_orcarouter = self.provider == "orcarouter" or (
             not self.is_openai_compatible and model_lower.startswith("orcarouter/")

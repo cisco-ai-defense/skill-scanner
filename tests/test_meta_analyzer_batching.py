@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from skill_scanner.core.analyzers.meta_analyzer import (
+    MetaAnalysisContextWindowError,
     MetaAnalysisTruncatedError,
     MetaAnalyzer,
     _meta_evidence_id,
@@ -214,6 +215,34 @@ async def test_length_finish_reason_bisects_batch_and_aggregates_all_usage() -> 
         "output_tokens": 700,
         "total_tokens": 900,
     }
+
+
+@pytest.mark.asyncio
+async def test_apple_fm_context_window_bisects_and_stops_at_one_finding(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SKILL_SCANNER_LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("SKILL_SCANNER_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("SKILL_SCANNER_META_LLM_API_KEY", raising=False)
+    analyzer = MetaAnalyzer(model="apple-fm/system", max_tokens=8192)
+    analyzer._build_skill_context = MagicMock(return_value=("bounded context", []))
+    findings = _findings(2)
+    calls: list[list[int]] = []
+
+    async def classify(_system_prompt: str, user_prompt: str) -> str:
+        indices = _prompt_indices(user_prompt)
+        calls.append(list(indices))
+        if indices == [0]:
+            return _classification(indices)
+        raise MetaAnalysisContextWindowError("context window cannot fit this prompt")
+
+    analyzer._make_llm_request = AsyncMock(side_effect=classify)
+
+    result = await analyzer.analyze_with_findings(_skill(), findings, ["static"])
+
+    assert calls == [[0, 1], [0], [1]]
+    assert [item["_index"] for item in result.validated_findings if not item.get("meta_analysis_degraded")] == [0]
+    degraded = {item["_index"] for item in result.validated_findings if item.get("meta_analysis_degraded")}
+    assert degraded == {1}
+    assert [warning["code"] for warning in result.analysis_warnings] == ["META_BATCH_CONTEXT_WINDOW"]
 
 
 @pytest.mark.asyncio

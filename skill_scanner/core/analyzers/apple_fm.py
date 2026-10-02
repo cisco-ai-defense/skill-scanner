@@ -91,6 +91,10 @@ class _Usage:
     completion_tokens = None
 
 
+class AppleFMContextWindowError(RuntimeError):
+    """The on-device model rejected the prompt as larger than its context window."""
+
+
 class AppleFMResponse:
     """LiteLLM-shaped completion so existing callers can read ``choices``."""
 
@@ -244,8 +248,20 @@ async def apple_fm_acompletion(**params: Any) -> AppleFMResponse:
         if not timeout:
             raise
         raise TimeoutError(f"apple-fm request timed out after {timeout} seconds") from exc
+    except Exception as exc:
+        if _is_context_window_error(exc):
+            raise AppleFMContextWindowError("Apple Foundation Models context window cannot fit this prompt") from exc
+        raise
     text = _response_text(raw)
     return AppleFMResponse(text)
+
+
+def _is_context_window_error(exc: BaseException) -> bool:
+    """Recognize the SDK's context-window failure without importing it."""
+    if type(exc).__name__ == "ExceededContextWindowSizeError":
+        return True
+    message = str(exc).lower()
+    return "context window" in message or "context length" in message
 
 
 def _response_text(raw: Any) -> str:

@@ -713,6 +713,10 @@ class MetaAnalysisTruncatedError(LLMResponseTruncatedError):
     """Raised when the provider reports an output-token truncation."""
 
 
+class MetaAnalysisContextWindowError(Exception):
+    """The on-device model cannot fit this meta-analysis prompt."""
+
+
 class MetaAnalysisParseError(ValueError):
     """Raised when a meta-analysis response cannot be parsed as valid JSON."""
 
@@ -1338,27 +1342,16 @@ Respond with JSON containing your analysis following the required schema."""
             response = await self._make_llm_request(self.system_prompt, user_prompt)
         except MetaAnalysisTruncatedError:
             if len(indices) > 1:
-                midpoint = len(indices) // 2
-                logger.warning(
-                    "Meta-analysis response truncated for findings %d-%d; retrying as %d and %d findings",
-                    indices[0],
-                    indices[-1],
-                    midpoint,
-                    len(indices) - midpoint,
+                return await self._bisect_batch(
+                    skill=skill,
+                    findings=findings,
+                    indices=indices,
+                    skill_context=skill_context,
+                    analyzers_used=analyzers_used,
+                    start_tag=start_tag,
+                    end_tag=end_tag,
+                    reason="response truncated",
                 )
-                narrowed = MetaAnalysisResult()
-                for narrowed_indices in (indices[:midpoint], indices[midpoint:]):
-                    narrowed_result = await self._analyze_batch(
-                        skill=skill,
-                        findings=findings,
-                        indices=narrowed_indices,
-                        skill_context=skill_context,
-                        analyzers_used=analyzers_used,
-                        start_tag=start_tag,
-                        end_tag=end_tag,
-                    )
-                    self._merge_batch_result(narrowed, narrowed_result)
-                return narrowed
             return self._degraded_batch_result(
                 findings,
                 indices,
@@ -1367,6 +1360,34 @@ Respond with JSON containing your analysis following the required schema."""
                 failure_diagnostic={
                     "outer_error_code": "META_BATCH_TRUNCATED",
                     "inner_error_code": "META_RESPONSE_TRUNCATED",
+                    "request_sha256": request_sha256,
+                    "repair_attempted": 0,
+                    "repair_succeeded": 0,
+                },
+            )
+        except MetaAnalysisContextWindowError:
+            if len(indices) > 1:
+                return await self._bisect_batch(
+                    skill=skill,
+                    findings=findings,
+                    indices=indices,
+                    skill_context=skill_context,
+                    analyzers_used=analyzers_used,
+                    start_tag=start_tag,
+                    end_tag=end_tag,
+                    reason="prompt exceeded the on-device context window",
+                )
+            return self._degraded_batch_result(
+                findings,
+                indices,
+                code="META_BATCH_CONTEXT_WINDOW",
+                message=(
+                    "The on-device Apple Foundation Model context window cannot fit "
+                    "this finding together with the skill context; the finding was retained unchanged."
+                ),
+                failure_diagnostic={
+                    "outer_error_code": "META_BATCH_CONTEXT_WINDOW",
+                    "inner_error_code": "APPLE_FM_CONTEXT_WINDOW",
                     "request_sha256": request_sha256,
                     "repair_attempted": 0,
                     "repair_succeeded": 0,
@@ -1423,6 +1444,42 @@ Respond with JSON containing your analysis following the required schema."""
             )
 
         return self._normalize_batch_result(batch_result, findings, indices)
+
+    async def _bisect_batch(
+        self,
+        skill: Skill,
+        findings: list[Finding],
+        indices: list[int],
+        skill_context: str,
+        analyzers_used: list[str],
+        start_tag: str,
+        end_tag: str,
+        *,
+        reason: str,
+    ) -> MetaAnalysisResult:
+        """Retry one batch as two smaller batches. A single finding is not split."""
+        midpoint = len(indices) // 2
+        logger.warning(
+            "Meta-analysis %s for findings %d-%d; retrying as %d and %d findings",
+            reason,
+            indices[0],
+            indices[-1],
+            midpoint,
+            len(indices) - midpoint,
+        )
+        narrowed = MetaAnalysisResult()
+        for narrowed_indices in (indices[:midpoint], indices[midpoint:]):
+            narrowed_result = await self._analyze_batch(
+                skill=skill,
+                findings=findings,
+                indices=narrowed_indices,
+                skill_context=skill_context,
+                analyzers_used=analyzers_used,
+                start_tag=start_tag,
+                end_tag=end_tag,
+            )
+            self._merge_batch_result(narrowed, narrowed_result)
+        return narrowed
 
     def _normalize_batch_result(
         self,
@@ -1907,6 +1964,8 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
         ]
 
         if self.is_apple_fm:
+            from .apple_fm import AppleFMContextWindowError
+
             config = self.provider_config
             if config is None or getattr(config, "is_apple_fm", False) is not True:
                 config = ProviderConfig(model=self.model, api_key=None, provider="apple-fm")
@@ -1921,7 +1980,11 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
             # Meta validates its own JSON contract. The on-device model has no
             # json_schema response format, so leave the prompt unconstrained.
             handler.response_schema = None
-            content = await handler.make_request(messages, context="meta-analysis")
+            try:
+                content = await handler.make_request(messages, context="meta-analysis")
+            except AppleFMContextWindowError as exc:
+                _add_token_usage(self._llm_usage, handler.last_usage)
+                raise MetaAnalysisContextWindowError(str(exc)) from exc
             _add_token_usage(self._llm_usage, handler.last_usage)
             return content
 
