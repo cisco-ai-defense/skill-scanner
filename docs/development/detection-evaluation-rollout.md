@@ -38,7 +38,12 @@ job regenerates the exact-golden manifest from the checked-out fixtures and
 requires the frozen public artifact's bundled manifest to match it exactly;
 stale or subset golden evidence cannot satisfy the gate.
 
-Package publication is directly dependent on this reusable gate. First,
+Package publication does not currently depend on this gate: `release.yml`
+stopped calling it in #219, and `detection-release-evidence.yml` and
+`detection-release-gates.yml` are dispatched by hand when release evidence is
+wanted. Pull requests that touch detection are checked by the
+[detection-impact check](detection-impact-check.md) instead. The rest of this
+section describes the gate as designed, for when it is wired back in. First,
 dispatch `detection-release-evidence.yml` from the exact release tag and pass
 that tag's full commit SHA. The protected producer downloads only the ten files
 listed in the MaliciousSkillBench profile at the locked revision, verifies all
@@ -59,9 +64,10 @@ compact canonical offline contract: `candidate.json`, `baseline.json`,
 `golden-corpus.json`, `evidence-provenance.json`, and the producer's passing
 `release-gate-result.json`. Candidate and baseline metadata record the exact
 release commit; provenance is `status=release_evidence` and `shipping=true`.
-Publication never downloads or rematerializes Hugging Face data. A missing,
-failed, wrong-workflow, cross-revision, expired, renamed, or identity-mismatched
-artifact blocks wheel building and therefore blocks PyPI and GitHub publication.
+Publication never downloads or rematerializes Hugging Face data. With the gate
+wired in, a missing, failed, wrong-workflow, cross-revision, expired, renamed,
+or identity-mismatched artifact would block wheel building and therefore PyPI
+and GitHub publication.
 
 Go 1.27.1 is the source-build minimum. Pull requests, detection evidence,
 release wheels, supply-chain exports, and Homebrew qualification pin exactly
