@@ -1090,10 +1090,12 @@ def generate_policy_command(args: argparse.Namespace) -> int:
         policy.to_yaml(output_path)
         print(f"Generated {preset} scan policy: {_redact_status_message(str(output_path))}\n")
         print("Edit the file to customise, then use:")
-        print(f"  skill-scanner scan --policy {_redact_status_message(str(output_path))} /path/to/skill\n")
+        print(f"  skill-scanner scan --policy {_redact_status_message(str(output_path))} --use-llm /path/to/skill\n")
         print("Or use the interactive configurator:")
         print("  skill-scanner configure-policy\n")
-        print("Available presets: strict | balanced (default) | permissive")
+        print("Available presets: balanced (default) | low-noise | quiet | strict | permissive")
+        print("Run every preset with the LLM judge (--use-llm). For fewer false positives use low-noise,")
+        print("or quiet, which requires the judge. strict is for hunting, not gating.")
         return 0
     except Exception as e:
         _print_cli_error("Error generating policy: ", e)
@@ -1301,7 +1303,11 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument("--use-trigger", action="store_true", help="Enable trigger specificity analysis")
-    parser.add_argument("--enable-meta", action="store_true", help="Enable meta-analysis FP filtering (2+ analyzers)")
+    parser.add_argument(
+        "--enable-meta",
+        action="store_true",
+        help="Enable the meta-analyzer (2+ analyzers). Off by default: measured to cost recall",
+    )
     parser.add_argument(
         "--adjudicate",
         action="store_true",
@@ -1316,7 +1322,11 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--policy",
         metavar="PRESET_OR_PATH",
-        help="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
+        help=(
+            "Scan policy: a preset (balanced, low-noise, quiet, strict, permissive) or a path to custom "
+            "YAML. For fewer false positives use low-noise or quiet together with --use-llm; quiet "
+            "requires the LLM judge"
+        ),
     )
     parser.add_argument(
         "--lenient",

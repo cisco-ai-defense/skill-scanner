@@ -54,6 +54,9 @@ def _run_python_module_help(module_and_args: list[str]) -> str:
     return proc.stdout.strip()
 
 
+_OPTIONAL_SEMANTIC_FLAGS_SECTION = "## Optional semantic flags\n\nBoth of these are accepted by `scan`, `scan-all` and `scan-repo`, and both are off by\ndefault.\n\n### `--llm-decompose`\n\nRun the LLM analyzer once per focus — declared purpose against actual behaviour, policy\nand instruction surface, and concrete security behaviours — and union the findings,\ninstead of making one general pass. It raises recall where a single pass was missing\nfindings, at roughly three times the model calls.\n\nThe size of the gain depends on the model and on how much headroom the single pass left,\nand on one positive-only corpus recall fell. Read [measured\nresults](measured-results.md) before assuming a figure transfers.\n\nRequires `--use-llm`.\n\n### `--system-one-endpoint` and `--system-one-model`\n\n| Flag | Meaning |\n|---|---|\n| `--system-one-endpoint URL` | A System One endpoint speaking `POST /v1/systemone`. Must be `https`, or `http` on loopback; a plaintext remote endpoint is refused so skill content is not sent in clear text. |\n| `--system-one-model NAME` | The model name to send to that endpoint. Required whenever the endpoint is set; supplying one without the other is an error rather than a silent default. |\n\nThe bearer token is read from `SKILL_SCANNER_SYSTEM_ONE_API_KEY` and never from the\ncommand line, so it does not land in shell history or a process listing.\n\n**This tier is advisory only.** It records a calibrated probability and cannot emit a\nfinding, change a severity, or alter the verdict. That is deliberate: across 439 records\nand two prompt framings, the model measured scored *inverted* with respect to the label\n(AUC 0.25–0.31), so wiring it into severity would have made the scanner worse. The\nintegration ships because the protocol is model-agnostic and a future model may separate\nthe classes. Demonstrating that separation on a corpus is the precondition for anything\nacting on it. See [measured results](measured-results.md).\n"
+
+
 def _render_cli_reference() -> str:
     blocks = [
         HelpBlock("Top-level CLI", ["-m", "skill_scanner.cli.cli", "--help"]),
@@ -89,7 +92,7 @@ def _render_cli_reference() -> str:
         "",
         "## Common Flags",
         "",
-        "Flags shared by `scan` and `scan-all`:",
+        "Flags shared by `scan`, `scan-all` and `scan-repo`:",
         "",
         "| Flag | Default | Description |",
         "|---|---|---|",
@@ -104,7 +107,10 @@ def _render_cli_reference() -> str:
         "| `--use-aidefense` | off | Enable Cisco AI Defense analyzer |",
         "| `--use-osv` | off | Enable OSV.dev dependency vulnerability scanning (no API key; requires network) |",
         "| `--llm-reasoning-effort LEVEL` | provider default | Optional reasoning depth: `disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Direct Google GenAI SDK requests reject configured controls; LiteLLM-backed Gemini requests support them. |",
-        "| `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |",
+        "| `--llm-decompose` | off | Run the LLM analyzer once per focus and union the findings instead of making one general pass. Raises recall at roughly three times the model calls. Requires `--use-llm`. See [Optional semantic flags](#optional-semantic-flags). |",
+        "| `--system-one-endpoint URL` | off | Optional System One screening endpoint speaking `POST /v1/systemone`. **Advisory only**: it can never change a finding, a severity or the verdict. `https`, or `http` on loopback. |",
+        "| `--system-one-model NAME` | none | Model name for the System One endpoint. Required with `--system-one-endpoint`, and rejected without it. |",
+        "| `--enable-meta` | off | Enable the meta (cross-correlation) analyzer. Measured to cost recall; leave it off unless you have measured it on your skills |",
         "| `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |",
         "| `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |",
         "| `--lenient` | off | Tolerate malformed YAML / missing fields: coerce bad fields, fill defaults, and continue instead of failing. Binary and non-UTF-8 files always fail. |",
@@ -134,6 +140,8 @@ def _render_cli_reference() -> str:
                 "",
             ]
         )
+
+    sections.append(_OPTIONAL_SEMANTIC_FLAGS_SECTION)
 
     return GENERATED_BANNER + "\n".join(sections).rstrip() + "\n"
 
@@ -427,6 +435,9 @@ def _collect_env_variables() -> dict[str, set[str]]:
             "SKILL_SCANNER_LLM_REASONING_EFFORT",
             "SKILL_SCANNER_META_LLM_REASONING_EFFORT",
         ),
+        "skill_scanner/core/analyzers/llm_request_handler.py": ("SKILL_SCANNER_LLM_TEMPERATURE",),
+        "skill_scanner/core/analyzers/meta_analyzer.py": ("SKILL_SCANNER_META_LLM_TEMPERATURE",),
+        "skill_scanner/core/analyzers/adjudicator.py": ("SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE",),
     }
     for source, variables in runtime_env_sources.items():
         for var in variables:
@@ -545,6 +556,21 @@ def _describe_env_var(var: str) -> str:
         ),
         "SKILL_SCANNER_TAXONOMY_PATH": "Path to a custom Cisco AI taxonomy YAML file (overridden by `--taxonomy`).",
         "SKILL_SCANNER_THREAT_MAPPING_PATH": "Path to a custom threat mapping YAML file (overridden by `--threat-mapping`).",
+        "SKILL_SCANNER_LLM_TEMPERATURE": (
+            "Sampling temperature for LLM requests, or `none` to omit it. When unset, the scanner sends 0 and "
+            "omits it for models that reject it (Claude Sonnet 5.x, Opus 4.7 and later, Fable, OpenAI reasoning "
+            "models)."
+        ),
+        "SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE": (
+            "Adjudicator sampling temperature override, or `none` to omit it; falls back to "
+            "`SKILL_SCANNER_LLM_TEMPERATURE`."
+        ),
+        "SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT": "Repair for a self-contradicting model response, **on by default**. Some models return a `SAFE` package verdict together with a non-empty findings array, which the strict parser rejects, discarding the whole analysis -- on benign skills far more often than malicious ones, so the skill goes un-analysed and passes the gate. The verdict is escalated to `SUSPICIOUS` and the findings are kept. Escalate-only: it never downgrades a verdict, so it cannot hide a detection. Set `0`, `false`, `no` or `off` to restore the strict path.",
+        "SKILL_SCANNER_META_LLM_TEMPERATURE": "Meta-analyzer sampling temperature override. Lower values make the arbitration more repeatable; note that temperature 0 is not determinism, and replays of the same input can still differ.",
+        "SKILL_SCANNER_SYSTEM_ONE_API_KEY": (
+            "Bearer token for the optional System One screening endpoint (`--system-one-endpoint`). Read from the "
+            "environment only, never from the command line."
+        ),
         "GEMINI_API_KEY": "Google AI Studio key; auto-set from `SKILL_SCANNER_LLM_API_KEY` when using Gemini via LiteLLM.",
         "ENABLE_STATIC_ANALYZER": "Optional environment toggle for static analyzer default.",
         "ENABLE_LLM_ANALYZER": "Optional environment toggle for LLM analyzer default.",
@@ -568,6 +594,9 @@ _ENV_VAR_GROUPS: list[tuple[str, str, list[str]]] = [
             "SKILL_SCANNER_LLM_MAX_TOKENS",
             "SKILL_SCANNER_LLM_REASONING_EFFORT",
             "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT",
+            "SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT",
+            "SKILL_SCANNER_LLM_TEMPERATURE",
+            "SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE",
         ],
     ),
     (
@@ -580,6 +609,7 @@ _ENV_VAR_GROUPS: list[tuple[str, str, list[str]]] = [
             "SKILL_SCANNER_META_LLM_API_VERSION",
             "SKILL_SCANNER_META_LLM_MAX_TOKENS",
             "SKILL_SCANNER_META_LLM_REASONING_EFFORT",
+            "SKILL_SCANNER_META_LLM_TEMPERATURE",
         ],
     ),
     (
@@ -619,13 +649,14 @@ _ENV_VAR_GROUPS: list[tuple[str, str, list[str]]] = [
             "SKILL_SCANNER_ALLOWED_ROOTS",
             "SKILL_SCANNER_TAXONOMY_PATH",
             "SKILL_SCANNER_THREAT_MAPPING_PATH",
+            "SKILL_SCANNER_SYSTEM_ONE_API_KEY",
         ],
     ),
 ]
 
 _ENV_VAR_EXAMPLES: dict[str, str] = {
     "SKILL_SCANNER_LLM_API_KEY": "sk-ant-...",
-    "SKILL_SCANNER_LLM_MODEL": "anthropic/claude-sonnet-4-20250514",
+    "SKILL_SCANNER_LLM_MODEL": "claude-sonnet-5-5",
     "SKILL_SCANNER_LLM_PROVIDER": "openai",
     "SKILL_SCANNER_LLM_BASE_URL": "https://api.openai.com/v1",
     "SKILL_SCANNER_LLM_API_VERSION": "2024-02-15-preview",
@@ -633,6 +664,11 @@ _ENV_VAR_EXAMPLES: dict[str, str] = {
     "SKILL_SCANNER_LLM_MAX_TOKENS": "16384",
     "SKILL_SCANNER_LLM_REASONING_EFFORT": "low",
     "SKILL_SCANNER_LLM_FORCE_JSON_OBJECT": "true",
+    "SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT": "0",
+    "SKILL_SCANNER_META_LLM_TEMPERATURE": "0",
+    "SKILL_SCANNER_SYSTEM_ONE_API_KEY": "(provider token)",
+    "SKILL_SCANNER_LLM_TEMPERATURE": "none",
+    "SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE": "0",
     "SKILL_SCANNER_META_LLM_API_KEY": "(falls back to LLM_API_KEY)",
     "SKILL_SCANNER_META_LLM_MODEL": "(falls back to LLM_MODEL)",
     "SKILL_SCANNER_META_LLM_BASE_URL": "(falls back to LLM_BASE_URL)",
@@ -659,6 +695,8 @@ _ENV_VAR_EXAMPLES: dict[str, str] = {
 
 _ENV_VAR_REQUIRED: set[str] = set()
 
+_BEDROCK_MANTLE_SECTION = "### Bedrock mantle route\n\nSome Bedrock models are published only on the OpenAI-compatible *mantle* endpoint rather than on\n`bedrock-runtime`. Reach those with the `bedrock-mantle/` prefix, for example\n`bedrock-mantle/google.gemma-4-26b-a4b`. The route is signed with SigV4 against service name\n`bedrock`, so it uses the same IAM credentials as `bedrock/` and needs no API key. It is a separate\nprovider because `bedrock/` signs against `bedrock-runtime`, which does not serve these models.\n\nTwo properties of the route are worth knowing before debugging a failure:\n\n- Its strict schema validator rejects `uniqueItems`, which the scanner strips automatically.\n- A `json_object` request is refused unless a message contains the literal word `json`, which the\n  scanner ensures.\n\nPrompt caching is not applied on this route; `cached_tokens` stays at zero across identical requests,\nso cost planning should not assume it.\n"
+
 
 def _render_configuration_reference() -> str:
     env_map = _collect_env_variables()
@@ -678,7 +716,7 @@ def _render_configuration_reference() -> str:
         "> ```bash",
         "> # Minimal .env for Anthropic",
         '> SKILL_SCANNER_LLM_API_KEY="sk-ant-..."',
-        '> SKILL_SCANNER_LLM_MODEL="anthropic/claude-sonnet-4-20250514"',
+        '> SKILL_SCANNER_LLM_MODEL="claude-sonnet-5-5"',
         "> ```",
         ">",
         "> See [Installation and Configuration](../user-guide/installation-and-configuration.md) for provider-specific setup.",
@@ -705,6 +743,8 @@ def _render_configuration_reference() -> str:
             example_cell = f"`{example}`" if example else ""
             sections.append(f"| `{var}` | {desc}{req} | {example_cell} |")
         sections.append("")
+        if group_title == "AWS / Bedrock":
+            sections.append(_BEDROCK_MANTLE_SECTION)
 
     sections.extend(
         [

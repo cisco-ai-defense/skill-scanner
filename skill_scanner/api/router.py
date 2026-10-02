@@ -274,7 +274,10 @@ class ScanRequest(_RemoteScanConfig):
     skill_directory: str = Field(..., description="Path to skill directory")
     policy: str | None = Field(
         None,
-        description="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
+        description=(
+            "Scan policy: a preset (balanced, low-noise, quiet, strict, permissive) or a path to custom "
+            "YAML. For fewer false positives use low-noise or quiet with use_llm; quiet requires the LLM judge"
+        ),
     )
     cel_mode: CelMode | None = Field(
         None,
@@ -282,7 +285,10 @@ class ScanRequest(_RemoteScanConfig):
     )
     custom_rules: str | None = Field(None, description="Path to custom YARA rules directory")
     use_llm: bool = Field(False, description="Enable LLM analyzer")
-    llm_provider: str | None = Field("anthropic", description="LLM provider (anthropic or openai)")
+    llm_provider: str | None = Field(
+        "anthropic",
+        description="LLM provider, for example anthropic, openai, openai-compatible, aws-bedrock or gcp-vertex",
+    )
     use_behavioral: bool = Field(False, description="Enable behavioral analyzer")
     use_virustotal: bool = Field(False, description="Enable VirusTotal binary file scanning")
     vt_upload_files: bool = Field(False, description="Upload unknown files to VirusTotal")
@@ -290,7 +296,7 @@ class ScanRequest(_RemoteScanConfig):
     aidefense_api_url: str | None = Field(None, description="AI Defense API URL")
     use_trigger: bool = Field(False, description="Enable trigger specificity analysis")
     use_osv: bool = Field(False, description="Enable OSV.dev dependency vulnerability scanning")
-    enable_meta: bool = Field(False, description="Enable meta-analysis for false positive filtering")
+    enable_meta: bool = Field(False, description="Enable the meta-analyzer (off by default: measured to cost recall)")
     llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
     llm_max_tokens: int | None = Field(
         None,
@@ -335,7 +341,10 @@ class BatchScanRequest(_RemoteScanConfig):
     skills_directory: str
     policy: str | None = Field(
         None,
-        description="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
+        description=(
+            "Scan policy: a preset (balanced, low-noise, quiet, strict, permissive) or a path to custom "
+            "YAML. For fewer false positives use low-noise or quiet with use_llm; quiet requires the LLM judge"
+        ),
     )
     cel_mode: CelMode | None = Field(
         None,
@@ -710,7 +719,10 @@ async def scan_skill(
 @router.post("/scan-upload")
 async def scan_uploaded_skill(
     file: UploadFile = File(..., description="ZIP file containing skill package"),
-    policy: str | None = Form(None, description="Scan policy: preset name or path to YAML"),
+    policy: str | None = Form(
+        None,
+        description="Scan policy: preset (balanced, low-noise, quiet, strict, permissive) or path to YAML",
+    ),
     cel_mode: CelMode | None = Form(
         None,
         description="Optional CEL decision-mode override: off, shadow (observe only), or enforce",
@@ -731,7 +743,7 @@ async def scan_uploaded_skill(
     aidefense_api_url: str | None = Form(None, description="AI Defense API URL"),
     use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
     use_osv: bool = Form(False, description="Enable OSV.dev dependency vulnerability scanning"),
-    enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
+    enable_meta: bool = Form(False, description="Enable the meta-analyzer (off by default: measured to cost recall)"),
     llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
     llm_max_tokens: int | None = Form(
         None,
