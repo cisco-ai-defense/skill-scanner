@@ -36,6 +36,7 @@ This will:
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
+| `scanner_version` | string | `""` (latest) | skill-scanner release to install, for example `2.2.0`. Pin it to the same release as the workflow ref so presets and flags match the docs |
 | `skill_path` | string | *(required)* | Path to skills directory or single skill |
 | `scan_mode` | string | `scan-all` | `scan` (single skill) or `scan-all` (directory) |
 | `format` | string | `sarif` | Output format: summary, json, markdown, table, sarif, html |
@@ -43,11 +44,18 @@ This will:
 | `fail_on_severity` | string | `high` | Fail if findings at/above this severity |
 | `python_version` | string | `3.12` | Numeric CPython version from 3.11 through 3.14 |
 | `upload_sarif` | boolean | `true` | Upload SARIF to Code Scanning |
-| `use_llm` | boolean | `false` | Enable LLM semantic analysis |
-| `llm_model` | string | `""` | LLM model name (maps to `SKILL_SCANNER_LLM_MODEL` env var, e.g. `gpt-4o`) |
+| `use_llm` | boolean | `false` | Enable the LLM judge (recommended) |
+| `llm_model` | string | `""` | LLM model name (maps to `SKILL_SCANNER_LLM_MODEL`, e.g. `claude-sonnet-5-5`). A `bedrock/` model installs the `[bedrock]` extra |
+| `llm_provider` | string | `""` | LLM provider (maps to `SKILL_SCANNER_LLM_PROVIDER`, e.g. `openai-compatible` for a gateway) |
+| `llm_base_url` | string | `""` | LLM endpoint base URL (maps to `SKILL_SCANNER_LLM_BASE_URL`) |
+| `aws_region` | string | `us-east-1` | Region for `bedrock/` models (maps to `AWS_REGION`); pass a Bedrock API key as `llm_api_key` |
 | `use_behavioral` | boolean | `false` | Enable behavioral dataflow analysis |
 | `lenient` | boolean | `false` | Tolerate malformed skills |
-| `extra_args` | string | `""` | Additional CLI flags from the workflow allowlist |
+| `extra_args` | string | `""` | Additional CLI flags from the workflow allowlist, including `--llm-decompose`, `--use-osv` and `--adjudicate` |
+
+The job fails with "could not run as configured" when the scanner exits 2 (an unknown policy, or an
+LLM judge that could not be built, for example a missing key), and with "found findings" when
+findings reach `fail_on_severity`.
 
 ## Secrets
 

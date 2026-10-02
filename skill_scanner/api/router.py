@@ -43,7 +43,7 @@ except ImportError:
     raise ImportError("API server requires FastAPI. Install with: pip install fastapi uvicorn python-multipart")
 
 from .. import __version__ as PACKAGE_VERSION
-from ..core.analyzer_factory import build_analyzers
+from ..core.analyzer_factory import LLM_CONFIGURATION_HINT, AnalyzerConfigurationError, build_analyzers
 from ..core.cel.models import CelMode
 from ..core.cel.runtime import CelRuntimeUnavailable
 from ..core.exceptions import SkillLoadError
@@ -274,7 +274,10 @@ class ScanRequest(_RemoteScanConfig):
     skill_directory: str = Field(..., description="Path to skill directory")
     policy: str | None = Field(
         None,
-        description="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
+        description=(
+            "Scan policy: a preset (balanced, low-noise, quiet, strict, permissive) or a path to custom "
+            "YAML. For fewer false positives use low-noise or quiet with use_llm; quiet requires the LLM judge"
+        ),
     )
     cel_mode: CelMode | None = Field(
         None,
@@ -282,7 +285,10 @@ class ScanRequest(_RemoteScanConfig):
     )
     custom_rules: str | None = Field(None, description="Path to custom YARA rules directory")
     use_llm: bool = Field(False, description="Enable LLM analyzer")
-    llm_provider: str | None = Field("anthropic", description="LLM provider (anthropic or openai)")
+    llm_provider: str | None = Field(
+        "anthropic",
+        description="LLM provider, for example anthropic, openai, openai-compatible, aws-bedrock or gcp-vertex",
+    )
     use_behavioral: bool = Field(False, description="Enable behavioral analyzer")
     use_virustotal: bool = Field(False, description="Enable VirusTotal binary file scanning")
     vt_upload_files: bool = Field(False, description="Upload unknown files to VirusTotal")
@@ -290,7 +296,7 @@ class ScanRequest(_RemoteScanConfig):
     aidefense_api_url: str | None = Field(None, description="AI Defense API URL")
     use_trigger: bool = Field(False, description="Enable trigger specificity analysis")
     use_osv: bool = Field(False, description="Enable OSV.dev dependency vulnerability scanning")
-    enable_meta: bool = Field(False, description="Enable meta-analysis for false positive filtering")
+    enable_meta: bool = Field(False, description="Enable the meta-analyzer (off by default: measured to cost recall)")
     llm_consensus_runs: int = Field(1, description="Number of LLM consensus runs (majority vote)")
     llm_max_tokens: int | None = Field(
         None,
@@ -335,7 +341,10 @@ class BatchScanRequest(_RemoteScanConfig):
     skills_directory: str
     policy: str | None = Field(
         None,
-        description="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
+        description=(
+            "Scan policy: a preset (balanced, low-noise, quiet, strict, permissive) or a path to custom "
+            "YAML. For fewer false positives use low-noise or quiet with use_llm; quiet requires the LLM judge"
+        ),
     )
     cel_mode: CelMode | None = Field(
         None,
@@ -439,6 +448,35 @@ def _skill_load_error_detail(error: SkillLoadError, skill_dir: Path) -> str:
     """Return client-safe validation detail for skill loading failures."""
     detail = str(error).replace(str(skill_dir), "skill directory")
     return f"Invalid skill package: {detail}"
+
+
+def _build_api_meta_analyzer(
+    policy: ScanPolicy,
+    *,
+    llm_max_tokens: int | None,
+    llm_provider: str | None,
+    llm_reasoning_effort: str | None,
+):
+    """Build the meta-analyzer a request asked for, or raise a configuration error."""
+    if not META_AVAILABLE or MetaAnalyzer is None or apply_meta_analysis_to_results is None:
+        raise AnalyzerConfigurationError("enable_meta needs the LLM dependencies: pip install litellm")
+    try:
+        return MetaAnalyzer(
+            policy=policy,
+            max_tokens=resolve_llm_max_tokens(
+                llm_max_tokens,
+                meta=True,
+                default=policy.llm_analysis.max_output_tokens if policy else 8192,
+            ),
+            provider=llm_provider,
+            reasoning_effort=llm_reasoning_effort,
+        )
+    except ReasoningConfigurationError:
+        raise
+    except Exception as e:
+        raise AnalyzerConfigurationError(
+            f"the meta-analyzer could not be initialised: {e}. {LLM_CONFIGURATION_HINT}"
+        ) from e
 
 
 def _build_analyzers(
@@ -579,6 +617,18 @@ async def scan_skill(
 
     scan_id = str(uuid.uuid4())
 
+    meta_analyzer = None
+    if request.enable_meta:
+        try:
+            meta_analyzer = _build_api_meta_analyzer(
+                policy,
+                llm_max_tokens=request.llm_max_tokens,
+                llm_provider=request.llm_provider,
+                llm_reasoning_effort=request.llm_reasoning_effort,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
     def run_scan():
         # Context variables do not automatically cross executor boundaries,
         # so bind the request id inside the worker thread itself.
@@ -610,13 +660,7 @@ async def scan_skill(
             result = await loop.run_in_executor(executor, run_scan)
 
         # Meta-analysis
-        if (
-            request.enable_meta
-            and META_AVAILABLE
-            and MetaAnalyzer is not None
-            and apply_meta_analysis_to_results is not None
-            and len(result.findings) > 0
-        ):
+        if meta_analyzer is not None and apply_meta_analysis_to_results is not None and len(result.findings) > 0:
             with scan_log_context(
                 skill_name=result.skill_name,
                 skill_path=str(skill_dir),
@@ -625,16 +669,6 @@ async def scan_skill(
                 try:
                     from ..core.loader import SkillLoader
 
-                    meta_analyzer = MetaAnalyzer(
-                        policy=policy,
-                        max_tokens=resolve_llm_max_tokens(
-                            request.llm_max_tokens,
-                            meta=True,
-                            default=policy.llm_analysis.max_output_tokens if policy else 8192,
-                        ),
-                        provider=request.llm_provider,
-                        reasoning_effort=request.llm_reasoning_effort,
-                    )
                     loader = SkillLoader()
                     skill = loader.load_skill(skill_dir)
 
@@ -685,7 +719,10 @@ async def scan_skill(
 @router.post("/scan-upload")
 async def scan_uploaded_skill(
     file: UploadFile = File(..., description="ZIP file containing skill package"),
-    policy: str | None = Form(None, description="Scan policy: preset name or path to YAML"),
+    policy: str | None = Form(
+        None,
+        description="Scan policy: preset (balanced, low-noise, quiet, strict, permissive) or path to YAML",
+    ),
     cel_mode: CelMode | None = Form(
         None,
         description="Optional CEL decision-mode override: off, shadow (observe only), or enforce",
@@ -706,7 +743,7 @@ async def scan_uploaded_skill(
     aidefense_api_url: str | None = Form(None, description="AI Defense API URL"),
     use_trigger: bool = Form(False, description="Enable trigger specificity analysis"),
     use_osv: bool = Form(False, description="Enable OSV.dev dependency vulnerability scanning"),
-    enable_meta: bool = Form(False, description="Enable meta-analysis for FP filtering"),
+    enable_meta: bool = Form(False, description="Enable the meta-analyzer (off by default: measured to cost recall)"),
     llm_consensus_runs: int = Form(1, description="Number of LLM consensus runs"),
     llm_max_tokens: int | None = Form(
         None,
@@ -951,25 +988,19 @@ def _run_batch_scan(
         )
 
         # Meta-analysis per skill
-        if (
-            request.enable_meta
-            and META_AVAILABLE
-            and MetaAnalyzer is not None
-            and apply_meta_analysis_to_results is not None
-        ):
+        if request.enable_meta:
             import asyncio
 
+            # Built before the per-skill loop so a configuration error fails the
+            # batch instead of being swallowed with the per-skill failures below.
+            meta_analyzer = _build_api_meta_analyzer(
+                policy,
+                llm_max_tokens=request.llm_max_tokens,
+                llm_provider=request.llm_provider,
+                llm_reasoning_effort=request.llm_reasoning_effort,
+            )
+
             async def _run_batch_meta(scanner_ref, report_ref, policy_ref):
-                meta_analyzer = MetaAnalyzer(
-                    policy=policy_ref,
-                    max_tokens=resolve_llm_max_tokens(
-                        request.llm_max_tokens,
-                        meta=True,
-                        default=policy_ref.llm_analysis.max_output_tokens if policy_ref else 8192,
-                    ),
-                    provider=request.llm_provider,
-                    reasoning_effort=request.llm_reasoning_effort,
-                )
                 for result in report_ref.scan_results:
                     if result.findings:
                         skill_dir_path = Path(result.skill_directory)

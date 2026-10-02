@@ -146,7 +146,7 @@ pip install cisco-ai-skill-scanner[all]
 ```bash
 # For LLM analyzer and Meta-analyzer
 export SKILL_SCANNER_LLM_API_KEY="your_api_key"
-export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"
+export SKILL_SCANNER_LLM_MODEL="claude-sonnet-5-5"
 
 # On-device Apple Foundation Model (no API key). Semantic scans only.
 # Behavioral alignment prompts exceed the on-device context window.

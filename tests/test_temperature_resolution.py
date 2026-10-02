@@ -28,10 +28,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from skill_scanner.core.analyzers import adjudicator
 from skill_scanner.core.analyzers.llm_request_handler import (
     _TEMPERATURE_UNSET,
     LLMRequestHandler,
     _resolve_temperature,
+    model_rejects_temperature,
 )
 from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
 
@@ -41,6 +43,7 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip any inherited temperature/meta env vars per test."""
     monkeypatch.delenv("SKILL_SCANNER_LLM_TEMPERATURE", raising=False)
     monkeypatch.delenv("SKILL_SCANNER_META_LLM_TEMPERATURE", raising=False)
+    monkeypatch.delenv("SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE", raising=False)
 
 
 class TestResolveTemperature:
@@ -128,3 +131,67 @@ class TestMetaAnalyzerTemperature:
     def test_explicit_none_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SKILL_SCANNER_LLM_TEMPERATURE", "0.7")
         assert self._make(temperature=None).temperature is None
+
+
+class TestModelsThatRejectTemperature:
+    """Models that reject ``temperature`` get it omitted unless a value is configured."""
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "claude-sonnet-5-5",
+            "anthropic/claude-sonnet-5-5",
+            "bedrock/us.anthropic.claude-sonnet-5-5",
+            "vertex_ai/claude-opus-5-5",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "claude-fable-5-1",
+            "orcarouter/anthropic/claude-sonnet-5",
+            "o3-mini",
+            "openai/o1",
+            "gpt-5",
+        ],
+    )
+    def test_rejecting_models(self, model: str) -> None:
+        assert model_rejects_temperature(model) is True
+        assert _resolve_temperature(_TEMPERATURE_UNSET, "MISSING_VAR", default=0.0, model=model) is None
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "claude-haiku-4-5",
+            "claude-sonnet-4-6",
+            "claude-opus-4-6",
+            "gpt-4o",
+            "gpt-5-chat-latest",
+            "bedrock-mantle/google.gemma-4-26b-a4b",
+            "",
+            None,
+        ],
+    )
+    def test_accepting_models_keep_default(self, model: str | None) -> None:
+        assert model_rejects_temperature(model) is False
+        assert _resolve_temperature(_TEMPERATURE_UNSET, "MISSING_VAR", default=0.0, model=model) == 0.0
+
+    def test_env_value_wins_for_rejecting_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MY_TEMP", "1.0")
+        assert _resolve_temperature(_TEMPERATURE_UNSET, "MY_TEMP", default=0.0, model="claude-sonnet-5-5") == 1.0
+
+    def test_explicit_value_wins_for_rejecting_model(self) -> None:
+        assert _resolve_temperature(0.3, "MISSING_VAR", default=0.0, model="claude-sonnet-5-5") == 0.3
+
+    def test_request_handler_omits_for_default_model(self) -> None:
+        provider_config = MagicMock()
+        provider_config.model = "claude-sonnet-5-5"
+        assert LLMRequestHandler(provider_config=provider_config).temperature is None
+
+    def test_meta_analyzer_omits_for_rejecting_model(self) -> None:
+        assert MetaAnalyzer(api_key="sk-test", model="claude-sonnet-5-5").temperature is None
+
+    def test_adjudicator_omits_for_rejecting_model(self) -> None:
+        assert adjudicator._resolve_temperature(model="claude-sonnet-5-5") is None
+        assert adjudicator._resolve_temperature(model="claude-haiku-4-5") == 0.0
+
+    def test_adjudicator_env_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE", "0.2")
+        assert adjudicator._resolve_temperature(model="claude-sonnet-5-5") == pytest.approx(0.2)

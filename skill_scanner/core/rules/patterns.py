@@ -632,6 +632,9 @@ class RuleLoader:
         self.rules_by_id: dict[str, SecurityRule] = {}
         self.rules_by_category: dict[ThreatCategory, list[SecurityRule]] = {}
         self.category_normalization_metrics = CategoryNormalizationMetrics()
+        # IDs of the rules in the primary (core) rules source, as opposed to
+        # opt-in packs from ``extra_rules_dirs`` or trusted packs.
+        self.primary_rule_ids: frozenset[str] = frozenset()
 
     @staticmethod
     def _extract_rules_list(data: Any, source_path: Path) -> list[dict]:
@@ -685,6 +688,9 @@ class RuleLoader:
             List of SecurityRule objects
         """
         rules_data = self._load_from_path(Path(self.rules_file))
+        self.primary_rule_ids = frozenset(
+            str(rule_data["id"]) for rule_data in rules_data if isinstance(rule_data, dict) and "id" in rule_data
+        )
 
         for extra_dir in self.extra_rules_dirs:
             extra_path = Path(extra_dir)

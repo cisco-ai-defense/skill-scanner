@@ -40,7 +40,7 @@ Flags shared by `scan`, `scan-all` and `scan-repo`:
 | `--llm-decompose` | off | Run the LLM analyzer once per focus and union the findings instead of making one general pass. Raises recall at roughly three times the model calls. Requires `--use-llm`. See [Optional semantic flags](#optional-semantic-flags). |
 | `--system-one-endpoint URL` | off | Optional System One screening endpoint speaking `POST /v1/systemone`. **Advisory only**: it can never change a finding, a severity or the verdict. `https`, or `http` on loopback. |
 | `--system-one-model NAME` | none | Model name for the System One endpoint. Required with `--system-one-endpoint`, and rejected without it. |
-| `--enable-meta` | off | Enable the meta (cross-correlation) analyzer |
+| `--enable-meta` | off | Enable the meta (cross-correlation) analyzer. Measured to cost recall; leave it off unless you have measured it on your skills |
 | `--fail-on-findings` | off | Exit non-zero if critical or high findings are reported; equivalent to `--fail-on-severity high` (CI gate) |
 | `--fail-on-severity LEVEL` | off | Exit non-zero if findings at or above LEVEL exist (critical, high, medium, low, info) |
 | `--lenient` | off | Tolerate malformed YAML / missing fields: coerce bad fields, fill defaults, and continue instead of failing. Binary and non-UTF-8 files always fail. |
@@ -206,7 +206,8 @@ options:
                         medium, high, xhigh, or max. Unset preserves the
                         provider default.
   --use-trigger         Enable trigger specificity analysis
-  --enable-meta         Enable meta-analysis FP filtering (2+ analyzers)
+  --enable-meta         Enable the meta-analyzer (2+ analyzers). Off by
+                        default: measured to cost recall
   --adjudicate          Enable per-finding adjudicator: for each deterministic
                         HIGH/CRITICAL finding, ask the LLM whether the matched
                         content is a real threat or a literal-regex false
@@ -215,8 +216,10 @@ options:
                         SKILL_SCANNER_LLM_MODEL (or
                         SKILL_SCANNER_ADJUDICATOR_LLM_MODEL to override).
   --policy PRESET_OR_PATH
-                        Scan policy: preset name (strict, balanced,
-                        permissive) or path to custom YAML
+                        Scan policy: a preset (balanced, low-noise, quiet,
+                        strict, permissive) or a path to custom YAML. For
+                        fewer false positives use low-noise or quiet together
+                        with --use-llm; quiet requires the LLM judge
   --lenient             Tolerate malformed YAML / missing fields: coerce bad
                         fields, fill defaults, and continue instead of
                         failing. Binary and non-UTF-8 files always fail.
@@ -365,7 +368,8 @@ options:
                         medium, high, xhigh, or max. Unset preserves the
                         provider default.
   --use-trigger         Enable trigger specificity analysis
-  --enable-meta         Enable meta-analysis FP filtering (2+ analyzers)
+  --enable-meta         Enable the meta-analyzer (2+ analyzers). Off by
+                        default: measured to cost recall
   --adjudicate          Enable per-finding adjudicator: for each deterministic
                         HIGH/CRITICAL finding, ask the LLM whether the matched
                         content is a real threat or a literal-regex false
@@ -374,8 +378,10 @@ options:
                         SKILL_SCANNER_LLM_MODEL (or
                         SKILL_SCANNER_ADJUDICATOR_LLM_MODEL to override).
   --policy PRESET_OR_PATH
-                        Scan policy: preset name (strict, balanced,
-                        permissive) or path to custom YAML
+                        Scan policy: a preset (balanced, low-noise, quiet,
+                        strict, permissive) or a path to custom YAML. For
+                        fewer false positives use low-noise or quiet together
+                        with --use-llm; quiet requires the LLM judge
   --lenient             Tolerate malformed YAML / missing fields: coerce bad
                         fields, fill defaults, and continue instead of
                         failing. Binary and non-UTF-8 files always fail.
@@ -528,7 +534,8 @@ options:
                         medium, high, xhigh, or max. Unset preserves the
                         provider default.
   --use-trigger         Enable trigger specificity analysis
-  --enable-meta         Enable meta-analysis FP filtering (2+ analyzers)
+  --enable-meta         Enable the meta-analyzer (2+ analyzers). Off by
+                        default: measured to cost recall
   --adjudicate          Enable per-finding adjudicator: for each deterministic
                         HIGH/CRITICAL finding, ask the LLM whether the matched
                         content is a real threat or a literal-regex false
@@ -537,8 +544,10 @@ options:
                         SKILL_SCANNER_LLM_MODEL (or
                         SKILL_SCANNER_ADJUDICATOR_LLM_MODEL to override).
   --policy PRESET_OR_PATH
-                        Scan policy: preset name (strict, balanced,
-                        permissive) or path to custom YAML
+                        Scan policy: a preset (balanced, low-noise, quiet,
+                        strict, permissive) or a path to custom YAML. For
+                        fewer false positives use low-noise or quiet together
+                        with --use-llm; quiet requires the LLM judge
   --lenient             Tolerate malformed YAML / missing fields: coerce bad
                         fields, fill defaults, and continue instead of
                         failing. Binary and non-UTF-8 files always fail.
@@ -600,13 +609,13 @@ Command: `python -m skill_scanner.cli.cli generate-policy --help`
 
 ```text
 usage: cli.py generate-policy [-h] [--output OUTPUT]
-                              [--preset {strict,balanced,permissive}]
+                              [--preset {balanced,low-noise,permissive,quiet,strict}]
 
 options:
   -h, --help            show this help message and exit
   --output OUTPUT, -o OUTPUT
                         Output file path
-  --preset {strict,balanced,permissive}
+  --preset {balanced,low-noise,permissive,quiet,strict}
                         Base preset
 ```
 

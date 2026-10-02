@@ -32,7 +32,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from .. import __version__
-from ..core.analyzer_factory import build_analyzers
+from ..core.analyzer_factory import LLM_CONFIGURATION_HINT, AnalyzerConfigurationError, build_analyzers
 from ..core.cel.models import CelMode
 from ..core.loader import SkillLoadError
 from ..core.reporters.html_reporter import HTMLReporter
@@ -74,6 +74,12 @@ except (ImportError, ModuleNotFoundError):
     merge_meta_analyzer_usage = None
 
 logger = logging.getLogger("skill_scanner.cli")
+
+# Exit codes: 1 means findings at or above --fail-on-severity (or a scan error);
+# 2 means the scan could not be configured as requested (bad policy, an
+# analyzer that was asked for but could not be built), as argparse uses for
+# usage errors.
+EXIT_CONFIGURATION_ERROR = 2
 
 _STATUS_MESSAGE_MAX_CHARS = 4096
 _STATUS_REDACTION = "<redacted>"
@@ -199,13 +205,14 @@ def _load_policy(args: argparse.Namespace) -> ScanPolicy:
                 logger.info("Using scan policy: %s (%s)", policy_value, policy.policy_name)
             except FileNotFoundError:
                 print(
-                    f"Error: Policy file not found: {_redact_status_message(str(policy_value))}",
+                    f"Error: Policy file not found: {_redact_status_message(str(policy_value))}. "
+                    f"Presets: {', '.join(ScanPolicy.preset_names())}",
                     file=sys.stderr,
                 )
-                sys.exit(1)
+                sys.exit(EXIT_CONFIGURATION_ERROR)
             except Exception as e:
                 _print_cli_error("Error loading policy file: ", e)
-                sys.exit(1)
+                sys.exit(EXIT_CONFIGURATION_ERROR)
     else:
         policy = ScanPolicy.default()
 
@@ -335,13 +342,10 @@ def _build_meta_analyzer(
     if not getattr(args, "enable_meta", False):
         return None
 
-    if not META_AVAILABLE:
-        logger.warning("Meta-analyzer requested but dependencies not installed.  pip install litellm")
-        return None
+    if not META_AVAILABLE or MetaAnalyzer is None:
+        raise AnalyzerConfigurationError("--enable-meta needs the LLM dependencies: pip install litellm")
     if analyzer_count < 2:
         logger.warning("Meta-analysis requires at least 2 analyzers.  Skipping.")
-        return None
-    if MetaAnalyzer is None:
         return None
 
     try:
@@ -370,8 +374,9 @@ def _build_meta_analyzer(
     except ReasoningConfigurationError:
         raise
     except Exception as e:
-        logger.warning("Could not initialise Meta-Analyzer: %s", _redact_status_message(str(e)))
-        return None
+        raise AnalyzerConfigurationError(
+            f"the meta-analyzer could not be initialised: {e}. {LLM_CONFIGURATION_HINT}"
+        ) from e
 
 
 def _make_status_printer(args: argparse.Namespace) -> Callable[[str], None]:
@@ -581,7 +586,7 @@ def scan_command(args: argparse.Namespace) -> int:
         scanner = _create_skill_scanner(analyzers, policy, args, status)
     except Exception as e:
         _print_cli_error("Error configuring scan: ", e)
-        return 1
+        return EXIT_CONFIGURATION_ERROR
     lenient = getattr(args, "lenient", False)
     skill_file = getattr(args, "skill_file", None)
 
@@ -690,7 +695,7 @@ def scan_all_command(args: argparse.Namespace) -> int:
         scanner = _create_skill_scanner(analyzers, policy, args, status)
     except Exception as e:
         _print_cli_error("Error configuring scan: ", e)
-        return 1
+        return EXIT_CONFIGURATION_ERROR
 
     lenient = getattr(args, "lenient", False)
     skill_file = getattr(args, "skill_file", None)
@@ -835,7 +840,7 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                 scanner = _create_skill_scanner(analyzers, policy, args, status)
             except Exception as e:
                 _print_cli_error("Error configuring scan: ", e)
-                return 1
+                return EXIT_CONFIGURATION_ERROR
 
             try:
                 report = scanner.scan_directory(
@@ -1085,10 +1090,12 @@ def generate_policy_command(args: argparse.Namespace) -> int:
         policy.to_yaml(output_path)
         print(f"Generated {preset} scan policy: {_redact_status_message(str(output_path))}\n")
         print("Edit the file to customise, then use:")
-        print(f"  skill-scanner scan --policy {_redact_status_message(str(output_path))} /path/to/skill\n")
+        print(f"  skill-scanner scan --policy {_redact_status_message(str(output_path))} --use-llm /path/to/skill\n")
         print("Or use the interactive configurator:")
         print("  skill-scanner configure-policy\n")
-        print("Available presets: strict | balanced (default) | permissive")
+        print("Available presets: balanced (default) | low-noise | quiet | strict | permissive")
+        print("Run every preset with the LLM judge (--use-llm). For fewer false positives use low-noise,")
+        print("or quiet, which requires the judge. strict is for hunting, not gating.")
         return 0
     except Exception as e:
         _print_cli_error("Error generating policy: ", e)
@@ -1296,7 +1303,11 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument("--use-trigger", action="store_true", help="Enable trigger specificity analysis")
-    parser.add_argument("--enable-meta", action="store_true", help="Enable meta-analysis FP filtering (2+ analyzers)")
+    parser.add_argument(
+        "--enable-meta",
+        action="store_true",
+        help="Enable the meta-analyzer (2+ analyzers). Off by default: measured to cost recall",
+    )
     parser.add_argument(
         "--adjudicate",
         action="store_true",
@@ -1311,7 +1322,11 @@ def _add_common_scan_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--policy",
         metavar="PRESET_OR_PATH",
-        help="Scan policy: preset name (strict, balanced, permissive) or path to custom YAML",
+        help=(
+            "Scan policy: a preset (balanced, low-noise, quiet, strict, permissive) or a path to custom "
+            "YAML. For fewer false positives use low-noise or quiet together with --use-llm; quiet "
+            "requires the LLM judge"
+        ),
     )
     parser.add_argument(
         "--lenient",

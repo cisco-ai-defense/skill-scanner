@@ -27,6 +27,7 @@ import importlib
 import json
 import logging
 import os
+import re
 import threading
 import warnings
 from pathlib import Path
@@ -249,11 +250,43 @@ _TEMPERATURE_UNSET = object()
 # without code changes.
 _TEMPERATURE_OMIT_VALUES = frozenset({"none", "null", "unset", "omit", "skip"})
 
+# Model families that reject a ``temperature`` value, matched anywhere in the
+# model id so every route prefix (``anthropic/``, ``bedrock/us.anthropic.``,
+# ``vertex_ai/``, ``orcarouter/anthropic/``) is covered: Claude Sonnet 5.x,
+# Opus 4.7 and later, Fable and Mythos.
+_CLAUDE_REJECTS_TEMPERATURE = re.compile(r"claude-(?:sonnet-5|opus-5|opus-4-[7-9]|fable|mythos)")
+# OpenAI reasoning models accept only their default temperature.
+_OPENAI_REASONING_MODEL = re.compile(r"^(?:o[1-9](?:-|$)|gpt-5(?!-chat))")
+# Claude models that reject a forced ``tool_choice``. LiteLLM emulates a JSON
+# schema on Anthropic and Bedrock with a forced tool call, so these models are
+# asked for plain JSON with the schema in the prompt instead.
+_CLAUDE_REJECTS_FORCED_TOOL_USE = re.compile(
+    r"claude-(?:(?:sonnet|opus)-5-[5-9]|(?:fable|mythos)-5-[1-9]|(?:sonnet|opus|fable|mythos)-(?:[6-9]|\d{2})(?:-|$))"
+)
+
+
+def model_rejects_temperature(model: str | None) -> bool:
+    """Return whether *model* rejects a ``temperature`` request parameter."""
+    if not isinstance(model, str) or not model:
+        return False
+    normalized = model.strip().lower()
+    if _CLAUDE_REJECTS_TEMPERATURE.search(normalized):
+        return True
+    return bool(_OPENAI_REASONING_MODEL.match(normalized.rsplit("/", 1)[-1]))
+
+
+def model_rejects_forced_tool_use(model: str | None) -> bool:
+    """Return whether *model* rejects a forced ``tool_choice``."""
+    if not isinstance(model, str) or not model:
+        return False
+    return bool(_CLAUDE_REJECTS_FORCED_TOOL_USE.search(model.strip().lower()))
+
 
 def _resolve_temperature(
     explicit: Any,
     env_var: str,
     default: float,
+    model: str | None = None,
 ) -> float | None:
     """Resolve the request-time ``temperature`` from constructor + env.
 
@@ -263,7 +296,9 @@ def _resolve_temperature(
         2. ``os.environ[env_var]`` — a numeric value is parsed as a float, and
            a value in ``_TEMPERATURE_OMIT_VALUES`` returns ``None`` to drop the
            parameter.
-        3. ``default`` (today: 0.0 for the per-file analyzer, 0.1 for meta).
+        3. ``None`` when *model* rejects ``temperature`` (see
+           ``model_rejects_temperature``), otherwise ``default`` (today: 0.0
+           for the per-file analyzer, 0.1 for meta).
 
     Returns:
         ``float`` to send as ``temperature``, or ``None`` to omit it entirely.
@@ -273,7 +308,7 @@ def _resolve_temperature(
 
     raw = os.environ.get(env_var, "").strip()
     if not raw:
-        return default
+        return None if model_rejects_temperature(model) else default
     if raw.lower() in _TEMPERATURE_OMIT_VALUES:
         return None
     try:
@@ -333,7 +368,12 @@ class LLMRequestHandler:
         """
         self.provider_config = provider_config
         self.max_tokens = resolve_llm_max_tokens(max_tokens)
-        self.temperature = _resolve_temperature(temperature, "SKILL_SCANNER_LLM_TEMPERATURE", default=0.0)
+        self.temperature = _resolve_temperature(
+            temperature,
+            "SKILL_SCANNER_LLM_TEMPERATURE",
+            default=0.0,
+            model=self.provider_config.model,
+        )
         self.max_retries = max_retries
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout
@@ -431,8 +471,31 @@ class LLMRequestHandler:
             return True
 
         model_lower = self.provider_config.model.lower()
+        if model_rejects_forced_tool_use(model_lower):
+            return True
         unsupported_json_schema_providers = ["deepseek", "minimax"]
         return any(name in model_lower for name in unsupported_json_schema_providers)
+
+    def _with_schema_instruction(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Put the response schema in the system message for plain JSON requests.
+
+        Without a schema in the request, a model returns JSON close to, but not
+        exactly, the contract (renamed or missing fields), and the strict parser
+        rejects the whole analysis.
+        """
+        if not self.response_schema:
+            return messages
+        instruction = (
+            "\n\nRespond with one JSON object that conforms exactly to this JSON Schema: the same "
+            "field names, no other top-level fields, and no text outside the JSON.\n"
+            + json.dumps(self.response_schema, separators=(",", ":"))
+        )
+        updated = [dict(message) for message in messages]
+        for message in updated:
+            if message.get("role") == "system":
+                message["content"] = f"{message.get('content', '')}{instruction}"
+                return updated
+        return [{"role": "system", "content": instruction.lstrip()}, *updated]
 
     def _build_response_format(self) -> dict[str, Any] | None:
         """Build the response format for LiteLLM requests."""
@@ -613,6 +676,8 @@ class LLMRequestHandler:
                 response_format = self._build_response_format()
                 if response_format:
                     request_params["response_format"] = response_format
+                    if response_format.get("type") == "json_object":
+                        request_params["messages"] = self._with_schema_instruction(messages)
 
                 response = await completion(**request_params, drop_params=True)
                 self._last_usage = _extract_token_usage(response)
@@ -633,6 +698,7 @@ class LLMRequestHandler:
                     self._use_plain_json_output = True
                     retry_params = dict(request_params)
                     retry_params["response_format"] = {"type": "json_object"}
+                    retry_params["messages"] = self._with_schema_instruction(messages)
                     response = await completion(**retry_params, drop_params=True)
                     self._last_usage = _extract_token_usage(response)
                     choice = response.choices[0]

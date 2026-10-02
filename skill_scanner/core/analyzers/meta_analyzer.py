@@ -48,6 +48,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ...config.constants import DEFAULT_LLM_MODEL
 from ...llm_reasoning import build_litellm_reasoning_params, resolve_llm_reasoning_effort
 from ...llm_token_options import resolve_llm_max_tokens
 from ...threats.threats import ThreatMapping
@@ -739,7 +740,7 @@ class MetaAnalyzer(BaseAnalyzer):
     The meta-analyzer runs AFTER all other analyzers complete.
 
     Example:
-        >>> meta = MetaAnalyzer(model="claude-3-5-sonnet-20241022", api_key=api_key)
+        >>> meta = MetaAnalyzer(model="claude-sonnet-5-5", api_key=api_key)
         >>> result = await meta.analyze_with_findings(skill, all_findings, analyzers_used)
         >>> validated = result.get_validated_findings(skill)
     """
@@ -768,7 +769,7 @@ class MetaAnalyzer(BaseAnalyzer):
         """Initialize the Meta Analyzer.
 
         Args:
-            model: Model identifier (defaults to claude-3-5-sonnet-20241022)
+            model: Model identifier (defaults to claude-sonnet-5-5)
             api_key: API key (if None, reads from environment)
             max_tokens: Maximum tokens for response. When omitted, resolves
                 from ``SKILL_SCANNER_META_LLM_MAX_TOKENS``, then
@@ -823,7 +824,7 @@ class MetaAnalyzer(BaseAnalyzer):
         if not configured_model and self.provider == "apple-fm":
             configured_model = "apple-fm/system"
         self.model: str = configured_model or (
-            "orcarouter/anthropic/claude-sonnet-5" if self.provider == "orcarouter" else "claude-3-5-sonnet-20241022"
+            "orcarouter/anthropic/claude-sonnet-5" if self.provider == "orcarouter" else DEFAULT_LLM_MODEL
         )
         self.base_url = (
             base_url
@@ -924,18 +925,20 @@ class MetaAnalyzer(BaseAnalyzer):
         self.max_tokens = resolve_llm_max_tokens(max_tokens, meta=True)
         # Resolve temperature: explicit arg > meta-specific env > scanner-wide
         # env > default.  ``None`` here means "omit ``temperature`` from the
-        # outgoing request" (Claude 4.x on Bedrock, OpenAI o1-series).
+        # outgoing request"; it is also the default for models that reject it.
         if temperature is _TEMPERATURE_UNSET and "SKILL_SCANNER_META_LLM_TEMPERATURE" in os.environ:
             self.temperature = _resolve_temperature(
                 _TEMPERATURE_UNSET,
                 "SKILL_SCANNER_META_LLM_TEMPERATURE",
                 default=0.1,
+                model=self.model,
             )
         else:
             self.temperature = _resolve_temperature(
                 temperature,
                 "SKILL_SCANNER_LLM_TEMPERATURE",
                 default=0.1,
+                model=self.model,
             )
         self.max_retries = max_retries
         self.timeout = timeout

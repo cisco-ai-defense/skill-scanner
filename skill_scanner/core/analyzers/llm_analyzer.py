@@ -40,6 +40,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ...config.constants import DEFAULT_LLM_MODEL
 from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...threats import cisco_ai_taxonomy
 from ...threats.threats import ThreatMapping
@@ -248,7 +249,7 @@ class LLMAnalyzer(BaseAnalyzer):
 
     Example:
         >>> analyzer = LLMAnalyzer(
-        ...     model=os.getenv("SKILL_SCANNER_LLM_MODEL", "claude-3-5-sonnet-20241022"),
+        ...     model=os.getenv("SKILL_SCANNER_LLM_MODEL", "claude-sonnet-5-5"),
         ...     api_key=os.getenv("SKILL_SCANNER_LLM_API_KEY")
         ... )
         >>> findings = analyzer.analyze(skill)
@@ -283,7 +284,7 @@ class LLMAnalyzer(BaseAnalyzer):
         Initialize enhanced LLM analyzer.
 
         Args:
-            model: Model identifier (e.g., "claude-3-5-sonnet-20241022", "gpt-4o", "bedrock/anthropic.claude-v2")
+            model: Model identifier (e.g., "claude-sonnet-5-5", "gpt-4o", "bedrock/us.anthropic.claude-sonnet-5-5")
             api_key: API key (if None, reads from environment)
             max_tokens: Maximum tokens for response. When omitted, resolves
                 from ``SKILL_SCANNER_LLM_MAX_TOKENS`` and then defaults to
@@ -341,20 +342,20 @@ class LLMAnalyzer(BaseAnalyzer):
             model_mapping = {
                 "openai": "gpt-4o",
                 "openai-compatible": "gpt-4o",
-                "anthropic": "claude-3-5-sonnet-20241022",
+                "anthropic": DEFAULT_LLM_MODEL,
                 "azure-openai": "azure/gpt-4o",
                 "azure-ai": "azure/gpt-4",
-                "aws-bedrock": "bedrock/anthropic.claude-v2",
+                "aws-bedrock": "bedrock/us.anthropic.claude-sonnet-5-5",
                 "gcp-vertex": "vertex_ai/gemini-1.5-pro",
                 "ollama": "ollama/llama2",
                 "apple-fm": "apple-fm/system",
                 "openrouter": "openrouter/openai/gpt-4",
                 "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
             }
-            model = model_mapping.get(provider_str, "claude-3-5-sonnet-20241022")
+            model = model_mapping.get(provider_str, DEFAULT_LLM_MODEL)
         elif model is None:
             # Default to anthropic if nothing specified
-            model = "claude-3-5-sonnet-20241022"
+            model = DEFAULT_LLM_MODEL
 
         # Initialize components
         self.provider_config = ProviderConfig(

@@ -210,3 +210,60 @@ The file `.github/workflows/scan-skills.yml` is a reusable workflow that other r
 ## Versioning
 
 This project follows [Semantic Versioning](https://semver.org/).
+The version comes from the git tag through hatch-vcs: there is no version string to edit, and tags
+carry no `v` prefix (`2.2.0`, not `v2.2.0`).
+
+## Cutting a Release
+
+1. Confirm every workflow on `main` is green, not only the required `test (3.12)` check:
+
+   ```bash
+   gh run list -R cisco-ai-defense/skill-scanner --branch main --limit 10
+   ```
+
+2. Run the local gate on the commit to release:
+
+   ```bash
+   uv sync --all-extras --frozen
+   uv run pre-commit run --all-files
+   uv run pytest tests/ --ignore=tests/test_llm_analyzer.py
+   uv run python evals/runners/benchmark_runner.py --eval-dir evals/skills
+   uv run pip-audit
+   ```
+
+3. Tag the commit and create the GitHub release **as a draft**. `release.yml` attaches the hash-pinned
+   `requirements.txt`, the CycloneDX SBOM and the CEL supply-chain files to the draft and then
+   publishes it; it cannot attach them to a release that is already published.
+
+   ```bash
+   git tag 2.2.0 <main-sha> && git push origin 2.2.0
+   gh release create 2.2.0 -R cisco-ai-defense/skill-scanner --draft --verify-tag \
+     --generate-notes --notes-start-tag <previous-tag>
+   ```
+
+   Add a hand-written summary of highlights and behavior changes to the draft notes.
+
+4. Publish to PyPI and watch the run:
+
+   ```bash
+   gh workflow run release.yml -R cisco-ai-defense/skill-scanner --ref main -f version=2.2.0
+   gh run watch -R cisco-ai-defense/skill-scanner
+   ```
+
+5. Verify the release:
+
+   ```bash
+   gh release view 2.2.0 -R cisco-ai-defense/skill-scanner --json assets --jq '.assets[].name'
+   uvx --from cisco-ai-skill-scanner==2.2.0 skill-scanner --version
+   ```
+
+   The assets must include `requirements.txt`, `sbom.cdx.json` and the `cel-go-*.json` files, and
+   PyPI must list five platform wheels and the sdist.
+
+6. Update the Homebrew formula. The workflow builds and smoke-installs it on macOS ARM and Intel,
+   then opens a pull request (or prints a compare link if Actions may not open pull requests in
+   this repository). Merge that pull request:
+
+   ```bash
+   gh workflow run update-homebrew.yml -R cisco-ai-defense/skill-scanner -f version=2.2.0
+   ```

@@ -26,6 +26,7 @@ from pathlib import Path
 
 from ..llm_reasoning import resolve_llm_reasoning_effort
 from ..llm_token_options import resolve_llm_max_tokens
+from .constants import DEFAULT_LLM_MODEL
 
 
 @dataclass
@@ -38,7 +39,7 @@ class Config:
 
     # LLM Configuration
     llm_provider_api_key: str | None = None
-    llm_model: str = "claude-3-5-sonnet-20241022"
+    llm_model: str = DEFAULT_LLM_MODEL
     llm_base_url: str | None = None
     llm_api_version: str | None = None
     llm_user: str | None = None
@@ -83,7 +84,7 @@ class Config:
             self.llm_provider_api_key = os.getenv("SKILL_SCANNER_LLM_API_KEY")
 
         # LLM model from environment (only if still at default)
-        if self.llm_model == "claude-3-5-sonnet-20241022":
+        if self.llm_model == DEFAULT_LLM_MODEL:
             if env_model := os.getenv("SKILL_SCANNER_LLM_MODEL"):
                 self.llm_model = env_model
 

@@ -5444,9 +5444,8 @@ rules:
     severity: HIGH
     knobs:
       enabled: true
-    description: Detects hardcoded IP addresses in skill content that may represent command and control  (C2) servers, particularly
-      when associated with suspicious network ranges or known  malware infrastructure. The analyzed skill "sakaen736jih/youtube-watcher-p"
-      contains  reference to IP 91.92.242.30 identified as
+    description: >-
+      Detects hardcoded IP addresses in skill content that may represent command and control (C2) servers, particularly when associated with suspicious network ranges or known malware infrastructure, such as the AMOS Stealer C2 range 91[.]92[.]242[.]0/24 seen in the ClawHub malicious-skill campaign.
   ATR_2026_00260:
     source: signature
     category: supply_chain_attack

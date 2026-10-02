@@ -1231,7 +1231,7 @@ class TestModelConfiguration:
         """Test default model is set correctly."""
         analyzer = LLMAnalyzer(api_key="test-key")
 
-        assert analyzer.model == "claude-3-5-sonnet-20241022"
+        assert analyzer.model == "claude-sonnet-5-5"
 
     def test_custom_model_selection(self):
         """Test custom model can be specified."""

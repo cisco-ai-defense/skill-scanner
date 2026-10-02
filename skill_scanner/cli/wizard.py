@@ -311,7 +311,7 @@ def _ask_analyzers(env: dict) -> dict[str, bool]:
     llm_set = env["keys"].get("SKILL_SCANNER_LLM_API_KEY", False)
     llm_tag = "[green]\u2714 key set[/]" if llm_set else "[dim]\u2718 key not set[/]"
     analyzers["use_llm"] = Confirm.ask(
-        f"  LLM semantic analysis  {llm_tag}",
+        f"  LLM judge (recommended: reads intent the rules cannot)  {llm_tag}",
         default=llm_set,
     )
 
@@ -335,8 +335,8 @@ def _ask_analyzers(env: dict) -> dict[str, bool]:
     meta_viable = active >= 2
     meta_hint = "" if meta_viable else "  [dim](enable 2+ analyzers first)[/]"
     analyzers["enable_meta"] = Confirm.ask(
-        f"  Meta-analysis false-positive filtering{meta_hint}",
-        default=meta_viable,
+        f"  Meta-analysis  [dim](off recommended: measured to cost recall)[/]{meta_hint}",
+        default=False,
     )
 
     return analyzers
@@ -353,28 +353,36 @@ def _ask_llm_details(env: dict) -> dict[str, str]:
 
     provider = Prompt.ask(
         "  LLM provider",
-        choices=["anthropic", "openai"],
+        choices=["anthropic", "openai", "openai-compatible", "aws-bedrock", "gcp-vertex", "azure-openai", "ollama"],
         default="anthropic",
     )
     details["llm_provider"] = provider
     return details
 
 
-def _ask_policy() -> str:
+def _ask_policy(use_llm: bool = True) -> str:
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column("Preset", style="bold", width=14)
     table.add_column("Description", style="dim")
-    table.add_row("[cyan]balanced[/]", "Recommended \u2014 good balance of coverage and noise")
-    table.add_row("[yellow]strict[/]", "Maximum detection \u2014 fewer false negatives")
-    table.add_row("[green]permissive[/]", "Minimal noise \u2014 fewer false positives")
+    table.add_row("[cyan]balanced[/]", "Default \u2014 with the LLM judge, the highest F1 measured")
+    table.add_row("[green]low-noise[/]", "Fewer false positives \u2014 use with the LLM judge")
+    table.add_row("[green]quiet[/]", "Fewest false positives \u2014 requires the LLM judge")
+    table.add_row("[yellow]strict[/]", "Maximum detection \u2014 for hunting, not for gating")
+    table.add_row("[dim]permissive[/]", "Fewer rules \u2014 not measured; prefer low-noise")
     console.print(table)
     console.print()
 
-    return Prompt.ask(
+    policy = Prompt.ask(
         "[bold]Policy preset[/]",
         choices=_POLICIES,
         default="balanced",
     )
+    if not use_llm and policy in {"low-noise", "quiet"}:
+        console.print(
+            f"[yellow]\u26a0  {policy} is measured with the LLM judge.[/] "
+            "Without it, the rules alone miss most malicious skills; enable the LLM judge."
+        )
+    return policy
 
 
 def _ask_format() -> str:
@@ -635,7 +643,7 @@ def run_wizard() -> int:
 
         # Step 4 — Policy
         _step_header(4, _SCAN_TOTAL_STEPS, "Policy")
-        policy = _ask_policy()
+        policy = _ask_policy(use_llm=bool(analyzers.get("use_llm")))
         preview_kw["policy"] = policy
         _print_preview(_build_partial_command(action, path, **preview_kw))
 
