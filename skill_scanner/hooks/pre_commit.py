@@ -41,8 +41,16 @@ Configuration:
     {
         "severity_threshold": "high",  # block on: critical, high, medium, low
         "skills_path": ".claude/skills",
+        "policy": "low-noise",
+        "use_llm": true,               # run the LLM judge (recommended)
+        "llm_model": "claude-sonnet-5-5",  # optional; falls back to SKILL_SCANNER_LLM_MODEL
+        "llm_provider": "anthropic",   # optional; falls back to SKILL_SCANNER_LLM_PROVIDER
         "fail_fast": true
     }
+
+    With ``use_llm`` set, the key comes from SKILL_SCANNER_LLM_API_KEY (or cloud
+    credentials for Bedrock and Vertex). A judge that cannot be built blocks the
+    commit with exit code 2 rather than falling back to the rules alone.
 """
 
 import argparse
@@ -61,7 +69,14 @@ DEFAULT_CONFIG = {
     "fail_fast": True,
     "use_behavioral": False,
     "use_trigger": True,
+    "use_llm": False,
+    "llm_model": None,  # falls back to SKILL_SCANNER_LLM_MODEL
+    "llm_provider": None,  # falls back to SKILL_SCANNER_LLM_PROVIDER
 }
+
+# Exit code when the hook cannot run as configured (for example, ``use_llm`` with
+# no usable model or key), matching the scanner CLI.
+EXIT_CONFIGURATION_ERROR = 2
 
 # Severity levels (higher number = more severe)
 SEVERITY_LEVELS = {
@@ -182,6 +197,8 @@ def scan_skill(skill_dir: Path, config: dict) -> dict:
     Returns:
         Scan results as dictionary
     """
+    from ..core.analyzer_factory import AnalyzerConfigurationError
+
     try:
         from ..core.analyzer_factory import build_analyzers
         from ..core.scan_policy import ScanPolicy
@@ -201,6 +218,9 @@ def scan_skill(skill_dir: Path, config: dict) -> dict:
             policy,
             use_behavioral=bool(config.get("use_behavioral")),
             use_trigger=bool(config.get("use_trigger")),
+            use_llm=bool(config.get("use_llm")),
+            llm_model=config.get("llm_model") or None,
+            llm_provider=config.get("llm_provider") or None,
         )
 
         with SkillScanner(analyzers=analyzers, policy=policy) as scanner:
@@ -233,6 +253,10 @@ def scan_skill(skill_dir: Path, config: dict) -> dict:
             "low_count": counts["low"],
         }
 
+    except AnalyzerConfigurationError:
+        # A requested analyzer that cannot be built is a configuration error for
+        # the whole run, not a per-skill scan failure to skip past.
+        raise
     except Exception as e:
         return {
             "skill_name": skill_dir.name,
@@ -381,6 +405,8 @@ def main(args: list[str] | None = None) -> int:
 
     print(f"Scanning {len(affected_skills)} skill(s)...")
 
+    from ..core.analyzer_factory import AnalyzerConfigurationError
+
     # Scan each affected skill
     blocked = False
     all_findings = []
@@ -388,7 +414,11 @@ def main(args: list[str] | None = None) -> int:
     for skill_dir in sorted(affected_skills):
         print(f"\n📦 {skill_dir.name}")
 
-        scan_result: dict = scan_skill(skill_dir, config)
+        try:
+            scan_result: dict = scan_skill(skill_dir, config)
+        except AnalyzerConfigurationError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return EXIT_CONFIGURATION_ERROR
 
         if scan_result.get("error"):
             print(f"  ⚠️  Error: {scan_result['error']}", file=sys.stderr)
