@@ -20,6 +20,7 @@ Static pattern analyzer for detecting security vulnerabilities.
 
 import ast
 import configparser
+import dataclasses
 import hashlib
 import logging
 import pickletools
@@ -1486,6 +1487,43 @@ def _yara_semantic_metadata(
     )
 
 
+_FRONTMATTER_TOP_LEVEL_KEY = re.compile(r"^[A-Za-z0-9_-]+\s*:")
+_FRONTMATTER_TEXT_FIELD = re.compile(r"^(?:description|when_to_use|when-to-use)\s*:", re.IGNORECASE)
+
+
+def _frontmatter_text_view(skill: Skill) -> str | None:
+    """Return SKILL.md's frontmatter with only its ``description`` and ``when_to_use`` lines kept.
+
+    Every other line is blanked rather than removed, so a match's line number is
+    its physical SKILL.md line. Returns ``None`` when there is no frontmatter, the
+    body was synthesized, or neither field is present.
+    """
+    if skill.load_metadata.get("synthetic_instruction_body"):
+        return None
+    frontmatter_lines = max(0, skill.instruction_body_line_offset)
+    if frontmatter_lines == 0 or skill.skill_md_path is None:
+        return None
+    raw: str | None = None
+    for skill_file in skill.files:
+        if skill_file.path == skill.skill_md_path:
+            raw = skill_file.read_content()
+            break
+    if raw is None:
+        try:
+            raw = skill.skill_md_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+    kept: list[str] = []
+    in_text_field = False
+    for line in raw.splitlines()[:frontmatter_lines]:
+        if line.strip() == "---" or _FRONTMATTER_TOP_LEVEL_KEY.match(line):
+            in_text_field = bool(_FRONTMATTER_TEXT_FIELD.match(line))
+        kept.append(line if in_text_field else "")
+    if not any(kept):
+        return None
+    return "\n".join(kept)
+
+
 class StaticAnalyzer(BaseAnalyzer):
     """Static pattern-based security analyzer."""
 
@@ -1689,6 +1727,7 @@ class StaticAnalyzer(BaseAnalyzer):
         findings.extend(check_active_hidden_html(skill))
         findings.extend(check_active_remote_execution(skill))
         findings.extend(check_active_semantic_directives(skill))
+        findings.extend(self._check_frontmatter_semantic_directives(skill))
         findings.extend(check_unicode_smuggling(skill))
         findings.extend(self._scan_scripts(skill))
         findings.extend(self._check_dynamic_sensitive_file_access(skill))
@@ -1921,7 +1960,12 @@ class StaticAnalyzer(BaseAnalyzer):
         return findings
 
     def _scan_instruction_body(self, skill: Skill) -> list[Finding]:
-        """Scan SKILL.md instruction body for prompt injection patterns."""
+        """Scan SKILL.md instruction body for prompt injection patterns.
+
+        The frontmatter ``description`` and ``when_to_use`` fields are scanned too,
+        with the core rules only: agents load them into context before a skill is
+        ever invoked, so they are the most exposed text in a skill.
+        """
         findings = []
 
         markdown_rules = self.rule_loader.get_rules_for_file_type("markdown")
@@ -1940,7 +1984,28 @@ class StaticAnalyzer(BaseAnalyzer):
                     physical_match["line_number"] = line_number + skill.instruction_body_line_offset
                 findings.append(self._create_finding_from_match(rule, physical_match))
 
+        frontmatter_view = _frontmatter_text_view(skill)
+        if frontmatter_view:
+            core_rule_ids = self.rule_loader.primary_rule_ids
+            frontmatter_context = SignatureScanContext(frontmatter_view)
+            for rule in markdown_rules:
+                if rule.id not in core_rule_ids:
+                    continue
+                # The view keeps every frontmatter line in place, so match line
+                # numbers are already physical SKILL.md lines.
+                for match in rule.scan_content(frontmatter_view, "SKILL.md", scan_context=frontmatter_context):
+                    findings.append(self._create_finding_from_match(rule, dict(match)))
+
         return findings
+
+    @staticmethod
+    def _check_frontmatter_semantic_directives(skill: Skill) -> list[Finding]:
+        """Run the active semantic-directive rules over the frontmatter text fields."""
+        frontmatter_view = _frontmatter_text_view(skill)
+        if not frontmatter_view:
+            return []
+        view = dataclasses.replace(skill, instruction_body=frontmatter_view, instruction_body_line_offset=0)
+        return check_active_semantic_directives(view)
 
     def _scan_scripts(self, skill: Skill) -> list[Finding]:
         """Scan all script files (Python, Bash) for vulnerabilities."""
@@ -4537,8 +4602,12 @@ class StaticAnalyzer(BaseAnalyzer):
 
         findings: list[Finding] = []
 
-        # Scan SKILL.md instruction body
+        # Scan SKILL.md instruction body, then the frontmatter description and
+        # when_to_use fields that agents load into context before invocation.
         yara_matches = self.yara_scanner.scan_content(skill.instruction_body, "SKILL.md")
+        frontmatter_view = _frontmatter_text_view(skill)
+        if frontmatter_view:
+            yara_matches = [*yara_matches, *self.yara_scanner.scan_content(frontmatter_view, "SKILL.md")]
         for match in yara_matches:
             rule_name = match.get("rule_name", "")
             if not self._is_rule_enabled(rule_name):
