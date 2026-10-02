@@ -27,7 +27,7 @@ import pytest
 
 from skill_scanner.core.analyzers.adjudicator import _LLM_LOCK, Adjudicator
 from skill_scanner.core.analyzers.apple_fm import apple_fm_acompletion, is_apple_fm_model
-from skill_scanner.core.analyzers.behavioral.alignment.alignment_llm_client import AlignmentLLMClient
+from skill_scanner.core.analyzers.behavioral_analyzer import BehavioralAnalyzer
 from skill_scanner.core.analyzers.llm_analyzer import LLMProvider
 from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
 from skill_scanner.core.analyzers.llm_request_handler import LLMRequestHandler
@@ -139,27 +139,17 @@ def test_meta_request_uses_apple_fm(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["temperature"] == 0.0
 
 
-def test_alignment_client_allows_keyless_apple_fm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_behavioral_alignment_is_not_routed_to_apple_fm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Alignment prompts exceed the on-device context window, so alignment is skipped."""
     _clear_keys(monkeypatch)
-    captured: dict = {}
+    monkeypatch.setenv("SKILL_SCANNER_LLM_API_KEY", "hosted-key")
 
-    async def fake_completion(**kwargs):
-        captured.update(kwargs)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content='{"aligned": true}'))],
-            usage=None,
-        )
+    by_model = BehavioralAnalyzer(use_alignment_verification=True, llm_model="apple-fm/system")
+    monkeypatch.setenv("SKILL_SCANNER_LLM_PROVIDER", "apple-fm")
+    by_provider = BehavioralAnalyzer(use_alignment_verification=True)
 
-    monkeypatch.setattr(
-        "skill_scanner.core.analyzers.behavioral.alignment.alignment_llm_client.apple_fm_acompletion",
-        fake_completion,
-    )
-    client = AlignmentLLMClient(model="apple-fm/system", api_key=None, max_tokens=32, temperature=0.0)
-    content = asyncio.run(client._make_llm_request("does this match"))
-
-    assert client._is_apple_fm is True
-    assert content == '{"aligned": true}'
-    assert captured["model"] == "apple-fm/system"
+    assert by_model.alignment_orchestrator is None
+    assert by_provider.alignment_orchestrator is None
 
 
 class _FakeSession:

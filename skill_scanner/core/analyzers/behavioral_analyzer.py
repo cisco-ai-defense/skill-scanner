@@ -111,20 +111,18 @@ class BehavioralAnalyzer(BaseAnalyzer):
                 from .behavioral.alignment import AlignmentOrchestrator
 
                 # Resolve LLM configuration - use SKILL_SCANNER_LLM_* variables
-
                 model = llm_model or os.environ.get("SKILL_SCANNER_LLM_MODEL", "gemini/gemini-2.0-flash")
-                provider_name = (llm_provider or os.environ.get("SKILL_SCANNER_LLM_PROVIDER") or "").strip().lower()
-                provider_name = provider_name.replace("_", "-")
-                if provider_name == "apple-fm" and not is_apple_fm_model(model):
-                    model = "apple-fm/system"
                 api_key = llm_api_key or os.environ.get("SKILL_SCANNER_LLM_API_KEY")
+                provider_name = (llm_provider or os.environ.get("SKILL_SCANNER_LLM_PROVIDER") or "").strip().lower()
 
-                keyless_apple = provider_name not in {
-                    "openai",
-                    "openai-compatible",
-                    "custom-openai",
-                } and is_apple_fm_model(model)
-                if api_key or keyless_apple:
+                if is_apple_fm_model(model) or provider_name.replace("_", "-") == "apple-fm":
+                    # Alignment prompts carry whole source files and exceed the
+                    # on-device model's context window.
+                    logger.warning(
+                        "Alignment verification needs a hosted model; the on-device Apple Foundation "
+                        "Model's context window is too small. Skipping alignment verification."
+                    )
+                elif api_key:
                     self.alignment_orchestrator = AlignmentOrchestrator(
                         llm_model=model,
                         llm_api_key=api_key,
