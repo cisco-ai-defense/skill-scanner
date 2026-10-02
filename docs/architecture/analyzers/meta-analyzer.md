@@ -120,7 +120,7 @@ export SKILL_SCANNER_META_LLM_REASONING_EFFORT="minimal"
 |----------|-------------|-------|
 | Bedrock (`bedrock/...` model) | AWS credentials/IAM **or** API key | API key is optional when Bedrock auth is available |
 | Ollama (`ollama/...` model) | None | Uses the local Ollama endpoint; no API key is required. Scanner requests disable the hidden thinking channel so the bounded output contains parseable JSON. |
-| Apple Foundation Models (`apple-fm/system`) | None | On-device. No API key. Install the `[apple-fm]` extra on macOS 26+ with Apple Intelligence. Semantic and meta scans only; behavioral alignment prompts exceed the on-device context window. |
+| Apple Foundation Models (`apple-fm/system`) | None | On-device. No API key. Install `apple-fm-sdk` (needs full Xcode) on macOS 26+ with Apple Intelligence. Semantic and meta scans only; behavioral alignment prompts exceed the on-device context window. |
 | Other models | `SKILL_SCANNER_META_LLM_API_KEY` or `SKILL_SCANNER_LLM_API_KEY` | Required for API-key-based providers |
 
 ### Setup Examples

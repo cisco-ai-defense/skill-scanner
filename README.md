@@ -129,7 +129,7 @@ pip install cisco-ai-skill-scanner[vertex]
 pip install cisco-ai-skill-scanner[azure]
 
 # On-device Apple Foundation Models (macOS 26+, Apple Intelligence)
-pip install cisco-ai-skill-scanner[apple-fm]
+pip install "apple-fm-sdk>=0.2.1,<0.3"   # builds from source; needs full Xcode
 
 # All cloud providers
 pip install cisco-ai-skill-scanner[all]
