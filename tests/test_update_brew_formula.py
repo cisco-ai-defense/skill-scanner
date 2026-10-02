@@ -405,6 +405,10 @@ def test_formula_builds_exact_host_helper_and_validates_rules() -> None:
     assert 'ENV["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"' in formula
     assert 'venv = virtualenv_create(libexec, "python3.12")' in formula
     assert 'dependency_resources = resources.reject { |resource| resource.name == "cel-helper" }' in formula
+    assert 'resource("cel-helper").stage do' in formula
+    assert 'system "unzip", "-q", wheel, "skill_scanner/core/cel/_bin/*", "-d", helper_dir' in formula
+    assert 'resource("cel-helper").stage(helper_dir)' not in formula
+    assert "\n  preserve_rpath\n" in formula
     assert 'wheelhouse = buildpath/"dependency-wheelhouse"' in formula
     assert "dependency_resources.each { |resource| resource.stage(wheelhouse) }" in formula
     assert 'dependency_wheels.all? { |wheel| wheel.file? && wheel.extname == ".whl" }' in formula
