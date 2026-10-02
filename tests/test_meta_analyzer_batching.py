@@ -222,6 +222,8 @@ async def test_apple_fm_context_window_bisects_and_stops_at_one_finding(monkeypa
     monkeypatch.delenv("SKILL_SCANNER_LLM_PROVIDER", raising=False)
     monkeypatch.delenv("SKILL_SCANNER_LLM_API_KEY", raising=False)
     monkeypatch.delenv("SKILL_SCANNER_META_LLM_API_KEY", raising=False)
+    # CI runners never have apple-fm-sdk; the analyzer checks for it when built.
+    monkeypatch.setattr("skill_scanner.core.analyzers.apple_fm.require_apple_fm_sdk", lambda: None)
     analyzer = MetaAnalyzer(model="apple-fm/system", max_tokens=8192)
     analyzer._build_skill_context = MagicMock(return_value=("bounded context", []))
     findings = _findings(2)
