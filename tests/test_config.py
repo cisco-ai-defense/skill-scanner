@@ -41,7 +41,7 @@ class TestConfigInitialization:
         with patch.dict("os.environ", env_without_llm, clear=True):
             config = Config()
 
-            assert config.llm_model == "claude-3-5-sonnet-20241022"
+            assert config.llm_model == "claude-sonnet-5-5"
             assert config.llm_max_tokens == 8192
             assert config.llm_temperature == 0.0
             assert config.enable_static_analyzer

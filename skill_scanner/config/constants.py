@@ -27,6 +27,9 @@ try:
 except Exception:  # pragma: no cover
     PACKAGE_VERSION = "0.0.0-dev"
 
+# Default LLM judge model when neither a model nor a provider is configured.
+DEFAULT_LLM_MODEL = "claude-sonnet-5-5"
+
 
 class SkillScannerConstants:
     """Constants used throughout the analyzer."""
@@ -47,7 +50,7 @@ class SkillScannerConstants:
     # Default values
     DEFAULT_MAX_FILE_SIZE_MB = 10
     DEFAULT_SCAN_TIMEOUT = 300
-    DEFAULT_LLM_MODEL = "claude-3-5-sonnet-20241022"
+    DEFAULT_LLM_MODEL = DEFAULT_LLM_MODEL
     DEFAULT_LLM_MAX_TOKENS = 4000
     DEFAULT_LLM_TEMPERATURE = 0.0
 

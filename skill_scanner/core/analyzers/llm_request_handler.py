@@ -27,6 +27,7 @@ import importlib
 import json
 import logging
 import os
+import re
 import threading
 import warnings
 from pathlib import Path
@@ -249,11 +250,30 @@ _TEMPERATURE_UNSET = object()
 # without code changes.
 _TEMPERATURE_OMIT_VALUES = frozenset({"none", "null", "unset", "omit", "skip"})
 
+# Model families that reject a ``temperature`` value, matched anywhere in the
+# model id so every route prefix (``anthropic/``, ``bedrock/us.anthropic.``,
+# ``vertex_ai/``, ``orcarouter/anthropic/``) is covered: Claude Sonnet 5.x,
+# Opus 4.7 and later, Fable and Mythos.
+_CLAUDE_REJECTS_TEMPERATURE = re.compile(r"claude-(?:sonnet-5|opus-5|opus-4-[7-9]|fable|mythos)")
+# OpenAI reasoning models accept only their default temperature.
+_OPENAI_REASONING_MODEL = re.compile(r"^(?:o[1-9](?:-|$)|gpt-5(?!-chat))")
+
+
+def model_rejects_temperature(model: str | None) -> bool:
+    """Return whether *model* rejects a ``temperature`` request parameter."""
+    if not isinstance(model, str) or not model:
+        return False
+    normalized = model.strip().lower()
+    if _CLAUDE_REJECTS_TEMPERATURE.search(normalized):
+        return True
+    return bool(_OPENAI_REASONING_MODEL.match(normalized.rsplit("/", 1)[-1]))
+
 
 def _resolve_temperature(
     explicit: Any,
     env_var: str,
     default: float,
+    model: str | None = None,
 ) -> float | None:
     """Resolve the request-time ``temperature`` from constructor + env.
 
@@ -263,7 +283,9 @@ def _resolve_temperature(
         2. ``os.environ[env_var]`` — a numeric value is parsed as a float, and
            a value in ``_TEMPERATURE_OMIT_VALUES`` returns ``None`` to drop the
            parameter.
-        3. ``default`` (today: 0.0 for the per-file analyzer, 0.1 for meta).
+        3. ``None`` when *model* rejects ``temperature`` (see
+           ``model_rejects_temperature``), otherwise ``default`` (today: 0.0
+           for the per-file analyzer, 0.1 for meta).
 
     Returns:
         ``float`` to send as ``temperature``, or ``None`` to omit it entirely.
@@ -273,7 +295,7 @@ def _resolve_temperature(
 
     raw = os.environ.get(env_var, "").strip()
     if not raw:
-        return default
+        return None if model_rejects_temperature(model) else default
     if raw.lower() in _TEMPERATURE_OMIT_VALUES:
         return None
     try:
@@ -333,7 +355,12 @@ class LLMRequestHandler:
         """
         self.provider_config = provider_config
         self.max_tokens = resolve_llm_max_tokens(max_tokens)
-        self.temperature = _resolve_temperature(temperature, "SKILL_SCANNER_LLM_TEMPERATURE", default=0.0)
+        self.temperature = _resolve_temperature(
+            temperature,
+            "SKILL_SCANNER_LLM_TEMPERATURE",
+            default=0.0,
+            model=self.provider_config.model,
+        )
         self.max_retries = max_retries
         self.rate_limit_delay = rate_limit_delay
         self.timeout = timeout

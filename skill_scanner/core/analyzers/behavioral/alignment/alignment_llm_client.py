@@ -136,7 +136,12 @@ class AlignmentLLMClient:
             self._api_version = api_version
             self._model = normalize_litellm_model_for_provider(model, self._provider)
         self._reasoning_effort = resolve_llm_reasoning_effort(reasoning_effort)
-        self._temperature = _resolve_temperature(temperature, "SKILL_SCANNER_LLM_TEMPERATURE", default=0.1)
+        self._temperature = _resolve_temperature(
+            temperature,
+            "SKILL_SCANNER_LLM_TEMPERATURE",
+            default=0.1,
+            model=self._model,
+        )
         self._max_tokens = max_tokens
         self._timeout = timeout
 

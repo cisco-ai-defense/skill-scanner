@@ -57,6 +57,7 @@ from .llm_request_handler import (
     _add_token_usage,
     _empty_token_usage,
     _extract_token_usage,
+    model_rejects_temperature,
 )
 
 logger = logging.getLogger(__name__)
@@ -173,14 +174,14 @@ Return a single JSON object on one line:
 """
 
 
-def _resolve_temperature(default: float = 0.0) -> float | None:
+def _resolve_temperature(default: float = 0.0, model: str | None = None) -> float | None:
     """Resolve the adjudicator's LLM temperature from env vars.
 
     Precedence: ``SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE`` >
-    ``SKILL_SCANNER_LLM_TEMPERATURE`` > ``default``.  A value in
-    ``_TEMPERATURE_OMIT_VALUES`` (e.g. ``"none"``) returns ``None``,
-    which drops the ``temperature`` parameter from the outbound request.
-    Required for Claude 4.x on Bedrock and OpenAI o1-series.
+    ``SKILL_SCANNER_LLM_TEMPERATURE`` > ``None`` when *model* rejects
+    ``temperature`` > ``default``.  A value in ``_TEMPERATURE_OMIT_VALUES``
+    (e.g. ``"none"``) returns ``None``, which drops the ``temperature``
+    parameter from the outbound request.
     """
     for env_name in ("SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE", "SKILL_SCANNER_LLM_TEMPERATURE"):
         raw = os.environ.get(env_name, "").strip()
@@ -198,7 +199,7 @@ def _resolve_temperature(default: float = 0.0) -> float | None:
                 default,
             )
             return default
-    return default
+    return None if model_rejects_temperature(model) else default
 
 
 def _resolve_model() -> str | None:
@@ -277,7 +278,7 @@ class Adjudicator:
         if model is None and self.provider == "orcarouter":
             model = "orcarouter/anthropic/claude-sonnet-5"
         self.model: str | None = model
-        self.temperature = _resolve_temperature()
+        self.temperature = _resolve_temperature(model=self.model)
 
         # Lazy-loaded rule registry — only touched if we actually
         # adjudicate anything, so the adjudicator being enabled at

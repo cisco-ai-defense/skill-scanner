@@ -25,7 +25,7 @@ This example demonstrates:
 
 Prerequisites:
     export SKILL_SCANNER_LLM_API_KEY="your_key"
-    export SKILL_SCANNER_LLM_MODEL="claude-3-5-sonnet-20241022"  # or gpt-4o
+    export SKILL_SCANNER_LLM_MODEL="claude-sonnet-5-5"  # or gpt-4o
     # For OpenAI-compatible custom endpoints:
     # export SKILL_SCANNER_LLM_PROVIDER="openai"
     # export SKILL_SCANNER_LLM_BASE_URL="https://your.internal.llm/v1"
@@ -71,7 +71,7 @@ def main():
         print("Error: SKILL_SCANNER_LLM_API_KEY environment variable not set")
         return 1
 
-    model = os.getenv("SKILL_SCANNER_LLM_MODEL", "claude-3-5-sonnet-20241022")
+    model = os.getenv("SKILL_SCANNER_LLM_MODEL", "claude-sonnet-5-5")
     provider = os.getenv("SKILL_SCANNER_LLM_PROVIDER")
     base_url = os.getenv("SKILL_SCANNER_LLM_BASE_URL")
     api_version = os.getenv("SKILL_SCANNER_LLM_API_VERSION")
