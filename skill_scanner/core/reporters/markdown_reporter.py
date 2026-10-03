@@ -331,12 +331,32 @@ class MarkdownReporter:
             if finding.snippet:
                 lines.append(f"{indent_str}")
                 lines.append(f"{indent_str}**Code Snippet:**")
-                if not re.search(r"```", finding.snippet):
-                    lines.append(f"{indent_str}```")
-                for line in finding.snippet.splitlines():
+                snippet_lines = finding.snippet.splitlines()
+                open_fence: str | None = None
+                has_fence = False
+                for line in snippet_lines:
+                    if open_fence:
+                        closing = rf" {{0,3}}{re.escape(open_fence[0])}{{{len(open_fence)},}}[ \t]*"
+                        if re.fullmatch(closing, line):
+                            open_fence = None
+                    else:
+                        opening = re.fullmatch(r" {0,3}(`{3,}|~{3,})(.*)", line)
+                        if opening and (opening[1][0] == "~" or "`" not in opening[2]):
+                            open_fence = opening[1]
+                            has_fence = True
+
+                # Preserve complete preformatted snippets, but contain raw or
+                # truncated snippets so their fences cannot consume the report.
+                preformatted = has_fence and open_fence is None
+                fence = ""
+                if not preformatted:
+                    longest_run = max((len(run) for run in re.findall(r"`+", finding.snippet)), default=0)
+                    fence = "`" * max(3, longest_run + 1)
+                    lines.append(f"{indent_str}{fence}")
+                for line in snippet_lines:
                     lines.append(f"{indent_str}{line}")
-                if not re.search(r"```", finding.snippet):
-                    lines.append(f"{indent_str}```")
+                if not preformatted:
+                    lines.append(f"{indent_str}{fence}")
 
             if finding.remediation:
                 lines.append(f"{indent_str}")

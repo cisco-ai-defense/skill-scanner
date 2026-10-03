@@ -24,6 +24,7 @@ from datetime import datetime
 from urllib.parse import unquote, unquote_to_bytes, urlsplit
 
 import pytest
+from markdown_it import MarkdownIt
 
 from skill_scanner.core.models import Finding, Report, ScanResult, Severity, ThreatCategory
 from skill_scanner.core.reporters.json_reporter import JSONReporter
@@ -553,3 +554,42 @@ def test_table_multi_skill_reports_suppressed_counts():
 def test_multi_skill_reports_unchanged_without_suppressions(report: Report):
     assert "Suppressed" not in MarkdownReporter().generate_report(report)
     assert "Suppressed" not in TableReporter().generate_report(report)
+
+
+@pytest.mark.parametrize("aggregate", [False, True])
+@pytest.mark.parametrize(
+    ("snippet", "expected_code", "expected_info"),
+    [
+        ('print("```")', 'print("```")', ""),
+        ('```python\nprint("payload")', '```python\nprint("payload")', ""),
+        ('print("payload")\n```', 'print("payload")\n```', ""),
+        ('````\nprint("payload")\n```', '````\nprint("payload")\n```', ""),
+        ('```python\nprint("payload")\n```', 'print("payload")', "python"),
+        ('~~~python\nprint("```")\n~~~', 'print("```")', "python"),
+        ('helper.py:\n```python\nprint("payload")\n```', 'print("payload")', "python"),
+        ('````\nprint("payload")\n`````', 'print("payload")', ""),
+    ],
+)
+def test_markdown_snippet_keeps_following_diagnostics_visible(
+    aggregate: bool, snippet: str, expected_code: str, expected_info: str
+):
+    findings = _sample_findings()
+    findings[0].snippet = snippet
+    findings[0].remediation = "Keep this remediation visible."
+    findings[1].snippet = None
+    result = ScanResult(skill_name="example", skill_directory=".", findings=findings)
+    data: ScanResult | Report = result
+    if aggregate:
+        data = Report()
+        data.add_scan_result(result)
+
+    tokens = MarkdownIt().parse(MarkdownReporter(detailed=True).generate_report(data))
+    code_blocks = [token for token in tokens if token.type == "fence"]
+    assert len(code_blocks) == 1
+    assert code_blocks[0].content == expected_code + "\n"
+    assert code_blocks[0].info == expected_info
+    assert any(
+        token.type == "inline" and token.content == "**Remediation:** Keep this remediation visible."
+        for token in tokens
+    )
+    assert any(token.type == "inline" and findings[1].title in token.content for token in tokens)
