@@ -593,3 +593,43 @@ def test_markdown_snippet_keeps_following_diagnostics_visible(
         for token in tokens
     )
     assert any(token.type == "inline" and findings[1].title in token.content for token in tokens)
+
+
+@pytest.mark.parametrize(
+    ("aggregate", "opening", "closing", "expected_code", "expected_info"),
+    [
+        (True, "  ~~~python", "~~~", '  ~~~python\nprint("payload")\n~~~', ""),
+        (False, "  ~~~python", "~~~", 'print("payload")', "python"),
+        (True, "  ```python", "```", '  ```python\nprint("payload")\n```', ""),
+        (False, "  ```python", "```", 'print("payload")', "python"),
+        (True, "~~~python", "  ~~~", '~~~python\nprint("payload")\n  ~~~', ""),
+        (False, "~~~python", "  ~~~", 'print("payload")', "python"),
+        (True, "```python", "  ```", '```python\nprint("payload")\n  ```', ""),
+        (False, "```python", "  ```", 'print("payload")', "python"),
+        (True, " ~~~python", " ~~~", 'print("payload")', "python"),
+        (True, " ```python", " ```", 'print("payload")', "python"),
+    ],
+)
+def test_markdown_indented_fences_keep_following_diagnostics_visible(
+    aggregate: bool, opening: str, closing: str, expected_code: str, expected_info: str
+):
+    findings = _sample_findings()
+    findings[0].snippet = f'{opening}\nprint("payload")\n{closing}'
+    findings[0].remediation = "Keep this remediation visible."
+    findings[1].snippet = None
+    result = ScanResult(skill_name="example", skill_directory=".", findings=findings)
+    data: ScanResult | Report = result
+    if aggregate:
+        data = Report()
+        data.add_scan_result(result)
+
+    tokens = MarkdownIt().parse(MarkdownReporter(detailed=True).generate_report(data))
+    code_blocks = [token for token in tokens if token.type == "fence"]
+    assert len(code_blocks) == 1
+    assert code_blocks[0].content == expected_code + "\n"
+    assert code_blocks[0].info == expected_info
+    assert any(
+        token.type == "inline" and token.content == "**Remediation:** Keep this remediation visible."
+        for token in tokens
+    )
+    assert any(token.type == "inline" and findings[1].title in token.content for token in tokens)

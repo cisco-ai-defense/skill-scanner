@@ -335,18 +335,19 @@ class MarkdownReporter:
                 open_fence: str | None = None
                 has_fence = False
                 for line in snippet_lines:
+                    formatted_line = f"{indent_str}{line}"
                     if open_fence:
                         closing = rf" {{0,3}}{re.escape(open_fence[0])}{{{len(open_fence)},}}[ \t]*"
-                        if re.fullmatch(closing, line):
+                        if re.fullmatch(closing, formatted_line):
                             open_fence = None
                     else:
-                        opening = re.fullmatch(r" {0,3}(`{3,}|~{3,})(.*)", line)
+                        opening = re.fullmatch(r" {0,3}(`{3,}|~{3,})(.*)", formatted_line)
                         if opening and (opening[1][0] == "~" or "`" not in opening[2]):
                             open_fence = opening[1]
                             has_fence = True
 
-                # Preserve complete preformatted snippets, but contain raw or
-                # truncated snippets so their fences cannot consume the report.
+                # Preserve fences that remain complete after report indentation,
+                # but contain other snippets so they cannot consume the report.
                 preformatted = has_fence and open_fence is None
                 fence = ""
                 if not preformatted:
