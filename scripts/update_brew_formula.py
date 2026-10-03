@@ -76,7 +76,6 @@ SKIP_PACKAGES = frozenset(
 SYSTEM_DEPS = [
     "depends_on macos: :sonoma",
     'depends_on "go" => :build',
-    'depends_on "rust" => :build',
     'depends_on "python@3.12"',
 ]
 

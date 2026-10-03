@@ -389,6 +389,8 @@ def test_formula_builds_exact_host_helper_and_validates_rules() -> None:
 
     assert "depends_on macos: :sonoma" in formula
     assert 'depends_on "go" => :build' in formula
+    # Every dependency is a prebuilt wheel, so nothing compiles Rust.
+    assert 'depends_on "rust"' not in formula
     assert "on_arm do" in formula and "arm64.whl" in formula
     assert "on_intel do" in formula and "amd64.whl" in formula
     assert 'resource "yara-python"' not in formula
