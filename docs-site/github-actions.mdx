@@ -35,9 +35,9 @@ on:
 
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
     with:
-      scanner_version: "2.2.0"
+      scanner_version: "2.2.1"
       skill_path: .cursor/skills
       policy: low-noise
       fail_on_severity: high
@@ -55,7 +55,7 @@ For Bedrock, Vertex AI or a model you host, use the
 [self-hosted workflow with the judge on Bedrock](#self-hosted-workflow-with-the-judge-on-bedrock)
 instead.
 
-Pin the workflow to a release tag such as `@2.2.0`, not `@main`. The caller must grant the three
+Pin the workflow to a release tag such as `@2.2.1`, not `@main`. The caller must grant the three
 permissions shown. A reusable workflow can only use permissions its caller grants, and the SARIF
 upload needs `security-events: write`.
 
@@ -124,9 +124,9 @@ Configure secrets in **Settings > Secrets and variables > Actions**. They are ne
 ```yaml
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
     with:
-      scanner_version: "2.2.0"
+      scanner_version: "2.2.1"
       skill_path: .cursor/skills
       policy: low-noise
       use_llm: true
@@ -146,9 +146,9 @@ Fails on HIGH; MEDIUM findings appear as annotations for the reviewer.
 ```yaml
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
     with:
-      scanner_version: "2.2.0"
+      scanner_version: "2.2.1"
       skill_path: vendor/skills
       policy: balanced        # quiet for the lowest false-positive rate
       use_llm: true
@@ -168,9 +168,9 @@ For an OpenAI-compatible gateway, add `llm_provider: openai-compatible` and `llm
 ```yaml
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
     with:
-      scanner_version: "2.2.0"
+      scanner_version: "2.2.1"
       skill_path: vendor/skills
       use_llm: true
       use_behavioral: true
@@ -210,7 +210,7 @@ framework:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/cisco-ai-defense/skill-scanner
-    rev: 2.2.0  # the latest release tag (no "v" prefix)
+    rev: 2.2.1  # the latest release tag (no "v" prefix)
     hooks:
       - id: skill-scanner
 ```
@@ -272,7 +272,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install "cisco-ai-skill-scanner==2.2.0"
+      - run: pip install "cisco-ai-skill-scanner==2.2.1"
 
       - name: Scan skills
         env:
@@ -344,7 +344,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.BEDROCK_ROLE_ARN }}
           aws-region: us-east-1
-      - run: pip install "cisco-ai-skill-scanner[bedrock]==2.2.0"
+      - run: pip install "cisco-ai-skill-scanner[bedrock]==2.2.1"
       - name: Scan skills
         env:
           SKILL_SCANNER_LLM_MODEL: bedrock-mantle/google.gemma-4-26b-a4b

@@ -138,7 +138,7 @@ As a pre-commit hook:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/cisco-ai-defense/skill-scanner
-    rev: 2.2.0  # the latest release tag (no "v" prefix)
+    rev: 2.2.1  # the latest release tag (no "v" prefix)
     hooks:
       - id: skill-scanner
 ```
@@ -173,9 +173,9 @@ on:
     paths: [".claude/skills/**"]
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
     with:
-      scanner_version: "2.2.0"
+      scanner_version: "2.2.1"
       skill_path: .claude/skills
       policy: low-noise
       fail_on_severity: high
@@ -217,7 +217,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.BEDROCK_ROLE_ARN }}
           aws-region: us-east-1
-      - run: pip install "cisco-ai-skill-scanner[bedrock]==2.2.0"
+      - run: pip install "cisco-ai-skill-scanner[bedrock]==2.2.1"
       - name: Scan
         env:
           SKILL_SCANNER_LLM_MODEL: bedrock-mantle/google.gemma-4-26b-a4b

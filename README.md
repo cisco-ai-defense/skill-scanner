@@ -405,9 +405,9 @@ on:
     paths: [".cursor/skills/**"]
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
     with:
-      scanner_version: "2.2.0"
+      scanner_version: "2.2.1"
       skill_path: .cursor/skills
       policy: low-noise
       use_llm: true
@@ -432,7 +432,7 @@ Scan skills, with the judge, before every commit using the [pre-commit](https://
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/cisco-ai-defense/skill-scanner
-    rev: 2.2.0  # the latest release tag (no "v" prefix)
+    rev: 2.2.1  # the latest release tag (no "v" prefix)
     hooks:
       - id: skill-scanner
 ```

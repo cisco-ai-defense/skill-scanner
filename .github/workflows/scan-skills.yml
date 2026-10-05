@@ -4,10 +4,10 @@
 #
 #   jobs:
 #     scan:
-#       uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.0
+#       uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
 #       with:
 #         skill_path: .cursor/skills
-#         scanner_version: "2.2.0"
+#         scanner_version: "2.2.1"
 #         use_llm: true
 #         llm_model: claude-sonnet-5-5
 #       secrets:

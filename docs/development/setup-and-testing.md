@@ -184,7 +184,7 @@ This project publishes a `.pre-commit-hooks.yaml` so other repos can use Skill S
 # In the consuming repo's .pre-commit-config.yaml
 repos:
   - repo: https://github.com/cisco-ai-defense/skill-scanner
-    rev: 2.2.0
+    rev: 2.2.1
     hooks:
       - id: skill-scanner
 ```
@@ -257,7 +257,7 @@ carry no `v` prefix (`2.2.0`, not `v2.2.0`).
 
    ```bash
    gh release view 2.2.0 -R cisco-ai-defense/skill-scanner --json assets --jq '.assets[].name'
-   uvx --from cisco-ai-skill-scanner==2.2.0 skill-scanner --version
+   uvx --from cisco-ai-skill-scanner==2.2.1 skill-scanner --version
    ```
 
    The assets must include `requirements.txt`, `sbom.cdx.json` and the `cel-go-*.json` files, and

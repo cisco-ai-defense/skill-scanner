@@ -242,7 +242,7 @@ Using the [pre-commit](https://pre-commit.com/) framework, with the LLM judge:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/cisco-ai-defense/skill-scanner
-    rev: 2.2.0  # the latest release tag (no "v" prefix)
+    rev: 2.2.1  # the latest release tag (no "v" prefix)
     hooks:
       - id: skill-scanner
 ```
