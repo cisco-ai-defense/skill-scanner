@@ -381,3 +381,48 @@ def test_detection_impact_workflow_passes_actionlint_when_available() -> None:
     if actionlint is None:
         return
     subprocess.run([actionlint, str(WORKFLOWS / _IMPACT_WORKFLOW)], check=True)
+
+
+# The repository lets GITHUB_TOKEN open pull requests (for the Homebrew formula),
+# so only these jobs may hold pull-requests: write.
+_PULL_REQUEST_WRITERS = {
+    ("detection-impact.yml", "comment"),
+    ("update-homebrew.yml", "commit-formula"),
+}
+
+
+def test_only_allowlisted_jobs_can_write_pull_requests() -> None:
+    writers = set()
+    for path in sorted([*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")]):
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert document.get("permissions") != "write-all", path.name
+        for job_id, job in document["jobs"].items():
+            permissions = job.get("permissions", document.get("permissions"))
+            assert permissions != "write-all", (path.name, job_id)
+            if isinstance(permissions, dict) and permissions.get("pull-requests") == "write":
+                writers.add((path.name, job_id))
+    assert writers == _PULL_REQUEST_WRITERS
+
+
+def test_homebrew_workflow_writes_only_from_its_pull_request_job() -> None:
+    document = yaml.safe_load(_workflow("update-homebrew.yml"))
+    assert document["permissions"] == {"contents": "read"}
+    writers = {
+        job_id
+        for job_id, job in document["jobs"].items()
+        if any(value == "write" for value in (job.get("permissions") or {}).values())
+    }
+    assert writers == {"commit-formula"}
+    assert document["jobs"]["commit-formula"]["permissions"] == {
+        "contents": "write",
+        "pull-requests": "write",
+        "actions": "write",
+    }
+
+
+def test_homebrew_pull_request_gets_the_required_unit_tests() -> None:
+    document = yaml.safe_load(_workflow("update-homebrew.yml"))
+    run = "\n".join(str(step.get("run", "")) for step in document["jobs"]["commit-formula"]["steps"])
+    assert 'gh workflow run python-tests.yml --ref "$branch"' in run
+    tests = yaml.safe_load(_workflow("python-tests.yml"))
+    assert "workflow_dispatch" in tests.get("on", tests.get(True))
