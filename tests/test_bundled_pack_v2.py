@@ -19,7 +19,8 @@ from skill_scanner.core.rule_registry import PackLoader, RuleDefinition
 from skill_scanner.core.rules.patterns import RuleLoader
 
 _PACKS = Path(__file__).resolve().parents[1] / "skill_scanner" / "data" / "packs"
-_COMMUNITY_BEHAVIOR_DIGEST = "f83d8fce9d7ad23d24f36020bf4f381fba810c8a544b9f06ab075a3bf2b6f39e"
+# Covers the PG_PII_CREDIT_CARD lookbehind change; no other rule differs.
+_COMMUNITY_BEHAVIOR_DIGEST = "51a78431a66c74ce0f234a93e25b2dbdc5b72ecaad2a653ba242b8aee6aeef36"
 
 
 def _minimal_manifest() -> dict:

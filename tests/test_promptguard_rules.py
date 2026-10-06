@@ -25,10 +25,19 @@ from skill_scanner.data import DATA_DIR
 
 
 @pytest.fixture(scope="module")
-def ssn_harvesting_rule() -> SecurityRule:
+def pii_detection_rules() -> list[SecurityRule]:
     signatures = DATA_DIR / "packs" / "promptguard" / "signatures" / "pii_detection.yaml"
-    rules = RuleLoader(rules_file=signatures).load_rules()
-    return next(rule for rule in rules if rule.id == "PG_PII_SSN_HARVESTING")
+    return RuleLoader(rules_file=signatures).load_rules()
+
+
+@pytest.fixture(scope="module")
+def ssn_harvesting_rule(pii_detection_rules: list[SecurityRule]) -> SecurityRule:
+    return next(rule for rule in pii_detection_rules if rule.id == "PG_PII_SSN_HARVESTING")
+
+
+@pytest.fixture(scope="module")
+def credit_card_rule(pii_detection_rules: list[SecurityRule]) -> SecurityRule:
+    return next(rule for rule in pii_detection_rules if rule.id == "PG_PII_CREDIT_CARD")
 
 
 @pytest.mark.parametrize(
@@ -64,3 +73,40 @@ def test_ssn_harvesting_identifiers_still_match_at_word_boundaries(
     matches = ssn_harvesting_rule.scan_content(sentence, "SKILL.md")
     assert len(matches) == 1
     assert Path(matches[0]["file_path"]).name == "SKILL.md"
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # A 16+ significant-digit float repr can contain a run that matches
+        # a card-number pattern once it is read starting after the ".".
+        "weights = [2.5399666666666668, 7.25, 12.5]",
+        "x = 0.4111111111111111",
+        "ratio = 3.4123456789012345",
+    ],
+)
+def test_credit_card_does_not_match_inside_decimal_fractions(
+    credit_card_rule: SecurityRule,
+    sentence: str,
+) -> None:
+    assert credit_card_rule.scan_content(sentence, "weights.py") == []
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "card: 5105 1051 0510 5100",
+        "4012-8888-8888-1881",
+        "3782 822463 10005",
+        "6011 0009 9013 9424",
+        "The card number is 4012888888881881.",
+        "4012888888881881, exp 12/30",
+    ],
+)
+def test_credit_card_still_matches_real_numbers(
+    credit_card_rule: SecurityRule,
+    sentence: str,
+) -> None:
+    matches = credit_card_rule.scan_content(sentence, "notes.md")
+    assert len(matches) == 1
+    assert Path(matches[0]["file_path"]).name == "notes.md"
