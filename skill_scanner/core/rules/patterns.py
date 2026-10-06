@@ -437,7 +437,7 @@ _PYTHON_LOOP_RE = re.compile(
     r"os\s*\.\s*environ(?:\s*\.\s*items\s*\(\s*\))?\s*:",
 )
 _PYTHON_SUBPROCESS_ENV_RE = re.compile(
-    r"\b(?:(?P<var>[A-Za-z_]\w*)\s*=\s*)?subprocess\.(?:run|check_output|Popen)\s*\("
+    r"\b(?:(?P<var>[A-Za-z_]\w*)\s*=\s*)?subprocess\.(?P<func>run|check_output|Popen)\s*\("
     r"[^#\n]{0,200}(?:['\"]env['\"]|\[\s*['\"]env['\"])",
 )
 _PYTHON_NETWORK_SINK_RE = re.compile(r"\b(?:requests|httpx)\.(?:post|put|patch|request)\s*\(")
@@ -448,6 +448,10 @@ _JS_ENV_SERIALIZE_RE = re.compile(
 _JS_ENTRIES_SINK_RE = re.compile(
     rf"Object\.entries\s*\(\s*{_JS_WHOLE_PROCESS_ENV}\s*\)[^;\n]{{0,320}}"
     r"(?:console\.(?:log|info|warn|error)|fetch\s*\(|axios\.(?:post|put|patch|request))"
+)
+_JS_URLSEARCHPARAMS_SINK_RE = re.compile(
+    r"\b(?:fetch|axios\.(?:post|put|patch|request))\s*\([^;\n]{0,320}"
+    rf"\bnew\s+URLSearchParams\s*\(\s*{_JS_WHOLE_PROCESS_ENV}\s*\)"
 )
 _SHELL_DUMP_COMMAND_RE = re.compile(
     r"(?:^|[;&|]\s*)"
@@ -482,6 +486,32 @@ def _strip_python_comment(line: str) -> str:
     return line
 
 
+def _mask_python_string_literals(code: str) -> str:
+    """Blank out plain string-literal contents, keeping offsets and f-strings intact."""
+
+    chars = list(code)
+    quote: str | None = None
+    masking = False
+    escaped = False
+    for index, char in enumerate(code):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+                continue
+            if masking:
+                chars[index] = " "
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            prefix = re.search(r"[A-Za-z]*$", code[:index])
+            masking = prefix is None or "f" not in prefix.group(0).lower()
+    return "".join(chars)
+
+
 def _is_comment_only_match(line: str, match_start: int, language: str) -> bool:
     prefix = line[:match_start].strip()
     stripped = line.strip()
@@ -498,19 +528,15 @@ def _line_indent(line: str) -> int:
     return len(line) - len(line.lstrip(" \t"))
 
 
-def _contains_both_identifiers(line: str, first: str, second: str) -> bool:
-    return (
-        re.search(rf"\b{re.escape(first)}\b", line) is not None
-        and re.search(rf"\b{re.escape(second)}\b", line) is not None
-    )
+def _contains_identifier(line: str, name: str) -> bool:
+    return re.search(rf"\b{re.escape(name)}\b", line) is not None
 
 
 def _python_loop_dumps_values(lines: Sequence[str], line_index: int, match: re.Match[str]) -> bool:
-    key = match.group("key")
     value = match.group("value")
     line = _strip_python_comment(lines[line_index])
     inline_body = line[match.end() :]
-    if _contains_both_identifiers(inline_body, key, value) and (
+    if _contains_identifier(inline_body, value) and (
         "print" in inline_body or _PYTHON_NETWORK_SINK_RE.search(inline_body)
     ):
         return True
@@ -522,17 +548,45 @@ def _python_loop_dumps_values(lines: Sequence[str], line_index: int, match: re.M
         if _line_indent(body_line) <= base_indent:
             break
         code = _strip_python_comment(body_line)
-        if _contains_both_identifiers(code, key, value) and (
+        if _contains_identifier(code, value) and (
             "print" in code or "json.dump" in code or _PYTHON_NETWORK_SINK_RE.search(code) or "urlopen" in code
         ):
             return True
     return False
 
 
+_PYTHON_SUBPROCESS_CAPTURE_RE = re.compile(r"\b(?:capture_output\s*=\s*True|stdout\s*=)")
+
+
+def _python_call_text(lines: Sequence[str], line_index: int, call_start: int) -> str:
+    """Return a call's argument text, following it across at most a few lines."""
+
+    parts: list[str] = []
+    depth = 0
+    for offset, raw in enumerate(lines[line_index : min(len(lines), line_index + 6)]):
+        code = _strip_python_comment(raw)
+        segment = code[call_start:] if offset == 0 else code
+        for position, char in enumerate(segment):
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    parts.append(segment[: position + 1])
+                    return "\n".join(parts)
+        parts.append(segment)
+    return "\n".join(parts)
+
+
 def _python_subprocess_env_is_exfiltrated(lines: Sequence[str], line_index: int, match: re.Match[str]) -> bool:
     line = _strip_python_comment(lines[line_index])
     if _PYTHON_NETWORK_SINK_RE.search(line[match.end() :]) or "urlopen" in line[match.end() :]:
         return True
+    if match.group("func") != "check_output":
+        call_text = _python_call_text(lines, line_index, match.start("func"))
+        if _PYTHON_SUBPROCESS_CAPTURE_RE.search(call_text) is None:
+            # Uncaptured output is inherited from the parent and printed to stdout.
+            return True
     var = match.group("var")
     if var is None:
         return False
@@ -541,6 +595,32 @@ def _python_subprocess_env_is_exfiltrated(lines: Sequence[str], line_index: int,
         if re.search(rf"\b{re.escape(var)}\b", code) and (_PYTHON_NETWORK_SINK_RE.search(code) or "urlopen" in code):
             return True
     return False
+
+
+_SHELL_COMMAND_SEPARATOR_RE = re.compile(r";|&&|\|\|")
+
+
+def _shell_env_dump_match(line: str) -> re.Match[str] | None:
+    """Return the first whole-environment dump among a line's shell commands.
+
+    The filtered-read exception (``env | grep ...``) applies only to its own
+    command, so a later ``; env > file`` on the same line is still reported.
+    """
+
+    separators = list(_SHELL_COMMAND_SEPARATOR_RE.finditer(line))
+    # Later commands start on the separator's last character so the patterns'
+    # ``[;&|]`` command-boundary prefix matches there.
+    starts = [0] + [separator.end() - 1 for separator in separators]
+    ends = [separator.start() for separator in separators] + [len(line)]
+    for start, end in zip(starts, ends, strict=True):
+        if _SHELL_FILTERED_ENV_RE.search(line, start, end):
+            continue
+        match = _SHELL_SUBSTITUTION_RE.search(line, start, end) or _SHELL_DUMP_COMMAND_RE.search(line, start, end)
+        if match is not None and re.match(r"\s*[;&|]?\s*set\s+-", match.group(0)):
+            continue
+        if match is not None:
+            return match
+    return None
 
 
 def _env_dump_language(file_path: str | None, content: str) -> str | None:
@@ -578,7 +658,9 @@ def _scan_env_dump_content(
         match: re.Match[str] | None = None
         if language == "python":
             code = _strip_python_comment(line)
-            match = _PYTHON_ENV_SINK_RE.search(code)
+            match = None
+            if _PYTHON_ENV_SINK_RE.search(_mask_python_string_literals(code)) is not None:
+                match = _PYTHON_ENV_SINK_RE.search(code)
             if match is None:
                 loop_match = _PYTHON_LOOP_RE.search(code)
                 if loop_match is not None and _python_loop_dumps_values(scan_context.lines, zero_index, loop_match):
@@ -590,19 +672,16 @@ def _scan_env_dump_content(
                 ):
                     match = subprocess_match
         elif language in {"javascript", "typescript"}:
-            match = _JS_ENV_SERIALIZE_RE.search(line) or _JS_ENTRIES_SINK_RE.search(line)
+            match = (
+                _JS_ENV_SERIALIZE_RE.search(line)
+                or _JS_ENTRIES_SINK_RE.search(line)
+                or _JS_URLSEARCHPARAMS_SINK_RE.search(line)
+            )
         else:
             stripped = line.strip()
-            if stripped.startswith("#!") or stripped.startswith("#") or _SHELL_FILTERED_ENV_RE.search(line):
-                match = None
-            else:
-                match = _SHELL_SUBSTITUTION_RE.search(line) or _SHELL_DUMP_COMMAND_RE.search(line)
-                if (
-                    match is not None
-                    and match.group(0).lstrip().startswith("set")
-                    and re.match(r"\s*set\s+-", match.group(0))
-                ):
-                    match = None
+            match = None
+            if not stripped.startswith("#"):
+                match = _shell_env_dump_match(line)
 
         if match is None or _is_comment_only_match(line, match.start(), language):
             continue
