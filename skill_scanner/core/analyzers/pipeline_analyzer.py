@@ -93,8 +93,23 @@ _PIPELINE_PATTERNS = [
     # ``_extract_pipelines``; one delimiter-bounded field avoids overlapping
     # greedy repetitions on malformed input.
     re.compile(r"`([^`]*)`"),
-    # Shell-style commands (lines starting with $ or #)
-    re.compile(r"^\s*[\$#]\s*(.+)$", re.MULTILINE),
+    # Shell-style commands (lines starting with $ or #).
+    #
+    # ``[^\S\n]`` is "any whitespace except LF".  With re.MULTILINE and a
+    # greedy ``\s*`` (which matches newlines), ``^`` matches at the start of
+    # every line and ``\s*`` consumes the entire remaining run of blank lines
+    # before failing on ``[\$#]`` and backtracking, which is O(n^2) on long
+    # blank-line runs (a trivial scanner-evasion technique using whitespace
+    # padding).  Excluding LF keeps the leading class from spanning lines while
+    # still accepting tabs, CR (CRLF input), form feeds, vertical tabs and
+    # Unicode spaces exactly as before.
+    #
+    # Intentional semantic change: with the old pattern a *marker-only* line
+    # (``$`` or ``#`` followed by nothing but whitespace) let the second ``\s*``
+    # swallow the newline and capture the *next* line as the command.  That
+    # accidental cross-line capture is no longer performed; a prompt marker and
+    # its command must sit on the same line.
+    re.compile(r"^[^\S\n]*[\$#][^\S\n]*(.+)$", re.MULTILINE),
     # Run/exec patterns in Python
     re.compile(r'(?:os\.system|subprocess\.(?:run|call|Popen|check_output))\s*\(\s*["\'](.+?)["\']', re.DOTALL),
     re.compile(r'(?:os\.system|subprocess\.(?:run|call|Popen|check_output))\s*\(\s*f["\'](.+?)["\']', re.DOTALL),
