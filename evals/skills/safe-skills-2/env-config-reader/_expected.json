@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "benign.env-config-reader-001",
+  "skill_name": "env-config-reader",
+  "package_label": "benign",
+  "expected_verdict": "safe",
+  "expected_severity": "SAFE",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "9fa517a565f0b7949a725a286e8b63e466478adb7030a3302c8d1a1c7deda0d4",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "6f590d383dd079727980bdda713f22ab3034172e7766e3941df23eced6efe4bf",
+    "label_evidence_sha256": "fcfbae2313616833ceccd7a9ef34a8b9de687c109a7b5ef790980854cd2e20e6"
+  },
+  "expected_findings": [],
+  "notes": "Benign near-miss for DATA_EXFIL_ENV_DUMP: targeted os.environ.get/os.getenv reads plus a set -euo pipefail / printenv PATH / env python3 shell script. Inert, never executed; must produce no findings."
+}

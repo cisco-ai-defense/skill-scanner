@@ -95,6 +95,23 @@
   description: "Bulk process environment snapshot can expose credentials and tokens"
   remediation: "Read only the specific environment variables required by the skill; never snapshot the full environment"
 
+- id: DATA_EXFIL_ENV_DUMP
+  category: data_exfiltration
+  severity: HIGH
+  patterns:
+    # This rule is implemented by the language-aware scanner for
+    # DATA_EXFIL_ENV_DUMP in core/rules/patterns.py.  These representative
+    # patterns keep the YAML self-describing for pack readers.
+    - "print\\s*\\([^\\n]*(?:dict\\s*\\(\\s*)?os\\.environ"
+    - "json\\.dump(?:s)?\\s*\\(\\s*(?:dict\\s*\\(\\s*)?os\\.environ"
+    - "for\\s+\\w+\\s*,\\s*\\w+\\s+in\\s+os\\.environ\\s*(?:\\.\\s*items\\s*\\(\\s*\\))?\\s*:"
+    - "(?:^|[;&|]\\s*)(?:env|printenv|export[ \\t]+-p|declare[ \\t]+-x|set)[ \\t]*(?:$|[#;|>]|>>)"
+    - "JSON\\.stringify\\s*\\(\\s*process\\.env\\b"
+    - "Object\\.entries\\s*\\(\\s*process\\.env\\b"
+  file_types: [python, bash, javascript, typescript]
+  description: "Outputs, serialises, or transmits whole-environment values; targeted reads, keys-only enumeration, and local snapshots remain below this HIGH boundary"
+  remediation: "Read only the specific environment variables the skill needs; never print, serialise, pipe, redirect, or transmit the full process environment"
+
 - id: DATA_EXFIL_BASE64_AND_NETWORK
   category: data_exfiltration
   severity: HIGH
