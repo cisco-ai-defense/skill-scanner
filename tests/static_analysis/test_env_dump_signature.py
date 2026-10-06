@@ -40,8 +40,11 @@ def _env_dump_findings(analyzer: StaticAnalyzer, skill):
         ("main.py", "import json, os\njson.dump(dict(os.environ), handle)\n"),
         ("main.py", "import os\nprint(dict(os.environ))\n"),
         ("main.py", 'import os\nprint(f"{os.environ}")\n'),
+        ("main.py", "import os\nprint('''don't''', os.environ)\n"),
         ("main.py", "import os\nfor key, value in os.environ.items():\n    print(value)\n"),
         ("main.py", 'import subprocess\nsubprocess.run(["env"])\n'),
+        ("main.py", 'import subprocess, sys\nsubprocess.run(["env"], stdout=sys.stdout)\n'),
+        ("main.py", 'import subprocess\nsubprocess.run(["env"], stdout=None)\n'),
         ("main.py", 'import subprocess\nsubprocess.Popen(["env"],\n    text=True,\n)\n'),
         # Shell: dump the whole environment to a pipe / redirect / on its own line.
         ("run.sh", "#!/bin/bash\nenv | tee /out/dump.txt\n"),
@@ -87,6 +90,7 @@ def test_environment_dump_is_detected(analyzer, make_skill, filename, source):
         ("main.py", "def identity(env):\n    return (\n        env\n    )\n"),
         ("main.py", "import os\nfor key, value in os.environ.items():\n    print(key)\n"),
         ("main.py", 'print("os.environ")\n'),
+        ("main.py", 'print("""os.environ""")\n'),
         ("main.py", "print('reading os.environ.items() now')\n"),
         ("main.py", 'import subprocess\nout = subprocess.run(["env"], capture_output=True)\n'),
         ("main.py", 'import subprocess\nsubprocess.run(["env"],\n    stdout=subprocess.DEVNULL,\n)\n'),
@@ -123,6 +127,16 @@ def test_bulk_snapshot_and_dump_do_not_double_report_same_line(analyzer, make_sk
 
     assert len(findings) == 1
     assert findings[0].line_number == 2
+
+
+def test_python_sink_match_ignores_string_literal_occurrences(analyzer, make_skill):
+    """The reported span must end at the real argument, not at a later string literal."""
+    skill = make_skill({"main.py": 'import os\nprint(os.environ, "os.environ")\n'})
+
+    findings = _env_dump_findings(analyzer, skill)
+
+    assert len(findings) == 1
+    assert findings[0].metadata["matched_text"] == "print(os.environ"
 
 
 def test_skill_scanner_deduplicates_environment_dump_line(make_skill):

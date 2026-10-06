@@ -490,25 +490,23 @@ def _mask_python_string_literals(code: str) -> str:
     """Blank out plain string-literal contents, keeping offsets and f-strings intact."""
 
     chars = list(code)
-    quote: str | None = None
-    masking = False
-    escaped = False
-    for index, char in enumerate(code):
-        if quote is not None:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == quote:
-                quote = None
-                continue
-            if masking:
-                chars[index] = " "
+    index = 0
+    while index < len(code):
+        char = code[index]
+        if char not in {"'", '"'}:
+            index += 1
             continue
-        if char in {"'", '"'}:
-            quote = char
-            prefix = re.search(r"[A-Za-z]*$", code[:index])
-            masking = prefix is None or "f" not in prefix.group(0).lower()
+        delimiter = char * 3 if code.startswith(char * 3, index) else char
+        prefix = re.search(r"[A-Za-z]*$", code[:index])
+        masking = prefix is None or "f" not in prefix.group(0).lower()
+        index += len(delimiter)
+        while index < len(code) and not code.startswith(delimiter, index):
+            step = 2 if code[index] == "\\" else 1
+            if masking:
+                for offset in range(index, min(len(code), index + step)):
+                    chars[offset] = " "
+            index += step
+        index += len(delimiter)
     return "".join(chars)
 
 
@@ -555,7 +553,10 @@ def _python_loop_dumps_values(lines: Sequence[str], line_index: int, match: re.M
     return False
 
 
-_PYTHON_SUBPROCESS_CAPTURE_RE = re.compile(r"\b(?:capture_output\s*=\s*True|stdout\s*=)")
+# ``stdout=None`` and ``stdout=sys.stdout`` inherit the parent's stdout, so they do not capture.
+_PYTHON_SUBPROCESS_CAPTURE_RE = re.compile(
+    r"\b(?:capture_output\s*=\s*True|stdout\s*=(?!\s*(?:None|sys\s*\.\s*stdout)\b))"
+)
 
 
 def _python_call_text(lines: Sequence[str], line_index: int, call_start: int) -> str:
@@ -656,11 +657,14 @@ def _scan_env_dump_content(
     for zero_index, line in enumerate(scan_context.lines):
         line_number = zero_index + 1
         match: re.Match[str] | None = None
+        matched_text: str | None = None
         if language == "python":
             code = _strip_python_comment(line)
-            match = None
-            if _PYTHON_ENV_SINK_RE.search(_mask_python_string_literals(code)) is not None:
-                match = _PYTHON_ENV_SINK_RE.search(code)
+            # Match on the masked text so the span never points into a string
+            # literal; masking preserves offsets, so the span is valid for ``code``.
+            match = _PYTHON_ENV_SINK_RE.search(_mask_python_string_literals(code))
+            if match is not None:
+                matched_text = code[match.start() : match.end()]
             if match is None:
                 loop_match = _PYTHON_LOOP_RE.search(code)
                 if loop_match is not None and _python_loop_dumps_values(scan_context.lines, zero_index, loop_match):
@@ -708,7 +712,7 @@ def _scan_env_dump_content(
                 "match_start": relative_match_start,
                 "match_end": relative_match_end,
                 "matched_pattern": "DATA_EXFIL_ENV_DUMP language-aware scanner",
-                "matched_text": match.group(0),
+                "matched_text": matched_text if matched_text is not None else match.group(0),
                 "file_path": file_path,
                 "context_kind": context_kind,
                 "polarity": polarity,
