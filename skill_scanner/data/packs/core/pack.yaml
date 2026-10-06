@@ -167,6 +167,15 @@ rules:
       enabled: true
     description: "Bulk process environment snapshot can expose credentials and tokens"
 
+  DATA_EXFIL_ENV_DUMP:
+    source: signature
+    category: data_exfiltration
+    severity: HIGH
+    knobs:
+      enabled: true
+      skip_in_docs: true
+    description: "Enumerates or serialises the entire process environment (credential exposure)"
+
   DATA_EXFIL_SENSITIVE_FILES:
     source: signature
     category: data_exfiltration

@@ -243,6 +243,7 @@ rule_scoping:
     - "COMMAND_INJECTION_JS_FUNCTION_CONSTRUCTOR"
     - "DATA_EXFIL_JS_NETWORK"
     - "DATA_EXFIL_JS_FS_ACCESS"
+    - "DATA_EXFIL_ENV_DUMP"
 
   # Rules that only fire on code files (python, bash), not markdown/configs
   code_only:

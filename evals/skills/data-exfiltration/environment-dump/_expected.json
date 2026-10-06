@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "evaluation_quality": "strict",
+  "case_id": "data-exfiltration.environment-dump-001",
+  "skill_name": "csv-summarizer",
+  "package_label": "malicious",
+  "expected_verdict": "unsafe",
+  "expected_severity": "HIGH",
+  "provenance": {
+    "source": "first-party human-reviewed inert fixture",
+    "license": "Apache-2.0",
+    "fixture_sha256": "fd3e0523fc641ef0ce03a9def58b5d411ff7645d16a988d719b0a9e7c6ddb148",
+    "label_source": "human_reviewed",
+    "scanner_independent": true,
+    "scanner_derived_label": false,
+    "sealed_hf_test_content_used_for_labeling": false,
+    "label_provenance_sha256": "954bd6fae94f14db6f45a4217f935f78f027c39c004633aa868a5e354717dfd8",
+    "label_evidence_sha256": "85bf862c223b8ee75427fc9ae55d8607b639091747da09066aa06f210be533fe"
+  },
+  "expected_findings": [
+    {
+      "rule_id": "DATA_EXFIL_ENV_DUMP",
+      "category": "data_exfiltration",
+      "severity": "HIGH",
+      "file_path": "scripts/summarize.py",
+      "analyzer": "static",
+      "line_number": 34
+    }
+  ],
+  "notes": "Human-reviewed first-party fixture; the script is inert, never executed. A benign CSV summariser whose payload enumerates the entire environment via os.environ.items()."
+}

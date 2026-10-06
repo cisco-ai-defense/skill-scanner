@@ -555,12 +555,12 @@ class TestDirectorySignatureLoading:
     """Verify RuleLoader correctly loads from a signatures/ directory."""
 
     def test_loader_reads_directory(self):
-        """RuleLoader should load all 46 rules from the signatures/ directory."""
+        """RuleLoader should load all 47 rules from the signatures/ directory."""
         from skill_scanner.core.rules.patterns import RuleLoader
 
         loader = RuleLoader()  # defaults to signatures/ directory
         rules = loader.load_rules()
-        assert len(rules) == 46, f"Expected 46 rules, got {len(rules)}"
+        assert len(rules) == 47, f"Expected 47 rules, got {len(rules)}"
         assert {rule.id for rule in rules} == _load_signature_rule_ids()
 
     def test_loader_has_all_categories(self):

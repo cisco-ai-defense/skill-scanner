@@ -412,6 +412,232 @@ def _has_additional_pattern_match(
     return False
 
 
+_PYTHON_WHOLE_ENV = r"""
+    (?:
+        os\s*\.\s*environ\s*\.\s*(?:items|copy)\s*\(\s*\)
+        |
+        dict\s*\(\s*(?:\*\*\s*)?os\s*\.\s*environ(?:\s*\.\s*items\s*\(\s*\))?\s*\)
+        |
+        os\s*\.\s*environ(?!\s*(?:\[|\.get\s*\(|\.\s*(?:keys|values)\s*\(|\.\s*[A-Za-z_]))
+    )
+"""
+_PYTHON_WHOLE_ENV_RE = re.compile(_PYTHON_WHOLE_ENV, re.VERBOSE)
+_PYTHON_ENV_SINK_RE = re.compile(
+    rf"""
+    \b(?:
+        print|pprint\.pprint|logging\.\w+|logger\.\w+|
+        json\.dump|json\.dumps|
+        requests\.(?:post|put|patch|request)|httpx\.(?:post|put|patch|request)
+    )\s*\([^#\n]{{0,400}}{_PYTHON_WHOLE_ENV}
+    """,
+    re.VERBOSE,
+)
+_PYTHON_LOOP_RE = re.compile(
+    r"\bfor\s+(?P<key>[A-Za-z_]\w*)\s*,\s*(?P<value>[A-Za-z_]\w*)\s+in\s+"
+    r"os\s*\.\s*environ(?:\s*\.\s*items\s*\(\s*\))?\s*:",
+)
+_PYTHON_SUBPROCESS_ENV_RE = re.compile(
+    r"\b(?:(?P<var>[A-Za-z_]\w*)\s*=\s*)?subprocess\.(?:run|check_output|Popen)\s*\("
+    r"[^#\n]{0,200}(?:['\"]env['\"]|\[\s*['\"]env['\"])",
+)
+_PYTHON_NETWORK_SINK_RE = re.compile(r"\b(?:requests|httpx)\.(?:post|put|patch|request)\s*\(")
+_JS_WHOLE_PROCESS_ENV = r"process\.env\b(?!\s*(?:\.|\[))"
+_JS_ENV_SERIALIZE_RE = re.compile(
+    rf"\b(?:JSON\.stringify|console\.(?:log|info|warn|error))\s*\([^;\n]{{0,240}}{_JS_WHOLE_PROCESS_ENV}"
+)
+_JS_ENTRIES_SINK_RE = re.compile(
+    rf"Object\.entries\s*\(\s*{_JS_WHOLE_PROCESS_ENV}\s*\)[^;\n]{{0,320}}"
+    r"(?:console\.(?:log|info|warn|error)|fetch\s*\(|axios\.(?:post|put|patch|request))"
+)
+_SHELL_DUMP_COMMAND_RE = re.compile(
+    r"(?:^|[;&|]\s*)"
+    r"(?P<cmd>env|printenv|export[ \t]+-p|declare[ \t]+-x|set)"
+    r"(?P<tail>[ \t]*(?:$|[#;|>]|>>))"
+)
+_SHELL_SUBSTITUTION_RE = re.compile(r"\$\(\s*(?:env|printenv|export[ \t]+-p|declare[ \t]+-x|set)\s*\)")
+_SHELL_FILTERED_ENV_RE = re.compile(r"(?:^|[;&|]\s*)(?:env|printenv)[ \t]*\|[ \t]*grep\b")
+
+
+def _strip_python_comment(line: str) -> str:
+    """Return a conservative Python code prefix for signature precision."""
+
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if quote is not None:
+            if char == quote:
+                quote = None
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            continue
+        if char == "#":
+            return line[:index]
+    return line
+
+
+def _is_comment_only_match(line: str, match_start: int, language: str) -> bool:
+    prefix = line[:match_start].strip()
+    stripped = line.strip()
+    if language == "python":
+        return stripped.startswith("#")
+    if language == "shell":
+        return stripped.startswith("#")
+    if language in {"javascript", "typescript"}:
+        return stripped.startswith(("//", "/*", "*")) or prefix.endswith("/*")
+    return False
+
+
+def _line_indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" \t"))
+
+
+def _contains_both_identifiers(line: str, first: str, second: str) -> bool:
+    return (
+        re.search(rf"\b{re.escape(first)}\b", line) is not None
+        and re.search(rf"\b{re.escape(second)}\b", line) is not None
+    )
+
+
+def _python_loop_dumps_values(lines: Sequence[str], line_index: int, match: re.Match[str]) -> bool:
+    key = match.group("key")
+    value = match.group("value")
+    line = _strip_python_comment(lines[line_index])
+    inline_body = line[match.end() :]
+    if _contains_both_identifiers(inline_body, key, value) and (
+        "print" in inline_body or _PYTHON_NETWORK_SINK_RE.search(inline_body)
+    ):
+        return True
+
+    base_indent = _line_indent(lines[line_index])
+    for body_line in lines[line_index + 1 : min(len(lines), line_index + 9)]:
+        if not body_line.strip():
+            continue
+        if _line_indent(body_line) <= base_indent:
+            break
+        code = _strip_python_comment(body_line)
+        if _contains_both_identifiers(code, key, value) and (
+            "print" in code or "json.dump" in code or _PYTHON_NETWORK_SINK_RE.search(code) or "urlopen" in code
+        ):
+            return True
+    return False
+
+
+def _python_subprocess_env_is_exfiltrated(lines: Sequence[str], line_index: int, match: re.Match[str]) -> bool:
+    line = _strip_python_comment(lines[line_index])
+    if _PYTHON_NETWORK_SINK_RE.search(line[match.end() :]) or "urlopen" in line[match.end() :]:
+        return True
+    var = match.group("var")
+    if var is None:
+        return False
+    for later in lines[line_index + 1 : min(len(lines), line_index + 7)]:
+        code = _strip_python_comment(later)
+        if re.search(rf"\b{re.escape(var)}\b", code) and (_PYTHON_NETWORK_SINK_RE.search(code) or "urlopen" in code):
+            return True
+    return False
+
+
+def _env_dump_language(file_path: str | None, content: str) -> str | None:
+    path = Path((file_path or "").replace("\\", "/"))
+    suffix = path.suffix.lower()
+    if suffix == ".py":
+        return "python"
+    if suffix in {".js", ".mjs", ".cjs"}:
+        return "javascript"
+    if suffix in {".ts", ".tsx"}:
+        return "typescript"
+    if suffix in {".sh", ".bash", ".zsh"}:
+        return "shell"
+    first_line = content.splitlines()[0] if content.splitlines() else ""
+    if first_line.startswith("#!") and re.search(r"\b(?:ba|z|k)?sh\b|\benv\s+(?:ba|z|k)?sh\b", first_line):
+        return "shell"
+    return None
+
+
+def _scan_env_dump_content(
+    content: str,
+    file_path: str | None,
+    scan_context: SignatureScanContext,
+) -> list[dict[str, Any]]:
+    """Scan DATA_EXFIL_ENV_DUMP with language-aware behavior boundaries."""
+
+    language = _env_dump_language(file_path, content)
+    if language is None:
+        return []
+
+    results: list[dict[str, Any]] = []
+    seen_lines: set[int] = set()
+    for zero_index, line in enumerate(scan_context.lines):
+        line_number = zero_index + 1
+        match: re.Match[str] | None = None
+        if language == "python":
+            code = _strip_python_comment(line)
+            match = _PYTHON_ENV_SINK_RE.search(code)
+            if match is None:
+                loop_match = _PYTHON_LOOP_RE.search(code)
+                if loop_match is not None and _python_loop_dumps_values(scan_context.lines, zero_index, loop_match):
+                    match = loop_match
+            if match is None:
+                subprocess_match = _PYTHON_SUBPROCESS_ENV_RE.search(code)
+                if subprocess_match is not None and _python_subprocess_env_is_exfiltrated(
+                    scan_context.lines, zero_index, subprocess_match
+                ):
+                    match = subprocess_match
+        elif language in {"javascript", "typescript"}:
+            match = _JS_ENV_SERIALIZE_RE.search(line) or _JS_ENTRIES_SINK_RE.search(line)
+        else:
+            stripped = line.strip()
+            if stripped.startswith("#!") or stripped.startswith("#") or _SHELL_FILTERED_ENV_RE.search(line):
+                match = None
+            else:
+                match = _SHELL_SUBSTITUTION_RE.search(line) or _SHELL_DUMP_COMMAND_RE.search(line)
+                if (
+                    match is not None
+                    and match.group(0).lstrip().startswith("set")
+                    and re.match(r"\s*set\s+-", match.group(0))
+                ):
+                    match = None
+
+        if match is None or _is_comment_only_match(line, match.start(), language):
+            continue
+        if line_number in seen_lines:
+            continue
+        seen_lines.add(line_number)
+
+        stripped_line = line.strip()
+        leading_space = len(line) - len(line.lstrip())
+        relative_match_start = max(0, match.start() - leading_space)
+        relative_match_end = min(len(stripped_line), match.end() - leading_space)
+        context_kind, polarity = scan_context.classify_match(
+            zero_index,
+            file_path,
+            match_start=match.start(),
+            match_end=match.end(),
+            additional_active_match=False,
+        )
+        results.append(
+            {
+                "line_number": line_number,
+                "line_content": stripped_line,
+                "pattern_index": None,
+                "match_start": relative_match_start,
+                "match_end": relative_match_end,
+                "matched_pattern": "DATA_EXFIL_ENV_DUMP language-aware scanner",
+                "matched_text": match.group(0),
+                "file_path": file_path,
+                "context_kind": context_kind,
+                "polarity": polarity,
+            }
+        )
+    return results
+
+
 class SecurityRule:
     """Represents a security detection rule."""
 
@@ -494,6 +720,8 @@ class SecurityRule:
         # with different content rather than returning mismatched line data.
         if scan_context is None or scan_context.content is not content:
             scan_context = SignatureScanContext(content)
+        if self.id == "DATA_EXFIL_ENV_DUMP":
+            return _scan_env_dump_content(content, file_path, scan_context)
         lines = scan_context.lines
         for line_num, line in enumerate(lines, start=1):
             # Check exclude patterns first

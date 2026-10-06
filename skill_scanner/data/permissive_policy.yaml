@@ -252,6 +252,7 @@ rule_scoping:
     - "COMMAND_INJECTION_JS_FUNCTION_CONSTRUCTOR"
     - "DATA_EXFIL_JS_NETWORK"
     - "DATA_EXFIL_JS_FS_ACCESS"
+    - "DATA_EXFIL_ENV_DUMP"
 
   code_only:
     - "prompt_injection_unicode_steganography"

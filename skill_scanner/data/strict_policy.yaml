@@ -108,6 +108,7 @@ rule_scoping:
     - "COMMAND_INJECTION_JS_FUNCTION_CONSTRUCTOR"
     - "DATA_EXFIL_JS_NETWORK"
     - "DATA_EXFIL_JS_FS_ACCESS"
+    - "DATA_EXFIL_ENV_DUMP"
 
   # Unicode steganography fires on everything (strict wants max coverage)
   code_only:
