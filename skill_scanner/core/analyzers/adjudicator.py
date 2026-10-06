@@ -49,6 +49,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ...llm_reasoning import ReasoningConfigurationError, build_litellm_reasoning_params, normalize_llm_reasoning_effort
 from ..models import Finding, Severity, Skill
 from ..rule_registry import PackLoader
 from .llm_provider_config import ProviderConfig
@@ -220,6 +221,41 @@ def _parse_adjudicator_content(content: str) -> dict[str, Any] | None:
     return parsed
 
 
+_REASONING_EFFORT_ENV = "SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT"
+
+
+def _resolve_reasoning_effort(default: str = "disabled") -> str:
+    """Resolve the adjudicator's reasoning effort from the environment.
+
+    The adjudicator caps its answer at 200 tokens, and reasoning tokens count
+    against that cap. A model that thinks by default (Claude Sonnet 5 treats an
+    omitted ``thinking`` field as adaptive thinking) can spend all 200 tokens
+    before it writes the JSON verdict, or leave only a cut-off fragment. Reasoning
+    is therefore off unless ``SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT``
+    names another level. The global ``SKILL_SCANNER_LLM_REASONING_EFFORT`` is
+    deliberately not a fallback: it targets the main analyzers, which have a large
+    output budget.
+    """
+    raw = os.environ.get(_REASONING_EFFORT_ENV, "").strip()
+    if not raw:
+        return default
+    try:
+        return normalize_llm_reasoning_effort(raw, source=_REASONING_EFFORT_ENV) or default
+    except ReasoningConfigurationError as exc:
+        logger.warning("Ignoring invalid %s=%r (%s); using %s", _REASONING_EFFORT_ENV, raw, exc, default)
+        return default
+
+
+def _finish_reason(response: Any) -> str | None:
+    """Return the first choice's ``finish_reason`` as a string, or ``None``."""
+    try:
+        choice = response["choices"][0]
+        reason = choice.get("finish_reason") if isinstance(choice, dict) else getattr(choice, "finish_reason", None)
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
+    return reason if isinstance(reason, str) else None
+
+
 def _resolve_model() -> str | None:
     """Resolve the LLM model from env vars.
 
@@ -299,6 +335,7 @@ class Adjudicator:
             model = "apple-fm/system"
         self.model: str | None = model
         self.temperature = _resolve_temperature(model=self.model)
+        self.reasoning_effort = _resolve_reasoning_effort()
 
         # Lazy-loaded rule registry — only touched if we actually
         # adjudicate anything, so the adjudicator being enabled at
@@ -520,8 +557,12 @@ class Adjudicator:
         }
         if self.temperature is not None:
             request["temperature"] = self.temperature
+        # Keep reasoning tokens out of the 200-token answer budget (see
+        # ``_resolve_reasoning_effort``). Applied last so it wins over provider params.
+        request.update(build_litellm_reasoning_params(self.reasoning_effort, model=model, provider=self.provider))
 
         content = ""
+        finish_reason: str | None = None
         last_exc: Exception | None = None
         with _LLM_LOCK:
             for attempt in range(self.max_retries + 1):
@@ -532,6 +573,7 @@ class Adjudicator:
                     _add_token_usage(self._llm_usage, _extract_token_usage(response))
                     content = response["choices"][0]["message"]["content"] or ""
                     content = content.strip()
+                    finish_reason = _finish_reason(response)
                     break
                 except Exception as exc:
                     last_exc = exc
@@ -555,7 +597,10 @@ class Adjudicator:
         end = content.rfind("}")
         if start == -1 or end == -1 or end <= start:
             logger.debug("adjudicator response had no JSON: %r", content[:200])
-            self._note_llm_failure("response contained no JSON object")
+            if finish_reason == "length":
+                self._note_llm_failure("response was cut off at the 200-token limit (finish_reason=length)")
+            else:
+                self._note_llm_failure("response contained no JSON object")
             return None
         try:
             parsed = json.loads(content[start : end + 1])

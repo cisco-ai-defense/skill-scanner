@@ -654,3 +654,95 @@ class TestAdjudicatorProviderCredentials:
         assert "not producing verdicts" in warnings[0].getMessage()
         # Demote-only invariant is untouched by the new reporting.
         assert all(f.severity in (Severity.HIGH, Severity.CRITICAL) for f in findings)
+
+
+class TestAdjudicatorReasoning:
+    """Reasoning tokens share the 200-token answer cap, so reasoning is off by default.
+
+    A model that thinks when no ``thinking`` field is sent (Claude Sonnet 5 treats
+    an omitted field as adaptive thinking) can spend the whole cap before the JSON
+    verdict, which leaves an empty or cut-off answer and a failed adjudication.
+    """
+
+    @staticmethod
+    def _request(monkeypatch: pytest.MonkeyPatch, model: str, **env: str) -> dict[str, Any]:
+        monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", model)
+        monkeypatch.delenv("SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT", raising=False)
+        monkeypatch.delenv("SKILL_SCANNER_LLM_REASONING_EFFORT", raising=False)
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("false_positive", 5)
+            Adjudicator(max_retries=0)._call_llm("prompt")
+        return mock_call.call_args.kwargs
+
+    def test_anthropic_request_disables_thinking(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        request = self._request(monkeypatch, "anthropic/claude-sonnet-5")
+        assert request["thinking"] == {"type": "disabled"}
+        assert "reasoning_effort" not in request
+        assert request["max_tokens"] == 200
+
+    def test_other_providers_use_reasoning_effort_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        request = self._request(monkeypatch, "openai/example-model")
+        assert request["reasoning_effort"] == "none"
+        assert "thinking" not in request
+
+    def test_adjudicator_env_selects_another_level(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        request = self._request(
+            monkeypatch, "anthropic/claude-sonnet-5", SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT="low"
+        )
+        assert request["reasoning_effort"] == "low"
+        assert "thinking" not in request
+
+    def test_invalid_env_falls_back_to_disabled_with_a_warning(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING):
+            request = self._request(
+                monkeypatch, "anthropic/claude-sonnet-5", SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT="bogus"
+            )
+        assert request["thinking"] == {"type": "disabled"}
+        assert any("SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT" in r.getMessage() for r in caplog.records)
+
+    def test_global_reasoning_env_does_not_reach_the_adjudicator(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The global setting targets the main analyzers, which have a large output budget.
+        request = self._request(monkeypatch, "anthropic/claude-sonnet-5", SKILL_SCANNER_LLM_REASONING_EFFORT="high")
+        assert request["thinking"] == {"type": "disabled"}
+        assert "reasoning_effort" not in request
+
+
+class TestAdjudicatorTruncationReason:
+    """A cut-off answer is reported as such, not as a missing JSON object."""
+
+    @staticmethod
+    def _truncated(content: str) -> Any:
+        response_type = type("MockLiteLLMResponse", (dict,), {})
+        resp: Any = response_type({"choices": [{"finish_reason": "length", "message": {"content": content}}]})
+        resp.usage = MagicMock(prompt_tokens=1, completion_tokens=200, total_tokens=201)
+        return resp
+
+    @pytest.mark.parametrize("content", ["", '{"verdict": "false_positive", "confidence": 5, "reason": "cut'])
+    def test_length_stop_without_closing_brace_names_the_limit(
+        self, content: str, with_model_env: None, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING):
+            with patch("litellm.completion", return_value=self._truncated(content)):
+                assert Adjudicator(max_retries=0)._call_llm("prompt") is None
+        messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("finish_reason=length" in m for m in messages)
+        assert not any("no JSON object" in m for m in messages)
+
+    def test_missing_json_without_a_length_stop_keeps_the_old_reason(
+        self, with_model_env: None, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING):
+            with patch("litellm.completion", return_value=_mock_litellm_response_text("plain prose")):
+                assert Adjudicator(max_retries=0)._call_llm("prompt") is None
+        assert any("no JSON object" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+
+
+def _mock_litellm_response_text(text: str) -> Any:
+    response_type = type("MockLiteLLMResponse", (dict,), {})
+    resp: Any = response_type({"choices": [{"finish_reason": "stop", "message": {"content": text}}]})
+    resp.usage = MagicMock(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+    return resp

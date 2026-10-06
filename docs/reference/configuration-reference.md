@@ -35,6 +35,7 @@ Primary settings for the LLM semantic analyzer.
 | `SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT` | Repair for a self-contradicting model response, **on by default**. Some models return a `SAFE` package verdict together with a non-empty findings array, which the strict parser rejects, discarding the whole analysis -- on benign skills far more often than malicious ones, so the skill goes un-analysed and passes the gate. The verdict is escalated to `SUSPICIOUS` and the findings are kept. Escalate-only: it never downgrades a verdict, so it cannot hide a detection. Set `0`, `false`, `no` or `off` to restore the strict path. | `0` |
 | `SKILL_SCANNER_LLM_TEMPERATURE` | Sampling temperature for LLM requests, or `none` to omit it. When unset, the scanner sends 0 and omits it for models that reject it (Claude Sonnet 5.x, Opus 4.7 and later, Fable, OpenAI reasoning models). | `none` |
 | `SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE` | Adjudicator sampling temperature override, or `none` to omit it; falls back to `SKILL_SCANNER_LLM_TEMPERATURE`. | `0` |
+| `SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT` | Adjudicator reasoning level (`disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). The adjudicator caps its answer at 200 tokens and reasoning tokens count against the cap, so reasoning is off by default. Does not fall back to `SKILL_SCANNER_LLM_REASONING_EFFORT`. | `disabled` |
 
 ## Meta Analyzer
 
@@ -146,6 +147,7 @@ The OSV analyzer queries [OSV.dev](https://osv.dev) for known-vulnerable pinned 
 | `ENABLE_STATIC_ANALYZER` | `skill_scanner/config/config.py` |
 | `GEMINI_API_KEY` | `skill_scanner/core/analyzers/llm_provider_config.py` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `.env.example` |
+| `SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT` | `skill_scanner/core/analyzers/adjudicator.py` |
 | `SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE` | `skill_scanner/core/analyzers/adjudicator.py` |
 | `SKILL_SCANNER_ALLOWED_ROOTS` | `skill_scanner/api/router.py` |
 | `SKILL_SCANNER_LLM_API_KEY` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
@@ -154,7 +156,7 @@ The OSV analyzer queries [OSV.dev](https://osv.dev) for known-vulnerable pinned 
 | `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` | `.env.example` |
 | `SKILL_SCANNER_LLM_MAX_TOKENS` | `.env.example`, `skill_scanner/llm_token_options.py` |
 | `SKILL_SCANNER_LLM_MODEL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
-| `SKILL_SCANNER_LLM_PROVIDER` | `.env.example`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
+| `SKILL_SCANNER_LLM_PROVIDER` | `.env.example`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_REASONING_EFFORT` | `.env.example`, `skill_scanner/llm_reasoning.py` |
 | `SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT` | `skill_scanner/core/analyzers/llm_analyzer.py` |
 | `SKILL_SCANNER_LLM_TEMPERATURE` | `skill_scanner/core/analyzers/llm_request_handler.py` |

@@ -67,6 +67,7 @@ Environment variables (in order of precedence):
 
 - `SKILL_SCANNER_ADJUDICATOR_LLM_MODEL` — model override specific to the adjudicator
 - `SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE` — temperature override, or `"none"` to omit
+- `SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT` — reasoning level (`disabled` by default). The verdict is capped at 200 tokens and reasoning tokens count against the cap, so a reasoning model can run out of tokens before the JSON verdict. `SKILL_SCANNER_LLM_REASONING_EFFORT` is not a fallback
 - `SKILL_SCANNER_LLM_MODEL` — fallback if the adjudicator-specific var is unset
 - `SKILL_SCANNER_LLM_TEMPERATURE` — fallback if the adjudicator-specific var is unset
 

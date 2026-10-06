@@ -437,7 +437,10 @@ def _collect_env_variables() -> dict[str, set[str]]:
         ),
         "skill_scanner/core/analyzers/llm_request_handler.py": ("SKILL_SCANNER_LLM_TEMPERATURE",),
         "skill_scanner/core/analyzers/meta_analyzer.py": ("SKILL_SCANNER_META_LLM_TEMPERATURE",),
-        "skill_scanner/core/analyzers/adjudicator.py": ("SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE",),
+        "skill_scanner/core/analyzers/adjudicator.py": (
+            "SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE",
+            "SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT",
+        ),
     }
     for source, variables in runtime_env_sources.items():
         for var in variables:
@@ -565,6 +568,11 @@ def _describe_env_var(var: str) -> str:
             "Adjudicator sampling temperature override, or `none` to omit it; falls back to "
             "`SKILL_SCANNER_LLM_TEMPERATURE`."
         ),
+        "SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT": (
+            "Adjudicator reasoning level (`disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). The "
+            "adjudicator caps its answer at 200 tokens and reasoning tokens count against the cap, so reasoning is "
+            "off by default. Does not fall back to `SKILL_SCANNER_LLM_REASONING_EFFORT`."
+        ),
         "SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT": "Repair for a self-contradicting model response, **on by default**. Some models return a `SAFE` package verdict together with a non-empty findings array, which the strict parser rejects, discarding the whole analysis -- on benign skills far more often than malicious ones, so the skill goes un-analysed and passes the gate. The verdict is escalated to `SUSPICIOUS` and the findings are kept. Escalate-only: it never downgrades a verdict, so it cannot hide a detection. Set `0`, `false`, `no` or `off` to restore the strict path.",
         "SKILL_SCANNER_META_LLM_TEMPERATURE": "Meta-analyzer sampling temperature override. Lower values make the arbitration more repeatable; note that temperature 0 is not determinism, and replays of the same input can still differ.",
         "SKILL_SCANNER_SYSTEM_ONE_API_KEY": (
@@ -597,6 +605,7 @@ _ENV_VAR_GROUPS: list[tuple[str, str, list[str]]] = [
             "SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT",
             "SKILL_SCANNER_LLM_TEMPERATURE",
             "SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE",
+            "SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT",
         ],
     ),
     (
@@ -669,6 +678,7 @@ _ENV_VAR_EXAMPLES: dict[str, str] = {
     "SKILL_SCANNER_SYSTEM_ONE_API_KEY": "(provider token)",
     "SKILL_SCANNER_LLM_TEMPERATURE": "none",
     "SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE": "0",
+    "SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT": "disabled",
     "SKILL_SCANNER_META_LLM_API_KEY": "(falls back to LLM_API_KEY)",
     "SKILL_SCANNER_META_LLM_MODEL": "(falls back to LLM_MODEL)",
     "SKILL_SCANNER_META_LLM_BASE_URL": "(falls back to LLM_BASE_URL)",
