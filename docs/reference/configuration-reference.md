@@ -35,7 +35,8 @@ Primary settings for the LLM semantic analyzer.
 | `SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT` | Repair for a self-contradicting model response, **on by default**. Some models return a `SAFE` package verdict together with a non-empty findings array, which the strict parser rejects, discarding the whole analysis -- on benign skills far more often than malicious ones, so the skill goes un-analysed and passes the gate. The verdict is escalated to `SUSPICIOUS` and the findings are kept. Escalate-only: it never downgrades a verdict, so it cannot hide a detection. Set `0`, `false`, `no` or `off` to restore the strict path. | `0` |
 | `SKILL_SCANNER_LLM_TEMPERATURE` | Sampling temperature for LLM requests, or `none` to omit it. When unset, the scanner sends 0 and omits it for models that reject it (Claude Sonnet 5.x, Opus 4.7 and later, Fable, OpenAI reasoning models). | `none` |
 | `SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE` | Adjudicator sampling temperature override, or `none` to omit it; falls back to `SKILL_SCANNER_LLM_TEMPERATURE`. | `0` |
-| `SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT` | Adjudicator reasoning level (`disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). The adjudicator caps its answer at 200 tokens and reasoning tokens count against the cap, so reasoning is off by default. Does not fall back to `SKILL_SCANNER_LLM_REASONING_EFFORT`. | `disabled` |
+| `SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT` | Adjudicator reasoning level (`disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). The adjudicator's answer-token budget is small and reasoning tokens count against it, so reasoning is off by default. Does not fall back to `SKILL_SCANNER_LLM_REASONING_EFFORT`. | `disabled` |
+| `SKILL_SCANNER_ADJUDICATOR_LLM_MAX_TOKENS` | Adjudicator answer-token budget override. A secondary safety net, not the fix for a truncated answer: raise it only if a verdict genuinely needs more than one sentence. Does not fall back to `SKILL_SCANNER_LLM_MAX_TOKENS`, which targets the semantic and meta analyzers and defaults far higher. | `200` |
 
 ## Meta Analyzer
 
@@ -147,6 +148,7 @@ The OSV analyzer queries [OSV.dev](https://osv.dev) for known-vulnerable pinned 
 | `ENABLE_STATIC_ANALYZER` | `skill_scanner/config/config.py` |
 | `GEMINI_API_KEY` | `skill_scanner/core/analyzers/llm_provider_config.py` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `.env.example` |
+| `SKILL_SCANNER_ADJUDICATOR_LLM_MAX_TOKENS` | `skill_scanner/core/analyzers/adjudicator.py` |
 | `SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT` | `skill_scanner/core/analyzers/adjudicator.py` |
 | `SKILL_SCANNER_ADJUDICATOR_LLM_TEMPERATURE` | `skill_scanner/core/analyzers/adjudicator.py` |
 | `SKILL_SCANNER_ALLOWED_ROOTS` | `skill_scanner/api/router.py` |

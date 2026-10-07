@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from ...llm_reasoning import ReasoningConfigurationError, build_litellm_reasoning_params, normalize_llm_reasoning_effort
+from ...llm_token_options import validate_llm_max_tokens
 from ..models import Finding, Severity, Skill
 from ..rule_registry import PackLoader
 from .llm_provider_config import ProviderConfig
@@ -227,14 +228,14 @@ _REASONING_EFFORT_ENV = "SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT"
 def _resolve_reasoning_effort(default: str = "disabled") -> str:
     """Resolve the adjudicator's reasoning effort from the environment.
 
-    The adjudicator caps its answer at 200 tokens, and reasoning tokens count
-    against that cap. A model that thinks by default (Claude Sonnet 5 treats an
-    omitted ``thinking`` field as adaptive thinking) can spend all 200 tokens
-    before it writes the JSON verdict, or leave only a cut-off fragment. Reasoning
-    is therefore off unless ``SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT``
-    names another level. The global ``SKILL_SCANNER_LLM_REASONING_EFFORT`` is
-    deliberately not a fallback: it targets the main analyzers, which have a large
-    output budget.
+    The adjudicator's answer-token budget (see ``_resolve_max_tokens``) is small
+    by design, and reasoning tokens count against it. A model that thinks by
+    default (Claude Sonnet 5 treats an omitted ``thinking`` field as adaptive
+    thinking) can spend the whole budget before it writes the JSON verdict, or
+    leave only a cut-off fragment. Reasoning is therefore off unless
+    ``SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT`` names another level. The
+    global ``SKILL_SCANNER_LLM_REASONING_EFFORT`` is deliberately not a
+    fallback: it targets the main analyzers, which have a large output budget.
     """
     raw = os.environ.get(_REASONING_EFFORT_ENV, "").strip()
     if not raw:
@@ -254,6 +255,39 @@ def _finish_reason(response: Any) -> str | None:
     except (KeyError, IndexError, TypeError, AttributeError):
         return None
     return reason if isinstance(reason, str) else None
+
+
+_MAX_TOKENS_ENV = "SKILL_SCANNER_ADJUDICATOR_LLM_MAX_TOKENS"
+_DEFAULT_MAX_TOKENS = 200
+
+
+def _resolve_max_tokens(default: int = _DEFAULT_MAX_TOKENS) -> int:
+    """Resolve the adjudicator's output-token budget from the environment.
+
+    200 tokens comfortably fits the one-sentence verdict this pass asks for --
+    every successful call measured so far used 85-168 of them -- so raising
+    this is a secondary safety net, not the fix for truncated answers.
+    ``_resolve_reasoning_effort`` is: a model that reasons by default can spend
+    the whole budget on reasoning tokens before the JSON verdict, and no
+    ``max_tokens`` increase changes that. ``SKILL_SCANNER_LLM_MAX_TOKENS`` is
+    not read here, deliberately: that variable's default (8192) targets the
+    semantic and meta analyzers, which return much more than one sentence, and
+    inheriting it would multiply the adjudicator's per-finding cost for no
+    benefit if reasoning is already disabled.
+    """
+    raw = os.environ.get(_MAX_TOKENS_ENV, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Ignoring invalid %s=%r (not an integer); using %s", _MAX_TOKENS_ENV, raw, default)
+        return default
+    try:
+        return validate_llm_max_tokens(value, source=_MAX_TOKENS_ENV)
+    except ValueError as exc:
+        logger.warning("Ignoring invalid %s=%r (%s); using %s", _MAX_TOKENS_ENV, raw, exc, default)
+        return default
 
 
 def _resolve_model() -> str | None:
@@ -336,6 +370,7 @@ class Adjudicator:
         self.model: str | None = model
         self.temperature = _resolve_temperature(model=self.model)
         self.reasoning_effort = _resolve_reasoning_effort()
+        self.max_tokens = _resolve_max_tokens()
 
         # Lazy-loaded rule registry — only touched if we actually
         # adjudicate anything, so the adjudicator being enabled at
@@ -535,7 +570,7 @@ class Adjudicator:
         # Spread FIRST so the adjudicator's own parameters win by construction
         # rather than by a promise about what get_request_params returns today: a
         # future `max_tokens` or `timeout` key there must not silently override
-        # this pass's deliberate 200-token cap and per-request timeout. `model` is
+        # this pass's answer-token budget and per-request timeout. `model` is
         # the one value the resolver may legitimately override (OpenAI-compatible
         # prefixing), so it is taken explicitly instead of being clobbered.
         provider_params = self._provider_params()
@@ -552,12 +587,12 @@ class Adjudicator:
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            "max_tokens": 200,
+            "max_tokens": self.max_tokens,
             "timeout": self.timeout,
         }
         if self.temperature is not None:
             request["temperature"] = self.temperature
-        # Keep reasoning tokens out of the 200-token answer budget (see
+        # Keep reasoning tokens out of the answer-token budget (see
         # ``_resolve_reasoning_effort``). Applied last so it wins over provider params.
         request.update(build_litellm_reasoning_params(self.reasoning_effort, model=model, provider=self.provider))
 
@@ -598,7 +633,9 @@ class Adjudicator:
         if start == -1 or end == -1 or end <= start:
             logger.debug("adjudicator response had no JSON: %r", content[:200])
             if finish_reason == "length":
-                self._note_llm_failure("response was cut off at the 200-token limit (finish_reason=length)")
+                self._note_llm_failure(
+                    f"response was cut off at the {self.max_tokens}-token limit (finish_reason=length)"
+                )
             else:
                 self._note_llm_failure("response contained no JSON object")
             return None
@@ -626,7 +663,7 @@ class Adjudicator:
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=200,
+                max_tokens=self.max_tokens,
                 temperature=self.temperature,
                 timeout=self.timeout,
             )

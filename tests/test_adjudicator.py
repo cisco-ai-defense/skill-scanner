@@ -746,3 +746,56 @@ def _mock_litellm_response_text(text: str) -> Any:
     resp: Any = response_type({"choices": [{"finish_reason": "stop", "message": {"content": text}}]})
     resp.usage = MagicMock(prompt_tokens=1, completion_tokens=1, total_tokens=2)
     return resp
+
+
+class TestAdjudicatorMaxTokens:
+    """The answer-token budget is a secondary safety net, independent of reasoning control.
+
+    Default 200 is unchanged; the override exists for a verdict that genuinely needs
+    more than one sentence, not as the fix for a reasoning model eating the budget.
+    """
+
+    @staticmethod
+    def _request(monkeypatch: pytest.MonkeyPatch, **env: str) -> dict[str, Any]:
+        monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "anthropic/claude-sonnet-5")
+        monkeypatch.delenv("SKILL_SCANNER_ADJUDICATOR_LLM_MAX_TOKENS", raising=False)
+        monkeypatch.delenv("SKILL_SCANNER_LLM_MAX_TOKENS", raising=False)
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        with patch("litellm.completion") as mock_call:
+            mock_call.return_value = _mock_litellm_response("false_positive", 5)
+            Adjudicator(max_retries=0)._call_llm("prompt")
+        return mock_call.call_args.kwargs
+
+    def test_default_is_200(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert self._request(monkeypatch)["max_tokens"] == 200
+
+    def test_env_overrides_the_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert self._request(monkeypatch, SKILL_SCANNER_ADJUDICATOR_LLM_MAX_TOKENS="500")["max_tokens"] == 500
+
+    @pytest.mark.parametrize("raw", ["0", "-1", "not-a-number", "3.5"])
+    def test_invalid_value_falls_back_to_200_with_a_warning(
+        self, raw: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING):
+            request = self._request(monkeypatch, SKILL_SCANNER_ADJUDICATOR_LLM_MAX_TOKENS=raw)
+        assert request["max_tokens"] == 200
+        assert any("SKILL_SCANNER_ADJUDICATOR_LLM_MAX_TOKENS" in r.getMessage() for r in caplog.records)
+
+    def test_global_max_tokens_env_does_not_reach_the_adjudicator(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # SKILL_SCANNER_LLM_MAX_TOKENS targets the semantic/meta analyzers (default 8192);
+        # inheriting it here would multiply adjudicator cost for no benefit.
+        assert self._request(monkeypatch, SKILL_SCANNER_LLM_MAX_TOKENS="8192")["max_tokens"] == 200
+
+    def test_truncation_message_names_the_configured_limit(
+        self, monkeypatch: pytest.MonkeyPatch, with_model_env: None, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setenv("SKILL_SCANNER_ADJUDICATOR_LLM_MAX_TOKENS", "500")
+        response_type = type("MockLiteLLMResponse", (dict,), {})
+        resp: Any = response_type({"choices": [{"finish_reason": "length", "message": {"content": ""}}]})
+        resp.usage = MagicMock(prompt_tokens=1, completion_tokens=500, total_tokens=501)
+        with caplog.at_level(logging.WARNING):
+            with patch("litellm.completion", return_value=resp):
+                assert Adjudicator(max_retries=0)._call_llm("prompt") is None
+        messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("500-token limit" in m for m in messages)
