@@ -158,7 +158,7 @@ The OSV analyzer queries [OSV.dev](https://osv.dev) for known-vulnerable pinned 
 | `SKILL_SCANNER_LLM_FORCE_JSON_OBJECT` | `.env.example` |
 | `SKILL_SCANNER_LLM_MAX_TOKENS` | `.env.example`, `skill_scanner/llm_token_options.py` |
 | `SKILL_SCANNER_LLM_MODEL` | `.env.example`, `skill_scanner/cli/cli.py`, `skill_scanner/config/config.py`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
-| `SKILL_SCANNER_LLM_PROVIDER` | `.env.example`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/behavioral_analyzer.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
+| `SKILL_SCANNER_LLM_PROVIDER` | `.env.example`, `skill_scanner/core/analyzer_factory.py`, `skill_scanner/core/analyzers/llm_analyzer.py`, `skill_scanner/core/analyzers/llm_provider_config.py`, `skill_scanner/core/analyzers/meta_analyzer.py` |
 | `SKILL_SCANNER_LLM_REASONING_EFFORT` | `.env.example`, `skill_scanner/llm_reasoning.py` |
 | `SKILL_SCANNER_LLM_REPAIR_INCONSISTENT_VERDICT` | `skill_scanner/core/analyzers/llm_analyzer.py` |
 | `SKILL_SCANNER_LLM_TEMPERATURE` | `skill_scanner/core/analyzers/llm_request_handler.py` |
