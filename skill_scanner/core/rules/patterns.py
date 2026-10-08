@@ -487,21 +487,32 @@ def _strip_python_comment(line: str) -> str:
 
 
 def _mask_python_string_literals(code: str) -> str:
-    """Blank literal text while retaining expressions inside f-strings and offsets."""
+    """Blank comments and literals across lines, retaining f-string expressions."""
 
     chars = list(code)
     index = 0
     while index < len(code):
         char = code[index]
+        if char == "#":
+            end = code.find("\n", index)
+            if end == -1:
+                end = len(code)
+            chars[index:end] = [" "] * (end - index)
+            index = end
+            continue
         if char not in {"'", '"'}:
             index += 1
             continue
         delimiter = char * 3 if code.startswith(char * 3, index) else char
-        prefix = re.search(r"[A-Za-z]*$", code[:index])
-        is_f_string = prefix is not None and "f" in prefix.group(0).lower()
+        prefix_start = index
+        while prefix_start and code[prefix_start - 1].isalpha():
+            prefix_start -= 1
+        is_f_string = "f" in code[prefix_start:index].lower()
         index += len(delimiter)
         expression_depth = 0
         while index < len(code) and (expression_depth or not code.startswith(delimiter, index)):
+            if len(delimiter) == 1 and code[index] == "\n" and not expression_depth:
+                break
             if expression_depth and code[index] in {"'", '"'}:
                 index = _mask_nested_quoted_literal(code, chars, index)
                 continue
@@ -522,9 +533,11 @@ def _mask_python_string_literals(code: str) -> str:
                 step = 1
             if not expression_depth:
                 for offset in range(index, min(len(code), index + step)):
-                    chars[offset] = " "
+                    if code[offset] != "\n":
+                        chars[offset] = " "
             index += step
-        index += len(delimiter)
+        if code.startswith(delimiter, index):
+            index += len(delimiter)
     return "".join(chars)
 
 
@@ -533,27 +546,39 @@ def _mask_nested_quoted_literal(code: str, chars: list[str], index: int) -> int:
 
     quote = code[index]
     index += 1
-    while index < len(code) and code[index] != quote:
+    while index < len(code) and code[index] not in {quote, "\n"}:
         step = 2 if code[index] == "\\" else 1
         for offset in range(index, min(len(code), index + step)):
-            chars[offset] = " "
+            if code[offset] != "\n":
+                chars[offset] = " "
         index += step
-    return index + 1
+    return index + 1 if index < len(code) and code[index] == quote else index
 
 
 def _mask_js_string_literals(code: str) -> str:
-    """Blank quoted text, preserving expressions inside template literals."""
+    """Blank comments and quoted text across lines, retaining template expressions."""
 
     chars = list(code)
     index = 0
     while index < len(code):
         quote = code[index]
+        if code.startswith("//", index) or code.startswith("/*", index):
+            line_comment = code.startswith("//", index)
+            end = code.find("\n" if line_comment else "*/", index + 2)
+            end = len(code) if end == -1 else end + (0 if line_comment else 2)
+            for offset in range(index, end):
+                if code[offset] != "\n":
+                    chars[offset] = " "
+            index = end
+            continue
         if quote not in {"'", '"', "`"}:
             index += 1
             continue
         index += 1
         expression_depth = 0
         while index < len(code) and (expression_depth or code[index] != quote):
+            if quote != "`" and code[index] == "\n" and not expression_depth:
+                break
             if expression_depth and code[index] in {"'", '"'}:
                 index = _mask_nested_quoted_literal(code, chars, index)
                 continue
@@ -572,9 +597,11 @@ def _mask_js_string_literals(code: str) -> str:
                 step = 1
             if not expression_depth:
                 for offset in range(index, min(len(code), index + step)):
-                    chars[offset] = " "
+                    if code[offset] != "\n":
+                        chars[offset] = " "
             index += step
-        index += 1
+        if index < len(code) and code[index] == quote:
+            index += 1
     return "".join(chars)
 
 
@@ -647,8 +674,10 @@ def _python_call_text(lines: Sequence[str], line_index: int, call_start: int) ->
     return "\n".join(parts)
 
 
-def _python_subprocess_env_is_exfiltrated(lines: Sequence[str], line_index: int, match: re.Match[str]) -> bool:
-    line = _strip_python_comment(lines[line_index])
+def _python_subprocess_env_is_exfiltrated(
+    lines: Sequence[str], masked_lines: Sequence[str], line_index: int, match: re.Match[str]
+) -> bool:
+    line = masked_lines[line_index]
     if _PYTHON_NETWORK_SINK_RE.search(line[match.end() :]) or "urlopen" in line[match.end() :]:
         return True
     if match.group("func") != "check_output":
@@ -659,8 +688,7 @@ def _python_subprocess_env_is_exfiltrated(lines: Sequence[str], line_index: int,
     var = match.group("var")
     if var is None:
         return False
-    for later in lines[line_index + 1 : min(len(lines), line_index + 7)]:
-        code = _strip_python_comment(later)
+    for code in masked_lines[line_index + 1 : min(len(lines), line_index + 7)]:
         if re.search(rf"\b{re.escape(var)}\b", code) and (_PYTHON_NETWORK_SINK_RE.search(code) or "urlopen" in code):
             return True
     return False
@@ -720,6 +748,14 @@ def _scan_env_dump_content(
     if language is None:
         return []
 
+    source = "\n".join(scan_context.lines)
+    if language == "python":
+        masked_lines = _mask_python_string_literals(source).split("\n")
+    elif language in {"javascript", "typescript"}:
+        masked_lines = _mask_js_string_literals(source).split("\n")
+    else:
+        masked_lines = []
+
     results: list[dict[str, Any]] = []
     seen_lines: set[int] = set()
     for zero_index, line in enumerate(scan_context.lines):
@@ -727,24 +763,28 @@ def _scan_env_dump_content(
         match: re.Match[str] | None = None
         matched_text: str | None = None
         if language == "python":
-            code = _strip_python_comment(line)
+            code = masked_lines[zero_index]
             # Match on the masked text so the span never points into a string
             # literal; masking preserves offsets, so the span is valid for ``code``.
-            match = _PYTHON_ENV_SINK_RE.search(_mask_python_string_literals(code))
+            match = _PYTHON_ENV_SINK_RE.search(code)
             if match is not None:
-                matched_text = code[match.start() : match.end()]
+                matched_text = line[match.start() : match.end()]
             if match is None:
                 loop_match = _PYTHON_LOOP_RE.search(code)
-                if loop_match is not None and _python_loop_dumps_values(scan_context.lines, zero_index, loop_match):
+                if loop_match is not None and _python_loop_dumps_values(masked_lines, zero_index, loop_match):
                     match = loop_match
             if match is None:
-                subprocess_match = _PYTHON_SUBPROCESS_ENV_RE.search(code)
-                if subprocess_match is not None and _python_subprocess_env_is_exfiltrated(
-                    scan_context.lines, zero_index, subprocess_match
+                subprocess_match = _PYTHON_SUBPROCESS_ENV_RE.search(_strip_python_comment(line))
+                if (
+                    subprocess_match is not None
+                    and "subprocess" in code[subprocess_match.start() : subprocess_match.end()]
+                    and _python_subprocess_env_is_exfiltrated(
+                        scan_context.lines, masked_lines, zero_index, subprocess_match
+                    )
                 ):
                     match = subprocess_match
         elif language in {"javascript", "typescript"}:
-            code = _mask_js_string_literals(line)
+            code = masked_lines[zero_index]
             match = (
                 _JS_ENV_SERIALIZE_RE.search(code)
                 or _JS_ENTRIES_SINK_RE.search(code)

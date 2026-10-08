@@ -95,9 +95,15 @@ def test_environment_dump_is_detected(analyzer, make_skill, filename, source):
         ("main.py", 'print(f"literal os.environ")\n'),
         ("main.py", 'print(f"example: {{os.environ}}")\n'),
         ("main.py", "print(f\"{'os.environ'}\")\n"),
+        ("main.py", 'def example():\n    """\n    print(os.environ)\n    """\n    return 1\n'),
         ("main.py", 'print("""os.environ""")\n'),
         ("main.py", "print('reading os.environ.items() now')\n"),
         ("main.py", 'import subprocess\nout = subprocess.run(["env"], capture_output=True)\n'),
+        (
+            "main.py",
+            'import subprocess\nout = subprocess.run(["env"], capture_output=True)\n'
+            '"""Example: requests.post(url, data=out.stdout)"""\n',
+        ),
         ("main.py", 'import subprocess\nsubprocess.run(["env"],\n    stdout=subprocess.DEVNULL,\n)\n'),
         # Shell: ubiquitous safe idioms and targeted lookups.
         ("run.sh", "#!/usr/bin/env bash\nset -euo pipefail\necho ok\n"),
@@ -113,6 +119,7 @@ def test_environment_dump_is_detected(analyzer, make_skill, filename, source):
         ("app.js", "console.log('usage: process.env');\n"),
         ("app.js", "console.log(`literal process.env`);\n"),
         ("app.js", 'console.log(`${"process.env"}`);\n'),
+        ("app.js", "/*\nconsole.log(process.env)\n*/\nconst x = 1;\n"),
         ("app.js", "const count = Object.keys(process.env.PATH).length;\n"),
         ("app.js", "const count = Object.keys(process.env).length;\n"),
         ("app.js", "fetch(url, {body: new URLSearchParams({mode: process.env.NODE_ENV})});\n"),
