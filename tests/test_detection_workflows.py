@@ -195,7 +195,7 @@ def test_trusted_release_evidence_producer_is_pinned_offline_and_exact_sha() -> 
     assert 'go-version: "1.27.1"' in workflow
     acquisition = workflow.split("Acquire and materialize locked public corpus", 1)[1]
     acquisition = acquisition.split("Run exact-SHA offline release evaluation", 1)[0]
-    assert "uv sync --frozen --no-install-project --only-group datasets" in acquisition
+    assert "uv sync --frozen --no-install-project --no-default-groups --group datasets" in acquisition
     assert "setup-go" not in acquisition
     assert "d4b42ce5766a6e0359c987cf59c1007cb3795a90" in workflow
     assert "ProtectSkills/MaliciousSkillBench" in workflow

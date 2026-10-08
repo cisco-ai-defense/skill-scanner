@@ -86,10 +86,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install locked acquisition dependencies
-        # Acquisition only needs the locked dataset tools. Installing the
-        # editable project here would invoke the CEL wheel hook before this
-        # network-facing job has (or needs) a Go toolchain.
-        run: uv sync --frozen --no-install-project --only-group datasets
+        # Snapshot validation imports the scanner, so this job needs its locked
+        # runtime dependencies alongside the dataset tools. Skip the editable
+        # project to avoid invoking the CEL wheel hook before Go is available.
+        run: uv sync --frozen --no-install-project --no-default-groups --group datasets
 
       - name: Download only lock-pinned Hugging Face source files
         shell: bash
