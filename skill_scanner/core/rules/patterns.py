@@ -487,7 +487,7 @@ def _strip_python_comment(line: str) -> str:
 
 
 def _mask_python_string_literals(code: str) -> str:
-    """Blank out plain string-literal contents, keeping offsets and f-strings intact."""
+    """Blank literal text while retaining expressions inside f-strings and offsets."""
 
     chars = list(code)
     index = 0
@@ -498,15 +498,83 @@ def _mask_python_string_literals(code: str) -> str:
             continue
         delimiter = char * 3 if code.startswith(char * 3, index) else char
         prefix = re.search(r"[A-Za-z]*$", code[:index])
-        masking = prefix is None or "f" not in prefix.group(0).lower()
+        is_f_string = prefix is not None and "f" in prefix.group(0).lower()
         index += len(delimiter)
-        while index < len(code) and not code.startswith(delimiter, index):
-            step = 2 if code[index] == "\\" else 1
-            if masking:
+        expression_depth = 0
+        while index < len(code) and (expression_depth or not code.startswith(delimiter, index)):
+            if expression_depth and code[index] in {"'", '"'}:
+                index = _mask_nested_quoted_literal(code, chars, index)
+                continue
+            if code[index] == "\\" and expression_depth == 0:
+                step = 2
+            elif is_f_string and expression_depth == 0 and code[index] == "{" and code.startswith("{{", index):
+                step = 2
+            elif is_f_string and expression_depth == 0 and code[index] == "{":
+                expression_depth = 1
+                step = 1
+            elif is_f_string and expression_depth and code[index] == "{":
+                expression_depth += 1
+                step = 1
+            elif is_f_string and expression_depth and code[index] == "}":
+                expression_depth -= 1
+                step = 1
+            else:
+                step = 1
+            if not expression_depth:
                 for offset in range(index, min(len(code), index + step)):
                     chars[offset] = " "
             index += step
         index += len(delimiter)
+    return "".join(chars)
+
+
+def _mask_nested_quoted_literal(code: str, chars: list[str], index: int) -> int:
+    """Mask a quoted value inside an interpolation without changing offsets."""
+
+    quote = code[index]
+    index += 1
+    while index < len(code) and code[index] != quote:
+        step = 2 if code[index] == "\\" else 1
+        for offset in range(index, min(len(code), index + step)):
+            chars[offset] = " "
+        index += step
+    return index + 1
+
+
+def _mask_js_string_literals(code: str) -> str:
+    """Blank quoted text, preserving expressions inside template literals."""
+
+    chars = list(code)
+    index = 0
+    while index < len(code):
+        quote = code[index]
+        if quote not in {"'", '"', "`"}:
+            index += 1
+            continue
+        index += 1
+        expression_depth = 0
+        while index < len(code) and (expression_depth or code[index] != quote):
+            if expression_depth and code[index] in {"'", '"'}:
+                index = _mask_nested_quoted_literal(code, chars, index)
+                continue
+            if code[index] == "\\" and expression_depth == 0:
+                step = 2
+            elif quote == "`" and expression_depth == 0 and code.startswith("${", index):
+                expression_depth = 1
+                step = 2
+            elif quote == "`" and expression_depth and code[index] == "{":
+                expression_depth += 1
+                step = 1
+            elif quote == "`" and expression_depth and code[index] == "}":
+                expression_depth -= 1
+                step = 1
+            else:
+                step = 1
+            if not expression_depth:
+                for offset in range(index, min(len(code), index + step)):
+                    chars[offset] = " "
+            index += step
+        index += 1
     return "".join(chars)
 
 
@@ -676,10 +744,11 @@ def _scan_env_dump_content(
                 ):
                     match = subprocess_match
         elif language in {"javascript", "typescript"}:
+            code = _mask_js_string_literals(line)
             match = (
-                _JS_ENV_SERIALIZE_RE.search(line)
-                or _JS_ENTRIES_SINK_RE.search(line)
-                or _JS_URLSEARCHPARAMS_SINK_RE.search(line)
+                _JS_ENV_SERIALIZE_RE.search(code)
+                or _JS_ENTRIES_SINK_RE.search(code)
+                or _JS_URLSEARCHPARAMS_SINK_RE.search(code)
             )
         else:
             stripped = line.strip()
