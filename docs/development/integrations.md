@@ -96,7 +96,7 @@ Add to your [`.pre-commit-config.yaml`](https://github.com/cisco-ai-defense/skil
 ```yaml
 repos:
   - repo: https://github.com/cisco-ai-defense/skill-scanner
-    rev: 2.2.1  # the latest release tag (no "v" prefix)
+    rev: 2.2.2  # the latest release tag (no "v" prefix)
     hooks:
       - id: skill-scanner
 ```

@@ -19,9 +19,9 @@ on:
 
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.2
     with:
-      scanner_version: "2.2.1"
+      scanner_version: "2.2.2"
       skill_path: .cursor/skills
       policy: low-noise
       use_llm: true
@@ -44,7 +44,7 @@ This will:
 3. Upload SARIF results to GitHub Code Scanning (findings appear as annotations on PRs)
 4. Fail the workflow if any findings at or above HIGH severity are detected (configurable via `fail_on_severity`)
 
-Pin the workflow to a release tag (`@2.2.1`), and grant the caller job `security-events: write`,
+Pin the workflow to a release tag (`@2.2.2`), and grant the caller job `security-events: write`,
 `contents: read` and `actions: read`: a reusable workflow can only use the permissions its caller
 grants. For which preset and threshold to use, see
 [Recommended Settings](https://cisco-ai-defense.github.io/docs/skill-scanner/recommended-settings).
@@ -102,9 +102,9 @@ The recommended starting point. Use `policy: low-noise` for your own skills, `ba
 ```yaml
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.2
     with:
-      scanner_version: "2.2.1"
+      scanner_version: "2.2.2"
       skill_path: .cursor/skills
       policy: low-noise
       use_llm: true
@@ -124,9 +124,9 @@ Enable every analyzer including VirusTotal binary scanning:
 ```yaml
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.2
     with:
-      scanner_version: "2.2.1"
+      scanner_version: "2.2.2"
       skill_path: .cursor/skills
       use_llm: true
       use_behavioral: true
