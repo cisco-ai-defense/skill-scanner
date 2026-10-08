@@ -572,7 +572,8 @@ def _describe_env_var(var: str) -> str:
         "SKILL_SCANNER_ADJUDICATOR_LLM_REASONING_EFFORT": (
             "Adjudicator reasoning level (`disabled`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). The "
             "adjudicator's answer-token budget is small and reasoning tokens count against it, so reasoning is "
-            "off by default. Does not fall back to `SKILL_SCANNER_LLM_REASONING_EFFORT`."
+            "off by default. Does not fall back to `SKILL_SCANNER_LLM_REASONING_EFFORT`. Has no effect on the "
+            "on-device Apple FM model, whose SDK has no reasoning control."
         ),
         "SKILL_SCANNER_ADJUDICATOR_LLM_MAX_TOKENS": (
             "Adjudicator answer-token budget override. A secondary safety net, not the fix for a truncated "
