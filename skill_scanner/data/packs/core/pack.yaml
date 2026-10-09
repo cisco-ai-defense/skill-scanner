@@ -1530,7 +1530,7 @@ rules:
     severity: HIGH
     knobs:
       enabled: true
-    description: "Active instruction collects sensitive data and sends it to an external or attacker-style destination"
+    description: "Active instruction sends collected sensitive data to an external or attacker-style destination, or a local credential file to an explicit remote destination"
 
   ACTIVE_HIDDEN_HTML_INSTRUCTION:
     source: python

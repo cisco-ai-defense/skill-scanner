@@ -24,7 +24,8 @@ cannot see when the behavior is expressed as an agent instruction:
   execution condition;
 * an active operating-system persistence directive; and
 * collection of sensitive data followed by transmission to an explicitly
-  external or attacker-style destination.
+  external or attacker-style destination, or a local credential file sent to
+  an explicit remote destination.
 
 Examples, reference sections, negative guidance, and scoped prohibitions are
 inert.  No sample content is executed, and findings expose normalized classes
@@ -225,6 +226,32 @@ _SENSITIVE_REFERENCE_RE = re.compile(
     r"(?:data|information|secrets?|credentials?))\b",
     re.IGNORECASE,
 )
+# A concrete local credential file is specific enough that any explicit remote
+# destination completes the shape; generic words such as "API key" are not, and
+# keep the suspicious-destination requirement above. ``process.env`` is a runtime
+# lookup rather than a file, and public keys and env templates are not secrets.
+_CREDENTIAL_FILE_RE = re.compile(
+    r"\.ssh/id_(?:rsa|ed25519)(?!\.pub\b)(?!\w)|\.aws/credentials\b|/proc/(?:self/)?environ\b|"
+    r"(?<![\w.])\.env\b(?!\.(?:example|sample|template)\b)",
+    re.IGNORECASE,
+)
+_DIRECT_TRANSFER_RE = re.compile(
+    r"\b(?:exfiltrat(?:e|es|ed|ing)|forward(?:s|ed|ing)?|post(?:s|ed|ing)?|send(?:s|ing)?|sent|"
+    r"siphon(?:s|ed|ing)?|transmit(?:s|ted|ting)?|upload(?:s|ed|ing)?)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_DESTINATION_RE = re.compile(
+    r"\bhttps?://[^\s<>\"')\]]+|"
+    r"\b(?:to|at)\s+(?:(?:the\s+)?(?:host|server|endpoint)\s+)?"
+    r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"(?!(?:bak|cfg|conf|csv|env|ini|js|json|log|md|py|sh|toml|ts|txt|ya?ml)\b)[a-z]{2,63}\b",
+    re.IGNORECASE,
+)
+# When the verb precedes the file, the verb must read as a directive ("send",
+# "sends"), not narration ("sending preview..."), and nothing between them may
+# exclude the file or start a new markdown section.
+_DIRECTIVE_TRANSFER_RE = re.compile(r"(?:exfiltrate|forward|post|send|siphon|transmit|upload)s?", re.IGNORECASE)
+_BRIDGE_BREAK_RE = re.compile(r"\b(?:but|except|excluding|never|not|without)\b|(?:^|\s)#{1,6}\s", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -499,10 +526,62 @@ def _limited_matches(pattern: re.Pattern[str], text: str) -> list[re.Match[str]]
     return matches
 
 
+def _credential_file_transfer(text: str) -> re.Match[str] | None:
+    """Return the credential-file match of a direct transfer to an explicit destination.
+
+    Two orders are accepted: the transfer verb takes the file as its object
+    ("send <file> to <destination>"), or the file comes first and the transfer
+    refers back to it ("read <file> and post it to <destination>").
+    """
+
+    files = _limited_matches(_CREDENTIAL_FILE_RE, text)
+    if not files:
+        return None
+    transfers = _limited_matches(_DIRECT_TRANSFER_RE, text)
+    destinations = _limited_matches(_EXPLICIT_DESTINATION_RE, text)
+    destinations.extend(_limited_matches(_SUSPICIOUS_DESTINATION_RE, text))
+    if not transfers or not destinations:
+        return None
+
+    for source in files:
+        for transfer in transfers:
+            if transfer.end() <= source.start():
+                if (
+                    source.start() - transfer.end() > 120
+                    or not _DIRECTIVE_TRANSFER_RE.fullmatch(transfer.group(0))
+                    or _BRIDGE_BREAK_RE.search(text[transfer.end() : source.start()])
+                ):
+                    continue
+                flow_end = source.end()
+            elif source.end() <= transfer.start() and transfer.start() - source.end() <= 200:
+                flow_end = transfer.end()
+            else:
+                continue
+            for destination in destinations:
+                if destination.start() < flow_end or destination.start() - flow_end > 400:
+                    continue
+                if flow_end == transfer.end():
+                    transfer_object = text[transfer.end() : destination.start()]
+                    if not (
+                        _SENSITIVE_REFERENCE_RE.search(transfer_object) or _CREDENTIAL_FILE_RE.search(transfer_object)
+                    ):
+                        continue
+                return source
+    return None
+
+
 def _exfiltration_candidate(region: _Region) -> SemanticDirectiveCandidate | None:
     if _is_inert(region):
         return None
     text = region.content
+    credential_file = _credential_file_transfer(text)
+    if credential_file is not None:
+        return SemanticDirectiveCandidate(
+            rule_id=ACTIVE_SENSITIVE_EXFILTRATION,
+            line_number=_physical_line(region, credential_file.start()),
+            context_kind=region.context_kind,
+            behavior_class="sensitive_external_transfer",
+        )
     sources = _limited_matches(_SENSITIVE_SOURCE_RE, text)
     collections = _limited_matches(_COLLECTION_ACTION_RE, text)
     transfers = _limited_matches(_TRANSMISSION_ACTION_RE, text)
@@ -702,10 +781,10 @@ def _finding(candidate: SemanticDirectiveCandidate, line_offset: int) -> Finding
     else:
         category = ThreatCategory.DATA_EXFILTRATION
         severity = Severity.HIGH
-        title = "Active instruction sends collected sensitive data to an external destination"
+        title = "Active instruction sends sensitive data to an external destination"
         description = (
-            "An active instruction combines a sensitive-data source, collection action, outbound transfer, and "
-            "explicitly external or attacker-style destination."
+            "An active instruction sends collected sensitive data to an explicitly external or attacker-style "
+            "destination, or sends a local credential file to an explicit remote destination."
         )
         snippet = "[active sensitive-data transfer directive]"
         remediation = "Remove the transfer and keep credentials, secrets, and private system data local."
