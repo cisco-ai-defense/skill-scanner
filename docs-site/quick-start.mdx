@@ -190,9 +190,9 @@ on:
     paths: [".cursor/skills/**"]
 jobs:
   scan:
-    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.1
+    uses: cisco-ai-defense/skill-scanner/.github/workflows/scan-skills.yml@2.2.2
     with:
-      scanner_version: "2.2.1"
+      scanner_version: "2.2.2"
       skill_path: .cursor/skills
       policy: low-noise
       fail_on_severity: high
