@@ -158,15 +158,18 @@ jobs:
           include-hidden-files: false
           retention-days: 1
 
+      - name: Save validated snapshot for offline evaluation
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/msb-snapshot
+          key: release-snapshot-${{ inputs.release_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
   evaluate:
     name: Run exact-SHA offline release evaluation
     needs: acquire
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     environment: detection-release-corpora
-    permissions:
-      contents: read
-      actions: read
     outputs:
       artifact_name: ${{ steps.artifact-name.outputs.name }}
     steps:
@@ -238,16 +241,12 @@ jobs:
           print(f"Validated core pack ({len(pack.rules)} rules, {len(cel_rules)} CEL expressions)")
           PY
 
-      - name: Download inert snapshot
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SNAPSHOT_ARTIFACT: ${{ needs.acquire.outputs.snapshot_artifact }}
-        run: |
-          gh run download "$GITHUB_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "$SNAPSHOT_ARTIFACT" \
-            --dir "$RUNNER_TEMP/msb-snapshot"
+      - name: Restore inert snapshot from exact-run cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/msb-snapshot
+          key: release-snapshot-${{ inputs.release_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
 
       - name: Run OFF plus exactly five active scans with OS-denied network
         shell: bash
