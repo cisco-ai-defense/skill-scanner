@@ -215,6 +215,9 @@ def test_trusted_release_evidence_producer_is_pinned_offline_and_exact_sha() -> 
     assert "load_dataset(" not in workflow
     assert "trust_remote_code" not in workflow
     assert "materialize_malicious_skill_bench.py" in workflow
+    assert 'gh run download "$GITHUB_RUN_ID"' in workflow
+    assert "SNAPSHOT_ARTIFACT: ${{ needs.acquire.outputs.snapshot_artifact }}" in workflow
+    assert "actions: read" in workflow
     assert 'if [[ "$GITHUB_SHA" != "$RELEASE_SHA" ]]' in workflow
     assert "detection-release-evidence-${{ inputs.release_sha }}" in workflow
 

@@ -164,6 +164,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     environment: detection-release-corpora
+    permissions:
+      contents: read
+      actions: read
     outputs:
       artifact_name: ${{ steps.artifact-name.outputs.name }}
     steps:
@@ -236,10 +239,15 @@ jobs:
           PY
 
       - name: Download inert snapshot
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.acquire.outputs.snapshot_artifact }}
-          path: ${{ runner.temp }}/msb-snapshot
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SNAPSHOT_ARTIFACT: ${{ needs.acquire.outputs.snapshot_artifact }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$SNAPSHOT_ARTIFACT" \
+            --dir "$RUNNER_TEMP/msb-snapshot"
 
       - name: Run OFF plus exactly five active scans with OS-denied network
         shell: bash
