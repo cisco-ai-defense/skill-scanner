@@ -214,7 +214,7 @@ The file `.github/workflows/scan-skills.yml` is a reusable workflow that other r
 
 This project follows [Semantic Versioning](https://semver.org/).
 The version comes from the git tag through hatch-vcs: there is no version string to edit, and tags
-carry no `v` prefix (`2.2.0`, not `v2.2.0`).
+carry no `v` prefix (`2.2.2`, not `v2.2.2`).
 
 ## Cutting a Release
 
@@ -270,5 +270,5 @@ carry no `v` prefix (`2.2.0`, not `v2.2.0`).
    unit tests on it.)
 
    ```bash
-   gh workflow run update-homebrew.yml -R cisco-ai-defense/skill-scanner -f version=2.2.0
+   gh workflow run update-homebrew.yml -R cisco-ai-defense/skill-scanner -f version=2.2.2
    ```
