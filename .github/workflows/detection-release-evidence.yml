@@ -162,7 +162,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/msb-snapshot
-          key: release-snapshot-${{ inputs.release_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: release-snapshot-${{ steps.snapshot-name.outputs.name }}
 
   evaluate:
     name: Run exact-SHA offline release evaluation
@@ -245,7 +245,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/msb-snapshot
-          key: release-snapshot-${{ inputs.release_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: release-snapshot-${{ needs.acquire.outputs.snapshot_artifact }}
           fail-on-cache-miss: true
 
       - name: Run OFF plus exactly five active scans with OS-denied network

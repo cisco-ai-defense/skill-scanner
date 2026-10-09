@@ -218,9 +218,8 @@ def test_trusted_release_evidence_producer_is_pinned_offline_and_exact_sha() -> 
     assert "actions/cache/save@v4" in acquisition
     assert "actions/cache/restore@v4" in workflow
     assert "fail-on-cache-miss: true" in workflow
-    assert (
-        workflow.count("release-snapshot-${{ inputs.release_sha }}-${{ github.run_id }}-${{ github.run_attempt }}") == 2
-    )
+    assert "key: release-snapshot-${{ steps.snapshot-name.outputs.name }}" in acquisition
+    assert "key: release-snapshot-${{ needs.acquire.outputs.snapshot_artifact }}" in workflow
     assert 'if [[ "$GITHUB_SHA" != "$RELEASE_SHA" ]]' in workflow
     assert "detection-release-evidence-${{ inputs.release_sha }}" in workflow
 
