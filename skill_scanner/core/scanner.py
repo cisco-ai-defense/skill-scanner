@@ -663,6 +663,8 @@ class SkillScanner:
             "errors": contract_errors[:100],
         }
         policy_meta["loader"] = dict(proof)
+        annotate_findings_taxonomy([*findings, *suppressed_findings], self.rule_registry)
+        policy_meta["taxonomy"] = taxonomy_scan_metadata(findings)
         self._annotate_findings_with_policy([*findings, *suppressed_findings], policy_meta)
         return ScanResult(
             skill_name=skill_directory.name,

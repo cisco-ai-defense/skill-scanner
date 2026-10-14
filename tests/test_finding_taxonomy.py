@@ -117,6 +117,7 @@ def test_only_operational_rules_are_not_applicable(bundled_registry):
         "OVERSIZED_FILE",
         "SKILL_LOAD_FALLBACK_USED",
         "SKILL_LOAD_REJECTED_LIMIT",
+        "SKILL_LOAD_FAILED",
         "FINDING_OUTPUT_NORMALIZATION",
         "BEHAVIOR_DATAFLOW_ANALYSIS_INCOMPLETE",
         "LLM_CONTEXT_BUDGET_EXCEEDED",
@@ -339,6 +340,33 @@ def test_sarif_results_carry_taxonomy(exfil_scan):
     for result in mapped:
         assert taxonomy.is_valid_aitech(result["properties"]["aitech"])
         assert result["properties"]["framework_mappings"]
+
+
+def test_load_failure_finding_is_annotated(tmp_path):
+    skill = tmp_path / "multi" / "broken"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_bytes(b"---\nname: x\ndescription: y\n---\n\xff\xfe hello\n")
+    report = SkillScanner().scan_directory(tmp_path / "multi")
+    (result,) = report.scan_results
+    (finding,) = result.findings
+    assert finding.rule_id == "SKILL_LOAD_FAILED"
+    assert finding.metadata["taxonomy_status"] == "not_applicable"
+    assert finding.metadata["aitech"] is None
+    assert result.scan_metadata["taxonomy"]["findings"]["not_applicable"] == 1
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks unavailable")
+def test_skipped_symlink_finding_is_mapped(tmp_path):
+    skill = tmp_path / "skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: demo\ndescription: A benign demo skill\n---\n# Demo\n")
+    (tmp_path / "outside.py").write_text("print('hi')\n")
+    os.symlink("../outside.py", skill / "helper.py")
+    result = SkillScanner().scan_skill(skill)
+    (finding,) = [f for f in result.findings if f.rule_id == "SYMLINK_NOT_SCANNED"]
+    assert finding.metadata["aitech"] == "AITech-9.2"
+    assert finding.metadata["aisubtech"] == "AISubtech-9.2.1"
+    assert finding.metadata["taxonomy_source"] == "rule"
 
 
 def test_meta_missed_threats_are_annotated():
