@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -372,8 +373,9 @@ def test_custom_threat_mapping_code_overrides_rule_declaration(monkeypatch, tmp_
     path = tmp_path / "mapping.json"
     path.write_text(json.dumps({"yara_threats": {"PROMPT INJECTION": {"aitech": "AITech-1.2"}}}), encoding="utf-8")
     registry = _registry(_rule("TEST_RULE", "AISubtech-1.1.1"))
-    # Let monkeypatch own the variable so teardown removes it; passing the path
+    # Let monkeypatch own the variable so teardown restores it; passing the path
     # to configure_threat_mappings() would write os.environ directly.
+    prior = os.environ.get("SKILL_SCANNER_THREAT_MAPPING_PATH")
     monkeypatch.setenv("SKILL_SCANNER_THREAT_MAPPING_PATH", str(path))
     try:
         threats.configure_threat_mappings()
@@ -391,9 +393,14 @@ def test_custom_threat_mapping_code_overrides_rule_declaration(monkeypatch, tmp_
         annotate_finding_taxonomy(trigger_finding, registry)
         assert trigger_finding.metadata["taxonomy_source"] == "rule"
     finally:
-        monkeypatch.delenv("SKILL_SCANNER_THREAT_MAPPING_PATH", raising=False)
+        # Reload whichever mapping was active before the test.
+        if prior is None:
+            monkeypatch.delenv("SKILL_SCANNER_THREAT_MAPPING_PATH", raising=False)
+        else:
+            monkeypatch.setenv("SKILL_SCANNER_THREAT_MAPPING_PATH", prior)
         threats.configure_threat_mappings()
-    assert threats.get_taxonomy_override("static", "prompt_injection") is None
+    if prior is None:
+        assert threats.get_taxonomy_override("static", "prompt_injection") is None
 
 
 def test_subtechnique_whose_parent_is_not_registered_is_not_mapped(monkeypatch, tmp_path):
