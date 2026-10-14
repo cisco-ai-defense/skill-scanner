@@ -19,6 +19,8 @@ Static pattern analyzer for detecting security vulnerabilities.
 """
 
 import ast
+import base64
+import binascii
 import configparser
 import dataclasses
 import hashlib
@@ -27,15 +29,21 @@ import pickletools
 import re
 import tomllib
 import unicodedata
+from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit, urlunsplit
+
+import frontmatter
+import frontmatter.default_handlers as frontmatter_handlers
+import yaml
 
 from ...config.yara_modes import YaraModeConfig
 from ...core.brand_claims import claims_anthropic_affiliation
+from ...core.loader import frontmatter_parse_input
 from ...core.models import Finding, Severity, Skill, SkillFile, ThreatCategory
 from ...core.rules.active_dynamic_execution import check_active_dynamic_execution
 from ...core.rules.active_html_injection import check_active_hidden_html
@@ -1499,14 +1507,32 @@ def _yara_semantic_metadata(
 # ``allowed-tools`` holds tool-permission grammar such as ``Bash(curl:*)``, not prose an
 # agent reads as instructions; the capability checks cover it. Every other key is scanned.
 _FRONTMATTER_NON_TEXT_FIELD = re.compile(r"""^["']?(?:allowed-tools|allowed_tools)["']?\s*:""", re.IGNORECASE)
+_FRONTMATTER_NON_TEXT_KEY = re.compile(r"allowed[-_]tools", re.IGNORECASE)
+_YAML_MERGE_TAG = "tag:yaml.org,2002:merge"
+_YAML_BINARY_TAG = "tag:yaml.org,2002:binary"
+# python-frontmatter loads with libyaml's CSafeLoader when it is available; compose with the same class.
+_FRONTMATTER_YAML_LOADER = frontmatter_handlers.SafeLoader
+
+
+class _DecodedScalar(NamedTuple):
+    """A frontmatter string as the manifest receives it, with where it sits in SKILL.md."""
+
+    key_line: int  # 0-based physical line of the top-level key the string belongs to
+    line: int  # 0-based physical line where the string's own text starts
+    text: str
+    written: bool  # the source spells the text out on that one line
 
 
 def _frontmatter_text_view(skill: Skill) -> str | None:
     """Return SKILL.md's frontmatter text: every value and comment except ``allowed-tools``.
 
     Every other line is blanked rather than removed, so a match's line number is
-    its physical SKILL.md line. Returns ``None`` when there is no frontmatter, the
-    body was synthesized, or the frontmatter holds nothing but excluded fields.
+    its physical SKILL.md line. A value whose parsed text is not spelled out on a
+    kept line (an alias of an anchor inside ``allowed-tools``, a merge key, escape
+    sequences, ``!!binary``, a value folded over several lines) is added, decoded,
+    to its own line or to the key that receives it. Returns ``None`` when there is
+    no frontmatter, the body was synthesized, or the frontmatter holds nothing but
+    excluded fields.
     """
     if skill.load_metadata.get("synthetic_instruction_body"):
         return None
@@ -1523,9 +1549,10 @@ def _frontmatter_text_view(skill: Skill) -> str | None:
             raw = skill.skill_md_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             return None
+    lines = raw.splitlines()[:frontmatter_lines]
     kept: list[str] = []
     in_text_field = True
-    for line in raw.splitlines()[:frontmatter_lines]:
+    for line in lines:
         if line.strip() == "---":
             in_text_field = True
             kept.append("")
@@ -1535,9 +1562,111 @@ def _frontmatter_text_view(skill: Skill) -> str | None:
         # Comments are never parsed into the manifest, so scan them wherever they sit,
         # including an inline comment after an excluded field's value.
         kept.append(line if in_text_field or line.lstrip().startswith("#") else _yaml_inline_comment(line))
+    decoded = _decoded_frontmatter_values(raw)
+    if decoded is None:
+        # The loader read this frontmatter but it could not be composed here, so the
+        # exclusion cannot be checked against the parsed values: scan every line.
+        kept = ["" if line.strip() == "---" else line for line in lines]
+    elif kept:
+        intact = [k is line for k, line in zip(kept, lines, strict=True)]
+        last = len(kept) - 1
+        additions: dict[int, list[str]] = {}
+        for value in decoded:
+            line_no = min(max(value.line, 0), last)
+            if value.written and intact[line_no]:
+                continue  # already scanned where it is written
+            text = " ".join(value.text.split())
+            if not text:
+                continue
+            # Report on the value's own line when that line is scanned; text from an
+            # excluded block (an alias or merge key) goes on the key that receives it.
+            index = line_no if kept[line_no] else min(max(value.key_line, 0), last)
+            additions.setdefault(index, []).append(text)
+        for index, texts in additions.items():
+            kept[index] = "  ".join([kept[index], *texts] if kept[index] else texts)
     if not any(kept):
         return None
     return "\n".join(kept)
+
+
+def _decoded_frontmatter_values(raw: str) -> list[_DecodedScalar] | None:
+    """Return every frontmatter string the manifest receives, except ``allowed-tools``.
+
+    The text the loader parses is composed with the loader python-frontmatter uses
+    (libyaml's CSafeLoader when available), so aliases, merge keys, escape sequences
+    and ``!!binary`` resolve exactly as in the manifest. Returns ``None`` when that
+    text cannot be composed.
+    """
+    try:
+        text = frontmatter_parse_input(raw).strip()
+        handler = frontmatter.YAMLHandler()
+        boundary = handler.FM_BOUNDARY.match(text)
+        if boundary is None:
+            return []
+        fm, _ = handler.split(text)
+        root = yaml.compose(fm, Loader=_FRONTMATTER_YAML_LOADER)
+    except Exception:  # noqa: BLE001 - the caller scans every line instead
+        return None
+    if not isinstance(root, yaml.MappingNode):
+        return []
+    # The loader drops anything before the first ``---``; count it back in.
+    base = text[: boundary.end()].count("\n") + raw.split("---", 1)[0].count("\n")
+    line_starts = [0, *(match.end() for match in re.finditer("\n", fm))]
+
+    def spelled_out(node: yaml.ScalarNode, value: str) -> bool:
+        # Only the node's own source on its own line counts, so each check is local.
+        start, end = node.start_mark, node.end_mark
+        if node.style in ("|", ">") or start.line != end.line or start.line >= len(line_starts):
+            return False
+        line_end = line_starts[start.line + 1] if start.line + 1 < len(line_starts) else len(fm)
+        if not line_starts[start.line] <= start.index <= end.index <= line_end:
+            return False
+        return " ".join(value.split()) in " ".join(fm[start.index : end.index].split())
+
+    values: list[_DecodedScalar] = []
+    # Each node is visited once, so the decoded text is bounded by the frontmatter the
+    # loader already size-limits, and alias chains cannot multiply the work.
+    seen: set[int] = set()
+    pairs = deque((key, value, key.start_mark.line) for key, value in root.value)
+    while pairs:
+        key, value, key_line = pairs.popleft()
+        if key.tag == _YAML_MERGE_TAG:
+            merged = value.value if isinstance(value, yaml.SequenceNode) else [value]
+            for mapping in merged:
+                if isinstance(mapping, yaml.MappingNode) and id(mapping) not in seen:
+                    seen.add(id(mapping))
+                    pairs.extend((k, v, key_line) for k, v in mapping.value)
+            continue
+        if isinstance(key, yaml.ScalarNode) and _FRONTMATTER_NON_TEXT_KEY.fullmatch(key.value):
+            continue
+        stack: list[yaml.Node] = [value, key]
+        while stack:
+            node = stack.pop()
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            if isinstance(node, yaml.ScalarNode):
+                decoded = _yaml_scalar_text(node)
+                if decoded:
+                    # A block scalar's text starts on the line after its ``|``/``>`` indicator.
+                    start = node.start_mark.line + (1 if node.style in ("|", ">") else 0)
+                    values.append(_DecodedScalar(base + key_line, base + start, decoded, spelled_out(node, decoded)))
+            elif isinstance(node, yaml.MappingNode):
+                for k, v in reversed(node.value):
+                    stack.extend((v, k))
+            elif isinstance(node, yaml.SequenceNode):
+                stack.extend(reversed(node.value))
+    return values
+
+
+def _yaml_scalar_text(node: yaml.ScalarNode) -> str:
+    """Return a scalar's text as the manifest gets it; ``!!binary`` is base64-decoded like SafeLoader does."""
+    if node.tag != _YAML_BINARY_TAG:
+        return node.value
+    try:
+        return base64.decodebytes(node.value.encode("ascii")).decode("utf-8", errors="replace")
+    except (binascii.Error, UnicodeEncodeError):
+        return node.value
 
 
 def _starts_top_level_entry(line: str) -> bool:

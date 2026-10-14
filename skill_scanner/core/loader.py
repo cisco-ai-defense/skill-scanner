@@ -59,6 +59,21 @@ def _quote_frontmatter_scalar(match: re.Match[str]) -> str:
     return f"{match.group(1)}: {json.dumps(match.group(2), ensure_ascii=False)}"
 
 
+def frontmatter_parse_input(content: str) -> str:
+    """Return SKILL.md text exactly as it is handed to the frontmatter parser.
+
+    ``name`` and ``description`` values that contain ``:`` are quoted first so YAML
+    does not read them as mappings. The static analyzer composes the same text, so
+    the frontmatter values it scans are the ones the manifest gets.
+    """
+    if "---" in content:
+        parts = content.split("---", 2)
+        if len(parts) >= 3:
+            fm = _FRONTMATTER_QUOTE_RE.sub(_quote_frontmatter_scalar, parts[1])
+            return f"---{fm}---{parts[2]}"
+    return content
+
+
 def _classify_extensionless_script(path: Path, file_type: str) -> str:
     """Recognize extensionless source code so analyzers do not skip it.
 
@@ -319,12 +334,7 @@ class SkillLoader:
         """
         content = self._read_skill_text_file(skill_md_path, package_root=package_root)
         raw_content = content
-
-        if "---" in content:
-            parts = content.split("---", 2)
-            if len(parts) >= 3:
-                fm = _FRONTMATTER_QUOTE_RE.sub(_quote_frontmatter_scalar, parts[1])
-                content = f"---{fm}---{parts[2]}"
+        content = frontmatter_parse_input(content)
 
         # Parse with python-frontmatter
         try:
