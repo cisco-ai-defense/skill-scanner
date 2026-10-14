@@ -1496,10 +1496,9 @@ def _yara_semantic_metadata(
     )
 
 
-_FRONTMATTER_TOP_LEVEL_KEY = re.compile(r"^[A-Za-z0-9_-]+\s*:")
 # ``allowed-tools`` holds tool-permission grammar such as ``Bash(curl:*)``, not prose an
 # agent reads as instructions; the capability checks cover it. Every other key is scanned.
-_FRONTMATTER_NON_TEXT_FIELD = re.compile(r"^(?:allowed-tools|allowed_tools)\s*:", re.IGNORECASE)
+_FRONTMATTER_NON_TEXT_FIELD = re.compile(r"""^["']?(?:allowed-tools|allowed_tools)["']?\s*:""", re.IGNORECASE)
 
 
 def _frontmatter_text_view(skill: Skill) -> str | None:
@@ -1531,7 +1530,7 @@ def _frontmatter_text_view(skill: Skill) -> str | None:
             in_text_field = True
             kept.append("")
             continue
-        if _FRONTMATTER_TOP_LEVEL_KEY.match(line):
+        if _starts_top_level_entry(line):
             in_text_field = not _FRONTMATTER_NON_TEXT_FIELD.match(line)
         # Comments are never parsed into the manifest, so scan them wherever they sit,
         # including an inline comment after an excluded field's value.
@@ -1539,6 +1538,19 @@ def _frontmatter_text_view(skill: Skill) -> str | None:
     if not any(kept):
         return None
     return "\n".join(kept)
+
+
+def _starts_top_level_entry(line: str) -> bool:
+    """Whether a frontmatter line opens a new top-level entry, whatever its key syntax.
+
+    YAML continues a top-level value only on indented lines and ``- `` sequence items,
+    so any other unindented line is a new key: plain, quoted (``"description":``) or
+    complex (``? description``). Matching only plain keys let a quoted or complex key
+    after ``allowed-tools`` inherit its exclusion while the loader still read it.
+    """
+    if not line or line[0] in " \t#":
+        return False
+    return not (line[0] == "-" and line[1:2] in ("", " ", "\t"))
 
 
 def _yaml_inline_comment(line: str) -> str:

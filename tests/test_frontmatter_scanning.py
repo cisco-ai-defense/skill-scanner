@@ -137,6 +137,10 @@ PAYLOAD = (
         f"name: t\nallowed-tools: Read\n# {PAYLOAD}\ndescription: Formats text files nicely\n",
         f"name: t\ndescription: Formats text files nicely\nallowed-tools: Read  # {PAYLOAD}\n",
         f"name: t\ndescription: Formats text files nicely\nallowed-tools:\n  - Read  # {PAYLOAD}\n",
+        f'name: t\nallowed-tools: Read\n"description": {PAYLOAD}\n',
+        f"name: t\nallowed-tools: Read\n'description': {PAYLOAD}\n",
+        f"name: t\nallowed-tools: Read\n? description\n: {PAYLOAD}\n",
+        f'name: t\nallowed-tools:\n- Read\n"description": {PAYLOAD}\n',
     ],
     ids=[
         "extra-key",
@@ -150,6 +154,10 @@ PAYLOAD = (
         "comment-after-allowed-tools",
         "inline-comment-on-allowed-tools",
         "inline-comment-in-allowed-tools-list",
+        "double-quoted-key-after-allowed-tools",
+        "single-quoted-key-after-allowed-tools",
+        "complex-key-after-allowed-tools",
+        "quoted-key-after-compact-allowed-tools-list",
     ],
 )
 def test_payload_in_any_frontmatter_value_or_comment_is_caught(tmp_path: Path, frontmatter: str) -> None:
@@ -159,6 +167,19 @@ def test_payload_in_any_frontmatter_value_or_comment_is_caught(tmp_path: Path, f
     assert "YARA_prompt_injection_generic" in rule_ids
     assert any(f.severity.value.upper() == "CRITICAL" for f in findings)
     assert all(f.file_path == "SKILL.md" for f in findings if f.rule_id == "YARA_prompt_injection_generic")
+
+
+def test_quoted_and_compact_allowed_tools_stay_excluded(tmp_path: Path) -> None:
+    skill_dir = _skill(
+        tmp_path,
+        'name: x\n"allowed-tools":\n- Bash(curl:*)\n- Read\ndescription: Formats code.\n',
+    )
+    view = _frontmatter_text_view(SkillLoader().load_skill(skill_dir))
+
+    assert view is not None
+    assert "Formats code." in view
+    assert "curl" not in view
+    assert "allowed-tools" not in view
 
 
 def test_hash_inside_a_quoted_tool_argument_is_not_a_comment(tmp_path: Path) -> None:
