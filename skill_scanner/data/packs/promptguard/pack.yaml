@@ -18,6 +18,7 @@ rules:
   PG_PII_SSN:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.5.10
     severity: CRITICAL
     knobs:
       enabled: true
@@ -25,6 +26,7 @@ rules:
   PG_PII_CREDIT_CARD:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.6.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -32,6 +34,7 @@ rules:
   PG_PII_IBAN:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.6.2
     severity: HIGH
     knobs:
       enabled: true
@@ -39,6 +42,7 @@ rules:
   PG_PII_PHONE_HARVESTING:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.5.2
     severity: HIGH
     knobs:
       enabled: true
@@ -46,6 +50,7 @@ rules:
   PG_PII_SSN_HARVESTING:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.5.10
     severity: CRITICAL
     knobs:
       enabled: true
@@ -53,6 +58,7 @@ rules:
   PG_PII_CARD_HARVESTING:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.6.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -60,6 +66,7 @@ rules:
   PG_PII_CREDENTIAL_HARVESTING:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -67,6 +74,7 @@ rules:
   PG_PII_MEDICAL_ID:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.7.2
     severity: HIGH
     knobs:
       enabled: true
@@ -74,6 +82,7 @@ rules:
   PG_SECRET_OPENAI_KEY:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -81,6 +90,7 @@ rules:
   PG_SECRET_ANTHROPIC_KEY:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -88,6 +98,7 @@ rules:
   PG_SECRET_SLACK_TOKEN:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -95,6 +106,7 @@ rules:
   PG_SECRET_SLACK_WEBHOOK:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -102,6 +114,7 @@ rules:
   PG_SECRET_HUGGINGFACE_TOKEN:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -109,6 +122,7 @@ rules:
   PG_SECRET_TWILIO_KEY:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -116,6 +130,7 @@ rules:
   PG_SECRET_SENDGRID_KEY:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -123,6 +138,7 @@ rules:
   PG_SECRET_NPM_TOKEN:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -130,6 +146,7 @@ rules:
   PG_SECRET_PYPI_TOKEN:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -137,6 +154,7 @@ rules:
   PG_SECRET_DISCORD_TOKEN:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -144,6 +162,7 @@ rules:
   PG_SECRET_AZURE_KEY:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -151,6 +170,7 @@ rules:
   PG_SECRET_DIGITALOCEAN_TOKEN:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -158,6 +178,7 @@ rules:
   PG_EXFIL_MARKDOWN_IMAGE:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -165,6 +186,7 @@ rules:
   PG_EXFIL_MARKDOWN_LINK:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: HIGH
     knobs:
       enabled: true
@@ -172,6 +194,7 @@ rules:
   PG_EXFIL_HTML_TAG:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: HIGH
     knobs:
       enabled: true
@@ -179,6 +202,7 @@ rules:
   PG_EXFIL_DATA_URI:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -186,6 +210,7 @@ rules:
   PG_EXFIL_URL_ENCODING:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: HIGH
     knobs:
       enabled: true
@@ -193,6 +218,7 @@ rules:
   PG_EXFIL_INVISIBLE_PAYLOAD:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true

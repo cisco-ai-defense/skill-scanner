@@ -11,10 +11,20 @@ description: 'Open-source AI agent security detection rules from the Agent Threa
   privilege escalation, model abuse, excessive autonomy, data poisoning, and model security. Benchmark results are published
   upstream in the ATR benchmark table, version-pinned per measurement; see the pack README for the figures that apply to this
   ruleset and their caveats. MIT license.'
+taxonomy_defaults:
+  autonomy_abuse: AISubtech-2.1.1
+  data_exfiltration: AISubtech-8.2.3
+  harmful_content: AISubtech-15.1.25
+  prompt_injection: AISubtech-1.1.1
+  social_engineering: AISubtech-1.1.5
+  supply_chain_attack: AISubtech-9.3.1
+  transitive_trust_abuse: AISubtech-12.1.2
+  unauthorized_tool_use: AISubtech-14.2.1
 rules:
   ATR_2026_00030:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -24,6 +34,7 @@ rules:
   ATR_2026_00032:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -33,6 +44,7 @@ rules:
   ATR_2026_00074:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-14.2.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -42,6 +54,7 @@ rules:
   ATR_2026_00076:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.3
     severity: HIGH
     knobs:
       enabled: true
@@ -51,6 +64,7 @@ rules:
   ATR_2026_00077:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-2.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -60,6 +74,7 @@ rules:
   ATR_2026_00108:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -69,6 +84,7 @@ rules:
   ATR_2026_00116:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.3
     severity: HIGH
     knobs:
       enabled: true
@@ -78,6 +94,7 @@ rules:
   ATR_2026_00117:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-3.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -87,6 +104,7 @@ rules:
   ATR_2026_00118:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-2.1.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -96,6 +114,7 @@ rules:
   ATR_2026_00119:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-15.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -105,6 +124,7 @@ rules:
   ATR_2026_00132:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -114,6 +134,7 @@ rules:
   ATR_2026_00139:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -122,6 +143,7 @@ rules:
   ATR_2026_00164:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-14.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -166,6 +188,7 @@ rules:
   ATR_2026_00287:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -328,6 +351,7 @@ rules:
   ATR_2026_00326:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -400,6 +424,7 @@ rules:
   ATR_2026_00334:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -418,6 +443,7 @@ rules:
   ATR_2026_00336:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-15.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -427,6 +453,7 @@ rules:
   ATR_2026_00337:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -472,6 +499,7 @@ rules:
   ATR_2026_00342:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -715,6 +743,7 @@ rules:
   ATR_2026_00371:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-15.1.15
     severity: HIGH
     knobs:
       enabled: true
@@ -778,6 +807,7 @@ rules:
   ATR_2026_00380:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-15.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -886,6 +916,7 @@ rules:
   ATR_2026_00404:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-1.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -904,6 +935,7 @@ rules:
   ATR_2026_00416:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-9.3.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -913,6 +945,7 @@ rules:
   ATR_2026_00417:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -922,6 +955,7 @@ rules:
   ATR_2026_00418:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -931,6 +965,7 @@ rules:
   ATR_2026_00430:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-3.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -940,6 +975,7 @@ rules:
   ATR_2026_00432:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -949,6 +985,7 @@ rules:
   ATR_2026_00440:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -958,6 +995,7 @@ rules:
   ATR_2026_00552:
     source: signature
     category: social_engineering
+    taxonomy: AISubtech-2.2.2
     severity: HIGH
     knobs:
       enabled: true
@@ -967,6 +1005,7 @@ rules:
   ATR_2026_00020:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -976,6 +1015,7 @@ rules:
   ATR_2026_00021:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -985,6 +1025,7 @@ rules:
   ATR_2026_00075:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-5.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1003,6 +1044,7 @@ rules:
   ATR_2026_00113:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1012,6 +1054,7 @@ rules:
   ATR_2026_00114:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1021,6 +1064,7 @@ rules:
   ATR_2026_00115:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1039,6 +1083,7 @@ rules:
   ATR_2026_00141:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1055,6 +1100,7 @@ rules:
   ATR_2026_00145:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1064,6 +1110,7 @@ rules:
   ATR_2026_00146:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1073,6 +1120,7 @@ rules:
   ATR_2026_00150:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1082,6 +1130,7 @@ rules:
   ATR_2026_00152:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1091,6 +1140,7 @@ rules:
   ATR_2026_00162:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1100,6 +1150,7 @@ rules:
   ATR_2026_00201:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1109,6 +1160,7 @@ rules:
   ATR_2026_00212:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1127,6 +1179,7 @@ rules:
   ATR_2026_00274:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1136,6 +1189,7 @@ rules:
   ATR_2026_00275:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1145,6 +1199,7 @@ rules:
   ATR_2026_00290:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1154,6 +1209,7 @@ rules:
   ATR_2026_00291:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.5
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1163,6 +1219,7 @@ rules:
   ATR_2026_00293:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.5
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1172,6 +1229,7 @@ rules:
   ATR_2026_00294:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.6
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1181,6 +1239,7 @@ rules:
   ATR_2026_00295:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.7
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1199,6 +1258,7 @@ rules:
   ATR_2026_00411:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1217,6 +1277,7 @@ rules:
   ATR_2026_00422:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1235,6 +1296,7 @@ rules:
   ATR_2026_00424:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1244,6 +1306,7 @@ rules:
   ATR_2026_00426:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1253,6 +1316,7 @@ rules:
   ATR_2026_00431:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1262,6 +1326,7 @@ rules:
   ATR_2026_00449:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-4.2.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1271,6 +1336,7 @@ rules:
   ATR_2026_00471:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1288,6 +1354,7 @@ rules:
   ATR_2026_00504:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.3.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1297,6 +1364,7 @@ rules:
   ATR_2026_00505:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1306,6 +1374,7 @@ rules:
   ATR_2026_00514:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1315,6 +1384,7 @@ rules:
   ATR_2026_00516:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -1324,6 +1394,7 @@ rules:
   ATR_2026_00524:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1333,6 +1404,7 @@ rules:
   ATR_2026_00548:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-4.2.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1342,6 +1414,7 @@ rules:
   ATR_2026_00566:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-7.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1351,6 +1424,7 @@ rules:
   ATR_2026_00569:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1360,6 +1434,7 @@ rules:
   ATR_2026_00571:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -1369,6 +1444,7 @@ rules:
   ATR_2026_00574:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1378,6 +1454,7 @@ rules:
   ATR_2026_00578:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1387,6 +1464,7 @@ rules:
   ATR_2026_00580:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1396,6 +1474,7 @@ rules:
   ATR_2026_00583:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1405,6 +1484,7 @@ rules:
   ATR_2026_00702:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1414,6 +1494,7 @@ rules:
   ATR_2026_00703:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.6
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1423,6 +1504,7 @@ rules:
   ATR_2026_00704:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.7
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1432,6 +1514,7 @@ rules:
   ATR_2026_00705:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.5
     severity: HIGH
     knobs:
       enabled: true
@@ -1441,6 +1524,7 @@ rules:
   ATR_2026_00706:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.5
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1459,6 +1543,7 @@ rules:
   ATR_2026_00850:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1468,6 +1553,7 @@ rules:
   ATR_2026_00851:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.6
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1477,6 +1563,7 @@ rules:
   ATR_2026_00852:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.7
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1486,6 +1573,7 @@ rules:
   ATR_2026_00853:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.7
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1495,6 +1583,7 @@ rules:
   ATR_2026_00854:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.5
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1513,6 +1602,7 @@ rules:
   ATR_2026_00856:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.5
     severity: HIGH
     knobs:
       enabled: true
@@ -1540,6 +1630,7 @@ rules:
   ATR_2026_00859:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.5
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1549,6 +1640,7 @@ rules:
   ATR_2026_00860:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-2.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1558,6 +1650,7 @@ rules:
   ATR_2026_00861:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-2.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1567,6 +1660,7 @@ rules:
   ATR_2026_00862:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1576,6 +1670,7 @@ rules:
   ATR_2026_00863:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1585,6 +1680,7 @@ rules:
   ATR_2026_01450:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -1594,6 +1690,7 @@ rules:
   ATR_2026_01451:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -1603,6 +1700,7 @@ rules:
   ATR_2026_01452:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -1630,6 +1728,7 @@ rules:
   ATR_2026_01455:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1639,6 +1738,7 @@ rules:
   ATR_2026_01456:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1648,6 +1748,7 @@ rules:
   ATR_2026_01457:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1657,6 +1758,7 @@ rules:
   ATR_2026_01458:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1666,6 +1768,7 @@ rules:
   ATR_2026_01459:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1675,6 +1778,7 @@ rules:
   ATR_2026_01460:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1684,6 +1788,7 @@ rules:
   ATR_2026_01461:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1693,6 +1798,7 @@ rules:
   ATR_2026_01462:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-1.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1702,6 +1808,7 @@ rules:
   ATR_2026_01463:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -1711,6 +1818,7 @@ rules:
   ATR_2026_01464:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1720,6 +1828,7 @@ rules:
   ATR_2026_01605:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1729,6 +1838,7 @@ rules:
   ATR_2026_01606:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.3
     severity: HIGH
     knobs:
       enabled: true
@@ -1738,6 +1848,7 @@ rules:
   ATR_2026_01607:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1747,6 +1858,7 @@ rules:
   ATR_2026_01608:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1756,6 +1868,7 @@ rules:
   ATR_2026_01753:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-15.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1765,6 +1878,7 @@ rules:
   ATR_2026_01754:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-15.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1774,6 +1888,7 @@ rules:
   ATR_2026_01770:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1783,6 +1898,7 @@ rules:
   ATR_2026_01772:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.3.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1837,6 +1953,7 @@ rules:
   ATR_2026_01891:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1846,6 +1963,7 @@ rules:
   ATR_2026_01892:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1855,6 +1973,7 @@ rules:
   ATR_2026_01893:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.3.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1864,6 +1983,7 @@ rules:
   ATR_2026_01894:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1872,6 +1992,7 @@ rules:
   ATR_2026_01895:
     source: signature
     category: data_exfiltration
+    taxonomy: AITech-8.5
     severity: HIGH
     knobs:
       enabled: true
@@ -1880,6 +2001,7 @@ rules:
   ATR_2026_01924:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1889,6 +2011,7 @@ rules:
   ATR_2026_01929:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1898,6 +2021,7 @@ rules:
   ATR_2026_01948:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1916,6 +2040,7 @@ rules:
   ATR_2026_01961:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1934,6 +2059,7 @@ rules:
   ATR_2026_01984:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1952,6 +2078,7 @@ rules:
   ATR_2026_02017:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1961,6 +2088,7 @@ rules:
   ATR_2026_00070:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-6.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1970,6 +2098,7 @@ rules:
   ATR_2026_00450:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-5.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1979,6 +2108,7 @@ rules:
   ATR_2026_00570:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -1988,6 +2118,7 @@ rules:
   ATR_2026_01155:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-5.1.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1997,6 +2128,7 @@ rules:
   ATR_2026_01774:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-5.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2006,6 +2138,7 @@ rules:
   ATR_2026_00050:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-13.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2015,6 +2148,7 @@ rules:
   ATR_2026_00051:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-13.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2051,6 +2185,7 @@ rules:
   ATR_2026_00428:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2060,6 +2195,7 @@ rules:
   ATR_2026_00491:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-8.3.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2069,6 +2205,7 @@ rules:
   ATR_2026_00500:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-9.1.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2105,6 +2242,7 @@ rules:
   ATR_2026_00711:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2114,6 +2252,7 @@ rules:
   ATR_2026_00712:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-9.3.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2123,6 +2262,7 @@ rules:
   ATR_2026_00713:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2150,6 +2290,7 @@ rules:
   ATR_2026_00722:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-15.1.17
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2159,6 +2300,7 @@ rules:
   ATR_2026_01751:
     source: signature
     category: autonomy_abuse
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -2168,6 +2310,7 @@ rules:
   ATR_2026_01752:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-13.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2186,6 +2329,7 @@ rules:
   ATR_2026_01801:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-15.1.17
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2195,6 +2339,7 @@ rules:
   ATR_2026_01804:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-2.3.2
     severity: HIGH
     knobs:
       enabled: true
@@ -2204,6 +2349,7 @@ rules:
   ATR_2026_01805:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-15.1.7
     severity: HIGH
     knobs:
       enabled: true
@@ -2213,6 +2359,7 @@ rules:
   ATR_2026_01806:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-15.1.17
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2222,6 +2369,7 @@ rules:
   ATR_2026_01809:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-15.1.7
     severity: HIGH
     knobs:
       enabled: true
@@ -2231,6 +2379,7 @@ rules:
   ATR_2026_01837:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-18.2.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2239,6 +2388,7 @@ rules:
   ATR_2026_01838:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-13.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2247,6 +2397,7 @@ rules:
   ATR_2026_01849:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-15.1.8
     severity: HIGH
     knobs:
       enabled: true
@@ -2255,6 +2406,7 @@ rules:
   ATR_2026_01989:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-9.1.3
     severity: HIGH
     knobs:
       enabled: true
@@ -2264,6 +2416,7 @@ rules:
   ATR_2026_01993:
     source: signature
     category: autonomy_abuse
+    taxonomy: AITech-9.2
     severity: HIGH
     knobs:
       enabled: true
@@ -2273,6 +2426,7 @@ rules:
   ATR_2026_01994:
     source: signature
     category: autonomy_abuse
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2291,6 +2445,7 @@ rules:
   ATR_2026_00281:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2300,6 +2455,7 @@ rules:
   ATR_2026_00284:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-1.1.4
     severity: MEDIUM
     knobs:
       enabled: true
@@ -2318,6 +2474,7 @@ rules:
   ATR_2026_00292:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.13
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2345,6 +2502,7 @@ rules:
   ATR_2026_00413:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2354,6 +2512,7 @@ rules:
   ATR_2026_00502:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-8.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -2363,6 +2522,7 @@ rules:
   ATR_2026_00517:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-10.1.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -2372,6 +2532,7 @@ rules:
   ATR_2026_01750:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-13.1.3
     severity: HIGH
     knobs:
       enabled: true
@@ -2381,6 +2542,7 @@ rules:
   ATR_2026_01760:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-13.1.3
     severity: HIGH
     knobs:
       enabled: true
@@ -2390,6 +2552,7 @@ rules:
   ATR_2026_01830:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.7
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2399,6 +2562,7 @@ rules:
   ATR_2026_01831:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.7
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2408,6 +2572,7 @@ rules:
   ATR_2026_01833:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.10
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2416,6 +2581,7 @@ rules:
   ATR_2026_01834:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.12
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2424,6 +2590,7 @@ rules:
   ATR_2026_01835:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.10
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2432,6 +2599,7 @@ rules:
   ATR_2026_01836:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2440,6 +2608,7 @@ rules:
   ATR_2026_01840:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.16
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2449,6 +2618,7 @@ rules:
   ATR_2026_01841:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -2457,6 +2627,7 @@ rules:
   ATR_2026_01842:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.23
     severity: MEDIUM
     knobs:
       enabled: true
@@ -2466,6 +2637,7 @@ rules:
   ATR_2026_01843:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.10
     severity: HIGH
     knobs:
       enabled: true
@@ -2474,6 +2646,7 @@ rules:
   ATR_2026_01844:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.10
     severity: HIGH
     knobs:
       enabled: true
@@ -2482,6 +2655,7 @@ rules:
   ATR_2026_01845:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.12
     severity: HIGH
     knobs:
       enabled: true
@@ -2490,6 +2664,7 @@ rules:
   ATR_2026_01846:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.7
     severity: MEDIUM
     knobs:
       enabled: true
@@ -2499,6 +2674,7 @@ rules:
   ATR_2026_01847:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.12
     severity: MEDIUM
     knobs:
       enabled: true
@@ -2507,6 +2683,7 @@ rules:
   ATR_2026_01848:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.10
     severity: HIGH
     knobs:
       enabled: true
@@ -2515,6 +2692,7 @@ rules:
   ATR_2026_01850:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.8
     severity: HIGH
     knobs:
       enabled: true
@@ -2523,6 +2701,7 @@ rules:
   ATR_2026_01851:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2531,6 +2710,7 @@ rules:
   ATR_2026_01852:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.12
     severity: HIGH
     knobs:
       enabled: true
@@ -2539,6 +2719,7 @@ rules:
   ATR_2026_01853:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.14
     severity: HIGH
     knobs:
       enabled: true
@@ -2547,6 +2728,7 @@ rules:
   ATR_2026_01854:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -2555,6 +2737,7 @@ rules:
   ATR_2026_01855:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.23
     severity: MEDIUM
     knobs:
       enabled: true
@@ -2572,6 +2755,7 @@ rules:
   ATR_2026_01896:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2581,6 +2765,7 @@ rules:
   ATR_2026_01897:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2590,6 +2775,7 @@ rules:
   ATR_2026_01898:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-18.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2598,6 +2784,7 @@ rules:
   ATR_2026_00072:
     source: signature
     category: policy_violation
+    taxonomy: AISubtech-10.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2607,6 +2794,7 @@ rules:
   ATR_2026_00073:
     source: signature
     category: policy_violation
+    taxonomy: AITech-6.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2616,6 +2804,7 @@ rules:
   ATR_2026_00433:
     source: signature
     category: policy_violation
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2634,6 +2823,7 @@ rules:
   ATR_2026_00041:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -2643,6 +2833,7 @@ rules:
   ATR_2026_00107:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2652,6 +2843,7 @@ rules:
   ATR_2026_00110:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2661,6 +2853,7 @@ rules:
   ATR_2026_00111:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2670,6 +2863,7 @@ rules:
   ATR_2026_00112:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2679,6 +2873,7 @@ rules:
   ATR_2026_00143:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -2688,6 +2883,7 @@ rules:
   ATR_2026_00144:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.2.3
     severity: HIGH
     knobs:
       enabled: true
@@ -2697,6 +2893,7 @@ rules:
   ATR_2026_00204:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -2706,6 +2903,7 @@ rules:
   ATR_2026_00436:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2715,6 +2913,7 @@ rules:
   ATR_2026_00441:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2724,6 +2923,7 @@ rules:
   ATR_2026_00451:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2733,6 +2933,7 @@ rules:
   ATR_2026_00528:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-14.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2742,6 +2943,7 @@ rules:
   ATR_2026_00539:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2751,6 +2953,7 @@ rules:
   ATR_2026_00546:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -2760,6 +2963,7 @@ rules:
   ATR_2026_00547:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.3
     severity: HIGH
     knobs:
       enabled: true
@@ -2769,6 +2973,7 @@ rules:
   ATR_2026_00549:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2778,6 +2983,7 @@ rules:
   ATR_2026_00551:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-5.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2787,6 +2993,7 @@ rules:
   ATR_2026_01600:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2796,6 +3003,7 @@ rules:
   ATR_2026_01601:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2805,6 +3013,7 @@ rules:
   ATR_2026_01602:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2814,6 +3023,7 @@ rules:
   ATR_2026_01603:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2823,6 +3033,7 @@ rules:
   ATR_2026_01604:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -2832,6 +3043,7 @@ rules:
   ATR_2026_01609:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2841,6 +3053,7 @@ rules:
   ATR_2026_01610:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -2850,6 +3063,7 @@ rules:
   ATR_2026_01611:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -2859,6 +3073,7 @@ rules:
   ATR_2026_01612:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-4.3.5
     severity: HIGH
     knobs:
       enabled: true
@@ -2868,6 +3083,7 @@ rules:
   ATR_2026_01613:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-14.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -2877,6 +3093,7 @@ rules:
   ATR_2026_01614:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-14.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -2886,6 +3103,7 @@ rules:
   ATR_2026_01615:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2895,6 +3113,7 @@ rules:
   ATR_2026_01616:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -2904,6 +3123,7 @@ rules:
   ATR_2026_01802:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2913,6 +3133,7 @@ rules:
   ATR_2026_01803:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2922,6 +3143,7 @@ rules:
   ATR_2026_01808:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AITech-8.6
     severity: HIGH
     knobs:
       enabled: true
@@ -2931,6 +3153,7 @@ rules:
   ATR_2026_01899:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2940,6 +3163,7 @@ rules:
   ATR_2026_01933:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-14.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2949,6 +3173,7 @@ rules:
   ATR_2026_01934:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-14.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2958,6 +3183,7 @@ rules:
   ATR_2026_01949:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-14.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2967,6 +3193,7 @@ rules:
   ATR_2026_01974:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-14.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2976,6 +3203,7 @@ rules:
   ATR_2026_01981:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-14.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -2985,6 +3213,7 @@ rules:
   ATR_2026_01986:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-14.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -2994,6 +3223,7 @@ rules:
   ATR_2026_01992:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3012,6 +3242,7 @@ rules:
   ATR_2026_00002:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3021,6 +3252,7 @@ rules:
   ATR_2026_00003:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3039,6 +3271,7 @@ rules:
   ATR_2026_00005:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -3048,6 +3281,7 @@ rules:
   ATR_2026_00080:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3057,6 +3291,7 @@ rules:
   ATR_2026_00081:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3066,6 +3301,7 @@ rules:
   ATR_2026_00082:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-11.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -3075,6 +3311,7 @@ rules:
   ATR_2026_00083:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3084,6 +3321,7 @@ rules:
   ATR_2026_00084:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3093,6 +3331,7 @@ rules:
   ATR_2026_00085:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-11.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -3102,6 +3341,7 @@ rules:
   ATR_2026_00086:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3111,6 +3351,7 @@ rules:
   ATR_2026_00087:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-11.1.4
     severity: MEDIUM
     knobs:
       enabled: true
@@ -3120,6 +3361,7 @@ rules:
   ATR_2026_00088:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-11.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -3129,6 +3371,7 @@ rules:
   ATR_2026_00089:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-11.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -3138,6 +3381,7 @@ rules:
   ATR_2026_00090:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-8.3.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3147,6 +3391,7 @@ rules:
   ATR_2026_00091:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3156,6 +3401,7 @@ rules:
   ATR_2026_00092:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3165,6 +3411,7 @@ rules:
   ATR_2026_00093:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3174,6 +3421,7 @@ rules:
   ATR_2026_00094:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-11.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3192,6 +3440,7 @@ rules:
   ATR_2026_00104:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3201,6 +3450,7 @@ rules:
   ATR_2026_00130:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3210,6 +3460,7 @@ rules:
   ATR_2026_00131:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -3236,6 +3487,7 @@ rules:
   ATR_2026_00138:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3244,6 +3496,7 @@ rules:
   ATR_2026_00140:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -3261,6 +3514,7 @@ rules:
   ATR_2026_00153:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3270,6 +3524,7 @@ rules:
   ATR_2026_00154:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-2.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -3288,6 +3543,7 @@ rules:
   ATR_2026_00156:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -3306,6 +3562,7 @@ rules:
   ATR_2026_00202:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3315,6 +3572,7 @@ rules:
   ATR_2026_00203:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-4.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3356,6 +3614,7 @@ rules:
   ATR_2026_00226:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3365,6 +3624,7 @@ rules:
   ATR_2026_00227:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3374,6 +3634,7 @@ rules:
   ATR_2026_00228:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3383,6 +3644,7 @@ rules:
   ATR_2026_00229:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3392,6 +3654,7 @@ rules:
   ATR_2026_00230:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3401,6 +3664,7 @@ rules:
   ATR_2026_00231:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3410,6 +3674,7 @@ rules:
   ATR_2026_00233:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3419,6 +3684,7 @@ rules:
   ATR_2026_00234:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3428,6 +3694,7 @@ rules:
   ATR_2026_00235:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3437,6 +3704,7 @@ rules:
   ATR_2026_00236:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3446,6 +3714,7 @@ rules:
   ATR_2026_00237:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3455,6 +3724,7 @@ rules:
   ATR_2026_00238:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3464,6 +3734,7 @@ rules:
   ATR_2026_00239:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3482,6 +3753,7 @@ rules:
   ATR_2026_00241:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3491,6 +3763,7 @@ rules:
   ATR_2026_00242:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3500,6 +3773,7 @@ rules:
   ATR_2026_00243:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3509,6 +3783,7 @@ rules:
   ATR_2026_00244:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3518,6 +3793,7 @@ rules:
   ATR_2026_00245:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3527,6 +3803,7 @@ rules:
   ATR_2026_00247:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3536,6 +3813,7 @@ rules:
   ATR_2026_00249:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3545,6 +3823,7 @@ rules:
   ATR_2026_00251:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3554,6 +3833,7 @@ rules:
   ATR_2026_00252:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3563,6 +3843,7 @@ rules:
   ATR_2026_00253:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3572,6 +3853,7 @@ rules:
   ATR_2026_00256:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3581,6 +3863,7 @@ rules:
   ATR_2026_00257:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3590,6 +3873,7 @@ rules:
   ATR_2026_00258:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3599,6 +3883,7 @@ rules:
   ATR_2026_00264:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3608,6 +3893,7 @@ rules:
   ATR_2026_00265:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3617,6 +3903,7 @@ rules:
   ATR_2026_00267:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -3626,6 +3913,7 @@ rules:
   ATR_2026_00272:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3635,6 +3923,7 @@ rules:
   ATR_2026_00276:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3644,6 +3933,7 @@ rules:
   ATR_2026_00278:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3671,6 +3961,7 @@ rules:
   ATR_2026_00285:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3680,6 +3971,7 @@ rules:
   ATR_2026_00286:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3689,6 +3981,7 @@ rules:
   ATR_2026_00296:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3698,6 +3991,7 @@ rules:
   ATR_2026_00297:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3707,6 +4001,7 @@ rules:
   ATR_2026_00308:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3716,6 +4011,7 @@ rules:
   ATR_2026_00309:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3725,6 +4021,7 @@ rules:
   ATR_2026_00310:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3734,6 +4031,7 @@ rules:
   ATR_2026_00311:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3743,6 +4041,7 @@ rules:
   ATR_2026_00312:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3752,6 +4051,7 @@ rules:
   ATR_2026_00313:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3761,6 +4061,7 @@ rules:
   ATR_2026_00315:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3770,6 +4071,7 @@ rules:
   ATR_2026_00316:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3779,6 +4081,7 @@ rules:
   ATR_2026_00321:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3788,6 +4091,7 @@ rules:
   ATR_2026_00359:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3797,6 +4101,7 @@ rules:
   ATR_2026_00367:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3806,6 +4111,7 @@ rules:
   ATR_2026_00373:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.23
     severity: HIGH
     knobs:
       enabled: true
@@ -3815,6 +4121,7 @@ rules:
   ATR_2026_00378:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -3824,6 +4131,7 @@ rules:
   ATR_2026_00382:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.10
     severity: HIGH
     knobs:
       enabled: true
@@ -3833,6 +4141,7 @@ rules:
   ATR_2026_00390:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.14
     severity: HIGH
     knobs:
       enabled: true
@@ -3842,6 +4151,7 @@ rules:
   ATR_2026_00394:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -3851,6 +4161,7 @@ rules:
   ATR_2026_00395:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -3860,6 +4171,7 @@ rules:
   ATR_2026_00396:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.25
     severity: HIGH
     knobs:
       enabled: true
@@ -3869,6 +4181,7 @@ rules:
   ATR_2026_00397:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.19
     severity: MEDIUM
     knobs:
       enabled: true
@@ -3878,6 +4191,7 @@ rules:
   ATR_2026_00399:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -3887,6 +4201,7 @@ rules:
   ATR_2026_00400:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3896,6 +4211,7 @@ rules:
   ATR_2026_00401:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-8.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -3905,6 +4221,7 @@ rules:
   ATR_2026_00403:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: MEDIUM
     knobs:
       enabled: true
@@ -3914,6 +4231,7 @@ rules:
   ATR_2026_00407:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3923,6 +4241,7 @@ rules:
   ATR_2026_00408:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3932,6 +4251,7 @@ rules:
   ATR_2026_00409:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -3941,6 +4261,7 @@ rules:
   ATR_2026_00410:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.25
     severity: MEDIUM
     knobs:
       enabled: true
@@ -3950,6 +4271,7 @@ rules:
   ATR_2026_00412:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.3.1
     severity: HIGH
     knobs:
       enabled: true
@@ -3959,6 +4281,7 @@ rules:
   ATR_2026_00414:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.9
     severity: MEDIUM
     knobs:
       enabled: true
@@ -3968,6 +4291,7 @@ rules:
   ATR_2026_00420:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -3986,6 +4310,7 @@ rules:
   ATR_2026_00443:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -3995,6 +4320,7 @@ rules:
   ATR_2026_00444:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4022,6 +4348,7 @@ rules:
   ATR_2026_00447:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4040,6 +4367,7 @@ rules:
   ATR_2026_00453:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -4049,6 +4377,7 @@ rules:
   ATR_2026_00454:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4076,6 +4405,7 @@ rules:
   ATR_2026_00457:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4085,6 +4415,7 @@ rules:
   ATR_2026_00458:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4094,6 +4425,7 @@ rules:
   ATR_2026_00459:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4103,6 +4435,7 @@ rules:
   ATR_2026_00460:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4121,6 +4454,7 @@ rules:
   ATR_2026_00462:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4130,6 +4464,7 @@ rules:
   ATR_2026_00463:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.25
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4139,6 +4474,7 @@ rules:
   ATR_2026_00464:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4148,6 +4484,7 @@ rules:
   ATR_2026_00465:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4157,6 +4494,7 @@ rules:
   ATR_2026_00466:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4166,6 +4504,7 @@ rules:
   ATR_2026_00467:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4184,6 +4523,7 @@ rules:
   ATR_2026_00469:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4193,6 +4533,7 @@ rules:
   ATR_2026_00470:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4202,6 +4543,7 @@ rules:
   ATR_2026_00472:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4211,6 +4553,7 @@ rules:
   ATR_2026_00473:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.25
     severity: HIGH
     knobs:
       enabled: true
@@ -4220,6 +4563,7 @@ rules:
   ATR_2026_00474:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4229,6 +4573,7 @@ rules:
   ATR_2026_00475:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -4238,6 +4583,7 @@ rules:
   ATR_2026_00476:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -4247,6 +4593,7 @@ rules:
   ATR_2026_00477:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4256,6 +4603,7 @@ rules:
   ATR_2026_00478:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4264,6 +4612,7 @@ rules:
   ATR_2026_00479:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4273,6 +4622,7 @@ rules:
   ATR_2026_00480:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4282,6 +4632,7 @@ rules:
   ATR_2026_00481:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4291,6 +4642,7 @@ rules:
   ATR_2026_00482:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-15.1.25
     severity: HIGH
     knobs:
       enabled: true
@@ -4300,6 +4652,7 @@ rules:
   ATR_2026_00483:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4309,6 +4662,7 @@ rules:
   ATR_2026_00484:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4318,6 +4672,7 @@ rules:
   ATR_2026_00485:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4327,6 +4682,7 @@ rules:
   ATR_2026_00486:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4336,6 +4692,7 @@ rules:
   ATR_2026_00487:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4345,6 +4702,7 @@ rules:
   ATR_2026_00488:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4354,6 +4712,7 @@ rules:
   ATR_2026_00489:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4363,6 +4722,7 @@ rules:
   ATR_2026_00490:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4372,6 +4732,7 @@ rules:
   ATR_2026_00492:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4381,6 +4742,7 @@ rules:
   ATR_2026_00493:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4390,6 +4752,7 @@ rules:
   ATR_2026_00495:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4399,6 +4762,7 @@ rules:
   ATR_2026_00496:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4408,6 +4772,7 @@ rules:
   ATR_2026_00497:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4417,6 +4782,7 @@ rules:
   ATR_2026_00498:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -4426,6 +4792,7 @@ rules:
   ATR_2026_00499:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4462,6 +4829,7 @@ rules:
   ATR_2026_00508:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -4471,6 +4839,7 @@ rules:
   ATR_2026_00509:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -4480,6 +4849,7 @@ rules:
   ATR_2026_00510:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -4489,6 +4859,7 @@ rules:
   ATR_2026_00511:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -4498,6 +4869,7 @@ rules:
   ATR_2026_00512:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-5.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -4507,6 +4879,7 @@ rules:
   ATR_2026_00515:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4525,6 +4898,7 @@ rules:
   ATR_2026_00519:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4534,6 +4908,7 @@ rules:
   ATR_2026_00520:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: LOW
     knobs:
       enabled: true
@@ -4543,6 +4918,7 @@ rules:
   ATR_2026_00535:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -4552,6 +4928,7 @@ rules:
   ATR_2026_00550:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -4561,6 +4938,7 @@ rules:
   ATR_2026_00554:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4569,6 +4947,7 @@ rules:
   ATR_2026_00565:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -4587,6 +4966,7 @@ rules:
   ATR_2026_00579:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4596,6 +4976,7 @@ rules:
   ATR_2026_00584:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4605,6 +4986,7 @@ rules:
   ATR_2026_00700:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -4614,6 +4996,7 @@ rules:
   ATR_2026_00701:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4623,6 +5006,7 @@ rules:
   ATR_2026_01000:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -4632,6 +5016,7 @@ rules:
   ATR_2026_01001:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -4650,6 +5035,7 @@ rules:
   ATR_2026_01005:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4659,6 +5045,7 @@ rules:
   ATR_2026_01006:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4668,6 +5055,7 @@ rules:
   ATR_2026_01007:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-4.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4677,6 +5065,7 @@ rules:
   ATR_2026_01009:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4686,6 +5075,7 @@ rules:
   ATR_2026_01012:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4695,6 +5085,7 @@ rules:
   ATR_2026_01013:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -4731,6 +5122,7 @@ rules:
   ATR_2026_01018:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -4749,6 +5141,7 @@ rules:
   ATR_2026_01020:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4758,6 +5151,7 @@ rules:
   ATR_2026_01021:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4767,6 +5161,7 @@ rules:
   ATR_2026_01023:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4776,6 +5171,7 @@ rules:
   ATR_2026_01024:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4785,6 +5181,7 @@ rules:
   ATR_2026_01025:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4794,6 +5191,7 @@ rules:
   ATR_2026_01026:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -4803,6 +5201,7 @@ rules:
   ATR_2026_01304:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -4812,6 +5211,7 @@ rules:
   ATR_2026_01757:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4821,6 +5221,7 @@ rules:
   ATR_2026_01758:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4830,6 +5231,7 @@ rules:
   ATR_2026_01759:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4839,6 +5241,7 @@ rules:
   ATR_2026_01771:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -4848,6 +5251,7 @@ rules:
   ATR_2026_01800:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4857,6 +5261,7 @@ rules:
   ATR_2026_01860:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -4866,6 +5271,7 @@ rules:
   ATR_2026_01861:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -4875,6 +5281,7 @@ rules:
   ATR_2026_01865:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -4884,6 +5291,7 @@ rules:
   ATR_2026_01900:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4893,6 +5301,7 @@ rules:
   ATR_2026_01901:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4902,6 +5311,7 @@ rules:
   ATR_2026_01902:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4911,6 +5321,7 @@ rules:
   ATR_2026_01903:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4920,6 +5331,7 @@ rules:
   ATR_2026_01904:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -4929,6 +5341,7 @@ rules:
   ATR_2026_01905:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4938,6 +5351,7 @@ rules:
   ATR_2026_01906:
     source: signature
     category: prompt_injection
+    taxonomy: AITech-1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -4974,6 +5388,7 @@ rules:
   ATR_2026_01923:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -4983,6 +5398,7 @@ rules:
   ATR_2026_01925:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5010,6 +5426,7 @@ rules:
   ATR_2026_02002:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-8.4.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5028,6 +5445,7 @@ rules:
   ATR_2026_02004:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5037,6 +5455,7 @@ rules:
   ATR_2026_02005:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -5055,6 +5474,7 @@ rules:
   ATR_2026_02007:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5073,6 +5493,7 @@ rules:
   ATR_2026_02009:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5082,6 +5503,7 @@ rules:
   ATR_2026_02010:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5109,6 +5531,7 @@ rules:
   ATR_2026_02013:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5118,6 +5541,7 @@ rules:
   ATR_2026_02014:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5127,6 +5551,7 @@ rules:
   ATR_2026_02015:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5136,6 +5561,7 @@ rules:
   ATR_2026_02016:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5145,6 +5571,7 @@ rules:
   ATR_2026_02018:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5154,6 +5581,7 @@ rules:
   ATR_2026_02019:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -5163,6 +5591,7 @@ rules:
   ATR_2026_02020:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5172,6 +5601,7 @@ rules:
   ATR_2026_00060:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-3.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5181,6 +5611,7 @@ rules:
   ATR_2026_00061:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-4.3.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -5190,6 +5621,7 @@ rules:
   ATR_2026_00062:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.2.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5199,6 +5631,7 @@ rules:
   ATR_2026_00063:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-19.2.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5208,6 +5641,7 @@ rules:
   ATR_2026_00064:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-2.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5217,6 +5651,7 @@ rules:
   ATR_2026_00065:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.3.3
     severity: HIGH
     knobs:
       enabled: true
@@ -5226,6 +5661,7 @@ rules:
   ATR_2026_00066:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-12.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5235,6 +5671,7 @@ rules:
   ATR_2026_00120:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-1.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5244,6 +5681,7 @@ rules:
   ATR_2026_00121:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5253,6 +5691,7 @@ rules:
   ATR_2026_00122:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5262,6 +5701,7 @@ rules:
   ATR_2026_00123:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-2.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5271,6 +5711,7 @@ rules:
   ATR_2026_00124:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.3.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5280,6 +5721,7 @@ rules:
   ATR_2026_00125:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-5.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5289,6 +5731,7 @@ rules:
   ATR_2026_00126:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.3.3
     severity: HIGH
     knobs:
       enabled: true
@@ -5298,6 +5741,7 @@ rules:
   ATR_2026_00127:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-11.1.4
     severity: MEDIUM
     knobs:
       enabled: true
@@ -5307,6 +5751,7 @@ rules:
   ATR_2026_00128:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-1.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5316,6 +5761,7 @@ rules:
   ATR_2026_00129:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-1.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5325,6 +5771,7 @@ rules:
   ATR_2026_00134:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-3.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -5334,6 +5781,7 @@ rules:
   ATR_2026_00135:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5343,6 +5791,7 @@ rules:
   ATR_2026_00147:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-3.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5351,6 +5800,7 @@ rules:
   ATR_2026_00149:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5360,6 +5810,7 @@ rules:
   ATR_2026_00151:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-3.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5369,6 +5820,7 @@ rules:
   ATR_2026_00157:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-11.1.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5378,6 +5830,7 @@ rules:
   ATR_2026_00200:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-5.2.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5387,6 +5840,7 @@ rules:
   ATR_2026_00214:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5396,6 +5850,7 @@ rules:
   ATR_2026_00217:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5405,6 +5860,7 @@ rules:
   ATR_2026_00220:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-15.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5414,6 +5870,7 @@ rules:
   ATR_2026_00222:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5423,6 +5880,7 @@ rules:
   ATR_2026_00223:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-15.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5432,6 +5890,7 @@ rules:
   ATR_2026_00224:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5441,6 +5900,7 @@ rules:
   ATR_2026_00225:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5449,6 +5909,7 @@ rules:
   ATR_2026_00260:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.3.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5458,6 +5919,7 @@ rules:
   ATR_2026_00262:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-12.2.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5467,6 +5929,7 @@ rules:
   ATR_2026_00263:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5476,6 +5939,7 @@ rules:
   ATR_2026_00266:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-15.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5485,6 +5949,7 @@ rules:
   ATR_2026_00283:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5494,6 +5959,7 @@ rules:
   ATR_2026_00398:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5503,6 +5969,7 @@ rules:
   ATR_2026_00425:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-5.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5512,6 +5979,7 @@ rules:
   ATR_2026_00427:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-1.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5521,6 +5989,7 @@ rules:
   ATR_2026_00429:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-5.2.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5530,6 +5999,7 @@ rules:
   ATR_2026_00523:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5539,6 +6009,7 @@ rules:
   ATR_2026_00525:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-15.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5548,6 +6019,7 @@ rules:
   ATR_2026_00527:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5557,6 +6029,7 @@ rules:
   ATR_2026_01755:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.2.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5566,6 +6039,7 @@ rules:
   ATR_2026_01756:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.2.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5575,6 +6049,7 @@ rules:
   ATR_2026_00010:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5584,6 +6059,7 @@ rules:
   ATR_2026_00011:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5593,6 +6069,7 @@ rules:
   ATR_2026_00012:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-12.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5602,6 +6079,7 @@ rules:
   ATR_2026_00013:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5611,6 +6089,7 @@ rules:
   ATR_2026_00095:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.3.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5620,6 +6099,7 @@ rules:
   ATR_2026_00096:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.3.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5629,6 +6109,7 @@ rules:
   ATR_2026_00100:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-2.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5638,6 +6119,7 @@ rules:
   ATR_2026_00101:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-1.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5647,6 +6129,7 @@ rules:
   ATR_2026_00103:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-1.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5656,6 +6139,7 @@ rules:
   ATR_2026_00105:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-2.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5665,6 +6149,7 @@ rules:
   ATR_2026_00106:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-4.3.1
     severity: HIGH
     knobs:
       enabled: true
@@ -5674,6 +6159,7 @@ rules:
   ATR_2026_00161:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-12.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5683,6 +6169,7 @@ rules:
   ATR_2026_00209:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-13.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5692,6 +6179,7 @@ rules:
   ATR_2026_00210:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.5
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5701,6 +6189,7 @@ rules:
   ATR_2026_00259:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5710,6 +6199,7 @@ rules:
   ATR_2026_00270:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5719,6 +6209,7 @@ rules:
   ATR_2026_00277:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5728,6 +6219,7 @@ rules:
   ATR_2026_00393:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5737,6 +6229,7 @@ rules:
   ATR_2026_00415:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5746,6 +6239,7 @@ rules:
   ATR_2026_00419:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AITech-5.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5755,6 +6249,7 @@ rules:
   ATR_2026_00434:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5764,6 +6259,7 @@ rules:
   ATR_2026_00435:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-14.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5773,6 +6269,7 @@ rules:
   ATR_2026_00448:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5782,6 +6279,7 @@ rules:
   ATR_2026_00494:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5791,6 +6289,7 @@ rules:
   ATR_2026_00513:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.3.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5800,6 +6299,7 @@ rules:
   ATR_2026_00521:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5809,6 +6309,7 @@ rules:
   ATR_2026_00522:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5818,6 +6319,7 @@ rules:
   ATR_2026_00526:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5827,6 +6329,7 @@ rules:
   ATR_2026_00529:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5836,6 +6339,7 @@ rules:
   ATR_2026_00530:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5845,6 +6349,7 @@ rules:
   ATR_2026_00531:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-14.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5854,6 +6359,7 @@ rules:
   ATR_2026_00532:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5863,6 +6369,7 @@ rules:
   ATR_2026_00533:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-14.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5872,6 +6379,7 @@ rules:
   ATR_2026_00534:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-14.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -5881,6 +6389,7 @@ rules:
   ATR_2026_00536:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5890,6 +6399,7 @@ rules:
   ATR_2026_00537:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5899,6 +6409,7 @@ rules:
   ATR_2026_00538:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5908,6 +6419,7 @@ rules:
   ATR_2026_00540:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5917,6 +6429,7 @@ rules:
   ATR_2026_00541:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5926,6 +6439,7 @@ rules:
   ATR_2026_00542:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5935,6 +6449,7 @@ rules:
   ATR_2026_00543:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5944,6 +6459,7 @@ rules:
   ATR_2026_00544:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5953,6 +6469,7 @@ rules:
   ATR_2026_00545:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5962,6 +6479,7 @@ rules:
   ATR_2026_00561:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5970,6 +6488,7 @@ rules:
   ATR_2026_00567:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -5979,6 +6498,7 @@ rules:
   ATR_2026_00568:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.3
     severity: HIGH
     knobs:
       enabled: true
@@ -5988,6 +6508,7 @@ rules:
   ATR_2026_00572:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -5997,6 +6518,7 @@ rules:
   ATR_2026_00575:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AITech-5.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6006,6 +6528,7 @@ rules:
   ATR_2026_00576:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6015,6 +6538,7 @@ rules:
   ATR_2026_00577:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6024,6 +6548,7 @@ rules:
   ATR_2026_00581:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.3.3
     severity: HIGH
     knobs:
       enabled: true
@@ -6033,6 +6558,7 @@ rules:
   ATR_2026_00714:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -6042,6 +6568,7 @@ rules:
   ATR_2026_00715:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-3.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6051,6 +6578,7 @@ rules:
   ATR_2026_00716:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -6060,6 +6588,7 @@ rules:
   ATR_2026_00720:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-14.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -6069,6 +6598,7 @@ rules:
   ATR_2026_01300:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6078,6 +6608,7 @@ rules:
   ATR_2026_01301:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-12.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -6087,6 +6618,7 @@ rules:
   ATR_2026_01302:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AITech-1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6096,6 +6628,7 @@ rules:
   ATR_2026_01303:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-8.3.1
     severity: HIGH
     knobs:
       enabled: true
@@ -6105,6 +6638,7 @@ rules:
   ATR_2026_01306:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6114,6 +6648,7 @@ rules:
   ATR_2026_01307:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-4.3.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6123,6 +6658,7 @@ rules:
   ATR_2026_01310:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6141,6 +6677,7 @@ rules:
   ATR_2026_01927:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -6150,6 +6687,7 @@ rules:
   ATR_2026_01928:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -6159,6 +6697,7 @@ rules:
   ATR_2026_01930:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AITech-1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -6168,6 +6707,7 @@ rules:
   ATR_2026_01931:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6177,6 +6717,7 @@ rules:
   ATR_2026_01932:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-12.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -6186,6 +6727,7 @@ rules:
   ATR_2026_01935:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6195,6 +6737,7 @@ rules:
   ATR_2026_01952:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6204,6 +6747,7 @@ rules:
   ATR_2026_01953:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6213,6 +6757,7 @@ rules:
   ATR_2026_01959:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6222,6 +6767,7 @@ rules:
   ATR_2026_01963:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6231,6 +6777,7 @@ rules:
   ATR_2026_01965:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6240,6 +6787,7 @@ rules:
   ATR_2026_01967:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6249,6 +6797,7 @@ rules:
   ATR_2026_01968:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6258,6 +6807,7 @@ rules:
   ATR_2026_01970:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6267,6 +6817,7 @@ rules:
   ATR_2026_01973:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6276,6 +6827,7 @@ rules:
   ATR_2026_01978:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6285,6 +6837,7 @@ rules:
   ATR_2026_01979:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6294,6 +6847,7 @@ rules:
   ATR_2026_01980:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6303,6 +6857,7 @@ rules:
   ATR_2026_01982:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: MEDIUM
     knobs:
       enabled: true
@@ -6312,6 +6867,7 @@ rules:
   ATR_2026_01983:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6321,6 +6877,7 @@ rules:
   ATR_2026_01985:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6330,6 +6887,7 @@ rules:
   ATR_2026_01987:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6339,6 +6897,7 @@ rules:
   ATR_2026_02021:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -6348,6 +6907,7 @@ rules:
   ATR_2026_02022:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -6357,6 +6917,7 @@ rules:
   ATR_2026_02023:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -6366,6 +6927,7 @@ rules:
   ATR_2026_02024:
     source: signature
     category: transitive_trust_abuse
+    taxonomy: AISubtech-9.1.2
     severity: HIGH
     knobs:
       enabled: true

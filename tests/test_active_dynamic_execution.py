@@ -778,6 +778,7 @@ def test_core_manifest_declares_authoritative_v2_metadata() -> None:
         "source": "python",
         "analyzer": "static",
         "category": "command_injection",
+        "taxonomy": "AISubtech-9.1.1",
         "severity": "HIGH",
         "knobs": {"enabled": True},
         "description": "Syntax-confirmed dynamic code or process execution in active SKILL.md instructions",

@@ -237,6 +237,7 @@ def test_core_manifest_declares_authoritative_v2_metadata() -> None:
         "source": "python",
         "analyzer": "static",
         "category": "unicode_steganography",
+        "taxonomy": "AISubtech-1.1.2",
         "severity": "HIGH",
         "knobs": {"enabled": True},
         "description": "Hidden Unicode controls co-occur with active override or execution intent in SKILL.md",

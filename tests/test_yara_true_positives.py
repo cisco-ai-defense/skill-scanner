@@ -241,7 +241,7 @@ class TestCommandInjectionTruePositives:
 
 
 class TestJailbreakTruePositives:
-    """Ensure jailbreak patterns are detected (AITech-2.1)."""
+    """Ensure jailbreak patterns are detected (AISubtech-1.1.5)."""
 
     # --- DAN Jailbreak Patterns ---
     def test_detects_dan_explicit(self, yara_scanner):

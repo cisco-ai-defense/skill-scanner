@@ -55,6 +55,7 @@ from typing import Any
 
 import yaml
 
+from ..threats.cisco_ai_taxonomy import is_builtin_taxonomy_code
 from .cel.models import CelRollout, CelRule
 from .cel.validator import CelValidationError, validate_cel_expression
 from .models import Finding, Severity, ThreatCategory
@@ -76,6 +77,7 @@ _TRUSTED_PACK_FIELDS = frozenset(
         "license",
         "source_url",
         "rules",
+        "taxonomy_defaults",
     }
 )
 _TRUSTED_RULE_FIELDS = frozenset(
@@ -88,6 +90,7 @@ _TRUSTED_RULE_FIELDS = frozenset(
         "file_types",
         "remediation",
         "cel",
+        "taxonomy",
     }
 )
 _BUNDLED_V2_RULE_FIELDS = _TRUSTED_RULE_FIELDS | {"allowed_severity_demotions", "analyzer"}
@@ -169,6 +172,16 @@ _BUNDLED_ANALYZERS = frozenset(
     }
 )
 _THREAT_CATEGORIES = frozenset(item.value for item in ThreatCategory)
+
+# A rule's ``taxonomy`` selects one Cisco AI taxonomy code for its findings:
+# an AISubtech (preferred) or an AITech when no sub-technique fits.  Two
+# keywords cover the rest: ``not_applicable`` for operational findings that
+# describe no attack technique, and ``per_finding`` for analyzers that choose
+# a code for each finding (LLM, meta, AI Defense).
+TAXONOMY_NOT_APPLICABLE = "not_applicable"
+TAXONOMY_PER_FINDING = "per_finding"
+_TAXONOMY_KEYWORDS = frozenset({TAXONOMY_NOT_APPLICABLE, TAXONOMY_PER_FINDING})
+_TAXONOMY_CODE_RE = re.compile(r"^(?:AITech-\d+\.\d+|AISubtech-\d+\.\d+\.\d+)$")
 _SEVERITIES = frozenset(item.value for item in Severity)
 _SEVERITY_RANK = {
     Severity.SAFE.value: 0,
@@ -249,6 +262,66 @@ def _optional_pack_metadata(raw: dict[str, Any], context: str) -> dict[str, str]
     return result
 
 
+def _parse_taxonomy_selection(value: Any, context: str, *, bundled: bool) -> str:
+    """Validate one ``taxonomy`` selection.
+
+    Bundled packs are checked against the bundled taxonomy snapshot so a
+    release can never ship a code that does not exist.  Local packs may
+    target a custom taxonomy, so only the shape is checked here; codes the
+    active taxonomy does not know are reported as unmapped on findings.
+    """
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError(f"{context} must be a non-empty string without surrounding whitespace")
+    if value in _TAXONOMY_KEYWORDS:
+        return value
+    if not _TAXONOMY_CODE_RE.match(value):
+        raise ValueError(
+            f"{context} must be an AITech/AISubtech code, {TAXONOMY_NOT_APPLICABLE!r}, "
+            f"or {TAXONOMY_PER_FINDING!r}; got {value!r}"
+        )
+    if bundled and not is_builtin_taxonomy_code(value):
+        raise ValueError(f"{context} {value!r} does not exist in the bundled Cisco AI taxonomy")
+    return value
+
+
+def _parse_taxonomy_defaults(raw: Any, context: str, *, bundled: bool) -> dict[str, str]:
+    """Validate a pack-level ``taxonomy_defaults`` mapping of category -> selection."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"{context}.taxonomy_defaults must be a mapping of category to taxonomy code")
+    defaults: dict[str, str] = {}
+    for category, value in raw.items():
+        if category not in _THREAT_CATEGORIES:
+            raise ValueError(f"Unknown category {category!r} in {context}.taxonomy_defaults")
+        selection = _parse_taxonomy_selection(value, f"{context}.taxonomy_defaults.{category}", bundled=bundled)
+        if selection == TAXONOMY_PER_FINDING:
+            raise ValueError(f"{context}.taxonomy_defaults.{category} may not be {TAXONOMY_PER_FINDING!r}")
+        defaults[category] = selection
+    return defaults
+
+
+def _resolve_rule_taxonomy(
+    raw_rule: dict[str, Any],
+    category: str,
+    defaults: dict[str, str],
+    context: str,
+    *,
+    bundled: bool,
+    required: bool,
+) -> tuple[str, str]:
+    """Return ``(selection, source)`` for one rule; source is ``rule`` or ``pack_default``."""
+    if "taxonomy" in raw_rule:
+        return _parse_taxonomy_selection(raw_rule["taxonomy"], f"{context}.taxonomy", bundled=bundled), "rule"
+    if category in defaults:
+        return defaults[category], "pack_default"
+    if required:
+        raise ValueError(
+            f"{context} must declare taxonomy, or the pack must declare taxonomy_defaults for {category!r}"
+        )
+    return "", ""
+
+
 def _normalise_severity(value: Any, context: str) -> str:
     if not isinstance(value, str) or value.upper() not in _SEVERITIES:
         raise ValueError(f"Unknown severity {value!r} in {context}")
@@ -309,6 +382,16 @@ class RuleDefinition:
 
     cel: CelRule | None = None
     """Optional bounded CEL decision gate for this concrete rule."""
+
+    taxonomy: str = ""
+    """Cisco AI taxonomy selection for this rule's findings.
+
+    An AISubtech or AITech code, ``not_applicable``, ``per_finding``, or empty
+    when an unbundled pack declares nothing.
+    """
+
+    taxonomy_source: str = ""
+    """Where :attr:`taxonomy` came from: ``rule`` or ``pack_default``."""
 
 
 @dataclass(frozen=True)
@@ -379,6 +462,8 @@ class RulePack:
             containing multiple ``*.yaml`` category files.  Preferred
             over *signatures_file*.
         yara_dirs: List of directories containing ``.yara`` files.
+        taxonomy_defaults: Category -> taxonomy selection used for rules
+            that do not declare their own ``taxonomy``.
     """
 
     name: str
@@ -396,6 +481,7 @@ class RulePack:
     author: str = ""
     license: str = ""
     source_url: str = ""
+    taxonomy_defaults: dict[str, str] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -1351,6 +1437,9 @@ class PackLoader:
         if not isinstance(description, str):
             raise ValueError("bundled pack manifest.description must be a string")
         pack_metadata = _optional_pack_metadata(raw, "bundled pack manifest")
+        taxonomy_defaults = _parse_taxonomy_defaults(
+            raw.get("taxonomy_defaults"), "bundled pack manifest", bundled=True
+        )
         raw_rules = raw.get("rules")
         if not isinstance(raw_rules, dict) or not raw_rules:
             raise ValueError("bundled pack manifest.rules must be a non-empty mapping keyed by rule ID")
@@ -1414,6 +1503,9 @@ class PackLoader:
                 raise ValueError(f"{context}.file_types must be a list of non-empty strings")
 
             cel_rule = self._parse_cel(rule_id, pack_name, raw_rule.get("cel"))
+            taxonomy, taxonomy_source = _resolve_rule_taxonomy(
+                raw_rule, category, taxonomy_defaults, context, bundled=True, required=True
+            )
             definitions[rule_id] = RuleDefinition(
                 id=rule_id,
                 source_type=source,
@@ -1427,6 +1519,8 @@ class PackLoader:
                 file_types=list(file_types),
                 remediation=remediation,
                 cel=cel_rule,
+                taxonomy=taxonomy,
+                taxonomy_source=taxonomy_source,
             )
             manifest_rules[rule_id] = raw_rule
 
@@ -1457,6 +1551,7 @@ class PackLoader:
             yara_dirs=yara_dirs,
             schema_version=schema_version,
             trusted=False,
+            taxonomy_defaults=taxonomy_defaults,
             signature_rules=[item for item, _source in signature_metadata.values()],
             validation_report=PackValidationReport(
                 schema_status="v2",
@@ -1505,6 +1600,7 @@ class PackLoader:
         pack_name = raw.get("name") or pack_metadata.get("id") or path.name
         pack_version = str(raw.get("version") or pack_metadata.get("version") or "0.0")
         pack_desc = raw.get("description") or pack_metadata.get("description") or ""
+        taxonomy_defaults = _parse_taxonomy_defaults(raw.get("taxonomy_defaults"), f"pack {pack_name}", bundled=False)
 
         # Build RuleDefinition objects from the ``rules:`` section
         rules: dict[str, RuleDefinition] = {}
@@ -1576,6 +1672,14 @@ class PackLoader:
             if not isinstance(file_types, list) or not all(isinstance(item, str) for item in file_types):
                 raise ValueError(f"Rule {rule_id}.file_types must be a list of strings")
 
+            taxonomy, taxonomy_source = _resolve_rule_taxonomy(
+                rule_data,
+                str(rule_data.get("category", "")),
+                taxonomy_defaults,
+                f"rule {rule_id}",
+                bundled=False,
+                required=False,
+            )
             rules[rule_id] = RuleDefinition(
                 id=rule_id,
                 source_type=source_type,
@@ -1587,6 +1691,8 @@ class PackLoader:
                 analyzer=rule_data.get("analyzer", ""),
                 file_types=file_types,
                 remediation=remediation,
+                taxonomy=taxonomy,
+                taxonomy_source=taxonomy_source,
             )
             manifest_rules[rule_id] = rule_data
 
@@ -1616,6 +1722,7 @@ class PackLoader:
             signatures_dir=signatures_dir,
             yara_dirs=yara_dirs,
             validation_report=validation_report,
+            taxonomy_defaults=taxonomy_defaults,
         )
 
     def load_trusted_pack(self, path: Path | str) -> RulePack:
@@ -1660,6 +1767,9 @@ class PackLoader:
         if not isinstance(description, str):
             raise ValueError("trusted pack manifest.description must be a string")
         pack_metadata = _optional_pack_metadata(raw, "trusted pack manifest")
+        taxonomy_defaults = _parse_taxonomy_defaults(
+            raw.get("taxonomy_defaults"), "trusted pack manifest", bundled=False
+        )
         raw_rules = raw.get("rules")
         if not isinstance(raw_rules, dict):
             raise ValueError("trusted pack manifest.rules must be a mapping keyed by rule ID")
@@ -1709,6 +1819,9 @@ class PackLoader:
                 raise ValueError(f"{context}.file_types must be a list of non-empty strings")
 
             cel_rule = self._parse_cel(rule_id, pack_name, raw_rule.get("cel"))
+            taxonomy, taxonomy_source = _resolve_rule_taxonomy(
+                raw_rule, category, taxonomy_defaults, context, bundled=False, required=False
+            )
             definitions[rule_id] = RuleDefinition(
                 id=rule_id,
                 source_type=source,
@@ -1720,6 +1833,8 @@ class PackLoader:
                 file_types=list(file_types),
                 remediation=remediation,
                 cel=cel_rule,
+                taxonomy=taxonomy,
+                taxonomy_source=taxonomy_source,
             )
             manifest_rules[rule_id] = raw_rule
 
@@ -1745,6 +1860,7 @@ class PackLoader:
             yara_dirs=yara_dirs,
             schema_version=schema_version,
             trusted=True,
+            taxonomy_defaults=taxonomy_defaults,
             signature_rules=signature_rules,
             validation_report=PackValidationReport(
                 schema_status="v2",

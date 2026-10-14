@@ -226,6 +226,7 @@ def test_core_manifest_declares_authoritative_v2_metadata() -> None:
         "source": "python",
         "analyzer": "static",
         "category": "prompt_injection",
+        "taxonomy": "AISubtech-1.1.2",
         "severity": "HIGH",
         "knobs": {"enabled": True},
         "description": "Control override plus execution or sensitive-data action concealed by active HTML markup",

@@ -27,6 +27,7 @@ rules:
   PROMPT_INJECTION_IGNORE_INSTRUCTIONS:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.1
     severity: HIGH
     # Knob defaults below are for documentation only.
     # Runtime values come from the policy YAML sections.
@@ -38,6 +39,7 @@ rules:
   PROMPT_INJECTION_UNRESTRICTED_MODE:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -46,6 +48,7 @@ rules:
   PROMPT_INJECTION_BYPASS_POLICY:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -54,6 +57,7 @@ rules:
   PROMPT_INJECTION_REVEAL_SYSTEM:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-8.4.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -62,6 +66,7 @@ rules:
   PROMPT_INJECTION_CONCEALMENT:
     source: signature
     category: prompt_injection
+    taxonomy: AISubtech-1.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -71,6 +76,7 @@ rules:
   COMMAND_INJECTION_EVAL:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -79,6 +85,7 @@ rules:
   COMMAND_INJECTION_OS_SYSTEM:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -87,6 +94,7 @@ rules:
   COMMAND_INJECTION_SHELL_TRUE:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -95,6 +103,7 @@ rules:
   COMMAND_INJECTION_USER_INPUT:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -103,6 +112,7 @@ rules:
   COMMAND_INJECTION_JS_CHILD_PROCESS:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -111,6 +121,7 @@ rules:
   COMMAND_INJECTION_JS_FUNCTION_CONSTRUCTOR:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -120,6 +131,7 @@ rules:
   PATH_TRAVERSAL_OPEN:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -129,6 +141,7 @@ rules:
   SQL_INJECTION_STRING_FORMAT:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -138,6 +151,7 @@ rules:
   DATA_EXFIL_NETWORK_REQUESTS:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: MEDIUM
     knobs:
       enabled: true
@@ -146,6 +160,7 @@ rules:
   DATA_EXFIL_HTTP_POST:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -154,6 +169,7 @@ rules:
   DATA_EXFIL_SOCKET_CONNECT:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -162,6 +178,7 @@ rules:
   DATA_EXFIL_ENV_VARS:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -170,6 +187,7 @@ rules:
   DATA_EXFIL_ENV_DUMP:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -179,6 +197,7 @@ rules:
   DATA_EXFIL_SENSITIVE_FILES:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -188,6 +207,7 @@ rules:
     source: python
     analyzer: static
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -196,6 +216,7 @@ rules:
   DATA_EXFIL_BASE64_AND_NETWORK:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: HIGH
     knobs:
       enabled: true
@@ -204,6 +225,7 @@ rules:
   DATA_EXFIL_JS_NETWORK:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: MEDIUM
     knobs:
       enabled: true
@@ -212,6 +234,7 @@ rules:
   DATA_EXFIL_JS_FS_ACCESS:
     source: signature
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: LOW
     knobs:
       enabled: true
@@ -221,6 +244,7 @@ rules:
   TOOL_ABUSE_SYSTEM_PACKAGE_INSTALL:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -229,6 +253,7 @@ rules:
   TOOL_ABUSE_UNTRUSTED_PACKAGE_SOURCE:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.3.1
     severity: HIGH
     knobs:
       enabled: true
@@ -237,6 +262,7 @@ rules:
   TOOL_ABUSE_SYSTEM_MODIFICATION:
     source: signature
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -247,6 +273,7 @@ rules:
   OBFUSCATION_BASE64_LARGE:
     source: signature
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -255,6 +282,7 @@ rules:
   OBFUSCATION_HEX_BLOB:
     source: signature
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -263,6 +291,7 @@ rules:
   OBFUSCATION_XOR_ENCODING:
     source: signature
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -271,6 +300,7 @@ rules:
   OBFUSCATION_BINARY_FILE:
     source: signature
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -280,6 +310,7 @@ rules:
   SECRET_AWS_KEY:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -288,6 +319,7 @@ rules:
   SECRET_STRIPE_KEY:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -296,6 +328,7 @@ rules:
   SECRET_GOOGLE_API:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -304,6 +337,7 @@ rules:
   SECRET_GITHUB_TOKEN:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -312,6 +346,7 @@ rules:
   SECRET_JWT_TOKEN:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -320,6 +355,7 @@ rules:
   SECRET_PRIVATE_KEY:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -328,6 +364,7 @@ rules:
   SECRET_PASSWORD_VAR:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -336,6 +373,7 @@ rules:
   SECRET_CONNECTION_STRING:
     source: signature
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -347,6 +385,7 @@ rules:
     source: python
     analyzer: static
     category: social_engineering
+    taxonomy: AISubtech-4.3.5
     severity: LOW
     knobs:
       enabled: true
@@ -357,6 +396,7 @@ rules:
     source: python
     analyzer: static
     category: social_engineering
+    taxonomy: AISubtech-3.1.2
     # Maximum severity; generic branding references emit MEDIUM while an
     # explicit false "official" claim emits HIGH.
     severity: HIGH
@@ -370,6 +410,7 @@ rules:
   RESOURCE_ABUSE_INFINITE_LOOP:
     source: signature
     category: resource_abuse
+    taxonomy: AISubtech-13.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -379,6 +420,7 @@ rules:
   RESOURCE_ABUSE_FORK_BOMB:
     source: signature
     category: resource_abuse
+    taxonomy: AISubtech-13.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -387,6 +429,7 @@ rules:
   RESOURCE_ABUSE_LARGE_ALLOCATION:
     source: signature
     category: resource_abuse
+    taxonomy: AISubtech-13.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -396,6 +439,7 @@ rules:
   HARMFUL_CONTENT_EXPLICIT_INSTRUCTION:
     source: signature
     category: harmful_content
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -405,6 +449,7 @@ rules:
   MALWARE_RANSOMWARE_IMPLEMENTATION_CHAIN:
     source: signature
     category: malware
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -415,6 +460,7 @@ rules:
   SVG_EMBEDDED_SCRIPT:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -423,6 +469,7 @@ rules:
   PDF_EMBEDDED_JAVASCRIPT:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -431,6 +478,7 @@ rules:
   GLOB_HIDDEN_FILE_TARGETING:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.2
     severity: MEDIUM
     cel:
       fact_schema: v1
@@ -451,6 +499,7 @@ rules:
   FIND_EXEC_PATTERN:
     source: signature
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     cel:
       fact_schema: v1
@@ -471,6 +520,7 @@ rules:
   HIDDEN_FILE_WITH_CODE:
     source: signature
     category: supply_chain_attack
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -484,6 +534,7 @@ rules:
   YARA_embedded_elf_binary:
     source: yara
     category: supply_chain_attack
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -492,6 +543,7 @@ rules:
   YARA_embedded_pe_executable:
     source: yara
     category: supply_chain_attack
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -500,6 +552,7 @@ rules:
   YARA_embedded_macho_binary:
     source: yara
     category: supply_chain_attack
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -508,6 +561,7 @@ rules:
   YARA_embedded_shebang_in_binary:
     source: yara
     category: supply_chain_attack
+    taxonomy: AISubtech-9.2.1
     severity: MEDIUM
     cel:
       fact_schema: v1
@@ -540,6 +594,7 @@ rules:
   YARA_tool_chaining_abuse_generic:
     source: yara
     category: tool_chaining_abuse
+    taxonomy: AISubtech-8.2.3
     severity: MEDIUM
     knobs:
       enabled: true
@@ -550,6 +605,7 @@ rules:
   YARA_system_manipulation_generic:
     source: yara
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -558,6 +614,7 @@ rules:
   YARA_sql_injection_generic:
     source: yara
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -566,6 +623,7 @@ rules:
   YARA_script_injection_generic:
     source: yara
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -574,6 +632,7 @@ rules:
   YARA_prompt_injection_unicode_steganography:
     source: yara
     category: unicode_steganography
+    taxonomy: AISubtech-1.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -586,6 +645,7 @@ rules:
   YARA_prompt_injection_generic:
     source: yara
     category: prompt_injection
+    taxonomy: AISubtech-1.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -594,6 +654,7 @@ rules:
   YARA_indirect_prompt_injection_generic:
     source: yara
     category: transitive_trust_abuse
+    taxonomy: AITech-1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -602,6 +663,7 @@ rules:
   YARA_credential_harvesting_generic:
     source: yara
     category: hardcoded_secrets
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -610,6 +672,7 @@ rules:
   YARA_command_injection_generic:
     source: yara
     category: command_injection
+    taxonomy: AISubtech-9.1.4
     severity: CRITICAL
     knobs:
       enabled: true
@@ -618,6 +681,7 @@ rules:
   YARA_coercive_injection_generic:
     source: yara
     category: prompt_injection
+    taxonomy: AISubtech-1.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -626,6 +690,7 @@ rules:
   YARA_code_execution_generic:
     source: yara
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -634,6 +699,7 @@ rules:
   YARA_capability_inflation_generic:
     source: yara
     category: skill_discovery_abuse
+    taxonomy: AISubtech-4.3.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -642,6 +708,7 @@ rules:
   YARA_autonomy_abuse_generic:
     source: yara
     category: autonomy_abuse
+    taxonomy: AISubtech-2.1.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -650,6 +717,7 @@ rules:
   YARA_jailbreak_generic:
     source: yara
     category: prompt_injection
+    taxonomy: AISubtech-1.1.5
     severity: HIGH
     knobs:
       enabled: true
@@ -658,6 +726,7 @@ rules:
   YARA_SUSP_Lnx_EncodedShell_DecodeExec_Sep26:
     source: yara
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -666,6 +735,7 @@ rules:
   YARA_SUSP_Win_EncodedPowerShell_Exec_Sep26:
     source: yara
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -674,6 +744,7 @@ rules:
   YARA_SUSP_Multi_RawIP_DownloadExec_Sep26:
     source: yara
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -682,6 +753,7 @@ rules:
   YARA_SUSP_Multi_CredentialExfil_Chain_Sep26:
     source: yara
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -690,6 +762,7 @@ rules:
   YARA_SUSP_Multi_EncodedArchive_Exec_Sep26:
     source: yara
     category: malware
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -698,6 +771,7 @@ rules:
   YARA_SUSP_Multi_Cryptomining_ConfigExec_Sep26:
     source: yara
     category: resource_abuse
+    taxonomy: AISubtech-13.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -706,6 +780,7 @@ rules:
   YARA_SUSP_Multi_Cron_C2_Persistence_Sep26:
     source: yara
     category: malware
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -714,6 +789,7 @@ rules:
   YARA_SUSP_Multi_RemoteMiner_AcquireExec_Sep26:
     source: yara
     category: resource_abuse
+    taxonomy: AISubtech-13.2.1
     severity: HIGH
     cel:
       fact_schema: v1
@@ -734,6 +810,7 @@ rules:
   YARA_SUSP_Multi_RemoteConfig_StageExec_Sep26:
     source: yara
     category: malware
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -747,6 +824,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: not_applicable
     severity: INFO
     knobs:
       enabled: true
@@ -757,6 +835,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: not_applicable
     severity: LOW
     knobs:
       enabled: true
@@ -767,6 +846,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: not_applicable
     severity: INFO
     knobs:
       enabled: true
@@ -776,6 +856,7 @@ rules:
     source: python
     analyzer: static
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -785,6 +866,7 @@ rules:
     source: python
     analyzer: static
     category: unauthorized_tool_use
+    taxonomy: AISubtech-9.1.3
     # LOW until its real-skill flag rate is measured: a script calling any API its
     # SKILL.md does not name fires it, so at MEDIUM it would gate ordinary skills.
     severity: LOW
@@ -802,6 +884,7 @@ rules:
     source: python
     analyzer: static
     category: social_engineering
+    taxonomy: AISubtech-4.3.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -811,6 +894,7 @@ rules:
     source: python
     analyzer: static
     category: supply_chain_attack
+    taxonomy: AISubtech-9.3.1
     # Maximum severity. Registries under the policy's
     # llm_analysis.trusted_reference_domains are emitted at LOW.
     severity: HIGH
@@ -824,6 +908,7 @@ rules:
     source: python
     analyzer: static
     category: supply_chain_attack
+    taxonomy: AISubtech-9.3.3
     # Maximum severity. Emitted at LOW for both unpinned and wildcard ranges: an
     # unpinned dependency is hygiene, and supply-chain threat signals are separate rules.
     severity: MEDIUM
@@ -837,6 +922,7 @@ rules:
     source: python
     analyzer: static
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: HIGH
     knobs:
       enabled: true
@@ -846,6 +932,7 @@ rules:
     source: python
     analyzer: static
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -856,6 +943,7 @@ rules:
     source: python
     analyzer: static
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     # Maximum base severity. Binary or cross-family content emits MEDIUM, HIGH or CRITICAL;
     # a text label that differs from the extension's (Python read from a .md) emits LOW.
     severity: CRITICAL
@@ -874,6 +962,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: not_applicable
     severity: MEDIUM
     knobs:
       enabled: true
@@ -883,6 +972,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: AISubtech-9.2.1
     severity: INFO
     knobs:
       enabled: true
@@ -892,6 +982,7 @@ rules:
     source: python
     analyzer: static
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     allowed_severity_demotions:
       - HIGH
@@ -903,6 +994,7 @@ rules:
     source: python
     analyzer: static
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -912,6 +1004,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: not_applicable
     severity: INFO
     knobs:
       enabled: true
@@ -921,6 +1014,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: not_applicable
     severity: LOW
     knobs:
       enabled: true
@@ -930,6 +1024,7 @@ rules:
     source: python
     analyzer: static
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     cel:
       fact_schema: v1
@@ -952,6 +1047,7 @@ rules:
     source: python
     analyzer: static
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: LOW
     knobs:
       enabled: true
@@ -961,6 +1057,7 @@ rules:
     source: python
     analyzer: static
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -970,6 +1067,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: AISubtech-2.1.2
     severity: MEDIUM
     knobs:
       enabled: true
@@ -979,6 +1077,7 @@ rules:
     source: python
     analyzer: static
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -988,6 +1087,7 @@ rules:
     source: python
     analyzer: static
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.1.2
     severity: LOW
     knobs:
       enabled: true
@@ -997,6 +1097,7 @@ rules:
     source: python
     analyzer: static
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.1.2
     severity: LOW
     knobs:
       enabled: true
@@ -1006,6 +1107,7 @@ rules:
     source: python
     analyzer: static
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.1.2
     severity: MEDIUM
     cel:
       fact_schema: v1
@@ -1024,6 +1126,7 @@ rules:
     source: python
     analyzer: static
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     # Maximum base severity; individual PDF structures range LOW-CRITICAL.
     severity: CRITICAL
     allowed_severity_demotions:
@@ -1038,6 +1141,7 @@ rules:
     source: python
     analyzer: static
     category: supply_chain_attack
+    taxonomy: AISubtech-9.1.1
     # Maximum base severity; encryption and non-macro indicators are lower.
     severity: CRITICAL
     allowed_severity_demotions:
@@ -1051,6 +1155,7 @@ rules:
     source: python
     analyzer: static
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1060,6 +1165,7 @@ rules:
     source: python
     analyzer: static
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1072,6 +1178,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: not_applicable
     severity: LOW
     knobs:
       enabled: true
@@ -1082,6 +1189,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: not_applicable
     severity: LOW
     knobs:
       enabled: true
@@ -1092,6 +1200,7 @@ rules:
     source: python
     analyzer: static
     category: supply_chain_attack
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1101,6 +1210,7 @@ rules:
     source: python
     analyzer: static
     category: prompt_injection
+    taxonomy: AITech-1.2
     # Maximum base severity; role-switch variants emit MEDIUM.
     severity: HIGH
     allowed_severity_demotions:
@@ -1114,6 +1224,7 @@ rules:
     source: python
     analyzer: static
     category: policy_violation
+    taxonomy: AISubtech-8.2.3
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1123,6 +1234,7 @@ rules:
     source: python
     analyzer: static
     category: data_exfiltration
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1132,6 +1244,7 @@ rules:
     source: python
     analyzer: osv
     category: supply_chain_attack
+    taxonomy: AITech-9.3
     severity: HIGH
     knobs:
       enabled: true
@@ -1147,6 +1260,7 @@ rules:
     # Highest-impact base identity. Runtime category follows the source/sink
     # pair and severity ranges MEDIUM-CRITICAL before documentation demotions.
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     allowed_severity_demotions:
       - HIGH
@@ -1162,6 +1276,7 @@ rules:
     source: python
     analyzer: pipeline
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     # Base severity; documentation context can demote this to MEDIUM.
     severity: CRITICAL
     allowed_severity_demotions:
@@ -1186,6 +1301,7 @@ rules:
     source: python
     analyzer: pipeline
     category: supply_chain_attack
+    taxonomy: AISubtech-9.1.1
     # Base severity; documentation context can demote this to LOW.
     severity: HIGH
     allowed_severity_demotions:
@@ -1199,6 +1315,7 @@ rules:
     source: python
     analyzer: pipeline
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     # Base severity; documentation and known-installer context can demote it.
     severity: CRITICAL
     allowed_severity_demotions:
@@ -1218,6 +1335,7 @@ rules:
     source: python
     analyzer: pipeline
     category: command_injection
+    taxonomy: AISubtech-9.2.1
     # Base severity; documentation context can demote this to LOW.
     severity: HIGH
     allowed_severity_demotions:
@@ -1235,6 +1353,7 @@ rules:
     source: python
     analyzer: correlation
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: HIGH
     allowed_severity_demotions:
       - MEDIUM
@@ -1246,6 +1365,7 @@ rules:
     source: python
     analyzer: correlation
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     allowed_severity_demotions:
       - MEDIUM
@@ -1257,6 +1377,7 @@ rules:
     source: python
     analyzer: correlation
     category: malware
+    taxonomy: AISubtech-15.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1266,6 +1387,7 @@ rules:
     source: python
     analyzer: correlation
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     allowed_severity_demotions:
       - MEDIUM
@@ -1277,6 +1399,7 @@ rules:
     source: python
     analyzer: correlation
     category: malware
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     allowed_severity_demotions:
       - MEDIUM
@@ -1288,6 +1411,7 @@ rules:
     source: python
     analyzer: correlation
     category: supply_chain_attack
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     allowed_severity_demotions:
       - MEDIUM
@@ -1299,6 +1423,7 @@ rules:
     source: python
     analyzer: correlation
     category: malware
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     allowed_severity_demotions:
       - MEDIUM
@@ -1310,6 +1435,7 @@ rules:
     source: python
     analyzer: correlation
     category: unauthorized_tool_use
+    taxonomy: AISubtech-2.1.2
     severity: HIGH
     allowed_severity_demotions:
       - MEDIUM
@@ -1325,6 +1451,7 @@ rules:
     source: python
     analyzer: analyzability
     category: policy_violation
+    taxonomy: AISubtech-9.2.1
     severity: MEDIUM
     cel:
       fact_schema: v1
@@ -1352,6 +1479,7 @@ rules:
     source: python
     analyzer: analyzability
     category: policy_violation
+    taxonomy: AISubtech-9.2.1
     # Maximum base severity; moderately incomplete scans emit MEDIUM.
     severity: HIGH
     allowed_severity_demotions:
@@ -1364,6 +1492,7 @@ rules:
     source: python
     analyzer: skill_loader
     category: policy_violation
+    taxonomy: not_applicable
     severity: INFO
     knobs:
       enabled: true
@@ -1373,6 +1502,7 @@ rules:
     source: python
     analyzer: skill_loader
     category: policy_violation
+    taxonomy: not_applicable
     severity: HIGH
     knobs:
       enabled: true
@@ -1382,6 +1512,7 @@ rules:
     source: python
     analyzer: scanner
     category: policy_violation
+    taxonomy: not_applicable
     severity: INFO
     knobs:
       enabled: true
@@ -1406,6 +1537,7 @@ rules:
     source: python
     analyzer: scanner
     category: social_engineering
+    taxonomy: AISubtech-12.1.4
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1415,6 +1547,7 @@ rules:
     source: python
     analyzer: scanner
     category: social_engineering
+    taxonomy: AISubtech-12.1.4
     severity: LOW
     knobs:
       enabled: true
@@ -1428,6 +1561,7 @@ rules:
     source: python
     analyzer: content_extractor
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1437,6 +1571,7 @@ rules:
     source: python
     analyzer: content_extractor
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1446,6 +1581,7 @@ rules:
     source: python
     analyzer: content_extractor
     category: resource_abuse
+    taxonomy: AISubtech-13.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1455,6 +1591,7 @@ rules:
     source: python
     analyzer: content_extractor
     category: command_injection
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1464,6 +1601,7 @@ rules:
     source: python
     analyzer: content_extractor
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1473,6 +1611,7 @@ rules:
     source: python
     analyzer: content_extractor
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1482,6 +1621,7 @@ rules:
     source: python
     analyzer: content_extractor
     category: command_injection
+    taxonomy: AISubtech-9.1.2
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1491,6 +1631,7 @@ rules:
     source: python
     analyzer: static
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1500,6 +1641,7 @@ rules:
     source: python
     analyzer: static
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1509,6 +1651,7 @@ rules:
     source: python
     analyzer: static
     category: autonomy_abuse
+    taxonomy: AISubtech-2.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1518,6 +1661,7 @@ rules:
     source: python
     analyzer: static
     category: malware
+    taxonomy: AISubtech-9.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1527,6 +1671,7 @@ rules:
     source: python
     analyzer: static
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: HIGH
     knobs:
       enabled: true
@@ -1536,6 +1681,7 @@ rules:
     source: python
     analyzer: static
     category: prompt_injection
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1545,6 +1691,7 @@ rules:
     source: python
     analyzer: static
     category: unicode_steganography
+    taxonomy: AISubtech-1.1.2
     severity: HIGH
     knobs:
       enabled: true
@@ -1558,6 +1705,7 @@ rules:
     source: python
     analyzer: behavioral
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1567,6 +1715,7 @@ rules:
     source: python
     analyzer: behavioral
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1576,6 +1725,7 @@ rules:
     source: python
     analyzer: behavioral
     category: data_exfiltration
+    taxonomy: AISubtech-14.1.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1585,6 +1735,7 @@ rules:
     source: python
     analyzer: behavioral
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: HIGH
     knobs:
       enabled: true
@@ -1594,6 +1745,7 @@ rules:
     source: python
     analyzer: behavioral
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1605,6 +1757,7 @@ rules:
     # Highest-impact base identity. Runtime category follows the source/sink
     # pair and severity ranges MEDIUM-CRITICAL.
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: CRITICAL
     allowed_severity_demotions:
       - HIGH
@@ -1617,6 +1770,7 @@ rules:
     source: python
     analyzer: behavioral
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1626,6 +1780,7 @@ rules:
     source: python
     analyzer: behavioral
     category: command_injection
+    taxonomy: AISubtech-9.1.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1635,6 +1790,7 @@ rules:
     source: python
     analyzer: behavioral
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1644,6 +1800,7 @@ rules:
     source: python
     analyzer: behavioral
     category: policy_violation
+    taxonomy: not_applicable
     severity: INFO
     knobs:
       enabled: true
@@ -1657,6 +1814,7 @@ rules:
     source: python
     analyzer: trigger
     category: social_engineering
+    taxonomy: AISubtech-4.3.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1666,6 +1824,7 @@ rules:
     source: python
     analyzer: trigger
     category: social_engineering
+    taxonomy: not_applicable
     severity: LOW
     knobs:
       enabled: true
@@ -1675,6 +1834,7 @@ rules:
     source: python
     analyzer: trigger
     category: social_engineering
+    taxonomy: AISubtech-4.3.5
     severity: LOW
     knobs:
       enabled: true
@@ -1684,6 +1844,7 @@ rules:
     source: python
     analyzer: trigger
     category: social_engineering
+    taxonomy: AISubtech-4.3.5
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1697,6 +1858,7 @@ rules:
     source: python
     analyzer: bytecode
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1706,6 +1868,7 @@ rules:
     source: python
     analyzer: bytecode
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: CRITICAL
     knobs:
       enabled: true
@@ -1715,6 +1878,7 @@ rules:
     source: python
     analyzer: bytecode
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1728,6 +1892,7 @@ rules:
     source: python
     analyzer: cross_skill
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: HIGH
     knobs:
       enabled: true
@@ -1737,6 +1902,7 @@ rules:
     source: python
     analyzer: cross_skill
     category: data_exfiltration
+    taxonomy: AISubtech-8.2.3
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1746,6 +1912,7 @@ rules:
     source: python
     analyzer: cross_skill
     category: social_engineering
+    taxonomy: AISubtech-19.2.2
     severity: LOW
     knobs:
       enabled: true
@@ -1755,6 +1922,7 @@ rules:
     source: python
     analyzer: cross_skill
     category: obfuscation
+    taxonomy: AISubtech-9.2.1
     severity: MEDIUM
     knobs:
       enabled: true
@@ -1768,6 +1936,7 @@ rules:
     source: python
     analyzer: llm
     category: policy_violation
+    taxonomy: not_applicable
     severity: INFO
     knobs:
       enabled: true
@@ -1777,6 +1946,7 @@ rules:
     source: python
     analyzer: llm
     category: prompt_injection
+    taxonomy: AISubtech-1.1.4
     severity: HIGH
     knobs:
       enabled: true
@@ -1786,6 +1956,7 @@ rules:
     source: python
     analyzer: llm
     category: policy_violation
+    taxonomy: not_applicable
     severity: INFO
     knobs:
       enabled: true
@@ -1795,6 +1966,7 @@ rules:
     source: python
     analyzer: meta
     category: policy_violation
+    taxonomy: not_applicable
     severity: INFO
     knobs:
       enabled: true
@@ -1807,6 +1979,7 @@ rules:
     source: python
     analyzer: meta
     category: prompt_injection
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1817,6 +1990,7 @@ rules:
     source: python
     analyzer: meta
     category: command_injection
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1827,6 +2001,7 @@ rules:
     source: python
     analyzer: meta
     category: data_exfiltration
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1837,6 +2012,7 @@ rules:
     source: python
     analyzer: meta
     category: unauthorized_tool_use
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1847,6 +2023,7 @@ rules:
     source: python
     analyzer: meta
     category: obfuscation
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1857,6 +2034,7 @@ rules:
     source: python
     analyzer: meta
     category: hardcoded_secrets
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1867,6 +2045,7 @@ rules:
     source: python
     analyzer: meta
     category: social_engineering
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1877,6 +2056,7 @@ rules:
     source: python
     analyzer: meta
     category: resource_abuse
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1887,6 +2067,7 @@ rules:
     source: python
     analyzer: meta
     category: policy_violation
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1897,6 +2078,7 @@ rules:
     source: python
     analyzer: meta
     category: malware
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1907,6 +2089,7 @@ rules:
     source: python
     analyzer: meta
     category: harmful_content
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1917,6 +2100,7 @@ rules:
     source: python
     analyzer: meta
     category: skill_discovery_abuse
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1927,6 +2111,7 @@ rules:
     source: python
     analyzer: meta
     category: transitive_trust_abuse
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1937,6 +2122,7 @@ rules:
     source: python
     analyzer: meta
     category: autonomy_abuse
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1947,6 +2133,7 @@ rules:
     source: python
     analyzer: meta
     category: tool_chaining_abuse
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1957,6 +2144,7 @@ rules:
     source: python
     analyzer: meta
     category: unicode_steganography
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1967,6 +2155,7 @@ rules:
     source: python
     analyzer: meta
     category: supply_chain_attack
+    taxonomy: per_finding
     severity: CRITICAL
     allowed_severity_demotions: [HIGH, MEDIUM, LOW, INFO]
     knobs:
@@ -1977,6 +2166,7 @@ rules:
     source: python
     analyzer: aidefense
     category: prompt_injection
+    taxonomy: AITech-1.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1986,6 +2176,7 @@ rules:
     source: python
     analyzer: aidefense
     category: malware
+    taxonomy: AISubtech-12.2.1
     severity: HIGH
     knobs:
       enabled: true
@@ -1995,6 +2186,7 @@ rules:
     source: python
     analyzer: virustotal
     category: malware
+    taxonomy: AISubtech-15.1.1
     # Maximum base severity; the runtime detection ratio may emit MEDIUM or HIGH.
     severity: CRITICAL
     allowed_severity_demotions:

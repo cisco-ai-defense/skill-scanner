@@ -49,6 +49,7 @@ def test_core_manifest_matches_filesystem_candidate_metadata() -> None:
     assert manifest["rules"]["DATA_EXFIL_JS_FS_ACCESS"] == {
         "source": "signature",
         "category": "data_exfiltration",
+        "taxonomy": "AISubtech-8.2.3",
         "severity": "LOW",
         "knobs": {"enabled": True},
         "description": "Node.js filesystem access candidate for sensitive-flow correlation",

@@ -33,6 +33,7 @@ def _minimal_manifest() -> dict:
             "TEST_RULE": {
                 "source": "signature",
                 "category": "command_injection",
+                "taxonomy": "AISubtech-9.1.4",
                 "severity": "HIGH",
                 "knobs": {"enabled": True},
                 "description": "Detects a test marker",
@@ -167,6 +168,7 @@ def test_bundled_v2_python_source_requires_known_analyzer_but_local_pack_cannot_
             "source": "python",
             "analyzer": "static",
             "category": "policy_violation",
+            "taxonomy": "not_applicable",
             "severity": "LOW",
             "knobs": {"enabled": True},
         }

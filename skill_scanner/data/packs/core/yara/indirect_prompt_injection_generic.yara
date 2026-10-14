@@ -1,6 +1,6 @@
 //////////////////////////////////////////
 // Indirect Prompt Injection - Instruction Manipulation Detection
-// AITech-1.2 / AISubtech-1.2.1
+// AITech-1.2 (the taxonomy defines no sub-technique for it)
 // Target: Skills that embed/follow malicious instructions from external data sources
 // Detects delegation of trust to untrusted external content (webpages, documents, APIs)
 //////////////////////////////////////////
@@ -13,7 +13,6 @@ rule indirect_prompt_injection_generic{
         classification = "harmful"
         threat_type = "TRANSITIVE TRUST ABUSE"
         aitech = "AITech-1.2"
-        aisubtech = "AISubtech-1.2.1"
 
     strings:
 

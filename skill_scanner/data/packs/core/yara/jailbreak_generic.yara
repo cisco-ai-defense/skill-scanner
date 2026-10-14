@@ -1,6 +1,6 @@
 //////////////////////////////////////////
 // Jailbreak Detection Rule
-// AITech-2.1: Jailbreak Attacks
+// AITech-1.1 / AISubtech-1.1.5: Direct Prompt Injection and Jailbreak - Context Manipulation
 // Target: Attempts to bypass AI safety measures through context manipulation,
 //         semantic tricks, persona adoption, and other jailbreak techniques
 // Reference: OWASP LLM01:2025, Cisco AI Security Framework
@@ -13,12 +13,13 @@ rule jailbreak_generic{
         description = "Detects jailbreak attempts to bypass AI safety measures"
         classification = "harmful"
         threat_type = "JAILBREAK"
-        aitech = "AITech-2.1"
+        aitech = "AITech-1.1"
+        aisubtech = "AISubtech-1.1.5"
 
     strings:
 
         // ================================================================
-        // AISubtech-2.1.1: Context Manipulation (Jailbreak)
+        // Context manipulation (AISubtech-1.1.5)
         // ================================================================
 
         // --- DAN (Do Anything Now) Jailbreak Patterns ---
@@ -74,7 +75,7 @@ rule jailbreak_generic{
 
 
         // ================================================================
-        // AISubtech-2.1.3: Semantic Manipulation (Jailbreak)
+        // Semantic manipulation (AISubtech-1.1.5)
         // ================================================================
 
         // --- Research/Educational Framing ---
@@ -111,7 +112,7 @@ rule jailbreak_generic{
 
 
         // ================================================================
-        // AISubtech-2.1.4: Token Exploitation (Jailbreak)
+        // Token exploitation (AISubtech-1.1.4)
         // ================================================================
 
         // --- Output Encoding Bypass ---
@@ -129,7 +130,7 @@ rule jailbreak_generic{
 
 
         // ================================================================
-        // AISubtech-2.1.5: Multi-Agent Jailbreak Collaboration
+        // Multi-agent propagation (AISubtech-1.1.3)
         // ================================================================
 
         // Using other AI/agent to jailbreak
