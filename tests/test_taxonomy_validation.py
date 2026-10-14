@@ -235,13 +235,13 @@ class TestTaxonomyHelpers:
 
     def test_get_aitech_name(self):
         """Test AITech name lookup."""
-        assert get_aitech_name("AITech-1.1") == "Direct Prompt Injection"
+        assert get_aitech_name("AITech-1.1") == "Direct Prompt Injection and Jailbreak (Prompt-based Manipulation)"
         assert get_aitech_name("AITech-8.2") == "Data Exfiltration / Exposure"
         assert get_aitech_name("AITech-99.99") is None
 
     def test_get_aisubtech_name(self):
         """Test AISubtech name lookup."""
-        assert get_aisubtech_name("AISubtech-1.1.1") == "Instruction Manipulation (Direct Prompt Injection)"
+        assert get_aisubtech_name("AISubtech-1.1.1") == "Instruction Manipulation"
         assert get_aisubtech_name("AISubtech-99.99.99") is None
 
 

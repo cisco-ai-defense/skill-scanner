@@ -1,0 +1,2301 @@
+{
+  "version": "2.0.0",
+  "OB-001": {
+    "code": "OB-001",
+    "description": "Goal Hijacking",
+    "ai_tech": [
+      {
+        "code": "AITech-1.1",
+        "description": "Direct Prompt Injection and Jailbreak (Prompt-based Manipulation)",
+        "mappings": [
+          "OWASP: LLM01:2026: Prompt Injection",
+          "OWASP: ASI01: Agent Goal Hijack",
+          "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+          "MITRE ATLAS: AML.T0054: LLM Jailbreak",
+          "MITRE ATLAS: AML.T0093: Prompt Infiltration via Public-Facing Application",
+          "NIST AML: NISTAML.018: Prompt Injection"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-1.1.1",
+            "description": "Instruction Manipulation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: ASI01: Agent Goal Hijack",
+              "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+              "MITRE ATLAS: AML.T0054: LLM Jailbreak",
+              "MITRE ATLAS: AML.T0093: Prompt Infiltration via Public-Facing Application",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-1.1.2",
+            "description": "Obfuscation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: ASI01: Agent Goal Hijack",
+              "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+              "MITRE ATLAS: AML.T0054: LLM Jailbreak",
+              "MITRE ATLAS: AML.T0093: Prompt Infiltration via Public-Facing Application",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-1.1.3",
+            "description": "Multi-Agent Propagation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: ASI01: Agent Goal Hijack",
+              "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+              "MITRE ATLAS: AML.T0054: LLM Jailbreak",
+              "MITRE ATLAS: AML.T0093: Prompt Infiltration via Public-Facing Application",
+              "NIST AML: NISTAML.018: Prompt Injection",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation"
+            ]
+          },
+          {
+            "code": "AISubtech-1.1.4",
+            "description": "Token Exploitation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: ASI01: Agent Goal Hijack",
+              "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+              "MITRE ATLAS: AML.T0054: LLM Jailbreak",
+              "MITRE ATLAS: AML.T0093: Prompt Infiltration via Public-Facing Application",
+              "NIST AML: NISTAML.018: Prompt Injection",
+              "MITRE ATLAS: AML.T0043: Craft Adversarial Data"
+            ]
+          },
+          {
+            "code": "AISubtech-1.1.5",
+            "description": "Context Manipulation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: ASI01: Agent Goal Hijack",
+              "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+              "MITRE ATLAS: AML.T0054: LLM Jailbreak",
+              "MITRE ATLAS: AML.T0093: Prompt Infiltration via Public-Facing Application",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-1.2",
+        "description": "Indirect Prompt Injection",
+        "mappings": [
+          "OWASP: LLM01:2026: Prompt Injection",
+          "OWASP: LLM04:2026: Supply Chain",
+          "OWASP: ASI01: Agent Goal Hijack",
+          "MITRE ATLAS: AML.T0051.001: LLM Prompt Injection (Indirect)",
+          "MITRE ATLAS: AML.T0070: RAG Poisoning",
+          "MITRE ATLAS: AML.T0093: Prompt Infiltration via Public-Facing Application",
+          "NIST AML: NISTAML.015: Indirect Prompt Injection",
+          "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation"
+        ],
+        "ai_subtech": []
+      },
+      {
+        "code": "AITech-1.3",
+        "description": "Multimodal Injection and Manipulation",
+        "mappings": [
+          "OWASP: LLM01:2026: Prompt Injection",
+          "OWASP: ASI01: Agent Goal Hijack",
+          "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+          "MITRE ATLAS: AML.T0050: Command and Scripting Interpreter",
+          "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+          "MITRE ATLAS: AML.T0043: Craft Adversarial Data",
+          "NIST AML: NISTAML.018: Prompt Injection"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-1.3.1",
+            "description": "Image-Text Injection",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: ASI01: Agent Goal Hijack",
+              "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+              "MITRE ATLAS: AML.T0050: Command and Scripting Interpreter",
+              "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+              "MITRE ATLAS: AML.T0043: Craft Adversarial Data",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-1.3.2",
+            "description": "Image Manipulation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: ASI01: Agent Goal Hijack",
+              "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+              "MITRE ATLAS: AML.T0050: Command and Scripting Interpreter",
+              "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+              "MITRE ATLAS: AML.T0043: Craft Adversarial Data",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-1.3.3",
+            "description": "Audio Command Injection",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM10:2026: Improper Output Handling",
+              "OWASP: ASI01: Agent Goal Hijack",
+              "MITRE ATLAS: AML.T0043: Craft Adversarial Data",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-1.3.4",
+            "description": "Video Overlay Manipulation",
+            "mappings": [
+              "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+              "OWASP: ASI01: Agent Goal Hijack",
+              "MITRE ATLAS: AML.T0043: Craft Adversarial Data",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-002": {
+    "code": "OB-002",
+    "description": "Agentic Autonomy Failures (Misuse, Alignment, Drift)",
+    "ai_tech": [
+      {
+        "code": "AITech-2.1",
+        "description": "Excessive Agency",
+        "mappings": [
+          "OWASP: LLM03:2026: Excessive Agency",
+          "OWASP: ASI10: Rogue Agents",
+          "MITRE ATLAS: N/A",
+          "NIST AML: N/A"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-2.1.1",
+            "description": "Execution Approval Bypass",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI09: Human-Agent Trust Exploitation",
+              "OWASP: ASI10: Rogue Agents",
+              "MITRE ATLAS: N/A",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-2.1.2",
+            "description": "Capability and Permission Overreach",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI10: Rogue Agents",
+              "MITRE ATLAS: N/A",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-2.2",
+        "description": "Goal Drift",
+        "mappings": [
+          "OWASP: ASI10: Rogue Agents",
+          "MITRE ATLAS: N/A",
+          "NIST AML: N/A"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-2.2.1",
+            "description": "Unauthorized Scope Expansion",
+            "mappings": [
+              "OWASP: ASI10: Rogue Agents",
+              "MITRE ATLAS: N/A",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-2.2.2",
+            "description": "Goal Substitution",
+            "mappings": [
+              "OWASP: ASI10: Rogue Agents",
+              "MITRE ATLAS: N/A",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-2.2.3",
+            "description": "Authorization and Constraint Erosion",
+            "mappings": [
+              "OWASP: ASI10: Rogue Agents",
+              "MITRE ATLAS: N/A",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-2.3",
+        "description": "Reward Hacking",
+        "mappings": [
+          "OWASP: ASI10: Rogue Agents",
+          "MITRE ATLAS: N/A",
+          "NIST AML: N/A"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-2.3.1",
+            "description": "Task Loophole Exploitation",
+            "mappings": [
+              "OWASP: ASI10: Rogue Agents",
+              "MITRE ATLAS: N/A",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-2.3.2",
+            "description": "Verifier Manipulation",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI10: Rogue Agents",
+              "MITRE ATLAS: N/A",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-2.3.3",
+            "description": "Shortcut Acquisition",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI10: Rogue Agents",
+              "MITRE ATLAS: N/A",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-003": {
+    "code": "OB-003",
+    "description": "Masquerading / Obfuscation / Impersonation",
+    "ai_tech": [
+      {
+        "code": "AITech-3.1",
+        "description": "Masquerading / Obfuscation / Impersonation",
+        "mappings": [
+          "OWASP: LLM03:2026: Excessive Agency",
+          "OWASP: ASI03: Identity & Privilege Abuse",
+          "MITRE ATLAS: AML.T0073: Impersonation",
+          "MITRE ATLAS: AML.T0074: Masquerading",
+          "MITRE ATT&CK: T1656: Impersonation",
+          "MITRE ATT&CK: T1036: Masquerading",
+          "NIST AML: N/A"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-3.1.1",
+            "description": "Identity Obfuscation",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI03: Identity & Privilege Abuse",
+              "MITRE ATLAS: AML.T0073: Impersonation",
+              "MITRE ATLAS: AML.T0074: Masquerading",
+              "MITRE ATLAS: AML.T0091.000: App Access Token Abuse",
+              "MITRE ATT&CK: T1656: Impersonation",
+              "MITRE ATT&CK: T1036: Masquerading",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-3.1.2",
+            "description": "Trusted Agent Spoofing",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI03: Identity & Privilege Abuse",
+              "MITRE ATLAS: AML.T0074: Masquerading",
+              "MITRE ATLAS: AML.T0083: Credentials from AI Agent Configuration",
+              "MITRE ATT&CK: T1656: Impersonation",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-004": {
+    "code": "OB-004",
+    "description": "Communication Compromise",
+    "ai_tech": [
+      {
+        "code": "AITech-4.1",
+        "description": "Agent Injection",
+        "mappings": [
+          "OWASP: LLM04:2026: Supply Chain",
+          "OWASP: ASI07: Insecure Inter-Agent Communication",
+          "MITRE ATLAS: AML.T0068: LLM Prompt Obfuscation",
+          "NIST AML: NISTAML.024: Targeted Poisoning",
+          "MITRE ATT&CK: T1557: Adversary-in-the-Middle",
+          "MITRE ATT&CK: T1199: Trusted Relationship",
+          "MITRE ATT&CK: T1055: Process Injection",
+          "MITRE ATT&CK: T1204: User Execution"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-4.1.1",
+            "description": "Rogue Agent Introduction",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+              "MITRE ATLAS: AML.T0068: LLM Prompt Obfuscation",
+              "MITRE ATLAS: AML.T0103: Deploy AI Agent",
+              "NIST AML: NISTAML.024: Targeted Poisoning"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-4.2",
+        "description": "Context Boundary Attacks",
+        "mappings": [
+          "OWASP: LLM01:2026: Prompt Injection",
+          "OWASP: LLM10:2026: Improper Output Handling",
+          "OWASP: ASI06: Memory & Context Poisoning",
+          "OWASP: ASI07: Insecure Inter-Agent Communication",
+          "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+          "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+          "NIST AML: N/A",
+          "MITRE ATLAS: AML.T0051: LLM Prompt Injection"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-4.2.1",
+            "description": "Context Window Exploitation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM10:2026: Improper Output Handling",
+              "OWASP: ASI06: Memory & Context Poisoning",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+              "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+              "MITRE ATLAS: AML.T0005: Create Proxy AI Model",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-4.2.2",
+            "description": "Session Boundary Violation",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI06: Memory & Context Poisoning",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0012: Valid Accounts",
+              "MITRE ATLAS: AML.T0055: Unsecured Credentials",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-4.3",
+        "description": "Protocol Manipulation",
+        "mappings": [
+          "OWASP: LLM03:2026: Excessive Agency",
+          "OWASP: ASI07: Insecure Inter-Agent Communication",
+          "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+          "MITRE ATLAS: AML.T0018: Manipulate AI Model",
+          "MITRE ATT&CK: T1203: Exploitation for Client Execution",
+          "NIST AML: NISTAML.024: Targeted Poisoning"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-4.3.1",
+            "description": "Schema Inconsistencies",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+              "MITRE ATLAS: AML.T0018: Manipulate AI Model",
+              "NIST AML: NISTAML.024: Targeted Poisoning"
+            ]
+          },
+          {
+            "code": "AISubtech-4.3.2",
+            "description": "Namespace Collision",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+              "NIST AML: NISTAML.051: Model Poisoning"
+            ]
+          },
+          {
+            "code": "AISubtech-4.3.3",
+            "description": "Server Rebinding Attack",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0049: Exploit Public Facing Application",
+              "NIST AML: NISTAML.039: Compromising Connected Resources"
+            ]
+          },
+          {
+            "code": "AISubtech-4.3.4",
+            "description": "Replay Exploitation",
+            "mappings": [
+              "OWASP: LLM10:2026: Improper Output Handling",
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0068: LLM Prompt Obfuscation",
+              "MITRE ATLAS: AML.T0055: Unsecured Credentials",
+              "MITRE ATLAS: AML.T0012: Valid Accounts",
+              "NIST AML: NISTAML.027: Misaligned Outputs",
+              "NIST AML: NISTAML.051: Model Poisoning"
+            ]
+          },
+          {
+            "code": "AISubtech-4.3.5",
+            "description": "Capability Inflation",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI03: Identity & Privilege Abuse",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-4.3.6",
+            "description": "Cross-Origin Exploitation",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+              "MITRE ATLAS: AML.T0017: Develop Capabilities",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-005": {
+    "code": "OB-005",
+    "description": "Persistence",
+    "ai_tech": [
+      {
+        "code": "AITech-5.1",
+        "description": "Memory System Persistence",
+        "mappings": [
+          "OWASP: LLM01:2026: Prompt Injection",
+          "OWASP: ASI06: Memory & Context Poisoning",
+          "MITRE ATLAS: AML.T0061: LLM Prompt Self-Replication",
+          "MITRE ATLAS: AML.T0070: RAG Poisoning",
+          "MITRE ATLAS: AML.T0092: Manipulate User LLM Chat History",
+          "NIST AML: NISTAML.024: Targeted Poisoning"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-5.1.1",
+            "description": "Long-term / Short-term Memory Injection",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: ASI06: Memory & Context Poisoning",
+              "MITRE ATLAS: AML.T0061: LLM Prompt Self-Replication",
+              "MITRE ATLAS: AML.T0070: RAG Poisoning",
+              "MITRE ATLAS: AML.T0092: Manipulate User LLM Chat History",
+              "NIST AML: NISTAML.024: Targeted Poisoning"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-5.2",
+        "description": "Configuration Persistence",
+        "mappings": [
+          "OWASP: LLM04:2026: Supply Chain",
+          "OWASP: LLM05:2026: Data and Model Poisoning",
+          "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+          "MITRE ATLAS: AML.T0018: Manipulate AI Model",
+          "MITRE ATT&CK: T1098: Account Manipulation",
+          "NIST AML: N/A"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-5.2.1",
+            "description": "Agent Profile Tampering",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: LLM05:2026: Data and Model Poisoning",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "MITRE ATLAS: AML.T0018: Manipulate AI Model",
+              "MITRE ATLAS: AML.T0081: Modify AI Agent Configuration",
+              "MITRE ATT&CK: T1098: Account Manipulation",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-006": {
+    "code": "OB-006",
+    "description": "Feedback Loop Manipulation",
+    "ai_tech": [
+      {
+        "code": "AITech-6.1",
+        "description": "Training Data Poisoning",
+        "mappings": [
+          "OWASP: LLM05:2026: Data and Model Poisoning",
+          "OWASP: ASI06: Memory & Context Poisoning",
+          "MITRE ATLAS: AML.T0020: Poisoned Training Data",
+          "MITRE ATLAS: AML.T0070: RAG Poisoning",
+          "NIST AML: NISTAML.024: Targeted Poisoning",
+          "Cisco AI MDL Code: MDL-020",
+          "Cisco AI MDL Code: MDL-018",
+          "OWASP: ASI08: Cascading Failures"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-6.1.1",
+            "description": "Knowledge Base Poisoning",
+            "mappings": [
+              "OWASP: LLM05:2026: Data and Model Poisoning",
+              "OWASP: ASI06: Memory & Context Poisoning",
+              "MITRE ATLAS: AML.T0019: Publish Poisoned Dataset",
+              "MITRE ATLAS: AML.T0020: Poisoned Training Data",
+              "MITRE ATLAS: AML.T0115: Publish Poisoned AI Artifacts",
+              "MITRE ATLAS: AML.T0070: RAG Poisoning",
+              "NIST AML: NISTAML.024: Targeted Poisoning",
+              "Cisco AI MDL Code: MDL-020",
+              "Cisco AI MDL Code: MDL-018"
+            ]
+          },
+          {
+            "code": "AISubtech-6.1.2",
+            "description": "Reinforcement Biasing",
+            "mappings": [
+              "OWASP: LLM05:2026: Data and Model Poisoning",
+              "OWASP: ASI06: Memory & Context Poisoning",
+              "OWASP: ASI08: Cascading Failures",
+              "MITRE ATLAS: AML.T0061: LLM Prompt Self-Replication",
+              "MITRE ATLAS: AML.T0070: RAG Poisoning",
+              "NIST AML: NISTAML.013: Data Poisoning"
+            ]
+          },
+          {
+            "code": "AISubtech-6.1.3",
+            "description": "Reinforcement Signal Corruption",
+            "mappings": [
+              "OWASP: LLM05:2026: Data and Model Poisoning",
+              "OWASP: ASI06: Memory & Context Poisoning",
+              "OWASP: ASI08: Cascading Failures",
+              "MITRE ATLAS: AML.T0020: Poisoned Training Data",
+              "MITRE ATLAS: AML.T0018: Manipulate AI Model",
+              "NIST AML: NISTAML.024: Targeted Poisoning"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-007": {
+    "code": "OB-007",
+    "description": "Sabotage / Integrity Degradation",
+    "ai_tech": [
+      {
+        "code": "AITech-7.1",
+        "description": "Reasoning Corruption",
+        "mappings": [
+          "OWASP: LLM01:2026: Prompt Injection",
+          "OWASP: ASI06: Memory & Context Poisoning",
+          "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+          "MITRE ATLAS: AML.T0054: LLM Jailbreak",
+          "NIST AML: N/A"
+        ],
+        "ai_subtech": []
+      },
+      {
+        "code": "AITech-7.2",
+        "description": "Memory System Corruption",
+        "mappings": [
+          "OWASP: LLM05:2026: Data and Model Poisoning",
+          "OWASP: ASI06: Memory & Context Poisoning",
+          "MITRE ATLAS: AML.T0020: Poisoned Training Data",
+          "MITRE ATLAS: AML.T0070: RAG Poisoning",
+          "NIST AML: NISTAML.024: Targeted Poisoning",
+          "NIST AML: NISTAML.013: Data Poisoning"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-7.2.1",
+            "description": "Memory Anchor Attacks",
+            "mappings": [
+              "OWASP: LLM05:2026: Data and Model Poisoning",
+              "OWASP: ASI06: Memory & Context Poisoning",
+              "MITRE ATLAS: AML.T0018: Manipulate AI Model",
+              "MITRE ATLAS: AML.T0020: Poisoned Training Data",
+              "MITRE ATLAS: AML.T0070: RAG Poisoning",
+              "NIST AML: NISTAML.024: Targeted Poisoning"
+            ]
+          },
+          {
+            "code": "AISubtech-7.2.2",
+            "description": "Memory Index Manipulation",
+            "mappings": [
+              "OWASP: LLM05:2026: Data and Model Poisoning",
+              "OWASP: ASI06: Memory & Context Poisoning",
+              "MITRE ATLAS: AML.T0020: Poisoned Training Data",
+              "MITRE ATLAS: AML.T0070: RAG Poisoning",
+              "NIST AML: NISTAML.024: Targeted Poisoning",
+              "NIST AML: NISTAML.013: Data Poisoning"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-7.3",
+        "description": "Data Source Abuse and Manipulation",
+        "mappings": [
+          "OWASP: LLM04:2026: Supply Chain",
+          "OWASP: LLM05:2026: Data and Model Poisoning",
+          "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+          "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+          "MITRE ATLAS: AML.T0019: Publish Poisoned Dataset",
+          "NIST AML: NISTAML.013: Data Poisoning",
+          "NIST AML: NISTAML.051: Model Poisoning"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-7.3.1",
+            "description": "Corrupted Third-Party Data",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: LLM05:2026: Data and Model Poisoning",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+              "MITRE ATLAS: AML.T0019: Publish Poisoned Dataset",
+              "NIST AML: NISTAML.013: Data Poisoning",
+              "NIST AML: NISTAML.051: Model Poisoning"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-7.4",
+        "description": "Token Manipulation",
+        "mappings": [
+          "OWASP: LLM05:2026: Data and Model Poisoning",
+          "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+          "MITRE ATLAS: AML.T0055: Unsecured Credentials",
+          "MITRE ATT&CK: T1528: Steal Application Access Token",
+          "MITRE ATT&CK: T1552: Unsecured Credentials",
+          "NIST AML: NISTAML.051: Model Poisoning",
+          "NIST AML: NISTAML.024: Targeted Poisoning"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-7.4.1",
+            "description": "Token Theft",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: ASI03: Identity & Privilege Abuse",
+              "MITRE ATLAS: AML.T0055: Unsecured Credentials",
+              "MITRE ATLAS: AML.T0012: Valid Accounts",
+              "MITRE ATT&CK: T1552: Unsecured Credentials",
+              "MITRE ATT&CK: T1528: Steal Application Access Token",
+              "MITRE ATT&CK: T1087: Account Discovery",
+              "NIST AML: NISTAML.051: Model Poisoning"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-008": {
+    "code": "OB-008",
+    "description": "Data and Privacy Violations",
+    "ai_tech": [
+      {
+        "code": "AITech-8.1",
+        "description": "Membership Inference",
+        "mappings": [
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "OWASP: ASI09: Human-Agent Trust Exploitation",
+          "MITRE ATLAS: AML.T0024.000: Exfiltration via AI Inference API: Infer Training Data Membership",
+          "MITRE ATLAS: AML.T0063: AI Model Outputs",
+          "MITRE ATLAS: AML.T0040: AI Model Inference API Access",
+          "NIST AML: NISTAML.033: Membership Inference"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-8.1.1",
+            "description": "Presence Detection",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: ASI09: Human-Agent Trust Exploitation",
+              "MITRE ATLAS: AML.T0024.000: Exfiltration via AI Inference API: Infer Training Data Membership",
+              "MITRE ATLAS: AML.T0063: AI Model Outputs",
+              "MITRE ATLAS: AML.T0040: AI Model Inference API Access",
+              "NIST AML: NISTAML.033: Membership Inference"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-8.2",
+        "description": "Data Exfiltration / Exposure",
+        "mappings": [
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "OWASP: ASI09: Human-Agent Trust Exploitation",
+          "MITRE ATLAS: AML.T0024.000: Exfiltration via AI Inference API: Infer Training Data Membership",
+          "MITRE ATLAS: AML.T0035: AI Artifact Collection",
+          "MITRE ATLAS: AML.T0037: Data From Local System",
+          "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+          "NIST AML: NISTAML.037: Training Data Attacks"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-8.2.1",
+            "description": "Training Data Exposure",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: ASI09: Human-Agent Trust Exploitation",
+              "MITRE ATLAS: AML.T0024.000: Exfiltration via AI Inference API: Infer Training Data Membership",
+              "MITRE ATLAS: AML.T0035: AI Artifact Collection",
+              "MITRE ATLAS: AML.T0037: Data From Local System",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "NIST AML: NISTAML.037: Training Data Attacks"
+            ]
+          },
+          {
+            "code": "AISubtech-8.2.2",
+            "description": "LLM Data Leakage",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: ASI09: Human-Agent Trust Exploitation",
+              "MITRE ATLAS: AML.T0069: LLM System Information Discovery",
+              "MITRE ATLAS: AML.T0036: Data From Local System",
+              "MITRE ATLAS: AML.T0024.000: Exfiltration via AI Inference API: Infer Training Data Membership",
+              "MITRE ATLAS: AML.T0035: AI Artifact Collection",
+              "MITRE ATLAS: AML.T0037: Data From Local System",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "NIST AML: NISTAML.037: Training Data Attacks"
+            ]
+          },
+          {
+            "code": "AISubtech-8.2.3",
+            "description": "Data Exfiltration via Agent Tooling",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: ASI02: Tool Misuse & Exploitation",
+              "OWASP: ASI09: Human-Agent Trust Exploitation",
+              "MITRE ATLAS: AML.T0086: Exfiltration via AI Agent Tool Invocation",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-8.3",
+        "description": "Information Disclosure",
+        "mappings": [
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "OWASP: LLM10:2026: Improper Output Handling",
+          "MITRE ATLAS: AML.T0036: Data From Local System",
+          "MITRE ATLAS: AML.T0075: Cloud Service Discovery",
+          "NIST AML: NISTAML.038: Data Extraction",
+          "MITRE ATT&CK: T1592: Gather Victim Host Information",
+          "MITRE ATT&CK: T1595: Active Scanning"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-8.3.1",
+            "description": "Tool Metadata Exposure",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: LLM10:2026: Improper Output Handling",
+              "OWASP: ASI02: Tool Misuse & Exploitation",
+              "MITRE ATLAS: AML.T0036: Data From Local System",
+              "MITRE ATLAS: AML.T0075: Cloud Service Discovery",
+              "MITRE ATLAS: AML.T0084.003: Call Chains",
+              "MITRE ATLAS: AML.T0084.001: Tool Definitions",
+              "MITRE ATLAS: AML.T0002.002: AI Agent Configuration",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.3.2",
+            "description": "System Information Leakage",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0036: Data From Local System",
+              "MITRE ATLAS: AML.T0075: Cloud Service Discovery",
+              "NIST AML: NISTAML.039: Compromising Connected Resources"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-8.4",
+        "description": "Prompt/Meta Extraction",
+        "mappings": [
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "MITRE ATLAS: AML.T0056: Extract LLM System Prompt",
+          "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+          "NIST AML: NISTAML.035: Prompt Extraction"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-8.4.1",
+            "description": "System LLM Prompt Leakage",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: LLM08:2026: Hidden Context Exposure",
+              "MITRE ATLAS: AML.T0056: Extract LLM System Prompt",
+              "MITRE ATLAS: AML.T0035: AI Artifact Collection"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-8.5",
+        "description": "Personally Identifiable Information",
+        "mappings": [
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+          "MITRE ATLAS: AML.T0048.003: User Harm",
+          "NIST AML: NISTAML.03: Privacy Compromise",
+          "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+          "NIST AML: NISTAML.038: Data Extraction"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-8.5.1",
+            "description": "Email Address",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.5.2",
+            "description": "Phone Number",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.5.3",
+            "description": "Person Name",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.5.4",
+            "description": "IP Address",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.5.5",
+            "description": "Address",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.5.6",
+            "description": "Username",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.5.7",
+            "description": "Password",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.5.8",
+            "description": "Driver License Number",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.5.9",
+            "description": "Passport Number",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.5.10",
+            "description": "National ID Number",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-8.6",
+        "description": "Payment Card Industry Data",
+        "mappings": [
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+          "MITRE ATLAS: AML.T0048.003: User Harm",
+          "NIST AML: NISTAML.03: Privacy Compromise",
+          "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+          "NIST AML: NISTAML.038: Data Extraction"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-8.6.1",
+            "description": "Credit Card Number",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.6.2",
+            "description": "Bank Account Number",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.6.3",
+            "description": "Bank Routing Code",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.6.4",
+            "description": "Tax Identification Number",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-8.7",
+        "description": "Protected Health Information",
+        "mappings": [
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+          "MITRE ATLAS: AML.T0048.003: User Harm",
+          "NIST AML: NISTAML.03: Privacy Compromise",
+          "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+          "NIST AML: NISTAML.038: Data Extraction"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-8.7.1",
+            "description": "Medical License Number",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.7.2",
+            "description": "Patient ID Number",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.7.3",
+            "description": "Medication",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-8.7.4",
+            "description": "Medical Disease",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0057: LLM Data Leakage",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-009": {
+    "code": "OB-009",
+    "description": "Supply Chain Compromise",
+    "ai_tech": [
+      {
+        "code": "AITech-9.1",
+        "description": "Model or Agentic System Manipulation",
+        "mappings": [
+          "OWASP: LLM04:2026: Supply Chain",
+          "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+          "OWASP: ASI05: Unexpected Code Execution (RCE)",
+          "MITRE ATLAS: AML.T0050: Command and Scripting Interpreter",
+          "NIST AML: NISTAML.023: Backdoor Poisoning",
+          "Cisco AI MDL Code: MDL-006",
+          "Cisco AI MDL Code: MDL-007",
+          "Cisco AI MDL Code: MDL-005",
+          "Cisco AI MDL Code: MDL-010",
+          "Cisco AI MDL Code: MDL-012",
+          "Cisco AI MDL Code: MDL-014",
+          "Cisco AI MDL Code: MDL-015",
+          "Cisco AI MDL Code: MDL-019"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-9.1.1",
+            "description": "Code Execution",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "OWASP: ASI05: Unexpected Code Execution (RCE)",
+              "MITRE ATLAS: AML.T0050: Command and Scripting Interpreter",
+              "NIST AML: NISTAML.023: Backdoor Poisoning"
+            ]
+          },
+          {
+            "code": "AISubtech-9.1.2",
+            "description": "Unauthorized or Unsolicited System Access",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "OWASP: ASI05: Unexpected Code Execution (RCE)",
+              "MITRE ATLAS: AML.T0012: Valid Accounts",
+              "MITRE ATLAS: AML.T0112: Machine Compromise",
+              "NIST AML: AML.T0044: Full AI Model Access"
+            ]
+          },
+          {
+            "code": "AISubtech-9.1.3",
+            "description": "Unauthorized or Unsolicited Network Access",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "OWASP: ASI05: Unexpected Code Execution (RCE)",
+              "MITRE ATLAS: AML.T0049: Exploit Public Facing Application",
+              "NIST AML: AML.T0072: Reverse Shell",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-9.1.4",
+            "description": "Injection Attacks (e.g., SQL, Command Execution, XSS)",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM10:2026: Improper Output Handling",
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "OWASP: ASI05: Unexpected Code Execution (RCE)",
+              "MITRE ATLAS: AML.T0051: LLM Prompt Injection",
+              "MITRE ATLAS: AML.T0050: Command and Scripting Interpreter",
+              "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+              "MITRE ATT&CK: T1588.007: Obtain AI Capabilities",
+              "NIST AML: NISTAML.024: Targeted Poisoning"
+            ]
+          },
+          {
+            "code": "AISubtech-9.1.5",
+            "description": "Template Injection (e.g., SSTI)",
+            "mappings": [
+              "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "OWASP: ASI05: Unexpected Code Execution (RCE)",
+              "MITRE ATLAS: AML.T0074: Masquerading",
+              "MITRE ATLAS: AML.T0068: LLM Prompt Obfuscation",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-9.2",
+        "description": "Detection Evasion",
+        "mappings": [
+          "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+          "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+          "MITRE ATLAS: AML.T0074: Masquerading",
+          "MITRE ATLAS: AML.T0068: LLM Prompt Obfuscation",
+          "MITRE ATLAS: AML.T0107: Exploitation for Defense Evasion",
+          "NIST AML: N/A",
+          "Cisco AI MDL Code: MDL-001",
+          "Cisco AI MDL Code: MDL-003",
+          "Cisco AI MDL Code: MDL-009",
+          "Cisco AI MDL Code: MDL-011",
+          "Cisco AI MDL Code: MDL-016",
+          "Cisco AI MDL Code: MDL-017",
+          "Cisco AI MDL Code: MDL-019"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-9.2.1",
+            "description": "Obfuscation Vulnerabilities",
+            "mappings": [
+              "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "MITRE ATLAS: AML.T0074: Masquerading",
+              "MITRE ATLAS: AML.T0068: LLM Prompt Obfuscation",
+              "NIST AML: N/A",
+              "Cisco AI MDL Code: MDL-001",
+              "Cisco AI MDL Code: MDL-003",
+              "Cisco AI MDL Code: MDL-009",
+              "Cisco AI MDL Code: MDL-011",
+              "Cisco AI MDL Code: MDL-016",
+              "Cisco AI MDL Code: MDL-017",
+              "Cisco AI MDL Code: MDL-019"
+            ]
+          },
+          {
+            "code": "AISubtech-9.2.2",
+            "description": "Backdoors and Trojans",
+            "mappings": [
+              "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+              "MITRE ATLAS: AML.T0058: Publish Poisoned Models",
+              "MITRE ATLAS: T0018.003: Modify Prompt Construction Logic",
+              "NIST AML: NISTAML.023: Backdoor Poisoning",
+              "Cisco AI MDL Code: MDL-021"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-9.3",
+        "description": "Dependency / Plugin Compromise",
+        "mappings": [
+          "OWASP: LLM04:2026: Supply Chain",
+          "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+          "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+          "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+          "NIST AML: NISTAML.023: Backdoor Poisoning",
+          "NIST AML: NISTAML.018: Prompt Injection",
+          "Cisco AI MDL Code: MDL-023"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-9.3.1",
+            "description": "Malicious Package / Tool Injection",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+              "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+              "MITRE ATLAS: AML.T0110.002: Poisoned AI Agent Tool",
+              "MITRE ATLAS: AML.T0112.001: AI Artifacts",
+              "NIST AML: NISTAML.023: Backdoor Poisoning",
+              "NIST AML: NISTAML.018: Prompt Injection",
+              "Cisco AI MDL Code: MDL-023"
+            ]
+          },
+          {
+            "code": "AISubtech-9.3.2",
+            "description": "Dependency Name Squatting (Tools / Servers)",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+              "NIST AML: NISTAML.039: Compromising Connected Resources"
+            ]
+          },
+          {
+            "code": "AISubtech-9.3.3",
+            "description": "Dependency Replacement / Rug Pull",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+              "MITRE ATLAS: AML.T0018: Manipulate AI Model",
+              "MITRE ATLAS: AML.T0109: AI Supply Chain Rug Pull",
+              "NIST AML: NISTAML.051: Model Poisoning"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-010": {
+    "code": "OB-010",
+    "description": "Model Theft / Extraction",
+    "ai_tech": [
+      {
+        "code": "AITech-10.1",
+        "description": "Model Extraction",
+        "mappings": [
+          "OWASP: LLM06:2026: Unbounded Consumption",
+          "MITRE ATLAS: AML.T0063: AI Model Outputs",
+          "MITRE ATLAS: AML.T0035: AI Artifact Collection",
+          "MITRE ATLAS: AML.T0040: AI Model Inference API Access",
+          "NIST AML: NISTAML.038: Data Extraction",
+          "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+          "MITRE ATLAS: AML.T0024: Infer Training Data"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-10.1.1",
+            "description": "API Query Stealing",
+            "mappings": [
+              "OWASP: LLM06:2026: Unbounded Consumption",
+              "MITRE ATLAS: AML.T0063: AI Model Outputs",
+              "MITRE ATLAS: AML.T0035: AI Artifact Collection",
+              "MITRE ATLAS: AML.T0040: AI Model Inference API Access",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          },
+          {
+            "code": "AISubtech-10.1.2",
+            "description": "Weight Reconstruction",
+            "mappings": [
+              "OWASP: LLM06:2026: Unbounded Consumption",
+              "MITRE ATLAS: AML.T0018: Manipulate AI Model",
+              "NIST AML: N/A",
+              "Cisco AI MDL Code: MDL-022"
+            ]
+          },
+          {
+            "code": "AISubtech-10.1.3",
+            "description": "Sensitive Data Reconstruction",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: TA0010: Exfiltration",
+              "NIST AML: NISTAML.033: Membership Inference"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-10.2",
+        "description": "Model Inversion",
+        "mappings": [
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "MITRE ATLAS: AML.T0024.001: Invert ML Model",
+          "NIST AML: NISTAML.033: Membership Inference"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-10.2.1",
+            "description": "Model Inversion",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0024.001: Invert ML Model",
+              "NIST AML: NISTAML.033: Membership Inference"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-011": {
+    "code": "OB-011",
+    "description": "Adversarial Evasion",
+    "ai_tech": [
+      {
+        "code": "AITech-11.1",
+        "description": "Environment-Aware Evasion",
+        "mappings": [
+          "OWASP: LLM10:2026: Improper Output Handling",
+          "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+          "MITRE ATLAS: AML.T0015: Evade AI Model",
+          "NIST AML: N/A"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-11.1.1",
+            "description": "Agent-Specific Evasion",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-11.1.2",
+            "description": "Tool-Scoped Evasion",
+            "mappings": [
+              "OWASP: LLM10:2026: Improper Output Handling",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-11.1.3",
+            "description": "Environment-Scoped Payloads",
+            "mappings": [
+              "OWASP: LLM10:2026: Improper Output Handling",
+              "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-11.1.4",
+            "description": "Defense-Aware Payloads",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "MITRE ATLAS: AML.T0051.000: LLM Prompt Injection (Direct)",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-11.2",
+        "description": "Model-Selective Evasion",
+        "mappings": [
+          "OWASP: LLM01:2026: Prompt Injection",
+          "MITRE ATLAS: AML.T0015: Evade AI Model",
+          "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+          "NIST AML: N/A"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-11.2.1",
+            "description": "Targeted Model Fingerprinting",
+            "mappings": [
+              "OWASP: LLM06:2026: Unbounded Consumption",
+              "OWASP: LLM05:2026: Data and Model Poisoning",
+              "MITRE ATLAS: AML.T0014: Discover AI Model Family",
+              "NIST AML: NISTAML.051: Model Poisoning",
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-11.2.2",
+            "description": "Conditional Attack Execution",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-012": {
+    "code": "OB-012",
+    "description": "Action-Space and Integration Abuse",
+    "ai_tech": [
+      {
+        "code": "AITech-12.1",
+        "description": "Tool Exploitation",
+        "mappings": [
+          "OWASP: LLM03:2026: Excessive Agency",
+          "OWASP: ASI02: Tool Misuse & Exploitation",
+          "OWASP: ASI05: Unexpected Code Execution (RCE)",
+          "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+          "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+          "MITRE ATT&CK: T1059: Command and Scripting Interpreter",
+          "MITRE ATT&CK: T1106: Native API",
+          "NIST AML: NISTAML.051: Model Poisoning",
+          "NIST AML: NISTAML.039: Compromising Connected Resources"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-12.1.1",
+            "description": "Parameter Manipulation",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI02: Tool Misuse & Exploitation",
+              "MITRE ATLAS: AML.T0067: LLM Trusted Output Component Manipulation",
+              "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+              "NIST AML: NISTAML.051: Model Poisoning",
+              "NIST AML: NISTAML.039: Compromising Connected Resources"
+            ]
+          },
+          {
+            "code": "AISubtech-12.1.2",
+            "description": "Tool Poisoning",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+              "OWASP: ASI02: Tool Misuse & Exploitation",
+              "OWASP: ASI04: Agentic Supply Chain Vulnerabilities",
+              "MITRE ATLAS: AML.T0099: AI Agent Tool Data Poisoning",
+              "MITRE ATLAS: AML.T0110: AI Agent Tool Poisoning",
+              "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+              "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+              "MITRE ATLAS: AML.T0094: Delay Execution of LLM Instructions",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-12.1.3",
+            "description": "Unsafe System / Browser / File Execution",
+            "mappings": [
+              "OWASP: LLM10:2026: Improper Output Handling",
+              "OWASP: ASI02: Tool Misuse & Exploitation",
+              "OWASP: ASI05: Unexpected Code Execution (RCE)",
+              "MITRE ATLAS: AML.T0050: Command and Scripting Interpreter",
+              "MITRE ATLAS: AML.T0011: User Execution (Lure)",
+              "MITRE ATLAS: AML.T0094: Delay Execution of LLM Instructions",
+              "MITRE ATLAS: AML.T0095: Search Open Websites/Domains",
+              "MITRE ATLAS: AML.T0101: Data Destruction via AI Agent Tool Invocation",
+              "MITRE ATLAS: AML.T0011.003: Malicious Link",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-12.1.4",
+            "description": "Tool Shadowing",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI02: Tool Misuse & Exploitation",
+              "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+              "MITRE ATLAS: AML.T0010: AI Supply Chain Compromise",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-12.2",
+        "description": "Insecure Output Handling",
+        "mappings": [
+          "OWASP: LLM10:2026: Improper Output Handling",
+          "OWASP: ASI02: Tool Misuse & Exploitation",
+          "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+          "MITRE ATT&CK: T1059: Command and Scripting Interpreter",
+          "MITRE ATT&CK: T1190: Exploit Public-Facing Application",
+          "NIST AML: NISTAML.027: Misaligned Outputs"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-12.2.1",
+            "description": "Code Detection / Malicious Code Output",
+            "mappings": [
+              "OWASP: LLM10:2026: Improper Output Handling",
+              "OWASP: ASI02: Tool Misuse & Exploitation",
+              "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+              "MITRE ATT&CK: T1059: Command and Scripting Interpreter",
+              "MITRE ATT&CK: T1190: Exploit Public-Facing Application",
+              "NIST AML: NISTAML.027: Misaligned Outputs"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-013": {
+    "code": "OB-013",
+    "description": "Availability Abuse",
+    "ai_tech": [
+      {
+        "code": "AITech-13.1",
+        "description": "Disruption of Availability",
+        "mappings": [
+          "OWASP: LLM06:2026: Unbounded Consumption",
+          "OWASP: ASI08: Cascading Failures",
+          "MITRE ATLAS: AML.T0029: Denial of AI Service",
+          "NIST AML: N/A"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-13.1.1",
+            "description": "Compute Exhaustion",
+            "mappings": [
+              "OWASP: LLM06:2026: Unbounded Consumption",
+              "OWASP: ASI08: Cascading Failures",
+              "MITRE ATLAS: AML.T0029: Denial of AI Service",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-13.1.2",
+            "description": "Memory Flooding",
+            "mappings": [
+              "OWASP: LLM06:2026: Unbounded Consumption",
+              "OWASP: ASI08: Cascading Failures",
+              "MITRE ATLAS: AML.T0029: Denial of AI Service",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-13.1.3",
+            "description": "Model Denial of Service",
+            "mappings": [
+              "OWASP: LLM06:2026: Unbounded Consumption",
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI08: Cascading Failures",
+              "MITRE ATLAS: AML.T0029: Denial of AI Service",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-13.1.4",
+            "description": "Application Denial of Service",
+            "mappings": [
+              "OWASP: LLM06:2026: Unbounded Consumption",
+              "MITRE ATLAS: AML.T0029: Denial of AI Service",
+              "NIST AML: N/A"
+            ]
+          },
+          {
+            "code": "AISubtech-13.1.5",
+            "description": "Decision Paralysis Attacks",
+            "mappings": [
+              "OWASP: LLM06:2026: Unbounded Consumption",
+              "MITRE ATLAS: AML.T0029: Denial of AI Service",
+              "NIST AML: NISTAML.024: Targeted Poisoning"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-13.2",
+        "description": "Cost Harvesting / Repurposing",
+        "mappings": [
+          "OWASP: LLM06:2026: Unbounded Consumption",
+          "MITRE ATLAS: AML.T0040: AI Model Inference API Access",
+          "MITRE ATLAS: AML.T0029: Denial of AI Service",
+          "MITRE ATLAS: AML.T0034: Cost Harvesting",
+          "NIST AML: N/A"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-13.2.1",
+            "description": "Service Misuse for Cost Inflation",
+            "mappings": [
+              "OWASP: LLM06:2026: Unbounded Consumption",
+              "MITRE ATLAS: AML.T0040: AI Model Inference API Access",
+              "MITRE ATLAS: AML.T0029: Denial of AI Service",
+              "MITRE ATLAS: AML.T0034: Cost Harvesting",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-014": {
+    "code": "OB-014",
+    "description": "Privilege Compromise",
+    "ai_tech": [
+      {
+        "code": "AITech-14.1",
+        "description": "Unauthorized Access",
+        "mappings": [
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "OWASP: ASI03: Identity & Privilege Abuse",
+          "MITRE ATLAS: AML.T0055: Unsecured Credentials",
+          "MITRE ATLAS: AML.T0091: Use Alternate Authentication Material",
+          "MITRE ATLAS: AML.T0091.000: App Access Token Abuse",
+          "MITRE ATT&CK: T1098: Account Manipulation",
+          "MITRE ATT&CK: T1528: Steal Application Access Token",
+          "MITRE ATT&CK: T1550: Use Alternate Authentication Material",
+          "NIST AML: NISTAML.03: Privacy Compromise"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-14.1.1",
+            "description": "Credential Theft",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: ASI03: Identity & Privilege Abuse",
+              "MITRE ATLAS: AML.T0055: Unsecured Credentials",
+              "MITRE ATLAS: AML.T0091: Use Alternate Authentication Material",
+              "MITRE ATLAS: AML.T0091.000: App Access Token Abuse",
+              "MITRE ATLAS: AML.T0106: Exploitation for Credential Access",
+              "MITRE ATLAS: AML.T0098: AI Agent Tool Credential Harvesting",
+              "MITRE ATT&CK: T1098: Account Manipulation",
+              "MITRE ATT&CK: T1528: Steal Application Access Token",
+              "MITRE ATT&CK: T1550: Use Alternate Authentication Material",
+              "NIST AML: NISTAML.03: Privacy Compromise"
+            ]
+          },
+          {
+            "code": "AISubtech-14.1.2",
+            "description": "Insufficient Access Controls",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI03: Identity & Privilege Abuse",
+              "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-14.2",
+        "description": "Abuse of Delegated Authority",
+        "mappings": [
+          "OWASP: LLM03:2026: Excessive Agency",
+          "OWASP: ASI03: Identity & Privilege Abuse",
+          "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+          "MITRE ATLAS: AML.T0055: Unsecured Credentials",
+          "MITRE ATLAS: AML.T0091: Use Alternate Authentication Material",
+          "MITRE ATLAS: AML.T0091.000: App Access Token Abuse",
+          "NIST AML: N/A",
+          "MITRE ATT&CK: T1098: Account Manipulation",
+          "MITRE ATT&CK: T1528: Steal Application Access Token",
+          "MITRE ATT&CK: T1550: Use Alternate Authentication Material"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-14.2.1",
+            "description": "Permission Escalation via Delegation",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI03: Identity & Privilege Abuse",
+              "MITRE ATLAS: AML.T0053: LLM Plugin Compromise",
+              "MITRE ATLAS: AML.T0055: Unsecured Credentials",
+              "MITRE ATLAS: AML.T0091: Use Alternate Authentication Material",
+              "MITRE ATLAS: AML.T0091.000: App Access Token Abuse",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-015": {
+    "code": "OB-015",
+    "description": "Harmful / Misleading / Inaccurate Content",
+    "ai_tech": [
+      {
+        "code": "AITech-15.1",
+        "description": "Harmful Content",
+        "mappings": [
+          "OWASP: LLM01:2026: Prompt Injection",
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "MITRE ATLAS: AML.T0048.002: Societal Harm",
+          "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+          "NIST AML: NISTAML.04: Misuse Violations",
+          "NIST AML: NISTAML.018: Prompt Injection",
+          "OWASP: LLM07:2026: Misinformation",
+          "MITRE ATLAS: AML.T0015: Evade AI Model",
+          "NIST AML: NISTAML.027: Misaligned Outputs",
+          "MITRE ATT&CK: T1588.007: Obtain AI Capabilities"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-15.1.1",
+            "description": "Cybersecurity and Hacking: Malware / Exploits",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.2",
+            "description": "Cybersecurity and Hacking: Cyber Abuse",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.3",
+            "description": "Safety Harms and Toxicity: Animal Abuse",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.4",
+            "description": "Safety Harms and Toxicity: Child Abuse / Exploitation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.5",
+            "description": "Safety Harms and Toxicity: Disinformation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM07:2026: Misinformation",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.6",
+            "description": "Safety Harms and Toxicity: Environmental Harm",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.7",
+            "description": "Safety Harms and Toxicity: Financial Harm",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.000: Financial Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.8",
+            "description": "Safety Harms and Toxicity: Harassment",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.9",
+            "description": "Safety Harms and Toxicity: Hate Speech",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.10",
+            "description": "Safety Harms and Toxicity: Non-Violent Crime",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.11",
+            "description": "Safety Harms and Toxicity: Profanity",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.000: Financial Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.12",
+            "description": "Safety Harms and Toxicity: Scams and Deception",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.13",
+            "description": "Safety Harms and Toxicity: Self Harm",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.14",
+            "description": "Safety Harms and Toxicity: Sexual Content and Exploitation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.15",
+            "description": "Safety Harms and Toxicity: Social Division and Polarization",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM07:2026: Misinformation",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.16",
+            "description": "Safety Harms and Toxicity: Terrorism / Extremism",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.17",
+            "description": "Safety Harms and Toxicity: Violence and Public Safety Threat",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.18",
+            "description": "Safety Harms and Toxicity: Weapons / CBRN Risks",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.19",
+            "description": "Integrity: Hallucinations / Misinformation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM07:2026: Misinformation",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.027: Misaligned Outputs",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.20",
+            "description": "Integrity: Unauthorized Financial Advice",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM07:2026: Misinformation",
+              "MITRE ATLAS: AML.T0048.000: Financial Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.027: Misaligned Outputs",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.21",
+            "description": "Integrity: Unauthorized Legal Advice",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM07:2026: Misinformation",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.027: Misaligned Outputs",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.22",
+            "description": "Integrity: Unauthorized Medical Advice",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM07:2026: Misinformation",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.003: User Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "NIST AML: NISTAML.027: Misaligned Outputs",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.23",
+            "description": "Intellectual Property Compromise: Intellectual Property Infringement",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0048.004: ML Intellectual Property Theft",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.24",
+            "description": "Intellectual Property Compromise: Confidential Data",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "MITRE ATLAS: AML.T0048.004: ML Intellectual Property Theft",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "NIST AML: NISTAML.03: Privacy Compromise",
+              "NIST AML: NISTAML.018: Prompt Injection"
+            ]
+          },
+          {
+            "code": "AISubtech-15.1.25",
+            "description": "General Harms",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: LLM07:2026: Misinformation",
+              "MITRE ATLAS: AML.T0048.001: Reputational Harm",
+              "MITRE ATLAS: AML.T0048.002: Societal Harm",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "MITRE ATT&CK: T1588.007: Obtain AI Capabilities",
+              "NIST AML: NISTAML.04: Misuse Violations",
+              "NIST AML: NISTAML.018: Prompt Injection",
+              "NIST AML: NISTAML.027: Misaligned Outputs"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-016": {
+    "code": "OB-016",
+    "description": "Surveillance",
+    "ai_tech": [
+      {
+        "code": "AITech-16.1",
+        "description": "Eavesdropping",
+        "mappings": [
+          "OWASP: LLM02:2026: Sensitive Information Disclosure",
+          "OWASP: ASI07: Insecure Inter-Agent Communication",
+          "MITRE ATLAS: AML.T0037: Data From Local System",
+          "MITRE ATLAS: AML.T0069: LLM System Information Discovery",
+          "MITRE ATT&CK: T1040: Network Sniffing",
+          "MITRE ATT&CK: T1557: Adversary-in-the-Middle",
+          "MITRE ATT&CK: T1213: Data from Information Repositories",
+          "NIST AML: NISTAML.036: Leaking Information from User Interactions"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-16.1.1",
+            "description": "Logging Sensitive Conversations",
+            "mappings": [
+              "OWASP: LLM02:2026: Sensitive Information Disclosure",
+              "OWASP: ASI07: Insecure Inter-Agent Communication",
+              "MITRE ATLAS: AML.T0037: Data From Local System",
+              "MITRE ATLAS: AML.T0069: LLM System Information Discovery",
+              "MITRE ATT&CK: T1040: Network Sniffing",
+              "MITRE ATT&CK: T1557: Adversary-in-the-Middle",
+              "MITRE ATT&CK: T1213: Data from Information Repositories",
+              "NIST AML: NISTAML.036: Leaking Information from User Interactions"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-017": {
+    "code": "OB-017",
+    "description": "Cyber-Physical / Sensor Attacks",
+    "ai_tech": [
+      {
+        "code": "AITech-17.1",
+        "description": "Sensor Spoofing",
+        "mappings": [
+          "OWASP: LLM01:2026: Prompt Injection",
+          "OWASP: ASI05: Unexpected Code Execution (RCE)",
+          "MITRE ATLAS: AML.T0043: Craft Adversarial Data",
+          "MITRE ATLAS: AML.T0015: Evade AI Model",
+          "NIST AML: NISTAML.038: Data Extraction"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-17.1.1",
+            "description": "Sensor Spoofing: Action Signals (audio, visual)",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: ASI05: Unexpected Code Execution (RCE)",
+              "MITRE ATLAS: AML.T0043: Craft Adversarial Data",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "NIST AML: NISTAML.038: Data Extraction"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-018": {
+    "code": "OB-018",
+    "description": "System Misuse / Malicious Application",
+    "ai_tech": [
+      {
+        "code": "AITech-18.1",
+        "description": "Fraudulent Use",
+        "mappings": [
+          "OWASP: LLM01:2026: Prompt Injection",
+          "OWASP: LLM05:2026: Data and Model Poisoning",
+          "OWASP: ASI02: Tool Misuse & Exploitation",
+          "MITRE ATLAS: AML.T0011: User Execution (Lure)",
+          "MITRE ATLAS: AML.T0054: LLM Jailbreak",
+          "MITRE ATT&CK: T1588.007: Obtain AI Capabilities",
+          "NIST AML: NISTAML.027: Misaligned Outputs"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-18.1.1",
+            "description": "Spam / Scam / Social Engineering Generation",
+            "mappings": [
+              "OWASP: LLM01:2026: Prompt Injection",
+              "OWASP: LLM05:2026: Data and Model Poisoning",
+              "OWASP: ASI02: Tool Misuse & Exploitation",
+              "MITRE ATLAS: AML.T0011: User Execution (Lure)",
+              "MITRE ATLAS: AML.T0054: LLM Jailbreak",
+              "MITRE ATT&CK: T1588.007: Obtain AI Capabilities",
+              "NIST AML: NISTAML.027: Misaligned Outputs"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-18.2",
+        "description": "Malicious Workflows",
+        "mappings": [
+          "OWASP: LLM03:2026: Excessive Agency",
+          "OWASP: ASI02: Tool Misuse & Exploitation",
+          "OWASP: ASI08: Cascading Failures",
+          "MITRE ATLAS: AML.T0040: AI Model Inference API Access",
+          "MITRE ATLAS: AML.T0049: Exploit Public Facing Application",
+          "NIST AML: NISTAML.027: Misaligned Outputs"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-18.2.1",
+            "description": "Abuse of APIs for Mass Automation",
+            "mappings": [
+              "OWASP: LLM03:2026: Excessive Agency",
+              "OWASP: ASI02: Tool Misuse & Exploitation",
+              "OWASP: ASI08: Cascading Failures",
+              "MITRE ATLAS: AML.T0040: AI Model Inference API Access",
+              "MITRE ATLAS: AML.T0049: Exploit Public Facing Application",
+              "NIST AML: NISTAML.027: Misaligned Outputs"
+            ]
+          },
+          {
+            "code": "AISubtech-18.2.2",
+            "description": "Dedicated Malicious Server or Infrastructure",
+            "mappings": [
+              "OWASP: LLM04:2026: Supply Chain",
+              "OWASP: ASI02: Tool Misuse & Exploitation",
+              "MITRE ATLAS: AML.T0002: Acquire Infrastructure / Develop Capabilities",
+              "MITRE ATLAS: AML.T0005: Create Proxy AI Model",
+              "NIST AML: NISTAML.05: Supply Chain Attacks"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "OB-019": {
+    "code": "OB-019",
+    "description": "Multimodal / Cross-Modal Risks",
+    "ai_tech": [
+      {
+        "code": "AITech-19.1",
+        "description": "Cross-Modal Inconsistency Exploits",
+        "mappings": [
+          "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+          "MITRE ATLAS: AML.T0043: Craft Adversarial Data",
+          "NIST AML: NISTAML.024: Targeted Poisoning",
+          "MITRE ATLAS: AML.T0015: Evade AI Model"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-19.1.1",
+            "description": "Contradictory Inputs Attack",
+            "mappings": [
+              "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+              "MITRE ATLAS: AML.T0043: Craft Adversarial Data",
+              "NIST AML: NISTAML.024: Targeted Poisoning"
+            ]
+          },
+          {
+            "code": "AISubtech-19.1.2",
+            "description": "Modality Skewing",
+            "mappings": [
+              "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "NIST AML: N/A"
+            ]
+          }
+        ]
+      },
+      {
+        "code": "AITech-19.2",
+        "description": "Fusion Payload Split",
+        "mappings": [
+          "OWASP: ASI01: Agent Goal Hijack",
+          "OWASP: ASI05: Unexpected Code Execution (RCE)",
+          "OWASP: ASI06: Memory & Context Poisoning",
+          "MITRE ATLAS: AML.T0019: Publish Poisoned Dataset",
+          "MITRE ATLAS: AML.T0058: Publish Poisoned Models",
+          "MITRE ATLAS: AML.T0018: Manipulate AI Model",
+          "NIST AML: NISTAML.013: Data Poisoning",
+          "OWASP: LLM05:2026: Data and Model Poisoning"
+        ],
+        "ai_subtech": [
+          {
+            "code": "AISubtech-19.2.1",
+            "description": "Convergence Payload Injection",
+            "mappings": [
+              "OWASP: ASI01: Agent Goal Hijack",
+              "OWASP: ASI05: Unexpected Code Execution (RCE)",
+              "OWASP: ASI06: Memory & Context Poisoning",
+              "MITRE ATLAS: AML.T0019: Publish Poisoned Dataset",
+              "MITRE ATLAS: AML.T0058: Publish Poisoned Models",
+              "MITRE ATLAS: AML.T0018: Manipulate AI Model",
+              "NIST AML: NISTAML.013: Data Poisoning",
+              "OWASP: LLM05:2026: Data and Model Poisoning"
+            ]
+          },
+          {
+            "code": "AISubtech-19.2.2",
+            "description": "Chained Payload Execution",
+            "mappings": [
+              "OWASP: LLM09:2026: Vector and Embedding Weaknesses",
+              "OWASP: ASI01: Agent Goal Hijack",
+              "OWASP: ASI05: Unexpected Code Execution (RCE)",
+              "MITRE ATLAS: AML.T0015: Evade AI Model",
+              "NIST AML: NISTAML.051: Model Poisoning"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

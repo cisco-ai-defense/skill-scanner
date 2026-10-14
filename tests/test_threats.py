@@ -57,7 +57,7 @@ class TestThreatMappingContent:
         assert threat["scanner_category"] == "PROMPT INJECTION"
         assert threat["severity"] == "HIGH"
         assert threat["aitech"] == "AITech-1.1"
-        assert threat["aitech_name"] == "Direct Prompt Injection"
+        assert threat["aitech_name"] == "Direct Prompt Injection and Jailbreak (Prompt-based Manipulation)"
         assert "aisubtech" in threat
         assert "description" in threat
 
@@ -145,7 +145,9 @@ class TestGetThreatMapping:
         # Should return generic mapping, not raise error
         assert mapping is not None
         assert mapping["scanner_category"] == "UNKNOWN"
-        assert mapping["aitech"] == "AITech-99.9"
+        # No invented taxonomy code for a threat the tables do not know.
+        assert mapping["aitech"] is None
+        assert mapping["aisubtech"] is None
 
     @pytest.mark.parametrize("threat_name", ["PROMPT INJECTION", "prompt injection", "PROMPT_INJECTION"])
     def test_name_normalization_supports_case_and_underscores(self, threat_name):

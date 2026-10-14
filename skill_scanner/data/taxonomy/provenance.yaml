@@ -1,0 +1,15 @@
+# Provenance for the bundled taxonomy snapshot.
+# Regenerate with scripts/update_taxonomy_snapshot.py; do not edit by hand.
+schema_version: 1
+name: Cisco AI Security and Safety Taxonomy
+version: "2.0.0"
+repository: https://github.com/cisco-ai-defense/ai-security-safety-taxonomy
+revision: 655a343ac943a51b6f61f86e47156e7752c15dc6
+source_path: src/ai_safety_taxonomy/data/taxonomy.json
+source_sha256: eee14982a09e884c2b055fce3b541f66c9c062f8dde43a888792cd833de87930
+snapshot_file: cisco_ai_taxonomy.json
+snapshot_sha256: 3df746f05470b0766ded4714e992182e73c8a5d9945d42354f176f5c90007071
+fields:
+  objective: [code, description]
+  ai_tech: [code, description, mappings]
+  ai_subtech: [code, description, mappings]

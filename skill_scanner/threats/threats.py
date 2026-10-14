@@ -41,9 +41,9 @@ class ThreatMapping:
             "scanner_category": "PROMPT INJECTION",
             "severity": "HIGH",
             "aitech": "AITech-1.1",
-            "aitech_name": "Direct Prompt Injection",
+            "aitech_name": "Direct Prompt Injection and Jailbreak (Prompt-based Manipulation)",
             "aisubtech": "AISubtech-1.1.1",
-            "aisubtech_name": "Instruction Manipulation (Direct Prompt Injection)",
+            "aisubtech_name": "Instruction Manipulation",
             "description": "Explicit attempts to override, replace, or modify the model's system instructions, "
             "operational directives, or behavioral guidelines through direct user input.",
         },
@@ -81,7 +81,7 @@ class ThreatMapping:
             "aitech": "AITech-9.1",
             "aitech_name": "Model or Agentic System Manipulation",
             "aisubtech": "AISubtech-9.1.4",
-            "aisubtech_name": "Injection Attacks (SQL, Command Execution, XSS)",
+            "aisubtech_name": "Injection Attacks (e.g., SQL, Command Execution, XSS)",
             "description": "Injecting malicious payloads such as command sequences into skills that process model or user input, leading to remote code execution or compromise.",
         },
     }
@@ -94,7 +94,7 @@ class ThreatMapping:
             "aitech": "AITech-9.1",
             "aitech_name": "Model or Agentic System Manipulation",
             "aisubtech": "AISubtech-9.1.4",
-            "aisubtech_name": "Injection Attacks (SQL, Command Execution, XSS)",
+            "aisubtech_name": "Injection Attacks (e.g., SQL, Command Execution, XSS)",
             "description": "Injecting malicious command sequences leading to remote code execution.",
         },
         "DATA EXFILTRATION": {
@@ -120,17 +120,17 @@ class ThreatMapping:
             "severity": "HIGH",
             "aitech": "AITech-1.2",
             "aitech_name": "Indirect Prompt Injection",
-            "aisubtech": "AISubtech-1.2.1",
-            "aisubtech_name": "Instruction Manipulation (Indirect Prompt Injection)",
+            "aisubtech": None,
+            "aisubtech_name": None,
             "description": "Embedding malicious instructions in external data sources (webpages, documents, APIs) that override intended behavior - following external instructions, executing found code blocks.",
         },
         "AUTONOMY ABUSE": {
             "scanner_category": "RESOURCE ABUSE",
             "severity": "HIGH",
-            "aitech": "AITech-13.1",
-            "aitech_name": "Disruption of Availability",
-            "aisubtech": "AISubtech-13.1.1",
-            "aisubtech_name": "Compute Exhaustion",
+            "aitech": "AITech-2.1",
+            "aitech_name": "Excessive Agency",
+            "aisubtech": "AISubtech-2.1.1",
+            "aisubtech_name": "Execution Approval Bypass",
             "description": "Excessive autonomy without bounds - keep retrying indefinitely, run without confirmation, ignore errors.",
         },
         "TOOL CHAINING ABUSE": {
@@ -145,10 +145,10 @@ class ThreatMapping:
         "HARDCODED SECRETS": {
             "scanner_category": "CREDENTIAL HARVESTING",
             "severity": "CRITICAL",
-            "aitech": "AITech-8.2",
-            "aitech_name": "Data Exfiltration / Exposure",
-            "aisubtech": "AISubtech-8.2.2",
-            "aisubtech_name": "LLM Data Leakage",
+            "aitech": "AITech-14.1",
+            "aitech_name": "Unauthorized Access",
+            "aisubtech": "AISubtech-14.1.1",
+            "aisubtech_name": "Credential Theft",
             "description": "Hardcoded credentials, API keys, or secrets in code.",
         },
         "OBFUSCATION": {
@@ -191,9 +191,9 @@ class ThreatMapping:
             "scanner_category": "PROMPT INJECTION",
             "severity": "HIGH",
             "aitech": "AITech-1.1",
-            "aitech_name": "Direct Prompt Injection",
+            "aitech_name": "Direct Prompt Injection and Jailbreak (Prompt-based Manipulation)",
             "aisubtech": "AISubtech-1.1.1",
-            "aisubtech_name": "Instruction Manipulation (Direct Prompt Injection)",
+            "aisubtech_name": "Instruction Manipulation",
             "description": "Explicit attempts to override system instructions through direct input.",
         },
         "CODE EXECUTION": {
@@ -211,16 +211,16 @@ class ThreatMapping:
             "aitech": "AITech-9.1",
             "aitech_name": "Model or Agentic System Manipulation",
             "aisubtech": "AISubtech-9.1.4",
-            "aisubtech_name": "Injection Attacks (SQL, Command Execution, XSS)",
+            "aisubtech_name": "Injection Attacks (e.g., SQL, Command Execution, XSS)",
             "description": "Injecting malicious payloads such as SQL queries, command sequences, or scripts.",
         },
         "CREDENTIAL HARVESTING": {
             "scanner_category": "SECURITY VIOLATION",
             "severity": "HIGH",
-            "aitech": "AITech-8.2",
-            "aitech_name": "Data Exfiltration / Exposure",
-            "aisubtech": "AISubtech-8.2.3",
-            "aisubtech_name": "Data Exfiltration via Agent Tooling",
+            "aitech": "AITech-14.1",
+            "aitech_name": "Unauthorized Access",
+            "aisubtech": "AISubtech-14.1.1",
+            "aisubtech_name": "Credential Theft",
             "description": "Unauthorized exposure or exfiltration of credentials or sensitive information.",
         },
         "SYSTEM MANIPULATION": {
@@ -250,9 +250,9 @@ class ThreatMapping:
             "scanner_category": "PROMPT INJECTION",
             "severity": "HIGH",
             "aitech": "AITech-1.1",
-            "aitech_name": "Direct Prompt Injection",
+            "aitech_name": "Direct Prompt Injection and Jailbreak (Prompt-based Manipulation)",
             "aisubtech": "AISubtech-1.1.1",
-            "aisubtech_name": "Instruction Manipulation (Direct Prompt Injection)",
+            "aisubtech_name": "Instruction Manipulation",
             "description": "Malicious manipulation of tool metadata or descriptions that mislead the LLM.",
         },
         "RESOURCE EXHAUSTION": {
@@ -271,7 +271,7 @@ class ThreatMapping:
     AITECH_TO_CATEGORY = {
         "AITech-1.1": "prompt_injection",  # Direct Prompt Injection
         "AITech-1.2": "prompt_injection",  # Indirect Prompt Injection
-        "AITech-2.1": "social_engineering",  # Jailbreak
+        "AITech-2.1": "autonomy_abuse",  # Excessive Agency
         "AITech-4.3": "skill_discovery_abuse",  # Protocol Manipulation / Capability Inflation
         "AITech-8.2": "data_exfiltration",  # Data Exfiltration / Exposure
         "AITech-9.1": "command_injection",  # Model or Agentic System Manipulation (injection attacks)
@@ -280,7 +280,6 @@ class ThreatMapping:
         "AITech-12.1": "unauthorized_tool_use",  # Tool Exploitation
         "AITech-13.1": "resource_abuse",  # Disruption of Availability (AISubtech-13.1.1: Compute Exhaustion)
         "AITech-15.1": "harmful_content",  # Harmful Content
-        "AITech-99.9": "policy_violation",  # Unknown Threat
     }
 
     @classmethod
@@ -314,14 +313,14 @@ class ThreatMapping:
         threat_upper = threat_name.upper().replace("_", " ")
 
         if threat_upper not in threats:
-            # Return generic mapping if not found
+            # Unknown threats carry no taxonomy code rather than an invented one.
             return {
                 "scanner_category": "UNKNOWN",
                 "severity": "MEDIUM",
-                "aitech": "AITech-99.9",
-                "aitech_name": "Unknown Threat",
-                "aisubtech": "AISubtech-99.9.9",
-                "aisubtech_name": "Unclassified",
+                "aitech": None,
+                "aitech_name": None,
+                "aisubtech": None,
+                "aisubtech_name": None,
                 "description": f"Unclassified threat: {threat_name}",
             }
 
@@ -358,12 +357,14 @@ class ThreatMapping:
                 if threat_info.get("aitech") == aitech_code:
                     return threat_info
 
+        from .cisco_ai_taxonomy import get_aitech_name
+
         # Return generic mapping if not found
         return {
             "scanner_category": "UNKNOWN",
             "severity": "MEDIUM",
             "aitech": aitech_code,
-            "aitech_name": "Unknown Threat",
+            "aitech_name": get_aitech_name(aitech_code),
             "aisubtech": None,
             "aisubtech_name": None,
             "description": f"Unclassified threat with AITech code: {aitech_code}",
@@ -385,6 +386,18 @@ class ThreatMapping:
 
 _THREAT_MAPPING_ENV_VAR = "SKILL_SCANNER_THREAT_MAPPING_PATH"
 _ACTIVE_THREAT_MAPPING_SOURCE = "builtin"
+
+# Taxonomy codes set explicitly by a custom threat-mapping file, keyed by
+# (threat table, threat name).  The scanner applies these to findings of the
+# matching analyzer and category ahead of rule declarations, so an
+# organization can remap bundled rules onto its own taxonomy.
+_TAXONOMY_OVERRIDES: dict[tuple[str, str], tuple[str | None, str | None]] = {}
+_ANALYZER_THREAT_TABLES = {
+    "llm": "LLM_THREATS",
+    "static": "YARA_THREATS",
+    "yara": "YARA_THREATS",
+    "behavioral": "BEHAVIORAL_THREATS",
+}
 
 
 def _load_custom_mapping_payload(path: Path) -> dict[str, Any]:
@@ -435,6 +448,7 @@ def _reset_threat_mapping_defaults() -> None:
     ThreatMapping.YARA_THREATS = {k: dict(v) for k, v in _BASE_YARA_THREATS.items()}
     ThreatMapping.BEHAVIORAL_THREATS = {k: dict(v) for k, v in _BASE_BEHAVIORAL_THREATS.items()}
     ThreatMapping.AITECH_TO_CATEGORY = dict(_BASE_AITECH_TO_CATEGORY)
+    _TAXONOMY_OVERRIDES.clear()
 
 
 def _apply_custom_threat_mapping_payload(payload: dict[str, Any]) -> None:
@@ -453,6 +467,10 @@ def _apply_custom_threat_mapping_payload(payload: dict[str, Any]) -> None:
             attr = key_map[lower]
             base = getattr(ThreatMapping, attr)
             setattr(ThreatMapping, attr, _merge_threat_dict(base, value))
+            for threat_name, threat_info in value.items():
+                if "aitech" in threat_info or "aisubtech" in threat_info:
+                    normalized = str(threat_name).upper().replace("_", " ")
+                    _TAXONOMY_OVERRIDES[(attr, normalized)] = (threat_info.get("aitech"), threat_info.get("aisubtech"))
         elif lower in {"aitech_to_category", "aitech_category_map"}:
             if not isinstance(value, dict):
                 raise ValueError(f"{key} override must be an object")
@@ -500,6 +518,14 @@ def configure_threat_mappings(path: str | Path | None = None) -> str:
     BEHAVIORAL_THREAT_MAPPING = _create_simple_mapping(ThreatMapping.BEHAVIORAL_THREATS)
     STATIC_THREAT_MAPPING = YARA_THREAT_MAPPING
     return _ACTIVE_THREAT_MAPPING_SOURCE
+
+
+def get_taxonomy_override(analyzer: str | None, category: str) -> tuple[str | None, str | None] | None:
+    """Return ``(aitech, aisubtech)`` a custom threat-mapping file set for this analyzer and category."""
+    table = _ANALYZER_THREAT_TABLES.get((analyzer or "").lower())
+    if table is None:
+        return None
+    return _TAXONOMY_OVERRIDES.get((table, category.upper().replace("_", " ")))
 
 
 def get_threat_mapping_source() -> str:

@@ -1,0 +1,3 @@
+# The bundled taxonomy snapshot is pinned by SHA-256 in its provenance record;
+# keep its bytes identical on every checkout.
+skill_scanner/data/taxonomy/** -text

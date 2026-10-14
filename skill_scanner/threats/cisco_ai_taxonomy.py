@@ -15,268 +15,53 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Cisco AI Security Framework - Ground Truth Taxonomy.
+Cisco AI Security and Safety Taxonomy.
 
-Source: https://learn-cloudsecurity.cisco.com/ai-security-framework
-Owner: Ankit Garg
-Last Updated: 2026-02-02
+The scanner ships a pinned, reduced snapshot of the taxonomy in
+``skill_scanner/data/taxonomy/cisco_ai_taxonomy.json``.  The snapshot keeps
+objective, AITech and AISubtech codes, their official names, the parent/child
+structure, and the external framework crosswalks (OWASP, MITRE ATLAS,
+NIST AML).  ``provenance.yaml`` next to it records the source commit and the
+SHA-256 of both the source file and the snapshot.  The snapshot is read once
+at import and is never fetched or refreshed at runtime.
 
-This file contains the authoritative AITech and AISubtech codes from the
-Cisco Integrated AI Security and Safety Framework. All threat mappings in
-threats.py must use codes that exist in this taxonomy.
+Rules select an AISubtech code (or an AITech code when no sub-technique
+applies); the snapshot supplies the parent AITech, the names and the
+crosswalks.  Every code the scanner emits must exist in the active taxonomy.
 
-To update this file when the framework changes:
-1. Export data from https://learn-cloudsecurity.cisco.com/ai-security-framework
-2. Update the dictionaries below
-3. Run tests to validate threats.py alignment
+To update the bundled snapshot, run ``scripts/update_taxonomy_snapshot.py``.
+A different taxonomy can be loaded at runtime with ``--taxonomy`` or
+``SKILL_SCANNER_TAXONOMY_PATH``.
 """
 
+from __future__ import annotations
+
+import hashlib
 import json
 import os
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-# Valid AITech codes and their official names
-AITECH_TAXONOMY: dict[str, str] = {
-    # OB-001: Goal Hijacking
-    "AITech-1.1": "Direct Prompt Injection",
-    "AITech-1.2": "Indirect Prompt Injection",
-    "AITech-1.3": "Goal Manipulation",
-    "AITech-1.4": "Multi-Modal Injection and Manipulation",
-    # OB-002: Jailbreak
-    "AITech-2.1": "Jailbreak",
-    # OB-003: Masquerading / Obfuscation / Impersonation
-    "AITech-3.1": "Masquerading / Obfuscation / Impersonation",
-    # OB-004: Communication Compromise
-    "AITech-4.1": "Agent Injection",
-    "AITech-4.2": "Context Boundary Attacks",
-    "AITech-4.3": "Protocol Manipulation",
-    # OB-005: Persistence
-    "AITech-5.1": "Memory System Persistence",
-    "AITech-5.2": "Configuration Persistence",
-    # OB-006: Feedback Loop Manipulation
-    "AITech-6.1": "Training Data Poisoning",
-    # OB-007: Sabotage / Integrity Degradation
-    "AITech-7.1": "Reasoning Corruption",
-    "AITech-7.2": "Memory System Corruption",
-    "AITech-7.3": "Data Source Abuse and Manipulation",
-    "AITech-7.4": "Token Manipulation",
-    # OB-008: Data Privacy Violations
-    "AITech-8.1": "Membership Inference",
-    "AITech-8.2": "Data Exfiltration / Exposure",
-    "AITech-8.3": "Information Disclosure",
-    "AITech-8.4": "Prompt/Meta Extraction",
-    # OB-009: Supply Chain Compromise
-    "AITech-9.1": "Model or Agentic System Manipulation",
-    "AITech-9.2": "Detection Evasion",
-    "AITech-9.3": "Dependency / Plugin Compromise",
-    # OB-010: Model Theft / Extraction
-    "AITech-10.1": "Model Extraction",
-    "AITech-10.2": "Model Inversion",
-    # OB-011: Adversarial Evasion
-    "AITech-11.1": "Environment-Aware Evasion",
-    "AITech-11.2": "Model-Selective Evasion",
-    # OB-012: Action-Space and Integration Abuse
-    "AITech-12.1": "Tool Exploitation",
-    "AITech-12.2": "Insecure Output Handling",
-    # OB-013: Availability Abuse
-    "AITech-13.1": "Disruption of Availability",
-    "AITech-13.2": "Cost Harvesting / Repurposing",
-    # OB-014: Privilege Compromise
-    "AITech-14.1": "Unauthorized Access",
-    "AITech-14.2": "Abuse of Delegated Authority",
-    # OB-015: Harmful / Misleading / Inaccurate Content
-    "AITech-15.1": "Harmful Content",
-    # OB-016: Surveillance
-    "AITech-16.1": "Eavesdropping",
-    # OB-017: Cyber-Physical / Sensor Attacks
-    "AITech-17.1": "Sensor Spoofing",
-    # OB-018: System Misuse / Malicious Application
-    "AITech-18.1": "Fraudulent Use",
-    "AITech-18.2": "Malicious Workflows",
-    # OB-019: Multi-Modal / Cross-Modal Risks
-    "AITech-19.1": "Cross-Modal Inconsistency Exploits",
-    "AITech-19.2": "Fusion Payload Split",
-}
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "taxonomy"
+BUILTIN_SNAPSHOT_PATH = _DATA_DIR / "cisco_ai_taxonomy.json"
+BUILTIN_PROVENANCE_PATH = _DATA_DIR / "provenance.yaml"
 
-# Valid AISubtech codes and their official names
-AISUBTECH_TAXONOMY: dict[str, str] = {
-    # AITech-1.1: Direct Prompt Injection
-    "AISubtech-1.1.1": "Instruction Manipulation (Direct Prompt Injection)",
-    "AISubtech-1.1.2": "Obfuscation (Direct Prompt Injection)",
-    "AISubtech-1.1.3": "Multi-Agent Prompt Injection",
-    # AITech-1.2: Indirect Prompt Injection
-    "AISubtech-1.2.1": "Instruction Manipulation (Indirect Prompt Injection)",
-    "AISubtech-1.2.2": "Obfuscation (Indirect Prompt Injection)",
-    "AISubtech-1.2.3": "Multi-Agent (Indirect Prompt Injection)",
-    # AITech-1.3: Goal Manipulation
-    "AISubtech-1.3.1": "Goal Manipulation (Models, Agents)",
-    "AISubtech-1.3.2": "Goal Manipulation (Tools, Prompts, Resources)",
-    # AITech-1.4: Multi-Modal Injection
-    "AISubtech-1.4.1": "Image-Text Injection",
-    "AISubtech-1.4.2": "Image Manipulation",
-    "AISubtech-1.4.3": "Audio Command Injection",
-    "AISubtech-1.4.4": "Video Overlay Manipulation",
-    # AITech-2.1: Jailbreak
-    "AISubtech-2.1.1": "Context Manipulation (Jailbreak)",
-    "AISubtech-2.1.2": "Obfuscation (Jailbreak)",
-    "AISubtech-2.1.3": "Semantic Manipulation (Jailbreak)",
-    "AISubtech-2.1.4": "Token Exploitation (Jailbreak)",
-    "AISubtech-2.1.5": "Multi-Agent Jailbreak Collaboration",
-    # AITech-3.1: Masquerading
-    "AISubtech-3.1.1": "Identity Obfuscation",
-    "AISubtech-3.1.2": "Trusted Agent Spoofing",
-    # AITech-4.1: Agent Injection
-    "AISubtech-4.1.1": "Rogue Agent Introduction",
-    # AITech-4.2: Context Boundary Attacks
-    "AISubtech-4.2.1": "Context Window Exploitation",
-    "AISubtech-4.2.2": "Session Boundary Violation",
-    # AITech-4.3: Protocol Manipulation
-    "AISubtech-4.3.1": "Schema Inconsistencies",
-    "AISubtech-4.3.2": "Namespace Collision",
-    "AISubtech-4.3.3": "Server Rebinding Attack",
-    "AISubtech-4.3.4": "Replay Exploitation",
-    "AISubtech-4.3.5": "Capability Inflation",
-    "AISubtech-4.3.6": "Cross-Origin Exploitation",
-    # AITech-5.1: Memory System Persistence
-    "AISubtech-5.1.1": "Long-term / Short-term Memory Injection",
-    # AITech-5.2: Configuration Persistence
-    "AISubtech-5.2.1": "Agent Profile Tampering",
-    # AITech-6.1: Training Data Poisoning
-    "AISubtech-6.1.1": "Knowledge Base Poisoning",
-    "AISubtech-6.1.2": "Reinforcement Biasing",
-    "AISubtech-6.1.3": "Reinforcement Signal Corruption",
-    # AITech-7.2: Memory System Corruption
-    "AISubtech-7.2.1": "Memory Anchor Attacks",
-    "AISubtech-7.2.2": "Memory Index Manipulation",
-    # AITech-7.3: Data Source Abuse
-    "AISubtech-7.3.1": "Corrupted Third-Party Data",
-    # AITech-7.4: Token Manipulation
-    "AISubtech-7.4.1": "Token Theft",
-    # AITech-8.1: Membership Inference
-    "AISubtech-8.1.1": "Presence Detection",
-    # AITech-8.2: Data Exfiltration / Exposure
-    "AISubtech-8.2.1": "Training Data Exposure",
-    "AISubtech-8.2.2": "LLM Data Leakage",
-    "AISubtech-8.2.3": "Data Exfiltration via Agent Tooling",
-    # AITech-8.3: Information Disclosure
-    "AISubtech-8.3.1": "Tool Metadata Exposure",
-    "AISubtech-8.3.2": "System Information Leakage",
-    # AITech-8.4: Prompt/Meta Extraction
-    "AISubtech-8.4.1": "System LLM Prompt Leakage",
-    # AITech-9.1: Model or Agentic System Manipulation
-    "AISubtech-9.1.1": "Code Execution",
-    "AISubtech-9.1.2": "Unauthorized or Unsolicited System Access",
-    "AISubtech-9.1.3": "Unauthorized or Unsolicited Network Access",
-    "AISubtech-9.1.4": "Injection Attacks (SQL, Command Execution, XSS)",
-    "AISubtech-9.1.5": "Template Injection (SSTI)",
-    # AITech-9.2: Detection Evasion
-    "AISubtech-9.2.1": "Obfuscation Vulnerabilities",
-    "AISubtech-9.2.2": "Backdoors and Trojans",
-    # AITech-9.3: Dependency / Plugin Compromise
-    "AISubtech-9.3.1": "Malicious Package / Tool Injection",
-    "AISubtech-9.3.2": "Dependency Name Squatting (Tools / Servers)",
-    "AISubtech-9.3.3": "Dependency Replacement / Rug Pull",
-    # AITech-10.1: Model Extraction
-    "AISubtech-10.1.1": "API Query Stealing",
-    "AISubtech-10.1.2": "Weight Reconstruction",
-    "AISubtech-10.1.3": "Sensitive Data Reconstruction",
-    # AITech-10.2: Model Inversion
-    "AISubtech-10.2.1": "Model Inversion",
-    # AITech-11.1: Environment-Aware Evasion
-    "AISubtech-11.1.1": "Agent-Specific Evasion",
-    "AISubtech-11.1.2": "Tool-Scoped Evasion",
-    "AISubtech-11.1.3": "Environment-Scoped Payloads",
-    "AISubtech-11.1.4": "Defense-Aware Payloads",
-    # AITech-11.2: Model-Selective Evasion
-    "AISubtech-11.2.1": "Targeted Model Fingerprinting",
-    "AISubtech-11.2.2": "Conditional Attack Execution",
-    # AITech-12.1: Tool Exploitation
-    "AISubtech-12.1.1": "Parameter Manipulation",
-    "AISubtech-12.1.2": "Tool Poisoning",
-    "AISubtech-12.1.3": "Unsafe System / Browser / File Execution",
-    "AISubtech-12.1.4": "Tool Shadowing",
-    # AITech-12.2: Insecure Output Handling
-    "AISubtech-12.2.1": "Code Detection / Malicious Code Output",
-    # AITech-13.1: Disruption of Availability
-    "AISubtech-13.1.1": "Compute Exhaustion",
-    "AISubtech-13.1.2": "Memory Flooding",
-    "AISubtech-13.1.3": "Model Denial of Service",
-    "AISubtech-13.1.4": "Application Denial of Service",
-    "AISubtech-13.1.5": "Decision Paralysis Attacks",
-    # AITech-13.2: Cost Harvesting
-    "AISubtech-13.2.1": "Service Misuse for Cost Inflation",
-    # AITech-14.1: Unauthorized Access
-    "AISubtech-14.1.1": "Credential Theft",
-    "AISubtech-14.1.2": "Insufficient Access Controls",
-    # AITech-14.2: Abuse of Delegated Authority
-    "AISubtech-14.2.1": "Permission Escalation via Delegation",
-    # AITech-15.1: Harmful Content (extensive sub-techniques)
-    "AISubtech-15.1.1": "Cybersecurity and Hacking: Malware / Exploits",
-    "AISubtech-15.1.2": "Cybersecurity and Hacking: Cyber Abuse",
-    "AISubtech-15.1.3": "Safety Harms and Toxicity: Animal Abuse",
-    "AISubtech-15.1.4": "Safety Harms and Toxicity: Child Abuse / Exploitation",
-    "AISubtech-15.1.5": "Safety Harms and Toxicity: Disinformation",
-    "AISubtech-15.1.6": "Safety Harms and Toxicity: Environmental Harm",
-    "AISubtech-15.1.7": "Safety Harms and Toxicity: Financial Harm",
-    "AISubtech-15.1.8": "Safety Harms and Toxicity: Harassment",
-    "AISubtech-15.1.9": "Safety Harms and Toxicity: Hate Speech",
-    "AISubtech-15.1.10": "Safety Harms and Toxicity: Non-Violent Crime",
-    "AISubtech-15.1.11": "Safety Harms and Toxicity: Profanity",
-    "AISubtech-15.1.12": "Safety Harms and Toxicity: Scams and Deception",
-    "AISubtech-15.1.13": "Safety Harms and Toxicity: Self Harm",
-    "AISubtech-15.1.14": "Safety Harms and Toxicity: Sexual Content and Exploitation",
-    "AISubtech-15.1.15": "Safety Harms and Toxicity: Social Division and Polarization",
-    "AISubtech-15.1.16": "Safety Harms and Toxicity: Terrorism / Extremism",
-    "AISubtech-15.1.17": "Safety Harms and Toxicity: Violence and Public Safety Threat",
-    "AISubtech-15.1.18": "Safety Harms and Toxicity: Weapons / CBRN Risks",
-    "AISubtech-15.1.19": "Integrity: Hallucinations / Misinformation",
-    "AISubtech-15.1.20": "Integrity: Unauthorized Financial Advice",
-    "AISubtech-15.1.21": "Integrity: Unauthorized Legal Advice",
-    "AISubtech-15.1.22": "Integrity: Unauthorized Medical Advice",
-    "AISubtech-15.1.23": "Intellectual Property Compromise: Intellectual Property Infringement",
-    "AISubtech-15.1.24": "Intellectual Property Compromise: Confidential Data",
-    "AISubtech-15.1.25": "Privacy Attacks: PII / PHI / PCI",
-    # AITech-16.1: Eavesdropping
-    "AISubtech-16.1.1": "Logging Sensitive Conversations",
-    # AITech-17.1: Sensor Spoofing
-    "AISubtech-17.1.1": "Sensor Spoofing: Action Signals (audio, visual)",
-    # AITech-18.1: Fraudulent Use
-    "AISubtech-18.1.1": "Spam / Scam / Social Engineering Generation",
-    # AITech-18.2: Malicious Workflows
-    "AISubtech-18.2.1": "Abuse of APIs for Mass Automation",
-    "AISubtech-18.2.2": "Dedicated Malicious Server or Infrastructure",
-    # AITech-19.1: Cross-Modal Inconsistency
-    "AISubtech-19.1.1": "Contradictory Inputs Attack",
-    "AISubtech-19.1.2": "Modality Skewing",
-    # AITech-19.2: Fusion Payload Split
-    "AISubtech-19.2.1": "Convergence Payload Injection",
-    "AISubtech-19.2.2": "Chained Payload Execution",
-}
+_AISUBTECH_CODE_RE = re.compile(r"^AISubtech-(\d+\.\d+)\.\d+$")
 
-# Built-in defaults shipped with the package. These remain immutable and are
-# used when no external taxonomy is configured.
-_BUILTIN_AITECH_TAXONOMY: dict[str, str] = dict(AITECH_TAXONOMY)
-_BUILTIN_AISUBTECH_TAXONOMY: dict[str, str] = dict(AISUBTECH_TAXONOMY)
-AITECH_FRAMEWORK_MAPPINGS: dict[str, list[str]] = {code: [] for code in AITECH_TAXONOMY}
-AISUBTECH_FRAMEWORK_MAPPINGS: dict[str, list[str]] = {code: [] for code in AISUBTECH_TAXONOMY}
-_BUILTIN_AITECH_FRAMEWORK_MAPPINGS: dict[str, list[str]] = {
-    code: list(mappings) for code, mappings in AITECH_FRAMEWORK_MAPPINGS.items()
-}
-_BUILTIN_AISUBTECH_FRAMEWORK_MAPPINGS: dict[str, list[str]] = {
-    code: list(mappings) for code, mappings in AISUBTECH_FRAMEWORK_MAPPINGS.items()
-}
 
-# Convenience sets for quick membership testing.
-# Declared at module scope for static typing and re-assigned by reload_taxonomy().
-VALID_AITECH_CODES: set[str] = set(AITECH_TAXONOMY.keys())
-VALID_AISUBTECH_CODES: set[str] = set(AISUBTECH_TAXONOMY.keys())
+@dataclass(frozen=True)
+class _ParsedTaxonomy:
+    """Canonical in-memory form of one taxonomy payload."""
 
-# Optional runtime override path for loading custom taxonomy profiles.
-TAXONOMY_ENV_VAR = "SKILL_SCANNER_TAXONOMY_PATH"
-
-# Active source marker (builtin or external path).
-_ACTIVE_TAXONOMY_SOURCE = "builtin"
+    aitech: dict[str, str]
+    aisubtech: dict[str, str]
+    aitech_framework_mappings: dict[str, list[str]]
+    aisubtech_framework_mappings: dict[str, list[str]]
+    aisubtech_parents: dict[str, str]
+    version: str | None = None
+    provenance: dict[str, str] = field(default_factory=dict)
 
 
 def _read_taxonomy_file(path: Path) -> dict[str, Any]:
@@ -325,9 +110,16 @@ def _coerce_framework_mapping_dict(value: Any, field_name: str) -> dict[str, lis
     return out
 
 
-def _flatten_framework_taxonomy(
-    data: dict[str, Any],
-) -> tuple[dict[str, str], dict[str, str], dict[str, list[str]], dict[str, list[str]]]:
+def _numbered_parent(aisubtech_code: str, aitech_codes: dict[str, str]) -> str | None:
+    """Return the AITech that ``AISubtech-X.Y.Z`` is numbered under, if it exists."""
+    match = _AISUBTECH_CODE_RE.match(aisubtech_code)
+    if match is None:
+        return None
+    candidate = f"AITech-{match.group(1)}"
+    return candidate if candidate in aitech_codes else None
+
+
+def _flatten_framework_taxonomy(data: dict[str, Any]) -> _ParsedTaxonomy:
     """Flatten OB-* framework taxonomy into AITech/AISubtech maps.
 
     Supports the full Cisco framework shape:
@@ -337,6 +129,7 @@ def _flatten_framework_taxonomy(
     aisubtech: dict[str, str] = {}
     aitech_framework_mappings: dict[str, list[str]] = {}
     aisubtech_framework_mappings: dict[str, list[str]] = {}
+    parents: dict[str, str] = {}
 
     for ob_code, ob in data.items():
         if not ob_code.startswith("OB-") or not isinstance(ob, dict):
@@ -378,6 +171,12 @@ def _flatten_framework_taxonomy(
                         raise ValueError(
                             f"Conflicting AISubtech description for {sub_code}: {aisubtech[sub_code]!r} vs {sub_desc!r}"
                         )
+                    if isinstance(tech_code, str) and tech_code in aitech:
+                        if sub_code in parents and parents[sub_code] != tech_code:
+                            raise ValueError(
+                                f"AISubtech {sub_code} is listed under both {parents[sub_code]} and {tech_code}"
+                            )
+                        parents[sub_code] = tech_code
                     aisubtech[sub_code] = sub_desc
                     merged = list(aisubtech_framework_mappings.get(sub_code, []))
                     for entry in sub_mappings:
@@ -393,48 +192,91 @@ def _flatten_framework_taxonomy(
         aitech_framework_mappings.setdefault(code, [])
     for code in aisubtech:
         aisubtech_framework_mappings.setdefault(code, [])
-    return aitech, aisubtech, aitech_framework_mappings, aisubtech_framework_mappings
+    version = data.get("version")
+    return _ParsedTaxonomy(
+        aitech=aitech,
+        aisubtech=aisubtech,
+        aitech_framework_mappings=aitech_framework_mappings,
+        aisubtech_framework_mappings=aisubtech_framework_mappings,
+        aisubtech_parents=parents,
+        version=str(version) if version is not None else None,
+    )
 
 
-def _parse_taxonomy_payload(
+def _parse_flat_taxonomy(
     data: dict[str, Any],
-) -> tuple[dict[str, str], dict[str, str], dict[str, list[str]], dict[str, list[str]]]:
+    *,
+    aitech_key: str,
+    aisubtech_key: str,
+    aitech_mapping_keys: tuple[str, str],
+    aisubtech_mapping_keys: tuple[str, str],
+    parents_key: str,
+) -> _ParsedTaxonomy:
+    """Parse one of the flattened ``{code: name}`` dictionary formats."""
+    aitech = {str(k): str(v) for k, v in data[aitech_key].items()}
+    aisubtech = {str(k): str(v) for k, v in data[aisubtech_key].items()}
+    aitech_framework_mappings = _coerce_framework_mapping_dict(
+        data.get(aitech_mapping_keys[0]) or data.get(aitech_mapping_keys[1]),
+        aitech_mapping_keys[0],
+    )
+    aisubtech_framework_mappings = _coerce_framework_mapping_dict(
+        data.get(aisubtech_mapping_keys[0]) or data.get(aisubtech_mapping_keys[1]),
+        aisubtech_mapping_keys[0],
+    )
+    for code in aitech:
+        aitech_framework_mappings.setdefault(code, [])
+    for code in aisubtech:
+        aisubtech_framework_mappings.setdefault(code, [])
+
+    # Flattened payloads carry no tree.  An explicit parent map wins; otherwise
+    # a sub-technique belongs to the AITech its number is nested under, but
+    # only when that AITech is present in the same payload.
+    explicit = data.get(parents_key)
+    if explicit is not None and not isinstance(explicit, dict):
+        raise ValueError(f"{parents_key} must be an object mapping AISubtech codes to AITech codes")
+    parents: dict[str, str] = {}
+    for code in aisubtech:
+        parent = str(explicit[code]) if explicit and code in explicit else _numbered_parent(code, aitech)
+        if parent is None:
+            continue
+        if parent not in aitech:
+            raise ValueError(f"{parents_key}[{code!r}] names unknown AITech {parent!r}")
+        parents[code] = parent
+
+    version = data.get("version")
+    return _ParsedTaxonomy(
+        aitech=aitech,
+        aisubtech=aisubtech,
+        aitech_framework_mappings=aitech_framework_mappings,
+        aisubtech_framework_mappings=aisubtech_framework_mappings,
+        aisubtech_parents=parents,
+        version=str(version) if version is not None else None,
+    )
+
+
+def _parse_taxonomy_payload(data: dict[str, Any]) -> _ParsedTaxonomy:
     """Parse supported taxonomy payload formats into canonical maps."""
     # Format 1: flattened dictionaries
     if isinstance(data.get("AITECH_TAXONOMY"), dict) and isinstance(data.get("AISUBTECH_TAXONOMY"), dict):
-        aitech = {str(k): str(v) for k, v in data["AITECH_TAXONOMY"].items()}
-        aisubtech = {str(k): str(v) for k, v in data["AISUBTECH_TAXONOMY"].items()}
-        aitech_framework_mappings = _coerce_framework_mapping_dict(
-            data.get("AITECH_FRAMEWORK_MAPPINGS") or data.get("AITECH_MAPPINGS"),
-            "AITECH_FRAMEWORK_MAPPINGS",
+        return _parse_flat_taxonomy(
+            data,
+            aitech_key="AITECH_TAXONOMY",
+            aisubtech_key="AISUBTECH_TAXONOMY",
+            aitech_mapping_keys=("AITECH_FRAMEWORK_MAPPINGS", "AITECH_MAPPINGS"),
+            aisubtech_mapping_keys=("AISUBTECH_FRAMEWORK_MAPPINGS", "AISUBTECH_MAPPINGS"),
+            parents_key="AISUBTECH_PARENTS",
         )
-        aisubtech_framework_mappings = _coerce_framework_mapping_dict(
-            data.get("AISUBTECH_FRAMEWORK_MAPPINGS") or data.get("AISUBTECH_MAPPINGS"),
-            "AISUBTECH_FRAMEWORK_MAPPINGS",
-        )
-        for code in aitech:
-            aitech_framework_mappings.setdefault(code, [])
-        for code in aisubtech:
-            aisubtech_framework_mappings.setdefault(code, [])
-        return aitech, aisubtech, aitech_framework_mappings, aisubtech_framework_mappings
 
     # Format 2: lower-case flattened dictionaries
     if isinstance(data.get("aitech_taxonomy"), dict) and isinstance(data.get("aisubtech_taxonomy"), dict):
-        aitech = {str(k): str(v) for k, v in data["aitech_taxonomy"].items()}
-        aisubtech = {str(k): str(v) for k, v in data["aisubtech_taxonomy"].items()}
-        aitech_framework_mappings = _coerce_framework_mapping_dict(
-            data.get("aitech_framework_mappings") or data.get("aitech_mappings"),
-            "aitech_framework_mappings",
+        return _parse_flat_taxonomy(
+            data,
+            aitech_key="aitech_taxonomy",
+            aisubtech_key="aisubtech_taxonomy",
+            aitech_mapping_keys=("aitech_framework_mappings", "aitech_mappings"),
+            aisubtech_mapping_keys=("aisubtech_framework_mappings", "aisubtech_mappings"),
+            parents_key="aisubtech_parents",
         )
-        aisubtech_framework_mappings = _coerce_framework_mapping_dict(
-            data.get("aisubtech_framework_mappings") or data.get("aisubtech_mappings"),
-            "aisubtech_framework_mappings",
-        )
-        for code in aitech:
-            aitech_framework_mappings.setdefault(code, [])
-        for code in aisubtech:
-            aisubtech_framework_mappings.setdefault(code, [])
-        return aitech, aisubtech, aitech_framework_mappings, aisubtech_framework_mappings
 
     # Format 3: full framework shape (OB-* entries with ai_tech/ai_subtech)
     if any(str(k).startswith("OB-") for k in data.keys()):
@@ -444,6 +286,82 @@ def _parse_taxonomy_payload(
         "Unsupported taxonomy format. Expected either "
         "{AITECH_TAXONOMY, AISUBTECH_TAXONOMY} maps or OB-* framework taxonomy."
     )
+
+
+def _load_builtin_taxonomy() -> _ParsedTaxonomy:
+    """Load the bundled snapshot and attach its provenance record."""
+    import yaml
+
+    parsed = _parse_taxonomy_payload(_read_taxonomy_file(BUILTIN_SNAPSHOT_PATH))
+    provenance_raw = yaml.safe_load(BUILTIN_PROVENANCE_PATH.read_text(encoding="utf-8"))
+    if not isinstance(provenance_raw, dict):
+        raise ValueError(f"Taxonomy provenance must be a mapping: {BUILTIN_PROVENANCE_PATH}")
+    provenance = {
+        key: str(provenance_raw[key])
+        for key in ("name", "version", "repository", "revision", "source_sha256", "snapshot_sha256")
+        if provenance_raw.get(key) is not None
+    }
+    if provenance.get("version") != parsed.version:
+        raise ValueError(
+            f"Bundled taxonomy version {parsed.version!r} does not match provenance {provenance.get('version')!r}"
+        )
+    return _ParsedTaxonomy(
+        aitech=parsed.aitech,
+        aisubtech=parsed.aisubtech,
+        aitech_framework_mappings=parsed.aitech_framework_mappings,
+        aisubtech_framework_mappings=parsed.aisubtech_framework_mappings,
+        aisubtech_parents=parsed.aisubtech_parents,
+        version=parsed.version,
+        provenance=provenance,
+    )
+
+
+# Built-in snapshot shipped with the package.  It stays immutable and is used
+# when no external taxonomy is configured, and to validate bundled rule packs.
+_BUILTIN = _load_builtin_taxonomy()
+
+# Active taxonomy.  Declared at module scope for static typing and re-assigned
+# by reload_taxonomy(); read these through the module (or the helpers below)
+# so a reload is visible.
+AITECH_TAXONOMY: dict[str, str] = dict(_BUILTIN.aitech)
+AISUBTECH_TAXONOMY: dict[str, str] = dict(_BUILTIN.aisubtech)
+AITECH_FRAMEWORK_MAPPINGS: dict[str, list[str]] = {}
+AISUBTECH_FRAMEWORK_MAPPINGS: dict[str, list[str]] = {}
+AISUBTECH_PARENTS: dict[str, str] = {}
+VALID_AITECH_CODES: set[str] = set(AITECH_TAXONOMY.keys())
+VALID_AISUBTECH_CODES: set[str] = set(AISUBTECH_TAXONOMY.keys())
+
+# Optional runtime override path for loading custom taxonomy profiles.
+TAXONOMY_ENV_VAR = "SKILL_SCANNER_TAXONOMY_PATH"
+
+# Active source marker (builtin or external path).
+_ACTIVE_TAXONOMY_SOURCE = "builtin"
+_ACTIVE_TAXONOMY_VERSION: str | None = _BUILTIN.version
+_ACTIVE_TAXONOMY_SHA256: str | None = None
+
+
+def _activate(parsed: _ParsedTaxonomy, source: str, sha256: str | None = None) -> None:
+    global AITECH_TAXONOMY
+    global AISUBTECH_TAXONOMY
+    global AITECH_FRAMEWORK_MAPPINGS
+    global AISUBTECH_FRAMEWORK_MAPPINGS
+    global AISUBTECH_PARENTS
+    global VALID_AITECH_CODES
+    global VALID_AISUBTECH_CODES
+    global _ACTIVE_TAXONOMY_SOURCE
+    global _ACTIVE_TAXONOMY_VERSION
+    global _ACTIVE_TAXONOMY_SHA256
+
+    AITECH_TAXONOMY = dict(parsed.aitech)
+    AISUBTECH_TAXONOMY = dict(parsed.aisubtech)
+    AITECH_FRAMEWORK_MAPPINGS = {code: list(m) for code, m in parsed.aitech_framework_mappings.items()}
+    AISUBTECH_FRAMEWORK_MAPPINGS = {code: list(m) for code, m in parsed.aisubtech_framework_mappings.items()}
+    AISUBTECH_PARENTS = dict(parsed.aisubtech_parents)
+    VALID_AITECH_CODES = set(AITECH_TAXONOMY.keys())
+    VALID_AISUBTECH_CODES = set(AISUBTECH_TAXONOMY.keys())
+    _ACTIVE_TAXONOMY_SOURCE = source
+    _ACTIVE_TAXONOMY_VERSION = parsed.version
+    _ACTIVE_TAXONOMY_SHA256 = sha256
 
 
 def reload_taxonomy(path: str | Path | None = None) -> str:
@@ -456,40 +374,14 @@ def reload_taxonomy(path: str | Path | None = None) -> str:
     Returns:
         Active taxonomy source string ("builtin" or absolute file path).
     """
-    global AITECH_TAXONOMY
-    global AISUBTECH_TAXONOMY
-    global AITECH_FRAMEWORK_MAPPINGS
-    global AISUBTECH_FRAMEWORK_MAPPINGS
-    global VALID_AITECH_CODES
-    global VALID_AISUBTECH_CODES
-    global _ACTIVE_TAXONOMY_SOURCE
-
     configured = str(path) if path is not None else os.getenv(TAXONOMY_ENV_VAR)
     if not configured:
-        AITECH_TAXONOMY = dict(_BUILTIN_AITECH_TAXONOMY)
-        AISUBTECH_TAXONOMY = dict(_BUILTIN_AISUBTECH_TAXONOMY)
-        AITECH_FRAMEWORK_MAPPINGS = {
-            code: list(mappings) for code, mappings in _BUILTIN_AITECH_FRAMEWORK_MAPPINGS.items()
-        }
-        AISUBTECH_FRAMEWORK_MAPPINGS = {
-            code: list(mappings) for code, mappings in _BUILTIN_AISUBTECH_FRAMEWORK_MAPPINGS.items()
-        }
-        VALID_AITECH_CODES = set(AITECH_TAXONOMY.keys())
-        VALID_AISUBTECH_CODES = set(AISUBTECH_TAXONOMY.keys())
-        _ACTIVE_TAXONOMY_SOURCE = "builtin"
+        _activate(_BUILTIN, "builtin")
         return _ACTIVE_TAXONOMY_SOURCE
 
     taxonomy_path = Path(configured).expanduser().resolve()
-    payload = _read_taxonomy_file(taxonomy_path)
-    aitech, aisubtech, aitech_framework_mappings, aisubtech_framework_mappings = _parse_taxonomy_payload(payload)
-
-    AITECH_TAXONOMY = aitech
-    AISUBTECH_TAXONOMY = aisubtech
-    AITECH_FRAMEWORK_MAPPINGS = aitech_framework_mappings
-    AISUBTECH_FRAMEWORK_MAPPINGS = aisubtech_framework_mappings
-    VALID_AITECH_CODES = set(AITECH_TAXONOMY.keys())
-    VALID_AISUBTECH_CODES = set(AISUBTECH_TAXONOMY.keys())
-    _ACTIVE_TAXONOMY_SOURCE = str(taxonomy_path)
+    parsed = _parse_taxonomy_payload(_read_taxonomy_file(taxonomy_path))
+    _activate(parsed, str(taxonomy_path), hashlib.sha256(taxonomy_path.read_bytes()).hexdigest())
     return _ACTIVE_TAXONOMY_SOURCE
 
 
@@ -498,18 +390,47 @@ def get_taxonomy_source() -> str:
     return _ACTIVE_TAXONOMY_SOURCE
 
 
+def get_taxonomy_version() -> str | None:
+    """Return the version declared by the active taxonomy, if any."""
+    return _ACTIVE_TAXONOMY_VERSION
+
+
+def get_taxonomy_info() -> dict[str, str]:
+    """Describe the active taxonomy for scan metadata.
+
+    A custom taxonomy is identified by its SHA-256, never by its path, since
+    scan results leave the machine (reports, API responses).
+    """
+    builtin = _ACTIVE_TAXONOMY_SOURCE == "builtin"
+    info: dict[str, str] = {"source": "builtin" if builtin else "custom"}
+    if _ACTIVE_TAXONOMY_VERSION is not None:
+        info["version"] = _ACTIVE_TAXONOMY_VERSION
+    if builtin:
+        for key in ("name", "revision", "snapshot_sha256"):
+            if key in _BUILTIN.provenance:
+                info[key] = _BUILTIN.provenance[key]
+    elif _ACTIVE_TAXONOMY_SHA256 is not None:
+        info["sha256"] = _ACTIVE_TAXONOMY_SHA256
+    return info
+
+
 # Initialize active taxonomy once on module import.
 reload_taxonomy()
 
 
 def is_valid_aitech(code: str) -> bool:
-    """Check if an AITech code exists in the official taxonomy."""
+    """Check if an AITech code exists in the active taxonomy."""
     return code in VALID_AITECH_CODES
 
 
 def is_valid_aisubtech(code: str) -> bool:
-    """Check if an AISubtech code exists in the official taxonomy."""
+    """Check if an AISubtech code exists in the active taxonomy."""
     return code in VALID_AISUBTECH_CODES
+
+
+def is_builtin_taxonomy_code(code: str) -> bool:
+    """Check a code against the bundled snapshot, ignoring runtime overrides."""
+    return code in _BUILTIN.aitech or code in _BUILTIN.aisubtech
 
 
 def get_aitech_name(code: str) -> str | None:
@@ -520,6 +441,11 @@ def get_aitech_name(code: str) -> str | None:
 def get_aisubtech_name(code: str) -> str | None:
     """Get the official name for an AISubtech code."""
     return AISUBTECH_TAXONOMY.get(code)
+
+
+def get_aisubtech_parent(code: str) -> str | None:
+    """Get the parent AITech code of an AISubtech code."""
+    return AISUBTECH_PARENTS.get(code)
 
 
 def get_aitech_framework_mappings(code: str) -> list[str]:
@@ -544,3 +470,20 @@ def get_framework_mappings(aitech_code: str | None = None, aisubtech_code: str |
             if entry not in out:
                 out.append(entry)
     return out
+
+
+def resolve_taxonomy_code(code: str | None) -> tuple[str | None, str | None]:
+    """Resolve one selected code to ``(aitech, aisubtech)`` in the active taxonomy.
+
+    An AISubtech resolves to its parent AITech.  Unknown codes, and
+    sub-techniques whose parent is not known, resolve to ``(None, None)``;
+    nothing is guessed.
+    """
+    if not code:
+        return None, None
+    if code in VALID_AISUBTECH_CODES:
+        parent = AISUBTECH_PARENTS.get(code)
+        return (parent, code) if parent in VALID_AITECH_CODES else (None, None)
+    if code in VALID_AITECH_CODES:
+        return code, None
+    return None, None
