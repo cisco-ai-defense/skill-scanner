@@ -26,6 +26,7 @@ _CORE_SOURCE = _REPO_ROOT / "skill_scanner" / "core"
 # preventing a finding from carrying its more precise runtime severity.
 _DYNAMIC_BASE_IDENTITIES = {
     "SOCIAL_ENG_ANTHROPIC_IMPERSONATION": ("social_engineering", "HIGH"),
+    "SYMLINK_NOT_SCANNED": ("policy_violation", "HIGH"),
     "SUPPLY_CHAIN_UNPINNED_DEPENDENCY": ("supply_chain_attack", "MEDIUM"),
     "SUPPLY_CHAIN_REGISTRY_REDIRECT": ("supply_chain_attack", "HIGH"),
     "FILE_MAGIC_MISMATCH": ("obfuscation", "CRITICAL"),
@@ -53,6 +54,7 @@ _DYNAMIC_BASE_IDENTITIES = {
 
 _ALLOWED_SEVERITY_DEMOTIONS = {
     "SOCIAL_ENG_ANTHROPIC_IMPERSONATION": ["MEDIUM"],
+    "SYMLINK_NOT_SCANNED": ["MEDIUM"],
     "SUPPLY_CHAIN_UNPINNED_DEPENDENCY": ["LOW"],
     "SUPPLY_CHAIN_REGISTRY_REDIRECT": ["LOW"],
     "FILE_MAGIC_MISMATCH": ["HIGH", "MEDIUM", "LOW"],

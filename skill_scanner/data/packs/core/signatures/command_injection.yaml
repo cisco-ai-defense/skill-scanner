@@ -56,7 +56,9 @@
     # Testing/example context
     - "example"
     - "test"
-    - "#.*eval"
+    # Anchored at the first '#' so a long run of '#' stays linear (an
+    # unanchored "#.*eval" is quadratic on a single long line).
+    - "^[^#]*#.*eval"
   file_types: [bash]
   description: "eval with user-controlled input - command injection risk"
   remediation: "Never use eval with user input. Use safer alternatives like case statements or parameter validation"

@@ -1497,15 +1497,17 @@ def _yara_semantic_metadata(
 
 
 _FRONTMATTER_TOP_LEVEL_KEY = re.compile(r"^[A-Za-z0-9_-]+\s*:")
-_FRONTMATTER_TEXT_FIELD = re.compile(r"^(?:description|when_to_use|when-to-use)\s*:", re.IGNORECASE)
+# ``allowed-tools`` holds tool-permission grammar such as ``Bash(curl:*)``, not prose an
+# agent reads as instructions; the capability checks cover it. Every other key is scanned.
+_FRONTMATTER_NON_TEXT_FIELD = re.compile(r"^(?:allowed-tools|allowed_tools)\s*:", re.IGNORECASE)
 
 
 def _frontmatter_text_view(skill: Skill) -> str | None:
-    """Return SKILL.md's frontmatter with only its ``description`` and ``when_to_use`` lines kept.
+    """Return SKILL.md's frontmatter text: every value and comment except ``allowed-tools``.
 
     Every other line is blanked rather than removed, so a match's line number is
     its physical SKILL.md line. Returns ``None`` when there is no frontmatter, the
-    body was synthesized, or neither field is present.
+    body was synthesized, or the frontmatter holds nothing but excluded fields.
     """
     if skill.load_metadata.get("synthetic_instruction_body"):
         return None
@@ -1523,14 +1525,34 @@ def _frontmatter_text_view(skill: Skill) -> str | None:
         except (OSError, UnicodeDecodeError):
             return None
     kept: list[str] = []
-    in_text_field = False
+    in_text_field = True
     for line in raw.splitlines()[:frontmatter_lines]:
-        if line.strip() == "---" or _FRONTMATTER_TOP_LEVEL_KEY.match(line):
-            in_text_field = bool(_FRONTMATTER_TEXT_FIELD.match(line))
-        kept.append(line if in_text_field else "")
+        if line.strip() == "---":
+            in_text_field = True
+            kept.append("")
+            continue
+        if _FRONTMATTER_TOP_LEVEL_KEY.match(line):
+            in_text_field = not _FRONTMATTER_NON_TEXT_FIELD.match(line)
+        # Comments are never parsed into the manifest, so scan them wherever they sit,
+        # including an inline comment after an excluded field's value.
+        kept.append(line if in_text_field or line.lstrip().startswith("#") else _yaml_inline_comment(line))
     if not any(kept):
         return None
     return "\n".join(kept)
+
+
+def _yaml_inline_comment(line: str) -> str:
+    """Return the inline ``# comment`` of a YAML line (a ``#`` outside quotes after whitespace), else ``""``."""
+    quote: str | None = None
+    for i, ch in enumerate(line):
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "#" and i > 0 and line[i - 1] in " \t":
+            return line[i:]
+    return ""
 
 
 class StaticAnalyzer(BaseAnalyzer):
@@ -1974,9 +1996,9 @@ class StaticAnalyzer(BaseAnalyzer):
     def _scan_instruction_body(self, skill: Skill) -> list[Finding]:
         """Scan SKILL.md instruction body for prompt injection patterns.
 
-        The frontmatter ``description`` and ``when_to_use`` fields are scanned too,
-        with the core rules only: agents load them into context before a skill is
-        ever invoked, so they are the most exposed text in a skill.
+        The frontmatter values and comments are scanned too, with the core rules
+        only: agents load them into context before a skill is ever invoked, so
+        they are the most exposed text in a skill.
         """
         findings = []
 

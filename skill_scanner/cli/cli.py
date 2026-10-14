@@ -464,6 +464,15 @@ def _report_has_findings_at_or_above(report, threshold: str) -> bool:
     return any(count > 0 for level, count in counts if _SEVERITY_ORDER.index(level) <= idx)
 
 
+def _report_fails_gate(report, threshold: str) -> bool:
+    """Return True if *report* should fail a severity gate.
+
+    A skill that was skipped (its analysis crashed) was never scanned, so it
+    fails the gate just like a finding at or above *threshold*.
+    """
+    return bool(report.skills_skipped) or _report_has_findings_at_or_above(report, threshold)
+
+
 def _resolve_fail_severity(args: argparse.Namespace) -> str | None:
     """Determine the effective severity threshold from CLI flags.
 
@@ -790,7 +799,7 @@ def scan_all_command(args: argparse.Namespace) -> int:
         _write_output(args, _format_output(args, report))
 
         fail_severity = _resolve_fail_severity(args)
-        if fail_severity and _report_has_findings_at_or_above(report, fail_severity):
+        if fail_severity and _report_fails_gate(report, fail_severity):
             return 1
         return 0
 
@@ -937,7 +946,7 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                 _write_output(args, _format_output(args, report))
 
                 fail_severity = _resolve_fail_severity(args)
-                if fail_severity and _report_has_findings_at_or_above(report, fail_severity):
+                if fail_severity and _report_fails_gate(report, fail_severity):
                     return 1
                 return 0
 

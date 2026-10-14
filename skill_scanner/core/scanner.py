@@ -38,6 +38,7 @@ from .analyzers.base import BaseAnalyzer
 from .analyzers.llm_request_handler import _add_token_usage, _empty_token_usage
 from .cel import CelGate, CelMode, CelRule, CelTelemetry
 from .extractors.content_extractor import ContentExtractor
+from .finding_identity import stable_finding_suffix
 from .finding_taxonomy import annotate_findings_taxonomy, taxonomy_scan_metadata
 from .loader import SkillLoader, SkillLoadError
 from .models import Finding, Report, ScanResult, Severity, Skill, SkillManifest, ThreatCategory
@@ -601,10 +602,112 @@ class SkillScanner:
             scan_metadata=policy_meta,
         )
 
+    def _scan_load_failure(self, skill_directory: Path, error: SkillLoadError) -> ScanResult:
+        """Report a skill that could not be loaded as a HIGH finding.
+
+        A package that was never analyzed must not look clean in any output
+        format or exit code. The finding goes through the same contract,
+        scoped-suppression and CEL steps as the size-limit rejection above.
+        """
+
+        started = time.time()
+        proof: dict[str, Any] = {"content_scanned": False, "error": str(error)}
+        synthetic_skill = Skill(
+            directory=skill_directory,
+            manifest=SkillManifest(
+                name=skill_directory.name,
+                description="(skill could not be loaded)",
+            ),
+            skill_md_path=skill_directory / "SKILL.md",
+            instruction_body="",
+            files=[],
+            referenced_files=[],
+            manifest_complete=False,
+            load_metadata=dict(proof),
+        )
+        finding = Finding(
+            id="SKILL_LOAD_FAILED",
+            rule_id="SKILL_LOAD_FAILED",
+            category=ThreatCategory.POLICY_VIOLATION,
+            severity=Severity.HIGH,
+            title="Skill could not be loaded and was not analyzed",
+            description=f"The skill failed to load, so none of its content was scanned: {error}",
+            file_path=skill_directory.name,
+            remediation="Fix the load error (for example invalid UTF-8 or a symlinked SKILL.md) and rescan.",
+            analyzer="skill_loader",
+            metadata={"content_scanned": False},
+        )
+
+        checked, invalid_ids, contract_errors, _ = self._validate_bundled_python_findings([finding])
+        suppressed_findings: list[Finding] = []
+        findings = self._apply_scoped_suppressions(
+            [finding],
+            synthetic_skill.name,
+            suppressed_findings,
+            invalid_ids,
+        )
+        findings, cel_telemetry = self._apply_cel_with_contract(
+            synthetic_skill,
+            findings,
+            invalid_ids,
+        )
+        policy_meta: dict[str, Any] = self._policy_fingerprint_metadata()
+        policy_meta["cel"] = cel_telemetry.to_dict()
+        if suppressed_findings:
+            policy_meta["suppressions"] = build_suppression_summary(suppressed_findings)
+        policy_meta["rule_contract"] = {
+            "status": "failed" if invalid_ids else "passed",
+            "schema_version": 2,
+            "checked": checked,
+            "invalid_findings": len(invalid_ids),
+            "errors": contract_errors[:100],
+        }
+        policy_meta["loader"] = dict(proof)
+        self._annotate_findings_with_policy([*findings, *suppressed_findings], policy_meta)
+        return ScanResult(
+            skill_name=skill_directory.name,
+            skill_directory=str(skill_directory.absolute()),
+            findings=findings,
+            suppressed_findings=suppressed_findings,
+            scan_duration_seconds=time.time() - started,
+            analyzers_used=["skill_loader"],
+            analyzers_failed=[],
+            scan_metadata=policy_meta,
+        )
+
     # ------------------------------------------------------------------
     # Shared single-skill scanning logic (used by both scan_skill and
     # scan_directory for identical behaviour).
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _symlink_findings(skill: Skill) -> list[Finding]:
+        """One finding per symlink the loader refused to follow."""
+        findings: list[Finding] = []
+        for entry in skill.load_metadata.get("skipped_symlinks", []):
+            path = str(entry.get("path", ""))
+            escapes = bool(entry.get("escapes_skill_root"))
+            findings.append(
+                Finding(
+                    id=f"SYMLINK_NOT_SCANNED_{stable_finding_suffix(path)}",
+                    rule_id="SYMLINK_NOT_SCANNED",
+                    category=ThreatCategory.POLICY_VIOLATION,
+                    severity=Severity.HIGH if escapes else Severity.MEDIUM,
+                    title="Symlink in skill was not scanned",
+                    description=(
+                        f"'{path}' is a symbolic link ({entry.get('kind', 'unknown')}) pointing to "
+                        f"'{entry.get('target', '')}'"
+                        + (", outside the skill directory" if escapes else "")
+                        + ". Symlinks are not followed, so the content behind it was not analyzed "
+                        "but may be used once the skill is copied or installed."
+                    ),
+                    file_path=path,
+                    remediation="Replace the symlink with the real file or directory contents and rescan.",
+                    analyzer="skill_loader",
+                    metadata={k: entry[k] for k in ("target", "kind", "escapes_skill_root") if k in entry},
+                )
+            )
+        return findings
 
     def _scan_single_skill(
         self,
@@ -673,6 +776,7 @@ class SkillScanner:
                         metadata=dict(load_telemetry),
                     )
                 )
+            all_findings.extend(self._symlink_findings(skill))
             # Include any archive extraction findings (zip bombs, path traversal, etc.)
             all_findings.extend(extraction_result.findings)
             analyzer_names: list[str] = []
@@ -1594,6 +1698,7 @@ class SkillScanner:
             except SkillLoadError as e:
                 logger.warning("Failed to load %s: %s", skill_dir, e)
                 report.skills_skipped.append({"skill": str(skill_dir), "reason": str(e)})
+                report.add_scan_result(self._scan_load_failure(skill_dir, e))
                 continue
             except Exception as e:
                 logger.error("Unexpected error scanning %s: %s", skill_dir, e, exc_info=True)
