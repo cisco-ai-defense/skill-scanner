@@ -149,6 +149,8 @@ PAYLOAD = (
         f'name: t\ndescription: "\\x49{PAYLOAD[1:]}"\n',
         f"name: t\ndescription: !!binary {base64.b64encode(PAYLOAD.encode()).decode()}\n",
         f'name: t\nnotes: "{"x" * 70000}"\nallowed-tools:\n  - &p "{PAYLOAD}"\ndescription: *p\n',
+        f"name: t\ndescription: Formats text files nicely\nAllowed-Tools: {PAYLOAD}\n",
+        f"name: t\ndescription: Formats text files nicely\nALLOWED_TOOLS:\n  - {PAYLOAD}\n",
     ],
     ids=[
         "extra-key",
@@ -172,6 +174,8 @@ PAYLOAD = (
         "escape-sequences-in-quoted-value",
         "binary-tag",
         "alias-after-a-large-value",
+        "differently-cased-allowed-tools-key",
+        "differently-cased-allowed-tools-key-in-list",
     ],
 )
 def test_payload_in_any_frontmatter_value_or_comment_is_caught(tmp_path: Path, frontmatter: str) -> None:

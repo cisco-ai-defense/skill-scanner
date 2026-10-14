@@ -1506,8 +1506,9 @@ def _yara_semantic_metadata(
 
 # ``allowed-tools`` holds tool-permission grammar such as ``Bash(curl:*)``, not prose an
 # agent reads as instructions; the capability checks cover it. Every other key is scanned.
-_FRONTMATTER_NON_TEXT_FIELD = re.compile(r"""^["']?(?:allowed-tools|allowed_tools)["']?\s*:""", re.IGNORECASE)
-_FRONTMATTER_NON_TEXT_KEY = re.compile(r"allowed[-_]tools", re.IGNORECASE)
+# Case-sensitive like the loader: ``Allowed-Tools`` is kept as ordinary metadata, so it is scanned.
+_FRONTMATTER_NON_TEXT_FIELD = re.compile(r"""^["']?(?:allowed-tools|allowed_tools)["']?\s*:""")
+_FRONTMATTER_NON_TEXT_KEY = re.compile(r"allowed[-_]tools")
 _YAML_MERGE_TAG = "tag:yaml.org,2002:merge"
 _YAML_BINARY_TAG = "tag:yaml.org,2002:binary"
 # python-frontmatter loads with libyaml's CSafeLoader when it is available; compose with the same class.
