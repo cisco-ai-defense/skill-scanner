@@ -34,6 +34,7 @@ from rich.markdown import Markdown
 from .. import __version__
 from ..core.analyzer_factory import LLM_CONFIGURATION_HINT, AnalyzerConfigurationError, build_analyzers
 from ..core.cel.models import CelMode
+from ..core.finding_taxonomy import refresh_taxonomy_scan_metadata
 from ..core.loader import SkillLoadError
 from ..core.reporters.html_reporter import HTMLReporter
 from ..core.reporters.json_reporter import JSONReporter
@@ -608,6 +609,7 @@ def scan_command(args: argparse.Namespace) -> int:
                     original_findings=result.findings, meta_result=meta_result, skill=skill
                 )
                 result.findings = filtered
+                refresh_taxonomy_scan_metadata(result)
                 result.analyzers_used.append("meta_analyzer")
                 if merge_meta_analyzer_usage is not None:
                     merge_meta_analyzer_usage(result, meta_analyzer)

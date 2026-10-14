@@ -231,6 +231,7 @@ class SARIFReporter:
                     "category": finding.category.value,
                     "severity": finding.severity.value,
                     **({"remediation": finding.remediation} if finding.remediation else {}),
+                    **self._taxonomy_properties(finding),
                 },
             }
 
@@ -273,6 +274,20 @@ class SARIFReporter:
             results.append(result)
 
         return results
+
+    @staticmethod
+    def _taxonomy_properties(finding: Finding) -> dict[str, Any]:
+        """Carry the finding's Cisco AI taxonomy codes into SARIF result properties."""
+        metadata = finding.metadata or {}
+        if not metadata.get("aitech"):
+            return {}
+        properties: dict[str, Any] = {"aitech": metadata["aitech"]}
+        if metadata.get("aisubtech"):
+            properties["aisubtech"] = metadata["aisubtech"]
+        for key in ("framework_mappings", "aitech_mappings", "aisubtech_mappings"):
+            if metadata.get(key):
+                properties[key] = list(metadata[key])
+        return properties
 
     @staticmethod
     def _with_suppression(result: dict[str, Any], suppression: dict[str, Any]) -> dict[str, Any]:

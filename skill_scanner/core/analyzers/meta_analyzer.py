@@ -2610,6 +2610,11 @@ def apply_meta_analysis_to_results(
     missed_findings = meta_result.get_missed_threats(skill)
     for mf in missed_findings:
         mf.metadata["meta_false_positive"] = False
+    # Missed threats are created after the scanner's taxonomy step has run.
+    # Their rules are ``per_finding``: the code comes from the meta verdict.
+    from ..finding_taxonomy import annotate_findings_taxonomy
+
+    annotate_findings_taxonomy(missed_findings, None)
     result_findings.extend(missed_findings)
 
     return result_findings

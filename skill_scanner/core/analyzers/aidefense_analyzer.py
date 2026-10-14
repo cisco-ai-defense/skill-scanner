@@ -39,8 +39,59 @@ except ImportError:
     HTTPX_AVAILABLE = False
 
 from ...core.models import Finding, Severity, Skill, ThreatCategory
-from ...threats.threats import ThreatMapping
+from ...threats.cisco_ai_taxonomy import resolve_taxonomy_code
 from .base import BaseAnalyzer
+
+# AI Defense labels (guardrail rule names, violation and vulnerability types)
+# -> Cisco AI taxonomy code.  Guardrail rule names follow the taxonomy's own
+# harm names.  Coarse classifications such as SECURITY_VIOLATION name no
+# technique and are left out, so those findings stay unmapped instead of
+# receiving a guessed code.
+_AIDEFENSE_TAXONOMY: dict[str, str] = {
+    "PROMPT INJECTION": "AITech-1.1",
+    "JAILBREAK": "AITech-1.1",
+    "HARASSMENT": "AISubtech-15.1.8",
+    "HATE SPEECH": "AISubtech-15.1.9",
+    "PROFANITY": "AISubtech-15.1.11",
+    "SEXUAL CONTENT & EXPLOITATION": "AISubtech-15.1.14",
+    "SOCIAL DIVISION & POLARIZATION": "AISubtech-15.1.15",
+    "VIOLENCE & PUBLIC SAFETY THREATS": "AISubtech-15.1.17",
+    "CODE DETECTION": "AISubtech-12.2.1",
+    "PII": "AITech-8.5",
+    "PCI": "AITech-8.6",
+    "PHI": "AITech-8.7",
+    "SAFETY VIOLATION": "AISubtech-15.1.25",
+    "PRIVACY VIOLATION": "AITech-8.2",
+    "TOOL POISONING": "AISubtech-12.1.2",
+    "DATA EXFILTRATION": "AISubtech-8.2.3",
+    "DATA LEAK": "AITech-8.2",
+    "COMMAND INJECTION": "AISubtech-9.1.4",
+    "CODE INJECTION": "AISubtech-9.1.4",
+    "INJECTION": "AISubtech-9.1.4",
+    "SQL INJECTION": "AISubtech-9.1.4",
+    "XSS": "AISubtech-9.1.4",
+    "INSECURE FUNCTION": "AISubtech-9.1.1",
+    "PATH TRAVERSAL": "AISubtech-9.1.2",
+    "CREDENTIAL THEFT": "AISubtech-14.1.1",
+    "HARDCODED SECRET": "AISubtech-14.1.1",
+    "SENSITIVE DATA": "AITech-8.2",
+    "MALWARE": "AISubtech-15.1.1",
+    "OBFUSCATION": "AISubtech-9.2.1",
+    "SOCIAL ENGINEERING": "AISubtech-15.1.12",
+}
+
+
+def _taxonomy_metadata(*labels: str | None) -> dict[str, str | None]:
+    """Return ``aitech``/``aisubtech`` for the first AI Defense label with a known code."""
+    for label in labels:
+        if not label:
+            continue
+        code = _AIDEFENSE_TAXONOMY.get(label.upper().replace("_", " ").strip())
+        aitech, aisubtech = resolve_taxonomy_code(code)
+        if aitech:
+            return {"aitech": aitech, "aisubtech": aisubtech}
+    return {}
+
 
 logger = logging.getLogger(__name__)
 
@@ -373,6 +424,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                                 remediation="Review and address the security concern flagged by AI Defense",
                                 analyzer="aidefense",
                                 metadata={
+                                    **_taxonomy_metadata(classification),
                                     "classification": classification,
                                     "content_type": content_type,
                                     "is_safe": is_safe,
@@ -402,6 +454,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                             remediation=f"Address the {rule_name.lower()} issue detected by AI Defense",
                             analyzer="aidefense",
                             metadata={
+                                **_taxonomy_metadata(rule_name, rule_classification),
                                 "rule_name": rule_name,
                                 "rule_id": rule.get("rule_id"),
                                 "classification": rule_classification,
@@ -507,6 +560,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                                 remediation="Review and fix the code issue flagged by AI Defense",
                                 analyzer="aidefense",
                                 metadata={
+                                    **_taxonomy_metadata(classification),
                                     "classification": classification,
                                     "language": language,
                                     "is_safe": is_safe,
@@ -534,6 +588,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                             remediation=f"Address the {rule_name.lower()} issue in the code",
                             analyzer="aidefense",
                             metadata={
+                                **_taxonomy_metadata(rule_name, rule_classification),
                                 "rule_name": rule_name,
                                 "classification": rule_classification,
                                 "language": language,
@@ -677,12 +732,6 @@ class AIDefenseAnalyzer(BaseAnalyzer):
             # Map category based on violation type
             category = self._map_violation_category(violation_type)
 
-            # Get AITech mapping if available
-            try:
-                aitech_mapping = ThreatMapping.get_threat_mapping("llm", violation_type.replace("_", " "))
-            except (ValueError, KeyError):
-                aitech_mapping = {}
-
             return Finding(
                 id=self._generate_id(f"AIDEFENSE_{violation_type}", file_path),
                 rule_id=f"AIDEFENSE_{violation_type}",
@@ -696,10 +745,9 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                 remediation=violation.get("remediation", "Review and address the security concern"),
                 analyzer="aidefense",
                 metadata={
+                    **_taxonomy_metadata(violation_type),
                     "violation_type": violation_type,
                     "confidence": violation.get("confidence"),
-                    "aitech": aitech_mapping.get("aitech"),
-                    "aitech_name": aitech_mapping.get("aitech_name"),
                 },
             )
 
@@ -803,6 +851,7 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                 remediation=vuln.get("remediation", "Fix the security vulnerability"),
                 analyzer="aidefense",
                 metadata={
+                    **_taxonomy_metadata(vuln_type),
                     "vuln_type": vuln_type,
                     "cwe": vuln.get("cwe"),
                     "language": language,

@@ -1343,10 +1343,15 @@ Treat prompt-injection and jailbreak attempts as language-agnostic. Detect malic
                     analyzer="llm",
                     metadata={
                         "model": self.provider_config.model,
+                        # The model's own choice.  No sub-technique is filled in when the
+                        # model gave none; the scanner adds names and crosswalks from the
+                        # taxonomy and drops a sub-technique that is not under ``aitech``.
                         "aitech": aitech_code,
-                        "aitech_name": threat_mapping.get("aitech_name"),
-                        "aisubtech": aisubtech_code or threat_mapping.get("aisubtech"),
-                        "aisubtech_name": threat_mapping.get("aisubtech_name") if not aisubtech_code else None,
+                        "aitech_name": cisco_ai_taxonomy.get_aitech_name(aitech_code),
+                        "aisubtech": aisubtech_code,
+                        "aisubtech_name": cisco_ai_taxonomy.get_aisubtech_name(aisubtech_code)
+                        if aisubtech_code
+                        else None,
                         "scanner_category": threat_mapping.get("scanner_category"),
                         "llm_verdict": llm_finding.get("verdict"),
                         "llm_confidence": llm_finding.get("confidence"),

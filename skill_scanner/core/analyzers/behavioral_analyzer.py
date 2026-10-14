@@ -49,6 +49,22 @@ from .base import BaseAnalyzer
 
 logger = logging.getLogger(__name__)
 
+# BEHAVIOR_ALIGNMENT_* and BEHAVIOR_CROSSFILE_* rule IDs are built from the
+# threat name, so these findings pick their Cisco AI taxonomy code here rather
+# than from the pack manifest.
+ALIGNMENT_TAXONOMY: dict[str, str] = {
+    "DATA EXFILTRATION": "AISubtech-8.2.3",
+    "CREDENTIAL THEFT": "AISubtech-14.1.1",
+    "COMMAND INJECTION": "AISubtech-9.1.4",
+    "HIDDEN FUNCTIONALITY": "AISubtech-9.2.1",
+    "ALIGNMENT_MISMATCH": "AISubtech-4.3.5",
+}
+CROSSFILE_TAXONOMY: dict[str, str] = {
+    "exfiltration_chain": "AISubtech-8.2.3",
+    "credential_network_separation": "AISubtech-14.1.1",
+    "env_var_exfiltration": "AISubtech-8.2.3",
+}
+
 
 def _run_coroutine_sync(coro):
     """Run a coroutine from sync context, handling already-running loops."""
@@ -341,6 +357,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
                 remediation=f"Review function {func_context.name} and ensure documentation matches implementation",
                 analyzer="behavioral",
                 metadata={
+                    "aisubtech": ALIGNMENT_TAXONOMY.get(threat_name),
                     "function_name": func_context.name,
                     "threat_name": threat_name,
                     "confidence": analysis.get("confidence"),
@@ -515,6 +532,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
                 remediation=f"Review data flow across files: {', '.join(correlation.files_involved)}",
                 analyzer="behavioral",
                 metadata={
+                    "aisubtech": CROSSFILE_TAXONOMY.get(correlation.threat_type),
                     "files_involved": correlation.files_involved,
                     "threat_type": correlation.threat_type,
                     "evidence": correlation.evidence,

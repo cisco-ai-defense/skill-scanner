@@ -4623,8 +4623,6 @@ class StaticAnalyzer(BaseAnalyzer):
                 "signature_match_start": signature_match_start,
                 "signature_match_end": signature_match_end,
                 "signature_pattern_sha256": signature_pattern_sha256,
-                "aitech": threat_mapping.get("aitech") if threat_mapping else None,
-                "aitech_name": threat_mapping.get("aitech_name") if threat_mapping else None,
                 "scanner_category": threat_mapping.get("scanner_category") if threat_mapping else None,
                 "signature_context": context_kind,
                 "signature_polarity": polarity,
