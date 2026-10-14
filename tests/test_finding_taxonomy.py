@@ -372,8 +372,11 @@ def test_custom_threat_mapping_code_overrides_rule_declaration(monkeypatch, tmp_
     path = tmp_path / "mapping.json"
     path.write_text(json.dumps({"yara_threats": {"PROMPT INJECTION": {"aitech": "AITech-1.2"}}}), encoding="utf-8")
     registry = _registry(_rule("TEST_RULE", "AISubtech-1.1.1"))
+    # Let monkeypatch own the variable so teardown removes it; passing the path
+    # to configure_threat_mappings() would write os.environ directly.
+    monkeypatch.setenv("SKILL_SCANNER_THREAT_MAPPING_PATH", str(path))
     try:
-        threats.configure_threat_mappings(path)
+        threats.configure_threat_mappings()
         static_finding = _finding()
         static_finding.analyzer = "static"
         annotate_finding_taxonomy(static_finding, registry)
@@ -415,3 +418,42 @@ def test_subtechnique_whose_parent_is_not_registered_is_not_mapped(monkeypatch, 
     finally:
         monkeypatch.delenv(taxonomy.TAXONOMY_ENV_VAR, raising=False)
         taxonomy.reload_taxonomy()
+
+
+def test_cli_scan_counts_match_output_after_meta_analysis(monkeypatch):
+    """Counts must describe the findings actually output: meta false positives
+    are stripped and meta missed threats are added after the scan."""
+    from unittest.mock import AsyncMock, patch
+
+    from skill_scanner.cli import cli
+    from skill_scanner.core.analyzers.meta_analyzer import MetaAnalysisResult
+    from tests.test_cli_llm_usage import _base_args
+
+    meta_result = MetaAnalysisResult(
+        false_positives=[{"_index": 0, "reason": "benign"}],
+        missed_threats=[{"aitech": "AITech-8.2", "severity": "HIGH", "title": "Missed exfil", "description": "d"}],
+    )
+    monkeypatch.setenv("SKILL_SCANNER_LLM_API_KEY", "test-key")
+    monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "claude-3-5-sonnet-20241022")
+    with (
+        patch("skill_scanner.core.analyzers.llm_request_handler.acompletion", AsyncMock(side_effect=RuntimeError)),
+        patch(
+            "skill_scanner.core.analyzers.meta_analyzer.MetaAnalyzer.analyze_with_findings",
+            AsyncMock(return_value=meta_result),
+        ),
+    ):
+        args = _base_args(verbose=False)
+        assert cli.scan_command(args) == 0
+
+    result = args._result_or_report
+    assert not any(f.metadata.get("meta_false_positive") for f in result.findings)
+    missed = [f for f in result.findings if f.analyzer == "meta"]
+    assert len(missed) == 1 and missed[0].metadata["taxonomy_status"] == "mapped"
+    counts = result.scan_metadata["taxonomy"]["findings"]
+    assert sum(counts.values()) == len(result.findings)
+
+
+def test_new_technique_codes_have_a_category_fallback():
+    assert ThreatMapping.get_threat_category_from_aitech("AITech-14.1") == "hardcoded_secrets"
+    assert ThreatMapping.get_threat_category_from_aitech("AITech-8.4") == "data_exfiltration"
+    assert ThreatMapping.get_threat_category_from_aitech("AITech-1.3") == "prompt_injection"

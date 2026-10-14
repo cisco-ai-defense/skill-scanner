@@ -271,14 +271,17 @@ class ThreatMapping:
     AITECH_TO_CATEGORY = {
         "AITech-1.1": "prompt_injection",  # Direct Prompt Injection
         "AITech-1.2": "prompt_injection",  # Indirect Prompt Injection
+        "AITech-1.3": "prompt_injection",  # Multimodal Injection and Manipulation
         "AITech-2.1": "autonomy_abuse",  # Excessive Agency
         "AITech-4.3": "skill_discovery_abuse",  # Protocol Manipulation / Capability Inflation
         "AITech-8.2": "data_exfiltration",  # Data Exfiltration / Exposure
+        "AITech-8.4": "data_exfiltration",  # Prompt/Meta Extraction
         "AITech-9.1": "command_injection",  # Model or Agentic System Manipulation (injection attacks)
         "AITech-9.2": "obfuscation",  # Detection Evasion / Obfuscation Vulnerabilities
         "AITech-9.3": "supply_chain_attack",  # Dependency / Plugin Compromise
         "AITech-12.1": "unauthorized_tool_use",  # Tool Exploitation
         "AITech-13.1": "resource_abuse",  # Disruption of Availability (AISubtech-13.1.1: Compute Exhaustion)
+        "AITech-14.1": "hardcoded_secrets",  # Unauthorized Access (credential theft)
         "AITech-15.1": "harmful_content",  # Harmful Content
     }
 

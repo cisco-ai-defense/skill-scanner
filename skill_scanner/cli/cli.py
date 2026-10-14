@@ -609,7 +609,6 @@ def scan_command(args: argparse.Namespace) -> int:
                     original_findings=result.findings, meta_result=meta_result, skill=skill
                 )
                 result.findings = filtered
-                refresh_taxonomy_scan_metadata(result)
                 result.analyzers_used.append("meta_analyzer")
                 if merge_meta_analyzer_usage is not None:
                     merge_meta_analyzer_usage(result, meta_analyzer)
@@ -640,6 +639,7 @@ def scan_command(args: argparse.Namespace) -> int:
         # Strip false positives from output unless --verbose
         if not getattr(args, "verbose", False):
             result.findings = [f for f in result.findings if not f.metadata.get("meta_false_positive", False)]
+        refresh_taxonomy_scan_metadata(result)
 
         args._result_or_report = result
         _write_output(args, _format_output(args, result))
@@ -773,6 +773,8 @@ def scan_all_command(args: argparse.Namespace) -> int:
             report.cross_skill_findings = [
                 f for f in report.cross_skill_findings if not f.metadata.get("meta_false_positive", False)
             ]
+        for result in report.scan_results:
+            refresh_taxonomy_scan_metadata(result)
 
         # Recalculate report totals after meta-analysis and FP stripping
         all_findings = [f for r in report.scan_results for f in r.findings] + report.cross_skill_findings
@@ -918,6 +920,8 @@ def scan_repo_command(args: argparse.Namespace) -> int:
                     report.cross_skill_findings = [
                         f for f in report.cross_skill_findings if not f.metadata.get("meta_false_positive", False)
                     ]
+                for result in report.scan_results:
+                    refresh_taxonomy_scan_metadata(result)
 
                 # Recalculate report totals after meta-analysis and FP stripping
                 all_findings = [f for r in report.scan_results for f in r.findings] + report.cross_skill_findings
