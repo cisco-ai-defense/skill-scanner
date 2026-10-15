@@ -68,6 +68,7 @@ Deep-dive pages live in [`docs/`](docs/README.md).
 | [Architecture](docs/architecture/index.md) | System design and components |
 | [CEL Decision Layer](docs/architecture/cel-decision-layer.md) | Typed facts, safety bounds, rollout modes, and telemetry |
 | [Threat Taxonomy](docs/architecture/threat-taxonomy.md) | Complete AITech threat taxonomy with examples |
+| [Taxonomy Reference](docs/architecture/taxonomy-reference.md) | Definitions of every AITech and AISubtech code |
 | [LLM Analyzer](docs/architecture/analyzers/llm-analyzer.md) | LLM configuration and usage |
 | [System One Analyzer](docs/architecture/analyzers/system-one-analyzer.md) | Optional advisory screening tier, and why it cannot gate |
 | [Meta-Analyzer](docs/architecture/analyzers/meta-analyzer.md) | Optional second-pass review (off by default; measured cost) |

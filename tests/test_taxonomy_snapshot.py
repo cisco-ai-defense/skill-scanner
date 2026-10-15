@@ -24,6 +24,7 @@ import json
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 from skill_scanner.threats import cisco_ai_taxonomy as taxonomy
@@ -63,17 +64,17 @@ def test_provenance_pins_source_commit_and_hash():
     assert provenance["snapshot_file"] == SNAPSHOT.name
 
 
-def test_snapshot_keeps_only_codes_names_and_crosswalks():
-    """Definitions, threat indicators and labeling constitutions are not shipped."""
+def test_snapshot_keeps_only_codes_names_definitions_and_crosswalks():
+    """Threat indicators and labeling constitutions are not shipped."""
     snapshot = _snapshot()
     for key, objective in snapshot.items():
         if key == "version":
             continue
-        assert set(objective) == {"code", "description", "ai_tech"}, key
+        assert set(objective) == {"code", "description", "definition", "ai_tech"}, key
         for tech in objective["ai_tech"]:
-            assert set(tech) == {"code", "description", "mappings", "ai_subtech"}, tech["code"]
+            assert set(tech) == {"code", "description", "definition", "mappings", "ai_subtech"}, tech["code"]
             for sub in tech["ai_subtech"]:
-                assert set(sub) == {"code", "description", "mappings"}, sub["code"]
+                assert set(sub) == {"code", "description", "definition", "mappings"}, sub["code"]
 
 
 def test_update_script_output_is_stable_for_the_shipped_snapshot():
@@ -81,46 +82,95 @@ def test_update_script_output_is_stable_for_the_shipped_snapshot():
     assert script.render_snapshot(script.build_snapshot(_snapshot())) == SNAPSHOT.read_bytes()
 
 
-def test_update_script_drops_everything_but_codes_names_and_crosswalks():
-    script = _load_update_script()
-    source = {
+def _source_taxonomy() -> dict:
+    return {
         "version": "9.9.9",
         "OB-001": {
             "code": "OB-001",
             "description": "Goal Hijacking",
             "objective_group": "Common Manipulation Risks",
-            "definition": "not shipped",
+            "definition": "Objective definition.",
             "mappings": ["OWASP: LLM01:2026: Prompt Injection"],
             "ai_tech": [
                 {
                     "code": "AITech-1.1",
                     "description": "Tech",
-                    "definition": "not shipped",
+                    "definition": "  First   line.\n\n\u2022 One bullet  \n",
                     "mappings": ["OWASP: LLM01:2026: Prompt Injection", "OWASP: LLM01:2026: Prompt Injection"],
                     "threat_indicators": {"agentic": True},
                     "constitution": "not shipped",
                     "ai_subtech": [
-                        {"code": "AISubtech-1.1.1", "description": "Sub", "definition": "x", "mappings": ["ASI01"]}
+                        {
+                            "code": "AISubtech-1.1.1",
+                            "description": "Sub",
+                            "definition": "Sub definition.",
+                            "mappings": ["ASI01"],
+                            "constitution": "not shipped",
+                        }
                     ],
                 }
             ],
         },
     }
-    assert script.build_snapshot(source) == {
+
+
+def test_update_script_drops_everything_but_codes_names_definitions_and_crosswalks():
+    script = _load_update_script()
+    assert script.build_snapshot(_source_taxonomy()) == {
         "version": "9.9.9",
         "OB-001": {
             "code": "OB-001",
             "description": "Goal Hijacking",
+            "definition": "Objective definition.",
             "ai_tech": [
                 {
                     "code": "AITech-1.1",
                     "description": "Tech",
+                    "definition": "First line.\n\u2022 One bullet",
                     "mappings": ["OWASP: LLM01:2026: Prompt Injection"],
-                    "ai_subtech": [{"code": "AISubtech-1.1.1", "description": "Sub", "mappings": ["ASI01"]}],
+                    "ai_subtech": [
+                        {
+                            "code": "AISubtech-1.1.1",
+                            "description": "Sub",
+                            "definition": "Sub definition.",
+                            "mappings": ["ASI01"],
+                        }
+                    ],
                 }
             ],
         },
     }
+
+
+def test_update_script_requires_a_definition_for_every_code():
+    script = _load_update_script()
+    source = _source_taxonomy()
+    del source["OB-001"]["ai_tech"][0]["ai_subtech"][0]["definition"]
+    with pytest.raises(ValueError, match="AISubtech-1.1.1.definition"):
+        script.build_snapshot(source)
+
+
+def test_reference_doc_matches_the_shipped_snapshot():
+    script = _load_update_script()
+    assert script.REFERENCE_DOC.read_text(encoding="utf-8") == script.render_reference(_snapshot())
+
+
+def test_reference_doc_lists_every_code_with_its_definition():
+    doc = (REPO_ROOT / "docs" / "architecture" / "taxonomy-reference.md").read_text(encoding="utf-8")
+    for code in taxonomy.VALID_AITECH_CODES:
+        assert f"### {code} {taxonomy.get_aitech_name(code)}" in doc, code
+        assert taxonomy.get_aitech_definition(code).splitlines()[0] in doc, code
+    for code in taxonomy.VALID_AISUBTECH_CODES:
+        assert f"| `{code}` | {taxonomy.get_aisubtech_name(code)} |" in doc, code
+
+
+def test_every_code_has_a_definition():
+    for code in taxonomy.VALID_AITECH_CODES:
+        assert taxonomy.get_aitech_definition(code), code
+    for code in taxonomy.VALID_AISUBTECH_CODES:
+        assert taxonomy.get_aisubtech_definition(code), code
+    assert taxonomy.get_aitech_definition("AITech-1.1").startswith("Text-based prompt techniques")
+    assert taxonomy.get_aitech_definition("AITech-99.9") is None
 
 
 def test_every_subtechnique_has_its_numbered_parent():
@@ -184,6 +234,8 @@ def test_flat_custom_taxonomy_derives_parents_from_numbering(monkeypatch, tmp_pa
     try:
         taxonomy.reload_taxonomy(path)
         assert taxonomy.resolve_taxonomy_code("AISubtech-60.1.1") == ("AITech-60.1", "AISubtech-60.1.1")
+        # Flattened payloads carry names only.
+        assert taxonomy.get_aitech_definition("AITech-60.1") is None
         # A sub-technique without a known parent is never given a guessed one.
         assert taxonomy.resolve_taxonomy_code("AISubtech-61.1.1") == (None, None)
     finally:
