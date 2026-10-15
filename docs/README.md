@@ -19,6 +19,7 @@ built from [`docs-site/`](../docs-site/). This directory holds the deep-dive mat
 - [Scanning Pipeline](architecture/scanning-pipeline.md) -- How files flow through the analysis stages
 - [CEL Decision Layer](architecture/cel-decision-layer.md) -- Typed contextual decisions, safety bounds, and rollout modes
 - [Threat Taxonomy](architecture/threat-taxonomy.md) -- AITech threat taxonomy with examples
+- [Taxonomy Reference](architecture/taxonomy-reference.md) -- Definitions of every AITech and AISubtech code
 - [Binary Handling](architecture/binary-handling.md) -- How compiled and binary files are processed
 
 ### Analyzers

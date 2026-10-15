@@ -13,6 +13,7 @@ Skill Scanner is a modular security scanner for agent skill packages. It combine
 - **[CEL Decision Layer](./cel-decision-layer.md)** -- Typed fact projection, bounded expressions, rollout modes, fail-open behavior, and audit telemetry.
 - **[Analyzers](./analyzers/index.md)** -- The 10 detection engines — capability matrix, deep dives, and selection guide.
 - **[Threat Model](./threat-taxonomy.md)** -- Cisco AI Security Framework taxonomy, binary handling, and risk classification.
+- **[Taxonomy Reference](./taxonomy-reference.md)** -- Definitions of every objective, technique and sub-technique in taxonomy 2.0.0.
 - **[Extending](./analyzers/writing-custom-rules.md)** -- Write custom YAML signatures, YARA rules, and Python checks. Add new analyzers.
 
 ## High-Level Layout

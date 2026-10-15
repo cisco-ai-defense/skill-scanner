@@ -19,9 +19,9 @@ Cisco AI Security and Safety Taxonomy.
 
 The scanner ships a pinned, reduced snapshot of the taxonomy in
 ``skill_scanner/data/taxonomy/cisco_ai_taxonomy.json``.  The snapshot keeps
-objective, AITech and AISubtech codes, their official names, the parent/child
-structure, and the external framework crosswalks (OWASP, MITRE ATLAS,
-NIST AML).  ``provenance.yaml`` next to it records the source commit and the
+objective, AITech and AISubtech codes, their official names and definitions,
+the parent/child structure, and the external framework crosswalks (OWASP,
+MITRE ATLAS, NIST AML).  ``provenance.yaml`` next to it records the source commit and the
 SHA-256 of both the source file and the snapshot.  The snapshot is read once
 at import and is never fetched or refreshed at runtime.
 
@@ -40,7 +40,7 @@ import hashlib
 import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,8 @@ class _ParsedTaxonomy:
     aisubtech_parents: dict[str, str]
     version: str | None = None
     provenance: dict[str, str] = field(default_factory=dict)
+    aitech_definitions: dict[str, str] = field(default_factory=dict)
+    aisubtech_definitions: dict[str, str] = field(default_factory=dict)
 
 
 def _read_taxonomy_file(path: Path) -> dict[str, Any]:
@@ -119,6 +121,12 @@ def _numbered_parent(aisubtech_code: str, aitech_codes: dict[str, str]) -> str |
     return candidate if candidate in aitech_codes else None
 
 
+def _keep_definition(definitions: dict[str, str], code: str, value: Any) -> None:
+    """Record the first non-empty definition seen for a code."""
+    if code not in definitions and isinstance(value, str) and value.strip():
+        definitions[code] = value.strip()
+
+
 def _flatten_framework_taxonomy(data: dict[str, Any]) -> _ParsedTaxonomy:
     """Flatten OB-* framework taxonomy into AITech/AISubtech maps.
 
@@ -130,6 +138,8 @@ def _flatten_framework_taxonomy(data: dict[str, Any]) -> _ParsedTaxonomy:
     aitech_framework_mappings: dict[str, list[str]] = {}
     aisubtech_framework_mappings: dict[str, list[str]] = {}
     parents: dict[str, str] = {}
+    aitech_definitions: dict[str, str] = {}
+    aisubtech_definitions: dict[str, str] = {}
 
     for ob_code, ob in data.items():
         if not ob_code.startswith("OB-") or not isinstance(ob, dict):
@@ -151,6 +161,7 @@ def _flatten_framework_taxonomy(data: dict[str, Any]) -> _ParsedTaxonomy:
                         f"Conflicting AITech description for {tech_code}: {aitech[tech_code]!r} vs {tech_desc!r}"
                     )
                 aitech[tech_code] = tech_desc
+                _keep_definition(aitech_definitions, tech_code, tech.get("definition"))
                 merged = list(aitech_framework_mappings.get(tech_code, []))
                 for entry in tech_mappings:
                     if entry not in merged:
@@ -178,6 +189,7 @@ def _flatten_framework_taxonomy(data: dict[str, Any]) -> _ParsedTaxonomy:
                             )
                         parents[sub_code] = tech_code
                     aisubtech[sub_code] = sub_desc
+                    _keep_definition(aisubtech_definitions, sub_code, sub.get("definition"))
                     merged = list(aisubtech_framework_mappings.get(sub_code, []))
                     for entry in sub_mappings:
                         if entry not in merged:
@@ -200,6 +212,8 @@ def _flatten_framework_taxonomy(data: dict[str, Any]) -> _ParsedTaxonomy:
         aisubtech_framework_mappings=aisubtech_framework_mappings,
         aisubtech_parents=parents,
         version=str(version) if version is not None else None,
+        aitech_definitions=aitech_definitions,
+        aisubtech_definitions=aisubtech_definitions,
     )
 
 
@@ -305,15 +319,7 @@ def _load_builtin_taxonomy() -> _ParsedTaxonomy:
         raise ValueError(
             f"Bundled taxonomy version {parsed.version!r} does not match provenance {provenance.get('version')!r}"
         )
-    return _ParsedTaxonomy(
-        aitech=parsed.aitech,
-        aisubtech=parsed.aisubtech,
-        aitech_framework_mappings=parsed.aitech_framework_mappings,
-        aisubtech_framework_mappings=parsed.aisubtech_framework_mappings,
-        aisubtech_parents=parsed.aisubtech_parents,
-        version=parsed.version,
-        provenance=provenance,
-    )
+    return replace(parsed, provenance=provenance)
 
 
 # Built-in snapshot shipped with the package.  It stays immutable and is used
@@ -328,6 +334,8 @@ AISUBTECH_TAXONOMY: dict[str, str] = dict(_BUILTIN.aisubtech)
 AITECH_FRAMEWORK_MAPPINGS: dict[str, list[str]] = {}
 AISUBTECH_FRAMEWORK_MAPPINGS: dict[str, list[str]] = {}
 AISUBTECH_PARENTS: dict[str, str] = {}
+AITECH_DEFINITIONS: dict[str, str] = {}
+AISUBTECH_DEFINITIONS: dict[str, str] = {}
 VALID_AITECH_CODES: set[str] = set(AITECH_TAXONOMY.keys())
 VALID_AISUBTECH_CODES: set[str] = set(AISUBTECH_TAXONOMY.keys())
 
@@ -346,6 +354,8 @@ def _activate(parsed: _ParsedTaxonomy, source: str, sha256: str | None = None) -
     global AITECH_FRAMEWORK_MAPPINGS
     global AISUBTECH_FRAMEWORK_MAPPINGS
     global AISUBTECH_PARENTS
+    global AITECH_DEFINITIONS
+    global AISUBTECH_DEFINITIONS
     global VALID_AITECH_CODES
     global VALID_AISUBTECH_CODES
     global _ACTIVE_TAXONOMY_SOURCE
@@ -357,6 +367,8 @@ def _activate(parsed: _ParsedTaxonomy, source: str, sha256: str | None = None) -
     AITECH_FRAMEWORK_MAPPINGS = {code: list(m) for code, m in parsed.aitech_framework_mappings.items()}
     AISUBTECH_FRAMEWORK_MAPPINGS = {code: list(m) for code, m in parsed.aisubtech_framework_mappings.items()}
     AISUBTECH_PARENTS = dict(parsed.aisubtech_parents)
+    AITECH_DEFINITIONS = dict(parsed.aitech_definitions)
+    AISUBTECH_DEFINITIONS = dict(parsed.aisubtech_definitions)
     VALID_AITECH_CODES = set(AITECH_TAXONOMY.keys())
     VALID_AISUBTECH_CODES = set(AISUBTECH_TAXONOMY.keys())
     _ACTIVE_TAXONOMY_SOURCE = source
@@ -441,6 +453,16 @@ def get_aitech_name(code: str) -> str | None:
 def get_aisubtech_name(code: str) -> str | None:
     """Get the official name for an AISubtech code."""
     return AISUBTECH_TAXONOMY.get(code)
+
+
+def get_aitech_definition(code: str) -> str | None:
+    """Get the definition of an AITech code, when the active taxonomy has one."""
+    return AITECH_DEFINITIONS.get(code)
+
+
+def get_aisubtech_definition(code: str) -> str | None:
+    """Get the definition of an AISubtech code, when the active taxonomy has one."""
+    return AISUBTECH_DEFINITIONS.get(code)
 
 
 def get_aisubtech_parent(code: str) -> str | None:

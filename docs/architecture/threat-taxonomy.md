@@ -11,9 +11,10 @@ Skill Scanner aligns threat labels to Cisco's AI Security Framework taxonomy.
 
 - Authoritative taxonomy source: [Cisco AI Security Framework](https://learn-cloudsecurity.cisco.com/ai-security-framework)
 - Public framework write-up: [Cisco AI Security Framework paper](https://arxiv.org/html/2512.12921v1)
+- Definitions of every objective, technique and sub-technique: [Cisco AI Security & Safety Taxonomy 2.0.0 reference](taxonomy-reference.md)
 - Bundled snapshot: [`skill_scanner/data/taxonomy/cisco_ai_taxonomy.json`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/taxonomy/cisco_ai_taxonomy.json), with its provenance in [`provenance.yaml`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/data/taxonomy/provenance.yaml)
 
-The snapshot is a reduced copy of taxonomy version 2.0.0: objective, technique and sub-technique codes, their names, the parent/child structure, and each code's crosswalks. Definitions and labeling guidance are not shipped. `provenance.yaml` pins the source commit and the SHA-256 of both the source file and the snapshot; a test checks the shipped bytes against it. The snapshot is read once at import and never fetched or refreshed at runtime.
+The snapshot is a reduced copy of taxonomy version 2.0.0: objective, technique and sub-technique codes, their names and definitions, the parent/child structure, and each code's crosswalks. Threat indicators and labeling guidance are not shipped. The [reference page](taxonomy-reference.md) is generated from the snapshot and lists all 19 objectives, 44 techniques and 130 sub-techniques with their definitions. `provenance.yaml` pins the source commit and the SHA-256 of both the source file and the snapshot; a test checks the shipped bytes against it. The snapshot is read once at import and never fetched or refreshed at runtime.
 
 ## Mapping Flow
 
@@ -163,6 +164,7 @@ Skill Scanner now exposes framework mapping helpers from `skill_scanner.threats`
 - `get_aitech_framework_mappings(code)`
 - `get_aisubtech_framework_mappings(code)`
 - `get_framework_mappings(aitech_code=..., aisubtech_code=...)`
+- `get_aitech_definition(code)` and `get_aisubtech_definition(code)` return the taxonomy's definition text, or `None` when the active taxonomy has none (flattened custom taxonomies carry names only)
 
 At the threat level, use:
 
@@ -172,7 +174,7 @@ The bundled snapshot includes crosswalks for every technique and sub-technique. 
 
 ## Updating the Snapshot
 
-1. Regenerate the snapshot from the taxonomy release, pinning its commit and hash:
+1. Regenerate the snapshot and the [reference page](taxonomy-reference.md) from the taxonomy release, pinning its commit and hash:
    ```bash
    python scripts/update_taxonomy_snapshot.py /path/to/taxonomy.json \
      --revision <taxonomy repository commit> --expect-sha256 <sha256 of taxonomy.json>
