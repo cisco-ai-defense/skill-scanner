@@ -157,7 +157,7 @@ trusted local signature/YARA/CEL packs use repeatable `--trusted-rule-pack`.
 
 ### Threat Taxonomy
 
-Every finding carries a Cisco AI Security and Safety Taxonomy code (AITech and, where one fits, AISubtech) with its OWASP, MITRE ATLAS and NIST AML crosswalks, from a taxonomy 2.0.0 snapshot bundled with the scanner. Each bundled rule declares its code, so findings from different analyzers use consistent labels; operational findings such as a failed LLM call are marked `not_applicable`. The taxonomy can be overridden at runtime for custom organizational classifications.
+Findings carry a Cisco AI Security and Safety Taxonomy code (AITech and, where one fits, AISubtech) with its OWASP, MITRE ATLAS and NIST AML crosswalks, from a taxonomy 2.0.0 snapshot bundled with the scanner. Each bundled rule declares its code, so findings from different analyzers use consistent labels, and operational findings such as a failed LLM call are marked `not_applicable`. A finding whose code cannot be resolved, for example from a custom rule pack without a taxonomy selection or a code missing from a custom taxonomy, is marked `unmapped` rather than given a guessed code. The taxonomy can be overridden at runtime for custom organizational classifications.
 
 ---
 
