@@ -346,10 +346,10 @@ class LLMAnalyzer(BaseAnalyzer):
                 "azure-openai": "azure/gpt-4o",
                 "azure-ai": "azure/gpt-4",
                 "aws-bedrock": "bedrock/us.anthropic.claude-sonnet-5-5",
-                "gcp-vertex": "vertex_ai/gemini-1.5-pro",
+                "gcp-vertex": "vertex_ai/gemini-3.8-flash",
                 "ollama": "ollama/llama2",
                 "apple-fm": "apple-fm/system",
-                "openrouter": "openrouter/openai/gpt-4",
+                "openrouter": "openrouter/openai/gpt-5.6-sol",
                 "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
             }
             model = model_mapping.get(provider_str, DEFAULT_LLM_MODEL)

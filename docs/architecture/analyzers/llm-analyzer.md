@@ -145,7 +145,7 @@ analyzer = LLMAnalyzer(model="gemini/gemini-2.0-flash-exp", api_key=key)
 
 # Vertex AI -- uses GOOGLE_APPLICATION_CREDENTIALS if set, otherwise falls
 # back to ambient Application Default Credentials (e.g. Workload Identity)
-analyzer = LLMAnalyzer(model="vertex_ai/gemini-1.5-pro")
+analyzer = LLMAnalyzer(model="vertex_ai/gemini-3.8-flash")
 ```
 
 ### Azure OpenAI

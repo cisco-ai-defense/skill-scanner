@@ -211,6 +211,23 @@ class TestLLMAnalyzerInitialization:
             "api_base": "https://orca.internal/v1",
         }
 
+    def test_openrouter_provider_default_model_is_not_retired(self):
+        """OpenAI shuts down gpt-4 on 2026-10-23 and names gpt-5.6-sol as its replacement."""
+        with patch.dict("os.environ", {}, clear=True):
+            analyzer = LLMAnalyzer(provider="openrouter", api_key="test-key")
+
+        assert analyzer.model == "openrouter/openai/gpt-5.6-sol"
+        # gpt-5.6-sol is a reasoning model: the request must leave temperature out
+        assert analyzer.request_handler.temperature is None
+
+    def test_vertex_provider_default_model_is_not_retired(self):
+        """Vertex AI retired gemini-1.5-pro in 2025 and lists gemini-3.8-flash as current."""
+        with patch.dict("os.environ", {}, clear=True):
+            analyzer = LLMAnalyzer(provider="gcp-vertex", api_key=None)
+
+        assert analyzer.model == "vertex_ai/gemini-3.8-flash"
+        assert analyzer.provider_config.is_vertex
+
 
 class TestPromptLoading:
     """Test prompt loading functionality."""

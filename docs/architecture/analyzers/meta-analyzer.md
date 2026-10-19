@@ -174,7 +174,7 @@ export SKILL_SCANNER_LLM_API_VERSION="2025-01-01-preview"
 **Google Gemini:**
 ```bash
 export SKILL_SCANNER_LLM_API_KEY="your-gemini-key"
-export SKILL_SCANNER_LLM_MODEL="gemini/gemini-1.5-pro"
+export SKILL_SCANNER_LLM_MODEL="gemini/gemini-3.8-flash"
 ```
 
 **AWS Bedrock:**
