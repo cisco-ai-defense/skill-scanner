@@ -40,45 +40,14 @@ except ImportError:
 
 from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...threats.cisco_ai_taxonomy import resolve_taxonomy_code
+from ...threats.threats import get_threat_codes
 from .base import BaseAnalyzer
 
 # AI Defense labels (guardrail rule names, violation and vulnerability types)
-# -> Cisco AI taxonomy code.  Guardrail rule names follow the taxonomy's own
-# harm names.  Coarse classifications such as SECURITY_VIOLATION name no
-# technique and are left out, so those findings stay unmapped instead of
-# receiving a guessed code.
-_AIDEFENSE_TAXONOMY: dict[str, str] = {
-    "PROMPT INJECTION": "AITech-1.1",
-    "JAILBREAK": "AITech-1.1",
-    "HARASSMENT": "AISubtech-15.1.8",
-    "HATE SPEECH": "AISubtech-15.1.9",
-    "PROFANITY": "AISubtech-15.1.11",
-    "SEXUAL CONTENT & EXPLOITATION": "AISubtech-15.1.14",
-    "SOCIAL DIVISION & POLARIZATION": "AISubtech-15.1.15",
-    "VIOLENCE & PUBLIC SAFETY THREATS": "AISubtech-15.1.17",
-    "CODE DETECTION": "AISubtech-12.2.1",
-    "PII": "AITech-8.5",
-    "PCI": "AITech-8.6",
-    "PHI": "AITech-8.7",
-    "SAFETY VIOLATION": "AISubtech-15.1.25",
-    "PRIVACY VIOLATION": "AITech-8.2",
-    "TOOL POISONING": "AISubtech-12.1.2",
-    "DATA EXFILTRATION": "AISubtech-8.2.3",
-    "DATA LEAK": "AITech-8.2",
-    "COMMAND INJECTION": "AISubtech-9.1.4",
-    "CODE INJECTION": "AISubtech-9.1.4",
-    "INJECTION": "AISubtech-9.1.4",
-    "SQL INJECTION": "AISubtech-9.1.4",
-    "XSS": "AISubtech-9.1.4",
-    "INSECURE FUNCTION": "AISubtech-9.1.1",
-    "PATH TRAVERSAL": "AISubtech-9.1.2",
-    "CREDENTIAL THEFT": "AISubtech-14.1.1",
-    "HARDCODED SECRET": "AISubtech-14.1.1",
-    "SENSITIVE DATA": "AITech-8.2",
-    "MALWARE": "AISubtech-15.1.1",
-    "OBFUSCATION": "AISubtech-9.2.1",
-    "SOCIAL ENGINEERING": "AISubtech-15.1.12",
-}
+# -> Cisco AI taxonomy code, from ThreatMapping.AI_DEFENSE_THREATS.  Coarse
+# classifications such as SECURITY_VIOLATION name no technique and are not in
+# that table, so those findings stay unmapped instead of receiving a guessed code.
+_AIDEFENSE_TAXONOMY: dict[str, str] = get_threat_codes("ai_defense")
 
 
 def _taxonomy_metadata(*labels: str | None) -> dict[str, str | None]:

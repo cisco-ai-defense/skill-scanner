@@ -94,7 +94,7 @@ The table lists the codes most core rules use; the exact selection for every rul
 - Rule selections: each pack's `pack.yaml` under [`skill_scanner/data/packs/`](https://github.com/cisco-ai-defense/skill-scanner/tree/main/skill_scanner/data/packs)
 - Taxonomy loader and helpers: [`skill_scanner/threats/cisco_ai_taxonomy.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/threats/cisco_ai_taxonomy.py)
 - Finding annotation: [`skill_scanner/core/finding_taxonomy.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/core/finding_taxonomy.py)
-- Analyzer threat labels: [`skill_scanner/threats/threats.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/threats/threats.py)
+- Analyzer threat labels: [`skill_scanner/threats/threats.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/skill_scanner/threats/threats.py). `ThreatMapping` holds one table per analyzer (`LLM_THREATS`, `YARA_THREATS`, `BEHAVIORAL_THREATS`, `AI_DEFENSE_THREATS`), each entry with its codes, names, severity and a description of how the threat shows up in a skill. The AI Defense analyzer and the behavioral alignment and cross-file checks read their per-finding codes from these tables through `get_threat_codes()`.
 - Tests: [`tests/test_taxonomy_snapshot.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/tests/test_taxonomy_snapshot.py), [`tests/test_finding_taxonomy.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/tests/test_finding_taxonomy.py), [`tests/test_taxonomy_validation.py`](https://github.com/cisco-ai-defense/skill-scanner/blob/main/tests/test_taxonomy_validation.py)
 
 ## Custom Taxonomy Support

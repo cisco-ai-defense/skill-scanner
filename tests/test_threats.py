@@ -18,14 +18,25 @@
 
 import pytest
 
+from skill_scanner.core.analyzers.aidefense_analyzer import _AIDEFENSE_TAXONOMY
+from skill_scanner.core.analyzers.behavioral_analyzer import ALIGNMENT_TAXONOMY, CROSSFILE_TAXONOMY
 from skill_scanner.threats.cisco_ai_taxonomy import get_aisubtech_name, get_aitech_name
 from skill_scanner.threats.threats import (
+    API_THREAT_MAPPING,
     BEHAVIORAL_THREAT_MAPPING,
     LLM_THREAT_MAPPING,
     YARA_THREAT_MAPPING,
     ThreatMapping,
     get_threat_category,
+    get_threat_codes,
     get_threat_severity,
+)
+
+ALL_THREAT_TABLES = (
+    ThreatMapping.LLM_THREATS,
+    ThreatMapping.YARA_THREATS,
+    ThreatMapping.BEHAVIORAL_THREATS,
+    ThreatMapping.AI_DEFENSE_THREATS,
 )
 
 
@@ -95,6 +106,7 @@ class TestThreatMappingContent:
             ("LLM", ThreatMapping.LLM_THREATS),
             ("YARA", ThreatMapping.YARA_THREATS),
             ("BEHAVIORAL", ThreatMapping.BEHAVIORAL_THREATS),
+            ("AI_DEFENSE", ThreatMapping.AI_DEFENSE_THREATS),
         ]:
             for threat_name, threat_info in threats_dict.items():
                 for field in required_fields:
@@ -102,7 +114,7 @@ class TestThreatMappingContent:
 
     def test_threat_names_match_the_taxonomy_snapshot(self):
         """Every threat uses the code names from the bundled taxonomy snapshot."""
-        for threats_dict in (ThreatMapping.LLM_THREATS, ThreatMapping.YARA_THREATS, ThreatMapping.BEHAVIORAL_THREATS):
+        for threats_dict in ALL_THREAT_TABLES:
             for threat_name, threat_info in threats_dict.items():
                 assert threat_info["aitech_name"] == get_aitech_name(threat_info["aitech"]), threat_name
                 if threat_info["aisubtech"]:
@@ -110,7 +122,7 @@ class TestThreatMappingContent:
 
     def test_every_threat_describes_how_it_shows_up_in_a_skill(self):
         """Descriptions are full sentences about skills, not one-line labels."""
-        for threats_dict in (ThreatMapping.LLM_THREATS, ThreatMapping.YARA_THREATS, ThreatMapping.BEHAVIORAL_THREATS):
+        for threats_dict in ALL_THREAT_TABLES:
             for threat_name, threat_info in threats_dict.items():
                 description = threat_info["description"]
                 assert len(description.split()) >= 30, threat_name
@@ -211,6 +223,7 @@ class TestSimplifiedMappings:
             (ThreatMapping.LLM_THREATS, LLM_THREAT_MAPPING),
             (ThreatMapping.YARA_THREATS, YARA_THREAT_MAPPING),
             (ThreatMapping.BEHAVIORAL_THREATS, BEHAVIORAL_THREAT_MAPPING),
+            (ThreatMapping.AI_DEFENSE_THREATS, API_THREAT_MAPPING),
         ],
     )
     def test_simplified_mappings_are_derived_consistently(self, full_mapping, simple_mapping):
@@ -223,6 +236,33 @@ class TestSimplifiedMappings:
                 "threat_type": threat_name.lower().replace("_", " "),
                 "severity": full_info["severity"],
             }
+
+
+class TestThreatCodes:
+    """Analyzers that choose a code per finding read it from the threat tables."""
+
+    def test_ai_defense_codes_come_from_the_threat_table(self):
+        codes = get_threat_codes("ai_defense")
+        assert codes == {
+            name: info["aisubtech"] or info["aitech"] for name, info in ThreatMapping.AI_DEFENSE_THREATS.items()
+        }
+        assert _AIDEFENSE_TAXONOMY == codes
+
+    def test_behavioral_codes_keep_the_caller_spelling(self):
+        codes = get_threat_codes("behavioral", ("ALIGNMENT_MISMATCH", "exfiltration_chain"))
+        assert codes == {"ALIGNMENT_MISMATCH": "AISubtech-4.3.5", "exfiltration_chain": "AISubtech-8.2.3"}
+        for name, code in {**ALIGNMENT_TAXONOMY, **CROSSFILE_TAXONOMY}.items():
+            info = ThreatMapping.get_threat_mapping("behavioral", name)
+            assert code == (info["aisubtech"] or info["aitech"]), name
+
+    def test_unknown_threat_name_is_rejected(self):
+        with pytest.raises(ValueError, match="NOT A THREAT"):
+            get_threat_codes("behavioral", ("NOT A THREAT",))
+
+    def test_ai_defense_table_is_reachable_by_analyzer_name(self):
+        for analyzer in ("ai_defense", "aidefense"):
+            mapping = ThreatMapping.get_threat_mapping(analyzer, "hate_speech")
+            assert mapping["aisubtech"] == "AISubtech-15.1.9"
 
 
 class TestHelperFunctions:

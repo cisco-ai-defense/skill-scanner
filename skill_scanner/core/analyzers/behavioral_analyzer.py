@@ -45,25 +45,23 @@ from ...core.static_analysis.context_extractor import (
 )
 from ...core.static_analysis.interprocedural.call_graph_analyzer import CallGraphAnalyzer
 from ...core.static_analysis.interprocedural.cross_file_analyzer import CrossFileAnalyzer, CrossFileCorrelation
+from ...threats.threats import get_threat_codes
 from .base import BaseAnalyzer
 
 logger = logging.getLogger(__name__)
 
 # BEHAVIOR_ALIGNMENT_* and BEHAVIOR_CROSSFILE_* rule IDs are built from the
 # threat name, so these findings pick their Cisco AI taxonomy code here rather
-# than from the pack manifest.
-ALIGNMENT_TAXONOMY: dict[str, str] = {
-    "DATA EXFILTRATION": "AISubtech-8.2.3",
-    "CREDENTIAL THEFT": "AISubtech-14.1.1",
-    "COMMAND INJECTION": "AISubtech-9.1.4",
-    "HIDDEN FUNCTIONALITY": "AISubtech-9.2.1",
-    "ALIGNMENT_MISMATCH": "AISubtech-4.3.5",
-}
-CROSSFILE_TAXONOMY: dict[str, str] = {
-    "exfiltration_chain": "AISubtech-8.2.3",
-    "credential_network_separation": "AISubtech-14.1.1",
-    "env_var_exfiltration": "AISubtech-8.2.3",
-}
+# than from the pack manifest.  The codes come from
+# ThreatMapping.BEHAVIORAL_THREATS; only these names get one.
+ALIGNMENT_TAXONOMY: dict[str, str] = get_threat_codes(
+    "behavioral",
+    ("DATA EXFILTRATION", "CREDENTIAL THEFT", "COMMAND INJECTION", "HIDDEN FUNCTIONALITY", "ALIGNMENT_MISMATCH"),
+)
+CROSSFILE_TAXONOMY: dict[str, str] = get_threat_codes(
+    "behavioral",
+    ("exfiltration_chain", "credential_network_separation", "env_var_exfiltration"),
+)
 
 
 def _run_coroutine_sync(coro):
