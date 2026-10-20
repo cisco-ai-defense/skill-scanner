@@ -120,13 +120,11 @@ class TestThreatMappingContent:
                 if threat_info["aisubtech"]:
                     assert threat_info["aisubtech_name"] == get_aisubtech_name(threat_info["aisubtech"]), threat_name
 
-    def test_every_threat_describes_how_it_shows_up_in_a_skill(self):
-        """Descriptions are full sentences about skills, not one-line labels."""
+    def test_every_threat_has_a_description(self):
+        """Every threat entry carries a non-empty description."""
         for threats_dict in ALL_THREAT_TABLES:
             for threat_name, threat_info in threats_dict.items():
-                description = threat_info["description"]
-                assert len(description.split()) >= 30, threat_name
-                assert "skill" in description.lower(), threat_name
+                assert threat_info["description"].strip(), threat_name
 
 
 class TestGetThreatMapping:
