@@ -175,6 +175,7 @@ Set `SKILL_SCANNER_LLM_MODEL` using the provider prefix convention:
 | Ollama (local) | `ollama/llama3` | No API key needed |
 | Apple Foundation Models | `apple-fm/system` | On-device. No API key. Requires `apple-fm-sdk` (`pip install "apple-fm-sdk>=0.2.1,<0.3"`, built from source with full Xcode), macOS 26+, and Apple Intelligence. Use this for LLM semantic scans. Do not use it for behavioral alignment: those prompts exceed the on-device context window. |
 | OrcaRouter | `orcarouter/anthropic/claude-sonnet-5` | OpenAI-compatible gateway; default endpoint `https://api.orcarouter.ai/v1` (override with `SKILL_SCANNER_LLM_BASE_URL`) |
+| Atlas Cloud | `atlascloud/anthropic/claude-sonnet-5` | OpenAI-compatible gateway; default endpoint `https://api.atlascloud.ai/v1` (override with `SKILL_SCANNER_LLM_BASE_URL`). Model ids as listed at `/v1/models` |
 
 For OpenAI and OpenAI-compatible custom endpoints, `SKILL_SCANNER_LLM_USER` can set the raw Chat Completions `user` request field. The value is passed through unchanged and is ignored for non-OpenAI routes.
 
@@ -194,6 +195,7 @@ For OpenAI and OpenAI-compatible custom endpoints, `SKILL_SCANNER_LLM_USER` can 
 | Ollama | None | — |
 | Apple Foundation Models | None (on-device) | `SKILL_SCANNER_LLM_MODEL=apple-fm/system` |
 | OrcaRouter | API key | `SKILL_SCANNER_LLM_API_KEY` |
+| Atlas Cloud | API key | `SKILL_SCANNER_LLM_API_KEY` |
 
 ## Related
 

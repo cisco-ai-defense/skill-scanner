@@ -31,6 +31,7 @@ _NON_OPENAI_MODEL_PREFIXES = (
     "gemini-",
     "models/gemini-",
     "apple-fm/",
+    "atlascloud/",
     "ollama/",
     "openrouter/",
     "vertex/",

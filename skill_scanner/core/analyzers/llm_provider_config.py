@@ -196,12 +196,30 @@ class ProviderConfig:
             and not self.is_bedrock_mantle
             and ("bedrock/" in model or model_lower.startswith("bedrock/"))
         )
-        self.is_gemini = not self.is_openai_compatible and (
-            "gemini" in model_lower or model_lower.startswith("gemini/")
+        # Gateway providers are classified first: the downstream model name
+        # (e.g. ``atlascloud/google/gemini-2.5-pro``) must not trigger native
+        # Gemini/Vertex/Azure credential handling or dispatch.
+        self.is_orcarouter = self.provider == "orcarouter" or (
+            not self.is_openai_compatible and model_lower.startswith("orcarouter/")
         )
-        self.is_azure = not self.is_openai_compatible and (model_lower.startswith("azure/") or "azure" in model_lower)
-        self.is_vertex = not self.is_openai_compatible and (
-            model_lower.startswith("vertex_ai/") or "vertex" in model_lower
+        self.is_atlascloud = self.provider == "atlascloud" or (
+            not self.is_openai_compatible and model_lower.startswith("atlascloud/")
+        )
+        is_gateway = self.is_orcarouter or self.is_atlascloud
+        self.is_gemini = (
+            not self.is_openai_compatible
+            and not is_gateway
+            and ("gemini" in model_lower or model_lower.startswith("gemini/"))
+        )
+        self.is_azure = (
+            not self.is_openai_compatible
+            and not is_gateway
+            and (model_lower.startswith("azure/") or "azure" in model_lower)
+        )
+        self.is_vertex = (
+            not self.is_openai_compatible
+            and not is_gateway
+            and (model_lower.startswith("vertex_ai/") or "vertex" in model_lower)
         )
         self.is_ollama = not self.is_openai_compatible and model_lower.startswith("ollama/")
         self.is_apple_fm = not self.is_openai_compatible and (
@@ -217,9 +235,6 @@ class ProviderConfig:
                 "or a bedrock-mantle model without the apple-fm provider."
             )
         self.is_openrouter = not self.is_openai_compatible and model_lower.startswith("openrouter/")
-        self.is_orcarouter = self.provider == "orcarouter" or (
-            not self.is_openai_compatible and model_lower.startswith("orcarouter/")
-        )
         self.is_gpt5 = "gpt-5" in model_lower
 
         if self.is_ollama:
@@ -255,6 +270,12 @@ class ProviderConfig:
             if not LITELLM_AVAILABLE:
                 raise ImportError("LiteLLM is required for OrcaRouter. Install with: pip install litellm")
             self.model = self._normalize_orcarouter_model_name(model)
+        elif self.is_atlascloud:
+            # Atlas Cloud is OpenAI-compatible; route through the OpenAI LiteLLM adapter
+            # with the well-known default endpoint (overridable via base_url).
+            if not LITELLM_AVAILABLE:
+                raise ImportError("LiteLLM is required for Atlas Cloud. Install with: pip install litellm")
+            self.model = self._normalize_atlascloud_model_name(model)
         elif self.is_apple_fm:
             # On-device Foundation Models. Keep the apple-fm/ prefix so the
             # request handler can dispatch without LiteLLM or an API key.
@@ -304,6 +325,14 @@ class ProviderConfig:
         """Force LiteLLM's OpenAI adapter for OrcaRouter models (OpenAI-compatible)."""
         if model.lower().startswith("orcarouter/"):
             model = model[len("orcarouter/") :]
+        if model.lower().startswith("openai/"):
+            return model
+        return f"openai/{model}"
+
+    def _normalize_atlascloud_model_name(self, model: str) -> str:
+        """Force LiteLLM's OpenAI adapter for Atlas Cloud models (OpenAI-compatible)."""
+        if model.lower().startswith("atlascloud/"):
+            model = model[len("atlascloud/") :]
         if model.lower().startswith("openai/"):
             return model
         return f"openai/{model}"
@@ -466,6 +495,9 @@ class ProviderConfig:
         elif self.is_orcarouter:
             # Default OrcaRouter endpoint (OpenAI-compatible) when no base_url is given.
             params["api_base"] = "https://api.orcarouter.ai/v1"
+        elif self.is_atlascloud:
+            # Default Atlas Cloud endpoint (OpenAI-compatible) when no base_url is given.
+            params["api_base"] = "https://api.atlascloud.ai/v1"
         if self.api_version:
             params["api_version"] = self.api_version
 

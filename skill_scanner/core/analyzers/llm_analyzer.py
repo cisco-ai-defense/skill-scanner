@@ -118,6 +118,7 @@ class LLMProvider(str, Enum):
     - apple-fm: On-device Apple Foundation Models
     - openrouter: OpenRouter API
     - orcarouter: OrcaRouter API
+    - atlascloud: Atlas Cloud API
     """
 
     OPENAI = "openai"
@@ -131,6 +132,7 @@ class LLMProvider(str, Enum):
     APPLE_FM = "apple-fm"
     OPENROUTER = "openrouter"
     ORCAROUTER = "orcarouter"
+    ATLASCLOUD = "atlascloud"
 
     @classmethod
     def normalize(cls, provider: str) -> str:
@@ -351,6 +353,7 @@ class LLMAnalyzer(BaseAnalyzer):
                 "apple-fm": "apple-fm/system",
                 "openrouter": "openrouter/openai/gpt-4",
                 "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
+                "atlascloud": "atlascloud/anthropic/claude-sonnet-5",
             }
             model = model_mapping.get(provider_str, DEFAULT_LLM_MODEL)
         elif model is None:
