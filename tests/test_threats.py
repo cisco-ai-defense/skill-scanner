@@ -18,6 +18,7 @@
 
 import pytest
 
+from skill_scanner.threats.cisco_ai_taxonomy import get_aisubtech_name, get_aitech_name
 from skill_scanner.threats.threats import (
     BEHAVIORAL_THREAT_MAPPING,
     LLM_THREAT_MAPPING,
@@ -98,6 +99,22 @@ class TestThreatMappingContent:
             for threat_name, threat_info in threats_dict.items():
                 for field in required_fields:
                     assert field in threat_info, f"{analyzer_name} threat '{threat_name}' missing field '{field}'"
+
+    def test_threat_names_match_the_taxonomy_snapshot(self):
+        """Every threat uses the code names from the bundled taxonomy snapshot."""
+        for threats_dict in (ThreatMapping.LLM_THREATS, ThreatMapping.YARA_THREATS, ThreatMapping.BEHAVIORAL_THREATS):
+            for threat_name, threat_info in threats_dict.items():
+                assert threat_info["aitech_name"] == get_aitech_name(threat_info["aitech"]), threat_name
+                if threat_info["aisubtech"]:
+                    assert threat_info["aisubtech_name"] == get_aisubtech_name(threat_info["aisubtech"]), threat_name
+
+    def test_every_threat_describes_how_it_shows_up_in_a_skill(self):
+        """Descriptions are full sentences about skills, not one-line labels."""
+        for threats_dict in (ThreatMapping.LLM_THREATS, ThreatMapping.YARA_THREATS, ThreatMapping.BEHAVIORAL_THREATS):
+            for threat_name, threat_info in threats_dict.items():
+                description = threat_info["description"]
+                assert len(description.split()) >= 30, threat_name
+                assert "skill" in description.lower(), threat_name
 
 
 class TestGetThreatMapping:

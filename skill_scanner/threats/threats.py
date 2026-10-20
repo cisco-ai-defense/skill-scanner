@@ -20,7 +20,15 @@ Threat mapping from scanner threat names to AITech Taxonomy.
 This module provides mappings between different analyzers' threat names
 and the standardized AITech industry taxonomy threat classifications.
 
-Implements AITech codes (AITech-X.Y) for consistent threat categorization.
+The module is organized into two main sections:
+1. THREAT DEFINITIONS: Complete threat definitions with taxonomy mappings, severity,
+   and a description of how the threat shows up in a skill
+2. CUSTOM MAPPINGS & HELPER FUNCTIONS: Overrides from SKILL_SCANNER_THREAT_MAPPING_PATH,
+   lightweight mappings, and lookup helpers
+
+Codes and names follow the bundled Cisco AI Security & Safety Taxonomy snapshot.
+The taxonomy's own definition of each code is available from
+``cisco_ai_taxonomy.get_aitech_definition`` and ``get_aisubtech_definition``.
 """
 
 import json
@@ -30,6 +38,11 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# SECTION 1: THREAT DEFINITIONS
+# =============================================================================
 
 
 class ThreatMapping:
@@ -44,8 +57,10 @@ class ThreatMapping:
             "aitech_name": "Direct Prompt Injection and Jailbreak (Prompt-based Manipulation)",
             "aisubtech": "AISubtech-1.1.1",
             "aisubtech_name": "Instruction Manipulation",
-            "description": "Explicit attempts to override, replace, or modify the model's system instructions, "
-            "operational directives, or behavioral guidelines through direct user input.",
+            "description": "Explicit attempts in a skill's SKILL.md instructions, frontmatter, or bundled reference "
+            "files to override, replace, or reprioritize the agent's system instructions, developer directives, or "
+            "safety rules, causing the agent to follow attacker-controlled instructions instead of its intended "
+            'behavior once the skill is loaded (e.g., "Ignore all previous instructions").',
         },
         "DATA EXFILTRATION": {
             "scanner_category": "SECURITY VIOLATION",
@@ -54,8 +69,10 @@ class ThreatMapping:
             "aitech_name": "Data Exfiltration / Exposure",
             "aisubtech": "AISubtech-8.2.3",
             "aisubtech_name": "Data Exfiltration via Agent Tooling",
-            "description": "Unintentional and/or unauthorized exposure or exfiltration of sensitive information, "
-            "through exploitation of agent tools, integrations, or capabilities.",
+            "description": "Unintentional and/or unauthorized exposure or exfiltration of sensitive information, such "
+            "as credentials, source code, private files, or conversation data, through the tools, scripts, and "
+            "integrations a skill gives the agent, where legitimate capabilities like file reads, shell commands, or "
+            "network requests are used to move data to destinations the user did not intend.",
         },
         "TOOL POISONING": {
             "scanner_category": "SUSPICIOUS CODE EXECUTION",
@@ -64,7 +81,10 @@ class ThreatMapping:
             "aitech_name": "Tool Exploitation",
             "aisubtech": "AISubtech-12.1.2",
             "aisubtech_name": "Tool Poisoning",
-            "description": "Corrupting, modifying, or degrading the functionality, outputs, or behavior of tools used by agents through data poisoning, configuration tampering, or behavioral manipulation.",
+            "description": "Corrupting, modifying, or degrading the functionality, outputs, or behavior of tools or "
+            "scripts a skill provides or invokes, through tampered bundled code, poisoned configuration, or hidden "
+            "instructions in tool descriptions, causing the agent to act on deceptive or malicious outputs, escalate "
+            "privileges, or propagate altered data while appearing to run a legitimate skill.",
         },
         "TOOL SHADOWING": {
             "scanner_category": "SECURITY VIOLATION",
@@ -73,7 +93,10 @@ class ThreatMapping:
             "aitech_name": "Tool Exploitation",
             "aisubtech": "AISubtech-12.1.4",
             "aisubtech_name": "Tool Shadowing",
-            "description": "Disguising, substituting or duplicating legitimate tools within an agent, enabling malicious tools with identical or similar identifiers to intercept or replace trusted tool calls.",
+            "description": "Disguising, substituting, or duplicating legitimate tools, commands, or skills within the "
+            "agent's environment, enabling a malicious skill with an identical or similar name, trigger description, "
+            "or script to intercept or replace trusted tool calls, leading to unauthorized actions, data "
+            "exfiltration, or redirection of legitimate operations.",
         },
         "COMMAND INJECTION": {
             "scanner_category": "INJECTION ATTACK",
@@ -82,7 +105,10 @@ class ThreatMapping:
             "aitech_name": "Model or Agentic System Manipulation",
             "aisubtech": "AISubtech-9.1.4",
             "aisubtech_name": "Injection Attacks (e.g., SQL, Command Execution, XSS)",
-            "description": "Injecting malicious payloads such as command sequences into skills that process model or user input, leading to remote code execution or compromise.",
+            "description": "Injecting malicious payloads such as shell command sequences, SQL queries, or scripts "
+            "into skill scripts or instructions that process model or user input, so that unvalidated input reaches a "
+            "shell, interpreter, or query engine, leading to data exposure, remote code execution, or compromise of "
+            "the host running the agent.",
         },
     }
 
@@ -95,7 +121,9 @@ class ThreatMapping:
             "aitech_name": "Model or Agentic System Manipulation",
             "aisubtech": "AISubtech-9.1.4",
             "aisubtech_name": "Injection Attacks (e.g., SQL, Command Execution, XSS)",
-            "description": "Injecting malicious command sequences leading to remote code execution.",
+            "description": "Injecting malicious command sequences into shell invocations made by a skill's scripts or "
+            "instructions, typically through string concatenation, unquoted variables, or shell=True calls that carry "
+            "model or user input, leading to remote code execution or compromise of the host running the agent.",
         },
         "DATA EXFILTRATION": {
             "scanner_category": "SECURITY VIOLATION",
@@ -104,7 +132,10 @@ class ThreatMapping:
             "aitech_name": "Data Exfiltration / Exposure",
             "aisubtech": "AISubtech-8.2.3",
             "aisubtech_name": "Data Exfiltration via Agent Tooling",
-            "description": "Unauthorized exposure or exfiltration of sensitive information.",
+            "description": "Unauthorized exposure or exfiltration of sensitive information through a skill's scripts "
+            "or instructions, where files, environment variables, credentials, or agent context are read and then "
+            "sent to external servers, uploaded to remote endpoints, or passed to third parties through hidden or "
+            "undisclosed functionality.",
         },
         "SKILL DISCOVERY ABUSE": {
             "scanner_category": "PROTOCOL MANIPULATION",
@@ -113,7 +144,9 @@ class ThreatMapping:
             "aitech_name": "Protocol Manipulation",
             "aisubtech": "AISubtech-4.3.5",
             "aisubtech_name": "Capability Inflation",
-            "description": "Manipulation of skill discovery mechanisms to inflate perceived capabilities and increase unwanted activation (keyword baiting, over-broad descriptions, brand impersonation).",
+            "description": "Manipulation of skill discovery and activation through inflated or misleading metadata, "
+            "where a skill's name or frontmatter description uses keyword baiting, over-broad trigger phrases, or "
+            "brand impersonation so the agent loads it more often or for tasks it should not handle.",
         },
         "TRANSITIVE TRUST ABUSE": {
             "scanner_category": "PROMPT INJECTION",
@@ -122,7 +155,10 @@ class ThreatMapping:
             "aitech_name": "Indirect Prompt Injection",
             "aisubtech": None,
             "aisubtech_name": None,
-            "description": "Embedding malicious instructions in external data sources (webpages, documents, APIs) that override intended behavior - following external instructions, executing found code blocks.",
+            "description": "Embedding or relaying malicious instructions through external data sources a skill tells "
+            "the agent to trust, such as webpages, documents, API responses, or downloaded files, so the agent "
+            "follows instructions found in that content, runs code blocks it encounters, or treats third-party text "
+            "as if it came from the user or the skill author.",
         },
         "AUTONOMY ABUSE": {
             "scanner_category": "RESOURCE ABUSE",
@@ -131,7 +167,10 @@ class ThreatMapping:
             "aitech_name": "Excessive Agency",
             "aisubtech": "AISubtech-2.1.1",
             "aisubtech_name": "Execution Approval Bypass",
-            "description": "Excessive autonomy without bounds - keep retrying indefinitely, run without confirmation, ignore errors.",
+            "description": "Granting the agent excessive autonomy without bounds, where skill instructions tell it to "
+            "skip confirmation prompts, bypass approval steps, retry indefinitely, ignore errors, or run destructive "
+            "or high-impact actions without the user's explicit consent, removing the human checkpoints the host "
+            "normally enforces.",
         },
         "TOOL CHAINING ABUSE": {
             "scanner_category": "DATA EXFILTRATION",
@@ -140,7 +179,10 @@ class ThreatMapping:
             "aitech_name": "Data Exfiltration / Exposure",
             "aisubtech": "AISubtech-8.2.3",  # Data Exfiltration via Agent Tooling (from Framework)
             "aisubtech_name": "Data Exfiltration via Agent Tooling",
-            "description": "Suspicious multi-step tool chaining to exfiltrate data - read→send, collect→post, traverse→upload patterns.",
+            "description": "Suspicious multi-step tool chaining in a skill's instructions or scripts that combines "
+            "individually harmless steps into data exfiltration, such as read-then-send, collect-then-post, or "
+            "traverse-then-upload sequences that move local files, secrets, or agent context to an external "
+            "destination.",
         },
         "HARDCODED SECRETS": {
             "scanner_category": "CREDENTIAL HARVESTING",
@@ -149,7 +191,9 @@ class ThreatMapping:
             "aitech_name": "Unauthorized Access",
             "aisubtech": "AISubtech-14.1.1",
             "aisubtech_name": "Credential Theft",
-            "description": "Hardcoded credentials, API keys, or secrets in code.",
+            "description": "Credentials, API keys, tokens, private keys, or passwords hardcoded in a skill's "
+            "SKILL.md, bundled scripts, or packaged configuration files, exposing them to anyone who installs or "
+            "reads the skill and enabling unauthorized access to the services they protect.",
         },
         "OBFUSCATION": {
             "scanner_category": "SUSPICIOUS CODE",
@@ -158,7 +202,10 @@ class ThreatMapping:
             "aitech_name": "Detection Evasion",
             "aisubtech": "AISubtech-9.2.1",
             "aisubtech_name": "Obfuscation Vulnerabilities",
-            "description": "Deliberately obfuscated code to hide malicious intent.",
+            "description": "Deliberately obfuscated or encoded content in a skill, such as base64 or hex payloads, "
+            "packed or minified scripts, commands assembled from string fragments, or invisible Unicode characters, "
+            "used to hide malicious instructions or code from reviewers and scanners while the agent still decodes "
+            "and runs it.",
         },
         "UNAUTHORIZED TOOL USE": {
             "scanner_category": "SECURITY VIOLATION",
@@ -167,7 +214,10 @@ class ThreatMapping:
             "aitech_name": "Tool Exploitation",
             "aisubtech": "AISubtech-12.1.3",
             "aisubtech_name": "Unsafe System / Browser / File Execution",
-            "description": "Using tools or capabilities beyond declared permissions.",
+            "description": "Using tools or capabilities beyond what a skill declares, such as running shell commands, "
+            "writing files, launching browsers, or reaching system resources not covered by its allowed-tools or "
+            "described purpose, causing system, browser, or file execution the user did not approve when installing "
+            "the skill.",
         },
         "SOCIAL ENGINEERING": {
             "scanner_category": "HARMFUL CONTENT",
@@ -176,7 +226,10 @@ class ThreatMapping:
             "aitech_name": "Harmful Content",
             "aisubtech": "AISubtech-15.1.12",
             "aisubtech_name": "Safety Harms and Toxicity: Scams and Deception",
-            "description": "Misleading descriptions or deceptive metadata.",
+            "description": "Misleading descriptions, deceptive metadata, or manipulative instructions in a skill that "
+            "misrepresent what it does or who published it, using false claims, fake urgency, or impersonated "
+            "authority to win the trust of the user or the agent and obtain approvals, data, or actions they would "
+            "otherwise refuse.",
         },
         "RESOURCE ABUSE": {
             "scanner_category": "RESOURCE ABUSE",
@@ -185,7 +238,9 @@ class ThreatMapping:
             "aitech_name": "Disruption of Availability",
             "aisubtech": "AISubtech-13.1.1",
             "aisubtech_name": "Compute Exhaustion",
-            "description": "Excessive resource consumption or denial of service.",
+            "description": "Excessive consumption of compute, memory, disk, or API capacity by a skill's scripts or "
+            "instructions, such as unbounded loops, fork bombs, recursive invocations, or processing oversized "
+            "payloads without limits, degrading the host running the agent or causing denial of service.",
         },
         "PROMPT INJECTION": {
             "scanner_category": "PROMPT INJECTION",
@@ -194,7 +249,10 @@ class ThreatMapping:
             "aitech_name": "Direct Prompt Injection and Jailbreak (Prompt-based Manipulation)",
             "aisubtech": "AISubtech-1.1.1",
             "aisubtech_name": "Instruction Manipulation",
-            "description": "Explicit attempts to override system instructions through direct input.",
+            "description": "Explicit attempts in a skill's SKILL.md instructions, frontmatter, or bundled reference "
+            "files to override, replace, or reprioritize the agent's system instructions, developer directives, or "
+            "safety rules, causing the agent to follow attacker-controlled instructions instead of its intended "
+            'behavior once the skill is loaded (e.g., "Ignore all previous instructions").',
         },
         "CODE EXECUTION": {
             "scanner_category": "SUSPICIOUS CODE EXECUTION",
@@ -203,7 +261,9 @@ class ThreatMapping:
             "aitech_name": "Model or Agentic System Manipulation",
             "aisubtech": "AISubtech-9.1.1",
             "aisubtech_name": "Code Execution",
-            "description": "Autonomously generating, interpreting, or executing code, leading to unsolicited or unauthorized code execution.",
+            "description": "Autonomously generating, interpreting, or executing code through a skill, such as eval, "
+            "exec, compile, dynamic imports, or scripts that download and run further code, leading to unsolicited or "
+            "unauthorized code execution on the host running the agent.",
         },
         "INJECTION ATTACK": {
             "scanner_category": "INJECTION ATTACK",
@@ -212,7 +272,9 @@ class ThreatMapping:
             "aitech_name": "Model or Agentic System Manipulation",
             "aisubtech": "AISubtech-9.1.4",
             "aisubtech_name": "Injection Attacks (e.g., SQL, Command Execution, XSS)",
-            "description": "Injecting malicious payloads such as SQL queries, command sequences, or scripts.",
+            "description": "Injecting malicious payloads such as SQL queries, command sequences, or scripts into the "
+            "scripts or tools a skill runs on model or user input, leading to data exposure, remote code execution, "
+            "or compromise of the underlying system environment.",
         },
         "CREDENTIAL HARVESTING": {
             "scanner_category": "SECURITY VIOLATION",
@@ -221,7 +283,10 @@ class ThreatMapping:
             "aitech_name": "Unauthorized Access",
             "aisubtech": "AISubtech-14.1.1",
             "aisubtech_name": "Credential Theft",
-            "description": "Unauthorized exposure or exfiltration of credentials or sensitive information.",
+            "description": "Unauthorized collection or exfiltration of credentials by a skill, such as reading SSH "
+            "keys, cloud provider credentials, browser-stored passwords, .env files, or token caches and then "
+            "storing, printing, or sending them, enabling account takeover or access to the services those "
+            "credentials protect.",
         },
         "SYSTEM MANIPULATION": {
             "scanner_category": "SYSTEM MANIPULATION",
@@ -230,7 +295,10 @@ class ThreatMapping:
             "aitech_name": "Model or Agentic System Manipulation",
             "aisubtech": "AISubtech-9.1.2",
             "aisubtech_name": "Unauthorized or Unsolicited System Access",
-            "description": "Manipulating or accessing underlying system resources without authorization.",
+            "description": "Manipulating or accessing underlying system resources without authorization through a "
+            "skill's scripts or instructions, leading to unsolicited modification or deletion of files, permissions, "
+            "shell profiles, scheduled tasks, or agent configuration through commands the agent runs on the user's "
+            "behalf.",
         },
         "SUPPLY CHAIN ATTACK": {
             "scanner_category": "SUPPLY CHAIN ATTACK",
@@ -239,8 +307,9 @@ class ThreatMapping:
             "aitech_name": "Dependency / Plugin Compromise",
             "aisubtech": "AISubtech-9.3.1",
             "aisubtech_name": "Malicious Package / Tool Injection",
-            "description": "Bytecode poisoning, archive payload delivery, or dependency replacement "
-            "that compromises the supply chain integrity of a skill package.",
+            "description": "Introduction of malicious or tampered code into a skill package or its dependency chain, "
+            "such as poisoned bytecode, archives that deliver payloads on extraction, or replaced dependencies and "
+            "install steps, so the agent unknowingly runs compromised code when the skill is installed or used.",
         },
     }
 
@@ -253,7 +322,10 @@ class ThreatMapping:
             "aitech_name": "Direct Prompt Injection and Jailbreak (Prompt-based Manipulation)",
             "aisubtech": "AISubtech-1.1.1",
             "aisubtech_name": "Instruction Manipulation",
-            "description": "Malicious manipulation of tool metadata or descriptions that mislead the LLM.",
+            "description": "Malicious manipulation of a skill's metadata, descriptions, or instruction text that "
+            "misleads the agent into invoking tools incorrectly or exposing confidential context, combined with "
+            "hidden or conflicting instructions that alter the agent's reasoning or bypass the host's content "
+            "restrictions.",
         },
         "RESOURCE EXHAUSTION": {
             "scanner_category": "RESOURCE ABUSE",
@@ -262,7 +334,9 @@ class ThreatMapping:
             "aitech_name": "Disruption of Availability",
             "aisubtech": "AISubtech-13.1.1",
             "aisubtech_name": "Compute Exhaustion",
-            "description": "Overloading the system via repeated invocations or large payloads to cause denial of service.",
+            "description": "Overloading the host running the agent through a skill's code, such as repeated tool "
+            "invocations, unbounded loops or recursion, or processing large files without rate limits or break "
+            "conditions, degrading performance or causing denial of service.",
         },
     }
 
@@ -385,6 +459,11 @@ class ThreatMapping:
             aitech_code=aitech_code if aitech_code.startswith("AITech-") else None,
             aisubtech_code=aisubtech_code if aisubtech_code.startswith("AISubtech-") else None,
         )
+
+
+# =============================================================================
+# SECTION 2: CUSTOM MAPPINGS & HELPER FUNCTIONS
+# =============================================================================
 
 
 _THREAT_MAPPING_ENV_VAR = "SKILL_SCANNER_THREAT_MAPPING_PATH"
