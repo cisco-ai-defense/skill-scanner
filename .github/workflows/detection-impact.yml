@@ -259,6 +259,10 @@ jobs:
               finally:
                   sock.close()
           PY
+          if sudo -n true 2>/dev/null; then
+            echo "::error::scan sandbox can still use sudo"
+            exit 1
+          fi
           cd "$tree"
           "$python" evals/runners/cross_tool_benchmark.py \
             --tool skill-scanner --arm static --profile core \
@@ -268,7 +272,7 @@ jobs:
             --output-dir "$out"
           SCAN
           mkdir -p "$RUNNER_TEMP/rows/$TREE"
-          sudo unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups \
+          sudo unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --clear-groups --no-new-privs \
             env -i PATH="$PATH" HOME="$HOME" LANG=C.UTF-8 \
               SKILL_SCANNER_DISABLE_NETWORK=1 HF_HUB_OFFLINE=1 NO_PROXY='*' \
             bash "$RUNNER_TEMP/scan.sh" \

@@ -278,8 +278,10 @@ jobs:
           # a down loopback interface, so nothing in the scan can open a socket, while
           # the runner agent keeps its own connection to GitHub. Rejecting the runner
           # UID with iptables also cut the agent off, and the job then failed with
-          # "The hosted runner lost communication with the server". Only the
-          # variables listed here cross into the sandbox.
+          # "The hosted runner lost communication with the server". The scan runs
+          # without supplementary groups (no docker socket) and with no_new_privs,
+          # so it cannot use sudo or another setuid program to reach the host
+          # network. Only the variables listed here cross into the sandbox.
           sandbox_env=(
             PATH="$PATH" HOME="$HOME" LANG=C.UTF-8
             RUNNER_TEMP="$RUNNER_TEMP" GITHUB_WORKSPACE="$GITHUB_WORKSPACE"
@@ -328,6 +330,11 @@ jobs:
               finally:
                   sock.close()
           PY
+
+          if sudo -n true 2>/dev/null; then
+            echo "::error::scan sandbox can still use sudo"
+            exit 1
+          fi
 
           work="$RUNNER_TEMP/release-evidence-work"
           evidence="$RUNNER_TEMP/release-evidence"
@@ -383,7 +390,7 @@ jobs:
           install -m 600 "$work/release-gate-result.json" "$evidence/release-gate-result.json"
           SCANS
 
-          sudo unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups \
+          sudo unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --clear-groups --no-new-privs \
             env -i "${sandbox_env[@]}" bash "$scan_script"
 
       - name: Resolve fixed release evidence artifact name
