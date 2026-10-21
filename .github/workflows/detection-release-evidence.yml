@@ -274,18 +274,30 @@ jobs:
             exit 1
           fi
 
-          runner_uid="$(id -u)"
-          sudo iptables -I OUTPUT 1 -m owner --uid-owner "$runner_uid" -j REJECT
-          sudo ip6tables -I OUTPUT 1 -m owner --uid-owner "$runner_uid" -j REJECT
-          firewall_active=true
-          cleanup_firewall() {
-            if [[ "$firewall_active" == true ]]; then
-              sudo iptables -D OUTPUT -m owner --uid-owner "$runner_uid" -j REJECT
-              sudo ip6tables -D OUTPUT -m owner --uid-owner "$runner_uid" -j REJECT
-              firewall_active=false
+          # Run the scans in a fresh network namespace as the same user. It has only
+          # a down loopback interface, so nothing in the scan can open a socket, while
+          # the runner agent keeps its own connection to GitHub. Rejecting the runner
+          # UID with iptables also cut the agent off, and the job then failed with
+          # "The hosted runner lost communication with the server". Only the
+          # variables listed here cross into the sandbox.
+          sandbox_env=(
+            PATH="$PATH" HOME="$HOME" LANG=C.UTF-8
+            RUNNER_TEMP="$RUNNER_TEMP" GITHUB_WORKSPACE="$GITHUB_WORKSPACE"
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" GITHUB_REPOSITORY="$GITHUB_REPOSITORY"
+            RELEASE_SHA="$RELEASE_SHA" ARTIFACT_NAME="$ARTIFACT_NAME"
+            SKILL_SCANNER_SOURCE_REVISION="$SKILL_SCANNER_SOURCE_REVISION"
+            SKILL_SCANNER_DISABLE_NETWORK=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 NO_PROXY='*'
+          )
+          while IFS='=' read -r name _; do
+            if [[ "$name" == UV_* ]]; then
+              sandbox_env+=("$name=${!name}")
             fi
-          }
-          trap cleanup_firewall EXIT INT TERM
+          done < <(env)
+
+          scan_script="$RUNNER_TEMP/offline-release-scans.sh"
+          cat > "$scan_script" <<'SCANS'
+          set -eo pipefail
+          cd "$GITHUB_WORKSPACE"
 
           # The public runner uses the core-only factory, which excludes optional
           # network analyzers. Also fail if the full factory's optional defaults
@@ -300,7 +312,7 @@ jobs:
               raise SystemExit("release benchmark would enable an LLM or OSV analyzer")
           PY
 
-          # Prove the scanner's UID cannot open an external IPv4 or IPv6 socket.
+          # Prove the scan cannot open an external IPv4 or IPv6 socket.
           uv run --no-sync python - <<'PY'
           import socket
 
@@ -369,9 +381,10 @@ jobs:
             '.status == "passed" and .public.source_revision == $sha and .promotion_evidence.complete_public_release_run_passed == true' \
             "$work/release-gate-result.json" >/dev/null
           install -m 600 "$work/release-gate-result.json" "$evidence/release-gate-result.json"
+          SCANS
 
-          cleanup_firewall
-          trap - EXIT INT TERM
+          sudo unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups \
+            env -i "${sandbox_env[@]}" bash "$scan_script"
 
       - name: Resolve fixed release evidence artifact name
         id: artifact-name
