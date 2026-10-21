@@ -3,8 +3,8 @@ class SkillScanner < Formula
 
   desc "Security scanner for AI Agent Skills and MCP servers"
   homepage "https://github.com/cisco-ai-defense/skill-scanner"
-  url "https://files.pythonhosted.org/packages/5a/ee/39d9251ebff6faf6a72b3eeb49f219270a2be81ae903902e2e0f0d6b3d2e/cisco_ai_skill_scanner-2.3.0.tar.gz"
-  sha256 "11e78c3d816f7561c299146c7cfcdfd6433dd433f0fbf040393404205d0fde99"
+  url "https://files.pythonhosted.org/packages/65/66/4dfb3b610799159d27dcb5b4dcb0f1aff739c2f27d159dedded844735229/cisco_ai_skill_scanner-2.3.1.tar.gz"
+  sha256 "9d7f7ee5503a2694aab6f963203ded30976bfb36282217d12713cffbbacbc4f9"
   license "Apache-2.0"
 
   depends_on macos: :sonoma
@@ -18,8 +18,8 @@ class SkillScanner < Formula
 
   on_arm do
     resource "cel-helper" do
-      url "https://files.pythonhosted.org/packages/95/ec/e169a1d75a5ed33e0ed0e873337ae7a7adb7fb6268e0e89be8bb80b3653d/cisco_ai_skill_scanner-2.3.0-cp311.cp312.cp313.cp314-none-macosx_13_0_arm64.whl"
-      sha256 "8272624385351eaab7e5b7bddccc2e109532ea590744497b1562973eb0869b8c"
+      url "https://files.pythonhosted.org/packages/21/c2/c48785204f56206ddc6c788782052a6cd6fce083f5941e7b095b5e40ee90/cisco_ai_skill_scanner-2.3.1-cp311.cp312.cp313.cp314-none-macosx_13_0_arm64.whl"
+      sha256 "28a1e168d6b6af5d7615d6b157dccca551a68d59cc96952d0b21658349fd28ac"
     end
     resource "aiohappyeyeballs" do
       url "https://files.pythonhosted.org/packages/71/43/1947f06babed6b3f1d7f38b0c767f52df66bfb2bc10b468c4a7de9eceff2/aiohappyeyeballs-2.7.1-py3-none-any.whl", using: :nounzip
@@ -54,16 +54,16 @@ class SkillScanner < Formula
       sha256 "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309"
     end
     resource "boto3" do
-      url "https://files.pythonhosted.org/packages/c8/f8/0799a101e6f65c8b687f50c218654cef1e44658e946c7d33d362e2572621/boto3-1.43.114-py3-none-any.whl", using: :nounzip
-      sha256 "d9cac2eb921ce674970cef1c9ad750f85ee3a846aedcf188d18368fb9eb6da23"
+      url "https://files.pythonhosted.org/packages/78/de/cf71466f55516e61d8048374776b390a036a1b48c9a7a4cd8e21f8b27980/boto3-1.43.116-py3-none-any.whl", using: :nounzip
+      sha256 "9dca4dbd464b189041b27b5a02280bd5e02c3051bebf6bd03cd0e47aaf558030"
     end
     resource "botocore" do
-      url "https://files.pythonhosted.org/packages/9a/41/7c6fa7ac5fcfd5ea3c6f32aab001942da32b184a210f39042778cb1ad8ed/botocore-1.43.114-py3-none-any.whl", using: :nounzip
-      sha256 "d1c441a22e93e158de5b1e026205f5d6d67a4545d10540c5090c62dccb3a9eca"
+      url "https://files.pythonhosted.org/packages/3e/2e/449851ffdd5c6cd521d309bba501077025929ba0ef005a3052f43fca509e/botocore-1.43.116-py3-none-any.whl", using: :nounzip
+      sha256 "92f1efe8434183f08f91a61478925f5f8d23082024556f269f916477040e26f4"
     end
     resource "certifi" do
-      url "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl", using: :nounzip
-      sha256 "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
+      url "https://files.pythonhosted.org/packages/c4/51/29046e48f693c54e5b7412216d447a1d8362c9653148d98c02cdf65fa733/certifi-2026.10.19-py3-none-any.whl", using: :nounzip
+      sha256 "42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b"
     end
     resource "cffi" do
       url "https://files.pythonhosted.org/packages/54/7d/16e5a096677b5e313ca80cd5e5170efa3ea44624a82bb111925522da64b1/cffi-2.1.1-cp312-cp312-macosx_11_0_arm64.whl", using: :nounzip
@@ -102,8 +102,8 @@ class SkillScanner < Formula
       sha256 "33498710c68b5376b459cd3fc48d1d1f33822139eb3ed01defbc0528326da3ba"
     end
     resource "fastapi" do
-      url "https://files.pythonhosted.org/packages/ca/73/30ee3dd8f26fd385e451bbded9e1b54766a277db588e70154dd894f4b698/fastapi-0.143.1-py3-none-any.whl", using: :nounzip
-      sha256 "687beb445804e4c4dbe2a76fd83c25e9b973ac48c267defb86f791e099baecc4"
+      url "https://files.pythonhosted.org/packages/50/c3/759716158338892ed8e483077241cdf80e1fd727f56baf750c75bfea58de/fastapi-0.157.0-py3-none-any.whl", using: :nounzip
+      sha256 "45b5cbf098ce3f47e008ca67931ce333d028129c823e3b6766a3bd0d70b81f7f"
     end
     resource "fastuuid" do
       url "https://files.pythonhosted.org/packages/02/a2/e78fcc5df65467f0d207661b7ef86c5b7ac62eea337c0c0fcedbeee6fb13/fastuuid-0.14.0-cp312-cp312-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", using: :nounzip
@@ -202,8 +202,8 @@ class SkillScanner < Formula
       sha256 "3adc40eb5af300b2605fcfdb968c24e1d780a90f1f2221af7c15e5111e94d443"
     end
     resource "litellm" do
-      url "https://files.pythonhosted.org/packages/40/3b/a060486a4cb637d2aff7bedd2d9bdd807793cf8820153bca74fd14d7cbd4/litellm-1.105.1-cp310-abi3-macosx_11_0_arm64.whl", using: :nounzip
-      sha256 "3253da7d4967e367fb7e4e404b598a26037c45ba6d67a79356a81d3f8b9f9f3a"
+      url "https://files.pythonhosted.org/packages/51/fc/15e44b2a222dfda71e0aff107fccfb49b06a4695fae0eb6867aff84f7e1d/litellm-1.106.2-cp310-abi3-macosx_11_0_arm64.whl", using: :nounzip
+      sha256 "cc778d01ed65a8dd57d5211d581ec237e06df239a09c3d573ace33e0feea76c9"
     end
     resource "magika" do
       url "https://files.pythonhosted.org/packages/93/eb/24d94db0530029649b266ec3ca8221c07f2754f56046181f13237d2518f5/magika-1.0.3-py3-none-any.whl", using: :nounzip
@@ -274,12 +274,12 @@ class SkillScanner < Formula
       sha256 "9b9b72145a81759c6e9f327eb0e115a30a3fbd140fa5bd5da0d1956ec4c9f65a"
     end
     resource "platformdirs" do
-      url "https://files.pythonhosted.org/packages/8d/15/1633010b26e88e872c93b67c0b6c5e174fb74cb6fb5c1472b4d51d4a8f22/platformdirs-4.13.0-py3-none-any.whl", using: :nounzip
-      sha256 "3dbcf4cd708f21cf876c4eaa90e58412bc4f033d87143f41b1493ff77c25b7e1"
+      url "https://files.pythonhosted.org/packages/6c/8a/1d8cb3842909dc193a73835adedf412e32e18f8ffd59f43983949622fe6f/platformdirs-4.13.5-py3-none-any.whl", using: :nounzip
+      sha256 "53d3ec4280b815c1e0b02edad7f9ee8fda1ba9c0865dd9c2e6e63849ce82fc1e"
     end
     resource "pluggy" do
-      url "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", using: :nounzip
-      sha256 "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"
+      url "https://files.pythonhosted.org/packages/40/9e/2b38731e0fc536806f16490e1a12d7f0dc2a1235aa8cc07bcc75416a7daa/pluggy-1.7.0-py3-none-any.whl", using: :nounzip
+      sha256 "7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec"
     end
     resource "propcache" do
       url "https://files.pythonhosted.org/packages/f5/cd/785c64ed382f3f04201870267b02783f63b4678c2acfddc177a3ebcc2727/propcache-0.5.4-py3-none-any.whl", using: :nounzip
@@ -302,8 +302,8 @@ class SkillScanner < Formula
       sha256 "e8e1d6ce820aa23317e8209a86bd65a540973c12dc7552b48a4f6c8e9926815e"
     end
     resource "pydantic-settings" do
-      url "https://files.pythonhosted.org/packages/53/f4/b987bf8c51e5b19a95fa66d1ee596074141e085d9c2ddf97920803c7029b/pydantic_settings-2.16.0-py3-none-any.whl", using: :nounzip
-      sha256 "7e73acf7f61936a15e5a3b6eedaea29f133357faf7272f2607ba479b049dd7f2"
+      url "https://files.pythonhosted.org/packages/3c/74/fdf926afe145d8629c4b2ff57f4ea1d64ed7abc4d84d97463b2517a2547e/pydantic_settings-2.16.1-py3-none-any.whl", using: :nounzip
+      sha256 "30f5313340da4e8f1b440d1910b92a5bc3ccbb6b4ba70ec2b8395bc921f418f5"
     end
     resource "Pygments" do
       url "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl", using: :nounzip
@@ -358,12 +358,12 @@ class SkillScanner < Formula
       sha256 "e21c1429e205828ea886a2293a4a2c8e01f4c25d9893ca330e97a6cf73f52e7b"
     end
     resource "s3transfer" do
-      url "https://files.pythonhosted.org/packages/bc/e7/5c595c75e9f41a44f30e526eda465ea0b4eec93470e074e4a111b253f13a/s3transfer-0.19.2-py3-none-any.whl", using: :nounzip
-      sha256 "d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25"
+      url "https://files.pythonhosted.org/packages/e2/a4/88f9e10498759121060b8050a1554753dfc04df39bbbcc7aad9ecc8d9440/s3transfer-0.19.3-py3-none-any.whl", using: :nounzip
+      sha256 "24eb7535804306355e31c952a90022bf5b2f9d760f9a11062c7493a217c08553"
     end
     resource "setuptools" do
-      url "https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl", using: :nounzip
-      sha256 "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670"
+      url "https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl", using: :nounzip
+      sha256 "ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2"
     end
     resource "setuptools-scm" do
       url "https://files.pythonhosted.org/packages/da/f5/54538a1f17ea753c42b0928dc2e62986d463f8c393340b9a1e602f2d4dd9/setuptools_scm-10.3.4-py3-none-any.whl", using: :nounzip
@@ -378,8 +378,8 @@ class SkillScanner < Formula
       sha256 "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2"
     end
     resource "starlette" do
-      url "https://files.pythonhosted.org/packages/c1/b0/5742e4ac7af5eb58ec3470a537a49d7aa507e5539413e504b3a65ef50ba8/starlette-1.8.0-py3-none-any.whl", using: :nounzip
-      sha256 "dfdd6b29c26483288088d990eee59631dedadd66ce20d203402a7ca8e3c4656f"
+      url "https://files.pythonhosted.org/packages/f3/93/181df62699d9b5aca1d87e5cfda131dac87e3cdaebf668662f7206ca3470/starlette-1.9.0-py3-none-any.whl", using: :nounzip
+      sha256 "fd3f159936e882d06c1108f84688f7cda2cf85fc6a592a50edbd175e882c2ddc"
     end
     resource "tabulate" do
       url "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl", using: :nounzip
@@ -398,8 +398,8 @@ class SkillScanner < Formula
       sha256 "68649e97d5b43c44c031d8d848874a6eecae8f8fe40ea989aa777a5a83aca716"
     end
     resource "tomlkit" do
-      url "https://files.pythonhosted.org/packages/13/bc/8c13eb66537dce1d2bd3a57132902f38d0e7f5bb46fa9f4daed9fe9d76ee/tomlkit-0.15.1-py3-none-any.whl", using: :nounzip
-      sha256 "177a05aece5a8ca5266fd3c448abb47b8d352f09d477d3ca8332db4d89b24304"
+      url "https://files.pythonhosted.org/packages/da/46/7d84138a60a8bd796825b2d38ebe92d0d16501ca57d501b7c5d677401bbc/tomlkit-0.15.2-py3-none-any.whl", using: :nounzip
+      sha256 "05562412163a3037b94497385fb7f9204c637bc605af7a48199e41cf2272f437"
     end
     resource "tqdm" do
       url "https://files.pythonhosted.org/packages/a7/03/921a3d3c75785aca9ebfbfcabfbc3a1be12e2ab5265deb026d55a5a3f83e/tqdm-4.70.1-py3-none-any.whl", using: :nounzip
@@ -438,12 +438,12 @@ class SkillScanner < Formula
       sha256 "bbc1198edfdc90fda0600f825aa94150f428dfcbf8138746f55998e0e660d64c"
     end
     resource "websockets" do
-      url "https://files.pythonhosted.org/packages/8a/58/835cd51934d6780fa586f275b5d9901eead6d81569b4343b3767cdbaae4c/websockets-17.2-py3-none-any.whl", using: :nounzip
-      sha256 "6aa59f0ef92e796b2db6f5f26550c4713c0e4036899fadf02f55e2ed4db0b7ae"
+      url "https://files.pythonhosted.org/packages/d7/b0/3f01fcb3406662f6deb1e3e72b34dd0979e993991c0b7435a9e12bc14f02/websockets-17.3-py3-none-any.whl", using: :nounzip
+      sha256 "dc2b495a92b3971966bf102e73589f950db3ec1ca6713265355ce7771d97b199"
     end
     resource "yara-x" do
-      url "https://files.pythonhosted.org/packages/ea/f3/d5646eabcd9d3920a5bcf77de64077df7e88f245842a4ac555d12280a220/yara_x-1.21.0-cp38-abi3-macosx_14_0_arm64.whl", using: :nounzip
-      sha256 "24a739f492782335bb3b886cb2b6eaf008991f67b9e63e15b940af02aba233c0"
+      url "https://files.pythonhosted.org/packages/0f/bb/22b5cb8b57d60a258196ff46392be59f9261c7dd33a237960059de5c9d55/yara_x-1.22.0-cp39-abi3-macosx_14_0_arm64.whl", using: :nounzip
+      sha256 "eb6d4812e73614643f3c10a2592692b544ca7db43eacb2c8c649a1c9658382c3"
     end
     resource "yarl" do
       url "https://files.pythonhosted.org/packages/54/22/318c7980066769c6bcd9221ed2248294f5698811da099013098c670565ed/yarl-1.25.1-py3-none-any.whl", using: :nounzip
@@ -456,8 +456,8 @@ class SkillScanner < Formula
   end
   on_intel do
     resource "cel-helper" do
-      url "https://files.pythonhosted.org/packages/03/6b/c0956d5932246354ff2f53ca1ad1e12464183b1279466b3febc1e1601e41/cisco_ai_skill_scanner-2.3.0-cp311.cp312.cp313.cp314-none-macosx_13_0_x86_64.whl"
-      sha256 "b04a05c6282a8f959d8178734c5bbd6c2c2d1c98f543c7ae087724c7104881b1"
+      url "https://files.pythonhosted.org/packages/ce/28/f49415469823bff3651fe5f4b93b43fa1d8ae21f5cf730ae2de804967d20/cisco_ai_skill_scanner-2.3.1-cp311.cp312.cp313.cp314-none-macosx_13_0_x86_64.whl"
+      sha256 "513648df459f0c05ba7bd7eb9dce51329aaf9d979a98acd5503521d43243fc2d"
     end
     resource "aiohappyeyeballs" do
       url "https://files.pythonhosted.org/packages/71/43/1947f06babed6b3f1d7f38b0c767f52df66bfb2bc10b468c4a7de9eceff2/aiohappyeyeballs-2.7.1-py3-none-any.whl", using: :nounzip
@@ -492,16 +492,16 @@ class SkillScanner < Formula
       sha256 "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309"
     end
     resource "boto3" do
-      url "https://files.pythonhosted.org/packages/c8/f8/0799a101e6f65c8b687f50c218654cef1e44658e946c7d33d362e2572621/boto3-1.43.114-py3-none-any.whl", using: :nounzip
-      sha256 "d9cac2eb921ce674970cef1c9ad750f85ee3a846aedcf188d18368fb9eb6da23"
+      url "https://files.pythonhosted.org/packages/78/de/cf71466f55516e61d8048374776b390a036a1b48c9a7a4cd8e21f8b27980/boto3-1.43.116-py3-none-any.whl", using: :nounzip
+      sha256 "9dca4dbd464b189041b27b5a02280bd5e02c3051bebf6bd03cd0e47aaf558030"
     end
     resource "botocore" do
-      url "https://files.pythonhosted.org/packages/9a/41/7c6fa7ac5fcfd5ea3c6f32aab001942da32b184a210f39042778cb1ad8ed/botocore-1.43.114-py3-none-any.whl", using: :nounzip
-      sha256 "d1c441a22e93e158de5b1e026205f5d6d67a4545d10540c5090c62dccb3a9eca"
+      url "https://files.pythonhosted.org/packages/3e/2e/449851ffdd5c6cd521d309bba501077025929ba0ef005a3052f43fca509e/botocore-1.43.116-py3-none-any.whl", using: :nounzip
+      sha256 "92f1efe8434183f08f91a61478925f5f8d23082024556f269f916477040e26f4"
     end
     resource "certifi" do
-      url "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl", using: :nounzip
-      sha256 "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
+      url "https://files.pythonhosted.org/packages/c4/51/29046e48f693c54e5b7412216d447a1d8362c9653148d98c02cdf65fa733/certifi-2026.10.19-py3-none-any.whl", using: :nounzip
+      sha256 "42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b"
     end
     resource "cffi" do
       url "https://files.pythonhosted.org/packages/10/69/43965eccfdead3b9220015fd1320e117be8c6ed01a62ffab76eeb752f5d5/cffi-2.1.1-cp312-cp312-macosx_10_15_x86_64.whl", using: :nounzip
@@ -544,8 +544,8 @@ class SkillScanner < Formula
       sha256 "33498710c68b5376b459cd3fc48d1d1f33822139eb3ed01defbc0528326da3ba"
     end
     resource "fastapi" do
-      url "https://files.pythonhosted.org/packages/ca/73/30ee3dd8f26fd385e451bbded9e1b54766a277db588e70154dd894f4b698/fastapi-0.143.1-py3-none-any.whl", using: :nounzip
-      sha256 "687beb445804e4c4dbe2a76fd83c25e9b973ac48c267defb86f791e099baecc4"
+      url "https://files.pythonhosted.org/packages/50/c3/759716158338892ed8e483077241cdf80e1fd727f56baf750c75bfea58de/fastapi-0.157.0-py3-none-any.whl", using: :nounzip
+      sha256 "45b5cbf098ce3f47e008ca67931ce333d028129c823e3b6766a3bd0d70b81f7f"
     end
     resource "fastuuid" do
       url "https://files.pythonhosted.org/packages/02/a2/e78fcc5df65467f0d207661b7ef86c5b7ac62eea337c0c0fcedbeee6fb13/fastuuid-0.14.0-cp312-cp312-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", using: :nounzip
@@ -648,8 +648,8 @@ class SkillScanner < Formula
       sha256 "3adc40eb5af300b2605fcfdb968c24e1d780a90f1f2221af7c15e5111e94d443"
     end
     resource "litellm" do
-      url "https://files.pythonhosted.org/packages/d7/71/72b0e4c54a8fb0e10a35adb611f2f03febc27ac4fdf9b372c4f4a7d53442/litellm-1.105.1-cp310-abi3-macosx_10_12_x86_64.whl", using: :nounzip
-      sha256 "633886584ffb6421485349376f2c1666d4854fecc3ab8b1cdb24537817d4e1cc"
+      url "https://files.pythonhosted.org/packages/0f/47/1038af80d9831972fae8712a890c30252f51c514c092d83e0f1330bb1fa1/litellm-1.106.2-cp310-abi3-macosx_10_12_x86_64.whl", using: :nounzip
+      sha256 "bf6f13445bb59d8d02131bbc1fb57161d1ae629bec65dc66f9add4c09fb6994a"
     end
     resource "magika" do
       url "https://files.pythonhosted.org/packages/93/eb/24d94db0530029649b266ec3ca8221c07f2754f56046181f13237d2518f5/magika-1.0.3-py3-none-any.whl", using: :nounzip
@@ -724,12 +724,12 @@ class SkillScanner < Formula
       sha256 "9b9b72145a81759c6e9f327eb0e115a30a3fbd140fa5bd5da0d1956ec4c9f65a"
     end
     resource "platformdirs" do
-      url "https://files.pythonhosted.org/packages/8d/15/1633010b26e88e872c93b67c0b6c5e174fb74cb6fb5c1472b4d51d4a8f22/platformdirs-4.13.0-py3-none-any.whl", using: :nounzip
-      sha256 "3dbcf4cd708f21cf876c4eaa90e58412bc4f033d87143f41b1493ff77c25b7e1"
+      url "https://files.pythonhosted.org/packages/6c/8a/1d8cb3842909dc193a73835adedf412e32e18f8ffd59f43983949622fe6f/platformdirs-4.13.5-py3-none-any.whl", using: :nounzip
+      sha256 "53d3ec4280b815c1e0b02edad7f9ee8fda1ba9c0865dd9c2e6e63849ce82fc1e"
     end
     resource "pluggy" do
-      url "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", using: :nounzip
-      sha256 "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"
+      url "https://files.pythonhosted.org/packages/40/9e/2b38731e0fc536806f16490e1a12d7f0dc2a1235aa8cc07bcc75416a7daa/pluggy-1.7.0-py3-none-any.whl", using: :nounzip
+      sha256 "7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec"
     end
     resource "propcache" do
       url "https://files.pythonhosted.org/packages/f5/cd/785c64ed382f3f04201870267b02783f63b4678c2acfddc177a3ebcc2727/propcache-0.5.4-py3-none-any.whl", using: :nounzip
@@ -752,8 +752,8 @@ class SkillScanner < Formula
       sha256 "704075d10b74f2f3c6e15407c696d88701df35fc8953f434a431add0d0074db0"
     end
     resource "pydantic-settings" do
-      url "https://files.pythonhosted.org/packages/53/f4/b987bf8c51e5b19a95fa66d1ee596074141e085d9c2ddf97920803c7029b/pydantic_settings-2.16.0-py3-none-any.whl", using: :nounzip
-      sha256 "7e73acf7f61936a15e5a3b6eedaea29f133357faf7272f2607ba479b049dd7f2"
+      url "https://files.pythonhosted.org/packages/3c/74/fdf926afe145d8629c4b2ff57f4ea1d64ed7abc4d84d97463b2517a2547e/pydantic_settings-2.16.1-py3-none-any.whl", using: :nounzip
+      sha256 "30f5313340da4e8f1b440d1910b92a5bc3ccbb6b4ba70ec2b8395bc921f418f5"
     end
     resource "Pygments" do
       url "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl", using: :nounzip
@@ -808,12 +808,12 @@ class SkillScanner < Formula
       sha256 "50906f5aea24b5a865cbd0a589698288631d9f3a54c3a937c83aefa95a0d14af"
     end
     resource "s3transfer" do
-      url "https://files.pythonhosted.org/packages/bc/e7/5c595c75e9f41a44f30e526eda465ea0b4eec93470e074e4a111b253f13a/s3transfer-0.19.2-py3-none-any.whl", using: :nounzip
-      sha256 "d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25"
+      url "https://files.pythonhosted.org/packages/e2/a4/88f9e10498759121060b8050a1554753dfc04df39bbbcc7aad9ecc8d9440/s3transfer-0.19.3-py3-none-any.whl", using: :nounzip
+      sha256 "24eb7535804306355e31c952a90022bf5b2f9d760f9a11062c7493a217c08553"
     end
     resource "setuptools" do
-      url "https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl", using: :nounzip
-      sha256 "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670"
+      url "https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl", using: :nounzip
+      sha256 "ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2"
     end
     resource "setuptools-scm" do
       url "https://files.pythonhosted.org/packages/da/f5/54538a1f17ea753c42b0928dc2e62986d463f8c393340b9a1e602f2d4dd9/setuptools_scm-10.3.4-py3-none-any.whl", using: :nounzip
@@ -828,8 +828,8 @@ class SkillScanner < Formula
       sha256 "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2"
     end
     resource "starlette" do
-      url "https://files.pythonhosted.org/packages/c1/b0/5742e4ac7af5eb58ec3470a537a49d7aa507e5539413e504b3a65ef50ba8/starlette-1.8.0-py3-none-any.whl", using: :nounzip
-      sha256 "dfdd6b29c26483288088d990eee59631dedadd66ce20d203402a7ca8e3c4656f"
+      url "https://files.pythonhosted.org/packages/f3/93/181df62699d9b5aca1d87e5cfda131dac87e3cdaebf668662f7206ca3470/starlette-1.9.0-py3-none-any.whl", using: :nounzip
+      sha256 "fd3f159936e882d06c1108f84688f7cda2cf85fc6a592a50edbd175e882c2ddc"
     end
     resource "sympy" do
       url "https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl", using: :nounzip
@@ -852,8 +852,8 @@ class SkillScanner < Formula
       sha256 "9d2b5c97daf61688c2ad1803ca851800feaba50fb68d5821779e9ea5880d968c"
     end
     resource "tomlkit" do
-      url "https://files.pythonhosted.org/packages/13/bc/8c13eb66537dce1d2bd3a57132902f38d0e7f5bb46fa9f4daed9fe9d76ee/tomlkit-0.15.1-py3-none-any.whl", using: :nounzip
-      sha256 "177a05aece5a8ca5266fd3c448abb47b8d352f09d477d3ca8332db4d89b24304"
+      url "https://files.pythonhosted.org/packages/da/46/7d84138a60a8bd796825b2d38ebe92d0d16501ca57d501b7c5d677401bbc/tomlkit-0.15.2-py3-none-any.whl", using: :nounzip
+      sha256 "05562412163a3037b94497385fb7f9204c637bc605af7a48199e41cf2272f437"
     end
     resource "tqdm" do
       url "https://files.pythonhosted.org/packages/a7/03/921a3d3c75785aca9ebfbfcabfbc3a1be12e2ab5265deb026d55a5a3f83e/tqdm-4.70.1-py3-none-any.whl", using: :nounzip
@@ -892,12 +892,12 @@ class SkillScanner < Formula
       sha256 "000b9688fc8133037a8b075c8ebf98f32844ff8964dda61e85c1db547dafc441"
     end
     resource "websockets" do
-      url "https://files.pythonhosted.org/packages/8a/58/835cd51934d6780fa586f275b5d9901eead6d81569b4343b3767cdbaae4c/websockets-17.2-py3-none-any.whl", using: :nounzip
-      sha256 "6aa59f0ef92e796b2db6f5f26550c4713c0e4036899fadf02f55e2ed4db0b7ae"
+      url "https://files.pythonhosted.org/packages/d7/b0/3f01fcb3406662f6deb1e3e72b34dd0979e993991c0b7435a9e12bc14f02/websockets-17.3-py3-none-any.whl", using: :nounzip
+      sha256 "dc2b495a92b3971966bf102e73589f950db3ec1ca6713265355ce7771d97b199"
     end
     resource "yara-x" do
-      url "https://files.pythonhosted.org/packages/6f/6b/362a34a3cfe186fb5a956d65c1f1c98fd14d8f8dfb322211c72c9bb6ab19/yara_x-1.21.0-cp38-abi3-macosx_14_0_x86_64.whl", using: :nounzip
-      sha256 "1c6e15cf61500bc27960099872586d41f3cfdd8597e4bb8d2f0361b921b118d9"
+      url "https://files.pythonhosted.org/packages/69/19/0365004e652a44dfccaa2fc73916b6c8e5ac0e64bbae1c0dfc301c5bdd63/yara_x-1.22.0-cp39-abi3-macosx_14_0_x86_64.whl", using: :nounzip
+      sha256 "1472591e7ec4a07be0e63383235fc2e8908b6d7d510b98d210068ffde30bbe10"
     end
     resource "yarl" do
       url "https://files.pythonhosted.org/packages/54/22/318c7980066769c6bcd9221ed2248294f5698811da099013098c670565ed/yarl-1.25.1-py3-none-any.whl", using: :nounzip
