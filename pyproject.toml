@@ -83,7 +83,8 @@ dependencies = [
     "openai>=2.0,<3",
     # Floor pin: avoid compromised PyPI lines in 1.80.16 / 1.82.3 / 1.82.8 (BerriAI/litellm#24512)
     # SSRF fix in 1.83.7 (GHSA-xqmj-j6mv-4862), CVE-2026-49468 in 1.84.0, PYSEC-2026-4066 in 1.89.7.
-    "litellm>=1.89.7,<2",
+    # Exclude 1.107.0: hijacked PyPI wheels with a .pth credential stealer (BerriAI/litellm#47826).
+    "litellm>=1.89.7,<2,!=1.107.0",
     # Floor pin: PYSEC-2026-2132 fixed in 8.3.3. Transitive via litellm/magika/uvicorn/typer.
     "click>=8.3.3",
     # Floor pin: PYSEC-2026-4175 through PYSEC-2026-4177. Transitive via requests/botocore.

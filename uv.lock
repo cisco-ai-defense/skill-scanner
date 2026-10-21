@@ -587,7 +587,7 @@ requires-dist = [
     { name = "httplib2", marker = "extra == 'google'", specifier = ">=0.32.0" },
     { name = "httplib2", marker = "extra == 'vertex'", specifier = ">=0.32.0" },
     { name = "httpx", specifier = ">=0.27,<1" },
-    { name = "litellm", specifier = ">=1.89.7,<2" },
+    { name = "litellm", specifier = ">=1.89.7,!=1.107.0,<2" },
     { name = "magika", specifier = ">=1.0,<2" },
     { name = "oletools", specifier = ">=0.60,<1" },
     { name = "openai", specifier = ">=2.0,<3" },
