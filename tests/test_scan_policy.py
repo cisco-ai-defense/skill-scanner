@@ -360,6 +360,19 @@ class TestScanPolicyPresets:
         with pytest.raises(ValueError, match="Unknown preset"):
             ScanPolicy.from_preset("nonexistent")
 
+    def test_presets_share_llm_context_budgets(self):
+        """A preset changes which findings are reported, not how much of the skill the LLM reads."""
+        budgets = {}
+        for name in ("strict", "balanced", "permissive", "low-noise", "quiet"):
+            llm = ScanPolicy.from_preset(name).llm_analysis
+            budgets[name] = (
+                llm.max_instruction_body_chars,
+                llm.max_code_file_chars,
+                llm.max_referenced_file_chars,
+                llm.max_total_prompt_chars,
+            )
+        assert len(set(budgets.values())) == 1, budgets
+
     def test_strict_has_fewer_benign_dotfiles(self):
         strict = ScanPolicy.from_preset("strict")
         balanced = ScanPolicy.from_preset("balanced")
