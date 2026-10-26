@@ -19,7 +19,7 @@ LLM-based analyzer for semantic security analysis.
 
 Production analyzer with:
 - LiteLLM for universal provider support (100+ models)
-- Prompt injection protection with random delimiters
+- Prompt injection protection with content-derived delimiters
 - Retry logic with exponential backoff
 - AWS Bedrock support with IAM roles
 - Async analysis for performance
@@ -71,6 +71,11 @@ _CONSENSUS_SEVERITY_RANK = {
 }
 
 _MAX_STRUCTURED_FINDINGS = 64
+# Deterministic findings below MEDIUM stay out of the model's context. LOW and INFO
+# findings are package hygiene (license, name format, description length) whose
+# thresholds are preset knobs, so passing them changed what the model read, and how
+# it rated unrelated issues, from one preset to the next.
+_MIN_STRUCTURED_FINDING_RANK = _CONSENSUS_SEVERITY_RANK[Severity.MEDIUM]
 _MAX_STRUCTURED_CONTEXT_CHARS = 32_768
 _MAX_CAPABILITIES = 64
 _MAX_INVENTORY_TYPES = 64
@@ -242,7 +247,7 @@ class LLMAnalyzer(BaseAnalyzer):
 
     Features:
     - Universal LLM support via LiteLLM (Anthropic, OpenAI, Azure, Bedrock)
-    - Prompt injection protection with random delimiters
+    - Prompt injection protection with content-derived delimiters
     - Retry logic with exponential backoff
     - Async analysis for better performance
     - AWS Bedrock credential support
@@ -491,7 +496,11 @@ class LLMAnalyzer(BaseAnalyzer):
 
         finding_rows: list[dict[str, Any]] = []
         ordered_findings = sorted(
-            deterministic_findings or [],
+            (
+                finding
+                for finding in deterministic_findings or []
+                if _CONSENSUS_SEVERITY_RANK.get(finding.severity, 0) >= _MIN_STRUCTURED_FINDING_RANK
+            ),
             key=lambda finding: (
                 -_CONSENSUS_SEVERITY_RANK.get(finding.severity, 0),
                 finding.rule_id,

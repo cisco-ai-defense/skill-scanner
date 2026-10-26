@@ -17,13 +17,12 @@
 """
 LLM Prompt Builder.
 
-Handles prompt construction with injection protection using random delimiters.
+Handles prompt construction with injection protection using content-derived delimiters.
 """
 
 import hashlib
 import logging
 import re
-import secrets
 from pathlib import Path
 
 from ...core.models import Skill
@@ -121,7 +120,8 @@ class PromptBuilder:
         """
         Create threat analysis prompt with prompt injection protection.
 
-        Uses random delimiter tags to prevent prompt injection attacks.
+        Wraps untrusted content in content-derived delimiter tags to prevent prompt
+        injection attacks.
 
         Args:
             skill_name: Name of the skill
@@ -137,11 +137,6 @@ class PromptBuilder:
         Returns:
             Tuple of (prompt, injection_detected)
         """
-        # Generate random delimiter tags
-        random_id = secrets.token_hex(16)
-        start_tag = f"<!---UNTRUSTED_INPUT_START_{random_id}--->"
-        end_tag = f"<!---UNTRUSTED_INPUT_END_{random_id}--->"
-
         # Build comprehensive analysis content
         analysis_content = f"""Skill Name: {skill_name}
 Description: {description}
@@ -166,13 +161,21 @@ TRUSTED_STRUCTURED_PRE_SCAN_CONTEXT_JSON:
 {enrichment_context}
 """
 
+        # Derive the delimiter tags from the wrapped content. A random tag made every
+        # scan of the same skill send a different prompt, so the model's findings,
+        # severities and titles moved between identical scans. Content cannot carry
+        # its own tag: the tag is a hash of the text that would have to contain it.
+        delimiter_id = hashlib.sha256(analysis_content.encode("utf-8", errors="replace")).hexdigest()[:32]
+        start_tag = f"<!---UNTRUSTED_INPUT_START_{delimiter_id}--->"
+        end_tag = f"<!---UNTRUSTED_INPUT_END_{delimiter_id}--->"
+
         # Check for delimiter injection (security violation)
         injection_detected = start_tag in analysis_content or end_tag in analysis_content
 
         if injection_detected:
             logger.warning("Potential prompt injection detected in skill %s", skill_name)
 
-        # Replace placeholders with random tags
+        # Replace placeholders with the derived tags
         protected_rules = self.protection_rules.replace("<!---UNTRUSTED_INPUT_START--->", start_tag).replace(
             "<!---UNTRUSTED_INPUT_END--->", end_tag
         )

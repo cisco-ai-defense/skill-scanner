@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 import pytest
 from jsonschema import Draft202012Validator
 
+from skill_scanner.core.analyzer_factory import build_core_analyzers
 from skill_scanner.core.analyzers import llm_request_handler
 from skill_scanner.core.analyzers.llm_analyzer import (
     _MAX_STRUCTURED_CONTEXT_CHARS,
@@ -44,6 +45,8 @@ from skill_scanner.core.analyzers.meta_analyzer import (
     ollama_meta_response_schema_sha256,
 )
 from skill_scanner.core.models import Finding, Severity, Skill, SkillFile, SkillManifest, ThreatCategory
+from skill_scanner.core.scan_policy import ScanPolicy
+from skill_scanner.core.scanner import SkillScanner
 
 
 def _skill(tmp_path: Path) -> Skill:
@@ -338,6 +341,48 @@ def test_structured_primary_context_is_bounded_normalized_and_deterministic() ->
     assert projected["package_facts"]["analyzability_score"] is None
     assert projected["package_facts"]["file_inventory"]["total_files"] == 1_000_000
     assert len(projected["manifest_capabilities"]["allowed_tools"]) <= 64
+
+
+def test_structured_primary_context_leaves_out_low_and_info_findings() -> None:
+    analyzer = LLMAnalyzer(
+        model="ollama/test",
+        provider="ollama",
+        base_url="http://127.0.0.1:11434",
+    )
+    kept = [_finding(index=0, severity=Severity.CRITICAL), _finding(index=1, severity=Severity.MEDIUM)]
+    hygiene = [_finding(index=2, severity=Severity.LOW), _finding(index=3, severity=Severity.INFO)]
+
+    analyzer.set_enrichment_context(deterministic_findings=kept)
+    without_hygiene = analyzer.enrichment_context
+    analyzer.set_enrichment_context(deterministic_findings=kept + hygiene)
+
+    assert analyzer.enrichment_context == without_hygiene
+    rows = json.loads(analyzer.enrichment_context or "{}")["deterministic_findings"]
+    assert [row["rule_id"] for row in rows] == ["RULE_000", "RULE_001"]
+
+
+def test_presets_send_the_same_prompt_when_they_differ_only_in_hygiene(tmp_path: Path) -> None:
+    """Strict's 512-character description cap must not change what the model reads."""
+    skill_dir = tmp_path / "long-description"
+    skill_dir.mkdir()
+    description = "Lists firewall policies for a tenant. " * 18
+    (skill_dir / "SKILL.md").write_text(
+        f"---\nname: long-description\ndescription: {description}\n---\n\n# Policies\n\nList the tenant's policies.\n"
+    )
+    safe = json.dumps({"verdict": "SAFE", "findings": [], "overall_assessment": "", "primary_threats": []})
+    prompts = {}
+    static_rules = {}
+    for preset in ("strict", "balanced", "permissive"):
+        policy = ScanPolicy.from_preset(preset)
+        analyzer = LLMAnalyzer(model="ollama/test", provider="ollama", base_url="http://127.0.0.1:11434", policy=policy)
+        analyzer.request_handler.make_request = AsyncMock(return_value=safe)
+        result = SkillScanner(analyzers=[*build_core_analyzers(policy), analyzer], policy=policy).scan_skill(skill_dir)
+        prompts[preset] = analyzer.request_handler.make_request.await_args.args[0]
+        static_rules[preset] = {finding.rule_id for finding in result.findings}
+
+    assert "MANIFEST_DESCRIPTION_TOO_LONG" in static_rules["strict"]
+    assert "MANIFEST_DESCRIPTION_TOO_LONG" not in static_rules["balanced"]
+    assert prompts["strict"] == prompts["balanced"] == prompts["permissive"]
 
 
 def test_primary_contract_accepts_known_id_and_rejects_unknown_id() -> None:
