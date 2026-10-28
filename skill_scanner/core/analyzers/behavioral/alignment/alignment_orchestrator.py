@@ -52,7 +52,7 @@ class AlignmentOrchestrator:
 
     def __init__(
         self,
-        llm_model: str = "gemini/gemini-2.0-flash",
+        llm_model: str = "gemini/gemini-3.8-flash",
         llm_api_key: str | None = None,
         llm_base_url: str | None = None,
         llm_temperature: Any = _TEMPERATURE_UNSET,
@@ -65,7 +65,7 @@ class AlignmentOrchestrator:
         """Initialize alignment orchestrator.
 
         Args:
-            llm_model: LLM model to use (e.g., "gemini/gemini-2.0-flash")
+            llm_model: LLM model to use (e.g., "gemini/gemini-3.8-flash")
             llm_api_key: API key for the LLM provider
             llm_base_url: Optional base URL for LLM API
             llm_temperature: Temperature for LLM responses

@@ -66,7 +66,7 @@ class AlignmentLLMClient:
 
     def __init__(
         self,
-        model: str = "gemini/gemini-2.0-flash",
+        model: str = "gemini/gemini-3.8-flash",
         api_key: str | None = None,
         base_url: str | None = None,
         api_version: str | None = None,
