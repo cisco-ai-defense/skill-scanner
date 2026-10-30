@@ -36,6 +36,7 @@ from ..static_analysis.url_classifier import classify_url, extract_urls
 
 CORE_PRECISION_RULE_IDS = frozenset(
     {
+        "COMMAND_INJECTION_JS_CHILD_PROCESS",
         "PROMPT_INJECTION_CONCEALMENT",
         "YARA_prompt_injection_generic",
     }
@@ -206,6 +207,9 @@ class CorePrecisionDecision:
     severity_override: Severity | None = None
     network_direction: str | None = None
     destination_class: str | None = None
+    title_override: str | None = None
+    description_override: str | None = None
+    remediation_override: str | None = None
 
 
 def _line_start(content: str, line_number: int) -> int | None:
@@ -742,62 +746,261 @@ def _classify_js_filesystem(
     return CorePrecisionDecision(True, f"{role}_filesystem_read_without_complete_flow_proof")
 
 
+_JS_CHILD_PROCESS_APIS = frozenset({"exec", "execSync", "execFile", "execFileSync", "spawn", "spawnSync", "fork"})
+_JS_IMPORT_NAMED_RE = re.compile(r"\bimport\s*\{(?P<names>[^}]*)\}\s*from\s*['\"](?:node:)?child_process['\"]")
+_JS_IMPORT_NAMESPACE_RE = re.compile(
+    r"\bimport\s*\*\s*as\s+(?P<name>[A-Za-z_$][\w$]*)\s+from\s*['\"](?:node:)?child_process['\"]"
+)
+_JS_IMPORT_DEFAULT_RE = re.compile(r"\bimport\s+(?P<name>[A-Za-z_$][\w$]*)\s+from\s*['\"](?:node:)?child_process['\"]")
+_JS_REQUIRE_DESTRUCTURE_RE = re.compile(
+    r"\b(?:const|let|var)\s*\{(?P<names>[^}]*)\}\s*=\s*require\s*\(\s*['\"](?:node:)?child_process['\"]\s*\)"
+)
+_JS_REQUIRE_NAMESPACE_RE = re.compile(
+    r"\b(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*=\s*require\s*\(\s*['\"](?:node:)?child_process['\"]\s*\)"
+)
+_JS_PROMISIFY_LOCAL_RE = re.compile(
+    r"\b(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*=\s*"
+    r"(?:[A-Za-z_$][\w$]*\s*\.\s*)?promisify\s*\(\s*(?P<target>[A-Za-z_$][\w$]*)\s*\)"
+)
+_JS_PROMISIFY_MEMBER_RE = re.compile(
+    r"\b(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*=\s*"
+    r"(?:[A-Za-z_$][\w$]*\s*\.\s*)?promisify\s*\(\s*[A-Za-z_$][\w$]*\s*\.\s*(?P<api>[A-Za-z_$][\w$]*)\s*\)"
+)
+_JS_BARE_PROCESS_CALL_RE = re.compile(r"\b(?P<api>exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s*\(")
+
+
+def _parse_child_process_names(names: str, *, cjs: bool) -> dict[str, str]:
+    bindings: dict[str, str] = {}
+    for entry in names.split(","):
+        entry = re.sub(r"^type\s+", "", entry.strip())
+        if not entry:
+            continue
+        if cjs and ":" in entry:
+            api, local = entry.split(":", 1)
+        elif " as " in entry:
+            api, local = entry.split(" as ", 1)
+        else:
+            api = local = entry
+        api, local = api.strip(), local.strip()
+        if api in _JS_CHILD_PROCESS_APIS and _JS_IDENTIFIER_RE.match(local):
+            bindings[local] = api
+    return bindings
+
+
+def _js_const_binding(content: str, name: str) -> str | None:
+    match = re.search(rf"\b(?:const|let|var)\s+{re.escape(name)}\s*=\s*(?P<value>[^;]{{1,4096}});", content)
+    return match.group("value") if match else None
+
+
+def _js_child_process_usage(
+    content: str,
+) -> tuple[list[tuple[str, list[str], str]], bool]:
+    """Collect child_process call sites from one JS/TS file.
+
+    Returns the call sites as (api, arguments, expression) plus a flag for
+    usage shapes this lexical scan cannot classify (re-exports, callback
+    references, computed access), which must fail open.
+    """
+
+    bindings: dict[str, str] = {}
+    namespaces = {"child_process"}
+    wrappers: dict[str, str] = {}
+    used_spans: list[tuple[int, int]] = []
+
+    for pattern, cjs in ((_JS_IMPORT_NAMED_RE, False), (_JS_REQUIRE_DESTRUCTURE_RE, True)):
+        for match in pattern.finditer(content):
+            bindings.update(_parse_child_process_names(match.group("names"), cjs=cjs))
+            used_spans.append((match.start(), match.end()))
+    for pattern in (_JS_IMPORT_NAMESPACE_RE, _JS_IMPORT_DEFAULT_RE, _JS_REQUIRE_NAMESPACE_RE):
+        for match in pattern.finditer(content):
+            namespaces.add(match.group("name"))
+            used_spans.append((match.start(), match.end()))
+    for match in _JS_PROMISIFY_LOCAL_RE.finditer(content):
+        if match.group("target") in bindings:
+            wrappers[match.group("name")] = bindings[match.group("target")]
+            used_spans.append((match.start(), match.end()))
+    for match in _JS_PROMISIFY_MEMBER_RE.finditer(content):
+        if match.group("api") in _JS_CHILD_PROCESS_APIS:
+            wrappers[match.group("name")] = match.group("api")
+            used_spans.append((match.start(), match.end()))
+
+    local_names = {**bindings, **wrappers}
+    call_patterns: list[tuple[re.Pattern[str], str | None]] = []
+    namespace_alternation = "|".join(re.escape(name) for name in sorted(namespaces))
+    call_patterns.append((re.compile(rf"\b(?:{namespace_alternation})\s*\.\s*(?P<api>[A-Za-z_$][\w$]*)\s*\("), None))
+    call_patterns.append(
+        (
+            re.compile(
+                r"\brequire\s*\(\s*['\"](?:node:)?child_process['\"]\s*\)\s*\.\s*(?P<api>[A-Za-z_$][\w$]*)\s*\("
+            ),
+            None,
+        )
+    )
+    for name, api in local_names.items():
+        call_patterns.append((re.compile(rf"\b{re.escape(name)}\s*\("), api))
+    if not local_names and len(namespaces) == 1:
+        # No import bindings were found (for example a script the signature
+        # matched on a bare call alone); classify bare API calls directly.
+        call_patterns.append((_JS_BARE_PROCESS_CALL_RE, None))
+
+    call_sites: list[tuple[str, list[str], str]] = []
+    unparseable_call = False
+    for pattern, fixed_api in call_patterns:
+        for match in pattern.finditer(content):
+            api = fixed_api or match.group("api")
+            if api not in _JS_CHILD_PROCESS_APIS:
+                continue
+            parsed = _split_js_arguments(content, match.end() - 1)
+            if parsed is None:
+                unparseable_call = True
+                continue
+            arguments, expression = parsed
+            call_sites.append((api, arguments, expression))
+            used_spans.append((match.start(), match.end() - 1 + len(expression)))
+
+    if unparseable_call:
+        return call_sites, True
+
+    masked = list(content)
+    for start, end in used_spans:
+        for index in range(max(start, 0), min(end, len(masked))):
+            if masked[index] not in "\r\n":
+                masked[index] = " "
+    remainder = "".join(masked)
+    for name in namespaces:
+        if re.search(rf"\b{re.escape(name)}\s*\.", remainder):
+            return call_sites, True
+    for name in local_names:
+        if re.search(rf"\b{re.escape(name)}\b", remainder):
+            return call_sites, True
+    return call_sites, False
+
+
+def _js_resolve_executable(content: str, argument: str) -> str | None:
+    argument = argument.strip()
+    literal = _literal_value(argument)
+    if literal is not None:
+        return literal
+    if argument == "process.execPath":
+        return "node"
+    if _JS_IDENTIFIER_RE.match(argument):
+        binding = _js_const_binding(content, argument)
+        if binding is not None:
+            return _literal_value(binding.strip())
+    return None
+
+
+def _js_resolve_argv(content: str, arguments: list[str]) -> str | None:
+    if len(arguments) < 2:
+        return ""
+    second = arguments[1].strip()
+    if second.startswith("["):
+        return second
+    if second.startswith("{"):
+        # execFile(file, options): the options object sits in the argv slot.
+        return ""
+    if _JS_IDENTIFIER_RE.match(second):
+        binding = _js_const_binding(content, second)
+        if binding is not None and binding.strip().startswith("["):
+            return binding
+    return None
+
+
+def _js_argv_has_untrusted_binding(content: str, argv_text: str) -> bool:
+    without_strings = re.sub(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:\\.|[^`\\])*`", " ", argv_text)
+    for identifier in set(re.findall(r"[A-Za-z_$][\w$]*", without_strings)):
+        binding = _js_const_binding(content, identifier)
+        if binding is not None and _JS_UNTRUSTED_VALUE_RE.search(binding):
+            return True
+    return False
+
+
+def _js_process_call_verdict(content: str, api: str, arguments: list[str], expression: str) -> str:
+    """Classify one child_process call as 'structured', 'shell', or 'dynamic'."""
+
+    if api in {"exec", "execSync"}:
+        return "shell"
+    if not arguments:
+        return "dynamic"
+    if _JS_SHELL_OPTION_RE.search(expression):
+        return "shell"
+    if re.search(r"\bshell\s*:", expression):
+        # A shell option with a non-literal value cannot be proven disabled.
+        return "dynamic"
+    executable = _js_resolve_executable(content, arguments[0])
+    if executable is None:
+        return "dynamic"
+    argv_text = _js_resolve_argv(content, arguments)
+    if argv_text is None:
+        return "dynamic"
+    if _JS_UNTRUSTED_VALUE_RE.search(arguments[0]) or _JS_UNTRUSTED_VALUE_RE.search(argv_text):
+        return "dynamic"
+    if _js_argv_has_untrusted_binding(content, argv_text):
+        return "dynamic"
+    executable_name = _executable_name(executable)
+    if executable_name in _JS_SHELL_EXECUTABLES and re.search(
+        r"(?:^|[\[,\s])['\"](?:-c|/c|-command)['\"]", argv_text, re.IGNORECASE
+    ):
+        return "shell"
+    interpreter_flags = _JS_CODE_INTERPRETER_FLAGS.get(executable_name or "", frozenset())
+    if any(re.search(rf"(?:^|[\[,\s])['\"]{re.escape(flag)}['\"]", argv_text) for flag in interpreter_flags):
+        return "shell"
+    return "structured"
+
+
 def _classify_js_child_process(finding: Finding, content: str) -> CorePrecisionDecision:
-    line_number = finding.line_number
-    if not isinstance(line_number, int):
-        return CorePrecisionDecision(True, "unclassified_process_candidate")
-    call = _call_at_line(content, line_number, _JS_PROCESS_CALL_RE)
-    if call is None:
-        snippet = finding.snippet or ""
-        if _JS_PROCESS_IMPORT_RE.search(snippet):
+    file_path = finding.file_path or ""
+    call_sites, unresolved = _js_child_process_usage(content)
+    if unresolved:
+        return CorePrecisionDecision(True, "unresolved_process_usage")
+    if not call_sites:
+        if _JS_PROCESS_IMPORT_RE.search(content):
+            # The module is imported but never executed in this file; an
+            # import alone is not shell command execution.
             return CorePrecisionDecision(False, "module_import_without_execution")
         return CorePrecisionDecision(True, "unclassified_process_candidate")
-    match, arguments, expression = call
-    api = match.group("api")
-    file_path = finding.file_path or ""
-    if api in {"exec", "execSync"}:
-        dynamic = bool(arguments and (_JS_UNTRUSTED_VALUE_RE.search(arguments[0]) or "${" in arguments[0]))
+
+    verdicts = [
+        _js_process_call_verdict(content, api, arguments, expression) for api, arguments, expression in call_sites
+    ]
+    if "shell" in verdicts:
         return CorePrecisionDecision(
             True,
             "shell_execution_candidate",
-            evidence_value_class="active_interpolated_execution" if dynamic else "execution_api",
-            candidate_command=_command_fact(shell=True, dynamic=dynamic, file_path=file_path),
+            evidence_value_class="shell_injection_sequence",
+            candidate_command=_command_fact(shell=True, dynamic=True, file_path=file_path),
         )
-    if len(arguments) < 2:
-        return CorePrecisionDecision(True, "unclassified_process_candidate")
-
-    executable_argument = arguments[0].strip()
-    argv_argument = arguments[1].strip()
-    dynamic = bool(_JS_UNTRUSTED_VALUE_RE.search(executable_argument) or _JS_UNTRUSTED_VALUE_RE.search(argv_argument))
-    literal_executable = _literal_value(executable_argument)
-    executable_name = _executable_name(literal_executable) if literal_executable else None
-    dynamic = dynamic or literal_executable is None
-    shell = bool(_JS_SHELL_OPTION_RE.search(expression))
-    shell = shell or bool(
-        executable_name in _JS_SHELL_EXECUTABLES
-        and re.search(r"(?:^|[\[,(\s])['\"](?:-c|/c|-command)['\"]", argv_argument, re.IGNORECASE)
-    )
-    interpreter_flags = _JS_CODE_INTERPRETER_FLAGS.get(executable_name or "", frozenset())
-    inline_code = any(
-        re.search(rf"(?:^|[\[,(\s])['\"]{re.escape(flag)}['\"]", argv_argument) for flag in interpreter_flags
-    )
-    if shell or dynamic or inline_code:
+    if "dynamic" in verdicts:
         return CorePrecisionDecision(
             True,
             "dynamic_shell_or_process_selection",
-            evidence_value_class="shell_injection_sequence" if shell else "active_interpolated_execution",
-            candidate_command=_command_fact(shell=shell or inline_code, dynamic=True, file_path=file_path),
+            evidence_value_class="active_interpolated_execution",
+            candidate_command=_command_fact(shell=False, dynamic=True, file_path=file_path),
         )
 
-    # Structured argv avoids shell token injection, but an interpreter can
-    # still execute an attacker-selected script and a fixed utility can retain
-    # dangerous subcommands.  Candidate suppression requires a real AST/data-
-    # flow proof that this lexical classifier does not provide.
+    # Every call site in the file is a structured invocation: a literal (or
+    # const-bound literal) executable, an argument array, and no shell.  Shell
+    # metacharacters in the arguments are inert without a shell, so the
+    # command-injection characterization does not hold; the finding is kept
+    # as a review item because direct process execution still warrants a
+    # look (search-path and option-injection risks are separate concerns).
     return CorePrecisionDecision(
         True,
-        "process_execution_without_complete_dataflow_proof",
-        evidence_value_class="active_interpolated_execution" if dynamic else "execution_api",
-        candidate_command=_command_fact(shell=False, dynamic=dynamic, file_path=file_path),
+        "structured_process_execution_without_shell",
+        evidence_value_class="structured_process_execution",
+        candidate_command=_command_fact(shell=False, dynamic=False, file_path=file_path),
+        severity_override=Severity.LOW,
+        title_override="Node.js child_process usage requires review",
+        description_override=(
+            "Every child_process invocation in this file uses a structured argument array without a shell "
+            "(no exec command string, no shell: true, no interpreter inline code), so shell command injection "
+            "is not indicated. The finding is retained at reduced severity because direct process execution "
+            "still warrants review."
+        ),
+        remediation_override=(
+            "Keep using execFile/spawn with explicit argument arrays and the shell disabled. "
+            "Avoid exec/execSync command strings and shell: true."
+        ),
     )
 
 
@@ -833,11 +1036,17 @@ def classify_core_signature_candidate(
         ):
             return CorePrecisionDecision(False, "agent_acts_instead_of_delegating")
         return CorePrecisionDecision(True, "action_concealment_or_ambiguous")
-    # The remaining broad process, filesystem, and network candidates require
+    if finding.rule_id == "COMMAND_INJECTION_JS_CHILD_PROCESS":
+        # The child_process classifier is file-scoped: the signature fires
+        # per pattern (often on the import line alone), so the verdict is
+        # computed from every call site in the file.  Anything it cannot
+        # resolve stays fail-open at the signature's severity.
+        return _classify_js_child_process(finding, content)
+    # The remaining broad filesystem and network candidates require
     # scope-correct AST/data-flow evidence before they can be suppressed or
     # demoted safely.  Keep them fail-open even when this helper is called
     # directly; the scanner currently invokes this module only for the two
-    # closed concealment grammars above.
+    # closed concealment grammars above and the child_process grammar.
     return CorePrecisionDecision(True, "rule_not_refined_fail_open")
 
 
@@ -858,14 +1067,21 @@ def _annotate_retained_candidate(finding: Finding, decision: CorePrecisionDecisi
         facts["flows"] = [decision.candidate_flow]
     if decision.severity_override is not None:
         finding.severity = decision.severity_override
-        finding.title = "Declared read-only network access"
-        finding.description = (
-            "The package performs a provider-bound read-only network request declared by its instructions. "
-            "No outbound payload or sensitive source-to-sink flow was identified."
-        )
-        finding.remediation = (
-            "Keep the destination declaration and review changes that add request bodies or new providers."
-        )
+        if decision.network_direction is not None:
+            finding.title = "Declared read-only network access"
+            finding.description = (
+                "The package performs a provider-bound read-only network request declared by its instructions. "
+                "No outbound payload or sensitive source-to-sink flow was identified."
+            )
+            finding.remediation = (
+                "Keep the destination declaration and review changes that add request bodies or new providers."
+            )
+    if decision.title_override is not None:
+        finding.title = decision.title_override
+    if decision.description_override is not None:
+        finding.description = decision.description_override
+    if decision.remediation_override is not None:
+        finding.remediation = decision.remediation_override
     if decision.network_direction is not None:
         facts["network_direction"] = decision.network_direction
     if decision.destination_class is not None:
