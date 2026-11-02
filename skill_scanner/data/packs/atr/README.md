@@ -1,91 +1,101 @@
 # ATR Rule Pack for Cisco Skill Scanner
 
 **Source:** [Agent Threat Rules (ATR)](https://github.com/Agent-Threat-Rule/agent-threat-rules)
-**ATR Version:** 4.2.2
-**Rules:** 840 signatures across 10 signature files
+**ATR Version:** 4.2.3
+**Rules:** 572 signatures across 10 signature files
 **License:** MIT
-**Benchmarks:** see the [ATR benchmark table at v4.2.2](https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/v4.2.2/README.md#8-evaluation),
-which is regenerated from measurement files rather than hand-copied. Selected
-rows:
 
-| Corpus | Samples | Recall (hunt / enforce) | Precision | ATR version |
-|---|---:|---:|---:|---:|
-| NVIDIA garak, in-the-wild jailbreaks | 650 | 92.3% / 0.9% | n/a (attacks only) | 4.1.5 |
-| NVIDIA garak, all 23 probe families | 3,475 | 57.2% / 0.5% | n/a (attacks only) | 4.1.5 |
-| PINT-format (deepset + Lakera Gandalf) | 850 | 65.4% / 0.4% | 100% | 4.1.5 |
-| Labeled SKILL.md, internal | 498 | 100% / 0% | 97% (hunt) | 4.1.5 |
+## Report-only
 
-**This pack ships ATR 4.2.2; the rows above were measured on 4.1.5.**
-Treat them as indicative of the shipped signatures rather than exact. The
-upstream table is the authority and carries the measurement file behind each
-row.
+Every signature in this pack is `LOW`, whatever the source rule's severity.
+This scanner treats a skill as unsafe on any HIGH or CRITICAL finding
+(`is_safe`, and `--fail-on-findings`), so this pack adds findings to a report
+but with the static analyzers does not change whether a skill passes, unless
+you run with `--fail-on-severity low` or `info`. Runs with the LLM or meta
+analyzer, which see these findings, were not measured. Each finding's `atr_url` links to the
+source rule, which carries ATR's own severity.
 
-Four caveats belong next to those numbers.
+## Measured in this scanner
 
-The two recall figures are ATR's two engine lanes. `hunt` loads rules of every
-maturity; `enforce` loads only `maturity: stable` rules. This pack carries the
-`hunt` rules plus four `status: draft` rules that ATR's engine skips in every
-lane, and this scanner matches them with its own engine, so the figures
-describe the rules, not a measurement of this scanner.
+This scanner's static analyzers with the `balanced` policy, on
+MaliciousSkillBench (`ProtectSkills/MaliciousSkillBench`, CC-BY-4.0)
+train/validation (1,338 benign, 5,256 malicious) and the 2,000-record ClawHub
+sample (`OpenClaw/clawhub-security-signals`), both materialized with
+`evals/datasets/` and its lock. ClawHub is unlabelled, so its column is a rate, not an error rate.
 
-The garak rows are partly closed-book: many of the rules that fire on that
-corpus were written from it. Upstream replays the in-the-wild row without
-those rules at 65.4%. The garak corpora contain no benign samples, so they
-measure recall only.
+| | Benign | Malicious | ClawHub |
+|---|---:|---:|---:|
+| Failed by core rules (HIGH or CRITICAL) | 0.8% | 31.7% | 3.6% |
+| Verdicts this pack changes, at HIGH or at MEDIUM | 0 | 0 | 0 |
+| Not failed by core, with an ATR finding | 5.4% | 12.6% | 14.5% |
 
-The PINT-format row is **not** a run of Lakera's official PINT benchmark. That
-corpus is private and roughly five times larger. This is a self-built corpus in
-the same format. At ATR 3.5.12, `ATR-2026-00001` alone accounted for 226 of its
-295 detections, so the row measures one rule family more than overall
-coverage; the per-rule split has not been re-measured since.
+Before this pack was reduced to the rules below and capped at `LOW`, core plus
+the ATR 3.5.6 pack failed 69.5% of the benign skills.
 
-The SKILL.md split is structural, not a tuning gap. All 39 rules carrying
-`scan_target: skill` in ATR 4.2.2 are `maturity: test`, so an enforce-lane
-deployment loads no skill-scanning rule at all.
+The rules in this pack were selected with ATR data only (see Pattern
+Provenance); these two corpora were used only to measure. Some ATR rules may
+have been written from MaliciousSkillBench samples, so the malicious column
+may read high. Per the MaliciousSkillBench terms, nothing here is measured on
+its source-disjoint split.
 
-OWASP Agentic Top 10 coverage (10/10 categories) is a taxonomy mapping, not a
-detection benchmark, and is listed separately upstream for that reason.
+ATR's own benchmark table measures ATR's engine, not this pack in this
+scanner, and is not repeated here.
 
 ## Overview
 
 This pack adds AI-agent security detection rules from the open-source ATR
 project, covering attack surfaces specific to modern AI-agent deployments
 (MCP tool layer, multi-agent trust, skill manifests, agent autonomy). It is
-the ATR `4.2.2` static ruleset. Four rules are excluded: the behavioral
-aggregation rule `ATR-2026-00553`, because this signature pack cannot evaluate
-its per-session time window and tool-call count, and `ATR-2026-00233`,
-`ATR-2026-00235` and `ATR-2026-00495`, which are deprecated upstream.
+the subset of the ATR `4.2.3` ruleset whose patterns mean the same thing over
+a skill's files as they do in ATR. Of the 844 rule files, 272 are left out:
+
+- 244 rules with a regex condition on a field only a running agent has
+  (`tool_name`, `tool_args`, `tool_response`, agent output, trace fields).
+  This pack has no field concept and matches every line of every file, so
+  such a condition matches whatever text looks like it.
+- 24 rules that fired on at least one of ATR's 432 benign skills when run in
+  this scanner.
+- `ATR-2026-00553`, a behavioral rule this signature pack cannot evaluate,
+  and `ATR-2026-00233`, `ATR-2026-00235` and `ATR-2026-00495`, which are
+  deprecated upstream.
 
 ## Attack Categories
 
 | Signature file | Category | Rules |
 |---|---|---|
-| `signatures/atr_prompt_injection.yaml` | Prompt injection | 255 |
-| `signatures/atr_context_exfiltration.yaml` | Context exfiltration | 138 |
-| `signatures/atr_tool_poisoning.yaml` | MCP tool poisoning | 118 |
-| `signatures/atr_agent_manipulation.yaml` | Agent manipulation (multi-agent, autonomy) | 108 |
-| `signatures/atr_privilege_escalation.yaml` | Privilege escalation | 77 |
-| `signatures/atr_skill_compromise.yaml` | Skill compromise | 52 |
-| `signatures/atr_model_abuse.yaml` | Model abuse | 41 |
-| `signatures/atr_excessive_autonomy.yaml` | Excessive autonomy | 38 |
-| `signatures/atr_data_poisoning.yaml` | Data poisoning | 9 |
+| `signatures/atr_prompt_injection.yaml` | Prompt injection | 195 |
+| `signatures/atr_context_exfiltration.yaml` | Context exfiltration | 113 |
+| `signatures/atr_tool_poisoning.yaml` | MCP tool poisoning | 86 |
+| `signatures/atr_privilege_escalation.yaml` | Privilege escalation | 50 |
+| `signatures/atr_skill_compromise.yaml` | Skill compromise | 36 |
+| `signatures/atr_model_abuse.yaml` | Model abuse | 35 |
+| `signatures/atr_excessive_autonomy.yaml` | Excessive autonomy | 31 |
+| `signatures/atr_agent_manipulation.yaml` | Agent manipulation (multi-agent, autonomy) | 17 |
+| `signatures/atr_data_poisoning.yaml` | Data poisoning | 5 |
 | `signatures/atr_model_security.yaml` | Model security | 4 |
-| **Total** | **10 categories** | **840** |
+| **Total** | **10 categories** | **572** |
 
 The full per-rule index (ATR id, category, severity, signature file) lives in
 `pack.yaml`. Each signature carries an `atr_url` linking to the source rule
-YAML on GitHub at the `v4.2.2` tag.
+YAML on GitHub at the `v4.2.3` tag.
 
 ## File Structure
 
 ```text
 skill_scanner/data/packs/atr/
-├── pack.yaml            # Pack manifest — indexes all 840 rules
+├── pack.yaml            # Pack manifest — indexes all 572 rules
 ├── README.md            # This file
 └── signatures/          # 10 category signature files (atr_<category>.yaml)
 ```
 
 ## Pattern Provenance
+
+Rules are selected in ATR's exporter, `scripts/export-cisco-pack.ts`
+(Agent-Threat-Rule/agent-threat-rules#764): only
+rules whose regex conditions read `content`, `user_input` or
+`tool_description` are exported, and `scripts/cisco-pack/benign-gate.py` runs
+the result in this scanner over ATR's benign skills and drops every rule that
+fires there. `--max-severity low` writes every signature at `LOW`.
 
 Every regex pattern is taken from an ATR YAML rule file
 (`detection.conditions[].value`); no patterns were invented for this pack.
@@ -111,8 +121,7 @@ The pack is generated by `scripts/export-cisco-pack.ts` in the ATR repository
 (`--downstream` reads this directory and keeps its schema_version 2 shape).
 ATR publishes stability guarantees for downstream consumers in its
 [Downstream Sync Contract](https://github.com/Agent-Threat-Rule/agent-threat-rules/blob/main/docs/DOWNSTREAM-SYNC-CONTRACT.md)
-(permanent rule ids, no silent removal of stable rules, a public
-false-positive reporting channel). Rule maturity is not carried in this pack;
+(permanent rule ids and a public false-positive reporting channel). Rule maturity is not carried in this pack;
 it is in each source rule linked by `atr_url`.
 
 ## ATR Project Links

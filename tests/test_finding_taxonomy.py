@@ -92,7 +92,7 @@ def _finding(rule_id: str = "TEST_RULE", **metadata) -> Finding:
 
 def test_every_bundled_rule_declares_a_real_code(bundled_registry):
     rules = bundled_registry.all_rules()
-    assert len(rules) > 900
+    assert len(rules) > 750
     for rule in rules.values():
         assert rule.taxonomy, rule.id
         if rule.taxonomy in (TAXONOMY_NOT_APPLICABLE, TAXONOMY_PER_FINDING):
