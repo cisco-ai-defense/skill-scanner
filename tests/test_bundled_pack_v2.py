@@ -19,8 +19,8 @@ from skill_scanner.core.rule_registry import PackLoader, RuleDefinition
 from skill_scanner.core.rules.patterns import RuleLoader
 
 _PACKS = Path(__file__).resolve().parents[1] / "skill_scanner" / "data" / "packs"
-# Covers the PG_PII_CREDIT_CARD lookbehind change; no other rule differs.
-_COMMUNITY_BEHAVIOR_DIGEST = "51a78431a66c74ce0f234a93e25b2dbdc5b72ecaad2a653ba242b8aee6aeef36"
+# Covers the ATR 4.2.2 pack refresh on top of the PG_PII_CREDIT_CARD lookbehind change.
+_COMMUNITY_BEHAVIOR_DIGEST = "ff03348e9fd8f3c6e7c22df4f44d92e83257641b801354ff6bb03393f372cbc2"
 
 
 def _minimal_manifest() -> dict:
@@ -65,7 +65,7 @@ def test_all_bundled_manifests_are_strict_v2_without_promotion_blockers() -> Non
     }
 
     assert set(packs) == {"atr", "core", "promptguard"}
-    assert len(packs["atr"].rules) == 712
+    assert len(packs["atr"].rules) == 840
     assert len(packs["promptguard"].rules) == 26
     for pack in packs.values():
         assert pack.schema_version == 2
@@ -90,7 +90,7 @@ def test_all_bundled_manifests_are_strict_v2_without_promotion_blockers() -> Non
 
 def test_category_normalization_changes_no_atr_or_promptguard_runtime_rule_behavior() -> None:
     rows: list[dict[str, object]] = []
-    for name, expected_count in (("atr", 712), ("promptguard", 26)):
+    for name, expected_count in (("atr", 840), ("promptguard", 26)):
         loader = RuleLoader(rules_file=_PACKS / name / "signatures", strict=True)
         rules = loader.load_rules()
         assert len(rules) == expected_count
