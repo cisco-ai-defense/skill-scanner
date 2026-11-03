@@ -410,7 +410,7 @@ def _format_single(fmt: str, args: argparse.Namespace, result_or_report) -> str:
     if fmt == "table":
         return TableReporter().generate_report(result_or_report)
     if fmt == "sarif":
-        return SARIFReporter().generate_report(result_or_report)
+        return SARIFReporter(tool_version=__version__).generate_report(result_or_report)
     if fmt == "html":
         return HTMLReporter().generate_report(result_or_report)
     # summary (default)
