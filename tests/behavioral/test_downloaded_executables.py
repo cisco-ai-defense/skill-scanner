@@ -120,6 +120,11 @@ exec "$bin" "$@"
             self.scan('echo "unterminated\ncurl -o /tmp/tool https://example.test/tool\nexec /tmp/tool'), []
         )
 
+    def test_repeated_variable_expansion_stays_bounded(self):
+        script = "value=x\n" + "value=$value$value\n" * 40
+        script += "curl -o /tmp/tool https://example.test/tool\nexec /tmp/tool"
+        self.assertEqual(len(self.scan(script)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

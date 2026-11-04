@@ -84,11 +84,28 @@ class BashDownloadedExecutable:
 
 
 def _download_value(token: str, variables: dict[str, str]) -> str:
+    # Expansion is bounded because the input is untrusted shell source.
+    limit = 4096
+    if len(token) > limit:
+        return ""
     if len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'":
         if token[0] == "'":
             return token[1:-1]
         token = token[1:-1]
-    return _VAR_REF.sub(lambda match: variables.get(match[1], "${" + match[1] + "}"), token)
+    parts: list[str] = []
+    end = 0
+    size = 0
+    for match in _VAR_REF.finditer(token):
+        literal = token[end : match.start()]
+        value = variables.get(match[1], "${" + match[1] + "}")
+        size += len(literal) + len(value)
+        if size > limit:
+            return ""
+        parts.extend((literal, value))
+        end = match.end()
+    if size + len(token) - end > limit:
+        return ""
+    return "".join(parts) + token[end:]
 
 
 def _download_target(command: list[str], variables: dict[str, str]) -> tuple[str, str] | None:
