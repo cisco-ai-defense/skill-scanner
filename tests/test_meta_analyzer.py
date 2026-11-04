@@ -919,6 +919,62 @@ class TestMetaDropParams:
         assert kwargs.get("drop_params") is True
 
 
+class TestBedrockStructuredOutput:
+    """Bedrock Meta requests carry a sanitized JSON schema; other providers are unchanged."""
+
+    @staticmethod
+    def _response():
+        r = MagicMock()
+        r.choices = [MagicMock()]
+        r.choices[0].message.content = '{"validated_findings": [], "false_positives": []}'
+        return r
+
+    @pytest.mark.asyncio
+    async def test_bedrock_request_sends_sanitized_schema(self):
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        analyzer = MetaAnalyzer(model="bedrock/us.anthropic.claude-haiku-5-5", aws_region="us-east-1")
+        with patch(
+            "skill_scanner.core.analyzers.meta_analyzer.acompletion", new_callable=AsyncMock
+        ) as mock_acompletion:
+            mock_acompletion.return_value = self._response()
+            await analyzer._make_llm_request("system prompt", "user prompt")
+
+        fmt = mock_acompletion.call_args.kwargs["response_format"]
+        assert fmt["type"] == "json_schema"
+        dumped = json.dumps(fmt)
+        for keyword in ("minItems", "maxItems", "uniqueItems"):
+            assert keyword not in dumped
+
+    @pytest.mark.asyncio
+    async def test_non_bedrock_request_has_no_response_format(self):
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        analyzer = MetaAnalyzer(model="gpt-5-nano", api_key="test-key")
+        with patch(
+            "skill_scanner.core.analyzers.meta_analyzer.acompletion", new_callable=AsyncMock
+        ) as mock_acompletion:
+            mock_acompletion.return_value = self._response()
+            await analyzer._make_llm_request("system prompt", "user prompt")
+
+        assert "response_format" not in mock_acompletion.call_args.kwargs
+
+    @pytest.mark.asyncio
+    async def test_bedrock_schema_rejection_falls_back_to_unconstrained(self):
+        from skill_scanner.core.analyzers.meta_analyzer import MetaAnalyzer
+
+        analyzer = MetaAnalyzer(model="bedrock/us.anthropic.claude-haiku-5-5", aws_region="us-east-1")
+        rejected = RuntimeError("BedrockException: output_config.format.schema is not supported")
+        with patch(
+            "skill_scanner.core.analyzers.meta_analyzer.acompletion", new_callable=AsyncMock
+        ) as mock_acompletion:
+            mock_acompletion.side_effect = [rejected, self._response()]
+            content = await analyzer._make_llm_request("system prompt", "user prompt")
+
+        assert "validated_findings" in content
+        assert "response_format" not in mock_acompletion.call_args_list[1].kwargs
+
+
 class TestMergeMetaAnalyzerUsage:
     """merge_meta_analyzer_usage() folds MetaAnalyzer spend into a ScanResult.
 
