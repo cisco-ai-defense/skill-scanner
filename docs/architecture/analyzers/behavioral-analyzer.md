@@ -188,6 +188,27 @@ skill-scanner scan /path/to/skill --use-behavioral
 
 ## Detection Examples
 
+### Runtime-downloaded executables
+
+With `--use-behavioral`, Bash launchers that download an HTTP(S) file with `curl`,
+`wget`, or `fetch` and later make that destination executable or invoke it
+produce `BEHAVIOR_DOWNLOADED_EXECUTABLE` (MEDIUM). The finding names the
+source URL pattern, destination, and source/sink lines. It explicitly states
+that the runtime artifact was **not scanned**; a scan of a launcher does not
+establish the safety of the code it retrieves.
+
+The check recognizes explicit output-file options and `>` redirection,
+simple variable assignments, quoted paths, and command chains. It does not
+download or execute anything, read environment values, prove branch
+reachability, or fully interpret Bash. Ordinary data downloads without a
+matching execution intent are not reported by this rule. Unparseable shell
+input stops this heuristic; dynamic commands, archive extraction, indirect
+helper functions, and other languages require separate analysis.
+
+Hook-trigger severity escalation and checksum-source independence are not
+inferred by this check. Scan fetched artifacts separately and review the
+integrity and automatic-trigger configuration before trusting a launcher.
+
 ### Example 1: Suspicious URL Detection
 
 **Code**:
@@ -315,3 +336,4 @@ def process(user_input):
 - [Static Analyzer](static-analyzer.md) -- Pattern-based detection (comparison with behavioral approach)
 - [LLM Analyzer](llm-analyzer.md) -- Semantic analysis that complements dataflow findings
 - [Analyzer Selection Guide](meta-and-external-analyzers.md) -- When to enable `--use-behavioral`
+
