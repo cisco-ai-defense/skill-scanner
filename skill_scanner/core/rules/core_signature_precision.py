@@ -111,7 +111,15 @@ _JS_UNTRUSTED_VALUE_RE = re.compile(
     r"(?i)(?:process\.argv|req(?:uest)?\s*\.|user(?:Input|Command)?\b|"
     r"input(?:Command)?\b|params?\s*\.|query\s*\.|body\s*\[)"
 )
-_JS_SHELL_OPTION_RE = re.compile(r"\bshell\s*:\s*true\b", re.IGNORECASE)
+_JS_SHELL_OPTION_RE = re.compile(r"""['"]?shell['"]?\s*:\s*true\b""", re.IGNORECASE)
+# A shell option with any other value cannot be proven disabled; a literal
+# `false` in the effective options is the only proven-disabled shape.
+_JS_SHELL_OPTION_ANY_RE = re.compile(r"""['"]?shell['"]?\s*:""", re.IGNORECASE)
+_JS_SHELL_DISABLED_RE = re.compile(r"""['"]?shell['"]?\s*:\s*false\b""", re.IGNORECASE)
+# Combined short flags for a shell executable, e.g. `-lc` (a cluster of
+# single-letter flags containing `c`). The cluster is bounded so a long
+# word such as `-config` is not mistaken for one.
+_JS_SHELL_FLAG_RE = re.compile(r"(?:^|[\[,\s])['\"](?:-[A-Za-z]{0,3}c[A-Za-z]{0,3}|/c|-command)['\"]", re.IGNORECASE)
 _JS_FUNCTION_RE = re.compile(r"\bfunction\s+(?P<name>[A-Za-z_$][\w$]*)\s*\((?P<parameters>[^)]*)\)\s*\{")
 _JS_IDENTIFIER_RE = re.compile(r"^[A-Za-z_$][\w$]*$")
 _JS_CONST_ASSIGNMENT_RE_TEMPLATE = r"(?m)\bconst\s+{identifier}\s*=\s*(?P<value>[^;\r\n]{{1,4096}})\s*;"
@@ -764,7 +772,7 @@ _JS_PROMISIFY_LOCAL_RE = re.compile(
 )
 _JS_PROMISIFY_MEMBER_RE = re.compile(
     r"\b(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*=\s*"
-    r"(?:[A-Za-z_$][\w$]*\s*\.\s*)?promisify\s*\(\s*[A-Za-z_$][\w$]*\s*\.\s*(?P<api>[A-Za-z_$][\w$]*)\s*\)"
+    r"(?:[A-Za-z_$][\w$]*\s*\.\s*)?promisify\s*\(\s*(?P<receiver>[A-Za-z_$][\w$]*)\s*\.\s*(?P<api>[A-Za-z_$][\w$]*)\s*\)"
 )
 _JS_BARE_PROCESS_CALL_RE = re.compile(r"\b(?P<api>exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)\s*\(")
 
@@ -787,14 +795,106 @@ def _parse_child_process_names(names: str, *, cjs: bool) -> dict[str, str]:
     return bindings
 
 
+_JS_REASSIGNMENT_RE_TEMPLATE = (
+    r"\b{name}\s*(?:=(?![=>])|\+=|-=|\*=|/=|%=|\*\*=|&&=|\|\|=|\?\?=|\+\+|--)"
+    r"|\+\+\s*{name}\b|--\s*{name}\b"
+)
+
+
 def _js_const_binding(content: str, name: str) -> str | None:
+    """Return the first const/let/var initializer, unless it is reassigned.
+
+    A reassigned name cannot be trusted to hold its initializer at the call,
+    so the binding is unresolved instead of silently keeping the first value.
+    """
+
     match = re.search(rf"\b(?:const|let|var)\s+{re.escape(name)}\s*=\s*(?P<value>[^;]{{1,4096}});", content)
-    return match.group("value") if match else None
+    if match is None:
+        return None
+    reassignment = re.compile(_JS_REASSIGNMENT_RE_TEMPLATE.format(name=re.escape(name)))
+    if reassignment.search(content[match.end() :]):
+        return None
+    return match.group("value")
+
+
+def _js_has_declaration(content: str, name: str) -> bool:
+    """Return whether ``name`` is declared or assigned anywhere in ``content``."""
+
+    return (
+        re.search(rf"\b(?:const|let|var)\s+{re.escape(name)}\b", content) is not None
+        or re.search(_JS_REASSIGNMENT_RE_TEMPLATE.format(name=re.escape(name)), content) is not None
+    )
+
+
+def _js_visible_binding(content: str, name: str, before: int) -> str | None:
+    """Return a binding only when exactly one declaration is visible at ``before``.
+
+    A name declared twice before the call (for example an outer literal and a
+    shadowing declaration) has no single visible value, so it is unresolved.
+    """
+
+    pattern = re.compile(rf"\b(?:const|let|var)\s+{re.escape(name)}\s*=\s*(?P<value>[^;]{{1,4096}});")
+    matches = list(pattern.finditer(content[:before]))
+    if len(matches) != 1:
+        return None
+    # A reassigned name cannot be trusted to hold its initializer at the call,
+    # even when exactly one declaration is visible before it.
+    reassignment = re.compile(_JS_REASSIGNMENT_RE_TEMPLATE.format(name=re.escape(name)))
+    if reassignment.search(content[matches[0].end() :]):
+        return None
+    return matches[0].group("value")
+
+
+_JS_ARROW_BLOCK_RE = re.compile(r"\((?P<parameters>[^)]*)\)\s*=>\s*\{")
+_JS_ARROW_EXPRESSION_RE = re.compile(r"\((?P<parameters>[^)]*)\)\s*=>")
+_JS_ARROW_SINGLE_PARAM_RE = re.compile(r"(?<![\w$])(?P<parameter>[A-Za-z_$][\w$]*)\s*=>")
+
+
+def _js_parameter_name(raw: str) -> str | None:
+    """Return a plain parameter name, or None for defaults/destructuring."""
+
+    parameter = raw.strip().split("=")[0].strip()
+    if parameter.startswith("..."):
+        parameter = parameter[3:]
+    return parameter if _JS_IDENTIFIER_RE.match(parameter) else None
+
+
+def _js_enclosing_function_parameters(content: str, call_offset: int) -> set[str]:
+    """Return the parameters of the innermost function enclosing ``call_offset``."""
+
+    parameters: set[str] = set()
+    for function in _JS_FUNCTION_RE.finditer(content[:call_offset]):
+        if not _brace_is_open_at(content, function.end() - 1, call_offset):
+            continue
+        for raw in function.group("parameters").split(","):
+            name = _js_parameter_name(raw)
+            if name is not None:
+                parameters.add(name)
+    for match in _JS_ARROW_BLOCK_RE.finditer(content[:call_offset]):
+        if not _brace_is_open_at(content, match.end() - 1, call_offset):
+            continue
+        for raw in match.group("parameters").split(","):
+            name = _js_parameter_name(raw)
+            if name is not None:
+                parameters.add(name)
+    # Expression-bodied arrows have no enclosing brace; the call must sit in
+    # the same statement as the arrow (no `;` in between).
+    for pattern in (_JS_ARROW_EXPRESSION_RE, _JS_ARROW_SINGLE_PARAM_RE):
+        for match in pattern.finditer(content[:call_offset]):
+            if ";" in content[match.end() : call_offset]:
+                continue
+            names = match.groupdict().get("parameters")
+            candidates = names.split(",") if names is not None else [match.group("parameter")]
+            for raw in candidates:
+                name = _js_parameter_name(raw)
+                if name is not None:
+                    parameters.add(name)
+    return parameters
 
 
 def _js_child_process_usage(
     content: str,
-) -> tuple[list[tuple[str, list[str], str]], bool]:
+) -> tuple[list[tuple[str, list[str], str, int]], bool]:
     """Collect child_process call sites from one JS/TS file.
 
     Returns the call sites as (api, arguments, expression) plus a flag for
@@ -820,7 +920,9 @@ def _js_child_process_usage(
             wrappers[match.group("name")] = bindings[match.group("target")]
             used_spans.append((match.start(), match.end()))
     for match in _JS_PROMISIFY_MEMBER_RE.finditer(content):
-        if match.group("api") in _JS_CHILD_PROCESS_APIS:
+        # Only a child_process receiver makes this a child_process wrapper:
+        # `promisify(db.exec)` must not register `db`'s method as one.
+        if match.group("receiver") in namespaces and match.group("api") in _JS_CHILD_PROCESS_APIS:
             wrappers[match.group("name")] = match.group("api")
             used_spans.append((match.start(), match.end()))
 
@@ -838,15 +940,19 @@ def _js_child_process_usage(
     )
     for name, api in local_names.items():
         call_patterns.append((re.compile(rf"\b{re.escape(name)}\s*\("), api))
-    if not local_names and len(namespaces) == 1:
-        # No import bindings were found (for example a script the signature
-        # matched on a bare call alone); classify bare API calls directly.
-        call_patterns.append((_JS_BARE_PROCESS_CALL_RE, None))
+    # Bare API calls are scanned even when import bindings exist: a bare
+    # `execSync(command)` in a file that only imports `execFile` must not go
+    # unseen. Call sites are deduplicated by offset, so a call matched by a
+    # binding pattern is not counted twice.
+    call_patterns.append((_JS_BARE_PROCESS_CALL_RE, None))
 
-    call_sites: list[tuple[str, list[str], str]] = []
+    call_sites: list[tuple[str, list[str], str, int]] = []
+    seen_call_starts: set[int] = set()
     unparseable_call = False
     for pattern, fixed_api in call_patterns:
         for match in pattern.finditer(content):
+            if match.start() in seen_call_starts:
+                continue
             api = fixed_api or match.group("api")
             if api not in _JS_CHILD_PROCESS_APIS:
                 continue
@@ -855,7 +961,8 @@ def _js_child_process_usage(
                 unparseable_call = True
                 continue
             arguments, expression = parsed
-            call_sites.append((api, arguments, expression))
+            call_sites.append((api, arguments, expression, match.start()))
+            seen_call_starts.add(match.start())
             used_spans.append((match.start(), match.end() - 1 + len(expression)))
 
     if unparseable_call:
@@ -870,13 +977,22 @@ def _js_child_process_usage(
     for name in namespaces:
         if re.search(rf"\b{re.escape(name)}\s*\.", remainder):
             return call_sites, True
+        # Computed access (`cp['exec'](`), optional access (`cp?.exec(`) and
+        # re-export (`export { cp }`) are namespace references outside a
+        # plain `name.api(` call; they cannot be resolved locally either.
+        if re.search(rf"\b{re.escape(name)}\s*\[", remainder):
+            return call_sites, True
+        if re.search(rf"\b{re.escape(name)}\s*\?\s*\.", remainder):
+            return call_sites, True
+        if re.search(rf"\bexport\s*\{{[^}}]*\b{re.escape(name)}\b", remainder):
+            return call_sites, True
     for name in local_names:
         if re.search(rf"\b{re.escape(name)}\b", remainder):
             return call_sites, True
     return call_sites, False
 
 
-def _js_resolve_executable(content: str, argument: str) -> str | None:
+def _js_resolve_executable(content: str, argument: str, call_offset: int | None = None) -> str | None:
     argument = argument.strip()
     literal = _literal_value(argument)
     if literal is not None:
@@ -884,13 +1000,21 @@ def _js_resolve_executable(content: str, argument: str) -> str | None:
     if argument == "process.execPath":
         return "node"
     if _JS_IDENTIFIER_RE.match(argument):
-        binding = _js_const_binding(content, argument)
+        if call_offset is not None:
+            # A parameter of the enclosing function shadows any outer literal,
+            # and a name with no single declaration visible at the call has
+            # no trustworthy value.
+            if argument in _js_enclosing_function_parameters(content, call_offset):
+                return None
+            binding = _js_visible_binding(content, argument, call_offset)
+        else:
+            binding = _js_const_binding(content, argument)
         if binding is not None:
             return _literal_value(binding.strip())
     return None
 
 
-def _js_resolve_argv(content: str, arguments: list[str]) -> str | None:
+def _js_resolve_argv(content: str, arguments: list[str], call_offset: int | None = None) -> str | None:
     if len(arguments) < 2:
         return ""
     second = arguments[1].strip()
@@ -900,37 +1024,116 @@ def _js_resolve_argv(content: str, arguments: list[str]) -> str | None:
         # execFile(file, options): the options object sits in the argv slot.
         return ""
     if _JS_IDENTIFIER_RE.match(second):
-        binding = _js_const_binding(content, second)
+        if call_offset is not None and second in _js_enclosing_function_parameters(content, call_offset):
+            return None
+        binding = (
+            _js_visible_binding(content, second, call_offset)
+            if call_offset is not None
+            else _js_const_binding(content, second)
+        )
         if binding is not None and binding.strip().startswith("["):
+            # A const array mutated after its declaration (push/unshift/
+            # splice) no longer holds only its initializer.
+            if re.search(
+                rf"\b{re.escape(second)}\s*\.\s*(?:push|unshift|splice)\s*\(",
+                content,
+            ):
+                return None
             return binding
     return None
 
 
 def _js_argv_has_untrusted_binding(content: str, argv_text: str) -> bool:
+    """Return whether any identifier in ``argv_text`` resolves, transitively, to an untrusted value."""
+
     without_strings = re.sub(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:\\.|[^`\\])*`", " ", argv_text)
-    for identifier in set(re.findall(r"[A-Za-z_$][\w$]*", without_strings)):
-        binding = _js_const_binding(content, identifier)
-        if binding is not None and _JS_UNTRUSTED_VALUE_RE.search(binding):
-            return True
+    pending = list(dict.fromkeys(re.findall(r"[A-Za-z_$][\w$]*", without_strings)))
+    seen: set[str] = set()
+    # Follow `const` alias chains (payload -> source -> req.query.value) with
+    # a depth bound so a cyclic chain cannot loop forever.
+    for _ in range(8):
+        if not pending:
+            return False
+        following: list[str] = []
+        for identifier in pending:
+            if identifier in seen:
+                continue
+            seen.add(identifier)
+            binding = _js_const_binding(content, identifier)
+            if binding is None:
+                # A declared name whose initializer cannot be resolved (for
+                # example it was reassigned) cannot be proven safe.
+                if _js_has_declaration(content, identifier):
+                    return True
+                continue
+            if _JS_UNTRUSTED_VALUE_RE.search(binding):
+                return True
+            following.extend(
+                identifier
+                for identifier in re.findall(
+                    r"[A-Za-z_$][\w$]*",
+                    re.sub(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:\\.|[^`\\])*`", " ", binding),
+                )
+                if identifier not in seen
+            )
+        pending = following
     return False
 
 
-def _js_process_call_verdict(content: str, api: str, arguments: list[str], expression: str) -> str:
+def _js_effective_options_text(content: str, arguments: list[str], expression: str) -> str:
+    """Return the call text plus any identifier-bound options objects.
+
+    An options argument given as a bare identifier (`opts`) does not carry
+    its `{shell: true}` in the call text; resolve its const binding so the
+    shell checks see the effective options.
+    """
+
+    parts = [expression]
+    for argument in arguments:
+        argument = argument.strip()
+        if _JS_IDENTIFIER_RE.match(argument):
+            binding = _js_const_binding(content, argument)
+            if binding is not None and binding.strip().startswith("{"):
+                parts.append(binding)
+    return " ".join(parts)
+
+
+def _js_expand_string_bindings(content: str, argv_text: str) -> str:
+    """Replace bare identifiers in ``argv_text`` with their string-literal bindings.
+
+    Used only for flag checks, so `const flag = '-e'` is seen as the `-e`
+    flag it is. Identifiers without a string-literal binding are left alone.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        binding = _js_const_binding(content, match.group(0))
+        literal = _literal_value(binding.strip()) if binding is not None else None
+        return f"'{literal}'" if literal is not None else match.group(0)
+
+    return re.sub(r"(?<![\w$'\"])[A-Za-z_$][\w$]*(?![\w$'\"])", replace, argv_text)
+
+
+def _js_process_call_verdict(
+    content: str, api: str, arguments: list[str], expression: str, call_offset: int | None = None
+) -> str:
     """Classify one child_process call as 'structured', 'shell', or 'dynamic'."""
 
     if api in {"exec", "execSync"}:
         return "shell"
     if not arguments:
         return "dynamic"
-    if _JS_SHELL_OPTION_RE.search(expression):
+    options_text = _js_effective_options_text(content, arguments, expression)
+    if _JS_SHELL_OPTION_RE.search(options_text):
         return "shell"
-    if re.search(r"\bshell\s*:", expression):
+    if _JS_SHELL_OPTION_ANY_RE.search(options_text) and not _JS_SHELL_DISABLED_RE.search(options_text):
         # A shell option with a non-literal value cannot be proven disabled.
+        # A proven literal `shell: false` falls through to the structured
+        # classification below instead.
         return "dynamic"
-    executable = _js_resolve_executable(content, arguments[0])
+    executable = _js_resolve_executable(content, arguments[0], call_offset)
     if executable is None:
         return "dynamic"
-    argv_text = _js_resolve_argv(content, arguments)
+    argv_text = _js_resolve_argv(content, arguments, call_offset)
     if argv_text is None:
         return "dynamic"
     if _JS_UNTRUSTED_VALUE_RE.search(arguments[0]) or _JS_UNTRUSTED_VALUE_RE.search(argv_text):
@@ -938,19 +1141,37 @@ def _js_process_call_verdict(content: str, api: str, arguments: list[str], expre
     if _js_argv_has_untrusted_binding(content, argv_text):
         return "dynamic"
     executable_name = _executable_name(executable)
-    if executable_name in _JS_SHELL_EXECUTABLES and re.search(
-        r"(?:^|[\[,\s])['\"](?:-c|/c|-command)['\"]", argv_text, re.IGNORECASE
-    ):
+    expanded_argv = _js_expand_string_bindings(content, argv_text)
+    if executable_name in _JS_SHELL_EXECUTABLES and _JS_SHELL_FLAG_RE.search(expanded_argv):
         return "shell"
     interpreter_flags = _JS_CODE_INTERPRETER_FLAGS.get(executable_name or "", frozenset())
-    if any(re.search(rf"(?:^|[\[,\s])['\"]{re.escape(flag)}['\"]", argv_text) for flag in interpreter_flags):
+    if any(re.search(rf"(?:^|[\[,\s])['\"]{re.escape(flag)}['\"]", expanded_argv) for flag in interpreter_flags):
         return "shell"
     return "structured"
 
 
-def _classify_js_child_process(finding: Finding, content: str) -> CorePrecisionDecision:
+_STRUCTURED_PROCESS_DESCRIPTION = (
+    "Every child_process invocation in this file uses a structured argument array without a shell "
+    "(no exec command string, no shell: true, no interpreter inline code), so shell command injection "
+    "is not indicated. The finding is retained at reduced severity because direct process execution "
+    "still warrants review."
+)
+_STRUCTURED_PROCESS_REMEDIATION = (
+    "Keep using execFile/spawn with explicit argument arrays and the shell disabled. "
+    "Avoid exec/execSync command strings and shell: true."
+)
+
+
+def _classify_js_child_process(
+    finding: Finding,
+    content: str,
+    *,
+    child_process_usage: tuple[list[tuple[str, list[str], str, int]], bool] | None = None,
+) -> CorePrecisionDecision:
     file_path = finding.file_path or ""
-    call_sites, unresolved = _js_child_process_usage(content)
+    if child_process_usage is None:
+        child_process_usage = _js_child_process_usage(content)
+    call_sites, unresolved = child_process_usage
     if unresolved:
         return CorePrecisionDecision(True, "unresolved_process_usage")
     if not call_sites:
@@ -961,7 +1182,8 @@ def _classify_js_child_process(finding: Finding, content: str) -> CorePrecisionD
         return CorePrecisionDecision(True, "unclassified_process_candidate")
 
     verdicts = [
-        _js_process_call_verdict(content, api, arguments, expression) for api, arguments, expression in call_sites
+        _js_process_call_verdict(content, api, arguments, expression, call_offset)
+        for api, arguments, expression, call_offset in call_sites
     ]
     if "shell" in verdicts:
         return CorePrecisionDecision(
@@ -991,16 +1213,8 @@ def _classify_js_child_process(finding: Finding, content: str) -> CorePrecisionD
         candidate_command=_command_fact(shell=False, dynamic=False, file_path=file_path),
         severity_override=Severity.LOW,
         title_override="Node.js child_process usage requires review",
-        description_override=(
-            "Every child_process invocation in this file uses a structured argument array without a shell "
-            "(no exec command string, no shell: true, no interpreter inline code), so shell command injection "
-            "is not indicated. The finding is retained at reduced severity because direct process execution "
-            "still warrants review."
-        ),
-        remediation_override=(
-            "Keep using execFile/spawn with explicit argument arrays and the shell disabled. "
-            "Avoid exec/execSync command strings and shell: true."
-        ),
+        description_override=_STRUCTURED_PROCESS_DESCRIPTION,
+        remediation_override=_STRUCTURED_PROCESS_REMEDIATION,
     )
 
 
@@ -1011,6 +1225,7 @@ def classify_core_signature_candidate(
     skill: Skill | None = None,
     unreferenced: bool = False,
     hidden: bool = False,
+    child_process_usage: tuple[list[tuple[str, list[str], str, int]], bool] | None = None,
 ) -> CorePrecisionDecision:
     """Classify one broad core candidate, failing open for unknown shapes."""
 
@@ -1041,7 +1256,7 @@ def classify_core_signature_candidate(
         # per pattern (often on the import line alone), so the verdict is
         # computed from every call site in the file.  Anything it cannot
         # resolve stays fail-open at the signature's severity.
-        return _classify_js_child_process(finding, content)
+        return _classify_js_child_process(finding, content, child_process_usage=child_process_usage)
     # The remaining broad filesystem and network candidates require
     # scope-correct AST/data-flow evidence before they can be suppressed or
     # demoted safely.  Keep them fail-open even when this helper is called
@@ -1099,6 +1314,11 @@ def refine_core_signature_findings(
     files = {Path(item.relative_path).as_posix(): item for item in skill.files}
     unreferenced = {Path(path).as_posix() for path in unreferenced_scripts}
     refined: list[Finding] = []
+    # The child_process usage scan is file-scoped and the same file can carry
+    # many findings; compute its content and usage once per file and reuse
+    # them instead of rescanning the file for every finding on it.
+    content_by_path: dict[str, str] = {}
+    child_process_usage_by_path: dict[str, tuple[list[tuple[str, list[str], str, int]], bool]] = {}
     for finding in findings:
         if finding.rule_id not in CORE_PRECISION_RULE_IDS:
             refined.append(finding)
@@ -1109,19 +1329,30 @@ def refine_core_signature_findings(
             content = skill.instruction_body
             hidden = False
         elif skill_file is not None:
-            content = skill_file.read_content()
+            cached_content = content_by_path.get(path)
+            if cached_content is None:
+                cached_content = skill_file.read_content()
+                content_by_path[path] = cached_content
+            content = cached_content
             hidden = skill_file.is_hidden
         else:
             # A recursively loaded alias can lack an inventory entry.  Its
             # candidate cannot be proven inert, so preserve it.
             refined.append(finding)
             continue
+        child_process_usage = None
+        if finding.rule_id == "COMMAND_INJECTION_JS_CHILD_PROCESS":
+            child_process_usage = child_process_usage_by_path.get(path)
+            if child_process_usage is None:
+                child_process_usage = _js_child_process_usage(content)
+                child_process_usage_by_path[path] = child_process_usage
         decision = classify_core_signature_candidate(
             finding,
             content,
             skill=skill,
             unreferenced=path in unreferenced,
             hidden=hidden,
+            child_process_usage=child_process_usage,
         )
         if decision.keep:
             _annotate_retained_candidate(finding, decision)

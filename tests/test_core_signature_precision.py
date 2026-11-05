@@ -13,7 +13,12 @@ import pytest
 from skill_scanner.core.analyzers.static import StaticAnalyzer
 from skill_scanner.core.loader import SkillLoader
 from skill_scanner.core.models import Finding, Severity, ThreatCategory
-from skill_scanner.core.rules.core_signature_precision import _literal_value, classify_core_signature_candidate
+from skill_scanner.core.rules.core_signature_precision import (
+    _STRUCTURED_PROCESS_DESCRIPTION,
+    _STRUCTURED_PROCESS_REMEDIATION,
+    _literal_value,
+    classify_core_signature_candidate,
+)
 
 _TARGET_RULES = {
     "COMMAND_INJECTION_JS_CHILD_PROCESS",
@@ -403,6 +408,139 @@ def test_structured_child_process_is_demoted_to_review_severity(tmp_path: Path, 
     assert hits
     assert all(finding.severity == Severity.LOW for finding in hits)
     assert all(finding.title == "Node.js child_process usage requires review" for finding in hits)
+    assert all(finding.description == _STRUCTURED_PROCESS_DESCRIPTION for finding in hits)
+    assert all(finding.remediation == _STRUCTURED_PROCESS_REMEDIATION for finding in hits)
+
+
+def _child_process_candidate() -> Finding:
+    return Finding(
+        id="COMMAND_INJECTION_JS_CHILD_PROCESS_test",
+        rule_id="COMMAND_INJECTION_JS_CHILD_PROCESS",
+        category=ThreatCategory.COMMAND_INJECTION,
+        severity=Severity.CRITICAL,
+        title="Node.js child_process module usage for shell command execution",
+        description="Test candidate",
+        file_path="scripts/tool.mjs",
+        line_number=1,
+        snippet="child_process",
+        analyzer="static",
+        metadata={},
+    )
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        # Reassigned let/var: the first initializer must not be trusted.
+        """import { execFile } from "node:child_process";
+let bin = 'curl'; bin = req.query.bin; execFile(bin, ['--silent']);
+""",
+        # A bare execSync call must not go unseen when bindings exist.
+        """import { execFile } from "node:child_process";
+execSync(command);
+execFile("curl", ["--silent", url]);
+""",
+        # Computed and optional namespace access cannot be resolved locally.
+        """import * as cp from "node:child_process";
+cp['exec'](process.argv[2]);
+""",
+        """import * as cp from "node:child_process";
+cp?.exec(process.argv[2]);
+""",
+        # Re-exporting the namespace cannot be resolved locally either.
+        """import * as cp from "node:child_process";
+export { cp };
+""",
+        # A function parameter shadows an outer literal executable.
+        """import { spawnSync } from "node:child_process";
+const bin = 'curl';
+function run(bin) { return spawnSync(bin, ["--version"]); }
+run("curl");
+""",
+        # A const argument array mutated after its declaration.
+        """import { spawn } from "node:child_process";
+const args = ['--version'];
+args.push('-e', req.query.code);
+spawn('node', args);
+""",
+        # An untrusted source reached through an alias chain.
+        """import { spawn } from "node:child_process";
+const source = req.query.value; const payload = source;
+spawn('curl', ['--config', payload]);
+""",
+        # A quoted shell key enables a shell.
+        """import { execFile } from "node:child_process";
+execFile("curl", ["--silent", url], { 'shell': true });
+""",
+        # An identifier-bound options object enables a shell.
+        """import { execFile } from "node:child_process";
+const opts = { shell: true };
+execFile("curl", ["--silent", url], opts);
+""",
+        # Combined short flags containing `c` invoke a shell.
+        """import { spawn } from "node:child_process";
+spawn('sh', ['-lc', 'echo hi']);
+""",
+        # An interpreter flag bound to a string literal.
+        """import { spawn } from "node:child_process";
+const flag = '-e';
+spawn('node', [flag, payload]);
+""",
+    ],
+)
+def test_child_process_review_findings_stay_critical(tmp_path: Path, script: str) -> None:
+    findings = _scan(tmp_path, "Use [the process helper](scripts/tool.mjs).", script)
+
+    hits = _rule_hits(findings, "COMMAND_INJECTION_JS_CHILD_PROCESS")
+    assert hits
+    assert all(finding.severity == Severity.CRITICAL for finding in hits)
+
+
+def test_promisified_non_child_process_receiver_is_not_a_shell_call() -> None:
+    # `promisify(db.exec)` must not register `db`'s method as a
+    # child_process wrapper, so the call is not a shell-execution call.
+    script = """import { promisify } from "node:util";
+const run = promisify(db.exec);
+run('SELECT 1');
+"""
+
+    decision = classify_core_signature_candidate(_child_process_candidate(), script)
+
+    assert decision.keep is True
+    assert decision.reason != "shell_execution_candidate"
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        # A proven literal `shell: false` is structured, not dynamic.
+        """import { execFile } from "node:child_process";
+execFile('curl', ['--version'], { shell: false });
+""",
+        # ... including when the options object is bound to an identifier.
+        """import { execFile } from "node:child_process";
+const opts = { shell: false };
+execFile('curl', ['--version'], opts);
+""",
+        # A promisified child_process call is still a structured call.
+        """import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const execFileAsync = promisify(execFile);
+await execFileAsync("curl", ["--silent", url]);
+""",
+        """import * as cp from "node:child_process";
+import { promisify } from "node:util";
+const execFileAsync = promisify(cp.execFile);
+await execFileAsync("curl", ["--silent", url]);
+""",
+    ],
+)
+def test_child_process_shell_disabled_or_promisified_stays_structured(tmp_path: Path, script: str) -> None:
+    findings = _scan(tmp_path, "Use [the process helper](scripts/tool.mjs).", script)
+
+    hits = _rule_hits(findings, "COMMAND_INJECTION_JS_CHILD_PROCESS")
+    assert hits
+    assert all(finding.severity == Severity.LOW for finding in hits)
 
 
 def test_child_process_import_without_execution_is_not_a_finding(tmp_path: Path) -> None:
