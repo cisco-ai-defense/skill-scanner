@@ -37,7 +37,12 @@ from pathlib import Path
 from typing import Any
 
 from ...core.models import Finding, Severity, Skill, ThreatCategory
-from ...core.static_analysis.bash_taint_tracker import BashTaintFlow, BashTaintType, analyze_bash_script
+from ...core.static_analysis.bash_taint_tracker import (
+    BashTaintFlow,
+    BashTaintType,
+    analyze_bash_downloads,
+    analyze_bash_script,
+)
 from ...core.static_analysis.context_extractor import (
     ContextExtractor,
     SkillFunctionContext,
@@ -229,6 +234,37 @@ class BehavioralAnalyzer(BaseAnalyzer):
             try:
                 bash_flows = analyze_bash_script(content, script_file.relative_path)
                 findings.extend(self._generate_findings_from_bash_flows(bash_flows, script_file.relative_path))
+                for download in analyze_bash_downloads(content):
+                    findings.append(
+                        Finding(
+                            id=self._generate_id(
+                                "BASH_DOWNLOAD", f"{script_file.relative_path}:{download.download_line}:{download.destination}"
+                            ),
+                            rule_id="BEHAVIOR_DOWNLOADED_EXECUTABLE",
+                            category=ThreatCategory.SUPPLY_CHAIN_ATTACK,
+                            severity=Severity.MEDIUM,
+                            title="Bash launcher acquires an executable at runtime",
+                            description=(
+                                f"Downloads `{download.destination}` from `{download.url}` at line "
+                                f"{download.download_line}, then makes it executable or invokes it at "
+                                f"line {download.sink_line}. The runtime download is not scanned; "
+                                "this finding covers the launcher, not the downloaded artifact's contents."
+                            ),
+                            file_path=script_file.relative_path,
+                            line_number=download.sink_line,
+                            snippet=download.sink_snippet,
+                            remediation=(
+                                "Obtain and scan the downloaded artifact separately before trusting its execution."
+                            ),
+                            analyzer="behavioral",
+                            metadata={
+                                "download_url": download.url,
+                                "destination": download.destination,
+                                "download_line": download.download_line,
+                                "coverage": "runtime_download_not_scanned",
+                            },
+                        )
+                    )
             except Exception as e:
                 logger.warning("Failed to analyze bash script %s: %s", script_file.relative_path, e)
 
@@ -731,3 +767,4 @@ class BehavioralAnalyzer(BaseAnalyzer):
             )
 
         return findings
+

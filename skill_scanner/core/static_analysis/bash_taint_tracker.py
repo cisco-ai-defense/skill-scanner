@@ -29,7 +29,9 @@ Tracks:
 
 from __future__ import annotations
 
+import posixpath
 import re
+import shlex
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
@@ -68,6 +70,180 @@ class BashTaintFlow:
     sink_snippet: str
     taints: set[BashTaintType]
     severity: str  # CRITICAL, HIGH, MEDIUM
+
+
+@dataclass
+class BashDownloadedExecutable:
+    """A downloaded file subsequently made executable or invoked."""
+
+    url: str
+    destination: str
+    download_line: int
+    sink_line: int
+    sink_snippet: str
+
+
+def _download_value(token: str, variables: dict[str, str]) -> str:
+    # Expansion is bounded because the input is untrusted shell source.
+    limit = 4096
+    if len(token) > limit:
+        return ""
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'":
+        if token[0] == "'":
+            return token[1:-1]
+        token = token[1:-1]
+    parts: list[str] = []
+    end = 0
+    size = 0
+    for match in _VAR_REF.finditer(token):
+        literal = token[end : match.start()]
+        value = variables.get(match[1], "${" + match[1] + "}")
+        size += len(literal) + len(value)
+        if size > limit:
+            return ""
+        parts.extend((literal, value))
+        end = match.end()
+    if size + len(token) - end > limit:
+        return ""
+    return "".join(parts) + token[end:]
+
+
+def _download_target(command: list[str], variables: dict[str, str]) -> tuple[str, str] | None:
+    name = command[0].rsplit("/", 1)[-1]
+    if name not in {"curl", "wget", "fetch"}:
+        return None
+    urls = [_download_value(token, variables) for token in command[1:]]
+    urls = [url for url in urls if url.startswith(("https://", "http://"))]
+    if len(urls) != 1:
+        return None
+    short_option = "O" if name == "wget" else "o"
+    long_option = "--output-document" if name == "wget" else "--output"
+    destination = None
+    for index, token in enumerate(command[1:], 1):
+        if token in {long_option, ">"}:
+            if index + 1 < len(command):
+                destination = command[index + 1]
+        elif token.startswith(long_option + "="):
+            destination = token.split("=", 1)[1]
+        elif token.startswith("-") and not token.startswith("--") and short_option in token[1:]:
+            suffix = token.split(short_option, 1)[1]
+            if suffix:
+                destination = suffix
+            elif index + 1 < len(command):
+                destination = command[index + 1]
+    if destination is None:
+        return None
+    destination = _download_value(destination, variables)
+    if not destination or destination == "-":
+        return None
+    return urls[0], posixpath.normpath(destination)
+
+
+def _download_sink(command: list[str], variables: dict[str, str]) -> list[str]:
+    name = command[0].rsplit("/", 1)[-1]
+    args = command[1:]
+    if name == "chmod":
+        while args and args[0].startswith("-"):
+            if args[0] == "-x":
+                return []
+            args = args[1:]
+        if not args:
+            return []
+        mode = _download_value(args[0], variables)
+        executable = bool(re.search(r"(?:^|,)[ugoa]*[+=][rwxXst]*[xX]", mode))
+        if re.fullmatch(r"[0-7]{3,4}", mode):
+            executable = any(int(digit) & 1 for digit in mode[-3:])
+        if not executable:
+            return []
+        targets = args[1:]
+    elif name == "exec":
+        if args[:1] == ["-a"]:
+            args = args[2:]
+        while args and args[0].startswith("-"):
+            args = args[1:]
+        targets = args[:1]
+    elif name in {"bash", "sh", "zsh", "source", "."}:
+        if args and args[0].startswith("-"):
+            return []
+        targets = args[:1]
+    else:
+        raw_name = command[0].strip("\"'")
+        if not raw_name.startswith(("/", "./", "../", "$", "~")):
+            return []
+        targets = command[:1]
+    return [posixpath.normpath(_download_value(token, variables)) for token in targets]
+
+
+def analyze_bash_downloads(content: str) -> list[BashDownloadedExecutable]:
+    """Match simple shell download destinations with later execution intent.
+
+    This is a line-based heuristic, not a shell interpreter or a control-flow
+    proof. Variables retain unresolved placeholders; no environment is read.
+    """
+    variables: dict[str, str] = {}
+    downloads: dict[str, tuple[str, int]] = {}
+    reported: set[tuple[str, int]] = set()
+    findings: list[BashDownloadedExecutable] = []
+    pending = ""
+    start_line = 1
+    heredocs: list[str] = []
+    for line_number, raw_line in enumerate(content.splitlines(), 1):
+        if heredocs:
+            if raw_line.lstrip("\t") == heredocs[0]:
+                heredocs.pop(0)
+            continue
+        if not pending:
+            start_line = line_number
+        if raw_line.endswith("\\"):
+            pending += raw_line[:-1] + " "
+            continue
+        line = pending + raw_line
+        pending = ""
+        assignment = _VAR_ASSIGN_SIMPLE.fullmatch(line.strip())
+        if assignment:
+            try:
+                values = shlex.split(assignment[2], comments=True, posix=False)
+            except ValueError:
+                break
+            if len(values) == 1:
+                variables[assignment[1]] = _download_value(values[0], variables)
+                continue
+        lexer = shlex.shlex(line, posix=False, punctuation_chars=";&|<>")
+        lexer.whitespace_split = True
+        try:
+            tokens = list(lexer)
+        except ValueError:
+            break
+        for index, token in enumerate(tokens[:-1]):
+            if token == "<<":
+                heredocs.append(tokens[index + 1].lstrip("-").strip("\"'"))
+        command: list[str] = []
+        for token in [*tokens, ";"]:
+            if token not in {";", "&&", "||", "|", "&"}:
+                command.append(token)
+                continue
+            while command and command[0] in {"then", "do", "else", "command"}:
+                command.pop(0)
+            if not command:
+                continue
+            if len(command) == 1 and (assignment := _VAR_ASSIGN_SIMPLE.fullmatch(command[0])):
+                variables[assignment[1]] = _download_value(assignment[2], variables)
+            else:
+                download = _download_target(command, variables)
+                if download:
+                    url, destination = download
+                    downloads[destination] = (url, start_line)
+                for destination in _download_sink(command, variables):
+                    if destination not in downloads:
+                        continue
+                    url, download_line = downloads[destination]
+                    identity = (destination, download_line)
+                    if identity in reported:
+                        continue
+                    findings.append(BashDownloadedExecutable(url, destination, download_line, start_line, line.strip()))
+                    reported.add(identity)
+            command = []
+    return findings
 
 
 # Patterns that introduce taint via command substitution
@@ -285,3 +461,4 @@ def _check_sinks(
                 severity=severity,
             )
         )
+
