@@ -37,6 +37,7 @@ Requirements:
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import json
 import logging
@@ -217,6 +218,19 @@ def _stable_request_error_code(error: Exception, *, repair: bool) -> str:
     if isinstance(error, ConnectionError):
         return f"{prefix}_CONNECTION_FAILED"
     return f"{prefix}_RUNTIME_FAILED"
+
+
+def _bedrock_meta_response_format() -> dict[str, Any]:
+    """Return the Meta response schema trimmed to what Bedrock constrained decoding accepts.
+
+    Bedrock's ``output_config.format`` rejects ``minItems``/``maxItems``/``uniqueItems``,
+    the same keywords the primary analyzer already strips for it.
+    """
+
+    fmt = copy.deepcopy(_ollama_meta_response_format())
+    schema = fmt["json_schema"]["schema"]
+    fmt["json_schema"]["schema"] = LLMRequestHandler._sanitize_schema_for_constrained_decoding(schema)
+    return fmt
 
 
 def _ollama_meta_response_format() -> dict[str, Any]:
@@ -2022,6 +2036,10 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
             # LiteLLM translates this to Ollama's ``think=false`` option.
             api_params["reasoning_effort"] = "none"
             api_params["response_format"] = _ollama_meta_response_format()
+        elif str(self.model).lower().startswith("bedrock/") and not self.is_bedrock_mantle:
+            # Without a schema Bedrock models often return malformed ``missed_threats``
+            # entries, which the contract check rejects and (non-Ollama) never repairs.
+            api_params["response_format"] = _bedrock_meta_response_format()
 
         if self.llm_user and supports_openai_user_param(self.model, self.provider):
             api_params["user"] = self.llm_user
@@ -2117,6 +2135,17 @@ Each recommendation, if any, must contain exactly `priority` (integer 1–3), `t
             except Exception as e:
                 last_exception = e
                 error_msg = str(e).lower()
+
+                if (
+                    api_params.get("response_format") is not None
+                    and not self.is_ollama
+                    and ("output_config.format" in error_msg or "response_format" in error_msg)
+                ):
+                    # This model/region rejects structured output: degrade to the
+                    # previous unconstrained request instead of failing the batch.
+                    logger.warning("Meta-analysis structured output rejected, retrying without it: %s", e)
+                    api_params.pop("response_format", None)
+                    continue
 
                 is_retryable = any(
                     keyword in error_msg
