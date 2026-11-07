@@ -1205,6 +1205,36 @@ class TestLLMRequestMaking:
         assert analyzer.is_bedrock
         assert analyzer.aws_region == "us-west-2"
 
+    def test_bedrock_region_honours_aws_default_region(self, monkeypatch):
+        """With no explicit region, AWS_DEFAULT_REGION wins over the us-east-1 default."""
+        from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+
+        monkeypatch.delenv("AWS_REGION", raising=False)
+        monkeypatch.setenv("AWS_DEFAULT_REGION", "eu-west-1")
+        config = ProviderConfig(model="bedrock/anthropic.claude-v2", api_key="k")
+        assert config.get_request_params()["aws_region_name"] == "eu-west-1"
+
+    def test_bedrock_region_falls_back_to_default(self, monkeypatch, tmp_path):
+        """With nothing configured anywhere, the documented us-east-1 default is sent."""
+        from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+
+        monkeypatch.delenv("AWS_REGION", raising=False)
+        monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+        monkeypatch.delenv("AWS_PROFILE", raising=False)
+        monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "none"))
+        config = ProviderConfig(model="bedrock/anthropic.claude-v2", api_key="k")
+        assert config.get_request_params()["aws_region_name"] == "us-east-1"
+
+    def test_bedrock_region_sent_when_explicit(self, monkeypatch):
+        from skill_scanner.core.analyzers.llm_provider_config import ProviderConfig
+
+        monkeypatch.delenv("AWS_REGION", raising=False)
+        config = ProviderConfig(model="bedrock/anthropic.claude-v2", api_key="k", aws_region="eu-west-1")
+        assert config.get_request_params()["aws_region_name"] == "eu-west-1"
+        monkeypatch.setenv("AWS_REGION", "ap-south-1")
+        config = ProviderConfig(model="bedrock/anthropic.claude-v2", api_key="k")
+        assert config.get_request_params()["aws_region_name"] == "ap-south-1"
+
 
 class TestErrorHandling:
     """Test error handling in LLM analyzer."""
