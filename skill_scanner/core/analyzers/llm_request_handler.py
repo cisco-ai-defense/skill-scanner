@@ -729,12 +729,12 @@ class LLMRequestHandler:
                 last_exception = e
                 error_msg = str(e).lower()
 
-                # Check for rate limiting
+                # Check for retryable errors (rate limit, overloaded, 503, timeout)
                 if _is_retryable_error_message(error_msg):
                     if attempt < self.max_retries:
                         delay = (2**attempt) * self.rate_limit_delay
                         logger.warning(
-                            "Rate limit hit for %s, retrying in %ss (attempt %d/%d)",
+                            "Retryable LLM error for %s, retrying in %ss (attempt %d/%d)",
                             context,
                             delay,
                             attempt + 1,
@@ -990,7 +990,7 @@ class LLMRequestHandler:
                     if attempt < self.max_retries:
                         delay = (2**attempt) * self.rate_limit_delay
                         logger.warning(
-                            "Rate limit hit for %s, retrying in %ss (attempt %d/%d)",
+                            "Retryable LLM error for %s, retrying in %ss (attempt %d/%d)",
                             context,
                             delay,
                             attempt + 1,
