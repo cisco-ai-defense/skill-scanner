@@ -125,6 +125,8 @@ class TestProviderAwareParams:
             ("openrouter/anthropic/claude-sonnet-5", "openrouter"),
             ("anthropic/claude-sonnet-5", "orcarouter"),
             ("orcarouter/anthropic/claude-sonnet-5", ""),
+            ("anthropic/claude-sonnet-5", "atlascloud"),
+            ("atlascloud/anthropic/claude-sonnet-5", ""),
             ("bedrock/amazon.nova-pro-v1:0", "aws-bedrock"),
         ],
     )

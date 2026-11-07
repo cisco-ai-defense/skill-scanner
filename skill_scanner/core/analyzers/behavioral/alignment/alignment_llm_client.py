@@ -104,7 +104,7 @@ class AlignmentLLMClient:
         if not LITELLM_AVAILABLE:
             raise ImportError("litellm is required for alignment verification. Install with: pip install litellm")
 
-        # Store configuration for per-request usage. OrcaRouter uses the shared
+        # Store configuration for per-request usage. OrcaRouter and Atlas Cloud use the shared
         # provider configuration so model normalization, key resolution, and
         # its default OpenAI-compatible endpoint stay consistent with the main
         # and meta LLM clients.
@@ -112,7 +112,11 @@ class AlignmentLLMClient:
         self._provider = raw_provider.strip().lower().replace("_", "-") if raw_provider else None
         self._provider_config: ProviderConfig | None = None
         self._llm_user = resolve_llm_user(llm_user)
-        if self._provider == "orcarouter" or model.lower().startswith("orcarouter/"):
+        if (
+            self._provider in {"orcarouter", "atlascloud"}
+            or model.lower().startswith("orcarouter/")
+            or model.lower().startswith("atlascloud/")
+        ):
             self._provider_config = ProviderConfig(
                 model=model,
                 api_key=api_key,

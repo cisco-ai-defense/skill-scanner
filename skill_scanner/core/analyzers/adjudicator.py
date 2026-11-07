@@ -365,6 +365,8 @@ class Adjudicator:
         model = _resolve_model()
         if model is None and self.provider == "orcarouter":
             model = "orcarouter/anthropic/claude-sonnet-5"
+        if model is None and self.provider == "atlascloud":
+            model = "atlascloud/anthropic/claude-sonnet-5"
         if model is None and self.provider == "apple-fm":
             model = "apple-fm/system"
         self.model: str | None = model
@@ -518,11 +520,11 @@ class Adjudicator:
 
         # Adopt the normalised model where ProviderConfig rewrites it onto
         # LiteLLM's OpenAI adapter: OpenAI-compatible gateways (a bare custom
-        # name raises "LLM Provider NOT provided") and OrcaRouter (LiteLLM does
-        # not recognise the `orcarouter/` prefix). Deliberately not generalised:
+        # name raises "LLM Provider NOT provided") and OrcaRouter / Atlas Cloud
+        # (LiteLLM does not recognise the `orcarouter/` or `atlascloud/` prefix). Deliberately not generalised:
         # the Gemini normalisation targets the Google SDK, which this
         # LiteLLM-only path cannot use.
-        if config.is_openai_compatible or config.is_orcarouter:
+        if config.is_openai_compatible or config.is_orcarouter or config.is_atlascloud:
             params["model"] = config.model
 
         # ProviderConfig defaults aws_region to us-east-1, so this key is always
