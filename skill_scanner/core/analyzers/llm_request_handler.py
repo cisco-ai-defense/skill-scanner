@@ -333,6 +333,26 @@ warnings.filterwarnings("ignore", message=".*async_success_handler.*was never aw
 warnings.filterwarnings("ignore", message=".*Enable tracemalloc.*")
 
 
+_RETRYABLE_ERROR_KEYWORDS = (
+    "rate limit",
+    "quota",
+    "too many requests",
+    "429",
+    "throttling",
+    "overloaded",
+    "503",
+    "service unavailable",
+    "temporarily unavailable",
+    "timeout",
+    "timed out",
+)
+
+
+def _is_retryable_error_message(error_msg: str) -> bool:
+    """Return True for rate-limit and transient provider errors worth retrying."""
+    return any(keyword in error_msg for keyword in _RETRYABLE_ERROR_KEYWORDS)
+
+
 class LLMRequestHandler:
     """Handles LLM API requests with retry logic and structured outputs."""
 
@@ -710,10 +730,7 @@ class LLMRequestHandler:
                 error_msg = str(e).lower()
 
                 # Check for rate limiting
-                if any(
-                    keyword in error_msg
-                    for keyword in ["rate limit", "quota", "too many requests", "429", "throttling"]
-                ):
+                if _is_retryable_error_message(error_msg):
                     if attempt < self.max_retries:
                         delay = (2**attempt) * self.rate_limit_delay
                         logger.warning(
@@ -969,10 +986,7 @@ class LLMRequestHandler:
 
                 last_exception = error
                 error_msg = str(error).lower()
-                if any(
-                    keyword in error_msg
-                    for keyword in ["rate limit", "quota", "too many requests", "429", "throttling"]
-                ):
+                if _is_retryable_error_message(error_msg):
                     if attempt < self.max_retries:
                         delay = (2**attempt) * self.rate_limit_delay
                         logger.warning(

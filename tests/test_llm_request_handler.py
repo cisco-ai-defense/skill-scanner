@@ -262,6 +262,44 @@ class TestLiteLLMRequestFallback:
         assert mocked_acompletion.await_args_list[0].kwargs["response_format"]["type"] == "json_object"
 
 
+class TestTransientErrorRetry:
+    """Transient provider errors (overloaded/503/timeout) are retried, not fatal."""
+
+    @pytest.fixture
+    def handler(self) -> LLMRequestHandler:
+        provider_config = MagicMock()
+        provider_config.model = "gpt-4o"
+        provider_config.use_google_sdk = False
+        provider_config.get_request_params.return_value = {}
+        return LLMRequestHandler(provider_config=provider_config, max_retries=2, rate_limit_delay=0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("message", ["Overloaded", "503 Service Unavailable", "Request timed out"])
+    async def test_retries_transient_error_then_succeeds(self, handler: LLMRequestHandler, message: str):
+        ok = MagicMock()
+        ok.choices = [MagicMock(message=MagicMock(content="{}"))]
+
+        with patch(
+            "skill_scanner.core.analyzers.llm_request_handler.acompletion",
+            AsyncMock(side_effect=[RuntimeError(message), ok]),
+        ) as mocked:
+            result = await handler.make_request([{"role": "user", "content": "x"}], context="demo")
+
+        assert result == "{}"
+        assert mocked.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_non_transient_error_is_not_retried(self, handler: LLMRequestHandler):
+        with patch(
+            "skill_scanner.core.analyzers.llm_request_handler.acompletion",
+            AsyncMock(side_effect=RuntimeError("invalid api key")),
+        ) as mocked:
+            with pytest.raises(RuntimeError):
+                await handler.make_request([{"role": "user", "content": "x"}], context="demo")
+
+        assert mocked.await_count == 1
+
+
 class TestTokenUsageHelpers:
     """Token extraction helpers and handler.last_usage state."""
 
