@@ -177,6 +177,10 @@ class ProviderConfig:
         self.api_version = api_version
         self.provider = self._normalize_provider(provider or os.getenv("SKILL_SCANNER_LLM_PROVIDER"))
         self.llm_user = resolve_llm_user(llm_user)
+        # Whether the region was chosen by the operator (argument or AWS_REGION).
+        # If not, AWS_DEFAULT_REGION / the boto3 session region is honoured
+        # before falling back to the us-east-1 default.
+        self._aws_region_explicit = bool(aws_region or os.getenv("AWS_REGION"))
         self.aws_region = aws_region or os.getenv("AWS_REGION", "us-east-1")
         self.aws_profile = aws_profile or os.getenv("AWS_PROFILE")
         self.aws_session_token = aws_session_token or os.getenv("AWS_SESSION_TOKEN")
@@ -285,6 +289,23 @@ class ProviderConfig:
         self.api_key = self._resolve_api_key(api_key)
 
         # Note: Google SDK client is created per-request, not configured globally
+
+    def _resolve_bedrock_region(self) -> str | None:
+        """Region to send to LiteLLM: explicit > AWS_DEFAULT_REGION > boto3 session > default."""
+        if self._aws_region_explicit:
+            return self.aws_region
+        env_region = os.getenv("AWS_DEFAULT_REGION")
+        if env_region:
+            return env_region
+        try:
+            import boto3
+
+            session_region = boto3.Session(profile_name=self.aws_profile).region_name
+            if session_region:
+                return str(session_region)
+        except Exception:
+            pass
+        return self.aws_region
 
     def _normalize_provider(self, provider: str | None) -> str | None:
         """Normalize provider aliases used by env vars, CLI, and SDK callers."""
@@ -483,8 +504,9 @@ class ProviderConfig:
             # AWS Bedrock supports:
             # 1. Bearer token auth via api_key (format: bedrock-api-key-*)
             # 2. IAM credentials via boto3 (falls back if no bearer token)
-            if self.aws_region:
-                params["aws_region_name"] = self.aws_region
+            region = self._resolve_bedrock_region()
+            if region:
+                params["aws_region_name"] = region
             if self.aws_session_token:
                 params["aws_session_token"] = self.aws_session_token
             if self.aws_profile:
