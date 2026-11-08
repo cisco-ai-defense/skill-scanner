@@ -110,7 +110,7 @@ On the command line, `--llm-provider openai-compatible` does the same as the pro
 - **Gateway needs a `user` field:** some gateways need the Chat Completions `user` field for routing
   or billing. Set it with `SKILL_SCANNER_LLM_USER`.
 
-Hosted routers with a built-in prefix also work directly: `openrouter/<model>` and `orcarouter/<model>`.
+Hosted routers with a built-in prefix also work directly: `openrouter/<model>`, `orcarouter/<model>` and `runcrate/<model>`. Runcrate serves open-weight models from `https://api.runcrate.ai/v1` (for example `runcrate/deepseek-ai/DeepSeek-V4-Flash`); create a key at [runcrate.ai](https://runcrate.ai/dashboard/api-keys) and set it as `SKILL_SCANNER_LLM_API_KEY`.
 
 ### Keeping Skill Content on Your Machines
 
