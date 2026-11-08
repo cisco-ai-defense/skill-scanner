@@ -2229,4 +2229,3 @@ rules:
     knobs:
       enabled: true
     description: "VirusTotal engines identify a packaged file as malicious"
-

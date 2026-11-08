@@ -197,13 +197,31 @@ source URL pattern, destination, and source/sink lines. It explicitly states
 that the runtime artifact was **not scanned**; a scan of a launcher does not
 establish the safety of the code it retrieves.
 
-The check recognizes explicit output-file options and `>` redirection,
-simple variable assignments, quoted paths, and command chains. It does not
-download or execute anything, read environment values, prove branch
+The check recognizes explicit output-file options and stdout redirection,
+simple variable assignments, quoted paths, multiline quoted strings, and command
+chains. Explicit file-output options take precedence over redirects; stderr and
+other non-stdout redirects are not download destinations. Shell interpreter
+options are distinguished from the script operand. `chmod +X` alone is not
+treated as setting execute bits on a newly downloaded file.
+
+Variable expansion is limited to 4,096 characters per value and 65,536 characters
+in total per command. A command that exceeds the total budget is skipped; later
+commands are still analyzed. Malformed logical lines are skipped, while
+unterminated quoted text remains unparsed rather than being treated as commands.
+Arithmetic shifts inside `$((...))` are not heredocs. Relative download entries
+are discarded after `cd`, `pushd`, or `popd` to avoid matching files across unknown
+working-directory changes; absolute destinations remain tracked.
+
+The heuristic does not download or execute anything, read environment values, prove branch
 reachability, or fully interpret Bash. Ordinary data downloads without a
-matching execution intent are not reported by this rule. Unparseable shell
-input stops this heuristic; dynamic commands, archive extraction, indirect
-helper functions, and other languages require separate analysis.
+matching execution intent are not reported by this rule. Dynamic commands,
+archive extraction, indirect helper functions, and other languages require separate analysis.
+
+Legitimate installers, including kubectl and jq installers, can produce this
+MEDIUM finding because their runtime artifacts are outside scan coverage. It is
+not proof of maliciousness. This finding alone does not change `is_safe`, but it
+does trigger `--fail-on-severity medium` gates. Review the downloaded artifact
+and choose the appropriate severity threshold for your workflow.
 
 Hook-trigger severity escalation and checksum-source independence are not
 inferred by this check. Scan fetched artifacts separately and review the
@@ -336,4 +354,3 @@ def process(user_input):
 - [Static Analyzer](static-analyzer.md) -- Pattern-based detection (comparison with behavioral approach)
 - [LLM Analyzer](llm-analyzer.md) -- Semantic analysis that complements dataflow findings
 - [Analyzer Selection Guide](meta-and-external-analyzers.md) -- When to enable `--use-behavioral`
-

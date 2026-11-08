@@ -238,7 +238,8 @@ class BehavioralAnalyzer(BaseAnalyzer):
                     findings.append(
                         Finding(
                             id=self._generate_id(
-                                "BASH_DOWNLOAD", f"{script_file.relative_path}:{download.download_line}:{download.destination}"
+                                "BASH_DOWNLOAD",
+                                f"{script_file.relative_path}:{download.download_line}:{download.destination}",
                             ),
                             rule_id="BEHAVIOR_DOWNLOADED_EXECUTABLE",
                             category=ThreatCategory.SUPPLY_CHAIN_ATTACK,
@@ -767,4 +768,3 @@ class BehavioralAnalyzer(BaseAnalyzer):
             )
 
         return findings
-

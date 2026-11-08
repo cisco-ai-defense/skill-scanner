@@ -83,7 +83,30 @@ class BashDownloadedExecutable:
     sink_snippet: str
 
 
+class _DownloadExpansionLimit(ValueError):
+    """The current command exhausted its shell-value expansion budget."""
+
+
+@dataclass
+class _DownloadExpansion:
+    """Bound retained expansions across all arguments of one command."""
+
+    variables: dict[str, str]
+    remaining: int = 65536
+
+    def value(self, token: str) -> str:
+        """Resolve one value, stopping this command when its budget is spent."""
+        if self.remaining <= 0:
+            raise _DownloadExpansionLimit
+        value = _download_value(token, self.variables)
+        self.remaining -= len(value)
+        if self.remaining < 0:
+            raise _DownloadExpansionLimit
+        return value
+
+
 def _download_value(token: str, variables: dict[str, str]) -> str:
+    """Resolve a simple shell value without reading the environment."""
     # Expansion is bounded because the input is untrusted shell source.
     limit = 4096
     if len(token) > limit:
@@ -108,39 +131,87 @@ def _download_value(token: str, variables: dict[str, str]) -> str:
     return "".join(parts) + token[end:]
 
 
-def _download_target(command: list[str], variables: dict[str, str]) -> tuple[str, str] | None:
-    name = command[0].rsplit("/", 1)[-1]
+def _download_target(command: list[str], expansion: _DownloadExpansion) -> tuple[str, str] | None:
+    """Prefer explicit downloader output over a stdout redirection."""
+    name = expansion.value(command[0]).rsplit("/", 1)[-1]
     if name not in {"curl", "wget", "fetch"}:
-        return None
-    urls = [_download_value(token, variables) for token in command[1:]]
-    urls = [url for url in urls if url.startswith(("https://", "http://"))]
-    if len(urls) != 1:
         return None
     short_option = "O" if name == "wget" else "o"
     long_option = "--output-document" if name == "wget" else "--output"
-    destination = None
-    for index, token in enumerate(command[1:], 1):
-        if token in {long_option, ">"}:
+    explicit = None
+    redirected = None
+    url = None
+    index = 1
+    while index < len(command):
+        token = command[index]
+        if token == long_option:
+            if index + 1 >= len(command):
+                return None
+            explicit = command[index + 1]
+            index += 1
+        elif token in {">", "1>"}:
             if index + 1 < len(command):
-                destination = command[index + 1]
+                redirected = command[index + 1]
+                index += 1
+        elif re.fullmatch(r"\d*(?:>>|>&|<|<&)|\d+>", token):
+            # These operands are logs, descriptors or input, not payloads.
+            index += 1
         elif token.startswith(long_option + "="):
-            destination = token.split("=", 1)[1]
+            explicit = token.split("=", 1)[1]
         elif token.startswith("-") and not token.startswith("--") and short_option in token[1:]:
             suffix = token.split(short_option, 1)[1]
             if suffix:
-                destination = suffix
+                explicit = suffix
             elif index + 1 < len(command):
-                destination = command[index + 1]
-    if destination is None:
+                explicit = command[index + 1]
+                index += 1
+            else:
+                return None
+        else:
+            value = expansion.value(token)
+            if value.startswith(("https://", "http://")):
+                if url is not None:
+                    return None
+                url = value
+        index += 1
+    if url is None:
         return None
-    destination = _download_value(destination, variables)
+    destination = expansion.value(explicit) if explicit is not None else "-"
+    if destination == "-" and redirected is not None:
+        destination = expansion.value(redirected)
     if not destination or destination == "-":
         return None
-    return urls[0], posixpath.normpath(destination)
+    return url, posixpath.normpath(destination)
 
 
-def _download_sink(command: list[str], variables: dict[str, str]) -> list[str]:
-    name = command[0].rsplit("/", 1)[-1]
+def _shell_script_operand(args: list[str]) -> list[str]:
+    """Select a shell's script operand without mistaking option values for it."""
+    index = 0
+    while index < len(args):
+        option = args[index].strip("\"'")
+        if option == "--":
+            return args[index + 1 : index + 2]
+        if option == "-":
+            return []
+        if option in {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}:
+            index += 2
+            continue
+        if option.startswith(("-", "+")):
+            if not option.startswith("--"):
+                flags = option[1:]
+                if "c" in flags or "s" in flags:
+                    return []
+                if flags.endswith(("o", "O")):
+                    index += 1
+            index += 1
+            continue
+        return args[index : index + 1]
+    return []
+
+
+def _download_sink(command: list[str], expansion: _DownloadExpansion) -> list[str]:
+    """Recognize explicit execute modes and supported invocation forms."""
+    name = expansion.value(command[0]).rsplit("/", 1)[-1]
     args = command[1:]
     if name == "chmod":
         while args and args[0].startswith("-"):
@@ -149,8 +220,8 @@ def _download_sink(command: list[str], variables: dict[str, str]) -> list[str]:
             args = args[1:]
         if not args:
             return []
-        mode = _download_value(args[0], variables)
-        executable = bool(re.search(r"(?:^|,)[ugoa]*[+=][rwxXst]*[xX]", mode))
+        mode = expansion.value(args[0])
+        executable = bool(re.search(r"(?:^|,)[ugoa]*[+=][rwxXst]*x", mode))
         if re.fullmatch(r"[0-7]{3,4}", mode):
             executable = any(int(digit) & 1 for digit in mode[-3:])
         if not executable:
@@ -162,7 +233,9 @@ def _download_sink(command: list[str], variables: dict[str, str]) -> list[str]:
         while args and args[0].startswith("-"):
             args = args[1:]
         targets = args[:1]
-    elif name in {"bash", "sh", "zsh", "source", "."}:
+    elif name in {"bash", "sh", "zsh"}:
+        targets = _shell_script_operand(args)
+    elif name in {"source", "."}:
         if args and args[0].startswith("-"):
             return []
         targets = args[:1]
@@ -171,7 +244,62 @@ def _download_sink(command: list[str], variables: dict[str, str]) -> list[str]:
         if not raw_name.startswith(("/", "./", "../", "$", "~")):
             return []
         targets = command[:1]
-    return [posixpath.normpath(_download_value(token, variables)) for token in targets]
+    return [posixpath.normpath(value) for token in targets if (value := expansion.value(token))]
+
+
+def _download_quote_state(line: str, quote: str) -> str:
+    """Track multiline quotes without interpreting the quoted command text."""
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if char == "\\" and quote != "'":
+            index += 2
+            continue
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+        elif char == "#" and (index == 0 or line[index - 1].isspace() or line[index - 1] in ";&|<>"):
+            break
+        index += 1
+    return quote
+
+
+def _download_tokens(line: str) -> list[str]:
+    """Keep numbered redirects distinct, retaining their source adjacency."""
+    lexer = shlex.shlex(line, posix=False, punctuation_chars=";&|<>")
+    lexer.whitespace_split = True
+    tokens: list[str] = []
+    end = 0
+    for token in lexer:
+        start = line.find(token, end)
+        if start < 0:
+            raise ValueError("Cannot locate shell token in source")
+        if token in {">", ">>", ">&"} and tokens and tokens[-1].isascii() and tokens[-1].isdigit() and start == end:
+            tokens[-1] += token
+        else:
+            tokens.append(token)
+        end = start + len(token)
+    return tokens
+
+
+def _download_heredocs(tokens: list[str]) -> list[str]:
+    """Recognize heredocs outside quoted words and arithmetic expansions."""
+    heredocs: list[str] = []
+    arithmetic_depth = 0
+    for index, token in enumerate(tokens):
+        if token.startswith(("'", '"')):
+            continue
+        if arithmetic_depth:
+            arithmetic_depth = max(0, arithmetic_depth + token.count("(") - token.count(")"))
+            continue
+        if "$((" in token:
+            arithmetic = token[token.index("$((") :]
+            arithmetic_depth = max(0, arithmetic.count("(") - arithmetic.count(")"))
+        elif token == "<<" and index + 1 < len(tokens):
+            heredocs.append(tokens[index + 1].lstrip("-").strip("\"'"))
+    return heredocs
 
 
 def analyze_bash_downloads(content: str) -> list[BashDownloadedExecutable]:
@@ -184,7 +312,8 @@ def analyze_bash_downloads(content: str) -> list[BashDownloadedExecutable]:
     downloads: dict[str, tuple[str, int]] = {}
     reported: set[tuple[str, int]] = set()
     findings: list[BashDownloadedExecutable] = []
-    pending = ""
+    pending: list[str] = []
+    quote = ""
     start_line = 1
     heredocs: list[str] = []
     for line_number, raw_line in enumerate(content.splitlines(), 1):
@@ -194,46 +323,55 @@ def analyze_bash_downloads(content: str) -> list[BashDownloadedExecutable]:
             continue
         if not pending:
             start_line = line_number
-        if raw_line.endswith("\\"):
-            pending += raw_line[:-1] + " "
+        quote = _download_quote_state(raw_line, quote)
+        if raw_line.endswith("\\") and quote != "'":
+            pending.append(raw_line[:-1] + " ")
             continue
-        line = pending + raw_line
-        pending = ""
+        pending.append(raw_line)
+        if quote:
+            pending.append("\n")
+            continue
+        line = "".join(pending)
+        pending.clear()
         assignment = _VAR_ASSIGN_SIMPLE.fullmatch(line.strip())
         if assignment:
             try:
                 values = shlex.split(assignment[2], comments=True, posix=False)
             except ValueError:
-                break
+                continue
             if len(values) == 1:
                 variables[assignment[1]] = _download_value(values[0], variables)
                 continue
-        lexer = shlex.shlex(line, posix=False, punctuation_chars=";&|<>")
-        lexer.whitespace_split = True
         try:
-            tokens = list(lexer)
+            tokens = _download_tokens(line)
         except ValueError:
-            break
-        for index, token in enumerate(tokens[:-1]):
-            if token == "<<":
-                heredocs.append(tokens[index + 1].lstrip("-").strip("\"'"))
+            continue
+        heredocs.extend(_download_heredocs(tokens))
         command: list[str] = []
         for token in [*tokens, ";"]:
             if token not in {";", "&&", "||", "|", "&"}:
                 command.append(token)
                 continue
-            while command and command[0] in {"then", "do", "else", "command"}:
+            while command and command[0] in {"then", "do", "else", "command", "if", "elif", "while", "until", "!"}:
                 command.pop(0)
             if not command:
                 continue
             if len(command) == 1 and (assignment := _VAR_ASSIGN_SIMPLE.fullmatch(command[0])):
                 variables[assignment[1]] = _download_value(assignment[2], variables)
             else:
-                download = _download_target(command, variables)
+                if command[0].strip("\"'") in {"cd", "pushd", "popd"}:
+                    downloads = {path: download for path, download in downloads.items() if posixpath.isabs(path)}
+                expansion = _DownloadExpansion(variables)
+                try:
+                    download = _download_target(command, expansion)
+                    targets = _download_sink(command, expansion)
+                except _DownloadExpansionLimit:
+                    command = []
+                    continue
                 if download:
                     url, destination = download
                     downloads[destination] = (url, start_line)
-                for destination in _download_sink(command, variables):
+                for destination in targets:
                     if destination not in downloads:
                         continue
                     url, download_line = downloads[destination]
@@ -461,4 +599,3 @@ def _check_sinks(
                 severity=severity,
             )
         )
-
