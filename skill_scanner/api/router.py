@@ -1039,15 +1039,15 @@ def _run_batch_scan(
                                 result.analyzers_used.append("meta_analyzer")
                                 if merge_meta_analyzer_usage is not None:
                                     merge_meta_analyzer_usage(result, meta_analyzer)
-                            except Exception:
-                                pass
+                            except Exception as meta_error:
+                                logger.warning("Meta-analysis failed for %s: %s", result.skill_name, meta_error)
 
             try:
                 asyncio.run(_run_batch_meta(scanner, report, policy))
             except ReasoningConfigurationError:
                 raise
-            except Exception:
-                pass
+            except Exception as meta_error:
+                logger.warning("Batch meta-analysis failed: %s", meta_error)
 
         # Keep batch summary counters consistent with potentially mutated
         # per-skill findings (e.g., after meta-analysis filtering).

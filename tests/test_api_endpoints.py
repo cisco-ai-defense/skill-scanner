@@ -962,6 +962,41 @@ class TestScanEndpointLLMUsage:
         response = client.post("/scan-batch", json=request_data)
         assert response.status_code == 200
 
+    def test_batch_meta_failure_is_logged(self, client, safe_skill_dir, caplog):
+        """Per-skill meta-analysis failures in /scan-batch must be logged, not silently dropped."""
+        failing_meta = MagicMock()
+        failing_meta.analyze_with_findings = AsyncMock(side_effect=RuntimeError("meta boom"))
+
+        result = MagicMock()
+        result.findings = [MagicMock()]
+        result.skill_name = "demo-skill"
+        result.skill_directory = str(safe_skill_dir)
+        report = MagicMock()
+        report.scan_results = [result]
+        scanner = MagicMock()
+        scanner.scan_directory.return_value = report
+
+        with (
+            patch("skill_scanner.api.router._create_api_scanner", return_value=scanner),
+            patch("skill_scanner.api.router._build_api_meta_analyzer", return_value=failing_meta),
+            patch("skill_scanner.api.router._recompute_report_summary"),
+            caplog.at_level("WARNING", logger="skill_scanner.api"),
+        ):
+            response = client.post(
+                "/scan-batch",
+                json={
+                    "skills_directory": str(safe_skill_dir.parent),
+                    "recursive": False,
+                    "use_llm": False,
+                    "enable_meta": True,
+                },
+            )
+            assert response.status_code == 200
+            time.sleep(1)
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("Meta-analysis failed" in m and "demo-skill" in m and "meta boom" in m for m in messages)
+
     def test_virustotal_without_key_returns_400(self, client, safe_skill_dir):
         """Test that VirusTotal without API key returns 400."""
         request_data = {"skill_directory": str(safe_skill_dir), "use_virustotal": True}
