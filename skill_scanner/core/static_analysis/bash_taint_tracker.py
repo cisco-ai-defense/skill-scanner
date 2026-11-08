@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import posixpath
 import re
-import shlex
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
@@ -81,6 +80,7 @@ class BashDownloadedExecutable:
     download_line: int
     sink_line: int
     sink_snippet: str
+    download_index: int = 0
 
 
 class _DownloadExpansionLimit(ValueError):
@@ -105,30 +105,41 @@ class _DownloadExpansion:
         return value
 
 
-def _download_value(token: str, variables: dict[str, str]) -> str:
-    """Resolve a simple shell value without reading the environment."""
+def _download_value(token: str, variables: dict[str, str], *, expand: bool = True) -> str:
+    """Resolve adjacent shell fragments, preserving single quotes and escapes."""
     # Expansion is bounded because the input is untrusted shell source.
     limit = 4096
     if len(token) > limit:
         return ""
-    if len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'":
-        if token[0] == "'":
-            return token[1:-1]
-        token = token[1:-1]
     parts: list[str] = []
-    end = 0
+    quote = ""
+    index = 0
     size = 0
-    for match in _VAR_REF.finditer(token):
-        literal = token[end : match.start()]
-        value = variables.get(match[1], "${" + match[1] + "}")
-        size += len(literal) + len(value)
+    while index < len(token):
+        char = token[index]
+        if char == quote or (not quote and char in "\"'"):
+            quote = "" if quote else char
+            index += 1
+            continue
+        if char == "\\" and quote != "'" and index + 1 < len(token):
+            following = token[index + 1]
+            if not quote or following in '\\$`"\n':
+                value = following
+                index += 2
+            else:
+                value = char
+                index += 1
+        elif expand and quote != "'" and (match := _VAR_REF.match(token, index)):
+            value = variables.get(match[1], "${" + match[1] + "}")
+            index = match.end()
+        else:
+            value = char
+            index += 1
+        size += len(value)
         if size > limit:
             return ""
-        parts.extend((literal, value))
-        end = match.end()
-    if size + len(token) - end > limit:
-        return ""
-    return "".join(parts) + token[end:]
+        parts.append(value)
+    return "".join(parts)
 
 
 def _download_target(command: list[str], expansion: _DownloadExpansion) -> tuple[str, str] | None:
@@ -142,9 +153,18 @@ def _download_target(command: list[str], expansion: _DownloadExpansion) -> tuple
     redirected = None
     url = None
     index = 1
+    proxy_options = {"--proxy", "--preproxy", "--proxy1.0", "--socks4", "--socks4a", "--socks5", "--socks5-hostname"}
     while index < len(command):
         token = command[index]
-        if token == long_option:
+        if name == "curl" and token in proxy_options | {"-x"}:
+            if index + 1 >= len(command):
+                return None
+            index += 1
+        elif name == "curl" and (
+            any(token.startswith(option + "=") for option in proxy_options) or token.startswith("-x")
+        ):
+            pass
+        elif token == long_option:
             if index + 1 >= len(command):
                 return None
             explicit = command[index + 1]
@@ -158,15 +178,19 @@ def _download_target(command: list[str], expansion: _DownloadExpansion) -> tuple
             index += 1
         elif token.startswith(long_option + "="):
             explicit = token.split("=", 1)[1]
-        elif token.startswith("-") and not token.startswith("--") and short_option in token[1:]:
-            suffix = token.split(short_option, 1)[1]
-            if suffix:
-                explicit = suffix
-            elif index + 1 < len(command):
-                explicit = command[index + 1]
-                index += 1
-            else:
-                return None
+        elif token.startswith("-") and not token.startswith("--"):
+            for offset, flag in enumerate(token[1:], 1):
+                if flag != short_option and not (name == "curl" and flag == "x"):
+                    continue
+                operand = token[offset + 1 :]
+                if not operand:
+                    if index + 1 >= len(command):
+                        return None
+                    operand = command[index + 1]
+                    index += 1
+                if flag == short_option:
+                    explicit = operand
+                break
         else:
             value = expansion.value(token)
             if value.startswith(("https://", "http://")):
@@ -209,6 +233,38 @@ def _shell_script_operand(args: list[str]) -> list[str]:
     return []
 
 
+def _chmod_sets_execute(mode: str) -> bool:
+    """Apply symbolic execute-bit changes in order to a fresh non-executable file."""
+    if re.fullmatch(r"[0-7]{3,4}", mode):
+        return bool(int(mode, 8) & 0o111)
+    bits = 0
+    classes = {"u": 4, "g": 2, "o": 1}
+    for clause in mode.split(","):
+        match = re.fullmatch(r"([ugoa]*)([+=-].*)", clause)
+        if not match:
+            return False
+        who, changes = match.groups()
+        selected = 7 if not who or "a" in who else sum(classes[c] for c in set(who))
+        end = 0
+        for change in re.finditer(r"([+=-])([ugo]|[rwxXst]*)", changes):
+            if change.start() != end:
+                return False
+            operator, permissions = change.groups()
+            executable = "x" in permissions or ("X" in permissions and bool(bits))
+            executable = executable or any(bits & classes[c] for c in permissions if c in classes)
+            requested = selected if executable else 0
+            if operator == "+":
+                bits |= requested
+            elif operator == "-":
+                bits &= ~requested
+            else:
+                bits = (bits & ~selected) | requested
+            end = change.end()
+        if end != len(changes):
+            return False
+    return bool(bits)
+
+
 def _download_sink(command: list[str], expansion: _DownloadExpansion) -> list[str]:
     """Recognize explicit execute modes and supported invocation forms."""
     name = expansion.value(command[0]).rsplit("/", 1)[-1]
@@ -221,18 +277,27 @@ def _download_sink(command: list[str], expansion: _DownloadExpansion) -> list[st
         if not args:
             return []
         mode = expansion.value(args[0])
-        executable = bool(re.search(r"(?:^|,)[ugoa]*[+=][rwxXst]*x", mode))
-        if re.fullmatch(r"[0-7]{3,4}", mode):
-            executable = any(int(digit) & 1 for digit in mode[-3:])
-        if not executable:
+        if not _chmod_sets_execute(mode):
             return []
         targets = args[1:]
     elif name == "exec":
-        if args[:1] == ["-a"]:
-            args = args[2:]
-        while args and args[0].startswith("-"):
-            args = args[1:]
-        targets = args[:1]
+        index = 0
+        while index < len(args):
+            option = args[index]
+            if option == "--":
+                index += 1
+                break
+            if option == "-a":
+                index += 2
+            elif option in {"-c", "-l", "-cl", "-lc"}:
+                index += 1
+            else:
+                break
+        args = args[index:]
+        if args and expansion.value(args[0]).rsplit("/", 1)[-1] in {"bash", "sh", "zsh"}:
+            targets = _shell_script_operand(args[1:])
+        else:
+            targets = args[:1]
     elif name in {"bash", "sh", "zsh"}:
         targets = _shell_script_operand(args)
     elif name in {"source", "."}:
@@ -247,12 +312,15 @@ def _download_sink(command: list[str], expansion: _DownloadExpansion) -> list[st
     return [posixpath.normpath(value) for token in targets if (value := expansion.value(token))]
 
 
-def _download_quote_state(line: str, quote: str) -> str:
-    """Track multiline quotes without interpreting the quoted command text."""
+def _download_shell_line(line: str, quote: str, in_word: bool) -> tuple[str, str, bool, bool]:
+    """Strip actual comments and recognize unescaped backslash-newlines."""
     index = 0
     while index < len(line):
         char = line[index]
         if char == "\\" and quote != "'":
+            if index + 1 == len(line):
+                return line[:-1], quote, True, True
+            in_word = True
             index += 2
             continue
         if quote:
@@ -260,33 +328,59 @@ def _download_quote_state(line: str, quote: str) -> str:
                 quote = ""
         elif char in "\"'":
             quote = char
-        elif char == "#" and (index == 0 or line[index - 1].isspace() or line[index - 1] in ";&|<>"):
-            break
+            in_word = True
+        elif char == "#" and not in_word:
+            return line[:index], quote, False, False
+        else:
+            in_word = not (char.isspace() or char in ";&|<>")
         index += 1
-    return quote
+    return line, quote, in_word, False
+
+
+_DOWNLOAD_OPERATOR = re.compile(r"(?:[0-9]+)?(?:<<-|<<<|<<|>>|>&|<&|>\||[<>])|&&|\|\||[;&|]")
+_DOWNLOAD_ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)", re.DOTALL)
 
 
 def _download_tokens(line: str) -> list[str]:
-    """Keep numbered redirects distinct, retaining their source adjacency."""
-    lexer = shlex.shlex(line, posix=False, punctuation_chars=";&|<>")
-    lexer.whitespace_split = True
+    """Keep raw shell words intact, including adjacent quotes and escapes."""
     tokens: list[str] = []
-    end = 0
-    for token in lexer:
-        start = line.find(token, end)
-        if start < 0:
-            raise ValueError("Cannot locate shell token in source")
-        if token in {">", ">>", ">&"} and tokens and tokens[-1].isascii() and tokens[-1].isdigit() and start == end:
-            tokens[-1] += token
-        else:
-            tokens.append(token)
-        end = start + len(token)
+    index = 0
+    while index < len(line):
+        if line[index].isspace():
+            index += 1
+            continue
+        if line[index] == "#":
+            break
+        if operator := _DOWNLOAD_OPERATOR.match(line, index):
+            tokens.append(operator[0])
+            index = operator.end()
+            continue
+        start = index
+        quote = ""
+        while index < len(line):
+            char = line[index]
+            if char == "\\" and quote != "'":
+                if index + 1 == len(line):
+                    raise ValueError("Incomplete shell escape")
+                index += 2
+                continue
+            if quote:
+                if char == quote:
+                    quote = ""
+            elif char in "\"'":
+                quote = char
+            elif char.isspace() or char in ";&|<>":
+                break
+            index += 1
+        if quote:
+            raise ValueError("Unterminated shell quote")
+        tokens.append(line[start:index])
     return tokens
 
 
-def _download_heredocs(tokens: list[str]) -> list[str]:
+def _download_heredocs(tokens: list[str]) -> list[tuple[str, bool]]:
     """Recognize heredocs outside quoted words and arithmetic expansions."""
-    heredocs: list[str] = []
+    heredocs: list[tuple[str, bool]] = []
     arithmetic_depth = 0
     for index, token in enumerate(tokens):
         if token.startswith(("'", '"')):
@@ -294,11 +388,13 @@ def _download_heredocs(tokens: list[str]) -> list[str]:
         if arithmetic_depth:
             arithmetic_depth = max(0, arithmetic_depth + token.count("(") - token.count(")"))
             continue
-        if "$((" in token:
-            arithmetic = token[token.index("$((") :]
+        if "((" in token:
+            arithmetic = token[token.index("((") :]
             arithmetic_depth = max(0, arithmetic.count("(") - arithmetic.count(")"))
-        elif token == "<<" and index + 1 < len(tokens):
-            heredocs.append(tokens[index + 1].lstrip("-").strip("\"'"))
+        elif re.fullmatch(r"\d*<<-?", token) and index + 1 < len(tokens):
+            # Delimiters undergo quote removal, never parameter expansion.
+            delimiter = _download_value(tokens[index + 1], {}, expand=False)
+            heredocs.append((delimiter, token.endswith("-")))
     return heredocs
 
 
@@ -309,39 +405,33 @@ def analyze_bash_downloads(content: str) -> list[BashDownloadedExecutable]:
     proof. Variables retain unresolved placeholders; no environment is read.
     """
     variables: dict[str, str] = {}
-    downloads: dict[str, tuple[str, int]] = {}
-    reported: set[tuple[str, int]] = set()
+    downloads: dict[str, tuple[str, int, int]] = {}
+    reported: set[int] = set()
+    download_index = 0
     findings: list[BashDownloadedExecutable] = []
     pending: list[str] = []
     quote = ""
+    in_word = False
     start_line = 1
-    heredocs: list[str] = []
+    heredocs: list[tuple[str, bool]] = []
     for line_number, raw_line in enumerate(content.splitlines(), 1):
         if heredocs:
-            if raw_line.lstrip("\t") == heredocs[0]:
+            delimiter, strip_tabs = heredocs[0]
+            if (raw_line.lstrip("\t") if strip_tabs else raw_line) == delimiter:
                 heredocs.pop(0)
             continue
         if not pending:
             start_line = line_number
-        quote = _download_quote_state(raw_line, quote)
-        if raw_line.endswith("\\") and quote != "'":
-            pending.append(raw_line[:-1] + " ")
+        code, quote, in_word, continued = _download_shell_line(raw_line, quote, in_word)
+        pending.append(code)
+        if continued:
             continue
-        pending.append(raw_line)
         if quote:
             pending.append("\n")
             continue
         line = "".join(pending)
         pending.clear()
-        assignment = _VAR_ASSIGN_SIMPLE.fullmatch(line.strip())
-        if assignment:
-            try:
-                values = shlex.split(assignment[2], comments=True, posix=False)
-            except ValueError:
-                continue
-            if len(values) == 1:
-                variables[assignment[1]] = _download_value(values[0], variables)
-                continue
+        in_word = False
         try:
             tokens = _download_tokens(line)
         except ValueError:
@@ -356,7 +446,9 @@ def analyze_bash_downloads(content: str) -> list[BashDownloadedExecutable]:
                 command.pop(0)
             if not command:
                 continue
-            if len(command) == 1 and (assignment := _VAR_ASSIGN_SIMPLE.fullmatch(command[0])):
+            if command[0] == "export" and len(command) == 2:
+                command = command[1:]
+            if len(command) == 1 and (assignment := _DOWNLOAD_ASSIGNMENT.fullmatch(command[0])):
                 variables[assignment[1]] = _download_value(assignment[2], variables)
             else:
                 if command[0].strip("\"'") in {"cd", "pushd", "popd"}:
@@ -370,15 +462,17 @@ def analyze_bash_downloads(content: str) -> list[BashDownloadedExecutable]:
                     continue
                 if download:
                     url, destination = download
-                    downloads[destination] = (url, start_line)
+                    download_index += 1
+                    downloads[destination] = (url, start_line, download_index)
                 for destination in targets:
                     if destination not in downloads:
                         continue
-                    url, download_line = downloads[destination]
-                    identity = (destination, download_line)
+                    url, download_line, identity = downloads[destination]
                     if identity in reported:
                         continue
-                    findings.append(BashDownloadedExecutable(url, destination, download_line, start_line, line.strip()))
+                    findings.append(
+                        BashDownloadedExecutable(url, destination, download_line, start_line, line.strip(), identity)
+                    )
                     reported.add(identity)
             command = []
     return findings

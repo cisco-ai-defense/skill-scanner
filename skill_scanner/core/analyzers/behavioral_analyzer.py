@@ -239,7 +239,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
                         Finding(
                             id=self._generate_id(
                                 "BASH_DOWNLOAD",
-                                f"{script_file.relative_path}:{download.download_line}:{download.destination}",
+                                f"{script_file.relative_path}:{download.download_line}:{download.destination}:{download.download_index}",
                             ),
                             rule_id="BEHAVIOR_DOWNLOADED_EXECUTABLE",
                             category=ThreatCategory.SUPPLY_CHAIN_ATTACK,
@@ -253,7 +253,10 @@ class BehavioralAnalyzer(BaseAnalyzer):
                             ),
                             file_path=script_file.relative_path,
                             line_number=download.sink_line,
-                            snippet=download.sink_snippet,
+                            snippet=(
+                                f"# Runtime acquisition {download.download_index} from line {download.download_line}\n"
+                                f"{download.sink_snippet}"
+                            ),
                             remediation=(
                                 "Obtain and scan the downloaded artifact separately before trusting its execution."
                             ),
@@ -262,6 +265,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
                                 "download_url": download.url,
                                 "destination": download.destination,
                                 "download_line": download.download_line,
+                                "download_index": download.download_index,
                                 "coverage": "runtime_download_not_scanned",
                             },
                         )

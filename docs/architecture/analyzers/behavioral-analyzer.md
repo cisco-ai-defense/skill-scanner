@@ -204,6 +204,24 @@ other non-stdout redirects are not download destinations. Shell interpreter
 options are distinguished from the script operand. `chmod +X` alone is not
 treated as setting execute bits on a newly downloaded file.
 
+Adjacent quoted path fragments remain one operand, and `#` is a comment only
+at a shell word boundary, preserving URL fragments. Backslash-newline pairs
+are removed without adding whitespace; backslashes inside comments do not
+continue the next line. Heredoc operators and delimiters are parsed separately,
+with quote removal on the delimiter and tab stripping only for `<<-`.
+
+Curl proxy operands are excluded from payload URLs. `exec`-wrapped shell
+invocations use the shell's script operand. Symbolic `chmod` clauses are applied
+in order, including removals and conditional `X`, assuming a newly downloaded
+non-executable regular file; filesystem metadata and umask are not inspected.
+Empty assignments clear tracked values.
+
+Each acquisition receives a file-local `download_index`, included in finding
+IDs, metadata, and an origin comment preceding the source snippet. This preserves
+separate acquisitions through report deduplication even when one command chain
+downloads repeatedly to the same destination on the same line. A chmod and a
+later invocation of a single acquisition still produce one finding.
+
 Variable expansion is limited to 4,096 characters per value and 65,536 characters
 in total per command. A command that exceeds the total budget is skipped; later
 commands are still analyzed. Malformed logical lines are skipped, while
