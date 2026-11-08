@@ -363,7 +363,9 @@ class TestExtractGoogleSdkTokenUsage:
         from skill_scanner.core.analyzers.llm_request_handler import _extract_google_sdk_token_usage
 
         response = MagicMock()
-        response.usage_metadata = SimpleNamespace(prompt_token_count=120, candidates_token_count=45, total_token_count=165)
+        response.usage_metadata = SimpleNamespace(
+            prompt_token_count=120, candidates_token_count=45, total_token_count=165
+        )
         u = _extract_google_sdk_token_usage(response)
         assert u == {"input_tokens": 120, "output_tokens": 45, "total_tokens": 165}
 
@@ -376,7 +378,7 @@ class TestExtractGoogleSdkTokenUsage:
         assert u["total_tokens"] == 60
 
     @pytest.mark.parametrize("thoughts", [None, 0, 30])
-    @pytest.mark.parametrize("total", [None, 0, 200])
+    @pytest.mark.parametrize("total", [None, 0, 195])
     def test_includes_thinking_tokens(self, thoughts: int | None, total: int | None) -> None:
         from skill_scanner.core.analyzers.llm_request_handler import _extract_google_sdk_token_usage
 
@@ -392,6 +394,26 @@ class TestExtractGoogleSdkTokenUsage:
             "input_tokens": 120,
             "output_tokens": 45 + (thoughts or 0),
             "total_tokens": total or 165 + (thoughts or 0),
+        }
+
+    @pytest.mark.parametrize("tool_use", [None, 0, 10])
+    def test_does_not_double_count_inclusive_candidates(self, tool_use: int | None) -> None:
+        from skill_scanner.core.analyzers.llm_request_handler import _extract_google_sdk_token_usage
+
+        total = 195 + (tool_use or 0)
+        response = SimpleNamespace(
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=120,
+                candidates_token_count=75,
+                thoughts_token_count=30,
+                tool_use_prompt_token_count=tool_use,
+                total_token_count=total,
+            )
+        )
+        assert _extract_google_sdk_token_usage(response) == {
+            "input_tokens": 120,
+            "output_tokens": 75,
+            "total_tokens": total,
         }
 
     def test_returns_zeros_when_no_usage_metadata(self) -> None:
