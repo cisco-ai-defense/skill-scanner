@@ -103,14 +103,16 @@ def _extract_google_sdk_token_usage(response: Any) -> LLMTokenUsage:
     """Read token counts from a Google GenAI SDK ``GenerateContentResponse``.
 
     The SDK exposes usage as ``response.usage_metadata.prompt_token_count`` /
-    ``candidates_token_count``, normalised here to the same ``input_tokens`` /
+    ``candidates_token_count`` plus ``thoughts_token_count``, normalised here to the same ``input_tokens`` /
     ``output_tokens`` names ``_extract_token_usage`` produces for LiteLLM.
     """
     usage = getattr(response, "usage_metadata", None)
     if usage is None:
         return _empty_token_usage()
     input_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
-    output_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
+    output_tokens = int(getattr(usage, "candidates_token_count", 0) or 0) + int(
+        getattr(usage, "thoughts_token_count", 0) or 0
+    )
     total_tokens = int(getattr(usage, "total_token_count", 0) or input_tokens + output_tokens)
     return {"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens}
 
