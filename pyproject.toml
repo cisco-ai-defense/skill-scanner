@@ -82,9 +82,10 @@ dependencies = [
     "anthropic>=0.50,<1",
     "openai>=2.0,<3",
     # Floor pin: avoid compromised PyPI lines in 1.80.16 / 1.82.3 / 1.82.8 (BerriAI/litellm#24512)
-    # SSRF fix in 1.83.7 (GHSA-xqmj-j6mv-4862), CVE-2026-49468 in 1.84.0, PYSEC-2026-4066 in 1.89.7.
+    # SSRF fix in 1.83.7 (GHSA-xqmj-j6mv-4862), CVE-2026-49468 in 1.84.0, PYSEC-2026-4066 in 1.89.7,
+    # GHSA-g5ff-637f-6q2m in 1.95.0, CVE-2026-114612 in 1.100.4.
     # Exclude 1.107.0: hijacked PyPI wheels with a .pth credential stealer (BerriAI/litellm#47826).
-    "litellm>=1.89.7,<2,!=1.107.0",
+    "litellm>=1.100.4,<2,!=1.107.0",
     # Floor pin: PYSEC-2026-2132 fixed in 8.3.3. Transitive via litellm/magika/uvicorn/typer.
     "click>=8.3.3",
     # Floor pin: PYSEC-2026-4175 through PYSEC-2026-4177. Transitive via requests/botocore.
@@ -100,7 +101,7 @@ google = [
     "google-generativeai>=0.8,<1",
     # Floor pins for transitive CVEs pulled in via google-generativeai -> google-api-python-client / google-auth
     "httplib2>=0.32.0",  # PYSEC-2026-3444
-    "pyasn1>=0.6.4",  # PYSEC-2026-3455, PYSEC-2026-3456, PYSEC-2026-3457
+    "pyasn1>=0.6.5",  # PYSEC-2026-3455..3457, CVE-2026-119194..119197
 ]
 # AWS Bedrock support (requires boto3 for IAM credentials)
 bedrock = [
@@ -111,7 +112,7 @@ vertex = [
     "google-cloud-aiplatform>=1.130,<2",
     # Floor pins for transitive CVEs pulled in via google-cloud-aiplatform -> google-api-core / google-auth
     "httplib2>=0.32.0",  # PYSEC-2026-3444
-    "pyasn1>=0.6.4",  # PYSEC-2026-3455, PYSEC-2026-3456, PYSEC-2026-3457
+    "pyasn1>=0.6.5",  # PYSEC-2026-3455..3457, CVE-2026-119194..119197
 ]
 # Azure OpenAI support (for managed identity auth)
 azure = [
@@ -129,7 +130,7 @@ all = [
     "google-cloud-aiplatform>=1.130,<2",
     "azure-identity>=1.20,<2",
     "httplib2>=0.32.0",  # PYSEC-2026-3444
-    "pyasn1>=0.6.4",  # PYSEC-2026-3455, PYSEC-2026-3456, PYSEC-2026-3457
+    "pyasn1>=0.6.5",  # PYSEC-2026-3455..3457, CVE-2026-119194..119197
 ]
 
 [dependency-groups]
