@@ -210,6 +210,19 @@ class TestScanPolicyCustomisation:
         with pytest.raises(ValueError, match="'severity' must be one of"):
             ScanPolicy.from_yaml(policy_file)
 
+    @pytest.mark.parametrize("rule_id", ["[BINARY_FILE_DETECTED]", "123", "true"])
+    def test_non_string_severity_override_rule_id_is_rejected(self, tmp_path, rule_id):
+        policy_file = tmp_path / "rule_id.yaml"
+        policy_file.write_text(
+            textwrap.dedent(f"""\
+            severity_overrides:
+              - rule_id: {rule_id}
+                severity: HIGH
+        """)
+        )
+        with pytest.raises(ValueError, match="'rule_id' must be a string"):
+            ScanPolicy.from_yaml(policy_file)
+
     @pytest.mark.parametrize(
         "entry",
         [

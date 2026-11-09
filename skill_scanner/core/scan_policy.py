@@ -495,6 +495,9 @@ def _severity_override_from_dict(entry: dict[str, Any]) -> SeverityOverride:
     except TypeError as exc:
         # Missing or unexpected keys; report them as a policy error, not a crash.
         raise ValueError(f"Invalid severity_overrides entry {entry!r}: {exc}") from exc
+    if not isinstance(override.rule_id, str):
+        # A list or number never equals a finding's rule id, so the override would be a silent no-op.
+        raise ValueError(f"severity_overrides entry: 'rule_id' must be a string, got {override.rule_id!r}")
     if not isinstance(override.severity, str) or override.severity not in _VALID_OVERRIDE_SEVERITIES:
         raise ValueError(
             f"severity_overrides entry for {override.rule_id!r}: 'severity' must be one of "
