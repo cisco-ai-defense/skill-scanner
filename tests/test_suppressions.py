@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -134,6 +134,14 @@ class TestSuppressionFromDict:
         assert suppression_from_dict({"rule_id": "R", "skills": ["a"], "expires": date(2030, 1, 31)}).expires == date(
             2030, 1, 31
         )
+
+    @pytest.mark.parametrize(
+        "expires",
+        [datetime(2030, 1, 31, 12, 0), datetime(2030, 1, 31, tzinfo=UTC), "2030-01-31T12:00:00"],
+    )
+    def test_expiry_with_a_time_is_rejected(self, expires: object):
+        with pytest.raises(SuppressionConfigError, match="ISO date"):
+            suppression_from_dict({"rule_id": "R", "skills": ["a"], "expires": expires})
 
     def test_round_trip_to_dict_omits_empty_fields(self):
         rule = suppression_from_dict({"rule_id": "R", "skills": ["a"]})

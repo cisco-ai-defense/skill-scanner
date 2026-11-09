@@ -219,6 +219,21 @@ class TestScanPolicyCustomisation:
         with pytest.raises(SuppressionConfigError, match="unknown key"):
             ScanPolicy.from_yaml(policy_file)
 
+    @pytest.mark.parametrize("expires", ["2030-12-31 12:00:00", "2030-12-31T12:00:00Z"])
+    def test_scoped_suppression_timestamp_expiry_is_rejected(self, tmp_path, expires):
+        """YAML loads an unquoted timestamp as a datetime, which must not reach the scan."""
+        policy_file = tmp_path / "timestamp.yaml"
+        policy_file.write_text(
+            textwrap.dedent(f"""\
+            suppressions:
+              - rule_id: HOMOGLYPH_ATTACK
+                skills: ["docs-translator"]
+                expires: {expires}
+        """)
+        )
+        with pytest.raises(SuppressionConfigError, match="without a time"):
+            ScanPolicy.from_yaml(policy_file)
+
     def test_scoped_suppressions_replace_preset_entries(self):
         """Use a non-empty base so replacement differs from concatenation."""
         base = {"suppressions": [{"rule_id": "FROM_PRESET", "skills": ["*"]}]}
