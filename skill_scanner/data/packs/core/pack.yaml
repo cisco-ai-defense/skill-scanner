@@ -1775,6 +1775,16 @@ rules:
       enabled: true
     description: "eval/exec with subprocess interaction"
 
+  BEHAVIOR_DOWNLOADED_EXECUTABLE:
+    source: python
+    analyzer: behavioral
+    category: supply_chain_attack
+    taxonomy: AISubtech-9.1.1
+    severity: MEDIUM
+    knobs:
+      enabled: true
+    description: "Bash launcher makes a runtime-downloaded file executable or invokes it; payload not scanned"
+
   BEHAVIOR_BASH_TAINT_FLOW:
     source: python
     analyzer: behavioral

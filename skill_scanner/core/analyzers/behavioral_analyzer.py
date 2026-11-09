@@ -33,11 +33,20 @@ import hashlib
 import logging
 import os
 import re
+from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from markdown_it import MarkdownIt
+
 from ...core.models import Finding, Severity, Skill, ThreatCategory
-from ...core.static_analysis.bash_taint_tracker import BashTaintFlow, BashTaintType, analyze_bash_script
+from ...core.static_analysis.bash_taint_tracker import (
+    BashTaintFlow,
+    BashTaintType,
+    analyze_bash_downloads,
+    analyze_bash_script,
+)
 from ...core.static_analysis.context_extractor import (
     ContextExtractor,
     SkillFunctionContext,
@@ -109,8 +118,8 @@ class BehavioralAnalyzer(BaseAnalyzer):
         Note:
             This analyzer processes Python (.py) files with full AST-based dataflow
             analysis, and bash (.sh) scripts with lightweight taint tracking.
-            Markdown files with code blocks are not analyzed directly here;
-            use the LLM analyzer for comprehensive markdown code block analysis.
+            Markdown Bash fences use shell taint and runtime-download checks;
+            Python fences use lightweight pattern checks rather than full AST analysis.
         """
         super().__init__("behavioral_analyzer")
 
@@ -166,8 +175,9 @@ class BehavioralAnalyzer(BaseAnalyzer):
         """
         Analyze skill using static dataflow analysis.
 
-        Note: Currently only analyzes Python files. Markdown files with
-        bash/shell code blocks require the LLM analyzer.
+        Python files use AST/dataflow analysis. Bash files and fenced shell
+        blocks use local taint and runtime-download heuristics; Python fences
+        use lightweight checks.
 
         Args:
             skill: Skill to analyze
@@ -229,6 +239,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
             try:
                 bash_flows = analyze_bash_script(content, script_file.relative_path)
                 findings.extend(self._generate_findings_from_bash_flows(bash_flows, script_file.relative_path))
+                findings.extend(self._generate_findings_from_bash_downloads(content, script_file.relative_path))
             except Exception as e:
                 logger.warning("Failed to analyze bash script %s: %s", script_file.relative_path, e)
 
@@ -540,47 +551,78 @@ class BehavioralAnalyzer(BaseAnalyzer):
 
         return findings
 
-    # Regex for fenced code blocks with optional language tag
-    _CODE_BLOCK_RE = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
-
     # Languages routed to bash taint tracker
     _BASH_LANGS = {"bash", "sh", "shell", "zsh", ""}
+
+    def _iter_markdown_code_blocks(self, content: str) -> Iterator[tuple[str, str, int]]:
+        """Yield CommonMark fence content after container/indent removal with physical source maps."""
+        parser = MarkdownIt("commonmark").disable("inline")
+        for token in parser.parse(content):
+            if token.type != "fence" or token.map is None:
+                continue
+            language = token.info.strip().split(maxsplit=1)[0].lower() if token.info.strip() else ""
+            yield language, token.content, token.map[0] + 2
 
     def _analyze_markdown_code_blocks(self, skill: Skill) -> list[Finding]:
         """Extract fenced code blocks from markdown files and route through analyzers.
 
-        Bash/shell blocks are run through the bash taint tracker.
+        Bash/shell blocks are run through the taint and runtime-download checks.
         Python blocks are run through lightweight pattern checks.
         """
         findings: list[Finding] = []
 
         # Collect markdown sources: SKILL.md + other .md files
-        md_sources: list[tuple[str, str]] = [("SKILL.md", skill.instruction_body)]
+        primary_source = "SKILL.md"
+        if skill.skill_md_path is not None:
+            try:
+                primary_source = skill.skill_md_path.relative_to(skill.directory).as_posix()
+            except ValueError:
+                primary_source = skill.skill_md_path.name
+        md_sources: list[tuple[str, str, int]] = [
+            (primary_source, skill.instruction_body, skill.instruction_body_line_offset)
+        ]
         for sf in skill.files:
-            if sf.file_type == "markdown" and sf.relative_path.lower() != "skill.md":
-                content = sf.read_content()
-                if content:
-                    md_sources.append((sf.relative_path, content))
+            if sf.file_type != "markdown":
+                continue
+            if skill.skill_md_path is not None:
+                try:
+                    is_primary = sf.path.samefile(skill.skill_md_path)
+                except OSError:
+                    # Cached/nonexistent paths retain the host's path case semantics.
+                    is_primary = sf.path == skill.skill_md_path
+                if is_primary:
+                    continue
+            content = sf.read_content()
+            if content:
+                md_sources.append((sf.relative_path, content, 0))
 
-        for source_file, content in md_sources:
-            for match in self._CODE_BLOCK_RE.finditer(content):
-                lang = match.group(1).lower()
-                block = match.group(2)
-                line_num = content[: match.start()].count("\n") + 1
+        for source_file, content, source_offset in md_sources:
+            for lang, block, first_code_line in self._iter_markdown_code_blocks(content):
+                base_line = source_offset + first_code_line - 1
 
                 if not block.strip():
                     continue
 
                 # Route bash/shell blocks through bash taint tracker
-                if lang in self._BASH_LANGS and len(block.strip().split("\n")) >= 2:
+                if lang in self._BASH_LANGS:
                     try:
-                        flows = analyze_bash_script(block, source_file)
-                        for flow_finding in self._generate_findings_from_bash_flows(flows, source_file):
-                            # Adjust line number to be relative to the markdown file
-                            flow_finding.line_number = line_num + (flow_finding.line_number or 0)
-                            flow_finding.metadata["from_code_block"] = True
-                            flow_finding.metadata["block_language"] = lang or "shell"
-                            findings.append(flow_finding)
+                        if len(block.strip().split("\n")) >= 2:
+                            flows = [
+                                replace(
+                                    flow, source_line=base_line + flow.source_line, sink_line=base_line + flow.sink_line
+                                )
+                                for flow in analyze_bash_script(block, source_file)
+                            ]
+                            for flow_finding in self._generate_findings_from_bash_flows(flows, source_file):
+                                flow_finding.metadata["from_code_block"] = True
+                                flow_finding.metadata["block_language"] = lang or "shell"
+                                findings.append(flow_finding)
+                        for download_finding in self._generate_findings_from_bash_downloads(
+                            block, source_file, base_line
+                        ):
+                            download_finding.metadata["from_code_block"] = True
+                            download_finding.metadata["block_language"] = lang or "shell"
+                            findings.append(download_finding)
                     except Exception as e:
                         logger.debug(
                             "Failed to analyze %s code block in %s: %s",
@@ -591,8 +633,53 @@ class BehavioralAnalyzer(BaseAnalyzer):
 
                 # Route python blocks through lightweight pattern check
                 elif lang == "python" and len(block.strip().split("\n")) >= 2:
-                    findings.extend(self._check_python_code_block(block, source_file, line_num))
+                    findings.extend(self._check_python_code_block(block, source_file, base_line + 1))
 
+        return findings
+
+    def _generate_findings_from_bash_downloads(self, content: str, file_path: str, base_line: int = 0) -> list[Finding]:
+        """Create shared script/block coverage findings with source-file line offsets.
+
+        Each fenced block has independent shell state. The file-relative download
+        line and acquisition index preserve distinct identities across blocks.
+        """
+        findings: list[Finding] = []
+        for download in analyze_bash_downloads(content):
+            download_line = base_line + download.download_line
+            sink_line = base_line + download.sink_line
+            findings.append(
+                Finding(
+                    id=self._generate_id(
+                        "BASH_DOWNLOAD",
+                        f"{file_path}:{download_line}:{download.destination}:{download.download_index}",
+                    ),
+                    rule_id="BEHAVIOR_DOWNLOADED_EXECUTABLE",
+                    category=ThreatCategory.SUPPLY_CHAIN_ATTACK,
+                    severity=Severity.MEDIUM,
+                    title="Bash launcher acquires an executable at runtime",
+                    description=(
+                        f"Downloads `{download.destination}` from `{download.url}` at line "
+                        f"{download_line}, then makes it executable or invokes it at line {sink_line}. "
+                        "The runtime download is not scanned; "
+                        "this finding covers the launcher, not the downloaded artifact's contents."
+                    ),
+                    file_path=file_path,
+                    line_number=sink_line,
+                    snippet=(
+                        f"# Runtime acquisition {download.download_index} from line {download_line}\n"
+                        f"{download.sink_snippet}"
+                    ),
+                    remediation="Obtain and scan the downloaded artifact separately before trusting its execution.",
+                    analyzer="behavioral",
+                    metadata={
+                        "download_url": download.url,
+                        "destination": download.destination,
+                        "download_line": download_line,
+                        "download_index": download.download_index,
+                        "coverage": "runtime_download_not_scanned",
+                    },
+                )
+            )
         return findings
 
     def _check_python_code_block(self, block: str, source_file: str, base_line: int) -> list[Finding]:

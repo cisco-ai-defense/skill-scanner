@@ -188,6 +188,107 @@ skill-scanner scan /path/to/skill --use-behavioral
 
 ## Detection Examples
 
+### Runtime-downloaded executables
+
+With `--use-behavioral`, Bash launchers and supported Markdown shell fences
+that download an HTTP(S) file with `curl`, `wget`, or `fetch` and later make that destination executable or invoke it
+produce `BEHAVIOR_DOWNLOADED_EXECUTABLE` (MEDIUM). The finding names the
+source URL pattern, destination, and source/sink lines. It explicitly states
+that the runtime artifact was **not scanned**; a scan of a launcher does not
+establish the safety of the code it retrieves.
+
+The same check covers backtick- and tilde-fenced `bash`, `sh`, `shell`, `zsh`, and
+unlabeled blocks in the primary instruction Markdown file and other Markdown
+files. Single-line command chains and LF/CRLF fences are supported. Each block
+has independent shell state. Findings retain the Markdown file path and report
+file-relative download and execution lines, including the loader's frontmatter
+offset for the primary instruction body. Bash-taint source/sink metadata and
+Python findings use physical file lines too. Primary-file deduplication uses
+filesystem identity rather than case-folded names, retaining distinct files on
+case-sensitive filesystems.
+
+Fences follow CommonMark parsing, including fences in list items and blockquotes.
+Container prefixes and opener indentation are removed from their content before
+analysis, preserving heredoc delimiters. A closing fence uses the same character
+and at least the opening length; inline fence strings do not end a block. An
+unclosed fence extends to the end of its container or file. Physical source maps
+preserve file-relative finding locations.
+
+The check recognizes explicit output-file options and stdout redirection,
+simple variable assignments, quoted paths, multiline quoted strings, and command
+chains. Quoted downloader option words are normalized before matching, while
+quoted redirection characters remain ordinary arguments. Stdout append redirects
+(`>>` and `1>>`) and writable read/write redirects (`1<>`) are supported. Explicit
+file-output options take precedence over redirects; stderr alone is not a
+download destination. Shell interpreter
+options, including options supplied through variables, are distinguished from
+the raw script operand. `chmod +X` alone is not
+treated as setting execute bits on a newly downloaded file.
+
+Adjacent quoted path fragments remain one operand, and `#` is a comment only
+at a shell word boundary, preserving URL fragments. Backslash-newline pairs
+are removed without adding whitespace; backslashes inside comments do not
+continue the next line. Heredoc operators and delimiters are parsed separately,
+with quote removal on the delimiter and tab stripping only for `<<-`.
+
+Curl proxy operands are excluded from payload URLs. `exec`-wrapped shell
+invocations use the shell's script operand. Symbolic `chmod` clauses are applied
+in order, including removals and conditional `X`, assuming a newly downloaded
+non-executable regular file; filesystem metadata and umask are not inspected.
+Leading-hyphen modes such as `chmod -w,+x` remain mode operands; actual chmod
+options are skipped, and reference-based modes require separate filesystem analysis.
+Empty assignments clear tracked values.
+
+Shell redirections are removed before selecting command operands, so redirect
+paths cannot become chmod targets. Known output descriptors are tracked in
+left-to-right order, including descriptor copies, moves, and closure. This is
+local to a command; persistent shell descriptor state is not modeled.
+Known file-backed stdin is an execution sink for shells reading commands from
+stdin, including `bash <tool` and `sh -s <tool`. A command string or explicit script
+operand takes precedence. Truncating redirects invalidate prior downloads to
+the affected path before processing the command; append and read/write redirects
+preserve that provenance.
+
+Declared curl option operands, including referer, header, and DoH resolver values, are excluded
+from payload URL selection. Wget and fetch default to local files, so a stdout
+log redirect is not a payload destination without an explicit stdout output
+option. Their URL-derived default filenames are not inferred. Curl `-O` and
+`--remote-name` infer a nonempty URL path basename without percent-decoding it;
+query strings and fragments are excluded. Server-chosen names (`-J`), empty
+basenames, URL globbing, and multiple output selectors are not inferred. Curl `--output-dir`
+prefixes output filenames, including remote-name output and names beginning with
+`/`, following curl's behavior; explicit stdout output is unaffected. Remote-name mode never
+makes a stdout log redirect a payload destination.
+
+Each acquisition receives a file-local `download_index`, included in finding
+IDs, metadata, and an origin comment preceding the source snippet. This preserves
+separate acquisitions through report deduplication even when one command chain
+downloads repeatedly to the same destination on the same line. A chmod and a
+later invocation of a single acquisition still produce one finding.
+
+Variable expansion is limited to 4,096 characters per value and 65,536 characters
+in total per command. A command that exceeds the total budget is skipped; later
+commands are still analyzed. Malformed logical lines are skipped, while
+unterminated quoted text remains unparsed rather than being treated as commands.
+Arithmetic shifts inside `$((...))` are not heredocs. Relative download entries
+are discarded after `cd`, `pushd`, or `popd` to avoid matching files across unknown
+working-directory changes; absolute destinations remain tracked.
+
+The heuristic does not download or execute anything, read environment values, prove branch
+reachability, or fully interpret Bash. Ordinary data downloads without a
+matching execution intent are not reported by this rule. Dynamic commands,
+archive extraction, indirect helper functions, and other languages require separate analysis.
+
+Legitimate installers, including kubectl and jq installers, can produce this
+MEDIUM finding because their runtime artifacts are outside scan coverage. It is
+not proof of maliciousness. This finding alone does not change `is_safe`, but it
+does trigger `--fail-on-severity medium` gates. Review the downloaded artifact
+and choose the appropriate severity threshold for your workflow.
+
+Hook-trigger severity escalation and checksum-source independence are not
+inferred by this check. Scan fetched artifacts separately and review the
+integrity and automatic-trigger configuration before trusting a launcher.
+
 ### Example 1: Suspicious URL Detection
 
 **Code**:
