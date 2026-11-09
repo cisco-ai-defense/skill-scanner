@@ -190,3 +190,16 @@ def test_alignment_client_uses_shared_runcrate_provider_config() -> None:
     assert client._provider_config is not None
     assert client._provider_config.is_runcrate
     assert client._api_key == "test-key"
+
+
+@pytest.mark.parametrize(
+    ("model", "provider"),
+    [
+        (f"runcrate/{DEFAULT_MODEL}", "ollama"),
+        ("ollama/llama2", "runcrate"),
+    ],
+)
+def test_runcrate_rejects_ollama_selection(model: str, provider: str) -> None:
+    """A local Ollama selection must never route skill content to Runcrate."""
+    with pytest.raises(ValueError, match="Ollama runs locally"):
+        ProviderConfig(model=model, provider=provider, api_key="test-key")

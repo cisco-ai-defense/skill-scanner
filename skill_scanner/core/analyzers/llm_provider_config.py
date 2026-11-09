@@ -230,6 +230,14 @@ class ProviderConfig:
                 "Bedrock Mantle model. Use provider 'apple-fm' with an apple-fm/ model, "
                 "or a bedrock-mantle model without the apple-fm provider."
             )
+        # Runcrate is a remote endpoint. A mixed selection would send skill
+        # content there while the caller asked for local Ollama.
+        if self.is_runcrate and (self.is_ollama or self.provider == "ollama"):
+            raise ValueError(
+                "Ollama runs locally and cannot be combined with a Runcrate model. "
+                "Use provider 'ollama' with an ollama/ model, "
+                "or a runcrate model without the ollama provider."
+            )
         self.is_openrouter = not self.is_openai_compatible and model_lower.startswith("openrouter/")
         self.is_orcarouter = self.provider == "orcarouter" or (
             not self.is_openai_compatible and model_lower.startswith("orcarouter/")
