@@ -307,6 +307,61 @@ class TestTUIFieldMap:
         assert "new_val_1" in result
         assert "new_val_2" in result
 
+    def test_set_field_normalizes_severity_overrides(self):
+        from skill_scanner.cli.policy_tui import PolicyConfigApp
+
+        app = PolicyConfigApp.__new__(PolicyConfigApp)
+        app.policy = ScanPolicy.default()
+
+        app._set_field("severity_overrides", ["BINARY_FILE_DETECTED:medium:reviewed"])
+
+        assert app._get_field("severity_overrides") == ["BINARY_FILE_DETECTED:MEDIUM:reviewed"]
+
+    @pytest.mark.parametrize("line", ["BINARY_FILE_DETECTED:SUPER_CRITICAL", "BINARY_FILE_DETECTED:SAFE"])
+    def test_set_field_rejects_invalid_severity_override(self, line):
+        from skill_scanner.cli.policy_tui import PolicyConfigApp
+
+        app = PolicyConfigApp.__new__(PolicyConfigApp)
+        app.policy = ScanPolicy.default()
+        before = list(app.policy.severity_overrides)
+
+        with pytest.raises(ValueError, match="'severity' must be one of"):
+            app._set_field("severity_overrides", ["MANIFEST_MISSING_LICENSE:LOW", line])
+
+        assert app.policy.severity_overrides == before
+
+    @pytest.mark.asyncio
+    async def test_invalid_override_reopens_editor_and_saved_policy_loads(self, tmp_path):
+        """An invalid override keeps the editor open; the saved file must load again."""
+        from textual.widgets import Button, TextArea
+
+        from skill_scanner.cli.policy_tui import PolicyConfigApp, SetEditorScreen
+
+        output = tmp_path / "policy.yaml"
+        app = PolicyConfigApp(output_path=str(output))
+        async with app.run_test() as pilot:
+            app.query_one("#edit-overrides", Button).press()
+            await pilot.pause()
+            assert isinstance(app.screen, SetEditorScreen)
+
+            app.screen.query_one("#editor", TextArea).text = "BINARY_FILE_DETECTED:SUPER_CRITICAL"
+            app.screen.query_one("#save", Button).press()
+            await pilot.pause()
+
+            assert isinstance(app.screen, SetEditorScreen)
+            assert "SUPER_CRITICAL" in app.screen.query_one("#editor", TextArea).text
+            assert app.policy.severity_overrides == []
+
+            app.screen.query_one("#editor", TextArea).text = "BINARY_FILE_DETECTED:high:reviewed"
+            app.screen.query_one("#save", Button).press()
+            await pilot.pause()
+
+            assert not isinstance(app.screen, SetEditorScreen)
+            app.action_save_policy()
+            await pilot.pause()
+
+        assert ScanPolicy.from_yaml(output).get_severity_override("BINARY_FILE_DETECTED") == "HIGH"
+
 
 # ===================================================================
 # 11c — --input flag for configure-policy

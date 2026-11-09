@@ -198,6 +198,18 @@ class TestScanPolicyCustomisation:
         with pytest.raises(ValueError, match="'severity' must be one of"):
             ScanPolicy.from_yaml(policy_file)
 
+    def test_non_string_severity_override_is_rejected(self, tmp_path):
+        policy_file = tmp_path / "list.yaml"
+        policy_file.write_text(
+            textwrap.dedent("""\
+            severity_overrides:
+              - rule_id: BINARY_FILE_DETECTED
+                severity: [HIGH]
+        """)
+        )
+        with pytest.raises(ValueError, match="'severity' must be one of"):
+            ScanPolicy.from_yaml(policy_file)
+
     def test_scoped_suppressions(self, tmp_path):
         policy_file = tmp_path / "scoped.yaml"
         policy_file.write_text(

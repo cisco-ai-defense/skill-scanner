@@ -489,7 +489,7 @@ def _severity_override_from_dict(entry: dict[str, Any]) -> SeverityOverride:
     only a log warning.
     """
     override = SeverityOverride(**entry)
-    if override.severity not in _VALID_OVERRIDE_SEVERITIES:
+    if not isinstance(override.severity, str) or override.severity not in _VALID_OVERRIDE_SEVERITIES:
         raise ValueError(
             f"severity_overrides entry for {override.rule_id!r}: 'severity' must be one of "
             f"{', '.join(sorted(_VALID_OVERRIDE_SEVERITIES))}, got {entry.get('severity')!r}"
