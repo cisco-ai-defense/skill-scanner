@@ -34,6 +34,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
+from urllib.parse import urlsplit
 
 
 class BashTaintType(Enum):
@@ -179,6 +180,7 @@ _CURL_VALUE_OPTIONS = frozenset(
         "--capath",
         "--connect-to",
         "--resolve",
+        "--doh-url",
         "--output-dir",
         "--dump-header",
         "--write-out",
@@ -211,47 +213,69 @@ _WGET_VALUE_OPTIONS = frozenset(
 _WGET_SHORT_VALUES = frozenset("OoaieUPTtwQ")
 
 
-def _download_redirects(command: list[str], expansion: _DownloadExpansion) -> tuple[list[str], str | None]:
+@dataclass
+class _DownloadRedirections:
+    """Separate command operands from known file-backed streams and overwritten paths."""
+
+    args: list[str] = field(default_factory=list)
+    stdin: str | None = None
+    stdout: str | None = None
+    truncated: set[str] = field(default_factory=set)
+
+
+def _download_redirects(command: list[str], expansion: _DownloadExpansion) -> _DownloadRedirections:
     """Remove shell redirects and track descriptor snapshots in source order.
 
-    Unknown inherited descriptors and read-only files have no known payload
-    destination. Descriptor copies capture the target's value at that moment.
+    Descriptor copies capture readable and writable capabilities at that moment.
+    Truncation remains significant even if a later redirect replaces the stream.
     """
-    args: list[str] = []
-    descriptors: dict[str, str | None] = {}
+    result = _DownloadRedirections()
+    unknown = (None, None)
+    descriptors: dict[str, tuple[str | None, str | None]] = {}
     index = 0
     while index < len(command):
         redirect = _SHELL_REDIRECT.fullmatch(command[index])
         if redirect is None:
-            args.append(command[index])
+            result.args.append(command[index])
             index += 1
             continue
         if index + 1 >= len(command):
-            return [], None
+            result.args = []
+            return result
         fd, operator, both = redirect.groups()
         fd = (fd or ("0" if operator and operator.startswith("<") else "1")).lstrip("0") or "0"
-        if operator in {"<", "<>", "<<", "<<-", "<<<"}:
-            descriptors[fd] = None
+        if operator in {"<<", "<<-", "<<<"}:
+            descriptors[fd] = unknown
         else:
             target = expansion.value(command[index + 1])
-            if both or operator in {">", ">>", ">|"}:
-                descriptors[fd] = target or None
+            if both or operator in {">", ">>", ">|", "<", "<>"}:
+                path = posixpath.normpath(target) if target else None
+                readable = path if operator in {"<", "<>"} else None
+                writable = path if operator != "<" else None
+                descriptors[fd] = (readable, writable)
+                if path and (both == "&>" or operator in {">", ">|"}):
+                    result.truncated.add(path)
                 if both:
-                    descriptors["2"] = target or None
+                    descriptors["2"] = descriptors[fd]
             elif operator in {">&", "<&"}:
                 source = target.removesuffix("-")
                 if source.isascii() and source.isdigit():
                     source = source.lstrip("0") or "0"
-                    descriptors[fd] = descriptors.get(source)
+                    descriptors[fd] = descriptors.get(source, unknown)
                     if target.endswith("-"):
-                        descriptors[source] = None
+                        descriptors[source] = unknown
                 elif operator == ">&" and not redirect[1] and target != "-":
                     # Bash's unnumbered >&file redirects both output streams.
-                    descriptors["1"] = descriptors["2"] = target or None
+                    path = posixpath.normpath(target) if target else None
+                    descriptors["1"] = descriptors["2"] = (None, path)
+                    if path:
+                        result.truncated.add(path)
                 else:
-                    descriptors[fd] = None
+                    descriptors[fd] = unknown
         index += 2
-    return args, descriptors.get("1")
+    result.stdin = descriptors.get("0", unknown)[0]
+    result.stdout = descriptors.get("1", unknown)[1]
+    return result
 
 
 def _download_target(
@@ -266,7 +290,10 @@ def _download_target(
     explicit = None
     url = None
     index = 1
-    remote_name = False
+    output_mode = "stdout" if name == "curl" else "default"
+    output_selectors = 0
+    output_directory = None
+    server_name = False
     options_done = False
     value_options = _CURL_VALUE_OPTIONS if name == "curl" else _WGET_VALUE_OPTIONS if name == "wget" else frozenset()
     short_values = _CURL_SHORT_VALUES if name == "curl" else _WGET_SHORT_VALUES if name == "wget" else {"o"}
@@ -284,16 +311,28 @@ def _download_target(
                     operand = expansion.value(command[index])
                 if option == long_option:
                     explicit = operand
+                    output_mode = "explicit"
+                    output_selectors += 1
+                elif name == "curl" and option == "--output-dir":
+                    output_directory = operand
                 elif name == "curl" and option == "--url":
                     if url is not None or not operand.startswith(("https://", "http://")):
                         return None
                     url = operand
-            elif name == "curl" and option in {"--remote-name", "--remote-name-all", "--out-null"}:
-                remote_name = True
+            elif name == "curl" and option in {"--remote-name", "--remote-name-all", "--out-null", "--no-remote-name"}:
+                output_mode = (
+                    "discard" if option == "--out-null" else "stdout" if option == "--no-remote-name" else "remote"
+                )
+                output_selectors += 1
+            elif name == "curl" and option == "--remote-header-name":
+                server_name = True
         elif not options_done and token.startswith("-"):
             for offset, flag in enumerate(token[1:], 1):
                 if name == "curl" and flag == "O":
-                    remote_name = True
+                    output_mode = "remote"
+                    output_selectors += 1
+                if name == "curl" and flag == "J":
+                    server_name = True
                 if flag not in short_values:
                     continue
                 operand = token[offset + 1 :]
@@ -304,6 +343,8 @@ def _download_target(
                     index += 1
                 if flag == short_option:
                     explicit = operand
+                    output_mode = "explicit"
+                    output_selectors += 1
                 break
         else:
             if token.startswith(("https://", "http://")):
@@ -311,39 +352,58 @@ def _download_target(
                     return None
                 url = token
         index += 1
-    if url is None:
+    if url is None or (name == "curl" and output_selectors > 1):
         return None
-    destination = explicit if explicit is not None else "-" if name == "curl" and not remote_name else None
+    if output_mode == "remote":
+        if server_name or any(char in url for char in "{}[]"):
+            return None
+        try:
+            destination = posixpath.basename(urlsplit(url).path)
+        except ValueError:
+            return None
+        if destination in {"", ".", "..", "-"}:
+            return None
+    else:
+        destination = explicit if output_mode == "explicit" else "-" if output_mode == "stdout" else None
     if destination == "-":
         destination = stdout
+    elif destination and output_directory:
+        # Curl prefixes its directory even when the output operand starts with '/'.
+        destination = f"{output_directory}/{destination}"
     if not destination or destination == "-":
         return None
     return url, posixpath.normpath(destination)
 
 
-def _shell_script_operand(args: list[str], expansion: _DownloadExpansion) -> list[str]:
-    """Resolve option words under the command budget and return the raw script operand."""
+def _shell_script_operand(args: list[str], expansion: _DownloadExpansion) -> tuple[list[str], bool]:
+    """Return the raw script operand or indicate that the shell reads commands from stdin."""
     index = 0
+    reads_stdin = False
     while index < len(args):
         option = expansion.value(args[index])
-        if option == "--":
-            return args[index + 1 : index + 2]
-        if option == "-":
-            return []
+        if option in {"--", "-"}:
+            operands = args[index + 1 : index + 2]
+            return ([], True) if reads_stdin else (operands, not operands)
         if option in {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}:
+            if index + 1 >= len(args):
+                return [], False
             index += 2
             continue
         if option.startswith(("-", "+")):
             if not option.startswith("--"):
                 flags = option[1:]
-                if "c" in flags or "s" in flags:
-                    return []
+                if "c" in flags:
+                    return [], False
+                if "s" in flags:
+                    reads_stdin = True
                 if flags.endswith(("o", "O")):
+                    if index + 1 >= len(args):
+                        return [], False
                     index += 1
             index += 1
             continue
-        return args[index : index + 1]
-    return []
+        return ([], True) if reads_stdin else (args[index : index + 1], False)
+    return [], True
 
 
 def _chmod_sets_execute(mode: str) -> bool:
@@ -378,10 +438,11 @@ def _chmod_sets_execute(mode: str) -> bool:
     return bool(bits)
 
 
-def _download_sink(command: list[str], expansion: _DownloadExpansion) -> list[str]:
+def _download_sink(command: list[str], expansion: _DownloadExpansion, stdin: str | None = None) -> list[str]:
     """Recognize explicit execute modes and supported invocation forms."""
     name = expansion.value(command[0]).rsplit("/", 1)[-1]
     args = command[1:]
+    reads_stdin = False
     if name == "chmod":
         index = 0
         while index < len(args):
@@ -427,11 +488,11 @@ def _download_sink(command: list[str], expansion: _DownloadExpansion) -> list[st
                 break
         args = args[index:]
         if args and expansion.value(args[0]).rsplit("/", 1)[-1] in {"bash", "sh", "zsh"}:
-            targets = _shell_script_operand(args[1:], expansion)
+            targets, reads_stdin = _shell_script_operand(args[1:], expansion)
         else:
             targets = args[:1]
     elif name in {"bash", "sh", "zsh"}:
-        targets = _shell_script_operand(args, expansion)
+        targets, reads_stdin = _shell_script_operand(args, expansion)
     elif name in {"source", "."}:
         if args and args[0].startswith("-"):
             return []
@@ -441,6 +502,8 @@ def _download_sink(command: list[str], expansion: _DownloadExpansion) -> list[st
         if not raw_name.startswith(("/", "./", "../", "$", "~")):
             return []
         targets = command[:1]
+    if reads_stdin:
+        return [stdin] if stdin else []
     return [posixpath.normpath(value) for token in targets if (value := expansion.value(token))]
 
 
@@ -580,10 +643,13 @@ def analyze_bash_downloads(content: str) -> list[BashDownloadedExecutable]:
                 continue
             expansion = _DownloadExpansion(variables)
             try:
-                command, stdout = _download_redirects(command, expansion)
+                redirects = _download_redirects(command, expansion)
             except _DownloadExpansionLimit:
                 command = []
                 continue
+            for path in redirects.truncated:
+                downloads.pop(path, None)
+            command = redirects.args
             while command and command[0] in {"then", "do", "else", "command", "if", "elif", "while", "until", "!"}:
                 command.pop(0)
             if not command:
@@ -596,8 +662,8 @@ def analyze_bash_downloads(content: str) -> list[BashDownloadedExecutable]:
                 if command[0].strip("\"'") in {"cd", "pushd", "popd"}:
                     downloads = {path: download for path, download in downloads.items() if posixpath.isabs(path)}
                 try:
-                    download = _download_target(command, expansion, stdout)
-                    targets = _download_sink(command, expansion)
+                    download = _download_target(command, expansion, redirects.stdout)
+                    targets = _download_sink(command, expansion, redirects.stdin)
                 except _DownloadExpansionLimit:
                     command = []
                     continue

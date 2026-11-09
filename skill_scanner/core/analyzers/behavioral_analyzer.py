@@ -38,6 +38,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from markdown_it import MarkdownIt
+
 from ...core.models import Finding, Severity, Skill, ThreatCategory
 from ...core.static_analysis.bash_taint_tracker import (
     BashTaintFlow,
@@ -549,44 +551,17 @@ class BehavioralAnalyzer(BaseAnalyzer):
 
         return findings
 
-    _CODE_FENCE_OPEN_RE = re.compile(r" {0,3}(`{3,}|~{3,})([^\r\n]*)")
-    _CODE_FENCE_CLOSE_RE = re.compile(r" {0,3}(`+|~+)[ \t]*")
-
     # Languages routed to bash taint tracker
     _BASH_LANGS = {"bash", "sh", "shell", "zsh", ""}
 
     def _iter_markdown_code_blocks(self, content: str) -> Iterator[tuple[str, str, int]]:
-        """Yield fenced content and its first physical code line, ignoring inline delimiters.
-
-        Closing fences must use the opener's character and at least its length.
-        An unclosed fence extends to EOF, as a Markdown code block does.
-        """
-        fence = ""
-        language = ""
-        start_line = 1
-        block: list[str] = []
-        for line_number, line in enumerate(content.splitlines(keepends=True), 1):
-            delimiter_line = line.rstrip("\r\n")
-            if not fence:
-                opener = self._CODE_FENCE_OPEN_RE.fullmatch(delimiter_line)
-                if not opener:
-                    continue
-                candidate, info = opener.groups()
-                if candidate.startswith("`") and "`" in info:
-                    continue
-                fence = candidate
-                language = info.strip().split(maxsplit=1)[0].lower() if info.strip() else ""
-                start_line = line_number + 1
+        """Yield CommonMark fence content after container/indent removal with physical source maps."""
+        parser = MarkdownIt("commonmark").disable("inline")
+        for token in parser.parse(content):
+            if token.type != "fence" or token.map is None:
                 continue
-            closer = self._CODE_FENCE_CLOSE_RE.fullmatch(delimiter_line)
-            if closer and closer[1][0] == fence[0] and len(closer[1]) >= len(fence):
-                yield language, "".join(block), start_line
-                fence = ""
-                block = []
-            else:
-                block.append(line)
-        if fence:
-            yield language, "".join(block), start_line
+            language = token.info.strip().split(maxsplit=1)[0].lower() if token.info.strip() else ""
+            yield language, token.content, token.map[0] + 2
 
     def _analyze_markdown_code_blocks(self, skill: Skill) -> list[Finding]:
         """Extract fenced code blocks from markdown files and route through analyzers.
