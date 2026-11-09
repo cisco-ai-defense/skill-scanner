@@ -196,12 +196,26 @@ class ProviderConfig:
             and not self.is_bedrock_mantle
             and ("bedrock/" in model or model_lower.startswith("bedrock/"))
         )
-        self.is_gemini = not self.is_openai_compatible and (
-            "gemini" in model_lower or model_lower.startswith("gemini/")
+        # Runcrate is classified before the native Gemini/Azure/Vertex checks so a
+        # downstream model name containing those words (for example
+        # ``runcrate/google/gemini-2.5-pro``) does not trigger their handling.
+        self.is_runcrate = self.provider == "runcrate" or (
+            not self.is_openai_compatible and model_lower.startswith("runcrate/")
         )
-        self.is_azure = not self.is_openai_compatible and (model_lower.startswith("azure/") or "azure" in model_lower)
-        self.is_vertex = not self.is_openai_compatible and (
-            model_lower.startswith("vertex_ai/") or "vertex" in model_lower
+        self.is_gemini = (
+            not self.is_openai_compatible
+            and not self.is_runcrate
+            and ("gemini" in model_lower or model_lower.startswith("gemini/"))
+        )
+        self.is_azure = (
+            not self.is_openai_compatible
+            and not self.is_runcrate
+            and (model_lower.startswith("azure/") or "azure" in model_lower)
+        )
+        self.is_vertex = (
+            not self.is_openai_compatible
+            and not self.is_runcrate
+            and (model_lower.startswith("vertex_ai/") or "vertex" in model_lower)
         )
         self.is_ollama = not self.is_openai_compatible and model_lower.startswith("ollama/")
         self.is_apple_fm = not self.is_openai_compatible and (
@@ -215,6 +229,14 @@ class ProviderConfig:
                 "Apple Foundation Models run on-device and cannot be combined with a "
                 "Bedrock Mantle model. Use provider 'apple-fm' with an apple-fm/ model, "
                 "or a bedrock-mantle model without the apple-fm provider."
+            )
+        # Runcrate is a remote endpoint. A mixed selection would send skill
+        # content there while the caller asked for local Ollama.
+        if self.is_runcrate and (self.is_ollama or self.provider == "ollama"):
+            raise ValueError(
+                "Ollama runs locally and cannot be combined with a Runcrate model. "
+                "Use provider 'ollama' with an ollama/ model, "
+                "or a runcrate model without the ollama provider."
             )
         self.is_openrouter = not self.is_openai_compatible and model_lower.startswith("openrouter/")
         self.is_orcarouter = self.provider == "orcarouter" or (
@@ -255,6 +277,12 @@ class ProviderConfig:
             if not LITELLM_AVAILABLE:
                 raise ImportError("LiteLLM is required for OrcaRouter. Install with: pip install litellm")
             self.model = self._normalize_orcarouter_model_name(model)
+        elif self.is_runcrate:
+            # Runcrate is OpenAI-compatible; route through the OpenAI LiteLLM adapter
+            # with the well-known default endpoint (overridable via base_url).
+            if not LITELLM_AVAILABLE:
+                raise ImportError("LiteLLM is required for Runcrate. Install with: pip install litellm")
+            self.model = self._normalize_runcrate_model_name(model)
         elif self.is_apple_fm:
             # On-device Foundation Models. Keep the apple-fm/ prefix so the
             # request handler can dispatch without LiteLLM or an API key.
@@ -304,6 +332,14 @@ class ProviderConfig:
         """Force LiteLLM's OpenAI adapter for OrcaRouter models (OpenAI-compatible)."""
         if model.lower().startswith("orcarouter/"):
             model = model[len("orcarouter/") :]
+        if model.lower().startswith("openai/"):
+            return model
+        return f"openai/{model}"
+
+    def _normalize_runcrate_model_name(self, model: str) -> str:
+        """Force LiteLLM's OpenAI adapter for Runcrate models (OpenAI-compatible)."""
+        if model.lower().startswith("runcrate/"):
+            model = model[len("runcrate/") :]
         if model.lower().startswith("openai/"):
             return model
         return f"openai/{model}"
@@ -466,6 +502,9 @@ class ProviderConfig:
         elif self.is_orcarouter:
             # Default OrcaRouter endpoint (OpenAI-compatible) when no base_url is given.
             params["api_base"] = "https://api.orcarouter.ai/v1"
+        elif self.is_runcrate:
+            # Default Runcrate endpoint (OpenAI-compatible) when no base_url is given.
+            params["api_base"] = "https://api.runcrate.ai/v1"
         if self.api_version:
             params["api_version"] = self.api_version
 

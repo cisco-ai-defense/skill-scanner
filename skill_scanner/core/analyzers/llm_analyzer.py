@@ -123,6 +123,7 @@ class LLMProvider(str, Enum):
     - apple-fm: On-device Apple Foundation Models
     - openrouter: OpenRouter API
     - orcarouter: OrcaRouter API
+    - runcrate: Runcrate API
     """
 
     OPENAI = "openai"
@@ -136,6 +137,7 @@ class LLMProvider(str, Enum):
     APPLE_FM = "apple-fm"
     OPENROUTER = "openrouter"
     ORCAROUTER = "orcarouter"
+    RUNCRATE = "runcrate"
 
     @classmethod
     def normalize(cls, provider: str) -> str:
@@ -356,6 +358,7 @@ class LLMAnalyzer(BaseAnalyzer):
                 "apple-fm": "apple-fm/system",
                 "openrouter": "openrouter/openai/gpt-5.6-sol",
                 "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
+                "runcrate": "runcrate/deepseek-ai/DeepSeek-V4-Flash",
             }
             model = model_mapping.get(provider_str, DEFAULT_LLM_MODEL)
         elif model is None:
