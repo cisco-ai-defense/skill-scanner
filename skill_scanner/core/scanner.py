@@ -1232,9 +1232,15 @@ class SkillScanner:
             override = self.policy.get_severity_override(finding.rule_id)
             if override:
                 try:
-                    finding.severity = Severity(override)
+                    severity = Severity(override)
                 except (ValueError, KeyError):
+                    severity = None
+                # SAFE is not a finding severity; policy loading rejects it, and an
+                # override built in code must not turn a finding into SAFE either.
+                if severity is None or severity is Severity.SAFE:
                     logger.warning("Invalid severity override '%s' for rule %s", override, finding.rule_id)
+                    continue
+                finding.severity = severity
 
     def _apply_scoped_suppressions(
         self,

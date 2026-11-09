@@ -173,6 +173,75 @@ class TestScanPolicyCustomisation:
         assert policy.get_severity_override("BINARY_FILE_DETECTED") == "MEDIUM"
         assert policy.get_severity_override("NONEXISTENT") is None
 
+    def test_severity_override_value_is_case_insensitive(self, tmp_path):
+        policy_file = tmp_path / "lower.yaml"
+        policy_file.write_text(
+            textwrap.dedent("""\
+            severity_overrides:
+              - rule_id: BINARY_FILE_DETECTED
+                severity: " medium "
+        """)
+        )
+        policy = ScanPolicy.from_yaml(policy_file)
+        assert policy.get_severity_override("BINARY_FILE_DETECTED") == "MEDIUM"
+
+    @pytest.mark.parametrize("severity", ["HIHG", "3", "SAFE"])
+    def test_unknown_severity_override_is_rejected(self, tmp_path, severity):
+        policy_file = tmp_path / "typo.yaml"
+        policy_file.write_text(
+            textwrap.dedent(f"""\
+            severity_overrides:
+              - rule_id: BINARY_FILE_DETECTED
+                severity: {severity}
+        """)
+        )
+        with pytest.raises(ValueError, match="'severity' must be one of"):
+            ScanPolicy.from_yaml(policy_file)
+
+    def test_non_string_severity_override_is_rejected(self, tmp_path):
+        policy_file = tmp_path / "list.yaml"
+        policy_file.write_text(
+            textwrap.dedent("""\
+            severity_overrides:
+              - rule_id: BINARY_FILE_DETECTED
+                severity: [HIGH]
+        """)
+        )
+        with pytest.raises(ValueError, match="'severity' must be one of"):
+            ScanPolicy.from_yaml(policy_file)
+
+    @pytest.mark.parametrize("rule_id", ["[BINARY_FILE_DETECTED]", "123", "true"])
+    def test_non_string_severity_override_rule_id_is_rejected(self, tmp_path, rule_id):
+        policy_file = tmp_path / "rule_id.yaml"
+        policy_file.write_text(
+            textwrap.dedent(f"""\
+            severity_overrides:
+              - rule_id: {rule_id}
+                severity: HIGH
+        """)
+        )
+        with pytest.raises(ValueError, match="'rule_id' must be a string"):
+            ScanPolicy.from_yaml(policy_file)
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "- BINARY_FILE_DETECTED",
+            "- severity: HIGH",
+            "- rule_id: BINARY_FILE_DETECTED\n                severity: HIGH\n                level: HIGH",
+        ],
+    )
+    def test_malformed_severity_override_entry_is_rejected(self, tmp_path, entry):
+        policy_file = tmp_path / "malformed.yaml"
+        policy_file.write_text(
+            textwrap.dedent(f"""\
+            severity_overrides:
+              {entry}
+        """)
+        )
+        with pytest.raises(ValueError, match="severity_overrides entr"):
+            ScanPolicy.from_yaml(policy_file)
+
     def test_scoped_suppressions(self, tmp_path):
         policy_file = tmp_path / "scoped.yaml"
         policy_file.write_text(
