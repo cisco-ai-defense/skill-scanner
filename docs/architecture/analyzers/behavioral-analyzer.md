@@ -190,16 +190,26 @@ skill-scanner scan /path/to/skill --use-behavioral
 
 ### Runtime-downloaded executables
 
-With `--use-behavioral`, Bash launchers that download an HTTP(S) file with `curl`,
-`wget`, or `fetch` and later make that destination executable or invoke it
+With `--use-behavioral`, Bash launchers and supported Markdown shell fences
+that download an HTTP(S) file with `curl`, `wget`, or `fetch` and later make that destination executable or invoke it
 produce `BEHAVIOR_DOWNLOADED_EXECUTABLE` (MEDIUM). The finding names the
 source URL pattern, destination, and source/sink lines. It explicitly states
 that the runtime artifact was **not scanned**; a scan of a launcher does not
 establish the safety of the code it retrieves.
 
+The same check covers backtick-fenced `bash`, `sh`, `shell`, `zsh`, and
+unlabeled blocks in the primary instruction Markdown file and other Markdown
+files. Single-line command chains and LF/CRLF fences are supported. Each block
+has independent shell state. Findings retain the Markdown file path and report
+file-relative download and execution lines, including the loader's frontmatter
+offset for the primary instruction body. Existing Python and Bash-taint block
+checks retain their routing.
+
 The check recognizes explicit output-file options and stdout redirection,
 simple variable assignments, quoted paths, multiline quoted strings, and command
-chains. Explicit file-output options take precedence over redirects; stderr and
+chains. Quoted downloader option words are normalized before matching, while
+quoted redirection characters remain ordinary arguments. Stdout append redirects
+(`>>` and `1>>`) are supported. Explicit file-output options take precedence over redirects; stderr and
 other non-stdout redirects are not download destinations. Shell interpreter
 options are distinguished from the script operand. `chmod +X` alone is not
 treated as setting execute bits on a newly downloaded file.
@@ -214,6 +224,8 @@ Curl proxy operands are excluded from payload URLs. `exec`-wrapped shell
 invocations use the shell's script operand. Symbolic `chmod` clauses are applied
 in order, including removals and conditional `X`, assuming a newly downloaded
 non-executable regular file; filesystem metadata and umask are not inspected.
+Leading-hyphen modes such as `chmod -w,+x` remain mode operands; actual chmod
+options are skipped, and reference-based modes require separate filesystem analysis.
 Empty assignments clear tracked values.
 
 Each acquisition receives a file-local `download_index`, included in finding

@@ -155,7 +155,19 @@ def _download_target(command: list[str], expansion: _DownloadExpansion) -> tuple
     index = 1
     proxy_options = {"--proxy", "--preproxy", "--proxy1.0", "--socks4", "--socks4a", "--socks5", "--socks5-hostname"}
     while index < len(command):
-        token = command[index]
+        raw_token = command[index]
+        # Only source operators redirect output; a quoted ">" is an argument.
+        if raw_token in {">", "1>", ">>", "1>>"}:
+            if index + 1 < len(command):
+                redirected = expansion.value(command[index + 1])
+                index += 1
+            index += 1
+            continue
+        if re.fullmatch(r"\d*(?:>>|>&|<|<&)|\d+>", raw_token):
+            # These operands are logs, descriptors or input, not payloads.
+            index += 2
+            continue
+        token = expansion.value(raw_token)
         if name == "curl" and token in proxy_options | {"-x"}:
             if index + 1 >= len(command):
                 return None
@@ -167,14 +179,7 @@ def _download_target(command: list[str], expansion: _DownloadExpansion) -> tuple
         elif token == long_option:
             if index + 1 >= len(command):
                 return None
-            explicit = command[index + 1]
-            index += 1
-        elif token in {">", "1>"}:
-            if index + 1 < len(command):
-                redirected = command[index + 1]
-                index += 1
-        elif re.fullmatch(r"\d*(?:>>|>&|<|<&)|\d+>", token):
-            # These operands are logs, descriptors or input, not payloads.
+            explicit = expansion.value(command[index + 1])
             index += 1
         elif token.startswith(long_option + "="):
             explicit = token.split("=", 1)[1]
@@ -186,23 +191,22 @@ def _download_target(command: list[str], expansion: _DownloadExpansion) -> tuple
                 if not operand:
                     if index + 1 >= len(command):
                         return None
-                    operand = command[index + 1]
+                    operand = expansion.value(command[index + 1])
                     index += 1
                 if flag == short_option:
                     explicit = operand
                 break
         else:
-            value = expansion.value(token)
-            if value.startswith(("https://", "http://")):
+            if token.startswith(("https://", "http://")):
                 if url is not None:
                     return None
-                url = value
+                url = token
         index += 1
     if url is None:
         return None
-    destination = expansion.value(explicit) if explicit is not None else "-"
+    destination = explicit if explicit is not None else "-"
     if destination == "-" and redirected is not None:
-        destination = expansion.value(redirected)
+        destination = redirected
     if not destination or destination == "-":
         return None
     return url, posixpath.normpath(destination)
@@ -270,16 +274,35 @@ def _download_sink(command: list[str], expansion: _DownloadExpansion) -> list[st
     name = expansion.value(command[0]).rsplit("/", 1)[-1]
     args = command[1:]
     if name == "chmod":
-        while args and args[0].startswith("-"):
-            if args[0] == "-x":
+        index = 0
+        while index < len(args):
+            option = expansion.value(args[index])
+            if option == "--":
+                index += 1
+                break
+            if not option.startswith("-") or (len(option) > 1 and option[1] in "rwxXstugo"):
+                break
+            if option in {
+                "--recursive",
+                "--changes",
+                "--silent",
+                "--quiet",
+                "--verbose",
+                "--preserve-root",
+                "--no-preserve-root",
+            }:
+                index += 1
+            elif option.startswith("-") and len(option) > 1 and all(flag in "Rcfv" for flag in option[1:]):
+                index += 1
+            else:
+                # Reference modes and unknown options need filesystem semantics.
                 return []
-            args = args[1:]
-        if not args:
+        if index >= len(args):
             return []
-        mode = expansion.value(args[0])
+        mode = expansion.value(args[index])
         if not _chmod_sets_execute(mode):
             return []
-        targets = args[1:]
+        targets = args[index + 1 :]
     elif name == "exec":
         index = 0
         while index < len(args):
