@@ -88,3 +88,36 @@ def test_hook_exits_2_when_the_judge_cannot_be_built(
 
     assert exit_code == pre_commit.EXIT_CONFIGURATION_ERROR == 2
     assert "LLM analyzer could not be loaded" in capsys.readouterr().err
+
+
+def test_hook_exits_2_when_the_policy_cannot_be_loaded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    skill_dir = tmp_path / ".claude" / "skills" / "formatter"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: formatter\ndescription: Formats code.\n---\n\nFormats code.\n")
+    policy_file = tmp_path / "policy.yaml"
+    policy_file.write_text(
+        "suppressions:\n"
+        "  - rule_id: DATA_EXFIL_HTTP_POST\n"
+        "    skills: [formatter]\n"
+        "    reason: reviewed\n"
+        "    expires: 2030-12-31 12:00:00\n"
+    )
+    (tmp_path / ".skill_scannerrc").write_text(json.dumps({"policy": str(policy_file)}))
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = pre_commit.main(["--scan-all"])
+
+    captured = capsys.readouterr()
+    assert exit_code == pre_commit.EXIT_CONFIGURATION_ERROR
+    assert "Error loading policy file" in captured.err
+    assert "without a time" in captured.err
+    assert "All skills passed" not in captured.out
+
+
+def test_scan_skill_raises_on_a_missing_policy_file(tmp_path: Path) -> None:
+    config = {**pre_commit.DEFAULT_CONFIG, "policy": str(tmp_path / "missing.yaml")}
+    with pytest.raises(pre_commit.PolicyConfigurationError, match="Error loading policy file"):
+        pre_commit.scan_skill(SAFE_SKILL_DIR, config)

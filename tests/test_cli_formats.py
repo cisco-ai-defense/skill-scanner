@@ -501,6 +501,23 @@ class TestScopedSuppressions:
         assert "DATA_EXFIL_HTTP_POST" in {f["rule_id"] for f in data["suppressed_findings"]}
         assert data["scan_metadata"]["suppressions"]["suppressed"] == 2
 
+    def test_timestamp_expiry_is_a_policy_error(self, safe_skill_dir, tmp_path):
+        policy_file = tmp_path / "timestamp.yaml"
+        policy_file.write_text(
+            "suppressions:\n"
+            "  - rule_id: DATA_EXFIL_HTTP_POST\n"
+            '    skills: ["simple-formatter"]\n'
+            '    reason: "Reviewed in ticket-1234"\n'
+            "    expires: 2030-12-31 12:00:00\n",
+            encoding="utf-8",
+        )
+
+        _, stderr, code = run_cli(["scan", str(safe_skill_dir), "--policy", str(policy_file)])
+
+        assert code == 2
+        assert "Error loading policy file" in stderr
+        assert "without a time" in stderr
+
     def test_json_stays_clean_with_suppressions(self, test_skills_dir, tmp_path):
         skill = test_skills_dir / "malicious" / "exfiltrator"
         stdout, _, _ = run_cli(
