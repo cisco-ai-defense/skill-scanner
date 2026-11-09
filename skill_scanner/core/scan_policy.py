@@ -488,7 +488,13 @@ def _severity_override_from_dict(entry: dict[str, Any]) -> SeverityOverride:
     in a policy file would otherwise leave the rule at its default severity with
     only a log warning.
     """
-    override = SeverityOverride(**entry)
+    if not isinstance(entry, dict):
+        raise ValueError(f"severity_overrides entries must be mappings, got {entry!r}")
+    try:
+        override = SeverityOverride(**entry)
+    except TypeError as exc:
+        # Missing or unexpected keys; report them as a policy error, not a crash.
+        raise ValueError(f"Invalid severity_overrides entry {entry!r}: {exc}") from exc
     if not isinstance(override.severity, str) or override.severity not in _VALID_OVERRIDE_SEVERITIES:
         raise ValueError(
             f"severity_overrides entry for {override.rule_id!r}: 'severity' must be one of "

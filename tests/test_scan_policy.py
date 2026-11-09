@@ -210,6 +210,25 @@ class TestScanPolicyCustomisation:
         with pytest.raises(ValueError, match="'severity' must be one of"):
             ScanPolicy.from_yaml(policy_file)
 
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "- BINARY_FILE_DETECTED",
+            "- severity: HIGH",
+            "- rule_id: BINARY_FILE_DETECTED\n                severity: HIGH\n                level: HIGH",
+        ],
+    )
+    def test_malformed_severity_override_entry_is_rejected(self, tmp_path, entry):
+        policy_file = tmp_path / "malformed.yaml"
+        policy_file.write_text(
+            textwrap.dedent(f"""\
+            severity_overrides:
+              {entry}
+        """)
+        )
+        with pytest.raises(ValueError, match="severity_overrides entr"):
+            ScanPolicy.from_yaml(policy_file)
+
     def test_scoped_suppressions(self, tmp_path):
         policy_file = tmp_path / "scoped.yaml"
         policy_file.write_text(

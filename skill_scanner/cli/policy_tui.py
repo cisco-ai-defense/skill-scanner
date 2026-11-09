@@ -765,18 +765,19 @@ class PolicyConfigApp(App[str | None]):
             overrides = []
             for line in value:
                 parts = line.split(":", 2)
-                if len(parts) >= 2:
-                    # Same validation as policy loading, so the TUI never saves a
-                    # policy file that the scanner refuses to load.
-                    overrides.append(
-                        _severity_override_from_dict(
-                            {
-                                "rule_id": parts[0].strip(),
-                                "severity": parts[1].strip(),
-                                "reason": parts[2].strip() if len(parts) > 2 else "",
-                            }
-                        )
+                if len(parts) < 2:
+                    raise ValueError(f"Invalid severity override {line!r}: expected rule_id:SEVERITY[:reason]")
+                # Same validation as policy loading, so the TUI never saves a
+                # policy file that the scanner refuses to load.
+                overrides.append(
+                    _severity_override_from_dict(
+                        {
+                            "rule_id": parts[0].strip(),
+                            "severity": parts[1].strip(),
+                            "reason": parts[2].strip() if len(parts) > 2 else "",
+                        }
                     )
+                )
             self.policy.severity_overrides = overrides
             return
 

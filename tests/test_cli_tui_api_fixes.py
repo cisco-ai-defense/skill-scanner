@@ -317,7 +317,10 @@ class TestTUIFieldMap:
 
         assert app._get_field("severity_overrides") == ["BINARY_FILE_DETECTED:MEDIUM:reviewed"]
 
-    @pytest.mark.parametrize("line", ["BINARY_FILE_DETECTED:SUPER_CRITICAL", "BINARY_FILE_DETECTED:SAFE"])
+    @pytest.mark.parametrize(
+        "line",
+        ["BINARY_FILE_DETECTED:SUPER_CRITICAL", "BINARY_FILE_DETECTED:SAFE", "BINARY_FILE_DETECTED HIGH"],
+    )
     def test_set_field_rejects_invalid_severity_override(self, line):
         from skill_scanner.cli.policy_tui import PolicyConfigApp
 
@@ -325,7 +328,7 @@ class TestTUIFieldMap:
         app.policy = ScanPolicy.default()
         before = list(app.policy.severity_overrides)
 
-        with pytest.raises(ValueError, match="'severity' must be one of"):
+        with pytest.raises(ValueError, match="'severity' must be one of|expected rule_id:SEVERITY"):
             app._set_field("severity_overrides", ["MANIFEST_MISSING_LICENSE:LOW", line])
 
         assert app.policy.severity_overrides == before
