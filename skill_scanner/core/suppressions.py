@@ -25,7 +25,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from .models import Severity
@@ -125,6 +125,14 @@ def _parse_expiry(value: object, *, rule_id: str) -> date | None:
     """Parse ``expires`` from a ``date`` or an ISO ``YYYY-MM-DD`` string."""
     if value is None:
         return None
+    if isinstance(value, datetime):
+        # PyYAML parses an unquoted timestamp such as ``2030-01-31 12:00:00``
+        # into datetime.datetime, a date subclass that cannot be compared with
+        # the scan date later.  Reject it here, like a timestamp string.
+        raise SuppressionConfigError(
+            f"suppressions entry for {rule_id!r}: 'expires' must be an ISO date (YYYY-MM-DD) "
+            f"without a time, got {value.isoformat()!r}"
+        )
     if isinstance(value, date):
         # PyYAML already parses unquoted YYYY-MM-DD into datetime.date.
         return value
