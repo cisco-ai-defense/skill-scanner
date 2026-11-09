@@ -197,13 +197,20 @@ source URL pattern, destination, and source/sink lines. It explicitly states
 that the runtime artifact was **not scanned**; a scan of a launcher does not
 establish the safety of the code it retrieves.
 
-The same check covers backtick-fenced `bash`, `sh`, `shell`, `zsh`, and
+The same check covers backtick- and tilde-fenced `bash`, `sh`, `shell`, `zsh`, and
 unlabeled blocks in the primary instruction Markdown file and other Markdown
 files. Single-line command chains and LF/CRLF fences are supported. Each block
 has independent shell state. Findings retain the Markdown file path and report
 file-relative download and execution lines, including the loader's frontmatter
-offset for the primary instruction body. Existing Python and Bash-taint block
-checks retain their routing.
+offset for the primary instruction body. Bash-taint source/sink metadata and
+Python findings use physical file lines too. Primary-file deduplication uses
+filesystem identity rather than case-folded names, retaining distinct files on
+case-sensitive filesystems.
+
+Fences open and close on standalone delimiter lines with up to three leading
+spaces. A closing fence uses the same character and at least the opening length;
+inline fence strings do not end a block. An unclosed fence extends to EOF. This
+is a lightweight fence recognizer, not a full Markdown container parser.
 
 The check recognizes explicit output-file options and stdout redirection,
 simple variable assignments, quoted paths, multiline quoted strings, and command
@@ -211,7 +218,8 @@ chains. Quoted downloader option words are normalized before matching, while
 quoted redirection characters remain ordinary arguments. Stdout append redirects
 (`>>` and `1>>`) are supported. Explicit file-output options take precedence over redirects; stderr and
 other non-stdout redirects are not download destinations. Shell interpreter
-options are distinguished from the script operand. `chmod +X` alone is not
+options, including options supplied through variables, are distinguished from
+the raw script operand. `chmod +X` alone is not
 treated as setting execute bits on a newly downloaded file.
 
 Adjacent quoted path fragments remain one operand, and `#` is a comment only
@@ -227,6 +235,17 @@ non-executable regular file; filesystem metadata and umask are not inspected.
 Leading-hyphen modes such as `chmod -w,+x` remain mode operands; actual chmod
 options are skipped, and reference-based modes require separate filesystem analysis.
 Empty assignments clear tracked values.
+
+Shell redirections are removed before selecting command operands, so redirect
+paths cannot become chmod targets. Known output descriptors are tracked in
+left-to-right order, including descriptor copies, moves, and closure. This is
+local to a command; persistent shell descriptor state is not modeled.
+
+Declared curl option operands, including referer and header values, are excluded
+from payload URL selection. Wget and fetch default to local files, so a stdout
+log redirect is not a payload destination without an explicit stdout output
+option. Their URL-derived default filenames are not inferred. Curl remote-name
+mode likewise does not make a stdout log redirect a payload destination.
 
 Each acquisition receives a file-local `download_index`, included in finding
 IDs, metadata, and an origin comment preceding the source snippet. This preserves

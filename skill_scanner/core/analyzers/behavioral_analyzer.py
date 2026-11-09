@@ -33,6 +33,8 @@ import hashlib
 import logging
 import os
 import re
+from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -547,11 +549,44 @@ class BehavioralAnalyzer(BaseAnalyzer):
 
         return findings
 
-    # Regex for fenced code blocks with optional language tag
-    _CODE_BLOCK_RE = re.compile(r"```(\w*)[ \t]*\r?\n(.*?)```", re.DOTALL)
+    _CODE_FENCE_OPEN_RE = re.compile(r" {0,3}(`{3,}|~{3,})([^\r\n]*)")
+    _CODE_FENCE_CLOSE_RE = re.compile(r" {0,3}(`+|~+)[ \t]*")
 
     # Languages routed to bash taint tracker
     _BASH_LANGS = {"bash", "sh", "shell", "zsh", ""}
+
+    def _iter_markdown_code_blocks(self, content: str) -> Iterator[tuple[str, str, int]]:
+        """Yield fenced content and its first physical code line, ignoring inline delimiters.
+
+        Closing fences must use the opener's character and at least its length.
+        An unclosed fence extends to EOF, as a Markdown code block does.
+        """
+        fence = ""
+        language = ""
+        start_line = 1
+        block: list[str] = []
+        for line_number, line in enumerate(content.splitlines(keepends=True), 1):
+            delimiter_line = line.rstrip("\r\n")
+            if not fence:
+                opener = self._CODE_FENCE_OPEN_RE.fullmatch(delimiter_line)
+                if not opener:
+                    continue
+                candidate, info = opener.groups()
+                if candidate.startswith("`") and "`" in info:
+                    continue
+                fence = candidate
+                language = info.strip().split(maxsplit=1)[0].lower() if info.strip() else ""
+                start_line = line_number + 1
+                continue
+            closer = self._CODE_FENCE_CLOSE_RE.fullmatch(delimiter_line)
+            if closer and closer[1][0] == fence[0] and len(closer[1]) >= len(fence):
+                yield language, "".join(block), start_line
+                fence = ""
+                block = []
+            else:
+                block.append(line)
+        if fence:
+            yield language, "".join(block), start_line
 
     def _analyze_markdown_code_blocks(self, skill: Skill) -> list[Finding]:
         """Extract fenced code blocks from markdown files and route through analyzers.
@@ -572,17 +607,23 @@ class BehavioralAnalyzer(BaseAnalyzer):
             (primary_source, skill.instruction_body, skill.instruction_body_line_offset)
         ]
         for sf in skill.files:
-            if sf.file_type != "markdown" or sf.relative_path.replace("\\", "/").lower() == primary_source.lower():
+            if sf.file_type != "markdown":
                 continue
+            if skill.skill_md_path is not None:
+                try:
+                    is_primary = sf.path.samefile(skill.skill_md_path)
+                except OSError:
+                    # Cached/nonexistent paths retain the host's path case semantics.
+                    is_primary = sf.path == skill.skill_md_path
+                if is_primary:
+                    continue
             content = sf.read_content()
             if content:
                 md_sources.append((sf.relative_path, content, 0))
 
         for source_file, content, source_offset in md_sources:
-            for match in self._CODE_BLOCK_RE.finditer(content):
-                lang = match.group(1).lower()
-                block = match.group(2)
-                line_num = content[: match.start()].count("\n") + 1
+            for lang, block, first_code_line in self._iter_markdown_code_blocks(content):
+                base_line = source_offset + first_code_line - 1
 
                 if not block.strip():
                     continue
@@ -591,15 +632,18 @@ class BehavioralAnalyzer(BaseAnalyzer):
                 if lang in self._BASH_LANGS:
                     try:
                         if len(block.strip().split("\n")) >= 2:
-                            flows = analyze_bash_script(block, source_file)
+                            flows = [
+                                replace(
+                                    flow, source_line=base_line + flow.source_line, sink_line=base_line + flow.sink_line
+                                )
+                                for flow in analyze_bash_script(block, source_file)
+                            ]
                             for flow_finding in self._generate_findings_from_bash_flows(flows, source_file):
-                                # Retain existing taint finding locations and routing.
-                                flow_finding.line_number = line_num + (flow_finding.line_number or 0)
                                 flow_finding.metadata["from_code_block"] = True
                                 flow_finding.metadata["block_language"] = lang or "shell"
                                 findings.append(flow_finding)
                         for download_finding in self._generate_findings_from_bash_downloads(
-                            block, source_file, line_num + source_offset
+                            block, source_file, base_line
                         ):
                             download_finding.metadata["from_code_block"] = True
                             download_finding.metadata["block_language"] = lang or "shell"
@@ -614,7 +658,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
 
                 # Route python blocks through lightweight pattern check
                 elif lang == "python" and len(block.strip().split("\n")) >= 2:
-                    findings.extend(self._check_python_code_block(block, source_file, line_num))
+                    findings.extend(self._check_python_code_block(block, source_file, base_line + 1))
 
         return findings
 
