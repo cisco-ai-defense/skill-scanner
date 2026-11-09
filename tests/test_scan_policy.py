@@ -173,6 +173,31 @@ class TestScanPolicyCustomisation:
         assert policy.get_severity_override("BINARY_FILE_DETECTED") == "MEDIUM"
         assert policy.get_severity_override("NONEXISTENT") is None
 
+    def test_severity_override_value_is_case_insensitive(self, tmp_path):
+        policy_file = tmp_path / "lower.yaml"
+        policy_file.write_text(
+            textwrap.dedent("""\
+            severity_overrides:
+              - rule_id: BINARY_FILE_DETECTED
+                severity: " medium "
+        """)
+        )
+        policy = ScanPolicy.from_yaml(policy_file)
+        assert policy.get_severity_override("BINARY_FILE_DETECTED") == "MEDIUM"
+
+    @pytest.mark.parametrize("severity", ["HIHG", "3", "SAFE"])
+    def test_unknown_severity_override_is_rejected(self, tmp_path, severity):
+        policy_file = tmp_path / "typo.yaml"
+        policy_file.write_text(
+            textwrap.dedent(f"""\
+            severity_overrides:
+              - rule_id: BINARY_FILE_DETECTED
+                severity: {severity}
+        """)
+        )
+        with pytest.raises(ValueError, match="'severity' must be one of"):
+            ScanPolicy.from_yaml(policy_file)
+
     def test_scoped_suppressions(self, tmp_path):
         policy_file = tmp_path / "scoped.yaml"
         policy_file.write_text(

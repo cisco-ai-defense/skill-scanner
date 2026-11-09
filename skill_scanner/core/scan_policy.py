@@ -51,6 +51,7 @@ import yaml
 
 from ..utils.file_utils import FileValidationError, read_text_strict
 from .cel.models import CelMode
+from .models import Severity
 from .suppressions import SuppressionRule, suppression_from_dict
 
 logger = logging.getLogger(__name__)
@@ -469,6 +470,32 @@ class SeverityOverride:
     severity: str  # CRITICAL / HIGH / MEDIUM / LOW / INFO
     reason: str = ""
 
+    def __post_init__(self) -> None:
+        # Severity values are upper-case; accept ``high`` the way scoped
+        # suppressions already do instead of silently ignoring the override.
+        if isinstance(self.severity, str):
+            self.severity = self.severity.strip().upper()
+
+
+# SAFE is a "no findings" sentinel, not a finding severity (same rule as scoped suppressions).
+_VALID_OVERRIDE_SEVERITIES = frozenset(level.value for level in Severity if level is not Severity.SAFE)
+
+
+def _severity_override_from_dict(entry: dict[str, Any]) -> SeverityOverride:
+    """Build a :class:`SeverityOverride` from a policy entry, rejecting unknown severities.
+
+    The scanner skips an override whose severity is not a valid level, so a typo
+    in a policy file would otherwise leave the rule at its default severity with
+    only a log warning.
+    """
+    override = SeverityOverride(**entry)
+    if override.severity not in _VALID_OVERRIDE_SEVERITIES:
+        raise ValueError(
+            f"severity_overrides entry for {override.rule_id!r}: 'severity' must be one of "
+            f"{', '.join(sorted(_VALID_OVERRIDE_SEVERITIES))}, got {entry.get('severity')!r}"
+        )
+    return override
+
 
 # ---------------------------------------------------------------------------
 # The top-level policy object
@@ -680,7 +707,7 @@ class ScanPolicy:
         la = d.get("llm_analysis") or {}
         fo = d.get("finding_output") or {}
 
-        severity_overrides = [SeverityOverride(**ovr) for ovr in d.get("severity_overrides") or []]
+        severity_overrides = [_severity_override_from_dict(ovr) for ovr in d.get("severity_overrides") or []]
         suppressions = [suppression_from_dict(entry) for entry in d.get("suppressions") or []]
 
         cel_mode_value = cel_policy.get("mode", "off")
