@@ -24,10 +24,15 @@ low-confidence results (e.g., truncated or synthetic files).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
+import shlex
 from pathlib import Path
 from typing import Any, NamedTuple
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -281,6 +286,44 @@ _DEFAULT_SHEBANG_COMPATIBLE_EXTENSIONS = frozenset(
     }
 )
 
+_SHEBANG_INTERPRETERS: dict[str, re.Pattern[str]] = {
+    ".py": re.compile(r"(?:python\d*(?:\.\d+)?|pypy\d*)$"),
+    ".sh": re.compile(r"(?:sh|bash|dash|ksh|zsh)$"),
+    ".bash": re.compile(r"(?:sh|bash|dash|ksh|zsh)$"),
+    ".js": re.compile(r"(?:node|nodejs|bun|deno)$"),
+    ".ts": re.compile(r"(?:bun|deno|tsx)$"),
+    ".rb": re.compile(r"ruby\d*(?:\.\d+)?$"),
+    ".pl": re.compile(r"perl\d*(?:\.\d+)?$"),
+    ".php": re.compile(r"php\d*(?:\.\d+)?$"),
+}
+
+
+def _shebang_matches_extension(file_path: Path, ext: str) -> bool:
+    """Return whether a script shebang names an interpreter for its extension."""
+    expected = _SHEBANG_INTERPRETERS.get(ext)
+    if expected is None:
+        return False
+    try:
+        with open(file_path, "rb") as f:
+            line = f.readline(512)
+        if not line.startswith(b"#!"):
+            return False
+        tokens = shlex.split(line[2:].decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return False
+    if not tokens:
+        return False
+
+    interpreter = Path(tokens[0]).name.lower()
+    if interpreter == "env":
+        remaining = tokens[1:]
+        if remaining and remaining[0] == "-S":
+            remaining = remaining[1:]
+        if not remaining or remaining[0].startswith("-"):
+            return False
+        interpreter = Path(remaining[0]).name.lower()
+    return expected.fullmatch(interpreter) is not None
+
 
 # ---------------------------------------------------------------------------
 # Legacy magic byte fallback
@@ -297,6 +340,10 @@ _MAGIC_SIGNATURES: list[tuple[int, bytes, MagicMatch]] = [
     (0, b"\xca\xfe\xba\xbe", MagicMatch("executable/macho_universal", "executable", "Mach-O Universal binary")),
     (0, b"#!", MagicMatch("executable/script", "executable", "Script with shebang")),
     # Archives
+    (0, b"!<arch>\n", MagicMatch("archive/ar", "archive", "ar archive")),
+    (0, b"070701", MagicMatch("archive/cpio", "archive", "cpio archive (newc)")),
+    (0, b"070702", MagicMatch("archive/cpio", "archive", "cpio archive (CRC)")),
+    (0, b"070707", MagicMatch("archive/cpio", "archive", "cpio archive (odc)")),
     (0, b"PK\x03\x04", MagicMatch("archive/zip", "archive", "ZIP archive")),
     (0, b"PK\x05\x06", MagicMatch("archive/zip_empty", "archive", "ZIP archive (empty)")),
     (0, b"PK\x07\x08", MagicMatch("archive/zip_spanned", "archive", "ZIP archive (spanned)")),
@@ -368,6 +415,11 @@ def _match_magic_bytes(data: bytes) -> MagicMatch | None:
 # text/code detection (typically 0.95+), so a high floor ensures legacy
 # handles truncated or synthetic binary files reliably.
 _MAGIKA_CONFIDENCE_FLOOR: float = 0.85
+
+# A model prediction below this level should not overrule ordinary UTF-8
+# bytes when claiming a text/code file is an archive. This also covers the
+# confidence band that STRICT flags but PERMISSIVE does not.
+_ARCHIVE_TEXT_CONFLICT_CONFIDENCE_FLOOR: float = 0.90
 
 
 def _magika_result_to_match(result) -> MagicMatch | None:
@@ -474,6 +526,71 @@ def get_extension_family(ext: str) -> str | None:
     return _EXTENSION_FAMILY.get(ext.lower())
 
 
+_MAX_VERIFIED_JSON_DEPTH = 256
+
+
+def _json_nesting_within_limit(content: str) -> bool:
+    """Bound JSON nesting before parsing, independent of interpreter limits."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in content:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > _MAX_VERIFIED_JSON_DEPTH:
+                return False
+        elif char in "]}":
+            depth -= 1
+            if depth < 0:
+                return False
+    return True
+
+
+def _is_structured_text_without_archive_signature(file_path: Path, ext: str) -> bool:
+    """Confirm a small file is valid JSON/YAML without known archive magic.
+
+    A known archive signature takes precedence. Shell and other loose text
+    formats are not sufficient evidence to override an archive prediction.
+    """
+    legacy = _detect_magic_legacy(file_path)
+    if legacy is not None and legacy.content_family == "archive":
+        return False
+
+    try:
+        with open(file_path, "rb") as f:
+            sample = f.read(65537)
+    except (OSError, PermissionError):
+        return False
+    if not sample or len(sample) > 65536:
+        return False
+    try:
+        content = sample.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    if not all(byte >= 32 or byte in (9, 10, 13) for byte in sample):
+        return False
+    try:
+        if ext == ".json":
+            if not _json_nesting_within_limit(content):
+                return False
+            json.loads(content)
+            return True
+        if ext in {".yaml", ".yml"}:
+            return isinstance(yaml.safe_load(content), (dict, list))
+    except (ValueError, yaml.YAMLError, RecursionError):
+        return False
+    return False
+
+
 def check_extension_mismatch(
     file_path: Path,
     min_confidence: float = 0.8,
@@ -523,6 +640,17 @@ def check_extension_mismatch(
         return None
 
     actual_family = magic.content_family
+
+    # Magika can call short structured text an archive (notably a Snap archive
+    # at the lower STRICT confidence threshold). Suppress only an uncertain
+    # model result after confirming that the whole file parses as JSON/YAML.
+    if (
+        expected_family in _TEXT_COMPATIBLE_FAMILIES
+        and actual_family == "archive"
+        and magic.score < _ARCHIVE_TEXT_CONFLICT_CONFIDENCE_FLOOR
+        and _is_structured_text_without_archive_signature(file_path, ext)
+    ):
+        return None
 
     # --- Group-level mismatch detection ---
 
@@ -589,6 +717,7 @@ def _severity_for_group_mismatch(
         and actual_family == "executable"
         and ext in shebang_exts
         and magic.content_type.startswith("executable/script")
+        and _shebang_matches_extension(file_path, ext)
     ):
         return None
 
@@ -693,6 +822,16 @@ def _check_text_label_mismatch(
         }
     )
     if actual_label in _BENIGN_TEXT_LABELS:
+        return None
+
+    # Short YAML mappings can also resemble textproto to Magika. A weak model
+    # label is not enough to contradict a complete, valid YAML document.
+    if (
+        ext in {".yaml", ".yml"}
+        and actual_label == "textproto"
+        and magic.score < _ARCHIVE_TEXT_CONFLICT_CONFIDENCE_FLOOR
+        and _is_structured_text_without_archive_signature(file_path, ext)
+    ):
         return None
 
     name = file_path.name

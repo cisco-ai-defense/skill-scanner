@@ -114,6 +114,30 @@ def _code_uses_network(skill: Skill) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def declares_bash_tool(allowed_tools: list[str]) -> bool:
+    """Recognize plain and scoped Bash declarations.
+
+    A declaration such as ``Bash(scripts/cli:*)`` names the Bash tool even
+    though its scope is restricted. This does not validate whether any actual
+    invocation falls within that scope.
+    """
+    for declaration in allowed_tools:
+        if not isinstance(declaration, str):
+            continue
+        value = declaration.strip()
+        if value.casefold() == "bash":
+            return True
+        prefix = "bash("
+        if not value.casefold().startswith(prefix) or not value.endswith(")"):
+            continue
+        scope = value[len(prefix) : -1]
+        # Reject malformed or nested declarations rather than treating them as
+        # permission. The reported false positives use a simple scoped form.
+        if scope.strip() and not any(char in "()" or ord(char) < 32 or 127 <= ord(char) <= 159 for char in scope):
+            return True
+    return False
+
+
 def check_allowed_tools_violations(skill: Skill) -> list[Finding]:
     """Check if code behavior violates allowed-tools restrictions."""
     findings: list[Finding] = []
@@ -161,7 +185,7 @@ def check_allowed_tools_violations(skill: Skill) -> list[Finding]:
             )
         )
 
-    if "bash" not in allowed_tools_lower and _code_executes_bash(skill):
+    if not declares_bash_tool(skill.manifest.allowed_tools) and _code_executes_bash(skill):
         findings.append(
             Finding(
                 id=generate_finding_id("ALLOWED_TOOLS_BASH_VIOLATION", skill.name),

@@ -22,6 +22,9 @@
 - id: COMMAND_INJECTION_OS_SYSTEM
   category: command_injection
   severity: CRITICAL
+  # SecurityRule.scan_content suppresses a subprocess match only when bounded
+  # Python AST analysis proves one of the reviewed gh API/lsof argv shapes.
+  # Unparseable, ambiguous, and over-budget source keeps these regex findings.
   patterns:
     - "os\\.system\\s*\\([^)]*[f\"'].*\\{.*\\}"
     - "subprocess\\.(?:call|run|Popen)\\s*\\([^)]*[f\"'].*\\{.*\\}"

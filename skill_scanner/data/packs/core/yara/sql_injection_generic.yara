@@ -37,8 +37,19 @@ rule sql_injection_generic{
         // SQL CAST injection (require SQL context)
         $sql_cast_injection = /\bCAST\s*\([^)]*\s+AS\s+(INT|VARCHAR|CHAR|TEXT|NVARCHAR)\)/i
 
-        // Database-specific system objects in malicious contexts
-        $database_system_objects = /(\bSELECT [^;]*\b(information_schema|mysql\.user|all_tables|user_tables)\b|\bFROM\s+(information_schema|mysql\.user|dual|all_tables|user_tables)\b|LOAD_FILE\s*\(\s*['"][^'"]*\.(config|passwd|shadow|key)\b|INTO\s+OUTFILE\s+['"][^'"]*\.(txt|sql|php)\b|\b(xp_cmdshell|sp_executesql)\s*\(|dbms_[a-z_]+\s*\()/i
+        // Database-specific dangerous operations. A read-only SELECT from
+        // information_schema is ordinary metadata discovery, not injection.
+        // Keep SELECT bounded to one line so a later example cannot make an
+        // earlier, unrelated SELECT look suspicious.
+        $database_system_objects = /(\bSELECT [^\n;]*\b(mysql\.user|all_tables|user_tables)\b|\bFROM\s+(mysql\.user|all_tables|user_tables)\b|LOAD_FILE\s*\(\s*['"][^'"]*\.(config|passwd|shadow|key)\b|INTO\s+OUTFILE\s+['"][^'"]*\.(txt|sql|php)\b|\b(xp_cmdshell|sp_executesql)\s*\(|dbms_[a-z_]+\s*\()/i
+
+        // A standalone metadata query is normal. A quote and semicolon before
+        // it are injection delimiters and must remain visible.
+        $stacked_schema_query = /['"][ \t]*;[ \t]*SELECT[^\n;]*\bFROM\s+information_schema\./i
+
+        // Detect a stacked SELECT on its own line. A later documentation
+        // example must not be needed to make the earlier payload match.
+        $stacked_select_query = /['"][ \t]*;[ \t]*SELECT[^\n;]{0,256}\bFROM[ \t]+[A-Za-z_][A-Za-z0-9_.]*/i
 
         // SQL injection with USER() function in malicious context
         $malicious_user_functions = /(\bUSER\s*\(\s*\)\s*(SELECT|FROM|WHERE|AND|OR|UNION)\b|CONCAT\s*\(\s*USER\s*\(\s*\))/i
@@ -81,6 +92,12 @@ rule sql_injection_generic{
 
         // Database system object access
         ($database_system_objects and not $common_sql_ops and not $common_context_phrases) or
+
+        // Metadata enumeration after a stacked-query injection delimiter
+        ($stacked_schema_query and not $common_sql_ops and not $common_context_phrases) or
+
+        // Query after a stacked-query injection delimiter
+        ($stacked_select_query and not $common_sql_ops and not $common_context_phrases) or
 
         // Malicious USER() function usage
         ($malicious_user_functions and not $common_sql_ops and not $common_context_phrases)

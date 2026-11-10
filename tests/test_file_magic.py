@@ -475,6 +475,192 @@ class TestTextFormatMismatch:
         severity, _desc, _magic = result
         assert severity == "CRITICAL"
 
+    @pytest.mark.parametrize(
+        ("filename", "content", "score"),
+        [
+            ("record.json", b'{"name":"example","enabled":true}\n', 0.67),
+            ("config.yaml", b"name: example\nenabled: true\n", 0.87),
+        ],
+    )
+    def test_structured_text_rejects_false_archive_label(self, tmp_path, monkeypatch, filename, content, score):
+        """A weak archive label cannot override a valid structured text file."""
+        f = tmp_path / filename
+        f.write_bytes(content)
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("archive/snap", "archive", "Snap archive", score),
+        )
+
+        assert check_extension_mismatch(f, min_confidence=0.6) is None
+
+    def test_valid_yaml_rejects_weak_textproto_label(self, tmp_path, monkeypatch):
+        """A small YAML mapping can resemble textproto without being mislabeled."""
+        f = tmp_path / "agent.yaml"
+        f.write_text("interface:\n  display_name: Example\n  default_prompt: Review the issue\n")
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("code/textproto", "code", "Textproto", 0.8904),
+        )
+
+        assert check_extension_mismatch(f, min_confidence=0.6) is None
+
+    @pytest.mark.parametrize("label,score", [("textproto", 0.95), ("shell", 0.8904)])
+    def test_other_yaml_label_conflicts_remain(self, tmp_path, monkeypatch, label, score):
+        f = tmp_path / "agent.yaml"
+        f.write_text("interface:\n  display_name: Example\n")
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch(f"code/{label}", "code", label, score),
+        )
+
+        result = check_extension_mismatch(f, min_confidence=0.6)
+        assert result is not None
+        assert result[0] == "MEDIUM"
+
+    @pytest.mark.parametrize(
+        ("filename", "content"),
+        [
+            ("setup.sh", b"#!/bin/sh\nprintf '%s\\n' ready\n"),
+            ("record.json", b'{"name":"example"}\nextra'),
+            ("config.yaml", b"plain scalar text\n"),
+        ],
+    )
+    def test_unverified_text_keeps_archive_finding(self, tmp_path, monkeypatch, filename, content):
+        f = tmp_path / filename
+        f.write_bytes(content)
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("archive/snap", "archive", "Snap archive", 0.67),
+        )
+
+        result = check_extension_mismatch(f, min_confidence=0.6)
+        assert result is not None
+        assert result[0] == "HIGH"
+
+    @pytest.mark.parametrize(
+        "archive_data",
+        [
+            b"PK\x03\x04" + b"\x00" * 100,
+            b"!<arch>\n" + b" " * 100,
+            b"070701" + b"0" * 100,
+            b"070707" + b"0" * 100,
+        ],
+    )
+    def test_real_archive_signature_survives_false_text_appearance(self, tmp_path, monkeypatch, archive_data):
+        """Real binary and ASCII archive headers remain HIGH in a JSON file."""
+        f = tmp_path / "record.json"
+        f.write_bytes(archive_data)
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("archive/zip", "archive", "ZIP archive", 0.67),
+        )
+
+        result = check_extension_mismatch(f, min_confidence=0.6)
+        assert result is not None
+        assert result[0] == "HIGH"
+
+    def test_high_confidence_archive_label_is_not_suppressed(self, tmp_path, monkeypatch):
+        f = tmp_path / "record.json"
+        f.write_text('{"name":"example"}\n')
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("archive/snap", "archive", "Snap archive", 0.95),
+        )
+
+        result = check_extension_mismatch(f, min_confidence=0.6)
+        assert result is not None
+        assert result[0] == "HIGH"
+
+    def test_archive_label_with_binary_after_text_prefix_is_not_suppressed(self, tmp_path, monkeypatch):
+        f = tmp_path / "record.json"
+        f.write_bytes(b" " * 4096 + b"\x00archive")
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("archive/snap", "archive", "Snap archive", 0.67),
+        )
+
+        result = check_extension_mismatch(f, min_confidence=0.6)
+        assert result is not None
+        assert result[0] == "HIGH"
+
+    @pytest.mark.parametrize(("extension", "depth"), [("json", 257), ("json", 16000), ("yaml", 1200)])
+    def test_deeply_nested_structured_text_fails_closed(self, tmp_path, monkeypatch, extension, depth):
+        """Parser recursion must not crash scanning or suppress an archive signal."""
+        f = tmp_path / f"record.{extension}"
+        nested = "[" * depth + "0" + "]" * depth
+        f.write_text(f"x: {nested}" if extension == "yaml" else nested)
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("archive/snap", "archive", "Snap archive", 0.67),
+        )
+
+        result = check_extension_mismatch(f, min_confidence=0.6)
+        assert result is not None
+        assert result[0] == "HIGH"
+
+    def test_json_brackets_inside_strings_do_not_exceed_nesting_limit(self, tmp_path, monkeypatch):
+        f = tmp_path / "record.json"
+        f.write_text('{"text":"\\\\\\"' + "[" * 1000 + '"}')
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("archive/snap", "archive", "Snap archive", 0.67),
+        )
+
+        assert check_extension_mismatch(f, min_confidence=0.6) is None
+
+    def test_strict_policy_keeps_generic_shebang_finding(self, tmp_path, monkeypatch):
+        """STRICT fails closed when the model only identifies a shebang script."""
+        from skill_scanner.core.scan_policy import ScanPolicy
+
+        f = tmp_path / "setup.sh"
+        f.write_text("#!/bin/sh\necho ready\n")
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("executable/script", "executable", "Script with shebang"),
+        )
+        strict = ScanPolicy.from_preset("strict")
+
+        result = check_extension_mismatch(
+            f,
+            min_confidence=strict.analysis_thresholds.min_confidence_pct / 100,
+            allow_script_shebang_text_extensions=strict.file_classification.allow_script_shebang_text_extensions,
+            shebang_compatible_extensions=strict.file_classification.script_shebang_extensions,
+        )
+        assert result is not None
+        assert result[0] == "CRITICAL"
+
+    def test_default_policy_accepts_matching_script_shebang(self, tmp_path, monkeypatch):
+        """The default exemption applies only to a matching interpreter."""
+        f = tmp_path / "setup.sh"
+        f.write_text("#!/usr/bin/env -S bash -e\necho ready\n")
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("executable/script", "executable", "Script with shebang"),
+        )
+
+        assert check_extension_mismatch(f) is None
+
+    def test_strict_policy_rejects_shell_shebang_in_python_file(self, tmp_path, monkeypatch):
+        """A shell script disguised as Python still produces a CRITICAL finding."""
+        from skill_scanner.core.scan_policy import ScanPolicy
+
+        f = tmp_path / "setup.py"
+        f.write_text("#!/bin/bash\necho ready\n")
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("executable/script", "executable", "Script with shebang"),
+        )
+        strict = ScanPolicy.from_preset("strict")
+
+        result = check_extension_mismatch(
+            f,
+            min_confidence=strict.analysis_thresholds.min_confidence_pct / 100,
+            allow_script_shebang_text_extensions=strict.file_classification.allow_script_shebang_text_extensions,
+            shebang_compatible_extensions=strict.file_classification.script_shebang_extensions,
+        )
+        assert result is not None
+        assert result[0] == "CRITICAL"
+
 
 # ── Confidence threshold ────────────────────────────────────────────────
 

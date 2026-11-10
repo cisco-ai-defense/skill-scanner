@@ -59,6 +59,42 @@ class ThreatCategory(str, Enum):
     SUPPLY_CHAIN_ATTACK = "supply_chain_attack"
 
 
+def _split_allowed_tools(value: str) -> list[str]:
+    """Split comma- or space-separated tools without splitting scoped commands."""
+    parts: list[str] = []
+    current: list[str] = []
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for char in value:
+        if quote is not None:
+            current.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in {"'", '"'}:
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")" and depth > 0:
+            depth -= 1
+        elif depth == 0 and (char == "," or char.isspace()):
+            part = "".join(current).strip()
+            if part:
+                parts.append(part)
+            current.clear()
+            continue
+        current.append(char)
+    last = "".join(current).strip()
+    if last:
+        parts.append(last)
+    return parts
+
+
 @dataclass
 class SkillManifest:
     """Parsed YAML frontmatter from SKILL.md.
@@ -84,11 +120,9 @@ class SkillManifest:
         if self.allowed_tools is None:
             self.allowed_tools = []
         elif isinstance(self.allowed_tools, str):
-            # Agent skill docs show comma-separated or space-separated tool lists in YAML frontmatter
-            # (e.g., "allowed-tools: Read, Grep, Glob" or "allowed-tools: Read Grep Glob").
-            sep = "," if "," in self.allowed_tools else None
-            parts = [p.strip() for p in self.allowed_tools.split(sep)]
-            self.allowed_tools = [p for p in parts if p]
+            # Preserve scoped Bash patterns, including spaces and commas in
+            # command arguments, while accepting both documented list forms.
+            self.allowed_tools = _split_allowed_tools(self.allowed_tools)
 
     @property
     def short_description(self) -> str | None:
