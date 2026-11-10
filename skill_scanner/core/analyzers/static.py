@@ -75,6 +75,7 @@ from ...core.static_analysis.python_shell_semantics import (
 )
 from ...core.static_analysis.url_classifier import classify_url, extract_urls
 from ...data import DATA_DIR
+from ...data.packs.core.python.allowed_tools_checks import declares_bash_tool
 from ...data.packs.core.python.registry_redirect_checks import check_registry_redirect
 from ...data.packs.core.python.undeclared_destination_checks import check_undeclared_network_destination
 from ...threats.threats import ThreatMapping
@@ -127,6 +128,102 @@ _GLOB_PATTERNS = [
     re.compile(r"\.rglob\("),
     re.compile(r"fnmatch\."),
 ]
+_PROMPT_OVERRIDE_EXAMPLE_PATTERNS = frozenset(
+    {
+        "$instruction_override_strong",
+        "$instruction_override_your",
+        "$do_not_obey",
+        "$advanced_overrides",
+    }
+)
+_PROMPT_EXAMPLE_REJECTION = re.compile(
+    r"\b(?:do not|don't|never|must not|should not|cannot|can't)\s+"
+    r"(?:follow|obey|execute|run|comply with)\s+(?:it|them|this|that|these|those)\b",
+    re.IGNORECASE,
+)
+_PROMPT_EXAMPLE_UNTRUSTED_SOURCE = re.compile(
+    r"\b(?:untrusted|malicious|attacker[- ]controlled)\b",
+    re.IGNORECASE,
+)
+_PROMPT_EXAMPLE_POSITIVE_ACTION = re.compile(
+    r"\b(?:follow|obey|execute|run|comply with|apply|send|copy|reveal|transmit|exfiltrate|"
+    r"ignore|bypass|forget|disregard)\b",
+    re.IGNORECASE,
+)
+_PROMPT_EXAMPLE_QUOTED_TEXT = re.compile(r"(?:'[^']*'|\"[^\"]*\"|`[^`]*`|‘[^’]*’|“[^”]*”)")
+_PROMPT_EXAMPLE_NEGATION_SUFFIX = re.compile(
+    r"\b(?:do not|don't|never|must not|should not|cannot|can't)\s+$",
+    re.IGNORECASE,
+)
+_PROMPT_EXAMPLE_MAX_CONTENT_CHARS = 256 * 1024
+
+
+def _is_rejected_quoted_prompt_example(string_match: dict[str, Any], file_content: str | None) -> bool:
+    """Recognize a quoted override shown as an explicitly rejected example.
+
+    Use YARA's byte offset to examine only the matched phrase and its own line.
+    A separate malicious instruction elsewhere in the file must still be found.
+    """
+    # The filter is optional precision logic. A very large input keeps the
+    # YARA finding instead of repeatedly encoding the whole file per match.
+    if file_content is None or len(file_content) > _PROMPT_EXAMPLE_MAX_CONTENT_CHARS:
+        return False
+    offset = string_match.get("offset")
+    matched_data = string_match.get("matched_data")
+    if not isinstance(offset, int) or not isinstance(matched_data, str) or not matched_data:
+        return False
+
+    content_bytes = file_content.encode("utf-8")
+    matched_bytes = matched_data.encode("utf-8")
+    end = offset + len(matched_bytes)
+    if offset < 0 or content_bytes[offset:end] != matched_bytes:
+        return False
+    line_start = content_bytes.rfind(b"\n", 0, offset) + 1
+    line_end = content_bytes.find(b"\n", end)
+    if line_end < 0:
+        line_end = len(content_bytes)
+    before = content_bytes[line_start:offset].decode("utf-8", errors="ignore").rstrip()
+    after = content_bytes[end:line_end].decode("utf-8", errors="ignore").lstrip()
+    quote_pairs = (("'", "'"), ('"', '"'), ("`", "`"), ("‘", "’"), ("“", "”"))
+    if not any(
+        before.endswith(open_quote) and after.startswith(close_quote) for open_quote, close_quote in quote_pairs
+    ):
+        return False
+
+    line = f"{before}{matched_data}{after}"
+    source_is_untrusted = (
+        "can contain text aimed at you" in line.casefold() or _PROMPT_EXAMPLE_UNTRUSTED_SOURCE.search(line) is not None
+    )
+    if not source_is_untrusted:
+        return False
+    rejection = _PROMPT_EXAMPLE_REJECTION.search(after)
+    if rejection is None:
+        return False
+
+    # An imperative before the quoted example still makes this line
+    # ambiguous. Ignore earlier quoted examples, but retain the finding when
+    # unquoted prose tells the agent to act on the instruction.
+    unquoted_before = _PROMPT_EXAMPLE_QUOTED_TEXT.sub(" ", before)
+    for action in _PROMPT_EXAMPLE_POSITIVE_ACTION.finditer(unquoted_before):
+        prefix = unquoted_before[max(0, action.start() - 32) : action.start()]
+        if _PROMPT_EXAMPLE_NEGATION_SUFFIX.search(prefix) is None:
+            return False
+
+    # A warning must reject this quoted example, not some unrelated rules.
+    # Contradictory instructions on the same line are ambiguous, so keep the
+    # finding. Restrict the pre-rejection check to instruction verbs because
+    # other quoted examples on the line may contain commands such as "run".
+    before_rejection = after[: rejection.start()]
+    if re.search(r"\b(?:follow|obey|comply with|apply)\b", before_rejection, re.IGNORECASE):
+        return False
+    after_rejection = after[rejection.end() :]
+    for action in _PROMPT_EXAMPLE_POSITIVE_ACTION.finditer(after_rejection):
+        prefix = after_rejection[max(0, action.start() - 32) : action.start()]
+        if _PROMPT_EXAMPLE_NEGATION_SUFFIX.search(prefix) is None:
+            return False
+    return True
+
+
 _SENSITIVE_PATH_LITERAL_RE = re.compile(
     r"(?i)(?:\.aws[/\\]credentials|\.ssh[/\\](?:id_[a-z0-9_]+|authorized_keys)|"
     r"\.(?:npmrc|gitconfig|gnupg|netrc|pgpass)|(?:^|[/\\])credentials?(?:[/\\]|$)|"
@@ -4291,7 +4388,7 @@ class StaticAnalyzer(BaseAnalyzer):
                     )
                 )
 
-        if "bash" not in allowed_tools_lower:
+        if not declares_bash_tool(skill.manifest.allowed_tools):
             if self._code_executes_bash(skill):
                 findings.append(
                     Finding(
@@ -4830,18 +4927,24 @@ class StaticAnalyzer(BaseAnalyzer):
 
         # Scan SKILL.md instruction body, then the frontmatter description and
         # when_to_use fields that agents load into context before invocation.
-        yara_matches = self.yara_scanner.scan_content(skill.instruction_body, "SKILL.md")
+        yara_matches = [
+            (match, skill.instruction_body)
+            for match in self.yara_scanner.scan_content(skill.instruction_body, "SKILL.md")
+        ]
         frontmatter_view = _frontmatter_text_view(skill)
         if frontmatter_view:
-            yara_matches = [*yara_matches, *self.yara_scanner.scan_content(frontmatter_view, "SKILL.md")]
-        for match in yara_matches:
+            yara_matches.extend(
+                (match, frontmatter_view)
+                for match in self.yara_scanner.scan_content(frontmatter_view, "SKILL.md")
+            )
+        for match, matched_content in yara_matches:
             rule_name = match.get("rule_name", "")
             if not self._is_rule_enabled(rule_name):
                 continue
             # embedded_shebang_in_binary only applies to binary files, not text
             if rule_name == "embedded_shebang_in_binary":
                 continue
-            findings.extend(self._create_findings_from_yara_match(match, skill))
+            findings.extend(self._create_findings_from_yara_match(match, skill, matched_content))
 
         # Use policy-defined rule scoping (org-customisable)
         _SKILLMD_AND_SCRIPTS_ONLY = self.policy.rule_scoping.skillmd_and_scripts_only
@@ -5609,6 +5712,13 @@ class StaticAnalyzer(BaseAnalyzer):
             # Skip exclusion patterns (these are used in YARA conditions but shouldn't create findings)
             string_identifier = string_match.get("identifier", "")
             if string_identifier.startswith("$documentation") or string_identifier.startswith("$safe"):
+                continue
+
+            if (
+                rule_name == "prompt_injection_generic"
+                and string_identifier in _PROMPT_OVERRIDE_EXAMPLE_PATTERNS
+                and _is_rejected_quoted_prompt_example(string_match, file_content)
+            ):
                 continue
 
             if (

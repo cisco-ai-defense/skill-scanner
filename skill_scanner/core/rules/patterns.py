@@ -18,6 +18,7 @@
 Pattern matching utilities for security rules.
 """
 
+import ast
 import logging
 import re
 from collections import Counter
@@ -30,6 +31,7 @@ from typing import Any, Literal
 import yaml
 
 from ...core.models import Severity, ThreatCategory
+from ..static_analysis.javascript_tokens import tokenize_javascript
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,482 @@ SIGNATURE_POLARITIES = frozenset({"active", "illustrative", "negative", "unknown
 # Used to strip character-class contents before checking whether a pattern
 # contains \n for genuine multiline spanning (vs single-line [^\n] anchoring).
 _CHAR_CLASS_RE = re.compile(r"\[[^\]]*\]")
+
+_JS_BUN_SPAWN_PREFIX = re.compile(r"\bBun\s*\.\s*$")
+_JS_BUN_GUARD_MAX_CHARS = 65_536
+_JS_BUN_GUARD_MAX_TOKENS = 4096
+_JS_BUN_DYNAMIC_CODE = frozenset(
+    {
+        "eval",
+        "Function",
+        "AsyncFunction",
+        "constructor",
+        "Object",
+        "Reflect",
+        "Proxy",
+        "globalThis",
+        "global",
+        "self",
+        "window",
+        "setTimeout",
+        "setInterval",
+    }
+)
+_JS_BUN_SENSITIVE_STRING = re.compile(r"\b(?:Bun|process|spawnSync|execPath)\b")
+_JS_BUN_ALLOWED_PROCESS_PREFIXES = (
+    ("process", ".", "execPath", ","),
+    ("process", ".", "execPath", "]"),
+    ("process", ".", "argv", ".", "slice", "("),
+    ("process", ".", "cwd", "("),
+    ("process", ".", "env", ","),
+    ("process", ".", "env", "}"),
+    ("process", ".", "stdout", ".", "write", "("),
+    ("process", ".", "stderr", ".", "write", "("),
+    ("process", ".", "exit", "("),
+)
+
+
+def _js_matching_group_end(source: str, start: int) -> int | None:
+    """Find a call's closing parenthesis, failing closed on ambiguous syntax."""
+    if start >= len(source) or source[start] != "(":
+        return None
+    pairs = {"[": "]", "{": "}", "(": ")"}
+    stack = ["("]
+    quote = ""
+    escaped = False
+    for index in range(start + 1, min(len(source), start + 4096)):
+        char = source[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = ""
+            continue
+        if char in "\"'":
+            quote = char
+        elif char in "`/":
+            # Templates, comments, and regex literals need a JS parser. Do not
+            # suppress a finding when one appears in the call.
+            return None
+        elif char in pairs:
+            stack.append(char)
+        elif char in "]})":
+            if not stack or pairs[stack[-1]] != char:
+                return None
+            stack.pop()
+            if not stack:
+                return index
+    return None
+
+
+def _js_split_top_level(source: str) -> list[str] | None:
+    """Split simple JS arguments without treating nested commas as separators."""
+    pairs = {"[": "]", "{": "}", "(": ")"}
+    stack: list[str] = []
+    quote = ""
+    escaped = False
+    start = 0
+    parts: list[str] = []
+    for index, char in enumerate(source):
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = ""
+            continue
+        if char in "\"'":
+            quote = char
+        elif char in "`/":
+            return None
+        elif char in pairs:
+            stack.append(char)
+        elif char in "]})":
+            if not stack or pairs[stack[-1]] != char:
+                return None
+            stack.pop()
+        elif char == "," and not stack:
+            part = source[start:index].strip()
+            if not part:
+                return None
+            parts.append(part)
+            start = index + 1
+    if quote or stack:
+        return None
+    last = source[start:].strip()
+    if last:
+        parts.append(last)
+    elif source and not source.rstrip().endswith(","):
+        return None
+    return parts
+
+
+def _js_plain_string(source: str) -> str | None:
+    """Decode only ordinary quoted literals; escaped/dynamic strings stay unknown."""
+    if len(source) >= 2 and source[0] in "\"'" and source[-1] == source[0] and "\\" not in source:
+        return source[1:-1]
+    return None
+
+
+def _js_bun_options(source: str | None) -> dict[str, str] | None:
+    """Parse a plain options object; reject spread, shorthand, and computed keys."""
+    if source is None:
+        return {}
+    if not source.startswith("{") or not source.endswith("}"):
+        return None
+    entries = _js_split_top_level(source[1:-1])
+    if entries is None:
+        return None
+    options = {}
+    for entry in entries:
+        key, separator, value = entry.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if not separator or not re.fullmatch(r"[A-Za-z_$][\w$]*", key) or not value or key in options:
+            return None
+        options[key] = value
+    return options
+
+
+def _js_code_prefix(source: str, end: int) -> str | None:
+    """Mask strings and comments before checking a nearby constant binding."""
+    if end > 4096:
+        return None
+    code = list(source[:end])
+    quote = ""
+    escaped = False
+    comment = ""
+    index = 0
+    while index < end:
+        char = source[index]
+        next_char = source[index + 1] if index + 1 < end else ""
+        if comment == "line":
+            if char in "\r\n":
+                comment = ""
+            else:
+                code[index] = " "
+            index += 1
+            continue
+        if comment == "block":
+            code[index] = " "
+            if char == "*" and next_char == "/":
+                code[index + 1] = " "
+                comment = ""
+                index += 2
+            else:
+                index += 1
+            continue
+        if quote:
+            code[index] = " "
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = ""
+            index += 1
+            continue
+        if char in "\"'":
+            code[index] = " "
+            quote = char
+        elif char == "/" and next_char in {"/", "*"}:
+            code[index : index + 2] = [" ", " "]
+            comment = "line" if next_char == "/" else "block"
+            index += 2
+            continue
+        elif char in "`/":
+            return None
+        index += 1
+    return "".join(code) if not quote and comment != "block" else None
+
+
+def _is_safe_bun_spawn_sync(source: str, open_paren: int) -> bool:
+    """Recognize only the two reviewed fixed Bun bootstrap call shapes."""
+    end = _js_matching_group_end(source, open_paren)
+    if end is None:
+        return False
+    call_args = _js_split_top_level(source[open_paren + 1 : end])
+    if call_args is None or len(call_args) not in {1, 2}:
+        return False
+    command = call_args[0]
+    if not command.startswith("[") or not command.endswith("]"):
+        return False
+    argv = _js_split_top_level(command[1:-1])
+    if not argv or argv[0] != "process.execPath":
+        return False
+    options = _js_bun_options(call_args[1] if len(call_args) == 2 else None)
+    if options is None:
+        return False
+    if len(argv) == 3 and [_js_plain_string(item) for item in argv[1:]] == ["install", "--frozen-lockfile"]:
+        code_prefix = _js_code_prefix(source, open_paren)
+        if code_prefix is None:
+            return False
+        declarations = re.findall(r"\b(?:const|let|var)\s+scriptsDirectory\b[^;]*;", code_prefix)
+        return (
+            options == {"cwd": "scriptsDirectory"}
+            and len(declarations) == 1
+            and re.fullmatch(r"const\s+scriptsDirectory\s*=\s*import\.meta\.dir\s*;", declarations[0]) is not None
+            and not re.search(r"\bfunction\b[^{};]*\([^)]*\bscriptsDirectory\b", code_prefix)
+            and not re.search(r"\([^)]*\bscriptsDirectory\b[^)]*\)\s*=>", code_prefix)
+        )
+    if len(argv) == 2 and argv[1] == "...process.argv.slice(1)":
+        return options == {
+            "cwd": "process.cwd()",
+            "env": "process.env",
+            "stdin": '"inherit"',
+            "stdout": '"inherit"',
+            "stderr": '"inherit"',
+        }
+    return False
+
+
+def _js_bun_globals_unchanged(source: str) -> bool:
+    """Reject bounded sources with shadowing, mutation, or dynamic code shapes."""
+    if len(source) > _JS_BUN_GUARD_MAX_CHARS:
+        return False
+    tokenization = tokenize_javascript(source, max_tokens=_JS_BUN_GUARD_MAX_TOKENS)
+    if not tokenization.complete:
+        return False
+    tokens = tokenization.tokens
+    values = [token.value for token in tokens]
+    for index, token in enumerate(tokens):
+        if token.kind == "string" and _JS_BUN_SENSITIVE_STRING.search(token.value):
+            # Computed properties and dynamic source strings are ambiguous.
+            return False
+        if token.kind != "identifier":
+            continue
+        if token.value in _JS_BUN_DYNAMIC_CODE:
+            return False
+        if token.value == "Bun":
+            if (index > 0 and values[index - 1] in {".", "[", "?"}) or values[index + 1 : index + 4] != [
+                ".",
+                "spawnSync",
+                "(",
+            ]:
+                return False
+        elif token.value == "process":
+            if index > 0 and values[index - 1] == "?":
+                return False
+            if index > 0 and values[index - 1] == "." and values[index - 3 : index] != [".", ".", "."]:
+                return False
+            if not any(
+                values[index : index + len(prefix)] == list(prefix) for prefix in _JS_BUN_ALLOWED_PROCESS_PREFIXES
+            ):
+                return False
+        elif token.value == "import" and values[index : index + 5] == ["import", ".", "meta", ".", "dir"]:
+            if values[index + 5 : index + 6] != [";"]:
+                return False
+    return True
+
+
+# A failed or over-budget parse must leave the regex finding in place.  These
+# limits match the bounded Python analysis used elsewhere in the scanner.
+_MAX_SUBPROCESS_SOURCE_BYTES = 1024 * 1024
+_MAX_SUBPROCESS_AST_NODES = 50_000
+_SUBPROCESS_SAFE_KEYWORDS = {
+    "run": frozenset({"input", "capture_output", "text", "check", "timeout", "shell"}),
+    "call": frozenset({"timeout", "shell"}),
+    "Popen": frozenset({"shell"}),
+}
+_DYNAMIC_BINDING_NAMES = frozenset(
+    {
+        "exec",
+        "eval",
+        "globals",
+        "locals",
+        "vars",
+        "getattr",
+        "setattr",
+        "delattr",
+        "patch",
+        "monkeypatch",
+        "__import__",
+        "__builtins__",
+    }
+)
+
+
+def _fixed_data_argument(node: ast.expr) -> bool:
+    """Accept literal argv data or an f-string with a fixed, non-option prefix.
+
+    An arbitrary value in its own argv element may be interpreted as an option
+    by the child program.  Such calls retain the existing finding.  Formatted
+    values are limited to names so evaluating an argument cannot itself run a
+    command or another side-effecting expression.
+    """
+
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str)
+    if not isinstance(node, ast.JoinedStr) or not node.values:
+        return False
+    first = node.values[0]
+    if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
+        return False
+    if not first.value or first.value.startswith("-"):
+        return False
+    return all(
+        isinstance(part, ast.Constant)
+        or (isinstance(part, ast.FormattedValue) and isinstance(part.value, ast.Name) and part.format_spec is None)
+        for part in node.values
+    )
+
+
+def _known_non_shell_argv(argv: ast.List | ast.Tuple) -> bool:
+    """Recognize reviewed non-shell command shapes without general CLI assumptions."""
+
+    if not argv.elts or not isinstance(argv.elts[0], ast.Constant):
+        return False
+    executable = argv.elts[0].value
+    if executable == "lsof" and len(argv.elts) == 3:
+        option, port = argv.elts[1:]
+        return (
+            isinstance(option, ast.Constant)
+            and option.value == "-ti"
+            and isinstance(port, ast.JoinedStr)
+            and bool(port.values)
+            and isinstance(port.values[0], ast.Constant)
+            and port.values[0].value == ":"
+            and _fixed_data_argument(port)
+        )
+    if executable == "gh" and len(argv.elts) >= 3:
+        subcommand, route = argv.elts[1:3]
+        return (
+            isinstance(subcommand, ast.Constant)
+            and subcommand.value == "api"
+            and isinstance(route, ast.JoinedStr)
+            and bool(route.values)
+            and isinstance(route.values[0], ast.Constant)
+            and route.values[0].value == "repos/"
+            and _fixed_data_argument(route)
+            and all(isinstance(arg, ast.Constant) and isinstance(arg.value, str) for arg in argv.elts[3:])
+        )
+    return False
+
+
+def _safe_subprocess_argv_calls(content: str) -> dict[tuple[int, int], tuple[int, int]]:
+    """Return AST spans proven to use fixed, direct subprocess argv.
+
+    This is deliberately narrower than "a list was passed": only the
+    reviewed gh API and lsof port-query shapes are suppressed.  Shell
+    wrappers, dynamic executables, and unknown keyword expansion all keep
+    the CRITICAL regex finding.
+    """
+
+    try:
+        if len(content) > _MAX_SUBPROCESS_SOURCE_BYTES or len(content.encode("utf-8")) > _MAX_SUBPROCESS_SOURCE_BYTES:
+            return {}
+        tree = ast.parse(content)
+    except (SyntaxError, RecursionError, MemoryError, ValueError, UnicodeError):
+        return {}
+
+    nodes: list[ast.AST] = []
+    for node in ast.walk(tree):
+        nodes.append(node)
+        if len(nodes) > _MAX_SUBPROCESS_AST_NODES:
+            return {}
+
+    # Any other use of the module object might replace its callables.  Dynamic
+    # namespace operations and pattern bindings are also treated as unknown.
+    direct_subprocess_uses = {
+        id(node.func.value)
+        for node in nodes
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "subprocess"
+        and node.func.attr in _SUBPROCESS_SAFE_KEYWORDS
+    }
+    direct_subprocess_uses.update(
+        id(node.type.value)
+        for node in nodes
+        if isinstance(node, ast.ExceptHandler)
+        and isinstance(node.type, ast.Attribute)
+        and isinstance(node.type.value, ast.Name)
+        and node.type.value.id == "subprocess"
+        and node.type.attr in {"TimeoutExpired", "CalledProcessError"}
+    )
+    imported = False
+    for node in nodes:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "subprocess" and alias.asname is None:
+                    imported = True
+                elif alias.asname == "subprocess" or alias.name.split(".", 1)[0] == "subprocess":
+                    return {}
+        elif isinstance(node, ast.ImportFrom):
+            if any((alias.asname or alias.name) == "subprocess" for alias in node.names):
+                return {}
+            if node.module == "unittest.mock" and any(alias.name == "patch" for alias in node.names):
+                return {}
+            if node.module == "os" and any(alias.name in {"environ", "environb", "putenv", "unsetenv", "chdir"} for alias in node.names):
+                return {}
+            if node.module == "builtins" and any(alias.name in _DYNAMIC_BINDING_NAMES for alias in node.names):
+                return {}
+            if node.module == "sys" and any(alias.name == "modules" for alias in node.names):
+                return {}
+        elif isinstance(node, ast.Constant) and node.value in {
+            "subprocess",
+            "subprocess.run",
+            "subprocess.call",
+            "subprocess.Popen",
+            "sys.modules",
+        }:
+            # Covers string-target patching, including mock.patch and
+            # monkeypatch.setattr, before the reviewed call executes.
+            return {}
+        elif isinstance(node, ast.Name):
+            if node.id in _DYNAMIC_BINDING_NAMES and isinstance(node.ctx, ast.Load):
+                return {}
+            if node.id == "subprocess" and (
+                not isinstance(node.ctx, ast.Load) or id(node) not in direct_subprocess_uses
+            ):
+                return {}
+        elif isinstance(node, ast.Attribute) and (
+            node.attr in _DYNAMIC_BINDING_NAMES
+            or node.attr in {"environ", "environb", "putenv", "unsetenv", "chdir"}
+            or (node.attr == "modules" and isinstance(node.value, ast.Name) and node.value.id == "sys")
+        ):
+            return {}
+        elif isinstance(node, ast.arg) and node.arg == "subprocess":
+            return {}
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == "subprocess":
+            return {}
+        elif isinstance(node, ast.ExceptHandler) and node.name == "subprocess":
+            return {}
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name == "subprocess":
+            return {}
+        elif isinstance(node, ast.MatchMapping) and node.rest == "subprocess":
+            return {}
+    if not imported:
+        return {}
+
+    safe_spans: dict[tuple[int, int], tuple[int, int]] = {}
+    for node in nodes:
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if not isinstance(node.func.value, ast.Name) or node.func.value.id != "subprocess":
+            continue
+        if node.func.attr not in _SUBPROCESS_SAFE_KEYWORDS or len(node.args) != 1:
+            continue
+        argv = node.args[0]
+        if not isinstance(argv, (ast.List, ast.Tuple)) or not _known_non_shell_argv(argv):
+            continue
+        if any(
+            keyword.arg not in _SUBPROCESS_SAFE_KEYWORDS[node.func.attr]
+            or (
+                keyword.arg == "shell"
+                and not (isinstance(keyword.value, ast.Constant) and keyword.value.value is False)
+            )
+            or (keyword.arg != "shell" and not isinstance(keyword.value, (ast.Constant, ast.Name)))
+            for keyword in node.keywords
+        ):
+            continue
+        safe_spans[(node.lineno, node.col_offset)] = (node.end_lineno, node.end_col_offset)
+    return safe_spans
+
 
 _CODE_SUFFIXES = frozenset({".bash", ".js", ".py", ".sh", ".ts", ".zsh"})
 _EXAMPLE_PATH_PARTS = frozenset(
@@ -915,6 +1393,47 @@ class SecurityRule:
         if self.id == "DATA_EXFIL_ENV_DUMP":
             return _scan_env_dump_content(content, file_path, scan_context)
         lines = scan_context.lines
+        safe_subprocess_calls: dict[tuple[int, int], tuple[int, int]] | None = None
+        bun_source: str | None = None
+        bun_line_offsets: list[int] | None = None
+        bun_globals_unchanged: bool | None = None
+
+        def is_safe_subprocess_match(
+            match: re.Match[str], line_number: int, line: str, start: int, end: tuple[int, int]
+        ) -> bool:
+            nonlocal safe_subprocess_calls
+            if self.id != "COMMAND_INJECTION_OS_SYSTEM" or not match.group(0).startswith("subprocess."):
+                return False
+            if safe_subprocess_calls is None:
+                safe_subprocess_calls = _safe_subprocess_argv_calls(content)
+            call_end = safe_subprocess_calls.get((line_number, len(line[:start].encode("utf-8"))))
+            return call_end is not None and end <= call_end
+
+        def is_safe_bun_match(match: re.Match[str], line_number: int, line: str) -> bool:
+            nonlocal bun_source, bun_line_offsets, bun_globals_unchanged
+            if (
+                self.id != "COMMAND_INJECTION_JS_CHILD_PROCESS"
+                or match.re.pattern != r"\bspawnSync\s*\("
+                or _JS_BUN_SPAWN_PREFIX.search(line[: match.start()]) is None
+            ):
+                return False
+            if bun_source is None:
+                # SignatureScanContext normalizes CRLF/CR, so offsets must use
+                # the same normalized source as its line and match positions.
+                bun_source = "\n".join(lines)
+                bun_line_offsets = []
+                offset = 0
+                for source_line in lines:
+                    bun_line_offsets.append(offset)
+                    offset += len(source_line) + 1
+            if bun_line_offsets is None or not _is_safe_bun_spawn_sync(
+                bun_source, bun_line_offsets[line_number - 1] + match.end() - 1
+            ):
+                return False
+            if bun_globals_unchanged is None:
+                bun_globals_unchanged = _js_bun_globals_unchanged(bun_source)
+            return bun_globals_unchanged
+
         for line_num, line in enumerate(lines, start=1):
             # Check exclude patterns first
             excluded = False
@@ -927,8 +1446,22 @@ class SecurityRule:
                 continue
 
             for pattern_index, pattern in enumerate(self.compiled_patterns):
-                match = pattern.search(line)
-                if match:
+                # When a safe argv call is skipped, continue looking for a
+                # second call on the same line that still merits a finding.
+                candidate_matches = (
+                    pattern.finditer(line)
+                    if self.id == "COMMAND_INJECTION_OS_SYSTEM"
+                    or (self.id == "COMMAND_INJECTION_JS_CHILD_PROCESS" and pattern.pattern == r"\bspawnSync\s*\(")
+                    else (pattern.search(line),)
+                )
+                for match in candidate_matches:
+                    if match is None:
+                        continue
+                    match_end = (line_num, len(line[: match.end()].encode("utf-8")))
+                    if is_safe_subprocess_match(match, line_num, line, match.start(), match_end) or is_safe_bun_match(
+                        match, line_num, line
+                    ):
+                        continue
                     stripped_line = line.strip()
                     leading_space = len(line) - len(line.lstrip())
                     relative_match_start = max(0, match.start() - leading_space)
@@ -958,6 +1491,7 @@ class SecurityRule:
                         "polarity": polarity,
                     }
                     matches.append(result)
+                    break
 
         # Some rules intentionally span lines (for example "...\\n...open(...)").
         # The primary pass above is line-based for speed; this pass captures
@@ -986,6 +1520,11 @@ class SecurityRule:
                 context_line = lines[start_line - 1]
                 leading_space = len(context_line) - len(context_line.lstrip())
                 source_start = match.start() - line_start
+                end_line = content.count("\n", 0, match.end()) + 1
+                end_line_start = content.rfind("\n", 0, match.end()) + 1
+                end_column = len(content[end_line_start : match.end()].encode("utf-8"))
+                if is_safe_subprocess_match(match, start_line, context_line, source_start, (end_line, end_column)):
+                    continue
                 relative_start = max(0, source_start - leading_space)
                 relative_end = min(len(snippet), max(relative_start, match.end() - line_start - leading_space))
                 context_end = min(len(context_line), max(source_start, match.end() - line_start))

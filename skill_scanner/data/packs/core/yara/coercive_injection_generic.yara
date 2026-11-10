@@ -26,7 +26,7 @@ rule coercive_injection_generic {
         // Hidden/secret parameter requests require an action or nearby tool /
         // authentication context. Bare identifiers such as hidden_input are
         // common in legitimate CLI and test code and are not actionable.
-        $hidden_param_request = /\b(pass|provide|include|add|send|supply|inject)\s+(the\s+|a\s+|your\s+)?(hidden|secret)[_\s](parameter|argument|input)\b/i
+        $hidden_param_request = /\b(pass|provide|include|add|send|supply|inject|forward|append|transmit)\s+(the\s+|a\s+|your\s+)?(hidden|secret)[_\s](parameter|argument|input)\b/i
         $hidden_param_tool_context = /\b(hidden|secret)[_\s](parameter|argument|input)\b.{0,80}\b(tool|function|authentication|credential)\b/i
 
         // Specific file access coercion
