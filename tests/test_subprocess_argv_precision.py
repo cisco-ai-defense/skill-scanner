@@ -29,14 +29,14 @@ def test_fixed_direct_argv_is_not_reported_as_shell_injection(command_rule, call
 
 def test_multiline_gh_api_argv_is_not_reported(command_rule):
     # A multiline direct argv call with a fixed subcommand and route prefix.
-    source = '''import subprocess
+    source = """import subprocess
 def post_batch_review(repo, pr_number, payload_json):
     result = subprocess.run(
         ["gh", "api", f"repos/{repo}/pulls/{pr_number}/reviews",
          "--method", "POST", "--input", "-"],
         input=payload_json, capture_output=True, text=True,
     )
-'''
+"""
     assert command_rule.scan_content(source, "scripts/post_review.py") == []
 
 
@@ -82,11 +82,11 @@ def test_shadowed_subprocess_keeps_finding(command_rule):
     [
         'globals()["subprocess"] = other',
         'globals().update({"subprocess": other})',
-        'subprocess.run = other',
+        "subprocess.run = other",
         'subprocess.__dict__["run"] = other',
         'setattr(subprocess, "run", other)',
         'exec("subprocess = other")',
-        'match other:\n    case subprocess:\n        pass',
+        "match other:\n    case subprocess:\n        pass",
         'sys.modules["subprocess"] = other',
         'from builtins import globals as g\ng()["subprocess"] = other',
         'from sys import modules as m\nm["subprocess"] = other\nimport subprocess',
@@ -100,11 +100,11 @@ def test_dynamic_rebinding_keeps_finding(command_rule, rebind):
 
 @pytest.mark.parametrize("target", ['"subprocess.run"', '"subprocess" + ".run"'])
 def test_string_target_patch_keeps_finding(command_rule, target):
-    source = '''import subprocess
+    source = """import subprocess
 from unittest.mock import patch
 with patch(TARGET, new=other):
     subprocess.run(["gh", "api", f"repos/{repo}"])
-'''.replace("TARGET", target)
+""".replace("TARGET", target)
     assert command_rule.scan_content(source, "scripts/main.py")
 
 
@@ -114,14 +114,11 @@ with patch(TARGET, new=other):
         'import os\nos.environ["PATH"] = user_path',
         'import os\nos.putenv("PATH", user_path)',
         'from os import environ as env\nenv["PATH"] = user_path',
-        'import os\nos.chdir(user_directory)',
+        "import os\nos.chdir(user_directory)",
     ],
 )
 def test_process_environment_changes_keep_finding(command_rule, environment_change):
-    source = (
-        f'import subprocess\n{environment_change}\n'
-        'subprocess.run(["gh", "api", f"repos/{repo}"])\n'
-    )
+    source = f'import subprocess\n{environment_change}\nsubprocess.run(["gh", "api", f"repos/{{repo}}"])\n'
     assert command_rule.scan_content(source, "scripts/main.py")
 
 
@@ -141,7 +138,7 @@ def test_source_and_ast_limits_keep_regex_finding(command_rule, monkeypatch):
 
 def test_safe_first_call_does_not_hide_unsafe_second_call(command_rule):
     source = (
-        'import subprocess\n'
+        "import subprocess\n"
         'subprocess.run(["gh", "api", f"repos/{repo}"]); subprocess.run(f"echo {user}", shell=True)\n'
     )
     assert command_rule.scan_content(source, "scripts/main.py")

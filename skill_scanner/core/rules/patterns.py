@@ -512,7 +512,9 @@ def _safe_subprocess_argv_calls(content: str) -> dict[tuple[int, int], tuple[int
                 return {}
             if node.module == "unittest.mock" and any(alias.name == "patch" for alias in node.names):
                 return {}
-            if node.module == "os" and any(alias.name in {"environ", "environb", "putenv", "unsetenv", "chdir"} for alias in node.names):
+            if node.module == "os" and any(
+                alias.name in {"environ", "environb", "putenv", "unsetenv", "chdir"} for alias in node.names
+            ):
                 return {}
             if node.module == "builtins" and any(alias.name in _DYNAMIC_BINDING_NAMES for alias in node.names):
                 return {}

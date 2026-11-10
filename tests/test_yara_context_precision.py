@@ -1,3 +1,6 @@
+# Copyright 2026 Cisco Systems, Inc. and its affiliates
+# SPDX-License-Identifier: Apache-2.0
+
 """Regression cases for YARA matches on defensive prose and read-only SQL."""
 
 from pathlib import Path
@@ -47,6 +50,19 @@ def test_stacked_metadata_query_remains_detected(yara_scanner: YaraScanner) -> N
         "'; SELECT * FROM information_schema.tables --",
         "sql_injection_generic",
     )
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "'; SELECT password FROM users --",
+        "'; SELECT password FROM users --\n"
+        "3. **Schema check**: `SELECT column_name, data_type FROM information_schema.columns "
+        "WHERE table_schema = '<tenant>' AND table_name = 'orders' ORDER BY ordinal_position`",
+    ],
+)
+def test_stacked_select_does_not_depend_on_later_documentation(yara_scanner: YaraScanner, content: str) -> None:
+    assert _has_rule(yara_scanner, content, "sql_injection_generic")
 
 
 def test_hidden_secret_input_description_is_not_coercion(yara_scanner: YaraScanner) -> None:

@@ -4934,8 +4934,7 @@ class StaticAnalyzer(BaseAnalyzer):
         frontmatter_view = _frontmatter_text_view(skill)
         if frontmatter_view:
             yara_matches.extend(
-                (match, frontmatter_view)
-                for match in self.yara_scanner.scan_content(frontmatter_view, "SKILL.md")
+                (match, frontmatter_view) for match in self.yara_scanner.scan_content(frontmatter_view, "SKILL.md")
             )
         for match, matched_content in yara_matches:
             rule_name = match.get("rule_name", "")

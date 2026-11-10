@@ -47,6 +47,10 @@ rule sql_injection_generic{
         // it are injection delimiters and must remain visible.
         $stacked_schema_query = /['"][ \t]*;[ \t]*SELECT[^\n;]*\bFROM\s+information_schema\./i
 
+        // Detect a stacked SELECT on its own line. A later documentation
+        // example must not be needed to make the earlier payload match.
+        $stacked_select_query = /['"][ \t]*;[ \t]*SELECT[^\n;]{0,256}\bFROM[ \t]+[A-Za-z_][A-Za-z0-9_.]*/i
+
         // SQL injection with USER() function in malicious context
         $malicious_user_functions = /(\bUSER\s*\(\s*\)\s*(SELECT|FROM|WHERE|AND|OR|UNION)\b|CONCAT\s*\(\s*USER\s*\(\s*\))/i
 
@@ -91,6 +95,9 @@ rule sql_injection_generic{
 
         // Metadata enumeration after a stacked-query injection delimiter
         ($stacked_schema_query and not $common_sql_ops and not $common_context_phrases) or
+
+        // Query after a stacked-query injection delimiter
+        ($stacked_select_query and not $common_sql_ops and not $common_context_phrases) or
 
         // Malicious USER() function usage
         ($malicious_user_functions and not $common_sql_ops and not $common_context_phrases)

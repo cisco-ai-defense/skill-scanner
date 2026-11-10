@@ -526,6 +526,35 @@ def get_extension_family(ext: str) -> str | None:
     return _EXTENSION_FAMILY.get(ext.lower())
 
 
+_MAX_VERIFIED_JSON_DEPTH = 256
+
+
+def _json_nesting_within_limit(content: str) -> bool:
+    """Bound JSON nesting before parsing, independent of interpreter limits."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in content:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > _MAX_VERIFIED_JSON_DEPTH:
+                return False
+        elif char in "]}":
+            depth -= 1
+            if depth < 0:
+                return False
+    return True
+
+
 def _is_structured_text_without_archive_signature(file_path: Path, ext: str) -> bool:
     """Confirm a small file is valid JSON/YAML without known archive magic.
 
@@ -551,6 +580,8 @@ def _is_structured_text_without_archive_signature(file_path: Path, ext: str) -> 
         return False
     try:
         if ext == ".json":
+            if not _json_nesting_within_limit(content):
+                return False
             json.loads(content)
             return True
         if ext in {".yaml", ".yml"}:

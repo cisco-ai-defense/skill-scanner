@@ -583,7 +583,7 @@ class TestTextFormatMismatch:
         assert result is not None
         assert result[0] == "HIGH"
 
-    @pytest.mark.parametrize(("extension", "depth"), [("json", 16000), ("yaml", 1200)])
+    @pytest.mark.parametrize(("extension", "depth"), [("json", 257), ("json", 16000), ("yaml", 1200)])
     def test_deeply_nested_structured_text_fails_closed(self, tmp_path, monkeypatch, extension, depth):
         """Parser recursion must not crash scanning or suppress an archive signal."""
         f = tmp_path / f"record.{extension}"
@@ -597,6 +597,16 @@ class TestTextFormatMismatch:
         result = check_extension_mismatch(f, min_confidence=0.6)
         assert result is not None
         assert result[0] == "HIGH"
+
+    def test_json_brackets_inside_strings_do_not_exceed_nesting_limit(self, tmp_path, monkeypatch):
+        f = tmp_path / "record.json"
+        f.write_text('{"text":"\\\\\\"' + "[" * 1000 + '"}')
+        monkeypatch.setattr(
+            "skill_scanner.core.file_magic.detect_magic",
+            lambda _path: MagicMatch("archive/snap", "archive", "Snap archive", 0.67),
+        )
+
+        assert check_extension_mismatch(f, min_confidence=0.6) is None
 
     def test_strict_policy_keeps_generic_shebang_finding(self, tmp_path, monkeypatch):
         """STRICT fails closed when the model only identifies a shebang script."""
