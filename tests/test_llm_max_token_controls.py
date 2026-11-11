@@ -233,6 +233,8 @@ class TestTruncationDetection:
         response.usage_metadata = MagicMock(
             prompt_token_count=10,
             candidates_token_count=1024,
+            thoughts_token_count=0,
+            tool_use_prompt_token_count=0,
             total_token_count=1034,
         )
         mock_genai = MagicMock()
