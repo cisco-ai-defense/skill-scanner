@@ -50,6 +50,12 @@ from .base import BaseAnalyzer
 
 logger = logging.getLogger(__name__)
 
+# Default alignment model for gateway providers (same ids as the main LLM analyzer).
+_GATEWAY_DEFAULT_MODELS = {
+    "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
+    "atlascloud": "atlascloud/anthropic/claude-sonnet-5",
+}
+
 # BEHAVIOR_ALIGNMENT_* and BEHAVIOR_CROSSFILE_* rule IDs are built from the
 # threat name, so these findings pick their Cisco AI taxonomy code here rather
 # than from the pack manifest.  The codes come from
@@ -95,6 +101,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
         llm_api_key: str | None = None,
         llm_provider: str | None = None,
         llm_reasoning_effort: str | None = None,
+        llm_base_url: str | None = None,
     ):
         """
         Initialize behavioral analyzer.
@@ -105,6 +112,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
             llm_api_key: API key for the LLM provider (or resolved from environment)
             llm_provider: Optional provider override used for request semantics
             llm_reasoning_effort: Optional reasoning-depth control for alignment calls
+            llm_base_url: Optional base URL for the LLM provider (or ``SKILL_SCANNER_LLM_BASE_URL``)
 
         Note:
             This analyzer processes Python (.py) files with full AST-based dataflow
@@ -125,13 +133,21 @@ class BehavioralAnalyzer(BaseAnalyzer):
                 from .behavioral.alignment import AlignmentOrchestrator
 
                 # Resolve LLM configuration - use SKILL_SCANNER_LLM_* variables
-                model = llm_model or os.environ.get("SKILL_SCANNER_LLM_MODEL", "gemini/gemini-3.8-flash")
                 api_key = llm_api_key or os.environ.get("SKILL_SCANNER_LLM_API_KEY")
+                base_url = llm_base_url or os.environ.get("SKILL_SCANNER_LLM_BASE_URL")
                 provider_name = (
                     (llm_provider or os.environ.get("SKILL_SCANNER_LLM_PROVIDER") or "")
                     .strip()
                     .lower()
                     .replace("_", "-")
+                )
+                # Gateway providers have their own default model; the Gemini
+                # fallback would be sent to a gateway that does not serve it.
+                model = (
+                    llm_model
+                    or os.environ.get("SKILL_SCANNER_LLM_MODEL")
+                    or _GATEWAY_DEFAULT_MODELS.get(provider_name)
+                    or "gemini/gemini-3.8-flash"
                 )
                 # A hosted gateway wins over the model name, matching the
                 # adjudicator and meta analyzer. openai-compatible plus
@@ -153,6 +169,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
                     self.alignment_orchestrator = AlignmentOrchestrator(
                         llm_model=model,
                         llm_api_key=api_key,
+                        llm_base_url=base_url,
                         llm_provider=llm_provider,
                         llm_reasoning_effort=llm_reasoning_effort,
                     )

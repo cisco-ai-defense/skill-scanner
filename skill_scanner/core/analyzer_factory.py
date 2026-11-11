@@ -187,6 +187,7 @@ def build_analyzers(
                 BehavioralAnalyzer(
                     llm_provider=llm_provider,
                     llm_reasoning_effort=llm_reasoning_effort,
+                    llm_base_url=llm_base_url or os.getenv("SKILL_SCANNER_LLM_BASE_URL"),
                 )
             )
         except (ImportError, ValueError, TypeError) as exc:
