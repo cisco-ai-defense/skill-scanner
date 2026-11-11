@@ -101,7 +101,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
 
         Args:
             use_alignment_verification: Enable LLM-powered alignment verification
-            llm_model: LLM model for alignment verification (e.g., "gemini/gemini-2.0-flash")
+            llm_model: LLM model for alignment verification (e.g., "gemini/gemini-3.8-flash")
             llm_api_key: API key for the LLM provider (or resolved from environment)
             llm_provider: Optional provider override used for request semantics
             llm_reasoning_effort: Optional reasoning-depth control for alignment calls
@@ -125,7 +125,7 @@ class BehavioralAnalyzer(BaseAnalyzer):
                 from .behavioral.alignment import AlignmentOrchestrator
 
                 # Resolve LLM configuration - use SKILL_SCANNER_LLM_* variables
-                model = llm_model or os.environ.get("SKILL_SCANNER_LLM_MODEL", "gemini/gemini-2.0-flash")
+                model = llm_model or os.environ.get("SKILL_SCANNER_LLM_MODEL", "gemini/gemini-3.8-flash")
                 api_key = llm_api_key or os.environ.get("SKILL_SCANNER_LLM_API_KEY")
                 provider_name = (
                     (llm_provider or os.environ.get("SKILL_SCANNER_LLM_PROVIDER") or "")

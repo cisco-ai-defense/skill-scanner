@@ -306,6 +306,16 @@ class TestSARIFFormat:
         assert "driver" in tool
         assert "name" in tool["driver"]
 
+    def test_sarif_tool_version_matches_package_version(self, safe_skill_dir):
+        """The SARIF driver version must report the installed package version, not a fixed default."""
+        from skill_scanner import __version__
+
+        stdout, _, code = run_cli(["scan", str(safe_skill_dir), "--format", "sarif"])
+        assert code == 0
+
+        driver = json.loads(stdout)["runs"][0]["tool"]["driver"]
+        assert driver["version"] == __version__
+
 
 # =============================================================================
 # Summary Format Tests (Default)
