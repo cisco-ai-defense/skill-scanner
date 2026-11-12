@@ -823,9 +823,11 @@ class MetaAnalyzer(BaseAnalyzer):
         configured_model = model or os.getenv("SKILL_SCANNER_META_LLM_MODEL") or os.getenv("SKILL_SCANNER_LLM_MODEL")
         if not configured_model and self.provider == "apple-fm":
             configured_model = "apple-fm/system"
-        self.model: str = configured_model or (
-            "orcarouter/anthropic/claude-sonnet-5" if self.provider == "orcarouter" else DEFAULT_LLM_MODEL
-        )
+        _provider_default_models = {
+            "orcarouter": "orcarouter/anthropic/claude-sonnet-5",
+            "atlascloud": "atlascloud/anthropic/claude-sonnet-5",
+        }
+        self.model: str = configured_model or _provider_default_models.get(self.provider or "", DEFAULT_LLM_MODEL)
         self.base_url = (
             base_url
             or os.getenv("SKILL_SCANNER_META_LLM_BASE_URL")  # Meta-specific
@@ -844,7 +846,7 @@ class MetaAnalyzer(BaseAnalyzer):
         self.aws_region = aws_region
         self.aws_profile = aws_profile
         self.aws_session_token = aws_session_token
-        # OrcaRouter uses LiteLLM's OpenAI adapter. Reuse the primary
+        # OrcaRouter and Atlas Cloud use LiteLLM's OpenAI adapter. Reuse the primary
         # analyzer's normalization and request-parameter handling so the meta
         # analyzer receives the same key and default endpoint.
         self.provider_config: ProviderConfig | None = None
@@ -852,6 +854,8 @@ class MetaAnalyzer(BaseAnalyzer):
         _wants_provider_config = (
             self.provider == "orcarouter"
             or self.model.lower().startswith("orcarouter/")
+            or self.provider == "atlascloud"
+            or self.model.lower().startswith("atlascloud/")
             or self.provider == "bedrock-mantle"
             or self.model.lower().startswith("bedrock-mantle/")
             or (not _openai_compatible and (self.provider == "apple-fm" or self.model.lower().startswith("apple-fm/")))
