@@ -333,8 +333,10 @@ class ProviderConfig:
         """Force LiteLLM's OpenAI adapter for Atlas Cloud models (OpenAI-compatible)."""
         if model.lower().startswith("atlascloud/"):
             model = model[len("atlascloud/") :]
-        if model.lower().startswith("openai/"):
-            return model
+        # Atlas Cloud's own catalogue contains ids in the ``openai/`` namespace
+        # (e.g. ``openai/gpt-5.6-terra``). LiteLLM strips exactly one leading
+        # ``openai/`` as its adapter prefix, so always add one and keep the
+        # complete gateway id intact behind it.
         return f"openai/{model}"
 
     def _normalize_bedrock_mantle_model_name(self, model: str) -> str:

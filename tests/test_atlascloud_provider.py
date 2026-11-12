@@ -150,3 +150,35 @@ def test_factory_forwards_base_url_to_behavioral_analyzer() -> None:
         with patch.dict(os.environ, {"SKILL_SCANNER_LLM_BASE_URL": "https://env/v1"}):
             analyzer_factory.build_analyzers(ScanPolicy.default(), use_behavioral=True)
     assert cls.call_args.kwargs["llm_base_url"] == "https://env/v1"
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [
+        ("atlascloud/openai/gpt-5.6-terra", "openai/openai/gpt-5.6-terra"),
+        ("openai/gpt-5.6-terra", "openai/openai/gpt-5.6-terra"),
+        ("atlascloud/anthropic/claude-opus-4.8", "openai/anthropic/claude-opus-4.8"),
+        ("google/gemini-2.5-pro", "openai/google/gemini-2.5-pro"),
+    ],
+)
+def test_atlascloud_preserves_full_gateway_model_id(configured: str, expected: str) -> None:
+    """LiteLLM strips one ``openai/`` adapter prefix; the Atlas id must survive it."""
+    from litellm import get_llm_provider
+
+    with patch.dict(
+        os.environ,
+        {
+            "SKILL_SCANNER_LLM_PROVIDER": "atlascloud",
+            "SKILL_SCANNER_LLM_API_KEY": "test-key",
+            "SKILL_SCANNER_LLM_MODEL": configured,
+        },
+        clear=True,
+    ):
+        adjudicator = Adjudicator(max_retries=0)
+    response = {"choices": [{"message": {"content": '{"verdict":"real","confidence":5,"reason":"t"}'}}]}
+    with patch("litellm.completion", return_value=response) as mock_completion:
+        adjudicator._call_llm("prompt")
+    model = mock_completion.call_args.kwargs["model"]
+    assert model == expected
+    # What LiteLLM would actually put on the wire for the Atlas request.
+    assert get_llm_provider(model)[0] == expected.split("/", 1)[1]
