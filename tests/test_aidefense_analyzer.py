@@ -329,6 +329,29 @@ class TestAPIRequestHandling:
         assert result is not None
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", [502, 503, 504])
+    @patch("asyncio.sleep", new_callable=AsyncMock)
+    @patch("httpx.AsyncClient.post")
+    async def test_retries_transient_5xx(self, mock_post, mock_sleep, status):
+        """Transient gateway errors (502/503/504) are retried instead of dropped."""
+        analyzer = AIDefenseAnalyzer(api_key="test-key", max_retries=2)
+
+        mock_5xx = MagicMock()
+        mock_5xx.status_code = status
+        mock_5xx.text = "upstream unavailable"
+
+        mock_200 = MagicMock()
+        mock_200.status_code = 200
+        mock_200.json.return_value = {"classifications": [], "is_safe": True}
+
+        mock_post.side_effect = [mock_5xx, mock_200]
+
+        result = await analyzer._make_api_request("/inspect/chat", {"messages": []})
+
+        assert result == {"classifications": [], "is_safe": True}
+        assert mock_post.call_count == 2
+
+    @pytest.mark.asyncio
     @patch("httpx.AsyncClient.post")
     async def test_handles_unauthorized(self, mock_post):
         """Test handling of unauthorized response (401)."""

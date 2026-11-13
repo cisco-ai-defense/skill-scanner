@@ -655,6 +655,19 @@ class AIDefenseAnalyzer(BaseAnalyzer):
                     logger.warning("AI Defense API rate limited, retrying in %ds...", delay)
                     await asyncio.sleep(delay)
                     continue
+                elif response.status_code in (502, 503, 504):
+                    # Transient gateway/availability error - back off and retry
+                    logger.warning(
+                        "AI Defense API returned %s (attempt %d/%d)",
+                        response.status_code,
+                        attempt + 1,
+                        self.max_retries,
+                    )
+                    if attempt < self.max_retries - 1:
+                        await asyncio.sleep((2**attempt) * 1.0)
+                        continue
+                    logger.error("AI Defense API error: %s - %s", response.status_code, response.text)
+                    return None
                 elif response.status_code == 401:
                     raise ValueError("Invalid AI Defense API key")
                 elif response.status_code == 403:
