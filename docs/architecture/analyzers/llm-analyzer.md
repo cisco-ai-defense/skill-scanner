@@ -117,13 +117,13 @@ findings = await analyzer.analyze_async(skill)
 ### Anthropic Claude
 ```python
 analyzer = LLMAnalyzer(model="anthropic/claude-sonnet-5-5", api_key=key)
-analyzer = LLMAnalyzer(model="anthropic/claude-opus-4-20250514", api_key=key)
+analyzer = LLMAnalyzer(model="anthropic/claude-opus-5-5", api_key=key)
 ```
 
 ### OpenAI GPT
 ```python
 analyzer = LLMAnalyzer(model="openai/<model>", api_key=key)
-analyzer = LLMAnalyzer(model="gpt-4-turbo", api_key=key)
+analyzer = LLMAnalyzer(model="gpt-5.6-sol", api_key=key)
 ```
 
 ### AWS Bedrock
@@ -138,10 +138,10 @@ analyzer = LLMAnalyzer(
 ### Google Gemini
 ```python
 # Using Google Generative AI SDK (direct)
-analyzer = LLMAnalyzer(model="gemini-2.0-flash-exp", api_key=key)
+analyzer = LLMAnalyzer(model="gemini-3.8-flash", api_key=key)
 
 # Using LiteLLM format
-analyzer = LLMAnalyzer(model="gemini/gemini-2.0-flash-exp", api_key=key)
+analyzer = LLMAnalyzer(model="gemini/gemini-3.8-flash", api_key=key)
 
 # Vertex AI -- uses GOOGLE_APPLICATION_CREDENTIALS if set, otherwise falls
 # back to ambient Application Default Credentials (e.g. Workload Identity)
