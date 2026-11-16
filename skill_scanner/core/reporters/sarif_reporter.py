@@ -34,7 +34,7 @@ class SARIFReporter:
     """Generates SARIF 2.1.0 format reports for GitHub Code Scanning."""
 
     SARIF_VERSION = "2.1.0"
-    SARIF_SCHEMA = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
+    SARIF_SCHEMA = "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json"
 
     # Map severity to SARIF levels
     SEVERITY_TO_LEVEL = {
