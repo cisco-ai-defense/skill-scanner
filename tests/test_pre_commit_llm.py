@@ -88,3 +88,23 @@ def test_hook_exits_2_when_the_judge_cannot_be_built(
 
     assert exit_code == pre_commit.EXIT_CONFIGURATION_ERROR == 2
     assert "LLM analyzer could not be loaded" in capsys.readouterr().err
+
+
+def test_hook_exits_2_when_the_policy_is_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    skill_dir = tmp_path / ".claude" / "skills" / "formatter"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: formatter\ndescription: Formats code.\n---\n\nFormats code.\n")
+    policy_file = tmp_path / "policy.yaml"
+    policy_file.write_text("severity_overrides:\n  - rule_id: 123\n    severity: HIGH\n")
+    (tmp_path / ".skill_scannerrc").write_text(json.dumps({"policy": str(policy_file)}))
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = pre_commit.main(["--scan-all"])
+
+    assert exit_code == pre_commit.EXIT_CONFIGURATION_ERROR == 2
+    err = capsys.readouterr().err
+    assert "Invalid scan policy" in err
+    assert "'rule_id' must be a string" in err

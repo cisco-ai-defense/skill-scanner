@@ -498,6 +498,9 @@ def _severity_override_from_dict(entry: dict[str, Any]) -> SeverityOverride:
     if not isinstance(override.rule_id, str):
         # A list or number never equals a finding's rule id, so the override would be a silent no-op.
         raise ValueError(f"severity_overrides entry: 'rule_id' must be a string, got {override.rule_id!r}")
+    if not override.rule_id.strip():
+        # Every finding has a nonempty rule id, so an empty one can never match.
+        raise ValueError("severity_overrides entry: 'rule_id' must not be empty")
     if not isinstance(override.severity, str) or override.severity not in _VALID_OVERRIDE_SEVERITIES:
         raise ValueError(
             f"severity_overrides entry for {override.rule_id!r}: 'severity' must be one of "
