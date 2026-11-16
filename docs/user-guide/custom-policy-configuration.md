@@ -639,7 +639,7 @@ severity_overrides:
     reason: "Archives are expected in our skill packages"
 ```
 
-**Valid severities:** `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`
+**Valid severities:** `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO` (case-insensitive). Any other value fails policy loading.
 
 **Impact:** Changes the reported severity for matching rules. Useful for tuning signal-to-noise ratio without losing visibility.
 

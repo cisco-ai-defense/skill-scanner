@@ -162,6 +162,55 @@ class TestScannerSeverityOverrides:
         for f in cred_findings:
             assert f.severity == Severity.LOW, f"Expected LOW but got {f.severity}"
 
+    def test_lowercase_severity_override_from_yaml_is_applied(self, tmp_path):
+        """``severity: high`` in a policy file must re-rate the finding, not be skipped."""
+        from skill_scanner.core.scanner import SkillScanner
+
+        skill_dir = tmp_path / "unlicensed"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: unlicensed\ndescription: Formats CSV files for a weekly report\n---\n# Usage\n",
+            encoding="utf-8",
+        )
+        policy_file = tmp_path / "policy.yaml"
+        policy_file.write_text(
+            textwrap.dedent("""\
+            severity_overrides:
+              - rule_id: MANIFEST_MISSING_LICENSE
+                severity: high
+                reason: "Every skill must declare a license"
+        """)
+        )
+
+        result = SkillScanner(policy=ScanPolicy.from_yaml(policy_file)).scan_skill(skill_dir)
+
+        license_findings = [f for f in result.findings if f.rule_id == "MANIFEST_MISSING_LICENSE"]
+        assert license_findings
+        assert all(f.severity == Severity.HIGH for f in license_findings)
+
+    @pytest.mark.parametrize("severity", ["SAFE", "safe"])
+    def test_safe_severity_override_built_in_code_is_ignored(self, tmp_path, severity):
+        """SAFE is not a finding severity, so an override set in code must not apply it."""
+        from skill_scanner.core.scan_policy import SeverityOverride
+        from skill_scanner.core.scanner import SkillScanner
+
+        skill_dir = tmp_path / "unlicensed"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: unlicensed\ndescription: Formats CSV files for a weekly report\n---\n# Usage\n",
+            encoding="utf-8",
+        )
+        baseline = SkillScanner(policy=ScanPolicy.default()).scan_skill(skill_dir)
+        expected = {f.severity for f in baseline.findings if f.rule_id == "MANIFEST_MISSING_LICENSE"}
+        assert expected and Severity.SAFE not in expected
+
+        policy = ScanPolicy.default()
+        policy.severity_overrides = [SeverityOverride(rule_id="MANIFEST_MISSING_LICENSE", severity=severity)]
+        result = SkillScanner(policy=policy).scan_skill(skill_dir)
+
+        license_findings = [f for f in result.findings if f.rule_id == "MANIFEST_MISSING_LICENSE"]
+        assert {f.severity for f in license_findings} == expected
+
     def test_severity_override_with_invalid_severity_is_ignored(self, tmp_path):
         """Invalid severity values in overrides should be silently ignored."""
         from skill_scanner.core.scan_policy import SeverityOverride

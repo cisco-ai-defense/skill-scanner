@@ -34,7 +34,7 @@ from textual.widgets import (
     TextArea,
 )
 
-from ..core.scan_policy import ScanPolicy, SeverityOverride
+from ..core.scan_policy import ScanPolicy, _severity_override_from_dict
 
 # ─── Utility ──────────────────────────────────────────────────────────────────
 
@@ -765,14 +765,19 @@ class PolicyConfigApp(App[str | None]):
             overrides = []
             for line in value:
                 parts = line.split(":", 2)
-                if len(parts) >= 2:
-                    overrides.append(
-                        SeverityOverride(
-                            rule_id=parts[0].strip(),
-                            severity=parts[1].strip(),
-                            reason=parts[2].strip() if len(parts) > 2 else "",
-                        )
+                if len(parts) < 2:
+                    raise ValueError(f"Invalid severity override {line!r}: expected rule_id:SEVERITY[:reason]")
+                # Same validation as policy loading, so the TUI never saves a
+                # policy file that the scanner refuses to load.
+                overrides.append(
+                    _severity_override_from_dict(
+                        {
+                            "rule_id": parts[0].strip(),
+                            "severity": parts[1].strip(),
+                            "reason": parts[2].strip() if len(parts) > 2 else "",
+                        }
                     )
+                )
             self.policy.severity_overrides = overrides
             return
 
@@ -799,9 +804,17 @@ class PolicyConfigApp(App[str | None]):
             self._pending_field = attr_path
 
             def on_result(result: set[str] | list[str] | None) -> None:
-                if result is not None and self._pending_field:
-                    self._set_field(self._pending_field, result)
+                field_path = self._pending_field
                 self._pending_field = None
+                if result is None or not field_path:
+                    return
+                try:
+                    self._set_field(field_path, result)
+                except ValueError as exc:
+                    # Keep the user's lines and reopen the editor so they can fix them.
+                    self.notify(str(exc), title="Invalid value", severity="error")
+                    self._pending_field = field_path
+                    self.push_screen(SetEditorScreen(title, result, as_list=is_list), callback=on_result)
 
             self.push_screen(
                 SetEditorScreen(title, current, as_list=is_list),

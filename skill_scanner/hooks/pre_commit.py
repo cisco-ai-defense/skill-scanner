@@ -78,6 +78,11 @@ DEFAULT_CONFIG = {
 # no usable model or key), matching the scanner CLI.
 EXIT_CONFIGURATION_ERROR = 2
 
+
+class PolicyConfigurationError(Exception):
+    """Raised when the configured scan policy cannot be loaded or validated."""
+
+
 # Severity levels (higher number = more severe)
 SEVERITY_LEVELS = {
     "safe": 0,
@@ -206,12 +211,15 @@ def scan_skill(skill_dir: Path, config: dict) -> dict:
 
         # Load policy (preset name, file path, or default)
         policy_value = config.get("policy")
-        if policy_value and policy_value in ScanPolicy.preset_names():
-            policy = ScanPolicy.from_preset(policy_value)
-        elif policy_value:
-            policy = ScanPolicy.from_yaml(policy_value)
-        else:
-            policy = ScanPolicy.default()
+        try:
+            if policy_value and policy_value in ScanPolicy.preset_names():
+                policy = ScanPolicy.from_preset(policy_value)
+            elif policy_value:
+                policy = ScanPolicy.from_yaml(policy_value)
+            else:
+                policy = ScanPolicy.default()
+        except Exception as exc:
+            raise PolicyConfigurationError(f"Invalid scan policy {policy_value!r}: {exc}") from exc
 
         # Delegate to the centralized factory
         analyzers = build_analyzers(
@@ -253,9 +261,10 @@ def scan_skill(skill_dir: Path, config: dict) -> dict:
             "low_count": counts["low"],
         }
 
-    except AnalyzerConfigurationError:
-        # A requested analyzer that cannot be built is a configuration error for
-        # the whole run, not a per-skill scan failure to skip past.
+    except (AnalyzerConfigurationError, PolicyConfigurationError):
+        # A requested analyzer that cannot be built, or a policy that cannot be
+        # loaded, is a configuration error for the whole run, not a per-skill
+        # scan failure to skip past.
         raise
     except Exception as e:
         return {
@@ -416,7 +425,7 @@ def main(args: list[str] | None = None) -> int:
 
         try:
             scan_result: dict = scan_skill(skill_dir, config)
-        except AnalyzerConfigurationError as exc:
+        except (AnalyzerConfigurationError, PolicyConfigurationError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return EXIT_CONFIGURATION_ERROR
 
